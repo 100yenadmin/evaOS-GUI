@@ -16,7 +16,7 @@ import http, {
 import { networkInterfaces } from 'node:os';
 import type { Socket } from 'node:net';
 import serveHandler from 'serve-handler';
-import cookie from 'cookie';
+import * as cookie from 'cookie';
 import type { AppMetadata } from './types.js';
 import { verifyPassword } from './auth/index.js';
 import {
