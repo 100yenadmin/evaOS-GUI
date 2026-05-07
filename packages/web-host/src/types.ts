@@ -45,10 +45,24 @@ export type WebHostHandle = {
 };
 
 /**
- * WebUI config schema (must match legacy webui.config.json)
+ * WebUI configuration persisted to userDataPath/webui.config.json.
+ *
+ * Schema frozen in M5. Fields MUST NOT be renamed or removed in M6+; only
+ * additive changes are allowed (with explicit migration notes in handoff).
+ *
+ * Design choice (M5): admin credentials live in this file under web-host's
+ * control. The legacy webserver persisted the same user via backend SQLite;
+ * M6 migration handles that transition at the desktop shell level.
  */
 export type WebUIConfig = {
+  /** bcrypt hash of the admin password. Empty string means "not initialized yet". */
   passwordHash: string;
+  /** Admin username. Defaults to 'admin'. */
   adminUsername: string;
-  // M5 will confirm complete schema when migrating from old webui.config.json
+  /** Preferred server port. Optional; CLI / env override wins. */
+  port?: number;
+  /** Whether to allow remote (0.0.0.0) binding by default. */
+  allowRemote?: boolean;
+  /** ISO timestamp of last password change. For audit only. */
+  passwordUpdatedAt?: string;
 };
