@@ -33,7 +33,7 @@ const SiderScheduledEntry: React.FC<SiderScheduledEntryProps> = ({
       <Tooltip {...siderTooltipProps} content={t('cron.scheduledTasks')} position='right'>
         <div
           className={classNames(
-            'w-full h-40px flex items-center justify-center cursor-pointer transition-colors rd-8px text-t-primary',
+            'w-full h-32px flex items-center justify-center cursor-pointer transition-colors rd-8px text-t-primary',
             isActive ? 'bg-[rgba(var(--primary-6),0.12)] text-primary' : 'hover:bg-fill-3 active:bg-fill-4'
           )}
           onClick={onClick}
@@ -54,16 +54,16 @@ const SiderScheduledEntry: React.FC<SiderScheduledEntryProps> = ({
     <Tooltip {...siderTooltipProps} content={t('cron.scheduledTasks')} position='right'>
       <div
         className={classNames(
-          'box-border h-40px w-full flex items-center justify-start gap-8px px-10px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary',
+          'box-border h-32px w-full flex items-center justify-start gap-10px pl-6px pr-14px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary',
           isMobile && 'sider-action-btn-mobile',
           isActive ? 'bg-[rgba(var(--primary-6),0.12)] text-primary' : 'hover:bg-fill-3 active:bg-fill-4'
         )}
         onClick={onClick}
       >
-        <span className='w-28px h-28px flex items-center justify-center shrink-0'>
+        <span className='size-24px flex items-center justify-center shrink-0'>
           <AlarmClock
             theme='outline'
-            size='20'
+            size='18'
             fill='currentColor'
             className='block leading-none'
             style={{ lineHeight: 0 }}

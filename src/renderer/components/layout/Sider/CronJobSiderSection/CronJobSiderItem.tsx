@@ -298,12 +298,12 @@ const CronJobSiderItem: React.FC<CronJobSiderItemProps> = ({
       {/* Header - arrow toggles expand, text navigates to detail */}
       <div
         className={classNames(
-          'flex items-center gap-8px h-40px px-10px rd-8px transition-colors min-w-0',
+          'flex items-center gap-10px h-32px px-14px rd-8px transition-colors min-w-0',
           pathname === `/scheduled/${job.id}` ? 'bg-[rgba(var(--primary-6),0.12)]' : 'hover:bg-fill-3 active:bg-fill-4'
         )}
       >
         {/* Expand/collapse arrow — fixed 28px column to align with sibling rows' icons */}
-        <span className='w-28px h-28px flex items-center justify-center shrink-0'>
+        <span className='size-20px flex items-center justify-center shrink-0'>
           {hasChildren && (
             <Down
               size={16}

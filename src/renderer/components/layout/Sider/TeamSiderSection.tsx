@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DeleteOne, EditOne, Peoples, Plus, Pushpin } from '@icon-park/react';
+import { DeleteOne, Down, EditOne, Peoples, Plus, Pushpin, Right } from '@icon-park/react';
 import { Input, Message, Modal, Tooltip } from '@arco-design/web-react';
 import classNames from 'classnames';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -22,6 +22,7 @@ import SiderItem from './SiderItem';
 import type { SiderMenuItem } from './SiderItem';
 
 const TEAM_PINNED_KEY = 'team-pinned-ids';
+const TEAM_EXPANDED_KEY = 'team-section-expanded';
 
 type SiderTooltipProps = React.ComponentProps<typeof Tooltip>;
 
@@ -45,6 +46,7 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
   const { mutate: globalMutate } = useSWRConfig();
 
   const [createTeamVisible, setCreateTeamVisible] = useState(false);
+  const [expanded, setExpanded] = useState(() => localStorage.getItem(TEAM_EXPANDED_KEY) !== 'false');
 
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
     try {
@@ -58,6 +60,14 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
     setPinnedIds((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
       localStorage.setItem(TEAM_PINNED_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem(TEAM_EXPANDED_KEY, String(next));
       return next;
     });
   }, []);
@@ -143,16 +153,28 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
         )
       ) : (
         <div className='shrink-0 flex flex-col gap-2px mb-8px'>
-          <div className='flex items-center justify-between px-12px py-8px'>
+          <div
+            className='group flex items-center px-14px py-8px pr-22px cursor-pointer select-none sticky top-0 z-10 bg-fill-2'
+            data-testid='team-section-toggle'
+            aria-expanded={expanded}
+            onClick={toggleExpanded}
+          >
             <span className='text-13px text-t-secondary font-bold leading-20px'>{t('team.sider.title')}</span>
             <div
-              className='h-20px w-20px rd-4px flex items-center justify-center cursor-pointer hover:bg-fill-3 transition-all shrink-0'
-              onClick={() => setCreateTeamVisible(true)}
+              className='ml-auto h-20px w-20px rd-4px flex items-center justify-center hover:bg-fill-3 transition-all shrink-0'
+              onClick={(event) => {
+                event.stopPropagation();
+                setCreateTeamVisible(true);
+              }}
             >
               <Plus theme='outline' size='14' fill='var(--color-text-2)' style={{ lineHeight: 0 }} />
             </div>
+            <div className='ml-2px h-20px w-20px rd-4px flex items-center justify-center hover:bg-fill-3 transition-all shrink-0 text-t-secondary'>
+              {expanded ? <Down theme='outline' size={12} /> : <Right theme='outline' size={12} />}
+            </div>
           </div>
-          {sortedTeams.length > 0 &&
+          {expanded &&
+            sortedTeams.length > 0 &&
             sortedTeams.map((team) => {
               const isPinned = pinnedIds.includes(team.id);
               const menuItems: SiderMenuItem[] = [

@@ -120,8 +120,8 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
       <div
         id={'c-' + conversation.id}
         className={classNames(
-          'chat-history__item h-40px rd-8px flex items-center group cursor-pointer relative overflow-hidden shrink-0 conversation-item [&.conversation-item+&.conversation-item]:mt-2px min-w-0 transition-colors',
-          collapsed ? 'justify-center px-0' : 'justify-start gap-8px px-10px',
+          'chat-history__item h-34px rd-8px flex items-center group cursor-pointer relative overflow-hidden shrink-0 conversation-item [&.conversation-item+&.conversation-item]:mt-1px min-w-0 transition-colors',
+          collapsed ? 'justify-center px-0' : 'justify-start gap-10px px-14px',
           {
             'hover:bg-[rgba(var(--primary-6),0.14)]': !batchMode,
             '!bg-active': selected,

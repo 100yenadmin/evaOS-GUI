@@ -159,7 +159,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
             <SettingsSider collapsed={collapsed} tooltipEnabled={tooltipEnabled} />
           </Suspense>
         ) : (
-          <div className='size-full flex flex-col gap-2px'>
+          <div className='size-full flex flex-col gap-2px pt-4px'>
             <SiderToolbar
               isMobile={isMobile}
               isBatchMode={isBatchMode}
@@ -189,7 +189,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
             {/* Divider between fixed top nav and scrollable content area */}
             <div
               className={classNames(
-                'shrink-0 mt-4px mb-4px h-1px bg-[var(--color-border-2)]',
+                'shrink-0 mt-8px mb-8px h-1px bg-[var(--color-border-2)]',
                 collapsed ? 'mx-6px' : 'mx-10px'
               )}
             />

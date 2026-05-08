@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TTeam } from '@/common/types/teamTypes';
 
 const mockUseTeamList = vi.hoisted(() => vi.fn(() => ({ teams: [], mutate: vi.fn(), removeTeam: vi.fn() })));
@@ -85,6 +85,10 @@ vi.mock('@/renderer/pages/team/components/TeamCreateModal', () => ({
 import Sider from '@/renderer/components/layout/Sider';
 
 describe('Sider team entry visibility', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('keeps the collapsed team icon color stable while using background-only active state', async () => {
     const teams: TTeam[] = [
       {
@@ -124,11 +128,48 @@ describe('Sider team entry visibility', () => {
     );
 
     expect(screen.getByTestId('sider-toolbar')).toBeInTheDocument();
-    expect(screen.getByTestId('sider-search-entry')).toBeInTheDocument();
     expect(screen.getByTestId('sider-scheduled-entry')).toBeInTheDocument();
     expect(screen.getByTestId('cron-job-section')).toBeInTheDocument();
     expect(await screen.findByTestId('workspace-grouped-history')).toBeInTheDocument();
     expect(screen.getByTestId('sider-footer')).toBeInTheDocument();
     expect(screen.getByText('team.sider.title')).toBeInTheDocument();
+  });
+
+  it('collapses and expands the team section in the full sidebar', () => {
+    const teams: TTeam[] = [
+      {
+        id: 'team-1',
+        userId: 'user-1',
+        name: 'Alpha Team',
+        workspace: '',
+        workspaceMode: 'shared',
+        leaderAgentId: 'lead-1',
+        agents: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    mockUseTeamList.mockReturnValue({ teams, mutate: vi.fn(), removeTeam: vi.fn() });
+
+    render(
+      <MemoryRouter initialEntries={['/guid']}>
+        <Sider />
+      </MemoryRouter>
+    );
+
+    const toggle = screen.getByTestId('team-section-toggle');
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Alpha Team')).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Alpha Team')).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Alpha Team')).toBeInTheDocument();
   });
 });

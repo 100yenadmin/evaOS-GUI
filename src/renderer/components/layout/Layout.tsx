@@ -440,7 +440,7 @@ const Layout: React.FC<{
               {!collapsed && <Titlebar workspaceAvailable={workspaceAvailable} />}
               <ArcoLayout.Header
                 className={classNames(
-                  'flex items-center justify-start py-8px px-16px pl-20px gap-12px layout-sider-header',
+                  'flex items-center justify-start py-8px px-14px gap-10px layout-sider-header',
                   isMobile && 'layout-sider-header--mobile',
                   {
                     'cursor-pointer group ': collapsed,
@@ -448,7 +448,7 @@ const Layout: React.FC<{
                 )}
               >
                 <div
-                  className={classNames('bg-black shrink-0 size-40px relative rd-0.5rem', {
+                  className={classNames('bg-black shrink-0 size-32px relative rd-0.5rem', {
                     '!size-24px': collapsed,
                   })}
                   onClick={onClick}
@@ -476,7 +476,7 @@ const Layout: React.FC<{
                     ></path>
                   </svg>
                 </div>
-                <div className='flex-1 text-20px text-1 collapsed-hidden font-bold'>AionUi</div>
+                <div className='flex-1 text-16px text-1 collapsed-hidden font-bold'>AionUi</div>
                 {isMobile && !collapsed && (
                   <button
                     type='button'

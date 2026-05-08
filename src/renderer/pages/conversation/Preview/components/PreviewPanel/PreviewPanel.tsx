@@ -281,42 +281,31 @@ const PreviewPanel: React.FC = () => {
     setContextMenu({ show: false, x: 0, y: 0, tabId: null });
   }, [tabs, closeTab]);
 
-  // 如果预览面板未打开，不渲染 / Don't render if preview panel is not open
-  if (!isOpen || !activeTab) return null;
-
-  const { content, contentType, metadata } = activeTab;
-  const isMarkdown = contentType === 'markdown';
-  const isHTML = contentType === 'html';
-  const isEditable = metadata?.editable !== false; // 默认可编辑 / Default editable
-
-  // 检查文件类型是否已有内置的打开按钮（Word、PPT、PDF、Excel 组件内部已提供）
-  // Check if file type already has built-in open button
-  // (Word, PPT, PDF, Excel components provide their own)
-  const hasBuiltInOpenButton = (FILE_TYPES_WITH_BUILTIN_OPEN as readonly string[]).includes(contentType);
-
-  // 对所有有 filePath 的文件显示"在系统中打开"按钮（统一在工具栏显示）
-  // Show "Open in System" button for all files with filePath (unified in toolbar)
-  const showOpenInSystemButton = Boolean(metadata?.filePath);
+  // 注意：所有 hooks 必须在条件 return 之前调用 / All hooks must be called before any conditional return
+  const tabContent = activeTab?.content ?? '';
+  const tabContentType = activeTab?.contentType;
+  const tabMetadata = activeTab?.metadata;
 
   // 下载文件到本地 / Download file to local system
   const handleDownload = useCallback(async () => {
+    if (!tabContentType) return;
     try {
-      const rawFileName = metadata?.fileName || `${contentType}-${Date.now()}`;
+      const rawFileName = tabMetadata?.fileName || `${tabContentType}-${Date.now()}`;
 
-      if (metadata?.filePath) {
+      if (tabMetadata?.filePath) {
         // All files with a disk path (binary, image, zip, etc.) — unified path
-        await downloadFileFromPath(metadata.filePath, rawFileName);
+        await downloadFileFromPath(tabMetadata.filePath, rawFileName);
         return;
       }
 
-      if (contentType === 'image') {
+      if (tabContentType === 'image') {
         // Pure base64 image (no file path on disk)
-        if (!content) {
+        if (!tabContent) {
           messageApi.error(t('messages.downloadFailed', { defaultValue: 'Failed to download' }));
           return;
         }
-        const blob = await fetch(content).then((res) => res.blob());
-        const nameExt = metadata?.fileName?.split('.').pop();
+        const blob = await fetch(tabContent).then((res) => res.blob());
+        const nameExt = tabMetadata?.fileName?.split('.').pop();
         const mimeExt = blob.type?.includes('/') ? blob.type.split('/').pop() : undefined;
         const ext = nameExt || mimeExt || 'png';
         const normalizedExt = ext.toLowerCase();
@@ -334,20 +323,20 @@ const PreviewPanel: React.FC = () => {
       }
 
       // Text / code content (no file path, no binary)
-      const nameExt = metadata?.fileName?.split('.').pop();
+      const nameExt = tabMetadata?.fileName?.split('.').pop();
       let mimeType = 'text/plain;charset=utf-8';
       let ext = 'txt';
-      if (contentType === 'markdown') {
+      if (tabContentType === 'markdown') {
         mimeType = 'text/markdown;charset=utf-8';
         ext = 'md';
-      } else if (contentType === 'html') {
+      } else if (tabContentType === 'html') {
         mimeType = 'text/html;charset=utf-8';
         ext = 'html';
-      } else if (contentType === 'diff') {
+      } else if (tabContentType === 'diff') {
         ext = 'diff';
-      } else if (contentType === 'code') {
+      } else if (tabContentType === 'code') {
         // Code files: set extension based on language
-        const lang = metadata?.language;
+        const lang = tabMetadata?.language;
         if (lang === 'javascript' || lang === 'js') ext = 'js';
         else if (lang === 'typescript' || lang === 'ts') ext = 'ts';
         else if (lang === 'python' || lang === 'py') ext = 'py';
@@ -362,16 +351,16 @@ const PreviewPanel: React.FC = () => {
       const normalizedExt = ext.toLowerCase();
       const hasSameExt = rawFileName.toLowerCase().endsWith(`.${normalizedExt}`);
       const fileName = hasSameExt ? rawFileName : `${rawFileName}.${ext}`;
-      downloadTextContent(content, fileName, mimeType);
+      downloadTextContent(tabContent, fileName, mimeType);
     } catch (error) {
       console.error('[PreviewPanel] Failed to download file:', error);
       messageApi.error(t('messages.downloadFailed', { defaultValue: 'Failed to download' }));
     }
-  }, [content, contentType, metadata?.fileName, metadata?.filePath, metadata?.language, messageApi, t]);
+  }, [tabContent, tabContentType, tabMetadata?.fileName, tabMetadata?.filePath, tabMetadata?.language, messageApi, t]);
 
   // 在系统默认应用中打开文件 / Open file in system default application
   const handleOpenInSystem = useCallback(async () => {
-    if (!metadata?.filePath) {
+    if (!tabMetadata?.filePath) {
       try {
         messageApi.error(t('preview.openInSystemFailed'));
       } catch {
@@ -382,7 +371,7 @@ const PreviewPanel: React.FC = () => {
 
     try {
       // 使用系统默认应用打开文件 / Open file with system default application
-      await ipcBridge.shell.openFile.invoke(metadata.filePath);
+      await ipcBridge.shell.openFile.invoke(tabMetadata.filePath);
       try {
         messageApi.success(t('preview.openInSystemSuccess'));
       } catch {
@@ -395,7 +384,24 @@ const PreviewPanel: React.FC = () => {
         // Context holder may be unmounted after async operation
       }
     }
-  }, [metadata?.filePath, messageApi, t]);
+  }, [tabMetadata?.filePath, messageApi, t]);
+
+  // 如果预览面板未打开，不渲染 / Don't render if preview panel is not open
+  if (!isOpen || !activeTab) return null;
+
+  const { content, contentType, metadata } = activeTab;
+  const isMarkdown = contentType === 'markdown';
+  const isHTML = contentType === 'html';
+  const isEditable = metadata?.editable !== false; // 默认可编辑 / Default editable
+
+  // 检查文件类型是否已有内置的打开按钮（Word、PPT、PDF、Excel 组件内部已提供）
+  // Check if file type already has built-in open button
+  // (Word, PPT, PDF, Excel components provide their own)
+  const hasBuiltInOpenButton = (FILE_TYPES_WITH_BUILTIN_OPEN as readonly string[]).includes(contentType);
+
+  // 对所有有 filePath 的文件显示"在系统中打开"按钮（统一在工具栏显示）
+  // Show "Open in System" button for all files with filePath (unified in toolbar)
+  const showOpenInSystemButton = Boolean(metadata?.filePath);
 
   // 渲染历史下拉菜单 / Render history dropdown
   const renderHistoryDropdown = () => {
