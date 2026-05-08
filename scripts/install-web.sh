@@ -325,6 +325,14 @@ extract_tarball() {
     # Set executable permission on the bun-compiled standalone binary
     chmod +x "${INSTALL_DIR}/aionui-web" 2>/dev/null || true
 
+    # On macOS, strip the quarantine xattr Safari/Chrome/curl-downloaded files
+    # inherit — otherwise Gatekeeper kills unsigned Mach-O binaries with a
+    # "damaged, can't be opened" dialog. This is standard practice for CLI
+    # tools distributed as tarballs (bun, deno, rustup do the same).
+    if command -v xattr &>/dev/null; then
+        xattr -dr com.apple.quarantine "${INSTALL_DIR}" 2>/dev/null || true
+    fi
+
     # Verify installation
     if [[ ! -x "${INSTALL_DIR}/aionui-web" ]]; then
         die "Installation failed: ${INSTALL_DIR}/aionui-web not found or not executable"
