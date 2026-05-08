@@ -74,6 +74,9 @@
 
 ## 验收标准
 
+> **UC-F 硬约束提示**:handoff 必须贴每条命令的原始输出(头 10 行 + 尾 10 行 +
+> 总行数 + 退出码),禁止"按经验通过"的转述。详见总设计 UC-F-1/3/5。
+
 ### 自动化门禁(agent 必须全部跑过)
 
 ```bash
@@ -188,9 +191,20 @@ bunx vitest run tests/e2e  # 本里程碑不新增 e2e,但已有 e2e 不能断
 里填:
 
 - 本里程碑分支名 + 最新 SHA
-- 基于哪个 `origin/feat/backend-migration` SHA
+- 基于哪个 `origin/feat/backend-migration` SHA + merge commit SHA
 - 实际删掉的文件清单 + 行数统计(应与本需求文档一致)
-- `bunx tsc --noEmit` / `bun run lint` / `prek run ...` 输出
-- 功能回归验证结论(哪些走通了 / 哪些未验证)
+- **UC-F-3 grep 证据**:对 7 个待删文件每个文件的 basename 跑 grep,贴原始
+  输出 + 每行标注(self-reference / consumer-also-deleted)
+- **UC-F-1 命令输出**:以下 8 条命令各自的头 10 尾 10 + 总行数 + 退出码:
+  - `bun run lint`
+  - `bunx tsc --noEmit`
+  - `bunx vitest run`(Step 1 初次)
+  - `prek run --from-ref origin/feat/backend-migration --to-ref HEAD`(Step 1 初次)
+  - `git merge origin/feat/backend-migration --no-ff -m "chore(n1): sync ..."`
+  - `bun run lint`(Step 4 基线同步后复跑)
+  - `bunx tsc --noEmit`(Step 4 复跑)
+  - `bunx vitest run`(Step 4 复跑)
+- 功能回归验证结论(哪些走通了 / 哪些未验证,**未验证的必须列出并给出后续
+  计划**,不得留空或仅写"未手动验证")
 - 若有偏离计划的改动,单列一节说明原因
 - 若发现 UC-B 保留文件实际可以删(或本需求"可删"文件实际不能删),escalate

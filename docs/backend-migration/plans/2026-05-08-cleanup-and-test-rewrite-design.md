@@ -148,6 +148,118 @@ backend `aionui-office::watch_manager` 提供 `OfficecliWatchManager` +
 **不保留**"暂时禁用"的注释块,直接恢复 `- name: Run unit tests` + `run: bunx vitest run`
 两行;handoff 文档中对应的 TODO 标记为 DONE。
 
+### UC-F:验证真实性(反偷懒硬约束)
+
+M 系列执行期暴露的问题:验证只口头"声明通过"不贴原始输出;改 CI workflow
+只改完 push 不等 CI 跑;删代码只凭经验不 grep 外部引用。`feat/ci-web-cli-release-integration`
+分支上积累的一批修复(commits `36b7f90c1` / `3a0a35acb` / `654404a17` / `c7c38e58b`
+/ `5fcfa5139` / `da5b340c2` / `a1caf0fb3` / `e091bd19c` / `fecc12831` / `2cae1bc19`
+等)绝大多数本可以通过里程碑 handoff 阶段的真实验证拦下。本次链路明确禁止
+以下做法,下列五条是硬约束:
+
+#### UC-F-1:handoff 必须贴原始命令输出
+
+requirements 里每一条"自动化门禁"命令,handoff 对应位置必须附:
+
+- 完整命令(`$ <command>`)
+- 原始 stdout + stderr 的**头 10 行 + 尾 10 行 + 总行数**
+- 退出码(`$ echo $?`)
+
+**禁止**:"tsc 通过"、"vitest 绿"、"按经验无影响"这类转述。
+
+命令输出过长时允许截断,格式:
+
+```
+$ bunx vitest run
+<头 10 行>
+... (总计 N 行,完整输出见 <路径> 或 CI run log)
+<尾 10 行>
+$ echo $?
+0
+```
+
+任何非 0 退出的命令必须在 handoff 的**诊断**节说明根因 + 修复动作,
+不得 `|| true` 吞错。
+
+#### UC-F-2:改 CI workflow 必须触发真实 CI run(N5 强制,其它里程碑按需)
+
+当里程碑改动了 `.github/workflows/**` 下任何文件:
+
+- push 后必须**等对应 workflow run 跑完**,不得 push 了就写 handoff 宣告完成
+- handoff 必须包含:
+  - `gh run list --branch <branch> --limit 5 --json databaseId,name,status,conclusion,url` 原始 JSON 输出
+  - 被修改的 workflow(或被恢复的 step)所在 run 的 `conclusion: success` URL
+  - 如果某个 workflow 的触发条件是 `workflow_call` 或 `workflow_dispatch` 无法通过
+    普通 push 触发,handoff 必须说明"用何种方式触发、URL、conclusion";实在无法
+    触发的要 escalate,不得默认"按经验应该能通过"
+- CI fail 时:**不得 merge 基线后再 push"冲一冲"来掩盖**,必须修到真绿或 escalate
+- **N5 的 handoff 至少包含 2 次 CI 成功**:
+  - 第一次:workflow 改完初次 push 触发
+  - 第二次:merge `origin/feat/backend-migration` 基线后再次 push 触发
+  两次 run 的 URL 都要贴
+
+#### UC-F-3:删除代码必须 grep 证明无外部引用
+
+删除任何源文件前,必须跑并在 handoff 贴输出:
+
+```bash
+# basename 不带扩展名;glob 涵盖 ts/tsx/js/json/yml/yaml
+grep -rn "<basename>" \
+  packages/ scripts/ tests/ \
+  --include='*.ts' --include='*.tsx' --include='*.js' \
+  --include='*.json' --include='*.yml' --include='*.yaml'
+```
+
+预期:无输出,或仅在待删文件本身 / 测试文件 / 已明确可删集合内的引用。
+
+- handoff 贴每个待删文件的完整 grep 输出,一一标注"self-reference"或"consumer 也在删除集合中"
+- 发现外部引用必须 escalate,**不得自行判断"那个引用可以忽略"**
+- 删除后再跑一次 `bunx tsc --noEmit`,错误数必须保持为 0
+
+#### UC-F-4:新增测试必须证明实际执行
+
+- 使用 `bunx vitest run --reporter=verbose`,handoff 贴输出(至少列出每个新增
+  测试文件对应的 `✓` 行 + 总计 `N passed` 数字)
+- 总 test count **必须 ≥ requirements 清单预期数**;低于预期需 escalate 解释
+- **禁止 `.skip` / `.todo`**;特殊情况必须有 `// BLOCKED: <reason + issue/tracking>`
+  行内注释,并在 handoff 独立一节列出所有被 block 的点 + 跟进计划
+- 测试不得依赖真实网络 / 真实文件系统之外的外部服务(backend / OAuth / …);
+  全部走 N3 沉淀的 `mockHttpBridge` 或 `vi.mock`
+
+#### UC-F-5:本地门禁顺序 + 基线同步后必须完整复跑
+
+标准验证顺序(任何一步 fail 必须修到绿才能下一步):
+
+```bash
+# Step 1 — 初次本地门禁
+bun run lint
+bunx tsc --noEmit
+bunx vitest run
+prek run --from-ref origin/feat/backend-migration --to-ref HEAD
+
+# Step 2 — 里程碑专属业务回归(见各 requirements)
+
+# Step 3 — 同步基线(merge 不是 rebase,保留下游 SHA 有效性)
+git fetch origin feat/backend-migration
+git merge origin/feat/backend-migration --no-ff \
+  -m "chore(nx): sync with feat/backend-migration"
+
+# Step 4 — 合并后完整复跑 Step 1 的四条,不得跳过
+bun run lint
+bunx tsc --noEmit
+bunx vitest run
+prek run --from-ref origin/feat/backend-migration --to-ref HEAD
+
+# Step 5 — push(如改了 workflow,等 UC-F-2 规定的 CI 跑完)
+git push -u origin <branch>
+```
+
+Step 4 发现新失败的处理:
+
+- **基线引入的破坏性变更** → escalate,**不自行修**(不应该在本里程碑 scope 里扩大范围)
+- **本里程碑和基线的隐性冲突**(文件无冲突但语义冲突)→ 修之 + 在 handoff
+  "Deviations"节如实说明
+
 ## 落地路径与里程碑
 
 5 个里程碑通过 feature 分支链接力。分支从 `feat/backend-migration` 逐级拉起,
