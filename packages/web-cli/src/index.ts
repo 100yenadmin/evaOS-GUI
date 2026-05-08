@@ -1,5 +1,5 @@
-import { startWebHost } from '@aionui/web-host';
-import type { WebHostHandle } from '@aionui/web-host';
+import { startWebHost, startStaticServer } from '@aionui/web-host';
+import type { WebHostHandle, StaticServerHandle } from '@aionui/web-host';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +21,7 @@ const cliRoot = path.resolve(__dirname, '..');
 const BACKEND_BINARY = process.platform === 'win32' ? 'aionui-backend.exe' : 'aionui-backend';
 const DEFAULT_PORT = 25808;
 
-let currentHandle: WebHostHandle | null = null;
+let currentHandle: WebHostHandle | StaticServerHandle | null = null;
 
 function parseArgs(argv: string[]): { command: string; flags: Map<string, string | true> } {
   const [command = 'start', ...rest] = argv;
@@ -109,11 +109,6 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
   const allowRemote = resolveAllowRemote(flags);
   const version = readPackageVersion();
 
-  if (!fs.existsSync(backendBin)) {
-    console.error(`[aionui-web] backend binary not found: ${backendBin}`);
-    console.error(`  hint: set AIONUI_BACKEND_BIN or pass --backend-bin <path>`);
-    process.exit(1);
-  }
   if (!fs.existsSync(staticDir)) {
     console.error(`[aionui-web] static dir not found: ${staticDir}`);
     console.error(`  hint: pass --static-dir <path> pointing to the SPA build output`);
@@ -127,42 +122,77 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
   console.log(`[aionui-web] backend bin: ${backendBin}`);
   console.log(`[aionui-web] launching  : port=${port} allowRemote=${allowRemote}`);
 
-  const handle = await startWebHost({
-    app: {
-      version,
-      isPackaged: true,
-      resourcesPath: cliRoot,
-      userDataPath: dataDir,
-    },
-    staticDir,
-    port,
-    allowRemote,
-    dataDir,
-    logDir,
-    dirs: {
-      cacheDir: dataDir,
-      workDir: dataDir,
-      logDir,
-    },
-    backend: {
-      kind: 'ownBackend',
-      resolveBackend: () => backendBin,
-    },
-  });
+  const backendAvailable = fs.existsSync(backendBin);
 
-  currentHandle = handle;
+  if (!backendAvailable) {
+    // Graceful degradation: serve the SPA shell without spawning backend.
+    // API calls from the browser will 502/ECONNREFUSED — frontend is expected
+    // to surface this to the user (e.g. "backend missing" banner).
+    console.warn('');
+    console.warn('⚠️  Backend binary not found — starting in FRONTEND-ONLY mode.');
+    console.warn(`   Missing: ${backendBin}`);
+    console.warn('   The web UI will load but API calls will fail until a backend is available.');
+    console.warn('   To enable backend: download aionui-backend and set AIONUI_BACKEND_BIN.');
+    console.warn('');
 
-  console.log('');
-  console.log('AionUi WebUI is ready');
-  console.log(`  Local  : ${handle.localUrl}`);
-  if (handle.networkUrl) console.log(`  Network: ${handle.networkUrl}`);
-  if (handle.initialPassword) {
+    const handle = await startStaticServer({
+      staticDir,
+      backendPort: 0, // invalid port → API proxy will fail cleanly
+      port,
+      allowRemote,
+      app: {
+        version,
+        isPackaged: true,
+        resourcesPath: cliRoot,
+        userDataPath: dataDir,
+      },
+    });
+    currentHandle = handle;
+
     console.log('');
-    console.log(`Initial admin password: ${handle.initialPassword}`);
-    console.log('(change it after first login)');
+    console.log('AionUi WebUI (frontend only) is ready');
+    console.log(`  Local  : ${handle.localUrl}`);
+    if (handle.networkUrl) console.log(`  Network: ${handle.networkUrl}`);
+    console.log('');
+    console.log('Press Ctrl+C to stop.');
+  } else {
+    const handle = await startWebHost({
+      app: {
+        version,
+        isPackaged: true,
+        resourcesPath: cliRoot,
+        userDataPath: dataDir,
+      },
+      staticDir,
+      port,
+      allowRemote,
+      dataDir,
+      logDir,
+      dirs: {
+        cacheDir: dataDir,
+        workDir: dataDir,
+        logDir,
+      },
+      backend: {
+        kind: 'ownBackend',
+        resolveBackend: () => backendBin,
+      },
+    });
+
+    currentHandle = handle;
+
+    console.log('');
+    console.log('AionUi WebUI is ready');
+    console.log(`  Local  : ${handle.localUrl}`);
+    if (handle.networkUrl) console.log(`  Network: ${handle.networkUrl}`);
+    if (handle.initialPassword) {
+      console.log('');
+      console.log(`Initial admin password: ${handle.initialPassword}`);
+      console.log('(change it after first login)');
+    }
+    console.log('');
+    console.log('Press Ctrl+C to stop.');
   }
-  console.log('');
-  console.log('Press Ctrl+C to stop.');
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -170,7 +200,7 @@ async function runStart(flags: Map<string, string | true>): Promise<void> {
     shuttingDown = true;
     console.log(`\n[aionui-web] received ${signal}, stopping...`);
     try {
-      await handle.stop();
+      if (currentHandle) await currentHandle.stop();
     } catch (err) {
       console.error('[aionui-web] stop failed:', err);
     }
