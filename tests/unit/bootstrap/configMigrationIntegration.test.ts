@@ -4,38 +4,96 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/common/adapter/httpBridge', () => ({
-  httpGet: vi.fn(),
-  httpPost: vi.fn(),
-  httpRequest: vi.fn(),
+const mockDriver = {
+  prepare: vi.fn(() => ({
+    run: vi.fn(),
+    get: vi.fn(),
+    all: vi.fn(),
+  })),
+  close: vi.fn(),
+  exec: vi.fn(),
+};
+
+vi.mock('@process/services/database/drivers/BetterSqlite3Driver', () => ({
+  BetterSqlite3Driver: class {
+    constructor() {
+      return mockDriver;
+    }
+  },
 }));
 
-vi.mock('@office-ai/platform', () => ({
-  StorageManager: class {},
-  ConfigPaths: {},
-  Logger: { getLogger: () => ({ info: vi.fn(), error: vi.fn() }) },
+vi.mock('fs', () => ({
+  existsSync: vi.fn(),
 }));
+
+vi.mock('@process/utils', () => ({
+  ensureDirectory: vi.fn(),
+  getDataPath: () => '/data',
+}));
+
+vi.mock('@process/services/database/schema', () => ({
+  CURRENT_DB_VERSION: 26,
+  getDatabaseVersion: vi.fn(() => 20),
+  initSchema: vi.fn(),
+  setDatabaseVersion: vi.fn(),
+}));
+
+vi.mock('@process/services/database/migrations', () => ({
+  runMigrations: vi.fn(),
+}));
+
+import { existsSync } from 'fs';
+import { runLegacyDatabaseMigrations } from '@process/services/database/runLegacyDatabaseMigrations';
+import { getDatabaseVersion, setDatabaseVersion } from '@process/services/database/schema';
+import { runMigrations } from '@process/services/database/migrations';
 
 describe('configMigrationIntegration', () => {
-  it('orchestrates configMigration flow', () => {
-    expect(true).toBe(true);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (existsSync as any).mockReturnValue(true);
+    (getDatabaseVersion as any).mockReturnValue(20);
   });
 
-  it('calls migrateAssistants in sequence', () => {
-    expect(true).toBe(true);
+  it('runs migrations when database version is outdated', async () => {
+    const result = await runLegacyDatabaseMigrations('/test/aionui.db');
+
+    expect(result.migrated).toBe(true);
+    expect(result.fromVersion).toBe(20);
+    expect(result.toVersion).toBe(26);
+    expect(runMigrations).toHaveBeenCalledWith(mockDriver, 20, 26);
+    expect(setDatabaseVersion).toHaveBeenCalledWith(mockDriver, 26);
   });
 
-  it('calls runBackendMigrations', () => {
-    expect(true).toBe(true);
+  it('skips migrations when database does not exist', async () => {
+    (existsSync as any).mockReturnValue(false);
+
+    const result = await runLegacyDatabaseMigrations('/test/aionui.db');
+
+    expect(result.skipped).toBe(true);
+    expect(result.migrated).toBe(false);
+    expect(runMigrations).not.toHaveBeenCalled();
   });
 
-  it('handles first-boot scenario', () => {
-    expect(true).toBe(true);
+  it('closes driver after migration completes', async () => {
+    await runLegacyDatabaseMigrations('/test/aionui.db');
+
+    expect(mockDriver.close).toHaveBeenCalled();
   });
 
-  it('uses mockHttpBridge for fake routes', () => {
-    expect(true).toBe(true);
+  it('ensures system user exists after migration', async () => {
+    await runLegacyDatabaseMigrations('/test/aionui.db');
+
+    expect(mockDriver.prepare).toHaveBeenCalledWith(expect.stringContaining('INSERT OR IGNORE INTO users'));
+  });
+
+  it('closes driver even if migration throws', async () => {
+    (runMigrations as any).mockImplementation(() => {
+      throw new Error('Migration failed');
+    });
+
+    await expect(runLegacyDatabaseMigrations('/test/aionui.db')).rejects.toThrow('Migration failed');
+    expect(mockDriver.close).toHaveBeenCalled();
   });
 });
