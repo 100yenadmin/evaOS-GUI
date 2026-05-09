@@ -4,7 +4,29 @@
 - Team-lead:主会话
 - 整链分支:`feat/n1..n5`(见下方 SHA list)
 - 目标合入分支:`origin/dev`
-- **状态**:**整链内部全部交付,但合入 dev 因业务分歧冲突需人工裁决,team-lead 未执行合入**
+- **状态**:✅ **整链已合入 dev,CI 全绿,tag + release 已自动产出**
+
+## ✅ 最终结果(2026-05-09)
+
+- **Merge commit**:`4167e1086` @ `origin/dev`
+- **Format fix commit**(cleanup follow-up):`68c8559a1` @ `origin/dev`
+- **CI run**:<https://github.com/iOfficeAI/AionUi/actions/runs/25586498714> **conclusion: success**
+- **全部 21 个 job 成功**(跳过的是条件不满足的 retry/skip job):
+  - Code Quality ✓
+  - Build Pipeline × 6 平台(macOS arm64/x64, Windows x64/arm64, Linux x64/arm64)✓
+  - Pack Web CLI × 4 平台 ✓
+  - Smoke test web-cli tarball ✓
+  - Smoke test install-web.sh ✓
+  - **Create Tag from Branch ✓**
+  - **Create Release ✓**
+- **验证完成**:整链带来的 64 unit test 文件 720 tests 在 dev 分支的 CI 环境下 `bunx vitest run` 全绿,恢复后的 3 个 workflow 的 vitest 步骤均成功执行
+
+### 整链执行的冲突处理(实际)
+
+1. **3 个 workflow content 冲突**(`build-and-release.yml` / `pack-web-cli.yml` / `_build-reusable.yml`):全部按 N5 取消注释版本接受,保留 `bunx vitest run`
+2. **1 个 handoff add/add 冲突**(`ci-web-cli-release-outcome.md`):保留 N5 的"TODO → DONE"版本
+3. **7 个 modify/delete 冲突**(N2 删 vs dev 改):全部 `git rm`,按 UC-C "全删重写"策略保留 N2 删除(dev 上对这些老测试的修改随之 obsolete)
+4. **Format 补刀**:首次 push 后 `bun run format:check` 对 3 个文件(N5-outcome.md + teamTypes.ts + TeamCreateModal.tsx)报未格式化,跑 `bun run format` 后追加 commit `68c8559a1`,CI 成功
 
 ---
 
