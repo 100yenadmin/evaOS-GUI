@@ -441,7 +441,7 @@ const Layout: React.FC<{
               {!collapsed && <Titlebar workspaceAvailable={workspaceAvailable} />}
               <ArcoLayout.Header
                 className={classNames(
-                  'flex items-center justify-start py-12px pl-10px pr-8px gap-12px layout-sider-header',
+                  'flex items-center justify-start pt-12px pb-4px pl-18px pr-16px gap-12px layout-sider-header',
                   isMobile && 'layout-sider-header--mobile',
                   {
                     'cursor-pointer group ': collapsed,
@@ -493,7 +493,7 @@ const Layout: React.FC<{
                   </button>
                 )}
               </ArcoLayout.Header>
-              <ArcoLayout.Content className='pt-8px px-8px pb-0 layout-sider-content'>
+              <ArcoLayout.Content className='pt-0 px-8px pb-0 layout-sider-content'>
                 {React.isValidElement(sider)
                   ? React.cloneElement(sider, {
                       onSessionClick: () => {
