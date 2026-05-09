@@ -800,20 +800,7 @@ app.on('before-quit', async () => {
     }
 
     // Web Server lifecycle is managed by aionui-backend subprocess
-
-    // Stop Office Watch processes (Word / Excel / PPT preview)
-    try {
-      const { stopAllOfficeWatchSessions } = await import('@process/bridge/officeWatchBridge');
-      stopAllOfficeWatchSessions();
-    } catch {
-      /* not initialized */
-    }
-    try {
-      const { stopAllWatchSessions } = await import('@process/bridge/pptPreviewBridge');
-      stopAllWatchSessions();
-    } catch {
-      /* not initialized */
-    }
+    // Office Watch processes (Word / Excel / PPT preview) are now managed by backend
   };
 
   // Master timeout: force quit if cleanup hangs
