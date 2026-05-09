@@ -87,7 +87,7 @@ h-34px  pl-10px  gap-8px  rd-8px
 ├─ [size-22px 容器]
 │    └─ icon 16px（新会话 + 外框 size-22px rd-6px bg-aou-2 border，icon 14px）
 ├─ 文字区（flex-1）
-│    14px / font-medium / text-t-primary（三行统一）
+│    14px / font-normal / text-t-primary（三行统一，全 sider 不加粗）
 └─ 右侧 slot（可选）
      batch 图标按钮等
 

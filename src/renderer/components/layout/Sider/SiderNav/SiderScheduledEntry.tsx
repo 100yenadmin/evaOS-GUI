@@ -69,7 +69,7 @@ const SiderScheduledEntry: React.FC<SiderScheduledEntryProps> = ({
             style={{ lineHeight: 0 }}
           />
         </span>
-        <span className='collapsed-hidden text-t-primary text-14px font-medium leading-24px'>
+        <span className='collapsed-hidden text-t-primary text-14px font-normal leading-24px'>
           {t('cron.scheduledTasks')}
         </span>
       </div>
