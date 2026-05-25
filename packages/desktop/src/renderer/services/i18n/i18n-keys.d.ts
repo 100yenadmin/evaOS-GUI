@@ -666,6 +666,8 @@ export type I18nKey =
   | 'library.filter.clear'
   | 'library.filter.time'
   | 'library.loading'
+  | 'library.refresh'
+  | 'library.search'
   | 'library.searchPlaceholder'
   | 'library.singleFile'
   | 'library.subtitle'

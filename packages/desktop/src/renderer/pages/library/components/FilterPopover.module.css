@@ -1,29 +1,26 @@
 /* Filter button */
 .filterBtn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 6px;
+  justify-content: center;
   border: none;
   background: transparent;
+  border-radius: 6px;
   color: var(--color-text-3);
-  font-size: 12px;
   cursor: pointer;
-  white-space: nowrap;
   transition:
-    color 0.15s,
-    background 0.15s;
-  flex-shrink: 0;
+    background 0.12s,
+    color 0.12s;
 }
 .filterBtn:hover {
   background: var(--color-fill-2);
   color: var(--color-text-2);
 }
 .filterBtn.active {
-  background: var(--color-fill-2);
   color: var(--color-text-1);
-  font-weight: 500;
 }
 
 /* Popover panel */

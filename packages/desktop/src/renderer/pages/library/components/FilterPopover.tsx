@@ -6,6 +6,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Tooltip } from '@arco-design/web-react';
 import { Filter, Close } from '@icon-park/react';
 import styles from './FilterPopover.module.css';
 
@@ -73,21 +74,22 @@ const FilterPopover: React.FC<FilterPopoverProps> = ({ filter, allAgents, onChan
 
   return (
     <div style={{ display: 'inline-block' }}>
-      <button
-        ref={btnRef}
-        type='button'
-        className={`${styles.filterBtn}${!empty ? ` ${styles.active}` : ''}`}
-        onClick={() => {
-          if (!open && btnRef.current) {
-            const rect = btnRef.current.getBoundingClientRect();
-            setPanelPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
-          }
-          setOpen((v) => !v);
-        }}
-      >
-        <Filter theme='outline' size='13' fill='currentColor' />
-        {t('library.filter.button')}
-      </button>
+      <Tooltip content={t('library.filter.button')} mini>
+        <button
+          ref={btnRef}
+          type='button'
+          className={`${styles.filterBtn}${!empty ? ` ${styles.active}` : ''}`}
+          onClick={() => {
+            if (!open && btnRef.current) {
+              const rect = btnRef.current.getBoundingClientRect();
+              setPanelPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+            }
+            setOpen((v) => !v);
+          }}
+        >
+          <Filter theme='outline' size='14' fill='currentColor' />
+        </button>
+      </Tooltip>
 
       {open && (
         <div

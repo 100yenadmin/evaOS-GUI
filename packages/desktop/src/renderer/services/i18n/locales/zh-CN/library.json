@@ -60,8 +60,10 @@
     "time": "时间",
     "clear": "清除筛选"
   },
-  "subtitle": "所有 AI 对话中生成的文件，自动归档在这里。",
+  "subtitle": "AI 为你生成的文件，都在这里。",
   "tooltip": {
     "from": "来自："
-  }
+  },
+  "search": "搜索",
+  "refresh": "刷新"
 }

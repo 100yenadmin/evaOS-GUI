@@ -8,8 +8,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Input, Message, Spin } from '@arco-design/web-react';
-import { Search } from '@icon-park/react';
+import { Input, Message, Spin, Tooltip } from '@arco-design/web-react';
+import { Search, Refresh } from '@icon-park/react';
 import AssetCard from './components/AssetCard';
 import AssetPopover from './components/AssetPopover';
 import AssetDrawer from './components/AssetDrawer';
@@ -56,6 +56,7 @@ const LibraryPage: React.FC = () => {
 
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | LibraryFileType>('all');
@@ -155,7 +156,14 @@ const LibraryPage: React.FC = () => {
       // Reset so a remount triggers a fresh scan (cache still serves data instantly).
       hasMounted.current = false;
     };
-  }, [conversations]);
+  }, [conversations, refreshKey]);
+
+  const handleRefresh = useCallback(() => {
+    clearLibraryCache();
+    hasMounted.current = false;
+    setLoading(true);
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const filteredAssets = useMemo((): FilteredCard[] => {
     const q = search.trim().toLowerCase();
@@ -538,6 +546,10 @@ const LibraryPage: React.FC = () => {
             </div>
           )}
 
+          <div className={styles.tabsFilterSlot}>
+            <FilterPopover filter={filter} allAgents={allAgents} onChange={setFilter} />
+          </div>
+
           {/* 搜索展开区 */}
           <div className={classNames(styles.tabsSearchSlot, searchOpen && styles.searchSlotOpen)}>
             {searchOpen && (
@@ -553,56 +565,62 @@ const LibraryPage: React.FC = () => {
                 className={styles.searchInput}
               />
             )}
-            <button
-              type='button'
-              className={classNames(styles.iconBtn, (searchOpen || search) && styles.iconBtnActive)}
-              onClick={() => {
-                if (searchOpen && search) {
-                  setSearch('');
-                  setSearchOpen(false);
-                  return;
-                }
-                setSearchOpen((v) => !v);
-              }}
-              title={t('library.searchPlaceholder')}
-            >
-              <Search theme='outline' size='14' fill='currentColor' />
-            </button>
+            <Tooltip content={t('library.search')} mini>
+              <button
+                type='button'
+                className={classNames(styles.iconBtn, (searchOpen || search) && styles.iconBtnActive)}
+                onClick={() => {
+                  if (searchOpen && search) {
+                    setSearch('');
+                    setSearchOpen(false);
+                    return;
+                  }
+                  setSearchOpen((v) => !v);
+                }}
+              >
+                <Search theme='outline' size='14' fill='currentColor' />
+              </button>
+            </Tooltip>
           </div>
 
-          <div className={styles.tabsFilterSlot}>
-            <FilterPopover filter={filter} allAgents={allAgents} onChange={setFilter} />
-          </div>
+          {/* 刷新按钮 */}
+          <Tooltip content={t('library.refresh')} mini>
+            <button type='button' className={styles.iconBtn} onClick={handleRefresh} disabled={loading}>
+              <Refresh theme='outline' size='14' fill='currentColor' />
+            </button>
+          </Tooltip>
 
           <div className={styles.modeToggle}>
-            <button
-              type='button'
-              className={classNames(styles.modeBtn, viewMode === 'file' && styles.active)}
-              onClick={() => setViewMode('file')}
-              title={t('library.view.file')}
-            >
-              <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
-                <rect x='1' y='1' width='5.5' height='5.5' rx='1' fill='currentColor' />
-                <rect x='7.5' y='1' width='5.5' height='5.5' rx='1' fill='currentColor' />
-                <rect x='1' y='7.5' width='5.5' height='5.5' rx='1' fill='currentColor' />
-                <rect x='7.5' y='7.5' width='5.5' height='5.5' rx='1' fill='currentColor' />
-              </svg>
-            </button>
-            <button
-              type='button'
-              className={classNames(styles.modeBtn, viewMode === 'list' && styles.active)}
-              onClick={() => setViewMode('list')}
-              title={t('library.view.list')}
-            >
-              <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
-                <rect x='1' y='2' width='3' height='3' rx='1' fill='currentColor' />
-                <rect x='6' y='3' width='7' height='1.5' rx='0.75' fill='currentColor' />
-                <rect x='1' y='6.25' width='3' height='3' rx='1' fill='currentColor' />
-                <rect x='6' y='7.25' width='7' height='1.5' rx='0.75' fill='currentColor' />
-                <rect x='1' y='10.5' width='3' height='1.5' rx='0.75' fill='currentColor' />
-                <rect x='6' y='10.5' width='5' height='1.5' rx='0.75' fill='currentColor' />
-              </svg>
-            </button>
+            <Tooltip content={t('library.view.file')} mini>
+              <button
+                type='button'
+                className={classNames(styles.modeBtn, viewMode === 'file' && styles.active)}
+                onClick={() => setViewMode('file')}
+              >
+                <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
+                  <rect x='1' y='1' width='5.5' height='5.5' rx='1' fill='currentColor' />
+                  <rect x='7.5' y='1' width='5.5' height='5.5' rx='1' fill='currentColor' />
+                  <rect x='1' y='7.5' width='5.5' height='5.5' rx='1' fill='currentColor' />
+                  <rect x='7.5' y='7.5' width='5.5' height='5.5' rx='1' fill='currentColor' />
+                </svg>
+              </button>
+            </Tooltip>
+            <Tooltip content={t('library.view.list')} mini>
+              <button
+                type='button'
+                className={classNames(styles.modeBtn, viewMode === 'list' && styles.active)}
+                onClick={() => setViewMode('list')}
+              >
+                <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
+                  <rect x='1' y='2' width='3' height='3' rx='1' fill='currentColor' />
+                  <rect x='6' y='3' width='7' height='1.5' rx='0.75' fill='currentColor' />
+                  <rect x='1' y='6.25' width='3' height='3' rx='1' fill='currentColor' />
+                  <rect x='6' y='7.25' width='7' height='1.5' rx='0.75' fill='currentColor' />
+                  <rect x='1' y='10.5' width='3' height='1.5' rx='0.75' fill='currentColor' />
+                  <rect x='6' y='10.5' width='5' height='1.5' rx='0.75' fill='currentColor' />
+                </svg>
+              </button>
+            </Tooltip>
           </div>
         </div>
 

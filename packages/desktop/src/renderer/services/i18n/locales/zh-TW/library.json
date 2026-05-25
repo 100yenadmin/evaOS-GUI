@@ -60,8 +60,10 @@
     "time": "時間",
     "clear": "清除篩選"
   },
-  "subtitle": "所有 AI 對話中生成的檔案，自動歸檔在這裡。",
+  "subtitle": "AI 為你生成的檔案，都在這裡。",
   "tooltip": {
     "from": "來自："
-  }
+  },
+  "search": "搜尋",
+  "refresh": "重新整理"
 }

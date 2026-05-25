@@ -28,41 +28,46 @@ const ChatConversationIndex: React.FC = () => {
     // (component may remount via React Router, resetting the ref to undefined)
     if (previousConversationIdRef.current !== id) {
       closePreview();
-
-      // 从 Library 跳转时，state 携带目标文件路径，关闭旧预览后立即打开
-      const filePath = (location.state as { previewFilePath?: string } | null)?.previewFilePath;
-      if (filePath) {
-        const contentType = getContentTypeByExtension(filePath);
-        const fileName = filePath.split('/').pop() ?? filePath;
-        void (async () => {
-          try {
-            let content: string;
-            if (contentType === 'image') {
-              content = await ipcBridge.fs.getImageBase64.invoke({ path: filePath, workspace: undefined });
-            } else if (
-              contentType === 'pdf' ||
-              contentType === 'word' ||
-              contentType === 'excel' ||
-              contentType === 'ppt'
-            ) {
-              content = '';
-            } else {
-              content = await ipcBridge.fs.readFile.invoke({ path: filePath, workspace: undefined });
-            }
-            openPreview(content, contentType, {
-              title: fileName,
-              file_name: fileName,
-              file_path: filePath,
-              editable: false,
-            });
-          } catch {
-            // 文件读取失败时静默处理，不影响对话加载
-          }
-        })();
-      }
+      previousConversationIdRef.current = id;
     }
 
-    previousConversationIdRef.current = id;
+    // 从 Library 跳转时，state 携带目标文件路径
+    const filePath = (location.state as { previewFilePath?: string } | null)?.previewFilePath;
+    if (!filePath) return;
+
+    const contentType = getContentTypeByExtension(filePath);
+    const fileName = filePath.split('/').pop() ?? filePath;
+    const isOfficeType = contentType === 'word' || contentType === 'excel' || contentType === 'ppt';
+
+    // Office 文件需要等待：
+    // 1. React 完成 unmount（OfficeWatchViewer cleanup 调用后端 stop）
+    // 2. 后端 stop 的 500ms intentional delay 完成后才 kill 旧进程
+    // 非 Office 文件无进程竞态，直接打开。
+    const delay = isOfficeType ? 650 : 0;
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          let content: string;
+          if (contentType === 'image') {
+            content = await ipcBridge.fs.getImageBase64.invoke({ path: filePath, workspace: undefined });
+          } else if (contentType === 'pdf' || isOfficeType) {
+            content = '';
+          } else {
+            content = await ipcBridge.fs.readFile.invoke({ path: filePath, workspace: undefined });
+          }
+          openPreview(content, contentType, {
+            title: fileName,
+            file_name: fileName,
+            file_path: filePath,
+            editable: false,
+          });
+        } catch {
+          // 文件读取失败时静默处理，不影响对话加载
+        }
+      })();
+    }, delay);
+    return () => window.clearTimeout(timer);
   }, [id, location.state, closePreview, openPreview]);
 
   // Swallow fetch errors (e.g. 404 when navigating back to a deleted conversation
