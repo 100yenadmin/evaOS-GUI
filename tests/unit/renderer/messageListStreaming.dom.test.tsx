@@ -138,10 +138,7 @@ function createTextMessage(content: string): IMessageText {
   };
 }
 
-function Wrapper({
-  children,
-  messages,
-}: PropsWithChildren<{ messages: IMessageText[] }>): JSX.Element {
+function Wrapper({ children, messages }: PropsWithChildren<{ messages: IMessageText[] }>): JSX.Element {
   return <MessageListProvider value={messages}>{children}</MessageListProvider>;
 }
 

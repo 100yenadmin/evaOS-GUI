@@ -412,13 +412,15 @@ export const useMessageLstCache = (key: string) => {
     if (!key) return;
     let cancelled = false;
     setLoading(true);
-    void loadMessages().catch((error) => {
-      console.error('[useMessageLstCache] Failed to load messages from database:', error);
-    }).finally(() => {
-      if (!cancelled) {
-        setLoading(false);
-      }
-    });
+    void loadMessages()
+      .catch((error) => {
+        console.error('[useMessageLstCache] Failed to load messages from database:', error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };

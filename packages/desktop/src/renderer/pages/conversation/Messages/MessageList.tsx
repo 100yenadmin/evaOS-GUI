@@ -121,44 +121,44 @@ const MessageListSkeleton: React.FC = () => {
       style={{ minHeight: '100%' }}
     >
       <div className='min-h-full flex flex-col justify-between py-10px box-border'>
-      {rows.map((row, index) => (
-        <div
-          key={index}
-          className={classNames(
-            'w-full min-w-0 flex items-start message-item px-8px m-t-10px max-w-full md:max-w-780px mx-auto',
-            {
-            'justify-start': row.align === 'left',
-            'justify-end': row.align === 'right',
-          }
-          )}
-        >
+        {rows.map((row, index) => (
           <div
-            className='flex-none min-w-0 rd-16px p-14px'
-            style={{
-              width: row.bubbleWidth,
-              maxWidth: '100%',
-              background: 'var(--color-fill-1)',
-              border: '1px solid var(--color-border-2)',
-            }}
+            key={index}
+            className={classNames(
+              'w-full min-w-0 flex items-start message-item px-8px m-t-10px max-w-full md:max-w-780px mx-auto',
+              {
+                'justify-start': row.align === 'left',
+                'justify-end': row.align === 'right',
+              }
+            )}
           >
-            <div className='flex flex-col gap-10px'>
-              {row.lines.map((width, lineIndex) => (
-                <div
-                  key={lineIndex}
-                  className='h-12px rd-999px'
-                  style={{
-                    width: `${width}%`,
-                    background:
-                      'linear-gradient(90deg, var(--color-fill-2) 0%, var(--color-fill-3) 50%, var(--color-fill-2) 100%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'message-list-skeleton-shimmer 1.4s ease-in-out infinite',
-                  }}
-                />
-              ))}
+            <div
+              className='flex-none min-w-0 rd-16px p-14px'
+              style={{
+                width: row.bubbleWidth,
+                maxWidth: '100%',
+                background: 'var(--color-fill-1)',
+                border: '1px solid var(--color-border-2)',
+              }}
+            >
+              <div className='flex flex-col gap-10px'>
+                {row.lines.map((width, lineIndex) => (
+                  <div
+                    key={lineIndex}
+                    className='h-12px rd-999px'
+                    style={{
+                      width: `${width}%`,
+                      background:
+                        'linear-gradient(90deg, var(--color-fill-2) 0%, var(--color-fill-3) 50%, var(--color-fill-2) 100%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'message-list-skeleton-shimmer 1.4s ease-in-out infinite',
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        ))}
       </div>
       <style>{`
         @keyframes message-list-skeleton-shimmer {

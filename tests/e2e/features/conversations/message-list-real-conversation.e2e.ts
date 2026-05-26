@@ -81,22 +81,27 @@ async function createConversation(page: Page, conversationId: string): Promise<s
 }
 
 async function removeConversation(page: Page, conversationId: string): Promise<void> {
-  await page.evaluate(async ({ id }) => {
-    const port = (window as unknown as { __backendPort?: number }).__backendPort;
-    if (!port) return;
+  await page.evaluate(
+    async ({ id }) => {
+      const port = (window as unknown as { __backendPort?: number }).__backendPort;
+      if (!port) return;
 
-    await fetch(`http://127.0.0.1:${port}/api/conversations/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    }).catch(() => {});
-  }, { id: conversationId });
+      await fetch(`http://127.0.0.1:${port}/api/conversations/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+    },
+    { id: conversationId }
+  );
 }
 
 async function installScrollProbe(page: Page): Promise<void> {
   await page.waitForSelector('[data-testid="message-list-scroller"]', { timeout: 30_000 });
   await page.evaluate(() => {
-    const existingProbe = (window as typeof window & {
-      __messageListScrollProbe?: { stop: () => ScrollProbeSample[] };
-    }).__messageListScrollProbe;
+    const existingProbe = (
+      window as typeof window & {
+        __messageListScrollProbe?: { stop: () => ScrollProbeSample[] };
+      }
+    ).__messageListScrollProbe;
     if (existingProbe) {
       existingProbe.stop();
     }
@@ -140,9 +145,11 @@ async function installScrollProbe(page: Page): Promise<void> {
     observer.observe(content);
     pushSample('start');
 
-    (window as typeof window & {
-      __messageListScrollProbe?: { stop: () => ScrollProbeSample[] };
-    }).__messageListScrollProbe = {
+    (
+      window as typeof window & {
+        __messageListScrollProbe?: { stop: () => ScrollProbeSample[] };
+      }
+    ).__messageListScrollProbe = {
       stop: () => {
         window.clearInterval(intervalId);
         observer.disconnect();
@@ -156,9 +163,11 @@ async function installScrollProbe(page: Page): Promise<void> {
 
 async function stopScrollProbe(page: Page): Promise<ScrollProbeSample[]> {
   return page.evaluate(() => {
-    const probe = (window as typeof window & {
-      __messageListScrollProbe?: { stop: () => ScrollProbeSample[] };
-    }).__messageListScrollProbe;
+    const probe = (
+      window as typeof window & {
+        __messageListScrollProbe?: { stop: () => ScrollProbeSample[] };
+      }
+    ).__messageListScrollProbe;
     if (!probe) {
       throw new Error('MessageList probe was not installed.');
     }
@@ -182,9 +191,11 @@ async function openConversationPage(page: Page, targetConversationId: string): P
 async function waitForStreamController(page: Page, targetConversationId: string): Promise<void> {
   await page.waitForFunction(
     (id) => {
-      const registry = (window as typeof window & {
-        __AIONUI_E2E_MESSAGE_STREAM__?: StreamRegistry;
-      }).__AIONUI_E2E_MESSAGE_STREAM__;
+      const registry = (
+        window as typeof window & {
+          __AIONUI_E2E_MESSAGE_STREAM__?: StreamRegistry;
+        }
+      ).__AIONUI_E2E_MESSAGE_STREAM__;
       return Boolean(registry?.controllers[id]);
     },
     targetConversationId,
@@ -192,16 +203,22 @@ async function waitForStreamController(page: Page, targetConversationId: string)
   );
 }
 
-async function runScenario(page: Page, targetConversationId: string, options: {
-  historyPairs?: number;
-  lines?: number;
-  seedHistoryOnly?: boolean;
-}): Promise<void> {
+async function runScenario(
+  page: Page,
+  targetConversationId: string,
+  options: {
+    historyPairs?: number;
+    lines?: number;
+    seedHistoryOnly?: boolean;
+  }
+): Promise<void> {
   await page.evaluate(
     async ({ currentConversationId, scenarioOptions }) => {
-      const registry = (window as typeof window & {
-        __AIONUI_E2E_MESSAGE_STREAM__?: StreamRegistry;
-      }).__AIONUI_E2E_MESSAGE_STREAM__;
+      const registry = (
+        window as typeof window & {
+          __AIONUI_E2E_MESSAGE_STREAM__?: StreamRegistry;
+        }
+      ).__AIONUI_E2E_MESSAGE_STREAM__;
       const controller = registry?.controllers[currentConversationId];
       if (!controller) {
         throw new Error(`No E2E stream controller registered for conversation ${currentConversationId}`);
@@ -212,25 +229,33 @@ async function runScenario(page: Page, targetConversationId: string, options: {
   );
 }
 
-async function startScenarioInBackground(page: Page, targetConversationId: string, options: {
-  historyPairs?: number;
-  lines?: number;
-  seedHistoryOnly?: boolean;
-}): Promise<void> {
+async function startScenarioInBackground(
+  page: Page,
+  targetConversationId: string,
+  options: {
+    historyPairs?: number;
+    lines?: number;
+    seedHistoryOnly?: boolean;
+  }
+): Promise<void> {
   await page.evaluate(
     ({ currentConversationId, promiseKey, scenarioOptions }) => {
-      const registry = (window as typeof window & {
-        __AIONUI_E2E_MESSAGE_STREAM__?: StreamRegistry;
-        [BACKGROUND_STREAM_PROMISE_KEY]?: Promise<void>;
-      }).__AIONUI_E2E_MESSAGE_STREAM__;
+      const registry = (
+        window as typeof window & {
+          __AIONUI_E2E_MESSAGE_STREAM__?: StreamRegistry;
+          [BACKGROUND_STREAM_PROMISE_KEY]?: Promise<void>;
+        }
+      ).__AIONUI_E2E_MESSAGE_STREAM__;
       const controller = registry?.controllers[currentConversationId];
       if (!controller) {
         throw new Error(`No E2E stream controller registered for conversation ${currentConversationId}`);
       }
 
-      (window as typeof window & {
-        [BACKGROUND_STREAM_PROMISE_KEY]?: Promise<void>;
-      })[promiseKey] = controller.runScenario(scenarioOptions);
+      (
+        window as typeof window & {
+          [BACKGROUND_STREAM_PROMISE_KEY]?: Promise<void>;
+        }
+      )[promiseKey] = controller.runScenario(scenarioOptions);
     },
     { currentConversationId: targetConversationId, promiseKey: BACKGROUND_STREAM_PROMISE_KEY, scenarioOptions: options }
   );
@@ -262,7 +287,9 @@ async function waitForAiTextLength(page: Page, minLength: number): Promise<void>
   );
 }
 
-async function simulateManualScrollIntervention(page: Page): Promise<{ aiTextLength: number; at: number; scrollTop: number }> {
+async function simulateManualScrollIntervention(
+  page: Page
+): Promise<{ aiTextLength: number; at: number; scrollTop: number }> {
   const scroller = page.locator('[data-testid="message-list-scroller"]');
   await scroller.hover();
   await page.mouse.wheel(0, -320);
