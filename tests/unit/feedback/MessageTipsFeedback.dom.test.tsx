@@ -206,8 +206,7 @@ describe('MessageTips — FeedbackButton wiring', () => {
     expect(screen.queryByText('backend billing required fallback')).not.toBeInTheDocument();
   });
 
-  it('expands classified error technical details explicitly', async () => {
-    const user = userEvent.setup();
+  it('expands classified error technical details by default', () => {
     render(
       <MessageTips
         message={buildTips('error', 'raw provider 401', {
@@ -222,10 +221,6 @@ describe('MessageTips — FeedbackButton wiring', () => {
     );
 
     const detailsToggle = screen.getByRole('button', { name: /common.technical_details/ });
-    expect(detailsToggle).toHaveAttribute('aria-expanded', 'false');
-
-    await user.click(detailsToggle);
-
     expect(detailsToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(/Provider returned 401/)).toBeInTheDocument();
   });

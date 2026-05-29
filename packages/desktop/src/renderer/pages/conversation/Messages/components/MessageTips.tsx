@@ -123,7 +123,7 @@ const MessageTips: React.FC<{ message: IMessageTips }> = ({ message }) => {
                 <div className='text-t-secondary whitespace-break-spaces [word-break:break-word]'>{resolutionHint}</div>
               )}
               {detailParts.length > 0 && (
-                <Collapse bordered={false} className='bg-transparent' defaultActiveKey={[]}>
+                <Collapse bordered={false} className='bg-transparent' defaultActiveKey={['technical-details']}>
                   <Collapse.Item
                     name='technical-details'
                     header={<span className='text-12px text-t-tertiary'>{t('common.technical_details')}</span>}
