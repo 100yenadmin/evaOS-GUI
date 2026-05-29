@@ -92,173 +92,173 @@
   "noModelConfigured": "Модель не настроена. Настройте в параметрах.",
   "createFailed": "Не удалось создать диалог",
   "agentError": {
-    "fallbackTitle": "The agent could not reply",
-    "errorCode": "Error code",
-    "retryable": "Retryable",
-    "notRetryable": "Needs configuration",
-    "resolutionPrefix": "Suggestion: ",
+    "fallbackTitle": "Агент не смог ответить",
+    "errorCode": "Код ошибки",
+    "retryable": "Можно повторить",
+    "notRetryable": "Требуется настройка",
+    "resolutionPrefix": "Рекомендация: ",
     "resolution": {
-      "retry": "Retry later, or send this message again.",
-      "wait_for_current_response": "Wait for the current response to finish before sending another message.",
-      "start_new_session": "Start a new conversation before continuing.",
-      "reconnect_agent": "Restart or reconnect the selected agent, then retry.",
-      "check_agent_login": "Log in to the selected agent, or refresh its credentials.",
-      "check_agent_installation": "Check the agent installation and local command configuration.",
-      "check_agent_version": "Update the agent, or fix the protocol version incompatibility.",
-      "check_local_command": "Install the missing command, or confirm it has been added to PATH.",
-      "check_provider_credentials": "Check the model provider API key or account credentials in settings.",
-      "check_provider_billing": "Check the model provider balance, credits, or quota.",
-      "check_provider_base_url": "Check the model provider Base URL, API path, proxy, and API compatibility.",
-      "change_model": "Choose a model that is available for the current account and supports this request.",
-      "reduce_context": "Reduce the message content, referenced files, or context size, then retry.",
-      "send_feedback": "Send feedback with logs so the team can investigate."
+      "retry": "Повторите попытку позже или отправьте это сообщение ещё раз.",
+      "wait_for_current_response": "Дождитесь завершения текущего ответа перед отправкой следующего сообщения.",
+      "start_new_session": "Начните новый диалог, чтобы продолжить.",
+      "reconnect_agent": "Перезапустите или переподключите выбранного агента, затем повторите попытку.",
+      "check_agent_login": "Войдите в выбранного агента или обновите его учётные данные.",
+      "check_agent_installation": "Проверьте установку агента и настройки локальной команды.",
+      "check_agent_version": "Обновите агента или устраните несовместимость версии протокола.",
+      "check_local_command": "Установите отсутствующую команду или убедитесь, что она добавлена в PATH.",
+      "check_provider_credentials": "Проверьте API-ключ или учётные данные поставщика модели в настройках.",
+      "check_provider_billing": "Проверьте баланс, кредиты или квоту поставщика модели.",
+      "check_provider_base_url": "Проверьте Base URL, путь API, прокси и совместимость API поставщика модели.",
+      "change_model": "Выберите модель, доступную для текущего аккаунта и поддерживающую этот запрос.",
+      "reduce_context": "Уменьшите содержимое сообщения, количество файлов или размер контекста, затем повторите попытку.",
+      "send_feedback": "Отправьте отзыв с логами, чтобы команда могла разобраться."
     },
     "ownership": {
-      "aionui": "App",
-      "user_agent": "Agent",
-      "user_llm_provider": "Model provider",
-      "unknown_upstream": "Upstream"
+      "aionui": "Приложение",
+      "user_agent": "Агент",
+      "user_llm_provider": "Поставщик модели",
+      "unknown_upstream": "Внешний сервис"
     },
     "codes": {
       "AIONUI_STREAM_BROKEN": {
-        "title": "Response stream was interrupted",
-        "body": "The app accepted your message but the response stream ended unexpectedly. Please retry; if it happens again, send feedback."
+        "title": "Поток ответа был прерван",
+        "body": "Приложение приняло сообщение, но поток ответа неожиданно завершился. Повторите попытку; если проблема повторится, отправьте отзыв."
       },
       "AIONUI_STATE_INCONSISTENT": {
-        "title": "Conversation state is out of sync",
-        "body": "The conversation state is out of sync. Restart this chat or reload the app before retrying."
+        "title": "Состояние диалога не синхронизировано",
+        "body": "Состояние диалога не синхронизировано. Перезапустите этот чат или перезагрузите приложение, затем повторите попытку."
       },
       "AIONUI_PERMISSION_ERROR": {
-        "title": "Could not access the requested resource",
-        "body": "A local permission or filesystem check failed. Check the project path and app permissions, then retry."
+        "title": "Не удалось получить доступ к нужному ресурсу",
+        "body": "Проверка локальных прав или файловой системы не удалась. Проверьте путь проекта и разрешения приложения, затем повторите попытку."
       },
       "AIONUI_INTERNAL_ERROR": {
-        "title": "Request failed in the app",
-        "body": "The request failed while the app was processing it. Please retry once; if it repeats, send feedback."
+        "title": "Запрос не удалось обработать в приложении",
+        "body": "Запрос завершился ошибкой во время обработки приложением. Повторите попытку один раз; если проблема повторится, отправьте отзыв."
       },
       "AIONUI_CONVERSATION_BUSY": {
-        "title": "Conversation is busy",
-        "body": "Another response is still running. Wait for it to finish before sending a new message."
+        "title": "Диалог занят",
+        "body": "Другой ответ ещё выполняется. Дождитесь его завершения перед отправкой нового сообщения."
       },
       "USER_AGENT_NOT_INSTALLED": {
-        "title": "The selected agent is not installed",
-        "body": "Install the CLI or app required by this agent, then reconnect it in settings."
+        "title": "Выбранный агент не установлен",
+        "body": "Установите CLI или приложение, необходимое для этого агента, затем переподключите его в настройках."
       },
       "USER_AGENT_STARTUP_FAILED": {
-        "title": "The selected agent failed to start",
-        "body": "The agent process exited before it was ready. Check its installation, login status, and local command configuration."
+        "title": "Не удалось запустить выбранного агента",
+        "body": "Процесс агента завершился до готовности. Проверьте установку, статус входа и настройки локальной команды."
       },
       "USER_AGENT_DISCONNECTED": {
-        "title": "The selected agent disconnected",
-        "body": "The agent connection closed while handling this message. Restart or reconnect the agent, then retry."
+        "title": "Выбранный агент отключился",
+        "body": "Соединение с агентом закрылось во время обработки сообщения. Перезапустите или переподключите агента, затем повторите попытку."
       },
       "USER_AGENT_AUTH_REQUIRED": {
-        "title": "The selected agent needs authentication",
-        "body": "Log in to the selected agent or refresh its credentials, then send the message again."
+        "title": "Выбранному агенту требуется аутентификация",
+        "body": "Войдите в выбранного агента или обновите его учётные данные, затем отправьте сообщение снова."
       },
       "USER_AGENT_SESSION_NOT_FOUND": {
-        "title": "The agent session was lost",
-        "body": "The agent no longer recognizes this session. Start a new chat or reconnect the agent."
+        "title": "Сессия агента потеряна",
+        "body": "Агент больше не распознаёт эту сессию. Начните новый чат или переподключите агента."
       },
       "USER_AGENT_UNSUPPORTED_METHOD": {
-        "title": "The selected agent does not support this action",
-        "body": "This agent cannot handle the requested operation. Try another agent or update the current one."
+        "title": "Выбранный агент не поддерживает это действие",
+        "body": "Этот агент не может выполнить запрошенную операцию. Попробуйте другого агента или обновите текущего."
       },
       "USER_AGENT_INVALID_PARAMS": {
-        "title": "The selected agent rejected the request",
-        "body": "The agent reported that the request format was invalid. Try simplifying the message or switching agents."
+        "title": "Выбранный агент отклонил запрос",
+        "body": "Агент сообщил, что формат запроса неверен. Упростите сообщение или переключитесь на другого агента."
       },
       "USER_AGENT_HANDSHAKE_FAILED": {
-        "title": "Agent handshake failed",
-        "body": "The selected agent could not complete its startup handshake. Restart or reconnect the agent, then retry."
+        "title": "Не удалось выполнить рукопожатие с агентом",
+        "body": "Выбранный агент не смог завершить стартовое рукопожатие. Перезапустите или переподключите агента, затем повторите попытку."
       },
       "USER_AGENT_HANDSHAKE_TIMEOUT": {
-        "title": "Agent handshake timed out",
-        "body": "The selected agent did not finish its startup handshake in time. Check whether it is still starting or blocked, then retry."
+        "title": "Истекло время рукопожатия с агентом",
+        "body": "Выбранный агент не завершил стартовое рукопожатие вовремя. Проверьте, не запускается ли он всё ещё и не заблокирован ли, затем повторите попытку."
       },
       "USER_AGENT_ACP_INIT_FAILED": {
-        "title": "Agent protocol initialization failed",
-        "body": "The app could not initialize the Agent Client Protocol session with this agent. Check the agent version and reconnect."
+        "title": "Не удалось инициализировать протокол агента",
+        "body": "Приложение не смогло инициализировать сессию Agent Client Protocol с этим агентом. Проверьте версию агента и переподключите его."
       },
       "USER_AGENT_PROTOCOL_MISMATCH": {
-        "title": "Agent protocol versions are incompatible",
-        "body": "The selected agent is using an incompatible protocol version. Update the agent or switch to a compatible one."
+        "title": "Версии протокола агента несовместимы",
+        "body": "Выбранный агент использует несовместимую версию протокола. Обновите агента или выберите совместимого."
       },
       "USER_AGENT_NO_PREVIOUS_SESSION": {
-        "title": "Previous agent session is unavailable",
-        "body": "The agent cannot resume the previous session. Start a new conversation to continue."
+        "title": "Предыдущая сессия агента недоступна",
+        "body": "Агент не может возобновить предыдущую сессию. Начните новый диалог, чтобы продолжить."
       },
       "USER_AGENT_COMMAND_NOT_FOUND": {
-        "title": "Agent command was not found",
-        "body": "The configured agent command could not be found. Install it or update the command path in settings."
+        "title": "Команда агента не найдена",
+        "body": "Настроенная команда агента не найдена. Установите её или обновите путь команды в настройках."
       },
       "USER_AGENT_MISSING_ENV": {
-        "title": "Agent environment is missing required variables",
-        "body": "The agent needs environment variables that are not configured. Add them in settings or your shell environment, then reconnect."
+        "title": "Агенту не хватает переменных окружения",
+        "body": "Не заданы переменные окружения, необходимые агенту. Добавьте их в настройках или в окружении shell, затем переподключите агента."
       },
       "USER_LLM_PROVIDER_AUTH_FAILED": {
-        "title": "Model provider authentication failed",
-        "body": "The selected provider rejected the API key or account credentials. Check the provider settings and try again."
+        "title": "Ошибка аутентификации у поставщика модели",
+        "body": "Выбранный поставщик отклонил API-ключ или учётные данные. Проверьте настройки поставщика и повторите попытку."
       },
       "USER_LLM_PROVIDER_CONFIG_ERROR": {
-        "title": "Model provider configuration is invalid",
-        "body": "The provider request could not be built from the current settings. Check credentials, region, Base URL, and provider-specific configuration before retrying."
+        "title": "Неверная конфигурация поставщика модели",
+        "body": "Не удалось сформировать запрос к поставщику из текущих настроек. Проверьте учётные данные, регион, Base URL и настройки поставщика перед повторной попыткой."
       },
       "USER_LLM_PROVIDER_MODEL_NOT_FOUND": {
-        "title": "The selected model was not found",
-        "body": "The provider does not recognize this model name. Choose an available model from settings and retry."
+        "title": "Выбранная модель не найдена",
+        "body": "Поставщик не распознаёт имя этой модели. Выберите доступную модель в настройках и повторите попытку."
       },
       "USER_LLM_PROVIDER_RATE_LIMITED": {
-        "title": "Model provider rate limit reached",
-        "body": "The provider is temporarily limiting requests. Wait a moment, reduce request frequency, or switch models."
+        "title": "Достигнут лимит запросов поставщика модели",
+        "body": "Поставщик временно ограничивает запросы. Подождите, снизьте частоту запросов или переключите модель."
       },
       "USER_LLM_PROVIDER_TIMEOUT": {
-        "title": "Model provider request timed out",
-        "body": "The provider did not respond in time. Retry later or switch to a more stable provider."
+        "title": "Истекло время запроса к поставщику модели",
+        "body": "Поставщик не ответил вовремя. Повторите попытку позже или переключитесь на более стабильного поставщика."
       },
       "USER_LLM_PROVIDER_NETWORK_ERROR": {
-        "title": "Could not reach the model provider",
-        "body": "A network or DNS error prevented access to the provider. Check your network, proxy, and Base URL."
+        "title": "Не удалось подключиться к поставщику модели",
+        "body": "Сетевая или DNS-ошибка помешала доступу к поставщику. Проверьте сеть, прокси и Base URL."
       },
       "USER_LLM_PROVIDER_GATEWAY_ERROR": {
-        "title": "Model provider service is unavailable",
-        "body": "The provider returned a gateway or service error. Retry later or use another provider."
+        "title": "Сервис поставщика модели недоступен",
+        "body": "Поставщик вернул ошибку шлюза или сервиса. Повторите попытку позже или используйте другого поставщика."
       },
       "USER_LLM_PROVIDER_PERMISSION_DENIED": {
-        "title": "Model provider permission denied",
-        "body": "The provider account does not have permission for this model or operation. Check account permissions or choose another model."
+        "title": "Поставщик модели отказал в доступе",
+        "body": "У аккаунта поставщика нет разрешения на эту модель или операцию. Проверьте права аккаунта или выберите другую модель."
       },
       "USER_LLM_PROVIDER_BILLING_REQUIRED": {
-        "title": "Model provider billing is required",
-        "body": "The selected provider needs active billing, credits, or quota before it can complete this request."
+        "title": "Поставщику модели требуется активная оплата",
+        "body": "Для выполнения запроса выбранному поставщику нужны активная оплата, кредиты или квота."
       },
       "USER_LLM_PROVIDER_UNSUPPORTED_MODEL": {
-        "title": "Model does not support this request",
-        "body": "The selected model is unavailable or does not support the requested capability. Choose a supported model and retry."
+        "title": "Модель не поддерживает этот запрос",
+        "body": "Выбранная модель недоступна или не поддерживает нужную возможность. Выберите поддерживаемую модель и повторите попытку."
       },
       "USER_LLM_PROVIDER_ENDPOINT_NOT_FOUND": {
-        "title": "Model provider endpoint was not found",
-        "body": "The provider endpoint or API path was not found. Check the Base URL, deployment name, and API compatibility."
+        "title": "Эндпоинт поставщика модели не найден",
+        "body": "Эндпоинт или путь API поставщика не найден. Проверьте Base URL, имя развёртывания и совместимость API."
       },
       "USER_LLM_PROVIDER_INVALID_REQUEST": {
-        "title": "Model provider rejected the request",
-        "body": "The provider reported that the request was invalid. Simplify the message or check model/provider settings."
+        "title": "Поставщик модели отклонил запрос",
+        "body": "Поставщик сообщил, что запрос неверен. Упростите сообщение или проверьте настройки модели/поставщика."
       },
       "USER_LLM_PROVIDER_INVALID_TOOL_SCHEMA": {
-        "title": "Tool schema was rejected by the provider",
-        "body": "The provider rejected a tool definition in this request. Update the agent or disable the incompatible tool, then retry."
+        "title": "Поставщик отклонил схему инструмента",
+        "body": "Поставщик отклонил определение инструмента в этом запросе. Обновите агента или отключите несовместимый инструмент, затем повторите попытку."
       },
       "USER_LLM_PROVIDER_CONTEXT_TOO_LARGE": {
-        "title": "Context is too large for the model",
-        "body": "The request exceeds the model context limit. Reduce message content, referenced files, or conversation history, then retry."
+        "title": "Контекст превышает лимит модели",
+        "body": "Запрос превышает лимит контекста модели. Уменьшите сообщение, файлы или историю диалога, затем повторите попытку."
       },
       "USER_LLM_PROVIDER_EMPTY_RESPONSE": {
-        "title": "Model provider returned an empty response",
-        "body": "The provider completed the request without usable content. Retry once or switch providers if it repeats."
+        "title": "Поставщик модели вернул пустой ответ",
+        "body": "Поставщик завершил запрос, но не вернул пригодное содержимое. Повторите один раз или переключите поставщика, если это повторяется."
       },
       "UNKNOWN_UPSTREAM_ERROR": {
-        "title": "The upstream agent or provider failed",
-        "body": "The app received an upstream error but could not classify it confidently. Review the details below or send feedback."
+        "title": "Ошибка внешнего агента или поставщика",
+        "body": "Приложение получило внешнюю ошибку, но не смогло уверенно её классифицировать. Просмотрите подробности ниже или отправьте отзыв."
       }
     }
   },

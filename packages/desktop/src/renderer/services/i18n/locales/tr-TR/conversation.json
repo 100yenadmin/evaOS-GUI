@@ -85,173 +85,173 @@
     "untitled": "Adsız sohbet"
   },
   "agentError": {
-    "fallbackTitle": "The agent could not reply",
-    "errorCode": "Error code",
-    "retryable": "Retryable",
-    "notRetryable": "Needs configuration",
-    "resolutionPrefix": "Suggestion: ",
+    "fallbackTitle": "Ajan yanıt veremedi",
+    "errorCode": "Hata kodu",
+    "retryable": "Yeniden denenebilir",
+    "notRetryable": "Yapılandırma gerekiyor",
+    "resolutionPrefix": "Öneri: ",
     "resolution": {
-      "retry": "Retry later, or send this message again.",
-      "wait_for_current_response": "Wait for the current response to finish before sending another message.",
-      "start_new_session": "Start a new conversation before continuing.",
-      "reconnect_agent": "Restart or reconnect the selected agent, then retry.",
-      "check_agent_login": "Log in to the selected agent, or refresh its credentials.",
-      "check_agent_installation": "Check the agent installation and local command configuration.",
-      "check_agent_version": "Update the agent, or fix the protocol version incompatibility.",
-      "check_local_command": "Install the missing command, or confirm it has been added to PATH.",
-      "check_provider_credentials": "Check the model provider API key or account credentials in settings.",
-      "check_provider_billing": "Check the model provider balance, credits, or quota.",
-      "check_provider_base_url": "Check the model provider Base URL, API path, proxy, and API compatibility.",
-      "change_model": "Choose a model that is available for the current account and supports this request.",
-      "reduce_context": "Reduce the message content, referenced files, or context size, then retry.",
-      "send_feedback": "Send feedback with logs so the team can investigate."
+      "retry": "Daha sonra yeniden deneyin veya bu mesajı tekrar gönderin.",
+      "wait_for_current_response": "Yeni bir mesaj göndermeden önce mevcut yanıtın bitmesini bekleyin.",
+      "start_new_session": "Devam etmeden önce yeni bir konuşma başlatın.",
+      "reconnect_agent": "Seçili ajanı yeniden başlatın veya yeniden bağlayın, ardından tekrar deneyin.",
+      "check_agent_login": "Seçili ajanda oturum açın veya kimlik bilgilerini yenileyin.",
+      "check_agent_installation": "Ajan kurulumunu ve yerel komut yapılandırmasını kontrol edin.",
+      "check_agent_version": "Ajanı güncelleyin veya protokol sürümü uyumsuzluğunu düzeltin.",
+      "check_local_command": "Eksik komutu yükleyin veya PATH içinde olduğundan emin olun.",
+      "check_provider_credentials": "Ayarlar bölümünde model sağlayıcının API anahtarını veya hesap kimlik bilgilerini kontrol edin.",
+      "check_provider_billing": "Model sağlayıcının bakiyesini, kredilerini veya kotasını kontrol edin.",
+      "check_provider_base_url": "Model sağlayıcının Base URL, API yolu, proxy ve API uyumluluğunu kontrol edin.",
+      "change_model": "Geçerli hesapta kullanılabilen ve bu isteği destekleyen bir model seçin.",
+      "reduce_context": "Mesaj içeriğini, başvurulan dosyaları veya bağlam boyutunu azaltıp yeniden deneyin.",
+      "send_feedback": "Ekibin inceleyebilmesi için günlüklerle birlikte geri bildirim gönderin."
     },
     "ownership": {
-      "aionui": "App",
-      "user_agent": "Agent",
-      "user_llm_provider": "Model provider",
-      "unknown_upstream": "Upstream"
+      "aionui": "Uygulama",
+      "user_agent": "Ajan",
+      "user_llm_provider": "Model sağlayıcı",
+      "unknown_upstream": "Üst hizmet"
     },
     "codes": {
       "AIONUI_STREAM_BROKEN": {
-        "title": "Response stream was interrupted",
-        "body": "The app accepted your message but the response stream ended unexpectedly. Please retry; if it happens again, send feedback."
+        "title": "Yanıt akışı kesildi",
+        "body": "Uygulama mesajınızı aldı ancak yanıt akışı beklenmedik şekilde sona erdi. Yeniden deneyin; tekrarlanırsa geri bildirim gönderin."
       },
       "AIONUI_STATE_INCONSISTENT": {
-        "title": "Conversation state is out of sync",
-        "body": "The conversation state is out of sync. Restart this chat or reload the app before retrying."
+        "title": "Konuşma durumu eşitlenmemiş",
+        "body": "Konuşma durumu eşitlenmemiş. Yeniden denemeden önce bu sohbeti yeniden başlatın veya uygulamayı yenileyin."
       },
       "AIONUI_PERMISSION_ERROR": {
-        "title": "Could not access the requested resource",
-        "body": "A local permission or filesystem check failed. Check the project path and app permissions, then retry."
+        "title": "İstenen kaynağa erişilemedi",
+        "body": "Yerel izin veya dosya sistemi denetimi başarısız oldu. Proje yolunu ve uygulama izinlerini kontrol edip yeniden deneyin."
       },
       "AIONUI_INTERNAL_ERROR": {
-        "title": "Request failed in the app",
-        "body": "The request failed while the app was processing it. Please retry once; if it repeats, send feedback."
+        "title": "İstek uygulamada başarısız oldu",
+        "body": "Uygulama isteği işlerken hata oluştu. Bir kez yeniden deneyin; tekrarlanırsa geri bildirim gönderin."
       },
       "AIONUI_CONVERSATION_BUSY": {
-        "title": "Conversation is busy",
-        "body": "Another response is still running. Wait for it to finish before sending a new message."
+        "title": "Konuşma meşgul",
+        "body": "Başka bir yanıt hâlâ çalışıyor. Yeni mesaj göndermeden önce bitmesini bekleyin."
       },
       "USER_AGENT_NOT_INSTALLED": {
-        "title": "The selected agent is not installed",
-        "body": "Install the CLI or app required by this agent, then reconnect it in settings."
+        "title": "Seçili ajan yüklü değil",
+        "body": "Bu ajanın gerektirdiği CLI veya uygulamayı yükleyin, ardından ayarlarda yeniden bağlayın."
       },
       "USER_AGENT_STARTUP_FAILED": {
-        "title": "The selected agent failed to start",
-        "body": "The agent process exited before it was ready. Check its installation, login status, and local command configuration."
+        "title": "Seçili ajan başlatılamadı",
+        "body": "Ajan işlemi hazır olmadan çıktı. Kurulumu, oturum durumunu ve yerel komut yapılandırmasını kontrol edin."
       },
       "USER_AGENT_DISCONNECTED": {
-        "title": "The selected agent disconnected",
-        "body": "The agent connection closed while handling this message. Restart or reconnect the agent, then retry."
+        "title": "Seçili ajan bağlantısı kesildi",
+        "body": "Bu mesaj işlenirken ajan bağlantısı kapandı. Ajanı yeniden başlatın veya yeniden bağlayın, ardından tekrar deneyin."
       },
       "USER_AGENT_AUTH_REQUIRED": {
-        "title": "The selected agent needs authentication",
-        "body": "Log in to the selected agent or refresh its credentials, then send the message again."
+        "title": "Seçili ajan kimlik doğrulaması istiyor",
+        "body": "Seçili ajanda oturum açın veya kimlik bilgilerini yenileyin, ardından mesajı tekrar gönderin."
       },
       "USER_AGENT_SESSION_NOT_FOUND": {
-        "title": "The agent session was lost",
-        "body": "The agent no longer recognizes this session. Start a new chat or reconnect the agent."
+        "title": "Ajan oturumu kayboldu",
+        "body": "Ajan artık bu oturumu tanımıyor. Yeni bir sohbet başlatın veya ajanı yeniden bağlayın."
       },
       "USER_AGENT_UNSUPPORTED_METHOD": {
-        "title": "The selected agent does not support this action",
-        "body": "This agent cannot handle the requested operation. Try another agent or update the current one."
+        "title": "Seçili ajan bu işlemi desteklemiyor",
+        "body": "Bu ajan istenen işlemi gerçekleştiremiyor. Başka bir ajan deneyin veya mevcut ajanı güncelleyin."
       },
       "USER_AGENT_INVALID_PARAMS": {
-        "title": "The selected agent rejected the request",
-        "body": "The agent reported that the request format was invalid. Try simplifying the message or switching agents."
+        "title": "Seçili ajan isteği reddetti",
+        "body": "Ajan istek biçiminin geçersiz olduğunu bildirdi. Mesajı sadeleştirin veya başka bir ajana geçin."
       },
       "USER_AGENT_HANDSHAKE_FAILED": {
-        "title": "Agent handshake failed",
-        "body": "The selected agent could not complete its startup handshake. Restart or reconnect the agent, then retry."
+        "title": "Ajan el sıkışması başarısız oldu",
+        "body": "Seçili ajan başlangıç el sıkışmasını tamamlayamadı. Ajanı yeniden başlatın veya yeniden bağlayın, ardından tekrar deneyin."
       },
       "USER_AGENT_HANDSHAKE_TIMEOUT": {
-        "title": "Agent handshake timed out",
-        "body": "The selected agent did not finish its startup handshake in time. Check whether it is still starting or blocked, then retry."
+        "title": "Ajan el sıkışması zaman aşımına uğradı",
+        "body": "Seçili ajan başlangıç el sıkışmasını zamanında tamamlamadı. Hâlâ başlıyor mu veya engellenmiş mi kontrol edip yeniden deneyin."
       },
       "USER_AGENT_ACP_INIT_FAILED": {
-        "title": "Agent protocol initialization failed",
-        "body": "The app could not initialize the Agent Client Protocol session with this agent. Check the agent version and reconnect."
+        "title": "Ajan protokolü başlatılamadı",
+        "body": "Uygulama bu ajan ile Agent Client Protocol oturumunu başlatamadı. Ajan sürümünü kontrol edip yeniden bağlayın."
       },
       "USER_AGENT_PROTOCOL_MISMATCH": {
-        "title": "Agent protocol versions are incompatible",
-        "body": "The selected agent is using an incompatible protocol version. Update the agent or switch to a compatible one."
+        "title": "Ajan protokol sürümleri uyumsuz",
+        "body": "Seçili ajan uyumsuz bir protokol sürümü kullanıyor. Ajanı güncelleyin veya uyumlu bir ajana geçin."
       },
       "USER_AGENT_NO_PREVIOUS_SESSION": {
-        "title": "Previous agent session is unavailable",
-        "body": "The agent cannot resume the previous session. Start a new conversation to continue."
+        "title": "Önceki ajan oturumu kullanılamıyor",
+        "body": "Ajan önceki oturumu sürdüremiyor. Devam etmek için yeni bir konuşma başlatın."
       },
       "USER_AGENT_COMMAND_NOT_FOUND": {
-        "title": "Agent command was not found",
-        "body": "The configured agent command could not be found. Install it or update the command path in settings."
+        "title": "Ajan komutu bulunamadı",
+        "body": "Yapılandırılmış ajan komutu bulunamadı. Komutu yükleyin veya ayarlarda komut yolunu güncelleyin."
       },
       "USER_AGENT_MISSING_ENV": {
-        "title": "Agent environment is missing required variables",
-        "body": "The agent needs environment variables that are not configured. Add them in settings or your shell environment, then reconnect."
+        "title": "Ajan için gerekli ortam değişkenleri eksik",
+        "body": "Ajanın ihtiyaç duyduğu ortam değişkenleri yapılandırılmamış. Ayarlara veya shell ortamına ekleyip yeniden bağlayın."
       },
       "USER_LLM_PROVIDER_AUTH_FAILED": {
-        "title": "Model provider authentication failed",
-        "body": "The selected provider rejected the API key or account credentials. Check the provider settings and try again."
+        "title": "Model sağlayıcı kimlik doğrulaması başarısız oldu",
+        "body": "Seçili sağlayıcı API anahtarını veya hesap kimlik bilgilerini reddetti. Sağlayıcı ayarlarını kontrol edip tekrar deneyin."
       },
       "USER_LLM_PROVIDER_CONFIG_ERROR": {
-        "title": "Model provider configuration is invalid",
-        "body": "The provider request could not be built from the current settings. Check credentials, region, Base URL, and provider-specific configuration before retrying."
+        "title": "Model sağlayıcı yapılandırması geçersiz",
+        "body": "Geçerli ayarlardan sağlayıcı isteği oluşturulamadı. Kimlik bilgilerini, bölgeyi, Base URL ve sağlayıcıya özel ayarları kontrol edip yeniden deneyin."
       },
       "USER_LLM_PROVIDER_MODEL_NOT_FOUND": {
-        "title": "The selected model was not found",
-        "body": "The provider does not recognize this model name. Choose an available model from settings and retry."
+        "title": "Seçili model bulunamadı",
+        "body": "Sağlayıcı bu model adını tanımıyor. Ayarlardan kullanılabilir bir model seçip yeniden deneyin."
       },
       "USER_LLM_PROVIDER_RATE_LIMITED": {
-        "title": "Model provider rate limit reached",
-        "body": "The provider is temporarily limiting requests. Wait a moment, reduce request frequency, or switch models."
+        "title": "Model sağlayıcı hız sınırına ulaşıldı",
+        "body": "Sağlayıcı geçici olarak istekleri sınırlıyor. Bir süre bekleyin, istek sıklığını azaltın veya model değiştirin."
       },
       "USER_LLM_PROVIDER_TIMEOUT": {
-        "title": "Model provider request timed out",
-        "body": "The provider did not respond in time. Retry later or switch to a more stable provider."
+        "title": "Model sağlayıcı isteği zaman aşımına uğradı",
+        "body": "Sağlayıcı zamanında yanıt vermedi. Daha sonra tekrar deneyin veya daha kararlı bir sağlayıcıya geçin."
       },
       "USER_LLM_PROVIDER_NETWORK_ERROR": {
-        "title": "Could not reach the model provider",
-        "body": "A network or DNS error prevented access to the provider. Check your network, proxy, and Base URL."
+        "title": "Model sağlayıcıya ulaşılamadı",
+        "body": "Ağ veya DNS hatası sağlayıcıya erişimi engelledi. Ağınızı, proxy ve Base URL ayarlarını kontrol edin."
       },
       "USER_LLM_PROVIDER_GATEWAY_ERROR": {
-        "title": "Model provider service is unavailable",
-        "body": "The provider returned a gateway or service error. Retry later or use another provider."
+        "title": "Model sağlayıcı hizmeti kullanılamıyor",
+        "body": "Sağlayıcı ağ geçidi veya hizmet hatası döndürdü. Daha sonra tekrar deneyin veya başka bir sağlayıcı kullanın."
       },
       "USER_LLM_PROVIDER_PERMISSION_DENIED": {
-        "title": "Model provider permission denied",
-        "body": "The provider account does not have permission for this model or operation. Check account permissions or choose another model."
+        "title": "Model sağlayıcı izni reddetti",
+        "body": "Sağlayıcı hesabının bu model veya işlem için izni yok. Hesap izinlerini kontrol edin veya başka bir model seçin."
       },
       "USER_LLM_PROVIDER_BILLING_REQUIRED": {
-        "title": "Model provider billing is required",
-        "body": "The selected provider needs active billing, credits, or quota before it can complete this request."
+        "title": "Model sağlayıcı için faturalandırma gerekiyor",
+        "body": "Seçili sağlayıcının bu isteği tamamlamak için etkin faturalandırma, kredi veya kotaya ihtiyacı var."
       },
       "USER_LLM_PROVIDER_UNSUPPORTED_MODEL": {
-        "title": "Model does not support this request",
-        "body": "The selected model is unavailable or does not support the requested capability. Choose a supported model and retry."
+        "title": "Model bu isteği desteklemiyor",
+        "body": "Seçili model kullanılamıyor veya istenen yeteneği desteklemiyor. Desteklenen bir model seçip yeniden deneyin."
       },
       "USER_LLM_PROVIDER_ENDPOINT_NOT_FOUND": {
-        "title": "Model provider endpoint was not found",
-        "body": "The provider endpoint or API path was not found. Check the Base URL, deployment name, and API compatibility."
+        "title": "Model sağlayıcı uç noktası bulunamadı",
+        "body": "Sağlayıcı uç noktası veya API yolu bulunamadı. Base URL, dağıtım adı ve API uyumluluğunu kontrol edin."
       },
       "USER_LLM_PROVIDER_INVALID_REQUEST": {
-        "title": "Model provider rejected the request",
-        "body": "The provider reported that the request was invalid. Simplify the message or check model/provider settings."
+        "title": "Model sağlayıcı isteği reddetti",
+        "body": "Sağlayıcı isteğin geçersiz olduğunu bildirdi. Mesajı sadeleştirin veya model/sağlayıcı ayarlarını kontrol edin."
       },
       "USER_LLM_PROVIDER_INVALID_TOOL_SCHEMA": {
-        "title": "Tool schema was rejected by the provider",
-        "body": "The provider rejected a tool definition in this request. Update the agent or disable the incompatible tool, then retry."
+        "title": "Araç şeması sağlayıcı tarafından reddedildi",
+        "body": "Sağlayıcı bu istekteki araç tanımını reddetti. Ajanı güncelleyin veya uyumsuz aracı devre dışı bırakıp yeniden deneyin."
       },
       "USER_LLM_PROVIDER_CONTEXT_TOO_LARGE": {
-        "title": "Context is too large for the model",
-        "body": "The request exceeds the model context limit. Reduce message content, referenced files, or conversation history, then retry."
+        "title": "Bağlam model sınırını aşıyor",
+        "body": "İstek modelin bağlam sınırını aşıyor. Mesaj içeriğini, başvurulan dosyaları veya konuşma geçmişini azaltıp yeniden deneyin."
       },
       "USER_LLM_PROVIDER_EMPTY_RESPONSE": {
-        "title": "Model provider returned an empty response",
-        "body": "The provider completed the request without usable content. Retry once or switch providers if it repeats."
+        "title": "Model sağlayıcı boş yanıt döndürdü",
+        "body": "Sağlayıcı isteği tamamladı ancak kullanılabilir içerik döndürmedi. Bir kez yeniden deneyin; tekrarlanırsa sağlayıcı değiştirin."
       },
       "UNKNOWN_UPSTREAM_ERROR": {
-        "title": "The upstream agent or provider failed",
-        "body": "The app received an upstream error but could not classify it confidently. Review the details below or send feedback."
+        "title": "Üst ajan veya sağlayıcı başarısız oldu",
+        "body": "Uygulama bir üst hata aldı ancak güvenle sınıflandıramadı. Aşağıdaki ayrıntıları inceleyin veya geri bildirim gönderin."
       }
     }
   },

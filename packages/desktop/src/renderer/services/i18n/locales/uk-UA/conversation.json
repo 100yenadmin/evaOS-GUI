@@ -92,173 +92,173 @@
   "noModelConfigured": "Модель не налаштована. Будь ласка, налаштуйте в параметрах.",
   "createFailed": "Не вдалося створити діалог",
   "agentError": {
-    "fallbackTitle": "The agent could not reply",
-    "errorCode": "Error code",
-    "retryable": "Retryable",
-    "notRetryable": "Needs configuration",
-    "resolutionPrefix": "Suggestion: ",
+    "fallbackTitle": "Агент не зміг відповісти",
+    "errorCode": "Код помилки",
+    "retryable": "Можна повторити",
+    "notRetryable": "Потрібне налаштування",
+    "resolutionPrefix": "Рекомендація: ",
     "resolution": {
-      "retry": "Retry later, or send this message again.",
-      "wait_for_current_response": "Wait for the current response to finish before sending another message.",
-      "start_new_session": "Start a new conversation before continuing.",
-      "reconnect_agent": "Restart or reconnect the selected agent, then retry.",
-      "check_agent_login": "Log in to the selected agent, or refresh its credentials.",
-      "check_agent_installation": "Check the agent installation and local command configuration.",
-      "check_agent_version": "Update the agent, or fix the protocol version incompatibility.",
-      "check_local_command": "Install the missing command, or confirm it has been added to PATH.",
-      "check_provider_credentials": "Check the model provider API key or account credentials in settings.",
-      "check_provider_billing": "Check the model provider balance, credits, or quota.",
-      "check_provider_base_url": "Check the model provider Base URL, API path, proxy, and API compatibility.",
-      "change_model": "Choose a model that is available for the current account and supports this request.",
-      "reduce_context": "Reduce the message content, referenced files, or context size, then retry.",
-      "send_feedback": "Send feedback with logs so the team can investigate."
+      "retry": "Повторіть спробу пізніше або надішліть це повідомлення ще раз.",
+      "wait_for_current_response": "Дочекайтеся завершення поточної відповіді, перш ніж надсилати наступне повідомлення.",
+      "start_new_session": "Почніть нову розмову, щоб продовжити.",
+      "reconnect_agent": "Перезапустіть або перепідключіть вибраного агента, потім повторіть спробу.",
+      "check_agent_login": "Увійдіть у вибраного агента або оновіть його облікові дані.",
+      "check_agent_installation": "Перевірте встановлення агента та налаштування локальної команди.",
+      "check_agent_version": "Оновіть агента або усуньте несумісність версії протоколу.",
+      "check_local_command": "Встановіть відсутню команду або переконайтеся, що її додано до PATH.",
+      "check_provider_credentials": "Перевірте API-ключ або облікові дані постачальника моделі в налаштуваннях.",
+      "check_provider_billing": "Перевірте баланс, кредити або квоту постачальника моделі.",
+      "check_provider_base_url": "Перевірте Base URL, шлях API, проксі та сумісність API постачальника моделі.",
+      "change_model": "Виберіть модель, доступну для поточного акаунта та сумісну з цим запитом.",
+      "reduce_context": "Зменште вміст повідомлення, кількість файлів або розмір контексту, потім повторіть спробу.",
+      "send_feedback": "Надішліть відгук із логами, щоб команда могла розібратися."
     },
     "ownership": {
-      "aionui": "App",
-      "user_agent": "Agent",
-      "user_llm_provider": "Model provider",
-      "unknown_upstream": "Upstream"
+      "aionui": "Застосунок",
+      "user_agent": "Агент",
+      "user_llm_provider": "Постачальник моделі",
+      "unknown_upstream": "Зовнішній сервіс"
     },
     "codes": {
       "AIONUI_STREAM_BROKEN": {
-        "title": "Response stream was interrupted",
-        "body": "The app accepted your message but the response stream ended unexpectedly. Please retry; if it happens again, send feedback."
+        "title": "Потік відповіді було перервано",
+        "body": "Застосунок прийняв повідомлення, але потік відповіді несподівано завершився. Повторіть спробу; якщо це повториться, надішліть відгук."
       },
       "AIONUI_STATE_INCONSISTENT": {
-        "title": "Conversation state is out of sync",
-        "body": "The conversation state is out of sync. Restart this chat or reload the app before retrying."
+        "title": "Стан розмови не синхронізовано",
+        "body": "Стан розмови не синхронізовано. Перезапустіть цей чат або перезавантажте застосунок, потім повторіть спробу."
       },
       "AIONUI_PERMISSION_ERROR": {
-        "title": "Could not access the requested resource",
-        "body": "A local permission or filesystem check failed. Check the project path and app permissions, then retry."
+        "title": "Не вдалося отримати доступ до потрібного ресурсу",
+        "body": "Перевірка локальних дозволів або файлової системи не вдалася. Перевірте шлях проєкту та дозволи застосунку, потім повторіть спробу."
       },
       "AIONUI_INTERNAL_ERROR": {
-        "title": "Request failed in the app",
-        "body": "The request failed while the app was processing it. Please retry once; if it repeats, send feedback."
+        "title": "Запит не вдалося обробити в застосунку",
+        "body": "Під час обробки запиту в застосунку сталася помилка. Повторіть спробу один раз; якщо проблема повториться, надішліть відгук."
       },
       "AIONUI_CONVERSATION_BUSY": {
-        "title": "Conversation is busy",
-        "body": "Another response is still running. Wait for it to finish before sending a new message."
+        "title": "Розмова зайнята",
+        "body": "Інша відповідь ще виконується. Дочекайтеся її завершення перед надсиланням нового повідомлення."
       },
       "USER_AGENT_NOT_INSTALLED": {
-        "title": "The selected agent is not installed",
-        "body": "Install the CLI or app required by this agent, then reconnect it in settings."
+        "title": "Вибраного агента не встановлено",
+        "body": "Встановіть CLI або застосунок, потрібний для цього агента, потім перепідключіть його в налаштуваннях."
       },
       "USER_AGENT_STARTUP_FAILED": {
-        "title": "The selected agent failed to start",
-        "body": "The agent process exited before it was ready. Check its installation, login status, and local command configuration."
+        "title": "Не вдалося запустити вибраного агента",
+        "body": "Процес агента завершився до готовності. Перевірте встановлення, стан входу та налаштування локальної команди."
       },
       "USER_AGENT_DISCONNECTED": {
-        "title": "The selected agent disconnected",
-        "body": "The agent connection closed while handling this message. Restart or reconnect the agent, then retry."
+        "title": "Вибраний агент відключився",
+        "body": "Під час обробки цього повідомлення з’єднання з агентом було закрито. Перезапустіть або перепідключіть агента, потім повторіть спробу."
       },
       "USER_AGENT_AUTH_REQUIRED": {
-        "title": "The selected agent needs authentication",
-        "body": "Log in to the selected agent or refresh its credentials, then send the message again."
+        "title": "Вибраному агенту потрібна автентифікація",
+        "body": "Увійдіть у вибраного агента або оновіть його облікові дані, потім надішліть повідомлення ще раз."
       },
       "USER_AGENT_SESSION_NOT_FOUND": {
-        "title": "The agent session was lost",
-        "body": "The agent no longer recognizes this session. Start a new chat or reconnect the agent."
+        "title": "Сесію агента втрачено",
+        "body": "Агент більше не розпізнає цю сесію. Почніть новий чат або перепідключіть агента."
       },
       "USER_AGENT_UNSUPPORTED_METHOD": {
-        "title": "The selected agent does not support this action",
-        "body": "This agent cannot handle the requested operation. Try another agent or update the current one."
+        "title": "Вибраний агент не підтримує цю дію",
+        "body": "Цей агент не може виконати запитану операцію. Спробуйте іншого агента або оновіть поточного."
       },
       "USER_AGENT_INVALID_PARAMS": {
-        "title": "The selected agent rejected the request",
-        "body": "The agent reported that the request format was invalid. Try simplifying the message or switching agents."
+        "title": "Вибраний агент відхилив запит",
+        "body": "Агент повідомив, що формат запиту недійсний. Спростіть повідомлення або перейдіть на іншого агента."
       },
       "USER_AGENT_HANDSHAKE_FAILED": {
-        "title": "Agent handshake failed",
-        "body": "The selected agent could not complete its startup handshake. Restart or reconnect the agent, then retry."
+        "title": "Не вдалося виконати рукостискання з агентом",
+        "body": "Вибраний агент не зміг завершити стартове рукостискання. Перезапустіть або перепідключіть агента, потім повторіть спробу."
       },
       "USER_AGENT_HANDSHAKE_TIMEOUT": {
-        "title": "Agent handshake timed out",
-        "body": "The selected agent did not finish its startup handshake in time. Check whether it is still starting or blocked, then retry."
+        "title": "Час рукостискання з агентом минув",
+        "body": "Вибраний агент не завершив стартове рукостискання вчасно. Перевірте, чи він ще запускається або заблокований, потім повторіть спробу."
       },
       "USER_AGENT_ACP_INIT_FAILED": {
-        "title": "Agent protocol initialization failed",
-        "body": "The app could not initialize the Agent Client Protocol session with this agent. Check the agent version and reconnect."
+        "title": "Не вдалося ініціалізувати протокол агента",
+        "body": "Застосунок не зміг ініціалізувати сесію Agent Client Protocol із цим агентом. Перевірте версію агента та перепідключіть його."
       },
       "USER_AGENT_PROTOCOL_MISMATCH": {
-        "title": "Agent protocol versions are incompatible",
-        "body": "The selected agent is using an incompatible protocol version. Update the agent or switch to a compatible one."
+        "title": "Версії протоколу агента несумісні",
+        "body": "Вибраний агент використовує несумісну версію протоколу. Оновіть агента або виберіть сумісного."
       },
       "USER_AGENT_NO_PREVIOUS_SESSION": {
-        "title": "Previous agent session is unavailable",
-        "body": "The agent cannot resume the previous session. Start a new conversation to continue."
+        "title": "Попередня сесія агента недоступна",
+        "body": "Агент не може відновити попередню сесію. Почніть нову розмову, щоб продовжити."
       },
       "USER_AGENT_COMMAND_NOT_FOUND": {
-        "title": "Agent command was not found",
-        "body": "The configured agent command could not be found. Install it or update the command path in settings."
+        "title": "Команду агента не знайдено",
+        "body": "Налаштовану команду агента не знайдено. Встановіть її або оновіть шлях команди в налаштуваннях."
       },
       "USER_AGENT_MISSING_ENV": {
-        "title": "Agent environment is missing required variables",
-        "body": "The agent needs environment variables that are not configured. Add them in settings or your shell environment, then reconnect."
+        "title": "Агенту бракує потрібних змінних середовища",
+        "body": "Не налаштовано змінні середовища, потрібні агенту. Додайте їх у налаштуваннях або shell-середовищі, потім перепідключіть агента."
       },
       "USER_LLM_PROVIDER_AUTH_FAILED": {
-        "title": "Model provider authentication failed",
-        "body": "The selected provider rejected the API key or account credentials. Check the provider settings and try again."
+        "title": "Помилка автентифікації в постачальника моделі",
+        "body": "Вибраний постачальник відхилив API-ключ або облікові дані. Перевірте налаштування постачальника та повторіть спробу."
       },
       "USER_LLM_PROVIDER_CONFIG_ERROR": {
-        "title": "Model provider configuration is invalid",
-        "body": "The provider request could not be built from the current settings. Check credentials, region, Base URL, and provider-specific configuration before retrying."
+        "title": "Неправильна конфігурація постачальника моделі",
+        "body": "Не вдалося сформувати запит до постачальника з поточних налаштувань. Перевірте облікові дані, регіон, Base URL і налаштування постачальника перед повторною спробою."
       },
       "USER_LLM_PROVIDER_MODEL_NOT_FOUND": {
-        "title": "The selected model was not found",
-        "body": "The provider does not recognize this model name. Choose an available model from settings and retry."
+        "title": "Вибрану модель не знайдено",
+        "body": "Постачальник не розпізнає цю назву моделі. Виберіть доступну модель у налаштуваннях і повторіть спробу."
       },
       "USER_LLM_PROVIDER_RATE_LIMITED": {
-        "title": "Model provider rate limit reached",
-        "body": "The provider is temporarily limiting requests. Wait a moment, reduce request frequency, or switch models."
+        "title": "Досягнуто ліміту запитів постачальника моделі",
+        "body": "Постачальник тимчасово обмежує запити. Зачекайте, зменште частоту запитів або перемкніть модель."
       },
       "USER_LLM_PROVIDER_TIMEOUT": {
-        "title": "Model provider request timed out",
-        "body": "The provider did not respond in time. Retry later or switch to a more stable provider."
+        "title": "Час запиту до постачальника моделі минув",
+        "body": "Постачальник не відповів вчасно. Повторіть спробу пізніше або перейдіть на стабільнішого постачальника."
       },
       "USER_LLM_PROVIDER_NETWORK_ERROR": {
-        "title": "Could not reach the model provider",
-        "body": "A network or DNS error prevented access to the provider. Check your network, proxy, and Base URL."
+        "title": "Не вдалося підключитися до постачальника моделі",
+        "body": "Мережева або DNS-помилка завадила доступу до постачальника. Перевірте мережу, проксі та Base URL."
       },
       "USER_LLM_PROVIDER_GATEWAY_ERROR": {
-        "title": "Model provider service is unavailable",
-        "body": "The provider returned a gateway or service error. Retry later or use another provider."
+        "title": "Сервіс постачальника моделі недоступний",
+        "body": "Постачальник повернув помилку шлюзу або сервісу. Повторіть спробу пізніше або скористайтеся іншим постачальником."
       },
       "USER_LLM_PROVIDER_PERMISSION_DENIED": {
-        "title": "Model provider permission denied",
-        "body": "The provider account does not have permission for this model or operation. Check account permissions or choose another model."
+        "title": "Постачальник моделі відмовив у доступі",
+        "body": "Обліковий запис постачальника не має дозволу на цю модель або операцію. Перевірте права акаунта або виберіть іншу модель."
       },
       "USER_LLM_PROVIDER_BILLING_REQUIRED": {
-        "title": "Model provider billing is required",
-        "body": "The selected provider needs active billing, credits, or quota before it can complete this request."
+        "title": "Постачальнику моделі потрібна активна оплата",
+        "body": "Для виконання цього запиту вибраному постачальнику потрібна активна оплата, кредити або квота."
       },
       "USER_LLM_PROVIDER_UNSUPPORTED_MODEL": {
-        "title": "Model does not support this request",
-        "body": "The selected model is unavailable or does not support the requested capability. Choose a supported model and retry."
+        "title": "Модель не підтримує цей запит",
+        "body": "Вибрана модель недоступна або не підтримує потрібну можливість. Виберіть підтримувану модель і повторіть спробу."
       },
       "USER_LLM_PROVIDER_ENDPOINT_NOT_FOUND": {
-        "title": "Model provider endpoint was not found",
-        "body": "The provider endpoint or API path was not found. Check the Base URL, deployment name, and API compatibility."
+        "title": "Ендпоінт постачальника моделі не знайдено",
+        "body": "Ендпоінт або шлях API постачальника не знайдено. Перевірте Base URL, назву розгортання та сумісність API."
       },
       "USER_LLM_PROVIDER_INVALID_REQUEST": {
-        "title": "Model provider rejected the request",
-        "body": "The provider reported that the request was invalid. Simplify the message or check model/provider settings."
+        "title": "Постачальник моделі відхилив запит",
+        "body": "Постачальник повідомив, що запит недійсний. Спростіть повідомлення або перевірте налаштування моделі/постачальника."
       },
       "USER_LLM_PROVIDER_INVALID_TOOL_SCHEMA": {
-        "title": "Tool schema was rejected by the provider",
-        "body": "The provider rejected a tool definition in this request. Update the agent or disable the incompatible tool, then retry."
+        "title": "Постачальник відхилив схему інструмента",
+        "body": "Постачальник відхилив визначення інструмента в цьому запиті. Оновіть агента або вимкніть несумісний інструмент, потім повторіть спробу."
       },
       "USER_LLM_PROVIDER_CONTEXT_TOO_LARGE": {
-        "title": "Context is too large for the model",
-        "body": "The request exceeds the model context limit. Reduce message content, referenced files, or conversation history, then retry."
+        "title": "Контекст перевищує ліміт моделі",
+        "body": "Запит перевищує ліміт контексту моделі. Зменште повідомлення, файли або історію розмови, потім повторіть спробу."
       },
       "USER_LLM_PROVIDER_EMPTY_RESPONSE": {
-        "title": "Model provider returned an empty response",
-        "body": "The provider completed the request without usable content. Retry once or switch providers if it repeats."
+        "title": "Постачальник моделі повернув порожню відповідь",
+        "body": "Постачальник завершив запит, але не повернув придатний вміст. Повторіть один раз або змініть постачальника, якщо це повториться."
       },
       "UNKNOWN_UPSTREAM_ERROR": {
-        "title": "The upstream agent or provider failed",
-        "body": "The app received an upstream error but could not classify it confidently. Review the details below or send feedback."
+        "title": "Помилка зовнішнього агента або постачальника",
+        "body": "Застосунок отримав зовнішню помилку, але не зміг надійно її класифікувати. Перегляньте подробиці нижче або надішліть відгук."
       }
     }
   },

@@ -92,173 +92,173 @@
   "noModelConfigured": "モデルが設定されていません。設定ページで設定してください。",
   "createFailed": "会話の作成に失敗しました",
   "agentError": {
-    "fallbackTitle": "The agent could not reply",
-    "errorCode": "Error code",
-    "retryable": "Retryable",
-    "notRetryable": "Needs configuration",
-    "resolutionPrefix": "Suggestion: ",
+    "fallbackTitle": "エージェントが応答できませんでした",
+    "errorCode": "エラーコード",
+    "retryable": "再試行できます",
+    "notRetryable": "設定の確認が必要です",
+    "resolutionPrefix": "提案: ",
     "resolution": {
-      "retry": "Retry later, or send this message again.",
-      "wait_for_current_response": "Wait for the current response to finish before sending another message.",
-      "start_new_session": "Start a new conversation before continuing.",
-      "reconnect_agent": "Restart or reconnect the selected agent, then retry.",
-      "check_agent_login": "Log in to the selected agent, or refresh its credentials.",
-      "check_agent_installation": "Check the agent installation and local command configuration.",
-      "check_agent_version": "Update the agent, or fix the protocol version incompatibility.",
-      "check_local_command": "Install the missing command, or confirm it has been added to PATH.",
-      "check_provider_credentials": "Check the model provider API key or account credentials in settings.",
-      "check_provider_billing": "Check the model provider balance, credits, or quota.",
-      "check_provider_base_url": "Check the model provider Base URL, API path, proxy, and API compatibility.",
-      "change_model": "Choose a model that is available for the current account and supports this request.",
-      "reduce_context": "Reduce the message content, referenced files, or context size, then retry.",
-      "send_feedback": "Send feedback with logs so the team can investigate."
+      "retry": "しばらく待ってから再試行するか、このメッセージをもう一度送信してください。",
+      "wait_for_current_response": "現在の応答が完了してから、次のメッセージを送信してください。",
+      "start_new_session": "新しい会話を開始してから続行してください。",
+      "reconnect_agent": "選択したエージェントを再起動または再接続してから再試行してください。",
+      "check_agent_login": "選択したエージェントにログインするか、認証情報を更新してください。",
+      "check_agent_installation": "エージェントのインストール状態とローカルコマンド設定を確認してください。",
+      "check_agent_version": "エージェントを更新するか、プロトコルバージョンの不一致を修正してください。",
+      "check_local_command": "不足しているコマンドをインストールするか、PATH に追加されていることを確認してください。",
+      "check_provider_credentials": "設定でモデルプロバイダーの API キーまたはアカウント認証情報を確認してください。",
+      "check_provider_billing": "モデルプロバイダーの残高、クレジット、またはクォータを確認してください。",
+      "check_provider_base_url": "モデルプロバイダーの Base URL、API パス、プロキシ、API 互換性を確認してください。",
+      "change_model": "現在のアカウントで利用でき、このリクエストをサポートするモデルを選択してください。",
+      "reduce_context": "メッセージ内容、参照ファイル、またはコンテキストサイズを減らしてから再試行してください。",
+      "send_feedback": "チームが調査できるよう、ログを添えてフィードバックを送信してください。"
     },
     "ownership": {
-      "aionui": "App",
-      "user_agent": "Agent",
-      "user_llm_provider": "Model provider",
-      "unknown_upstream": "Upstream"
+      "aionui": "アプリ",
+      "user_agent": "エージェント",
+      "user_llm_provider": "モデルプロバイダー",
+      "unknown_upstream": "上流"
     },
     "codes": {
       "AIONUI_STREAM_BROKEN": {
-        "title": "Response stream was interrupted",
-        "body": "The app accepted your message but the response stream ended unexpectedly. Please retry; if it happens again, send feedback."
+        "title": "応答ストリームが中断されました",
+        "body": "アプリはメッセージを受け付けましたが、応答ストリームが予期せず終了しました。再試行してください。繰り返し発生する場合はフィードバックを送信してください。"
       },
       "AIONUI_STATE_INCONSISTENT": {
-        "title": "Conversation state is out of sync",
-        "body": "The conversation state is out of sync. Restart this chat or reload the app before retrying."
+        "title": "会話状態が同期していません",
+        "body": "会話の状態が同期していません。このチャットを再開するか、アプリを再読み込みしてから再試行してください。"
       },
       "AIONUI_PERMISSION_ERROR": {
-        "title": "Could not access the requested resource",
-        "body": "A local permission or filesystem check failed. Check the project path and app permissions, then retry."
+        "title": "必要なリソースにアクセスできませんでした",
+        "body": "ローカル権限またはファイルシステムの確認に失敗しました。プロジェクトパスとアプリの権限を確認してから再試行してください。"
       },
       "AIONUI_INTERNAL_ERROR": {
-        "title": "Request failed in the app",
-        "body": "The request failed while the app was processing it. Please retry once; if it repeats, send feedback."
+        "title": "アプリ内でリクエストに失敗しました",
+        "body": "アプリが処理している間にリクエストが失敗しました。一度再試行してください。繰り返し発生する場合はフィードバックを送信してください。"
       },
       "AIONUI_CONVERSATION_BUSY": {
-        "title": "Conversation is busy",
-        "body": "Another response is still running. Wait for it to finish before sending a new message."
+        "title": "会話は処理中です",
+        "body": "別の応答がまだ実行中です。完了してから新しいメッセージを送信してください。"
       },
       "USER_AGENT_NOT_INSTALLED": {
-        "title": "The selected agent is not installed",
-        "body": "Install the CLI or app required by this agent, then reconnect it in settings."
+        "title": "選択したエージェントがインストールされていません",
+        "body": "このエージェントに必要な CLI またはアプリをインストールしてから、設定で再接続してください。"
       },
       "USER_AGENT_STARTUP_FAILED": {
-        "title": "The selected agent failed to start",
-        "body": "The agent process exited before it was ready. Check its installation, login status, and local command configuration."
+        "title": "選択したエージェントの起動に失敗しました",
+        "body": "準備が完了する前にエージェントプロセスが終了しました。インストール、ログイン状態、ローカルコマンド設定を確認してください。"
       },
       "USER_AGENT_DISCONNECTED": {
-        "title": "The selected agent disconnected",
-        "body": "The agent connection closed while handling this message. Restart or reconnect the agent, then retry."
+        "title": "選択したエージェントが切断されました",
+        "body": "このメッセージの処理中にエージェント接続が閉じられました。エージェントを再起動または再接続してから再試行してください。"
       },
       "USER_AGENT_AUTH_REQUIRED": {
-        "title": "The selected agent needs authentication",
-        "body": "Log in to the selected agent or refresh its credentials, then send the message again."
+        "title": "選択したエージェントで認証が必要です",
+        "body": "選択したエージェントにログインするか認証情報を更新してから、メッセージを再送信してください。"
       },
       "USER_AGENT_SESSION_NOT_FOUND": {
-        "title": "The agent session was lost",
-        "body": "The agent no longer recognizes this session. Start a new chat or reconnect the agent."
+        "title": "エージェントセッションが失われました",
+        "body": "エージェントがこのセッションを認識できなくなりました。新しいチャットを開始するか、エージェントを再接続してください。"
       },
       "USER_AGENT_UNSUPPORTED_METHOD": {
-        "title": "The selected agent does not support this action",
-        "body": "This agent cannot handle the requested operation. Try another agent or update the current one."
+        "title": "選択したエージェントはこの操作に対応していません",
+        "body": "このエージェントは要求された操作を処理できません。別のエージェントを試すか、現在のエージェントを更新してください。"
       },
       "USER_AGENT_INVALID_PARAMS": {
-        "title": "The selected agent rejected the request",
-        "body": "The agent reported that the request format was invalid. Try simplifying the message or switching agents."
+        "title": "選択したエージェントがリクエストを拒否しました",
+        "body": "エージェントはリクエスト形式が無効だと報告しました。メッセージを簡略化するか、別のエージェントに切り替えてください。"
       },
       "USER_AGENT_HANDSHAKE_FAILED": {
-        "title": "Agent handshake failed",
-        "body": "The selected agent could not complete its startup handshake. Restart or reconnect the agent, then retry."
+        "title": "エージェントのハンドシェイクに失敗しました",
+        "body": "選択したエージェントは起動時のハンドシェイクを完了できませんでした。エージェントを再起動または再接続してから再試行してください。"
       },
       "USER_AGENT_HANDSHAKE_TIMEOUT": {
-        "title": "Agent handshake timed out",
-        "body": "The selected agent did not finish its startup handshake in time. Check whether it is still starting or blocked, then retry."
+        "title": "エージェントのハンドシェイクがタイムアウトしました",
+        "body": "選択したエージェントは起動時のハンドシェイクを時間内に完了しませんでした。まだ起動中またはブロックされていないか確認してから再試行してください。"
       },
       "USER_AGENT_ACP_INIT_FAILED": {
-        "title": "Agent protocol initialization failed",
-        "body": "The app could not initialize the Agent Client Protocol session with this agent. Check the agent version and reconnect."
+        "title": "エージェントプロトコルの初期化に失敗しました",
+        "body": "アプリはこのエージェントとの Agent Client Protocol セッションを初期化できませんでした。エージェントのバージョンを確認して再接続してください。"
       },
       "USER_AGENT_PROTOCOL_MISMATCH": {
-        "title": "Agent protocol versions are incompatible",
-        "body": "The selected agent is using an incompatible protocol version. Update the agent or switch to a compatible one."
+        "title": "エージェントプロトコルのバージョンに互換性がありません",
+        "body": "選択したエージェントは互換性のないプロトコルバージョンを使用しています。エージェントを更新するか、互換性のあるエージェントに切り替えてください。"
       },
       "USER_AGENT_NO_PREVIOUS_SESSION": {
-        "title": "Previous agent session is unavailable",
-        "body": "The agent cannot resume the previous session. Start a new conversation to continue."
+        "title": "以前のエージェントセッションを利用できません",
+        "body": "エージェントは以前のセッションを再開できません。続行するには新しい会話を開始してください。"
       },
       "USER_AGENT_COMMAND_NOT_FOUND": {
-        "title": "Agent command was not found",
-        "body": "The configured agent command could not be found. Install it or update the command path in settings."
+        "title": "エージェントコマンドが見つかりません",
+        "body": "設定されたエージェントコマンドが見つかりませんでした。インストールするか、設定でコマンドパスを更新してください。"
       },
       "USER_AGENT_MISSING_ENV": {
-        "title": "Agent environment is missing required variables",
-        "body": "The agent needs environment variables that are not configured. Add them in settings or your shell environment, then reconnect."
+        "title": "エージェントに必要な環境変数が不足しています",
+        "body": "エージェントに必要な環境変数が設定されていません。設定またはシェル環境に追加してから再接続してください。"
       },
       "USER_LLM_PROVIDER_AUTH_FAILED": {
-        "title": "Model provider authentication failed",
-        "body": "The selected provider rejected the API key or account credentials. Check the provider settings and try again."
+        "title": "モデルプロバイダーの認証に失敗しました",
+        "body": "選択したプロバイダーが API キーまたはアカウント認証情報を拒否しました。プロバイダー設定を確認してから再試行してください。"
       },
       "USER_LLM_PROVIDER_CONFIG_ERROR": {
-        "title": "Model provider configuration is invalid",
-        "body": "The provider request could not be built from the current settings. Check credentials, region, Base URL, and provider-specific configuration before retrying."
+        "title": "モデルプロバイダーの設定が無効です",
+        "body": "現在の設定からプロバイダーリクエストを構築できませんでした。認証情報、リージョン、Base URL、プロバイダー固有の設定を確認してから再試行してください。"
       },
       "USER_LLM_PROVIDER_MODEL_NOT_FOUND": {
-        "title": "The selected model was not found",
-        "body": "The provider does not recognize this model name. Choose an available model from settings and retry."
+        "title": "選択したモデルが見つかりませんでした",
+        "body": "プロバイダーはこのモデル名を認識していません。設定で利用可能なモデルを選択してから再試行してください。"
       },
       "USER_LLM_PROVIDER_RATE_LIMITED": {
-        "title": "Model provider rate limit reached",
-        "body": "The provider is temporarily limiting requests. Wait a moment, reduce request frequency, or switch models."
+        "title": "モデルプロバイダーのレート制限に達しました",
+        "body": "プロバイダーが一時的にリクエストを制限しています。少し待つか、リクエスト頻度を下げるか、モデルを切り替えてください。"
       },
       "USER_LLM_PROVIDER_TIMEOUT": {
-        "title": "Model provider request timed out",
-        "body": "The provider did not respond in time. Retry later or switch to a more stable provider."
+        "title": "モデルプロバイダーのリクエストがタイムアウトしました",
+        "body": "プロバイダーが時間内に応答しませんでした。後でもう一度試すか、より安定したプロバイダーに切り替えてください。"
       },
       "USER_LLM_PROVIDER_NETWORK_ERROR": {
-        "title": "Could not reach the model provider",
-        "body": "A network or DNS error prevented access to the provider. Check your network, proxy, and Base URL."
+        "title": "モデルプロバイダーに接続できませんでした",
+        "body": "ネットワークまたは DNS エラーによりプロバイダーにアクセスできませんでした。ネットワーク、プロキシ、Base URL を確認してください。"
       },
       "USER_LLM_PROVIDER_GATEWAY_ERROR": {
-        "title": "Model provider service is unavailable",
-        "body": "The provider returned a gateway or service error. Retry later or use another provider."
+        "title": "モデルプロバイダーのサービスを利用できません",
+        "body": "プロバイダーがゲートウェイまたはサービスエラーを返しました。後でもう一度試すか、別のプロバイダーを使用してください。"
       },
       "USER_LLM_PROVIDER_PERMISSION_DENIED": {
-        "title": "Model provider permission denied",
-        "body": "The provider account does not have permission for this model or operation. Check account permissions or choose another model."
+        "title": "モデルプロバイダーで権限が拒否されました",
+        "body": "プロバイダーアカウントには、このモデルまたは操作を実行する権限がありません。アカウント権限を確認するか、別のモデルを選択してください。"
       },
       "USER_LLM_PROVIDER_BILLING_REQUIRED": {
-        "title": "Model provider billing is required",
-        "body": "The selected provider needs active billing, credits, or quota before it can complete this request."
+        "title": "モデルプロバイダーで請求設定が必要です",
+        "body": "選択したプロバイダーでこのリクエストを完了するには、有効な請求、クレジット、またはクォータが必要です。"
       },
       "USER_LLM_PROVIDER_UNSUPPORTED_MODEL": {
-        "title": "Model does not support this request",
-        "body": "The selected model is unavailable or does not support the requested capability. Choose a supported model and retry."
+        "title": "モデルはこのリクエストに対応していません",
+        "body": "選択したモデルは利用できないか、要求された機能に対応していません。対応しているモデルを選択して再試行してください。"
       },
       "USER_LLM_PROVIDER_ENDPOINT_NOT_FOUND": {
-        "title": "Model provider endpoint was not found",
-        "body": "The provider endpoint or API path was not found. Check the Base URL, deployment name, and API compatibility."
+        "title": "モデルプロバイダーのエンドポイントが見つかりませんでした",
+        "body": "プロバイダーのエンドポイントまたは API パスが見つかりませんでした。Base URL、デプロイ名、API 互換性を確認してください。"
       },
       "USER_LLM_PROVIDER_INVALID_REQUEST": {
-        "title": "Model provider rejected the request",
-        "body": "The provider reported that the request was invalid. Simplify the message or check model/provider settings."
+        "title": "モデルプロバイダーがリクエストを拒否しました",
+        "body": "プロバイダーはリクエストが無効だと報告しました。メッセージを簡略化するか、モデルやプロバイダー設定を確認してください。"
       },
       "USER_LLM_PROVIDER_INVALID_TOOL_SCHEMA": {
-        "title": "Tool schema was rejected by the provider",
-        "body": "The provider rejected a tool definition in this request. Update the agent or disable the incompatible tool, then retry."
+        "title": "ツールスキーマがプロバイダーに拒否されました",
+        "body": "プロバイダーはこのリクエスト内のツール定義を拒否しました。エージェントを更新するか、互換性のないツールを無効にしてから再試行してください。"
       },
       "USER_LLM_PROVIDER_CONTEXT_TOO_LARGE": {
-        "title": "Context is too large for the model",
-        "body": "The request exceeds the model context limit. Reduce message content, referenced files, or conversation history, then retry."
+        "title": "コンテキストがモデルの上限を超えています",
+        "body": "リクエストがモデルのコンテキスト上限を超えています。メッセージ内容、参照ファイル、または会話履歴を減らしてから再試行してください。"
       },
       "USER_LLM_PROVIDER_EMPTY_RESPONSE": {
-        "title": "Model provider returned an empty response",
-        "body": "The provider completed the request without usable content. Retry once or switch providers if it repeats."
+        "title": "モデルプロバイダーが空の応答を返しました",
+        "body": "プロバイダーはリクエストを完了しましたが、利用可能な内容を返しませんでした。一度再試行し、繰り返す場合はプロバイダーを切り替えてください。"
       },
       "UNKNOWN_UPSTREAM_ERROR": {
-        "title": "The upstream agent or provider failed",
-        "body": "The app received an upstream error but could not classify it confidently. Review the details below or send feedback."
+        "title": "上流のエージェントまたはプロバイダーで失敗しました",
+        "body": "アプリは上流エラーを受け取りましたが、確実には分類できませんでした。下の詳細を確認するか、フィードバックを送信してください。"
       }
     }
   },
