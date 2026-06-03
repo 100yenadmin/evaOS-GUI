@@ -43,8 +43,9 @@ import {
   resolveInitialBounds,
 } from './process/utils/windowBounds';
 import {
-  clearPendingDeepLinkUrl,
-  getPendingDeepLinkUrl,
+  clearPendingDeepLinkPayload,
+  emitDeepLinkPayload,
+  getPendingDeepLinkPayload,
   handleDeepLinkUrl,
   PROTOCOL_SCHEME,
 } from './process/utils/deepLink';
@@ -768,12 +769,12 @@ const handleAppReady = async (): Promise<void> => {
       });
     }
 
-    // Flush pending deep-link URL (received before window was ready)
-    const pendingUrl = getPendingDeepLinkUrl();
-    if (pendingUrl) {
-      clearPendingDeepLinkUrl();
+    // Flush pending deep-link payload (received before window was ready)
+    const pendingPayload = getPendingDeepLinkPayload();
+    if (pendingPayload) {
+      clearPendingDeepLinkPayload();
       mainWindow.webContents.once('did-finish-load', () => {
-        handleDeepLinkUrl(pendingUrl);
+        emitDeepLinkPayload(pendingPayload);
       });
     }
   }

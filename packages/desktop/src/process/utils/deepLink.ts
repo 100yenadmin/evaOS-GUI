@@ -10,13 +10,54 @@ import { EVAOS_BETA_IDENTITY, isEvaosBetaBuild } from '../evaosBetaSafety';
 
 export const PROTOCOL_SCHEME = isEvaosBetaBuild() ? EVAOS_BETA_IDENTITY.protocolScheme : 'aionui';
 
+export type DeepLinkPayload = { action: string; params: Record<string, string> };
+
+const RENDERER_SECRET_PARAM_NAMES = new Set([
+  'api_key',
+  'apikey',
+  'key',
+  'token',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'secret',
+  'client_secret',
+  'code',
+  'password',
+  'credential',
+  'credentials',
+  'grant',
+  'jwt',
+  'session',
+  'session_token',
+]);
+
+export const isRendererSecretDeepLinkParam = (name: string): boolean => {
+  const normalized = name.trim().toLowerCase().replace(/-/g, '_');
+  return (
+    RENDERER_SECRET_PARAM_NAMES.has(normalized) ||
+    normalized.endsWith('_token') ||
+    normalized.endsWith('_secret') ||
+    normalized.endsWith('_credential')
+  );
+};
+
+export const stripRendererSecretDeepLinkParams = (params: Record<string, string>): Record<string, string> => {
+  const safeParams: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (isRendererSecretDeepLinkParam(key)) continue;
+    safeParams[key] = value;
+  }
+  return safeParams;
+};
+
 /**
  * Parse an app deep-link URL into action and params.
  * Supports two formats:
  *   1. <scheme>://add-provider?base_url=xxx&api_key=xxx
  *   2. <scheme>://provider/add?v=1&data=<base64 JSON>  (one-api / new-api style)
  */
-export const parseDeepLinkUrl = (url: string): { action: string; params: Record<string, string> } | null => {
+export const parseDeepLinkUrl = (url: string): DeepLinkPayload | null => {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== `${PROTOCOL_SCHEME}:`) return null;
@@ -35,7 +76,11 @@ export const parseDeepLinkUrl = (url: string): { action: string; params: Record<
       try {
         const json = JSON.parse(Buffer.from(params.data, 'base64').toString('utf-8'));
         if (json && typeof json === 'object') {
-          Object.assign(params, json);
+          for (const [key, value] of Object.entries(json)) {
+            if (typeof value === 'string') {
+              params[key] = value;
+            }
+          }
         }
       } catch {
         // Ignore decode errors
@@ -43,23 +88,27 @@ export const parseDeepLinkUrl = (url: string): { action: string; params: Record<
       delete params.data;
     }
 
-    return { action, params };
+    return {
+      action,
+      params: isEvaosBetaBuild() ? stripRendererSecretDeepLinkParams(params) : params,
+    };
   } catch {
     return null;
   }
 };
 
 let mainWindowRef: BrowserWindow | null = null;
-let pendingDeepLinkUrl: string | null = process.argv.find((arg) => arg.startsWith(`${PROTOCOL_SCHEME}://`)) || null;
+let pendingDeepLinkPayload: DeepLinkPayload | null =
+  parseDeepLinkUrl(process.argv.find((arg) => arg.startsWith(`${PROTOCOL_SCHEME}://`)) || '') || null;
 
 export const setDeepLinkMainWindow = (win: BrowserWindow): void => {
   mainWindowRef = win;
 };
 
-export const getPendingDeepLinkUrl = (): string | null => pendingDeepLinkUrl;
+export const getPendingDeepLinkPayload = (): DeepLinkPayload | null => pendingDeepLinkPayload;
 
-export const clearPendingDeepLinkUrl = (): void => {
-  pendingDeepLinkUrl = null;
+export const clearPendingDeepLinkPayload = (): void => {
+  pendingDeepLinkPayload = null;
 };
 
 /**
@@ -71,9 +120,13 @@ export const handleDeepLinkUrl = (url: string): void => {
   if (!parsed) return;
 
   if (!mainWindowRef || mainWindowRef.isDestroyed()) {
-    pendingDeepLinkUrl = url;
+    pendingDeepLinkPayload = parsed;
     return;
   }
 
   ipcBridge.deepLink.received.emit(parsed);
+};
+
+export const emitDeepLinkPayload = (payload: DeepLinkPayload): void => {
+  ipcBridge.deepLink.received.emit(payload);
 };

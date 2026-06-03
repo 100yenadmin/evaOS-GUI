@@ -1,5 +1,12 @@
 # Changelog
 
+## evaOS Workbench Beta R&D (unreleased)
+
+### Native Companion Boundary
+
+- evaOS Workbench Beta is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback.
+- Beta builds block legacy shell-launch, Office preview watch, and local filesystem mutation/upload/watch actions by default unless an explicit diagnostic override is set.
+
 ## [2.1.10](https://github.com/iOfficeAI/AionUi/compare/v2.1.9...v2.1.10) (2026-06-02)
 
 ### Desktop

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getBaseUrl } from '@/common/adapter/httpBridge';
+import { assertEvaosBetaLegacyLocalActionAllowed, getBaseUrl } from '@/common/adapter/httpBridge';
 import { trackUpload, type UploadSource } from '@/renderer/hooks/file/useUploadState';
 
 /** Sentinel error message used when an upload is cancelled by the caller. */
@@ -36,6 +36,8 @@ export async function uploadFileViaHttp(
   file_name?: string,
   options?: UploadFileOptions
 ): Promise<string> {
+  assertEvaosBetaLegacyLocalActionAllowed('/api/fs/upload');
+
   const formData = new FormData();
   formData.append('file', file);
   if (file_name) {
