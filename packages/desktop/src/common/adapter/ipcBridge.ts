@@ -426,6 +426,93 @@ export interface IEvaosRuntimeStatusView {
   auditId?: string;
 }
 
+export type IEvaosAccountPolicyRole =
+  | 'owner'
+  | 'admin'
+  | 'billing_admin'
+  | 'technical_admin'
+  | 'manager'
+  | 'member'
+  | 'agent_only'
+  | 'support';
+
+export type IEvaosAccountPolicyScope =
+  | 'manage_members'
+  | 'manage_billing'
+  | 'manage_integrations'
+  | 'approve_actions'
+  | 'open_business_browser'
+  | 'use_creative_studio'
+  | 'use_design_workspace'
+  | 'view_company_brain'
+  | 'manage_company_brain'
+  | 'assign_agents'
+  | 'access_openclaw_dashboard'
+  | 'access_hermes_dashboard'
+  | 'access_terminal'
+  | 'access_technical_diagnostics';
+
+export interface IEvaosPeopleAccessPolicyRequest {
+  customerId: string;
+}
+
+export interface IEvaosPeopleAccessMemberView {
+  memberId: string;
+  email?: string;
+  displayName?: string;
+  role: IEvaosAccountPolicyRole;
+  seatType?: string;
+  status: string;
+  joinedAt?: string;
+  lastActiveAt?: string;
+}
+
+export interface IEvaosPeopleAccessInviteView {
+  inviteId: string;
+  email: string;
+  role: IEvaosAccountPolicyRole;
+  status: string;
+  expiresAt?: string;
+  invitedAt?: string;
+}
+
+export interface IEvaosPeopleAccessPolicyView {
+  schemaVersion: 'evaos.account_policy.v1';
+  customerAccountId: string;
+  selectedCustomerId: string;
+  membershipId?: string;
+  membershipRole: IEvaosAccountPolicyRole;
+  planCode?: string;
+  seatLimit?: number;
+  activeSeats?: number;
+  invitedSeats?: number;
+  scopes: IEvaosAccountPolicyScope[];
+  advancedSurfaces: Record<string, boolean>;
+  members: IEvaosPeopleAccessMemberView[];
+  invites: IEvaosPeopleAccessInviteView[];
+  routeDenied: boolean;
+  routeDenialReason?: string;
+  backendEnforced: boolean;
+  updatedAt?: string;
+  auditId?: string;
+}
+
+export interface IEvaosPeopleAccessInviteMemberRequest {
+  customerId: string;
+  email: string;
+  role: IEvaosAccountPolicyRole;
+  seatType?: string;
+}
+
+export interface IEvaosPeopleAccessMutationResult {
+  status: string;
+  message?: string;
+  inviteId?: string;
+  memberId?: string;
+  auditId?: string;
+  backendEnforced: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Application — stays IPC (Electron-native)
 // ---------------------------------------------------------------------------
@@ -1180,6 +1267,16 @@ export const evaosBroker = {
     'evaos.broker.runtime-status'
   ),
   revokeSession: bridge.buildProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>('evaos.broker.revoke-session'),
+};
+
+export const evaosPeopleAccess = {
+  getPolicy: bridge.buildProvider<IBridgeResponse<IEvaosPeopleAccessPolicyView>, IEvaosPeopleAccessPolicyRequest>(
+    'evaos.people-access.policy'
+  ),
+  inviteMember: bridge.buildProvider<
+    IBridgeResponse<IEvaosPeopleAccessMutationResult>,
+    IEvaosPeopleAccessInviteMemberRequest
+  >('evaos.people-access.invite-member'),
 };
 
 // ---------------------------------------------------------------------------

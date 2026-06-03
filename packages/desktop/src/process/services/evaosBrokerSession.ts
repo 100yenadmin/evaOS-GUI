@@ -5,7 +5,15 @@
  */
 
 import type {
+  IEvaosAccountPolicyRole,
+  IEvaosAccountPolicyScope,
   IEvaosBrokerSessionStatus,
+  IEvaosPeopleAccessInviteMemberRequest,
+  IEvaosPeopleAccessInviteView,
+  IEvaosPeopleAccessMemberView,
+  IEvaosPeopleAccessMutationResult,
+  IEvaosPeopleAccessPolicyRequest,
+  IEvaosPeopleAccessPolicyView,
   IEvaosRuntimeKey,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
@@ -50,7 +58,10 @@ export type EvaosBrokerErrorCode =
   | 'expired_session'
   | 'invalid_device_code'
   | 'invalid_customer'
+  | 'invalid_email'
+  | 'invalid_role'
   | 'invalid_runtime'
+  | 'action_denied'
   | 'broker_http_error'
   | 'broker_invalid_response'
   | 'broker_network_error';
@@ -161,6 +172,64 @@ export class EvaosBrokerSessionClient {
     )) as unknown;
 
     return sanitizeRuntimeStatus(raw, { customerId, runtime });
+  }
+
+  async peopleAccessPolicy(request: IEvaosPeopleAccessPolicyRequest): Promise<IEvaosPeopleAccessPolicyView> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before loading People Access.'
+    );
+    const session = this.requireActiveSession();
+
+    const [accountRaw, permissionsRaw] = await Promise.all([
+      this.postJson(
+        {
+          action: 'current_customer_account',
+          customer_id: customerId,
+        },
+        session
+      ),
+      this.postJson(
+        {
+          action: 'current_customer_account_permissions',
+          customer_id: customerId,
+        },
+        session
+      ),
+    ]);
+
+    return sanitizePeopleAccessPolicy(accountRaw, permissionsRaw, customerId);
+  }
+
+  async invitePeopleAccessMember(
+    request: IEvaosPeopleAccessInviteMemberRequest
+  ): Promise<IEvaosPeopleAccessMutationResult> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before inviting a member.'
+    );
+    const email = normalizeEmail(request.email);
+    const role = normalizeInviteRole(request.role);
+    const seatType = safeText(request.seatType, 80);
+    const session = this.requireActiveSession();
+
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertPolicyScope(policy, 'manage_members', 'You do not have permission to invite members for this account.');
+
+    const raw = await this.postJson(
+      stripUndefined({
+        action: 'invite_customer_account_member',
+        customer_id: customerId,
+        email,
+        role,
+        seat_type: seatType,
+      }),
+      session
+    );
+
+    return sanitizePeopleAccessMutationResult(raw);
   }
 
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
@@ -354,6 +423,252 @@ function sanitizeRuntimeStatus(
     sourcePointer: safeText(record.source_pointer),
     auditId: safeText(record.audit_id),
   });
+}
+
+const ACCOUNT_POLICY_SCHEMA_VERSION: IEvaosPeopleAccessPolicyView['schemaVersion'] = 'evaos.account_policy.v1';
+const PEOPLE_ACCESS_ROUTE_SCOPE: IEvaosAccountPolicyScope = 'manage_members';
+
+const VALID_ACCOUNT_ROLES: ReadonlySet<IEvaosAccountPolicyRole> = new Set([
+  'owner',
+  'admin',
+  'billing_admin',
+  'technical_admin',
+  'manager',
+  'member',
+  'agent_only',
+  'support',
+]);
+
+const VALID_INVITE_ROLES: ReadonlySet<IEvaosAccountPolicyRole> = new Set([
+  'admin',
+  'billing_admin',
+  'technical_admin',
+  'manager',
+  'member',
+  'agent_only',
+  'support',
+]);
+
+const VALID_POLICY_SCOPES: ReadonlySet<IEvaosAccountPolicyScope> = new Set([
+  'manage_members',
+  'manage_billing',
+  'manage_integrations',
+  'approve_actions',
+  'open_business_browser',
+  'use_creative_studio',
+  'use_design_workspace',
+  'view_company_brain',
+  'manage_company_brain',
+  'assign_agents',
+  'access_openclaw_dashboard',
+  'access_hermes_dashboard',
+  'access_terminal',
+  'access_technical_diagnostics',
+]);
+
+function sanitizePeopleAccessPolicy(
+  accountRaw: unknown,
+  permissionsRaw: unknown,
+  fallbackCustomerId: string
+): IEvaosPeopleAccessPolicyView {
+  const account = asRecord(accountRaw);
+  const permissions = asRecord(permissionsRaw);
+  if (!account || !permissions) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const schemaVersion = safeText(permissions.schema_version ?? account.schema_version);
+  const customerAccountId = safeText(permissions.customer_account_id ?? account.customer_account_id ?? account.id);
+  const selectedCustomerId =
+    safeText(permissions.selected_customer_id ?? permissions.customer_id ?? account.selected_customer_id) ??
+    fallbackCustomerId;
+  const membershipRole = normalizeAccountRoleValue(
+    permissions.membership_role ?? permissions.role ?? account.membership_role
+  );
+  const scopes = safePolicyScopeList(permissions.scopes);
+
+  if (
+    schemaVersion !== ACCOUNT_POLICY_SCHEMA_VERSION ||
+    !customerAccountId ||
+    !selectedCustomerId ||
+    !membershipRole ||
+    !scopes
+  ) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const routeDenied = !scopes.includes(PEOPLE_ACCESS_ROUTE_SCOPE);
+  const advancedSurfaces = safeBooleanMap(permissions.advanced_surfaces);
+
+  return stripUndefined({
+    schemaVersion: ACCOUNT_POLICY_SCHEMA_VERSION,
+    customerAccountId,
+    selectedCustomerId,
+    membershipId: safeText(permissions.membership_id ?? account.membership_id),
+    membershipRole,
+    planCode: safeText(permissions.plan_code ?? account.plan_code),
+    seatLimit: safeNonNegativeInteger(permissions.seat_limit ?? account.seat_limit),
+    activeSeats: safeNonNegativeInteger(permissions.active_seats ?? account.active_seats),
+    invitedSeats: safeNonNegativeInteger(permissions.invited_seats ?? account.invited_seats),
+    scopes,
+    advancedSurfaces,
+    members: safePeopleAccessMembers(account.members ?? account.customer_account_memberships),
+    invites: safePeopleAccessInvites(account.invites ?? account.invitations),
+    routeDenied,
+    routeDenialReason: routeDenied
+      ? 'People Access requires the manage_members scope for this customer account.'
+      : undefined,
+    backendEnforced: safeBoolean(permissions.backend_enforced) ?? true,
+    updatedAt: safeIsoDate(permissions.updated_at ?? account.updated_at),
+    auditId: safeText(permissions.audit_id ?? account.audit_id),
+  });
+}
+
+function sanitizePeopleAccessMutationResult(raw: unknown): IEvaosPeopleAccessMutationResult {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const status = safeText(record.status);
+  if (!status) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  return stripUndefined({
+    status,
+    message: safeText(record.message),
+    inviteId: safeText(record.invite_id ?? record.invitation_id ?? record.id),
+    memberId: safeText(record.member_id ?? record.membership_id),
+    auditId: safeText(record.audit_id),
+    backendEnforced: safeBoolean(record.backend_enforced) ?? true,
+  });
+}
+
+function assertPolicyScope(
+  policy: IEvaosPeopleAccessPolicyView,
+  scope: IEvaosAccountPolicyScope,
+  message: string
+): void {
+  if (!policy.scopes.includes(scope)) {
+    throw new EvaosBrokerSessionError('action_denied', message);
+  }
+}
+
+function normalizeEmail(value: string): string {
+  const text = safeText(value, 254)?.toLowerCase();
+  if (!text || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
+    throw new EvaosBrokerSessionError('invalid_email', 'Enter a valid invite email address.');
+  }
+  return text;
+}
+
+function normalizeInviteRole(value: IEvaosAccountPolicyRole): IEvaosAccountPolicyRole {
+  if (VALID_INVITE_ROLES.has(value)) {
+    return value;
+  }
+  throw new EvaosBrokerSessionError('invalid_role', 'Choose a supported People Access role.');
+}
+
+function normalizeAccountRoleValue(value: unknown): IEvaosAccountPolicyRole | undefined {
+  const role = safeText(value, 80);
+  return role && VALID_ACCOUNT_ROLES.has(role as IEvaosAccountPolicyRole)
+    ? (role as IEvaosAccountPolicyRole)
+    : undefined;
+}
+
+function safePolicyScopeList(value: unknown): IEvaosAccountPolicyScope[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const scopes = value
+    .map((item) => safeText(item, 80))
+    .filter((item): item is IEvaosAccountPolicyScope =>
+      Boolean(item && VALID_POLICY_SCOPES.has(item as IEvaosAccountPolicyScope))
+    );
+
+  return [...new Set(scopes)];
+}
+
+function safePeopleAccessMembers(value: unknown): IEvaosPeopleAccessMemberView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item): IEvaosPeopleAccessMemberView[] => {
+    const record = asRecord(item);
+    if (!record) return [];
+    const memberId = safeText(record.member_id ?? record.membership_id ?? record.id);
+    const role = normalizeAccountRoleValue(record.role ?? record.membership_role ?? record.seat_type);
+    if (!memberId || !role) return [];
+
+    return [
+      stripUndefined({
+        memberId,
+        email: safeEmailText(record.email ?? record.user_email),
+        displayName: safeText(record.display_name ?? record.name),
+        role,
+        seatType: safeText(record.seat_type),
+        status: safeText(record.status) ?? 'active',
+        joinedAt: safeIsoDate(record.joined_at ?? record.created_at),
+        lastActiveAt: safeIsoDate(record.last_active_at),
+      }),
+    ];
+  });
+}
+
+function safePeopleAccessInvites(value: unknown): IEvaosPeopleAccessInviteView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item): IEvaosPeopleAccessInviteView[] => {
+    const record = asRecord(item);
+    if (!record) return [];
+    const inviteId = safeText(record.invite_id ?? record.invitation_id ?? record.id);
+    const email = safeEmailText(record.email ?? record.invited_email);
+    const role = normalizeAccountRoleValue(record.role ?? record.membership_role ?? record.seat_type);
+    if (!inviteId || !email || !role) return [];
+
+    return [
+      stripUndefined({
+        inviteId,
+        email,
+        role,
+        status: safeText(record.status) ?? 'pending',
+        expiresAt: safeIsoDate(record.expires_at),
+        invitedAt: safeIsoDate(record.invited_at ?? record.created_at),
+      }),
+    ];
+  });
+}
+
+function safeEmailText(value: unknown): string | undefined {
+  const text = safeText(value, 254)?.toLowerCase();
+  return text && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) ? text : undefined;
+}
+
+function safeBooleanMap(value: unknown): Record<string, boolean> {
+  const record = asRecord(value);
+  if (!record) {
+    return {};
+  }
+
+  const result: Record<string, boolean> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const safeKey = safeText(key, 80);
+    if (!safeKey || typeof raw !== 'boolean') continue;
+    result[safeKey] = raw;
+  }
+  return result;
+}
+
+function safeNonNegativeInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    return undefined;
+  }
+  return value;
 }
 
 function normalizeRuntimeValue(value: unknown): IEvaosRuntimeKey | undefined {
