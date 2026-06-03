@@ -7,6 +7,16 @@
 import type {
   IEvaosAccountPolicyRole,
   IEvaosAccountPolicyScope,
+  IEvaosApprovalCenterRequest,
+  IEvaosApprovalCenterView,
+  IEvaosApprovalDecisionResult,
+  IEvaosApprovalDenyRequest,
+  IEvaosApprovalDestinationPreview,
+  IEvaosApprovalDestinationProof,
+  IEvaosApprovalPreviewKind,
+  IEvaosApprovalRequestView,
+  IEvaosApprovalRiskClass,
+  IEvaosApprovalRuntimeResult,
   IEvaosBrokerSessionStatus,
   IEvaosPeopleAccessInviteMemberRequest,
   IEvaosPeopleAccessInviteView,
@@ -19,6 +29,7 @@ import type {
   IEvaosRuntimeStatusView,
   IEvaosSafeUrlSummary,
 } from '@/common/adapter/ipcBridge';
+import { createHash } from 'crypto';
 
 export const EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT =
   'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session';
@@ -57,6 +68,7 @@ export type EvaosBrokerErrorCode =
   | 'missing_session'
   | 'expired_session'
   | 'invalid_device_code'
+  | 'invalid_approval'
   | 'invalid_customer'
   | 'invalid_email'
   | 'invalid_role'
@@ -230,6 +242,99 @@ export class EvaosBrokerSessionClient {
     );
 
     return sanitizePeopleAccessMutationResult(raw);
+  }
+
+  async approvalCenter(request: IEvaosApprovalCenterRequest): Promise<IEvaosApprovalCenterView> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before loading Approval Center.'
+    );
+    const limit = safeApprovalLimit(request.limit);
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+
+    if (!policy.scopes.includes('approve_actions')) {
+      return {
+        schemaVersion: 'evaos.approval_center.v1',
+        customerId,
+        customerAccountId: policy.customerAccountId,
+        membershipId: policy.membershipId,
+        membershipRole: policy.membershipRole,
+        routeDenied: true,
+        routeDenialReason: 'Approval Center requires the approve_actions scope for this customer account.',
+        backendEnforced: policy.backendEnforced,
+        requests: [],
+        summaryText: 'Approval Center denied by account policy',
+        policyAuditId: policy.auditId,
+      };
+    }
+
+    const raw = await this.postJson(
+      {
+        action: 'provider_approval_requests',
+        customer_id: customerId,
+        limit,
+      },
+      session
+    );
+
+    return sanitizeApprovalCenter(raw, policy, customerId);
+  }
+
+  async denyApproval(request: IEvaosApprovalDenyRequest): Promise<IEvaosApprovalDecisionResult> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before denying an approval.'
+    );
+    const approvalId = normalizeApprovalId(request.approvalId);
+    const reason = safeText(request.reason, 220);
+    const session = this.requireActiveSession();
+
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertPolicyScope(policy, 'approve_actions', 'You do not have permission to deny approvals for this account.');
+
+    const approvalRaw = await this.postJson(
+      {
+        action: 'provider_approval_request',
+        customer_id: customerId,
+        approval_id: approvalId,
+      },
+      session
+    );
+    const approval = sanitizeSingleApprovalRequest(approvalRaw);
+    if (!approval) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+
+    if (!policy.membershipId || !approval.requesterMembershipId) {
+      throw new EvaosBrokerSessionError(
+        'action_denied',
+        'Approval requester and approver evidence is required before denying.'
+      );
+    }
+
+    if (approval.requesterMembershipId === policy.membershipId) {
+      throw new EvaosBrokerSessionError('action_denied', 'Requesters cannot deny their own approval requests.');
+    }
+
+    const raw = await this.postJson(
+      stripUndefined({
+        action: 'provider_approval_decide',
+        customer_id: customerId,
+        approval_id: approvalId,
+        decision: 'deny',
+        scope: 'this-call',
+        destination_proof: toBrokerApprovalDestinationProof(approval.destinationProof),
+        request_source_pointer: approval.sourcePointer,
+        request_audit_id: approval.auditId,
+        reason,
+      }),
+      session
+    );
+
+    return sanitizeApprovalDecisionResult(raw, approval);
   }
 
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
@@ -466,6 +571,36 @@ const VALID_POLICY_SCOPES: ReadonlySet<IEvaosAccountPolicyScope> = new Set([
   'access_technical_diagnostics',
 ]);
 
+const APPROVAL_PAYLOAD_ALLOWLIST: ReadonlySet<string> = new Set([
+  'actual_recipient_email',
+  'recipient_email',
+  'subject',
+  'actual_recipient_id',
+  'actual_channel_id',
+  'recipient_id',
+  'channel_id',
+  'actual_url',
+  'target_url',
+  'url',
+  'actual_file_path',
+  'file_path',
+  'delete_path',
+  'export_destination',
+  'merchant',
+  'payment_target',
+  'actual_payment_target',
+  'amount',
+  'amount_text',
+  'cap',
+  'secret_name',
+  'secret_id',
+  'budget_cap',
+  'scope',
+  'budget_scope',
+  'permission',
+  'permission_scope',
+]);
+
 function sanitizePeopleAccessPolicy(
   accountRaw: unknown,
   permissionsRaw: unknown,
@@ -543,6 +678,448 @@ function sanitizePeopleAccessMutationResult(raw: unknown): IEvaosPeopleAccessMut
     auditId: safeText(record.audit_id),
     backendEnforced: safeBoolean(record.backend_enforced) ?? true,
   });
+}
+
+function sanitizeApprovalCenter(
+  raw: unknown,
+  policy: IEvaosPeopleAccessPolicyView,
+  fallbackCustomerId: string
+): IEvaosApprovalCenterView {
+  const record = asRecord(raw);
+  const source = record ? (record.requests ?? record.approvals ?? record.pending) : raw;
+  if (!record || !Array.isArray(source)) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+  const requests = safeApprovalRequests(source);
+  const summaryText = requests.length === 0 ? 'No pending approvals' : `${requests.length} pending approvals`;
+
+  return stripUndefined({
+    schemaVersion: 'evaos.approval_center.v1' as const,
+    customerId: safeText(record?.customer_id) ?? fallbackCustomerId,
+    customerAccountId: policy.customerAccountId,
+    membershipId: policy.membershipId,
+    membershipRole: policy.membershipRole,
+    routeDenied: false,
+    backendEnforced: safeBoolean(record?.backend_enforced) ?? policy.backendEnforced,
+    requests,
+    summaryText,
+    sourcePointer: safeText(record?.source_pointer),
+    auditId: safeText(record?.audit_id),
+    policyAuditId: policy.auditId,
+  });
+}
+
+function sanitizeApprovalDecisionResult(
+  raw: unknown,
+  fallbackRequest: IEvaosApprovalRequestView
+): IEvaosApprovalDecisionResult {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const status = safeText(record.status);
+  if (!status || !isDeniedApprovalStatus(status)) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+  const request = sanitizeSingleApprovalRequest(record.request ?? record.approval ?? record.resolved_request);
+  const approvalId = safeText(record.approval_id ?? record.id) ?? request?.approvalId;
+  const runtimeResult = sanitizeApprovalRuntimeResult(record.runtime_result ?? record.result);
+  const sourcePointer = safeText(record.source_pointer) ?? runtimeResult?.sourcePointer;
+  const auditId = safeText(record.audit_id) ?? runtimeResult?.auditId;
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  if (
+    approvalId !== fallbackRequest.approvalId ||
+    !runtimeResult ||
+    !isDeniedApprovalStatus(runtimeResult.status) ||
+    !runtimeResult.sourcePointer ||
+    !runtimeResult.auditId ||
+    !sourcePointer ||
+    !auditId ||
+    backendEnforced !== true
+  ) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return deny enforcement proof.'
+    );
+  }
+
+  return stripUndefined({
+    status,
+    decision: 'deny' as const,
+    scope: 'this-call' as const,
+    approvalId,
+    request: request ?? fallbackRequest,
+    runtimeResult,
+    sourcePointer,
+    auditId,
+    backendEnforced,
+  });
+}
+
+function safeApprovalRequests(value: unknown): IEvaosApprovalRequestView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item): IEvaosApprovalRequestView => {
+    const request = sanitizeSingleApprovalRequest(item);
+    if (!request) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+    return request;
+  });
+}
+
+function sanitizeSingleApprovalRequest(raw: unknown): IEvaosApprovalRequestView | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+
+  const requestRecord = asRecord(record.request) ?? asRecord(record.approval) ?? asRecord(record.resolved_request);
+  if (requestRecord) {
+    return sanitizeSingleApprovalRequest(requestRecord);
+  }
+
+  const approvalId = safeText(record.approval_id ?? record.request_id ?? record.id);
+  const agentId = safeText(record.agent_id);
+  const toolName = safeText(record.tool_name ?? record.tool);
+  const riskClass = safeApprovalRiskClass(record.risk_class);
+  const createdAt = safeIsoDate(record.created_at);
+  if (!approvalId || !agentId || !toolName || !riskClass || !createdAt) {
+    return undefined;
+  }
+
+  const sourcePointer = safeText(record.source_pointer) ?? `approval:${approvalId}`;
+  const payload = safeApprovalPayload(record.action_payload ?? record.payload);
+  const destinationPreview = approvalDestinationPreview(toolName, payload);
+  const destinationProof = approvalDestinationProof(destinationPreview, sourcePointer);
+  const allowAlwaysSupported = safeBoolean(record.allow_always_supported) ?? false;
+  const requesterMembershipId = safeText(record.requester_membership_id);
+  const canAllowOnce = destinationPreview.actionable && Boolean(destinationProof);
+  const canAllowAlways =
+    allowAlwaysSupported && canAllowOnce && destinationPreview.kind !== 'budget' && !destinationPreview.warning;
+  const canDeny = Boolean(requesterMembershipId);
+  const availableDecisions = [
+    ...(canAllowOnce ? (['allow-once'] as const) : []),
+    ...(canAllowAlways ? (['allow-always'] as const) : []),
+    ...(canDeny ? (['deny'] as const) : []),
+  ];
+
+  return stripUndefined({
+    approvalId,
+    ownerId: safeText(record.owner_id),
+    agentId,
+    requesterMembershipId,
+    toolName,
+    riskClass,
+    destinationPreview,
+    destinationProof,
+    allowAlwaysSupported,
+    availableDecisions,
+    canAllowOnce,
+    canAllowAlways,
+    canDeny,
+    createdAt,
+    expiresAt: safeIsoDate(record.expires_at),
+    sourcePointer,
+    auditId: safeText(record.audit_id),
+    nextAction: approvalNextAction(destinationPreview, riskClass),
+  });
+}
+
+function sanitizeApprovalRuntimeResult(value: unknown): IEvaosApprovalRuntimeResult | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const status = safeText(record.status);
+  if (!status) return undefined;
+  return stripUndefined({
+    status,
+    runtime: safeText(record.runtime),
+    sourcePointer: safeText(record.source_pointer),
+    auditId: safeText(record.audit_id),
+  });
+}
+
+function approvalDestinationPreview(
+  toolName: string,
+  payload: Record<string, string>
+): IEvaosApprovalDestinationPreview {
+  const tokens = toolName
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (tokens.some((token) => token === 'gmail' || token === 'email' || token === 'mail')) {
+    const recipient = firstPayloadValue(payload, ['actual_recipient_email', 'recipient_email']);
+    if (recipient && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      return stripUndefined({
+        kind: 'email_recipient' as const,
+        primary: recipient,
+        secondary: firstPayloadValue(payload, ['subject']),
+        actionable: true,
+      });
+    }
+    return missingApprovalDestination('Missing actual recipient email.');
+  }
+
+  if (tokens.some((token) => token === 'slack' || token === 'message' || token === 'chat')) {
+    const target = firstPayloadValue(payload, [
+      'actual_recipient_id',
+      'actual_channel_id',
+      'recipient_id',
+      'channel_id',
+    ]);
+    if (target) {
+      return stripUndefined({
+        kind: 'message_recipient' as const,
+        primary: target,
+        actionable: true,
+      });
+    }
+    return missingApprovalDestination('Missing actual message recipient or channel.');
+  }
+
+  if (tokens.some((token) => token === 'browser' || token === 'fetch' || token === 'url' || token === 'http')) {
+    const url = safeApprovalUrl(firstPayloadValue(payload, ['actual_url', 'target_url', 'url']));
+    if (url) {
+      return stripUndefined({
+        kind: 'url' as const,
+        primary: url,
+        secondary: new URL(url).host,
+        actionable: true,
+      });
+    }
+    return missingApprovalDestination('Missing actual HTTP or HTTPS URL.');
+  }
+
+  if (tokens.some((token) => token === 'file' || token === 'delete' || token === 'export')) {
+    const path = firstPayloadValue(payload, ['actual_file_path', 'file_path', 'delete_path', 'export_destination']);
+    if (path) {
+      return {
+        kind: 'file_path',
+        primary: path,
+        actionable: true,
+      };
+    }
+    return missingApprovalDestination('Missing actual file path.');
+  }
+
+  if (tokens.some((token) => token === 'purchase' || token === 'payment' || token === 'billing')) {
+    const target = firstPayloadValue(payload, ['merchant', 'payment_target', 'actual_payment_target']);
+    const amount = firstPayloadValue(payload, ['amount', 'amount_text', 'cap']);
+    if (target || amount) {
+      return stripUndefined({
+        kind: 'purchase' as const,
+        primary: target ?? amount ?? 'payment target',
+        secondary: amount,
+        actionable: true,
+      });
+    }
+    return missingApprovalDestination('Missing purchase or payment target.');
+  }
+
+  if (tokens.some((token) => token === 'secret' || token === 'credential')) {
+    const secretName = firstPayloadValue(payload, ['secret_name', 'secret_id']);
+    if (secretName) {
+      return {
+        kind: 'secret_name',
+        primary: secretName,
+        actionable: true,
+      };
+    }
+    return missingApprovalDestination('Missing secret name.');
+  }
+
+  if (tokens.some((token) => token === 'budget' || token === 'cap')) {
+    const cap = firstPayloadValue(payload, ['cap', 'budget_cap', 'amount']);
+    const scope = firstPayloadValue(payload, ['scope', 'budget_scope']);
+    if (cap || scope) {
+      return stripUndefined({
+        kind: 'budget' as const,
+        primary: cap ?? scope ?? 'budget change',
+        secondary: scope,
+        actionable: true,
+      });
+    }
+    return missingApprovalDestination('Missing budget scope.');
+  }
+
+  const permission = firstPayloadValue(payload, ['permission', 'permission_scope', 'scope']);
+  if (permission) {
+    return {
+      kind: 'permission',
+      primary: permission,
+      actionable: true,
+    };
+  }
+
+  return missingApprovalDestination('Missing actual destination details.');
+}
+
+function approvalDestinationProof(
+  preview: IEvaosApprovalDestinationPreview,
+  sourcePointer: string
+): IEvaosApprovalDestinationProof | undefined {
+  if (!preview.actionable || preview.kind === 'missing_destination') {
+    return undefined;
+  }
+
+  const fingerprint = stableApprovalFingerprint([
+    preview.kind,
+    fingerprintComponent(preview.primary, preview.kind),
+    fingerprintComponent(preview.secondary ?? '', preview.kind),
+  ]);
+  const summary = preview.secondary
+    ? `${preview.kind}: ${preview.primary} (${preview.secondary})`
+    : `${preview.kind}: ${preview.primary}`;
+
+  return {
+    kind: preview.kind,
+    fingerprint,
+    summary: summary.slice(0, 220),
+    source: 'aionui_preview',
+    sourcePointer,
+  };
+}
+
+function toBrokerApprovalDestinationProof(
+  proof: IEvaosApprovalDestinationProof | undefined
+): Record<string, unknown> | undefined {
+  if (!proof) {
+    return undefined;
+  }
+  return stripUndefined({
+    kind: proof.kind,
+    fingerprint: proof.fingerprint,
+    summary: proof.summary,
+    source: proof.source,
+    source_pointer: proof.sourcePointer,
+  });
+}
+
+function approvalNextAction(preview: IEvaosApprovalDestinationPreview, riskClass: IEvaosApprovalRiskClass): string {
+  if (!preview.actionable) {
+    return 'Approval request is missing actual destination details; deny or ask the runtime to resubmit.';
+  }
+  if (riskClass === 'critical') {
+    return 'Critical action. Verify the actual destination before deciding.';
+  }
+  if (riskClass === 'warning') {
+    return 'Review the actual destination before deciding.';
+  }
+  return 'Confirm the destination matches the intended action.';
+}
+
+function missingApprovalDestination(warning: string): IEvaosApprovalDestinationPreview {
+  return {
+    kind: 'missing_destination',
+    primary: 'Missing destination',
+    warning,
+    actionable: false,
+  };
+}
+
+function safeApprovalPayload(value: unknown): Record<string, string> {
+  const record = asRecord(value);
+  if (!record) {
+    return {};
+  }
+
+  const result: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(record)) {
+    const key = safeApprovalPayloadKey(rawKey);
+    if (!key || !APPROVAL_PAYLOAD_ALLOWLIST.has(key)) continue;
+    const valueText =
+      typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean'
+        ? safeApprovalPayloadText(String(rawValue), 500)
+        : undefined;
+    if (valueText) {
+      result[key] = valueText;
+    }
+  }
+  return result;
+}
+
+function safeApprovalPayloadKey(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 80 || !/^[a-z0-9_.-]+$/i.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function safeApprovalPayloadText(value: string, maxLength: number): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maxLength || SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function firstPayloadValue(payload: Record<string, string>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = payload[key];
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function safeApprovalRiskClass(value: unknown): IEvaosApprovalRiskClass | undefined {
+  const riskClass = safeText(value, 40);
+  return riskClass === 'critical' || riskClass === 'warning' || riskClass === 'info' ? riskClass : undefined;
+}
+
+function safeApprovalLimit(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 100 ? value : 50;
+}
+
+function normalizeApprovalId(value: string): string {
+  const text = safeText(value, 120);
+  if (!text) {
+    throw new EvaosBrokerSessionError('invalid_approval', 'Choose an approval request before deciding.');
+  }
+  return text;
+}
+
+function safeApprovalUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return undefined;
+    }
+    if (url.username || url.password || containsSecretMaterial(value)) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function isDeniedApprovalStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'denied' || normalized === 'rejected' || normalized === 'blocked';
+}
+
+function fingerprintComponent(value: string, kind: IEvaosApprovalPreviewKind): string {
+  if (kind === 'email_recipient') {
+    const parts = value.split('@');
+    return parts.length === 2 ? `${parts[0]}@${parts[1].toLowerCase()}` : value;
+  }
+  if (kind === 'url') {
+    try {
+      const url = new URL(value);
+      url.protocol = url.protocol.toLowerCase();
+      url.hostname = url.hostname.toLowerCase();
+      return url.toString();
+    } catch {
+      return value.toLowerCase();
+    }
+  }
+  return value;
+}
+
+function stableApprovalFingerprint(parts: string[]): string {
+  return `dest-${createHash('sha256').update(parts.join('|')).digest('hex')}`;
 }
 
 function assertPolicyScope(

@@ -6,6 +6,10 @@
 
 import { ipcBridge } from '@/common';
 import type {
+  IEvaosApprovalCenterRequest,
+  IEvaosApprovalCenterView,
+  IEvaosApprovalDecisionResult,
+  IEvaosApprovalDenyRequest,
   IEvaosPeopleAccessInviteMemberRequest,
   IEvaosPeopleAccessMutationResult,
   IEvaosPeopleAccessPolicyRequest,
@@ -34,6 +38,20 @@ export function initEvaosPeopleAccessBridge(
   ipcBridge.evaosPeopleAccess.inviteMember.provider(
     async (request: IEvaosPeopleAccessInviteMemberRequest): Promise<BridgeResponse<IEvaosPeopleAccessMutationResult>> =>
       toBridgeResponse(() => client.invitePeopleAccessMember(request))
+  );
+}
+
+export function initEvaosApprovalCenterBridge(
+  client: EvaosBrokerSessionClient = getDefaultEvaosBrokerSessionClient()
+): void {
+  ipcBridge.evaosApprovalCenter.getApprovals.provider(
+    async (request: IEvaosApprovalCenterRequest): Promise<BridgeResponse<IEvaosApprovalCenterView>> =>
+      toBridgeResponse(() => client.approvalCenter(request))
+  );
+
+  ipcBridge.evaosApprovalCenter.denyApproval.provider(
+    async (request: IEvaosApprovalDenyRequest): Promise<BridgeResponse<IEvaosApprovalDecisionResult>> =>
+      toBridgeResponse(() => client.denyApproval(request))
   );
 }
 

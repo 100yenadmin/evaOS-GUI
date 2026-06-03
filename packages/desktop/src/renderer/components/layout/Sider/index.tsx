@@ -9,7 +9,14 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
-import { SiderToolbar, SiderSearchEntry, SiderScheduledEntry, SiderPeopleAccessEntry } from './SiderNav';
+import { EVAOS_APPROVAL_CENTER_ENABLED } from '@/common/config/constants';
+import {
+  SiderApprovalCenterEntry,
+  SiderPeopleAccessEntry,
+  SiderScheduledEntry,
+  SiderSearchEntry,
+  SiderToolbar,
+} from './SiderNav';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
 import TeamSiderSection from './TeamSiderSection';
@@ -111,6 +118,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
+  const handleApprovalCenterClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/approval-center')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -198,6 +218,15 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               siderTooltipProps={siderTooltipProps}
               onClick={handlePeopleAccessClick}
             />
+            {EVAOS_APPROVAL_CENTER_ENABLED ? (
+              <SiderApprovalCenterEntry
+                isMobile={isMobile}
+                isActive={pathname === '/approval-center'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleApprovalCenterClick}
+              />
+            ) : null}
             {/* Scheduled tasks nav entry - fixed above scroll */}
             <SiderScheduledEntry
               isMobile={isMobile}

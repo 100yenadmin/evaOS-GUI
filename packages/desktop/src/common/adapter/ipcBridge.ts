@@ -513,6 +513,104 @@ export interface IEvaosPeopleAccessMutationResult {
   backendEnforced: boolean;
 }
 
+export type IEvaosApprovalDecision = 'allow-once' | 'allow-always' | 'deny';
+export type IEvaosApprovalScope = 'this-call' | 'this-agent';
+export type IEvaosApprovalRiskClass = 'critical' | 'warning' | 'info';
+export type IEvaosApprovalPreviewKind =
+  | 'email_recipient'
+  | 'message_recipient'
+  | 'url'
+  | 'file_path'
+  | 'purchase'
+  | 'secret_name'
+  | 'budget'
+  | 'permission'
+  | 'missing_destination';
+
+export interface IEvaosApprovalDestinationPreview {
+  kind: IEvaosApprovalPreviewKind;
+  primary: string;
+  secondary?: string;
+  bodyExcerpt?: string;
+  warning?: string;
+  actionable: boolean;
+}
+
+export interface IEvaosApprovalDestinationProof {
+  kind: IEvaosApprovalPreviewKind;
+  fingerprint: string;
+  summary: string;
+  source: string;
+  sourcePointer?: string;
+}
+
+export interface IEvaosApprovalRuntimeResult {
+  status: string;
+  runtime?: string;
+  sourcePointer?: string;
+  auditId?: string;
+}
+
+export interface IEvaosApprovalRequestView {
+  approvalId: string;
+  ownerId?: string;
+  agentId: string;
+  requesterMembershipId?: string;
+  toolName: string;
+  riskClass: IEvaosApprovalRiskClass;
+  destinationPreview: IEvaosApprovalDestinationPreview;
+  destinationProof?: IEvaosApprovalDestinationProof;
+  allowAlwaysSupported: boolean;
+  availableDecisions: IEvaosApprovalDecision[];
+  canAllowOnce: boolean;
+  canAllowAlways: boolean;
+  canDeny: boolean;
+  createdAt: string;
+  expiresAt?: string;
+  sourcePointer: string;
+  auditId?: string;
+  nextAction: string;
+}
+
+export interface IEvaosApprovalCenterRequest {
+  customerId: string;
+  limit?: number;
+}
+
+export interface IEvaosApprovalCenterView {
+  schemaVersion: 'evaos.approval_center.v1';
+  customerId: string;
+  customerAccountId?: string;
+  membershipId?: string;
+  membershipRole?: IEvaosAccountPolicyRole;
+  routeDenied: boolean;
+  routeDenialReason?: string;
+  backendEnforced: boolean;
+  requests: IEvaosApprovalRequestView[];
+  summaryText: string;
+  sourcePointer?: string;
+  auditId?: string;
+  policyAuditId?: string;
+}
+
+export interface IEvaosApprovalDenyRequest {
+  customerId: string;
+  approvalId: string;
+  reason?: string;
+}
+
+export interface IEvaosApprovalDecisionResult {
+  status: string;
+  decision: IEvaosApprovalDecision;
+  scope: IEvaosApprovalScope;
+  approvalId: string;
+  request?: IEvaosApprovalRequestView;
+  runtimeResult?: IEvaosApprovalRuntimeResult;
+  sourcePointer?: string;
+  auditId?: string;
+  backendEnforced: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Application — stays IPC (Electron-native)
 // ---------------------------------------------------------------------------
@@ -1277,6 +1375,15 @@ export const evaosPeopleAccess = {
     IBridgeResponse<IEvaosPeopleAccessMutationResult>,
     IEvaosPeopleAccessInviteMemberRequest
   >('evaos.people-access.invite-member'),
+};
+
+export const evaosApprovalCenter = {
+  getApprovals: bridge.buildProvider<IBridgeResponse<IEvaosApprovalCenterView>, IEvaosApprovalCenterRequest>(
+    'evaos.approval-center.approvals'
+  ),
+  denyApproval: bridge.buildProvider<IBridgeResponse<IEvaosApprovalDecisionResult>, IEvaosApprovalDenyRequest>(
+    'evaos.approval-center.deny'
+  ),
 };
 
 // ---------------------------------------------------------------------------
