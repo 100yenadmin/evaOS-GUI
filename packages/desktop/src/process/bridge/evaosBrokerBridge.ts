@@ -16,6 +16,9 @@ import {
   getDefaultEvaosBrokerSessionClient,
   type EvaosBrokerSessionClient,
 } from '@process/services/evaosBrokerSession';
+import { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
+
+export { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
 
 interface BridgeResponse<D = {}> {
   success: boolean;
@@ -30,10 +33,7 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
   );
 
   ipcBridge.evaosBroker.getSessionStatus.provider(
-    async (): Promise<BridgeResponse<IEvaosBrokerSessionStatus>> => ({
-      success: true,
-      data: client.getSessionStatus(),
-    })
+    async (): Promise<BridgeResponse<IEvaosBrokerSessionStatus>> => toBridgeResponse(() => client.getSessionStatus())
   );
 
   ipcBridge.evaosBroker.runtimeStatus.provider(
@@ -46,11 +46,13 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
   );
 }
 
-async function toBridgeResponse<D>(operation: () => Promise<D>): Promise<BridgeResponse<D>> {
+async function toBridgeResponse<D>(operation: () => D | Promise<D>): Promise<BridgeResponse<D>> {
   try {
+    const data = await operation();
+    assertEvaosRendererSafePayload(data);
     return {
       success: true,
-      data: await operation(),
+      data,
     };
   } catch (error) {
     return {

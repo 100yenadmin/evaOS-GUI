@@ -759,6 +759,10 @@ export function evaosBrokerErrorMessage(error: unknown): string {
   return 'The evaOS broker request failed safely.';
 }
 
+export function containsEvaosSecretMaterial(value: string): boolean {
+  return containsSecretMaterial(value);
+}
+
 export function isEvaosBrokerSessionError(error: unknown): error is EvaosBrokerSessionError {
   return error instanceof EvaosBrokerSessionError;
 }

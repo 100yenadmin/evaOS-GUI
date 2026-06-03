@@ -34,6 +34,7 @@ import {
   getDefaultEvaosBrokerSessionClient,
   type EvaosBrokerSessionClient,
 } from '@process/services/evaosBrokerSession';
+import { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
 
 interface BridgeResponse<D = {}> {
   success: boolean;
@@ -143,9 +144,11 @@ export function initEvaosCompanyBrainBridge(
 
 async function toBridgeResponse<D>(operation: () => Promise<D>): Promise<BridgeResponse<D>> {
   try {
+    const data = await operation();
+    assertEvaosRendererSafePayload(data);
     return {
       success: true,
-      data: await operation(),
+      data,
     };
   } catch (error) {
     return {
