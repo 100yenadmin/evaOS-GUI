@@ -26,6 +26,24 @@
 - [ ] I have performed a self-review of my own code
 - [ ] My changes generate no new warnings or errors
 
+## Agent Handoff
+
+- Source repos:
+- Systems touched:
+- Modules/files:
+- Contracts:
+- Dependencies:
+- Non-goals:
+- Mutation boundary:
+- Proof path:
+- Rollback:
+- Confidence gate:
+  - [ ] Primitive canary
+  - [ ] Scenario canary
+  - [ ] Negative-path proof
+  - [ ] Adversarial replay
+  - [ ] Takeover packet
+
 ## Screenshots
 
 <!-- If applicable, add screenshots to help explain your changes. -->

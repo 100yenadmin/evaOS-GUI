@@ -1,0 +1,125 @@
+name: evaOS Agent Handoff
+description: Create a public-beta sprint issue that another agent can safely take over.
+title: '[evaOS]: '
+labels: ['evaos', 'public-beta', 'ready-for-agent']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for evaOS AionUi public-beta sprint work. Keep the scope narrow enough that one agent can build, test, review, and hand off the slice.
+
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      description: Current owner, agent thread, or team responsible for the next action.
+      placeholder: agent/thread, GitHub handle, or team
+    validations:
+      required: true
+
+  - type: textarea
+    id: source_repos
+    attributes:
+      label: Source repos
+      description: List canonical repos, upstream repos, and dependency issue links.
+      placeholder: |
+        - 100yenadmin/AionUi
+        - evaos-desktop-bridge issue/PR links
+        - dashboard/backend issue/PR links
+    validations:
+      required: true
+
+  - type: textarea
+    id: systems_touched
+    attributes:
+      label: Systems touched
+      description: Name product systems and ownership boundaries touched by this issue.
+      placeholder: 'Broker session, People Access, Provider Hub, Company Brain, Business Browser, native companion'
+    validations:
+      required: true
+
+  - type: textarea
+    id: modules_files
+    attributes:
+      label: Modules and files
+      description: Expected modules, files, scripts, tests, docs, or workflows.
+      placeholder: |
+        - packages/desktop/src/process/...
+        - packages/desktop/src/renderer/pages/...
+        - scripts/...
+        - tests/unit/evaos/...
+    validations:
+      required: true
+
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Contracts
+      description: API, IPC, permission, runtime, audit, or release contracts this issue must preserve.
+      placeholder: 'Renderer receives metadata only; broker owns secrets; backend denial is authoritative.'
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Required upstream branches, PRs, secrets, CI jobs, fixtures, or account roles.
+      placeholder: 'Depends on #4 broker session handoff and #8 People Access account policy.'
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Explicitly state what this issue must not expand into.
+      placeholder: 'No provider secret storage in renderer. No production Forgejo deployment. No upstream release publish.'
+    validations:
+      required: true
+
+  - type: textarea
+    id: mutation_boundary
+    attributes:
+      label: Mutation boundary
+      description: State which code, data, accounts, or runtime state the agent may change.
+      placeholder: 'May edit AionUi shell files and tests. Must not mutate live customer provider grants.'
+    validations:
+      required: true
+
+  - type: input
+    id: proof_path
+    attributes:
+      label: Proof path
+      description: Absolute local artifact packet path under /Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/.
+      placeholder: /Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/<issue-id>/
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback
+      description: How to back out this issue without breaking the released macOS app fallback.
+      placeholder: 'Revert PR branch; beta remains gated; released macOS app keeps current bundle/update path.'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confidence_gate
+    attributes:
+      label: Confidence gate
+      description: Do not mark this issue beta-ready until every checked item has proof links.
+      options:
+        - label: Two read-only research passes exist.
+          required: true
+        - label: Primitive canary passes.
+          required: true
+        - label: Scenario canary passes with visual or log proof.
+          required: true
+        - label: Negative path fails closed.
+          required: true
+        - label: Adversarial replay has no unresolved Sev-1 or Sev-2 findings.
+          required: true
+        - label: Takeover packet has decision.md, proof.md, negative-proof.md, takeover.md, and artifacts/.
+          required: true
