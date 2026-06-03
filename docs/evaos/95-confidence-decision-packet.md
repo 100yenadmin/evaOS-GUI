@@ -122,6 +122,7 @@ Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
 5. People Access And Approval Live Fixture
    - Use requester, approver, denied member, and revoked member fixtures.
    - Required proof: route denial, action denial, backend denial, deny audit id, and requester-cannot-approve evidence.
+   - Canary command: `node scripts/evaosPeopleApprovalLiveCanary.js` with `AIONUI_EVAOS_APPROVAL_DENY_ACK=evaos-deny-test`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_APPROVAL_ID`, `AIONUI_EVAOS_REQUESTER_SESSION`, and `AIONUI_EVAOS_APPROVER_SESSION`; optional `AIONUI_EVAOS_DENIED_SESSION` proves a denied member cannot list approvals.
 
 6. Provider Hub Live Fixture
    - Exercise connected, needs-auth, expired, revoked, and approval-required provider states.
