@@ -472,7 +472,20 @@ jobs:
           }
 
           Write-Host "Using installer: $($installer.FullName)"
-          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait -NoNewWindow
+          $installerProcess = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru -NoNewWindow
+          if (-not $installerProcess.WaitForExit(180000)) {
+            Write-Host "Installer did not exit within 180 seconds. Recent installer-related processes:"
+            Get-Process -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProcessName -match 'EvaOSWorkbenchBeta|AionUi|electron|nsis' } |
+              Select-Object Id, ProcessName, StartTime, Path |
+              Format-Table -AutoSize
+            Stop-Process -Id $installerProcess.Id -Force -ErrorAction SilentlyContinue
+            throw "Silent installer did not exit within 180 seconds"
+          }
+
+          if ($installerProcess.ExitCode -ne 0) {
+            throw "Silent installer exited with code $($installerProcess.ExitCode)"
+          }
 
           $candidates = @(
             "$env:LOCALAPPDATA\\Programs\\evaOS Workbench Beta\\EvaOSWorkbenchBeta.exe",
