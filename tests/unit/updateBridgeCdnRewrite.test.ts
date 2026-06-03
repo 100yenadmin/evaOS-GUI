@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@office-ai/platform', () => ({
   bridge: {
@@ -116,6 +116,11 @@ const getCheckHandler = async () => {
 describe('updateBridge CDN URL rewriting', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.AIONUI_EVAOS_BETA = '0';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
   });
 
   it('rewrites asset.url to the CDN path and keeps GitHub URL in fallbackUrl', async () => {
@@ -167,6 +172,14 @@ describe('updateBridge CDN URL rewriting', () => {
 });
 
 describe('updateBridge allowlist includes CDN host', () => {
+  beforeEach(() => {
+    process.env.AIONUI_EVAOS_BETA = '0';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
+  });
+
   it('accepts static.aionui.com URLs for download', async () => {
     vi.resetModules();
     vi.clearAllMocks();
