@@ -334,7 +334,7 @@ function createReleaseManifest(outputDir, tag, env = process.env) {
     tag,
     developmentTag: isDevBetaTag(tag),
     repository: env.GITHUB_REPOSITORY || '',
-    releaseWorkflow: env.GITHUB_WORKFLOW || '',
+    releaseWorkflow: env.EVAOS_BETA_RELEASE_WORKFLOW || env.GITHUB_WORKFLOW || '',
     releaseRunId: env.GITHUB_RUN_ID || '',
     releaseRunAttempt: env.GITHUB_RUN_ATTEMPT || '',
     releaseCommit: env.EVAOS_BETA_RELEASE_COMMIT || env.GITHUB_SHA || '',

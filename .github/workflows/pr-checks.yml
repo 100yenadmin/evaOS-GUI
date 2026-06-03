@@ -619,6 +619,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: 100yenadmin/AionUi
           GITHUB_WORKFLOW: Build and Release
+          EVAOS_BETA_RELEASE_WORKFLOW: Build and Release
           GITHUB_RUN_ID: '12345'
           GITHUB_RUN_ATTEMPT: '1'
           EVAOS_BETA_RELEASE_COMMIT: mock-sha

@@ -85,7 +85,8 @@ describe('evaOS beta release gate', () => {
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
         GITHUB_REPOSITORY: '100yenadmin/AionUi',
-        GITHUB_WORKFLOW: 'Build and Release',
+        GITHUB_WORKFLOW: 'PR Checks',
+        EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
         GITHUB_RUN_ATTEMPT: '1',
         EVAOS_BETA_RELEASE_COMMIT: 'abc123',
