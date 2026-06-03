@@ -102,14 +102,8 @@ export function initSentry(): void {
     return;
   }
 
-  const sentryDsn = process.env.SENTRY_DSN;
-  if (!sentryDsn) {
-    console.info('[sentry] SENTRY_DSN not set, skipping initialization');
-    return;
-  }
-
   Sentry.init({
-    dsn: sentryDsn,
+    dsn: process.env.SENTRY_DSN!,
     environment: app.isPackaged ? 'production' : 'development',
     beforeSend(event) {
       const haystacks = collectEventSearchText(event);

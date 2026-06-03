@@ -186,13 +186,22 @@ jobs:
           COMMIT_SHORT=$(git rev-parse --short HEAD)
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
 
+          make_beta_tag() {
+            local version="$1"
+            local suffix="${2:-}"
+            if [[ "$version" != *evaos-beta* ]]; then
+              version="${version}-evaos-beta"
+            fi
+            echo "evaos-beta-v${version}${suffix}"
+          }
+
           # 根据分支确定 tag 格式
-          if [ "$BRANCH_NAME" = "dev" ]; then
-            TAG_NAME="v${VERSION}-dev-${COMMIT_SHORT}"
+          if [ "$BRANCH_NAME" = "dev" ] || [ "$BRANCH_NAME" = "evaos/dev" ]; then
+            TAG_NAME="$(make_beta_tag "$VERSION" "-dev-${COMMIT_SHORT}")"
             IS_DEV="true"
             echo "🔧 Development release: $TAG_NAME"
           else
-            TAG_NAME="v$VERSION"
+            TAG_NAME="$(make_beta_tag "$VERSION")"
             IS_DEV="false"
             echo "🚀 Production release: $TAG_NAME"
           fi
@@ -230,12 +239,12 @@ jobs:
 
                 # 获取新的 commit ID
                 COMMIT_SHORT=$(git rev-parse --short HEAD)
-                TAG_NAME="v${NEW_VERSION}-${COMMIT_SHORT}"
+                TAG_NAME="$(make_beta_tag "$NEW_VERSION" "-${COMMIT_SHORT}")"
 
                 echo "🚀 New tag with updated version: $TAG_NAME"
                 echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
               else
-                TAG_NAME="v${VERSION}-${COMMIT_SHORT}"
+                TAG_NAME="$(make_beta_tag "$VERSION" "-${COMMIT_SHORT}")"
                 echo "⚠️ Fallback: creating tag with commit ID: $TAG_NAME"
                 echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
               fi
