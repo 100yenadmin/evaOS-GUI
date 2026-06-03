@@ -1,4 +1,5 @@
 export { default as SiderApprovalCenterEntry } from './SiderApprovalCenterEntry';
+export { default as SiderBusinessBrowserEntry } from './SiderBusinessBrowserEntry';
 export { default as SiderConnectedAppsEntry } from './SiderConnectedAppsEntry';
 export { default as SiderPeopleAccessEntry } from './SiderPeopleAccessEntry';
 export { default as SiderScheduledEntry } from './SiderScheduledEntry';

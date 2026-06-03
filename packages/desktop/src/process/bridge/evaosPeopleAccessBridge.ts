@@ -10,6 +10,10 @@ import type {
   IEvaosApprovalCenterView,
   IEvaosApprovalDecisionResult,
   IEvaosApprovalDenyRequest,
+  IEvaosBusinessBrowserActionResult,
+  IEvaosBusinessBrowserOpenUrlRequest,
+  IEvaosBusinessBrowserRequest,
+  IEvaosBusinessBrowserView,
   IEvaosProviderActionRequest,
   IEvaosProviderActionResult,
   IEvaosProviderHubRequest,
@@ -85,6 +89,30 @@ export function initEvaosProviderHubBridge(
   ipcBridge.evaosProviderHub.mintGrant.provider(
     async (request: IEvaosProviderActionRequest): Promise<BridgeResponse<IEvaosProviderActionResult>> =>
       toBridgeResponse(() => client.mintProviderGrant(request))
+  );
+}
+
+export function initEvaosBusinessBrowserBridge(
+  client: EvaosBrokerSessionClient = getDefaultEvaosBrokerSessionClient()
+): void {
+  ipcBridge.evaosBusinessBrowser.getStatus.provider(
+    async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserView>> =>
+      toBridgeResponse(() => client.businessBrowserStatus(request))
+  );
+
+  ipcBridge.evaosBusinessBrowser.launch.provider(
+    async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
+      toBridgeResponse(() => client.launchBusinessBrowser(request))
+  );
+
+  ipcBridge.evaosBusinessBrowser.openUrl.provider(
+    async (request: IEvaosBusinessBrowserOpenUrlRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
+      toBridgeResponse(() => client.openBusinessBrowserUrl(request))
+  );
+
+  ipcBridge.evaosBusinessBrowser.stop.provider(
+    async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
+      toBridgeResponse(() => client.stopBusinessBrowser(request))
   );
 }
 

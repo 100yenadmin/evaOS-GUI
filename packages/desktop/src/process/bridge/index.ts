@@ -14,6 +14,7 @@ import { initWebuiBridge } from './webuiBridge';
 import { initEvaosBrokerBridge } from './evaosBrokerBridge';
 import {
   initEvaosApprovalCenterBridge,
+  initEvaosBusinessBrowserBridge,
   initEvaosPeopleAccessBridge,
   initEvaosProviderHubBridge,
 } from './evaosPeopleAccessBridge';
@@ -32,6 +33,7 @@ export function initAllBridges(_deps: BridgeDependencies = {}): void {
   initEvaosPeopleAccessBridge();
   initEvaosApprovalCenterBridge();
   initEvaosProviderHubBridge();
+  initEvaosBusinessBrowserBridge();
 }
 
 export {
@@ -39,6 +41,7 @@ export {
   initDialogBridge,
   initEvaosApprovalCenterBridge,
   initEvaosBrokerBridge,
+  initEvaosBusinessBrowserBridge,
   initEvaosPeopleAccessBridge,
   initEvaosProviderHubBridge,
   initNotificationBridge,

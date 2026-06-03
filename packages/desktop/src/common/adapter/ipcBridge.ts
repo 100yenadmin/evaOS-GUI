@@ -426,6 +426,53 @@ export interface IEvaosRuntimeStatusView {
   auditId?: string;
 }
 
+export interface IEvaosBusinessBrowserRequest {
+  customerId: string;
+}
+
+export interface IEvaosBusinessBrowserOpenUrlRequest {
+  customerId: string;
+  url: string;
+}
+
+export interface IEvaosBusinessBrowserView {
+  schemaVersion: 'evaos.browser_status.v1';
+  customerId: string;
+  customerAccountId?: string;
+  membershipId?: string;
+  membershipRole?: IEvaosAccountPolicyRole;
+  routeDenied: boolean;
+  routeDenialReason?: string;
+  backendEnforced: boolean;
+  displayLabel: string;
+  status: string;
+  healthSummary?: string;
+  currentUrlSummary?: IEvaosSafeUrlSummary;
+  authNeeded: boolean;
+  captchaNeeded: boolean;
+  waitingOnUser: boolean;
+  controlSessionActive: boolean;
+  canLaunch: boolean;
+  canOpenUrl: boolean;
+  canStop: boolean;
+  lastCheckedAt?: string;
+  lastActivityAt?: string;
+  actions: string[];
+  sourcePointer?: string;
+  auditId?: string;
+  policyAuditId?: string;
+}
+
+export interface IEvaosBusinessBrowserActionResult {
+  status: string;
+  message?: string;
+  browser?: IEvaosBusinessBrowserView;
+  urlSummary?: IEvaosSafeUrlSummary;
+  sourcePointer?: string;
+  auditId?: string;
+  backendEnforced: boolean;
+}
+
 export type IEvaosAccountPolicyRole =
   | 'owner'
   | 'admin'
@@ -1486,6 +1533,22 @@ export const evaosProviderHub = {
   ),
   mintGrant: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
     'evaos.provider-hub.mint-grant'
+  ),
+};
+
+export const evaosBusinessBrowser = {
+  getStatus: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserView>, IEvaosBusinessBrowserRequest>(
+    'evaos.business-browser.status'
+  ),
+  launch: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
+    'evaos.business-browser.launch'
+  ),
+  openUrl: bridge.buildProvider<
+    IBridgeResponse<IEvaosBusinessBrowserActionResult>,
+    IEvaosBusinessBrowserOpenUrlRequest
+  >('evaos.business-browser.open-url'),
+  stop: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
+    'evaos.business-browser.stop'
   ),
 };
 

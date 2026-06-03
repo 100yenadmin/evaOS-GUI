@@ -9,9 +9,14 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
-import { EVAOS_APPROVAL_CENTER_ENABLED, EVAOS_PROVIDER_HUB_ENABLED } from '@/common/config/constants';
+import {
+  EVAOS_APPROVAL_CENTER_ENABLED,
+  EVAOS_BUSINESS_BROWSER_ENABLED,
+  EVAOS_PROVIDER_HUB_ENABLED,
+} from '@/common/config/constants';
 import {
   SiderApprovalCenterEntry,
+  SiderBusinessBrowserEntry,
   SiderConnectedAppsEntry,
   SiderPeopleAccessEntry,
   SiderScheduledEntry,
@@ -145,6 +150,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
+  const handleBusinessBrowserClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/business-browser')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -239,6 +257,15 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                 collapsed={collapsed}
                 siderTooltipProps={siderTooltipProps}
                 onClick={handleConnectedAppsClick}
+              />
+            ) : null}
+            {EVAOS_BUSINESS_BROWSER_ENABLED ? (
+              <SiderBusinessBrowserEntry
+                isMobile={isMobile}
+                isActive={pathname === '/business-browser'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleBusinessBrowserClick}
               />
             ) : null}
             {EVAOS_APPROVAL_CENTER_ENABLED ? (
