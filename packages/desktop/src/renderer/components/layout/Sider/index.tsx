@@ -20,6 +20,7 @@ import {
   SiderBusinessBrowserEntry,
   SiderCompanyBrainEntry,
   SiderConnectedAppsEntry,
+  SiderMissionControlEntry,
   SiderPeopleAccessEntry,
   SiderScheduledEntry,
   SiderSearchEntry,
@@ -52,7 +53,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { jobs: cronJobs } = useAllCronJobs();
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
-  const lastNonSettingsPathRef = useRef('/guid');
+  const lastNonSettingsPathRef = useRef('/mission-control');
   const showLogout =
     typeof window !== 'undefined' && !(window as { electronAPI?: unknown }).electronAPI && status === 'authenticated';
 
@@ -106,6 +107,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     closePreview();
     setIsBatchMode(false);
     Promise.resolve(navigate('/scheduled')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleMissionControlClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/mission-control')).catch((error) => {
       console.error('Navigation failed:', error);
     });
     if (onSessionClick) {
@@ -257,6 +271,13 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               siderTooltipProps={siderTooltipProps}
               onConversationSelect={handleConversationSelect}
               onSessionClick={onSessionClick}
+            />
+            <SiderMissionControlEntry
+              isMobile={isMobile}
+              isActive={pathname === '/mission-control'}
+              collapsed={collapsed}
+              siderTooltipProps={siderTooltipProps}
+              onClick={handleMissionControlClick}
             />
             <SiderPeopleAccessEntry
               isMobile={isMobile}
