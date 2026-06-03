@@ -127,6 +127,7 @@ Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
 6. Provider Hub Live Fixture
    - Exercise connected, needs-auth, expired, revoked, and approval-required provider states.
    - Required proof: no raw provider secrets in renderer, logs, URLs, screenshots, or generic IPC.
+   - Canary command: `node scripts/evaosProviderHubLiveCanary.js` with `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, and optional `AIONUI_EVAOS_PROVIDER_REQUIRED_STATES=connected,needs_login,expired,revoked,approval_required`.
 
 7. Company Brain Live Boundary
    - Exercise org-scoped directory, account 360, query, empty, ingesting, error, and cross-org denial.
