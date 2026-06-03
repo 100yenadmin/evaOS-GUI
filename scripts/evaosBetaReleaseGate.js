@@ -204,6 +204,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const buildRelease = readText(rootDir, '.github/workflows/build-and-release.yml');
   const prChecks = readText(rootDir, '.github/workflows/pr-checks.yml');
   const distribute = readText(rootDir, '.github/workflows/release-distribute.yml');
+  const rcCanary = readText(rootDir, '.github/workflows/evaos-beta-rc-canary.yml');
   const reusableBuild = readText(rootDir, '.github/workflows/_build-reusable.yml');
   const afterSign = readText(rootDir, 'scripts/afterSign.js');
   const prepareAssets = readText(rootDir, 'scripts/prepare-release-assets.sh');
@@ -311,6 +312,27 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(distribute, 'EVAOS_BETA_TRUSTED_MANIFEST_PATH', '.github/workflows/release-distribute.yml', issues);
   requireText(distribute, 'scripts/verify-release-assets.sh dist', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, 'rc_proof_run_id', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, 'evaOS Beta RC Canary', '.github/workflows/release-distribute.yml', issues);
+  requireText(
+    distribute,
+    'scripts/evaosBetaReleaseGate.js verify-rc-proof',
+    '.github/workflows/release-distribute.yml',
+    issues
+  );
+
+  requireText(rcCanary, 'name: evaOS Beta RC Canary', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(rcCanary, 'workflow_dispatch:', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(rcCanary, 'evaos-beta-rc', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(rcCanary, 'fallback_release_repo', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(rcCanary, 'broker_session_proof_ref', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(
+    rcCanary,
+    'scripts/evaosBetaReleaseGate.js verify-rc-proof',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues
+  );
+  requireText(rcCanary, 'actions/upload-artifact', '.github/workflows/evaos-beta-rc-canary.yml', issues);
 
   requireText(reusableBuild, 'assert-public-release-env', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'EVAOS_BETA_REQUIRE_SIGNING', '.github/workflows/_build-reusable.yml', issues);

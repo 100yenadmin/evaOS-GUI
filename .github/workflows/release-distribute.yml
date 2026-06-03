@@ -22,6 +22,10 @@ on:
         description: 'Existing evaOS beta release tag to distribute (must start with evaos-beta-)'
         required: true
         type: string
+      rc_proof_run_id:
+        description: 'Successful evaOS Beta RC Canary workflow run id for the same tag.'
+        required: true
+        type: string
 
 permissions:
   id-token: write # required for OIDC token
@@ -205,6 +209,50 @@ jobs:
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
         run: node scripts/evaosBetaReleaseGate.js verify-manifest dist "${{ steps.version.outputs.tag }}"
+
+      - name: Validate release candidate proof
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC_PROOF_RUN_ID: ${{ github.event.inputs.rc_proof_run_id }}
+          TAG: ${{ steps.version.outputs.tag }}
+          EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RC_PROOF_RUN_ID" ]; then
+            echo "::error::rc_proof_run_id is required before public beta distribution."
+            exit 1
+          fi
+
+          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName)
+          node - "$RUN_JSON" <<'NODE'
+          const run = JSON.parse(process.argv[2]);
+          if (run.conclusion !== 'success') {
+            throw new Error(`RC proof run did not succeed: ${run.conclusion}`);
+          }
+          if (run.workflowName !== 'evaOS Beta RC Canary') {
+            throw new Error(`RC proof run used unexpected workflow: ${run.workflowName}`);
+          }
+          if (run.event !== 'workflow_dispatch') {
+            throw new Error(`RC proof run was not manually dispatched: ${run.event}`);
+          }
+          NODE
+
+          rm -rf rc-proof-download rc-proof
+          mkdir -p rc-proof-download
+          gh run download "$RC_PROOF_RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "evaos-beta-rc-proof-${TAG}" \
+            --dir rc-proof-download
+          PROOF_MANIFEST=$(find rc-proof-download -type f -name evaos-beta-rc-proof.json | head -n 1)
+          if [ -z "$PROOF_MANIFEST" ]; then
+            echo "::error::RC proof artifact did not contain evaos-beta-rc-proof.json."
+            exit 1
+          fi
+          PROOF_ROOT=$(dirname "$PROOF_MANIFEST")
+          mkdir -p rc-proof
+          cp -R "$PROOF_ROOT"/. rc-proof/
+
+          node scripts/evaosBetaReleaseGate.js verify-rc-proof rc-proof "$TAG"
 
       - name: Upload assets
         env:

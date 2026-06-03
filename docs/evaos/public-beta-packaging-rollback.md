@@ -23,8 +23,9 @@ The beta release path is manual-only:
 3. Enable `EVAOS_BETA_RELEASE_PUBLISH_ENABLED=true` only after the #13 decision packet says `ship public beta`.
 4. Set `EVAOS_BETA_RELEASE_BRANCH` to the audited release branch before enabling public beta tag creation.
 5. Distribute assets only with `Distribute evaOS Beta Release Assets`, `beta_distribution_ack=evaos-beta`, and a tag that starts with `evaos-beta-`.
-6. Do not distribute `-dev-` beta tags. Public distribution requires a non-dev `evaos-beta-` tag that is reachable from `EVAOS_BETA_RELEASE_BRANCH`.
-7. Distribution must validate `evaos-beta-release-manifest.json`, matching asset checksums, the tag commit, and the successful `Build and Release` workflow run before S3 upload.
+6. Run `evaOS Beta RC Canary` for the same non-dev tag and keep the successful workflow run id.
+7. Do not distribute `-dev-` beta tags. Public distribution requires a non-dev `evaos-beta-` tag that is reachable from `EVAOS_BETA_RELEASE_BRANCH`.
+8. Distribution must validate `evaos-beta-release-manifest.json`, matching asset checksums, the tag commit, the successful `Build and Release` workflow run, and the successful `evaOS Beta RC Canary` proof run before S3 upload.
 
 The release config audit runs in PR checks and in the manual release workflow:
 
@@ -81,6 +82,16 @@ node scripts/evaosBetaReleaseGate.js verify-rc-proof \
   /Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/rc-proof/<tag> \
   <tag>
 ```
+
+GitHub RC canary workflow:
+
+1. Dispatch `evaOS Beta RC Canary`.
+2. Set `beta_rc_ack=evaos-beta-rc`.
+3. Set `tag` to the existing non-dev `evaos-beta-*` release tag.
+4. Set `fallback_release_repo`, `fallback_release_tag`, `fallback_asset_pattern`, and `fallback_app_name` to the currently released macOS fallback app.
+5. Set `broker_session_proof_ref` to a non-secret issue, packet, or canary reference proving broker login/session state for the fallback.
+6. Download the uploaded artifact named `evaos-beta-rc-proof-<tag>`.
+7. Pass the successful canary workflow run id to `Distribute evaOS Beta Release Assets` as `rc_proof_run_id`.
 
 The proof packet must include:
 
