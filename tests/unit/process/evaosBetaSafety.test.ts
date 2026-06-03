@@ -41,6 +41,20 @@ describe('evaosBetaSafety', () => {
     expect(shouldAllowRemoteWebUI(env)).toBe(false);
   });
 
+  it('defaults to public beta fail-closed behavior when the beta env is omitted', () => {
+    const env = {
+      SENTRY_DSN: 'https://example@sentry.invalid/1',
+    };
+
+    expect(isEvaosBetaBuild(env)).toBe(true);
+    expect(getEvaosBetaUpdateRepo(env)).toBeUndefined();
+    expect(shouldDisableAutoUpdate(env)).toBe(true);
+    expect(shouldDisableSentry(env)).toBe(true);
+    expect(shouldAttachSentryDeviceId(env)).toBe(false);
+    expect(shouldSendStartupLogReport(env)).toBe(false);
+    expect(shouldAllowRemoteWebUI(env)).toBe(false);
+  });
+
   it('requires a beta-owned repo before beta auto-update can be enabled', () => {
     expect(
       shouldDisableAutoUpdate({

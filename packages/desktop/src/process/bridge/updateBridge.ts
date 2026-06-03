@@ -98,7 +98,7 @@ const rewriteAssetUrlToCDN = (assetName: string, version: string): string => {
 
 const mapAsset = (asset: GitHubReleaseApiAsset, version: string): GitHubReleaseAsset => ({
   name: asset.name,
-  url: rewriteAssetUrlToCDN(asset.name, version),
+  url: isEvaosBetaBuild() ? asset.browser_download_url : rewriteAssetUrlToCDN(asset.name, version),
   fallbackUrl: asset.browser_download_url,
   size: asset.size,
   contentType: asset.content_type,

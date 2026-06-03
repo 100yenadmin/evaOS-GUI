@@ -6,6 +6,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import UnoCSS from 'unocss/vite';
 import unoConfig from '../../uno.config.ts';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import { shouldDisableSentry } from './src/process/evaosBetaSafety';
 
 // Read the real AionUi version from the repo-root package.json.
 // `packages/desktop/package.json` is a workspace-internal placeholder pinned
@@ -14,19 +15,8 @@ const rootPackageJson = JSON.parse(readFileSync(resolve(__dirname, '../../packag
   version: string;
 };
 
-const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
-
-function isTruthyEnv(value: string | undefined): boolean {
-  return TRUE_ENV_VALUES.has((value ?? '').trim().toLowerCase());
-}
-
-function isEvaosBetaBuild(): boolean {
-  return process.env.AIONUI_EVAOS_BETA === undefined || isTruthyEnv(process.env.AIONUI_EVAOS_BETA);
-}
-
 function getSafeSentryEnv(): { dsn: string; authToken: string; org: string | undefined; project: string | undefined } {
-  const betaDisablesSentry = isEvaosBetaBuild() && !isTruthyEnv(process.env.AIONUI_EVAOS_BETA_ALLOW_SENTRY);
-  if (betaDisablesSentry) {
+  if (shouldDisableSentry(process.env)) {
     return { dsn: '', authToken: '', org: undefined, project: undefined };
   }
 

@@ -106,6 +106,13 @@ jobs:
           for file in "${files[@]}"; do
             base="$(basename "$file")"
             case "$base" in
+              *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
+                echo "::error::Refusing to distribute upstream AionUi asset: $base"
+                exit 1
+                ;;
+            esac
+
+            case "$base" in
               *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
                 ;;
               *)
