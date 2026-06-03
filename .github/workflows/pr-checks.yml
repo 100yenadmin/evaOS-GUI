@@ -501,15 +501,24 @@ jobs:
               "${env:ProgramFiles(x86)}"
             ) | Where-Object { $_ -and (Test-Path $_) }
 
-            Write-Host "Expected paths were not present. Searching standard install roots..."
-            $installedExe = Get-ChildItem -Path $searchRoots -Filter "EvaOSWorkbenchBeta.exe" -Recurse -ErrorAction SilentlyContinue |
+            Write-Host "Expected paths were not present. Checking immediate install-root directories..."
+            $candidateDirs = Get-ChildItem -Path $searchRoots -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match 'eva|EvaOS|AionUi|Workbench' } |
               Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1 -ExpandProperty FullName
+              Select-Object -First 20
+
+            foreach ($dir in $candidateDirs) {
+              $candidateExe = Join-Path $dir.FullName "EvaOSWorkbenchBeta.exe"
+              if (Test-Path $candidateExe) {
+                $installedExe = $candidateExe
+                break
+              }
+            }
           }
 
           if (-not $installedExe) {
-            Write-Host "Recent entries under LOCALAPPDATA\\Programs:"
-            Get-ChildItem -Path "$env:LOCALAPPDATA\\Programs" -ErrorAction SilentlyContinue |
+            Write-Host "Recent immediate entries under standard install roots:"
+            Get-ChildItem -Path $searchRoots -Directory -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 20 Name, FullName, LastWriteTime |
               Format-Table -AutoSize
