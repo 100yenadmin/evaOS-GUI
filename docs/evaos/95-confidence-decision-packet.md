@@ -22,7 +22,7 @@ Reasoning:
 
 - Shell/fork/release safety foundation: 86/100.
 - Broker/session/provider/permission trust: 58/100.
-- Company Brain/browser/runtime live proof: 60/100.
+- Company Brain/browser/runtime live proof: 65/100.
 - Native companion and local trust boundary: 72/100.
 - Packaging/rollback release process: 75/100.
 - Stack mergeability and operating process: 61/100.
@@ -63,7 +63,7 @@ The fork path should continue because the sprint did produce useful, mergeable s
 | #7 Approval Center + Deny Loop                   | PR-local           |                     93% | Needs requester/approver live fixture and audit enforcement proof.                                                                                    |
 | #8 People Access + Account Policy                | PR-local           |                     84% | Needs live account-policy fixture and role denial agreement.                                                                                          |
 | #9 Company Brain Directory + Account 360         | PR canary ready    |                     94% | Live canary now covers org-scoped directory/account/query plus mandatory directory/account/query negative fixtures; staging credentials still needed. |
-| #10 Business Browser / VM Control Proof          | PR-local           |                     90% | Needs real browser runtime before/after visual proof and action audit proof.                                                                          |
+| #10 Business Browser / VM Control Proof          | PR canary ready    |                     93% | Action-gated runtime/open/stop canary exists; staging execution, screenshots, and customer isolation proof still needed.                              |
 | #11 Native Companion Boundary                    | PR-local           |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                                    |
 | #12 Public Beta Packaging + Rollback             | PR-local passed    |                     95% | Release safety gate is strong; real signed artifact/install/rollback proof remains.                                                                   |
 | #13 95% Confidence Decision Packet               | In progress        | 95% decision confidence | This packet recommends continue R&D with blockers.                                                                                                    |
@@ -86,17 +86,17 @@ Local evidence root:
 
 ## Severity-Ranked Risks
 
-| Severity | Risk                                                                                                                                 | Owner               | Next Test                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Sev-1    | Public beta artifact has not been signed, notarized, installed, launched, or rolled back.                                            | Release agent       | Manual `Build and Release` on approved release branch, then install/launch/rollback smoke.                             |
-| Sev-1    | Root stack PR #15 still requires review before the stacked work can land.                                                            | Repo maintainer     | Review/merge PR #15, then advance the stack in order with current-head CI.                                             |
-| Sev-1    | Permission and approval flows are not live-backend proven across requester/approver/denied roles.                                    | Permissions agent   | Staging fixture with requester, approver, revoked member, backend denial, and audit evidence.                          |
-| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell.               | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                                  |
-| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.                        | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                            |
-| Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof. | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots. |
-| Sev-2    | Business Browser/VM control lacks real runtime before/after action evidence.                                                         | Runtime agent       | Browser open/stop scenario with customer switch isolation and audit id proof.                                          |
-| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                           | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.         |
-| Sev-3    | Forgejo sidecar remains read-only research, not implementation.                                                                      | Company Brain agent | Decide whether to index Forgejo metadata as a Company Brain source after beta blockers.                                |
+| Severity | Risk                                                                                                                                 | Owner               | Next Test                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Sev-1    | Public beta artifact has not been signed, notarized, installed, launched, or rolled back.                                            | Release agent       | Manual `Build and Release` on approved release branch, then install/launch/rollback smoke.                                  |
+| Sev-1    | Root stack PR #15 still requires review before the stacked work can land.                                                            | Repo maintainer     | Review/merge PR #15, then advance the stack in order with current-head CI.                                                  |
+| Sev-1    | Permission and approval flows are not live-backend proven across requester/approver/denied roles.                                    | Permissions agent   | Staging fixture with requester, approver, revoked member, backend denial, and audit evidence.                               |
+| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell.               | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                                       |
+| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.                        | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                                 |
+| Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof. | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots.      |
+| Sev-2    | Business Browser/VM control has a PR-local action canary but still needs staging execution with visual/customer isolation evidence.  | Runtime agent       | Run `scripts/evaosBusinessBrowserLiveCanary.js` with action ack, denied-session or wrong-customer fixture, and screenshots. |
+| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                           | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.              |
+| Sev-3    | Forgejo sidecar remains read-only research, not implementation.                                                                      | Company Brain agent | Decide whether to index Forgejo metadata as a Company Brain source after beta blockers.                                     |
 
 ## Next Sprint Issue Slate
 
@@ -138,6 +138,8 @@ Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
 8. Business Browser/VM Runtime Scenario
    - Launch/open/stop browser runtime across customer switch.
    - Required proof: before/after visual state, backend action proof, audit id, and customer isolation evidence.
+   - Canary command: `node scripts/evaosBusinessBrowserLiveCanary.js` with `AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK=evaos-browser-test`, `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL`, `AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS`, `AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION`, and `AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID`.
+   - Acceptance proof requires runtime status, open URL, post-open running status, stop, post-stop stopped status, denied runtime/open/stop source/audit evidence, and wrong-customer isolation. Denied-session-only proof is non-acceptance evidence.
 
 9. Final Public Beta Decision Recut
    - Re-run this decision packet after live proofs.
