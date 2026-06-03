@@ -473,6 +473,130 @@ export interface IEvaosBusinessBrowserActionResult {
   backendEnforced: boolean;
 }
 
+export type IEvaosCompanyBrainIngestionState = 'ready' | 'empty' | 'ingesting' | 'error';
+export type IEvaosCompanyBrainExceptionSeverity = 'critical' | 'warning' | 'info';
+
+export interface IEvaosCompanyBrainDirectoryRequest {
+  customerId: string;
+}
+
+export interface IEvaosCompanyBrainAccountRequest {
+  customerId: string;
+  accountId: string;
+}
+
+export interface IEvaosCompanyBrainQueryRequest {
+  customerId: string;
+  accountId: string;
+  query: string;
+}
+
+export interface IEvaosCompanyBrainIntegrationHealthView {
+  state: IEvaosCompanyBrainIngestionState;
+  summary?: string;
+  updatedAt?: string;
+}
+
+export interface IEvaosCompanyBrainAccountSummaryView {
+  accountId: string;
+  name: string;
+  domain?: string;
+  customerAccountId?: string;
+  owner?: string;
+  ingestionState: IEvaosCompanyBrainIngestionState;
+  exceptionCount: number;
+  lastActivityAt?: string;
+  sourcePointer?: string;
+  auditId?: string;
+}
+
+export interface IEvaosCompanyBrainDirectoryView {
+  schemaVersion: 'evaos.company_brain.directory.v1';
+  customerId: string;
+  customerAccountId?: string;
+  membershipId?: string;
+  membershipRole?: IEvaosAccountPolicyRole;
+  routeDenied: boolean;
+  routeDenialReason?: string;
+  backendEnforced: boolean;
+  ingestionState: IEvaosCompanyBrainIngestionState;
+  integrationHealth?: IEvaosCompanyBrainIntegrationHealthView;
+  accounts: IEvaosCompanyBrainAccountSummaryView[];
+  summaryText: string;
+  sourcePointer?: string;
+  auditId?: string;
+  policyAuditId?: string;
+}
+
+export interface IEvaosCompanyBrainBriefView {
+  title?: string;
+  summary?: string;
+  updatedAt?: string;
+  sourcePointer?: string;
+  auditId?: string;
+}
+
+export interface IEvaosCompanyBrainTimelineEntryView {
+  entryId: string;
+  type: string;
+  title: string;
+  summary?: string;
+  occurredAt?: string;
+  sourcePointer?: string;
+  auditId?: string;
+}
+
+export interface IEvaosCompanyBrainExceptionView {
+  exceptionId: string;
+  severity: IEvaosCompanyBrainExceptionSeverity;
+  title: string;
+  summary?: string;
+  status: string;
+  sourcePointer?: string;
+  auditId?: string;
+}
+
+export interface IEvaosCompanyBrainAccount360View {
+  schemaVersion: 'evaos.company_brain.account_360.v1';
+  customerId: string;
+  customerAccountId?: string;
+  membershipId?: string;
+  membershipRole?: IEvaosAccountPolicyRole;
+  routeDenied: boolean;
+  routeDenialReason?: string;
+  backendEnforced: boolean;
+  accountId: string;
+  account: IEvaosCompanyBrainAccountSummaryView;
+  ingestionState: IEvaosCompanyBrainIngestionState;
+  brief?: IEvaosCompanyBrainBriefView;
+  timeline: IEvaosCompanyBrainTimelineEntryView[];
+  exceptions: IEvaosCompanyBrainExceptionView[];
+  sourcePointer?: string;
+  auditId?: string;
+  policyAuditId?: string;
+}
+
+export interface IEvaosCompanyBrainCitationView {
+  citationId: string;
+  title?: string;
+  sourceType?: string;
+  occurredAt?: string;
+  sourcePointer?: string;
+}
+
+export interface IEvaosCompanyBrainQueryResult {
+  schemaVersion: 'evaos.company_brain.query.v1';
+  customerId: string;
+  customerAccountId?: string;
+  accountId: string;
+  status: string;
+  answer?: string;
+  citations: IEvaosCompanyBrainCitationView[];
+  sourcePointer?: string;
+  auditId?: string;
+  backendEnforced: boolean;
+}
+
 export type IEvaosAccountPolicyRole =
   | 'owner'
   | 'admin'
@@ -1549,6 +1673,20 @@ export const evaosBusinessBrowser = {
   >('evaos.business-browser.open-url'),
   stop: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
     'evaos.business-browser.stop'
+  ),
+};
+
+export const evaosCompanyBrain = {
+  getDirectory: bridge.buildProvider<
+    IBridgeResponse<IEvaosCompanyBrainDirectoryView>,
+    IEvaosCompanyBrainDirectoryRequest
+  >('evaos.company-brain.directory'),
+  getAccount360: bridge.buildProvider<
+    IBridgeResponse<IEvaosCompanyBrainAccount360View>,
+    IEvaosCompanyBrainAccountRequest
+  >('evaos.company-brain.account-360'),
+  query: bridge.buildProvider<IBridgeResponse<IEvaosCompanyBrainQueryResult>, IEvaosCompanyBrainQueryRequest>(
+    'evaos.company-brain.query'
   ),
 };
 

@@ -22,6 +22,20 @@ import type {
   IEvaosBusinessBrowserRequest,
   IEvaosBusinessBrowserView,
   IEvaosBrokerSessionStatus,
+  IEvaosCompanyBrainAccount360View,
+  IEvaosCompanyBrainAccountRequest,
+  IEvaosCompanyBrainAccountSummaryView,
+  IEvaosCompanyBrainBriefView,
+  IEvaosCompanyBrainCitationView,
+  IEvaosCompanyBrainDirectoryRequest,
+  IEvaosCompanyBrainDirectoryView,
+  IEvaosCompanyBrainExceptionSeverity,
+  IEvaosCompanyBrainExceptionView,
+  IEvaosCompanyBrainIngestionState,
+  IEvaosCompanyBrainIntegrationHealthView,
+  IEvaosCompanyBrainQueryRequest,
+  IEvaosCompanyBrainQueryResult,
+  IEvaosCompanyBrainTimelineEntryView,
   IEvaosPeopleAccessInviteMemberRequest,
   IEvaosPeopleAccessInviteView,
   IEvaosPeopleAccessMemberView,
@@ -111,6 +125,16 @@ const SECRET_VALUE_PATTERNS = [
   /\bepg_[A-Za-z0-9_-]{8,}\b/,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/,
   /\bBearer\s+[A-Za-z0-9._-]{8,}\b/i,
+  /\bsk_(?:live|test)_[A-Za-z0-9]{8,}\b/,
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/,
+  /\b(?:rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}\b/,
+  /\bgh[opusr]_[A-Za-z0-9_]{20,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
+  /\bglpat-[A-Za-z0-9_-]{10,}\b/,
+  /\bAIza[0-9A-Za-z_-]{20,}\b/,
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/i,
+  /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b/,
 ];
 const MAX_SAFE_TEXT_LENGTH = 500;
 
@@ -120,6 +144,8 @@ export type EvaosBrokerErrorCode =
   | 'invalid_device_code'
   | 'invalid_approval'
   | 'invalid_browser_url'
+  | 'invalid_company_brain_account'
+  | 'invalid_company_brain_query'
   | 'invalid_customer'
   | 'invalid_email'
   | 'invalid_role'
@@ -462,6 +488,89 @@ export class EvaosBrokerSessionClient {
 
   async stopBusinessBrowser(request: IEvaosBusinessBrowserRequest): Promise<IEvaosBusinessBrowserActionResult> {
     return this.businessBrowserAction(request, 'browser_stop');
+  }
+
+  async companyBrainDirectory(request: IEvaosCompanyBrainDirectoryRequest): Promise<IEvaosCompanyBrainDirectoryView> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before loading Company Brain.'
+    );
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertCompanyBrainPolicyProof(policy);
+
+    if (!policy.scopes.includes('view_company_brain')) {
+      return companyBrainDeniedDirectoryView(policy, customerId);
+    }
+
+    const raw = await this.postJson(
+      {
+        action: 'company_brain_directory',
+        customer_id: customerId,
+      },
+      session
+    );
+
+    return sanitizeCompanyBrainDirectory(raw, policy, customerId);
+  }
+
+  async companyBrainAccount360(request: IEvaosCompanyBrainAccountRequest): Promise<IEvaosCompanyBrainAccount360View> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before loading Company Brain.'
+    );
+    const accountId = normalizeCompanyBrainAccountId(request.accountId);
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertPolicyScope(
+      policy,
+      'view_company_brain',
+      'You do not have permission to view Company Brain for this account.'
+    );
+    assertCompanyBrainPolicyProof(policy);
+
+    const raw = await this.postJson(
+      {
+        action: 'company_brain_account_360',
+        customer_id: customerId,
+        account_id: accountId,
+      },
+      session
+    );
+
+    return sanitizeCompanyBrainAccount360(raw, { accountId, customerId, policy });
+  }
+
+  async companyBrainQuery(request: IEvaosCompanyBrainQueryRequest): Promise<IEvaosCompanyBrainQueryResult> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before querying Company Brain.'
+    );
+    const accountId = normalizeCompanyBrainAccountId(request.accountId);
+    const query = normalizeCompanyBrainQuery(request.query);
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertPolicyScope(
+      policy,
+      'view_company_brain',
+      'You do not have permission to query Company Brain for this account.'
+    );
+    assertCompanyBrainPolicyProof(policy);
+
+    const raw = await this.postJson(
+      {
+        action: 'company_brain_query',
+        customer_id: customerId,
+        account_id: accountId,
+        query,
+      },
+      session
+    );
+
+    return sanitizeCompanyBrainQuery(raw, { accountId, customerId, policy });
   }
 
   async startProviderAuth(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
@@ -1269,6 +1378,452 @@ function sanitizeBusinessBrowserRuntimeStatus(
   return sanitizeRuntimeStatus(raw, { customerId: fallbackCustomerId, runtime: 'browser' });
 }
 
+function companyBrainDeniedDirectoryView(
+  policy: IEvaosPeopleAccessPolicyView,
+  customerId: string
+): IEvaosCompanyBrainDirectoryView {
+  return stripUndefined({
+    schemaVersion: 'evaos.company_brain.directory.v1' as const,
+    customerId,
+    customerAccountId: policy.customerAccountId,
+    membershipId: policy.membershipId,
+    membershipRole: policy.membershipRole,
+    routeDenied: true,
+    routeDenialReason: 'Company Brain requires the view_company_brain scope for this customer account.',
+    backendEnforced: policy.backendEnforced,
+    ingestionState: 'empty' as const,
+    accounts: [],
+    summaryText: 'Company Brain denied by account policy',
+    policyAuditId: policy.auditId,
+  });
+}
+
+function sanitizeCompanyBrainDirectory(
+  raw: unknown,
+  policy: IEvaosPeopleAccessPolicyView,
+  fallbackCustomerId: string
+): IEvaosCompanyBrainDirectoryView {
+  const record = asRecord(raw);
+  const source = Array.isArray(raw) ? raw : (record?.accounts ?? record?.directory ?? record?.items);
+  if (!record || !Array.isArray(source)) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const schemaVersion = safeText(record.schema_version);
+  const responseCustomerId = safeText(record.customer_id);
+  const responseCustomerAccountId = safeText(record.customer_account_id);
+  if (!responseCustomerId || !responseCustomerAccountId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return Company Brain directory customer proof.'
+    );
+  }
+  assertCustomerScopeMatches(responseCustomerId, policy, fallbackCustomerId, 'Company Brain directory');
+  assertCustomerAccountMatches(responseCustomerAccountId, policy, 'Company Brain directory');
+
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  const sourcePointer = safeExactSourcePointer(
+    record.source_pointer,
+    `broker:company_brain_directory:${fallbackCustomerId}`
+  );
+  const auditId = safeText(record.audit_id);
+  if (schemaVersion !== 'evaos.company_brain.directory.v1' || backendEnforced !== true || !sourcePointer || !auditId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return Company Brain directory enforcement proof.'
+    );
+  }
+
+  const integrationHealth = sanitizeCompanyBrainIntegrationHealth(record.integration_health);
+  const ingestionState =
+    safeCompanyBrainIngestionState(record.ingestion_state ?? integrationHealth?.state) ??
+    (source.length === 0 ? 'empty' : 'ready');
+  const accounts = safeCompanyBrainAccounts(source, policy.customerAccountId);
+
+  return stripUndefined({
+    schemaVersion: 'evaos.company_brain.directory.v1' as const,
+    customerId: responseCustomerId ?? policy.selectedCustomerId ?? fallbackCustomerId,
+    customerAccountId: responseCustomerAccountId ?? policy.customerAccountId,
+    membershipId: policy.membershipId,
+    membershipRole: policy.membershipRole,
+    routeDenied: false,
+    backendEnforced,
+    ingestionState,
+    integrationHealth,
+    accounts,
+    summaryText: companyBrainDirectorySummary(accounts.length, ingestionState),
+    sourcePointer,
+    auditId,
+    policyAuditId: policy.auditId,
+  });
+}
+
+function sanitizeCompanyBrainAccount360(
+  raw: unknown,
+  fallback: {
+    accountId: string;
+    customerId: string;
+    policy: IEvaosPeopleAccessPolicyView;
+  }
+): IEvaosCompanyBrainAccount360View {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const schemaVersion = safeText(record.schema_version);
+  const responseCustomerId = safeText(record.customer_id);
+  const responseCustomerAccountId = safeText(record.customer_account_id);
+  if (!responseCustomerId || !responseCustomerAccountId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return Company Brain account customer proof.'
+    );
+  }
+  assertCustomerScopeMatches(responseCustomerId, fallback.policy, fallback.customerId, 'Company Brain account');
+  assertCustomerAccountMatches(responseCustomerAccountId, fallback.policy, 'Company Brain account');
+
+  const responseAccountId = safeText(
+    record.account_id ?? asRecord(record.account)?.account_id ?? asRecord(record.account)?.id
+  );
+  if (responseAccountId && responseAccountId !== fallback.accountId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker returned Company Brain account evidence for a different account.'
+    );
+  }
+
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  const sourcePointer = safeExactSourcePointer(
+    record.source_pointer,
+    `broker:company_brain_account_360:${fallback.accountId}`
+  );
+  const auditId = safeText(record.audit_id);
+  if (
+    schemaVersion !== 'evaos.company_brain.account_360.v1' ||
+    backendEnforced !== true ||
+    !sourcePointer ||
+    !auditId
+  ) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return Company Brain account enforcement proof.'
+    );
+  }
+
+  const account = sanitizeCompanyBrainAccountSummary(record.account ?? record, fallback.policy.customerAccountId);
+  if (!account || account.accountId !== fallback.accountId) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const ingestionState = safeCompanyBrainIngestionState(record.ingestion_state ?? account.ingestionState) ?? 'empty';
+
+  return stripUndefined({
+    schemaVersion: 'evaos.company_brain.account_360.v1' as const,
+    customerId: responseCustomerId ?? fallback.policy.selectedCustomerId ?? fallback.customerId,
+    customerAccountId: responseCustomerAccountId ?? fallback.policy.customerAccountId,
+    membershipId: fallback.policy.membershipId,
+    membershipRole: fallback.policy.membershipRole,
+    routeDenied: false,
+    backendEnforced,
+    accountId: fallback.accountId,
+    account,
+    ingestionState,
+    brief: sanitizeCompanyBrainBrief(record.brief, fallback.accountId),
+    timeline: safeCompanyBrainTimeline(record.timeline ?? record.events),
+    exceptions: safeCompanyBrainExceptions(record.exceptions),
+    sourcePointer,
+    auditId,
+    policyAuditId: fallback.policy.auditId,
+  });
+}
+
+function sanitizeCompanyBrainQuery(
+  raw: unknown,
+  fallback: {
+    accountId: string;
+    customerId: string;
+    policy: IEvaosPeopleAccessPolicyView;
+  }
+): IEvaosCompanyBrainQueryResult {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const schemaVersion = safeText(record.schema_version);
+  const responseCustomerId = safeText(record.customer_id);
+  const responseCustomerAccountId = safeText(record.customer_account_id);
+  if (!responseCustomerId || !responseCustomerAccountId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return Company Brain query customer proof.'
+    );
+  }
+  assertCustomerScopeMatches(responseCustomerId, fallback.policy, fallback.customerId, 'Company Brain query');
+  assertCustomerAccountMatches(responseCustomerAccountId, fallback.policy, 'Company Brain query');
+
+  const accountId = safeText(record.account_id);
+  const status = safeText(record.status);
+  const answer = safeText(record.answer, 2_000);
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  const sourcePointer = safeExactSourcePointer(
+    record.source_pointer,
+    `broker:company_brain_query:${fallback.accountId}`
+  );
+  const auditId = safeText(record.audit_id);
+  if (
+    schemaVersion !== 'evaos.company_brain.query.v1' ||
+    accountId !== fallback.accountId ||
+    !status ||
+    (status === 'answered' && !answer) ||
+    backendEnforced !== true ||
+    !sourcePointer ||
+    !auditId
+  ) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return Company Brain query enforcement proof.'
+    );
+  }
+
+  return stripUndefined({
+    schemaVersion: 'evaos.company_brain.query.v1' as const,
+    customerId: responseCustomerId ?? fallback.policy.selectedCustomerId ?? fallback.customerId,
+    customerAccountId: responseCustomerAccountId ?? fallback.policy.customerAccountId,
+    accountId,
+    status,
+    answer,
+    citations: safeCompanyBrainCitations(record.citations),
+    sourcePointer,
+    auditId,
+    backendEnforced,
+  });
+}
+
+function sanitizeCompanyBrainIntegrationHealth(value: unknown): IEvaosCompanyBrainIntegrationHealthView | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const state = safeCompanyBrainIngestionState(record.state ?? record.status);
+  if (!state) {
+    return undefined;
+  }
+
+  return stripUndefined({
+    state,
+    summary: safeText(record.summary, 220),
+    updatedAt: safeIsoDate(record.updated_at),
+  });
+}
+
+function safeCompanyBrainAccounts(
+  value: unknown,
+  expectedCustomerAccountId?: string
+): IEvaosCompanyBrainAccountSummaryView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item): IEvaosCompanyBrainAccountSummaryView => {
+    const account = sanitizeCompanyBrainAccountSummary(item, expectedCustomerAccountId);
+    if (!account) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+    return account;
+  });
+}
+
+function sanitizeCompanyBrainAccountSummary(
+  raw: unknown,
+  expectedCustomerAccountId?: string
+): IEvaosCompanyBrainAccountSummaryView | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+
+  const accountId = safeText(record.account_id ?? record.id, 120);
+  const name = safeText(record.name ?? record.account_name, 160);
+  if (!accountId || !name) {
+    return undefined;
+  }
+
+  const customerAccountId = safeText(record.customer_account_id);
+  if (expectedCustomerAccountId && customerAccountId !== expectedCustomerAccountId) {
+    return undefined;
+  }
+
+  const ingestionState = safeCompanyBrainIngestionState(record.ingestion_state ?? record.status) ?? 'empty';
+  const sourcePointer = safeExactSourcePointer(record.source_pointer, `broker:company_brain_account:${accountId}`);
+  const auditId = safeText(record.audit_id);
+  if (!sourcePointer || !auditId) {
+    return undefined;
+  }
+
+  return stripUndefined({
+    accountId,
+    name,
+    domain: safeText(record.domain, 180),
+    customerAccountId,
+    owner: safeText(record.owner, 120),
+    ingestionState,
+    exceptionCount: safeNonNegativeInteger(record.exception_count ?? record.exceptions_count) ?? 0,
+    lastActivityAt: safeIsoDate(record.last_activity_at),
+    sourcePointer,
+    auditId,
+  });
+}
+
+function sanitizeCompanyBrainBrief(value: unknown, accountId: string): IEvaosCompanyBrainBriefView | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const title = safeText(record.title, 180);
+  const summary = safeText(record.summary, 1_200);
+  const sourcePointer = safeExactSourcePointer(record.source_pointer, `broker:company_brain_brief:${accountId}`);
+  const auditId = safeText(record.audit_id);
+  if (!title && !summary) {
+    return undefined;
+  }
+  if (!sourcePointer || !auditId) {
+    return undefined;
+  }
+
+  return stripUndefined({
+    title,
+    summary,
+    updatedAt: safeIsoDate(record.updated_at),
+    sourcePointer,
+    auditId,
+  });
+}
+
+function safeCompanyBrainTimeline(value: unknown): IEvaosCompanyBrainTimelineEntryView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item): IEvaosCompanyBrainTimelineEntryView => {
+    const entry = sanitizeCompanyBrainTimelineEntry(item);
+    if (!entry) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+    return entry;
+  });
+}
+
+function sanitizeCompanyBrainTimelineEntry(raw: unknown): IEvaosCompanyBrainTimelineEntryView | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  const entryId = safeText(record.event_id ?? record.entry_id ?? record.id, 120);
+  const type = safeText(record.type, 80);
+  const title = safeText(record.title, 180);
+  if (!entryId || !type || !title) {
+    return undefined;
+  }
+  const sourcePointer = safeExactSourcePointer(record.source_pointer, `broker:company_brain_timeline:${entryId}`);
+  const auditId = safeText(record.audit_id);
+  if (!sourcePointer || !auditId) {
+    return undefined;
+  }
+
+  return stripUndefined({
+    entryId,
+    type,
+    title,
+    summary: safeText(record.summary, 500),
+    occurredAt: safeIsoDate(record.occurred_at),
+    sourcePointer,
+    auditId,
+  });
+}
+
+function safeCompanyBrainExceptions(value: unknown): IEvaosCompanyBrainExceptionView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item): IEvaosCompanyBrainExceptionView => {
+    const exception = sanitizeCompanyBrainException(item);
+    if (!exception) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+    return exception;
+  });
+}
+
+function sanitizeCompanyBrainException(raw: unknown): IEvaosCompanyBrainExceptionView | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  const exceptionId = safeText(record.exception_id ?? record.id, 120);
+  const severity = safeCompanyBrainExceptionSeverity(record.severity);
+  const title = safeText(record.title, 180);
+  const status = safeText(record.status, 80);
+  if (!exceptionId || !severity || !title || !status) {
+    return undefined;
+  }
+  const sourcePointer = safeExactSourcePointer(record.source_pointer, `broker:company_brain_exception:${exceptionId}`);
+  const auditId = safeText(record.audit_id);
+  if (!sourcePointer || !auditId) {
+    return undefined;
+  }
+
+  return stripUndefined({
+    exceptionId,
+    severity,
+    title,
+    summary: safeText(record.summary, 500),
+    status,
+    sourcePointer,
+    auditId,
+  });
+}
+
+function safeCompanyBrainCitations(value: unknown): IEvaosCompanyBrainCitationView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item): IEvaosCompanyBrainCitationView => {
+    const citation = sanitizeCompanyBrainCitation(item);
+    if (!citation) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+    return citation;
+  });
+}
+
+function sanitizeCompanyBrainCitation(raw: unknown): IEvaosCompanyBrainCitationView | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  const citationId = safeText(record.citation_id ?? record.id, 120);
+  if (!citationId) {
+    return undefined;
+  }
+  const sourcePointer = safeExactSourcePointer(record.source_pointer, `broker:company_brain_citation:${citationId}`);
+  if (!sourcePointer) {
+    return undefined;
+  }
+
+  return stripUndefined({
+    citationId,
+    title: safeText(record.title, 180),
+    sourceType: safeText(record.source_type ?? record.type, 80),
+    occurredAt: safeIsoDate(record.occurred_at),
+    sourcePointer,
+  });
+}
+
+function companyBrainDirectorySummary(count: number, ingestionState: IEvaosCompanyBrainIngestionState): string {
+  if (count === 0) {
+    return ingestionState === 'ingesting' ? 'No accounts indexed yet, ingesting' : 'No accounts indexed';
+  }
+  return `${count} ${count === 1 ? 'account' : 'accounts'}, ${ingestionState}`;
+}
+
 function isBusinessBrowserActionAvailable(actions: string[], capability: 'launch' | 'open_url' | 'stop'): boolean {
   const allowed = new Set(actions);
   if (capability === 'launch') {
@@ -1766,6 +2321,15 @@ function assertBusinessBrowserPolicyProof(policy: IEvaosPeopleAccessPolicyView):
   }
 }
 
+function assertCompanyBrainPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
+  if (policy.backendEnforced !== true || !policy.auditId) {
+    throw new EvaosBrokerSessionError(
+      'action_denied',
+      'Company Brain access requires backend-enforced account policy proof.'
+    );
+  }
+}
+
 function assertCustomerScopeMatches(
   responseCustomerId: string | undefined,
   policy: IEvaosPeopleAccessPolicyView,
@@ -1781,6 +2345,19 @@ function assertCustomerScopeMatches(
     throw new EvaosBrokerSessionError(
       'broker_invalid_response',
       `The evaOS broker returned ${context} evidence for a different customer.`
+    );
+  }
+}
+
+function assertCustomerAccountMatches(
+  responseCustomerAccountId: string | undefined,
+  policy: IEvaosPeopleAccessPolicyView,
+  context: string
+): void {
+  if (responseCustomerAccountId && policy.customerAccountId && responseCustomerAccountId !== policy.customerAccountId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      `The evaOS broker returned ${context} evidence for a different customer account.`
     );
   }
 }
@@ -1985,6 +2562,25 @@ function normalizeBusinessBrowserUrl(value: string): string {
   }
 }
 
+function normalizeCompanyBrainAccountId(value: string): string {
+  const text = safeText(value, 120);
+  if (!text || !/^[a-z0-9_.:-]+$/i.test(text)) {
+    throw new EvaosBrokerSessionError(
+      'invalid_company_brain_account',
+      'Choose a Company Brain account before loading details.'
+    );
+  }
+  return text;
+}
+
+function normalizeCompanyBrainQuery(value: string): string {
+  const text = safeText(value, 500);
+  if (!text || text.length < 3) {
+    throw new EvaosBrokerSessionError('invalid_company_brain_query', 'Enter a Company Brain question.');
+  }
+  return text;
+}
+
 function summarizeUrl(value: unknown): IEvaosSafeUrlSummary | undefined {
   if (typeof value === 'string') {
     return summarizeUrlString(value);
@@ -2172,6 +2768,40 @@ function safeBusinessBrowserRuntimeSourcePointer(value: unknown): string | undef
   }
 
   return text === 'broker:runtime_status:browser' ? text : undefined;
+}
+
+function safeExactSourcePointer(value: unknown, expected: string): string | undefined {
+  const text = safeText(value, 220);
+  if (!text) {
+    return undefined;
+  }
+
+  return text === expected ? text : undefined;
+}
+
+function safeCompanyBrainIngestionState(value: unknown): IEvaosCompanyBrainIngestionState | undefined {
+  const text = safeText(value, 80)?.toLowerCase();
+  if (text === 'ready' || text === 'empty' || text === 'ingesting' || text === 'error') {
+    return text;
+  }
+  if (text === 'running' || text === 'indexing' || text === 'pending') {
+    return 'ingesting';
+  }
+  if (text === 'failed' || text === 'blocked') {
+    return 'error';
+  }
+  return undefined;
+}
+
+function safeCompanyBrainExceptionSeverity(value: unknown): IEvaosCompanyBrainExceptionSeverity | undefined {
+  const text = safeText(value, 80)?.toLowerCase();
+  if (text === 'critical' || text === 'warning' || text === 'info') {
+    return text;
+  }
+  if (text === 'error' || text === 'high') {
+    return 'critical';
+  }
+  return undefined;
 }
 
 function hasOpaqueProviderHandle(value: unknown): boolean {

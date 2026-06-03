@@ -12,11 +12,13 @@ import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreate
 import {
   EVAOS_APPROVAL_CENTER_ENABLED,
   EVAOS_BUSINESS_BROWSER_ENABLED,
+  EVAOS_COMPANY_BRAIN_ENABLED,
   EVAOS_PROVIDER_HUB_ENABLED,
 } from '@/common/config/constants';
 import {
   SiderApprovalCenterEntry,
   SiderBusinessBrowserEntry,
+  SiderCompanyBrainEntry,
   SiderConnectedAppsEntry,
   SiderPeopleAccessEntry,
   SiderScheduledEntry,
@@ -163,6 +165,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
+  const handleCompanyBrainClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/company-brain')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -266,6 +281,15 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                 collapsed={collapsed}
                 siderTooltipProps={siderTooltipProps}
                 onClick={handleBusinessBrowserClick}
+              />
+            ) : null}
+            {EVAOS_COMPANY_BRAIN_ENABLED ? (
+              <SiderCompanyBrainEntry
+                isMobile={isMobile}
+                isActive={pathname === '/company-brain'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleCompanyBrainClick}
               />
             ) : null}
             {EVAOS_APPROVAL_CENTER_ENABLED ? (

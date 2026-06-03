@@ -15,6 +15,7 @@ import { initEvaosBrokerBridge } from './evaosBrokerBridge';
 import {
   initEvaosApprovalCenterBridge,
   initEvaosBusinessBrowserBridge,
+  initEvaosCompanyBrainBridge,
   initEvaosPeopleAccessBridge,
   initEvaosProviderHubBridge,
 } from './evaosPeopleAccessBridge';
@@ -34,6 +35,7 @@ export function initAllBridges(_deps: BridgeDependencies = {}): void {
   initEvaosApprovalCenterBridge();
   initEvaosProviderHubBridge();
   initEvaosBusinessBrowserBridge();
+  initEvaosCompanyBrainBridge();
 }
 
 export {
@@ -42,6 +44,7 @@ export {
   initEvaosApprovalCenterBridge,
   initEvaosBrokerBridge,
   initEvaosBusinessBrowserBridge,
+  initEvaosCompanyBrainBridge,
   initEvaosPeopleAccessBridge,
   initEvaosProviderHubBridge,
   initNotificationBridge,

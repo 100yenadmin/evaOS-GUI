@@ -14,6 +14,12 @@ import type {
   IEvaosBusinessBrowserOpenUrlRequest,
   IEvaosBusinessBrowserRequest,
   IEvaosBusinessBrowserView,
+  IEvaosCompanyBrainAccount360View,
+  IEvaosCompanyBrainAccountRequest,
+  IEvaosCompanyBrainDirectoryRequest,
+  IEvaosCompanyBrainDirectoryView,
+  IEvaosCompanyBrainQueryRequest,
+  IEvaosCompanyBrainQueryResult,
   IEvaosProviderActionRequest,
   IEvaosProviderActionResult,
   IEvaosProviderHubRequest,
@@ -113,6 +119,25 @@ export function initEvaosBusinessBrowserBridge(
   ipcBridge.evaosBusinessBrowser.stop.provider(
     async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
       toBridgeResponse(() => client.stopBusinessBrowser(request))
+  );
+}
+
+export function initEvaosCompanyBrainBridge(
+  client: EvaosBrokerSessionClient = getDefaultEvaosBrokerSessionClient()
+): void {
+  ipcBridge.evaosCompanyBrain.getDirectory.provider(
+    async (request: IEvaosCompanyBrainDirectoryRequest): Promise<BridgeResponse<IEvaosCompanyBrainDirectoryView>> =>
+      toBridgeResponse(() => client.companyBrainDirectory(request))
+  );
+
+  ipcBridge.evaosCompanyBrain.getAccount360.provider(
+    async (request: IEvaosCompanyBrainAccountRequest): Promise<BridgeResponse<IEvaosCompanyBrainAccount360View>> =>
+      toBridgeResponse(() => client.companyBrainAccount360(request))
+  );
+
+  ipcBridge.evaosCompanyBrain.query.provider(
+    async (request: IEvaosCompanyBrainQueryRequest): Promise<BridgeResponse<IEvaosCompanyBrainQueryResult>> =>
+      toBridgeResponse(() => client.companyBrainQuery(request))
   );
 }
 
