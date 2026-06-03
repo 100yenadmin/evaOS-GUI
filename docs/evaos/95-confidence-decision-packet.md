@@ -16,13 +16,13 @@ The current best path is to continue the AionUi fork for one more gated sprint, 
 
 ## Readiness Score
 
-Overall public beta readiness: 64/100.
+Overall public beta readiness: 66/100.
 
 Reasoning:
 
 - Shell/fork/release safety foundation: 86/100.
 - Broker/session/provider/permission trust: 58/100.
-- Company Brain/browser/runtime live proof: 65/100.
+- Company Brain/browser/runtime live proof: 68/100.
 - Native companion and local trust boundary: 72/100.
 - Packaging/rollback release process: 75/100.
 - Stack mergeability and operating process: 61/100.
@@ -58,16 +58,16 @@ The fork path should continue because the sprint did produce useful, mergeable s
 | #2 Upstream Sync + Fork Safety Baseline          | PR-local partial   |                     85% | Good baseline, still needs merge/review closeout.                                                                                                     |
 | #3 evaOS Shell Guardrails                        | PR-local partial   |                     85% | First guardrails exist; additional team/remote-agent claim fencing remains.                                                                           |
 | #4 Broker Auth + Desktop Session Handoff         | PR-local primitive |                     78% | Needs live/session scenario and secret-exposure proof after merge.                                                                                    |
-| #5 Session Center / Mission Control              | PR-local primitive |                     78% | Needs visual shell proof and live runtime scenario.                                                                                                   |
+| #5 Session Center / Mission Control              | PR #37 pending CI  |                     82% | Linearized onto active stack; needs visual shell proof and live runtime scenario.                                                                      |
 | #6 Connected Apps Provider Hub                   | PR-local           |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.                                                                              |
 | #7 Approval Center + Deny Loop                   | PR-local           |                     93% | Needs requester/approver live fixture and audit enforcement proof.                                                                                    |
 | #8 People Access + Account Policy                | PR-local           |                     84% | Needs live account-policy fixture and role denial agreement.                                                                                          |
 | #9 Company Brain Directory + Account 360         | PR canary ready    |                     94% | Live canary now covers org-scoped directory/account/query plus mandatory directory/account/query negative fixtures; staging credentials still needed. |
-| #10 Business Browser / VM Control Proof          | PR canary ready    |                     93% | Action-gated runtime/open/stop canary exists; staging execution, screenshots, and customer isolation proof still needed.                              |
+| #10 Business Browser / VM Control Proof          | PR canary green    |                     93% | PR #36 is green; staging execution, screenshots, and customer isolation proof still needed.                                                           |
 | #11 Native Companion Boundary                    | PR-local           |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                                    |
 | #12 Public Beta Packaging + Rollback             | PR-local passed    |                     95% | Release safety gate is strong; real signed artifact/install/rollback proof remains.                                                                   |
-| #13 95% Confidence Decision Packet               | In progress        | 95% decision confidence | This packet recommends continue R&D with blockers.                                                                                                    |
-| #14 Forgejo Company Brain Sidecar Spike          | Sidecar only       |                     70% | Useful as read-only/reference, not a beta dependency.                                                                                                 |
+| #13 95% Confidence Decision Packet               | Current            | 95% decision confidence | This packet recommends continue R&D with blockers and is updated through PR #37/#14 closeout.                                                         |
+| #14 Forgejo Company Brain Sidecar Spike          | Completed/closed   |                     80% | Use now only as read-only Company Brain public-source input; defer infrastructure, packages, Actions, private indexing, and code copy/porting.        |
 
 ## Verified Green Evidence
 
@@ -84,6 +84,13 @@ Local evidence root:
 
 - `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`
 
+Active stack evidence as of 2026-06-04:
+
+- PRs #31 through #36 are mergeable and have no non-success reported checks.
+- PR #36 Business Browser runtime canary is green at head `cd35c6a71334c68e61883d3bd1998bc381d37b98`.
+- PR #37 Mission Control linearization is mergeable at head `df76cb316029331b04838a0efed24a308eabdc29`; Windows build checks were still pending when this packet was updated.
+- Issue #14 Forgejo Company Brain Sidecar Spike is closed as completed for read-only spike scope; packet is under `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/14-forgejo-company-brain-sidecar-spike/`.
+
 ## Severity-Ranked Risks
 
 | Severity | Risk                                                                                                                                 | Owner               | Next Test                                                                                                                   |
@@ -96,7 +103,7 @@ Local evidence root:
 | Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof. | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots.      |
 | Sev-2    | Business Browser/VM control has a PR-local action canary but still needs staging execution with visual/customer isolation evidence.  | Runtime agent       | Run `scripts/evaosBusinessBrowserLiveCanary.js` with action ack, denied-session or wrong-customer fixture, and screenshots. |
 | Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                           | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.              |
-| Sev-3    | Forgejo sidecar remains read-only research, not implementation.                                                                      | Company Brain agent | Decide whether to index Forgejo metadata as a Company Brain source after beta blockers.                                     |
+| Sev-3    | Forgejo sidecar is safe only as a read-only public source; private/package indexing and self-hosting remain unreviewed.              | Company Brain agent | Add read-only public-source indexing only if it does not compete with beta blockers; defer private/self-hosted paths.       |
 
 ## Next Sprint Issue Slate
 
@@ -144,6 +151,10 @@ Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
 9. Final Public Beta Decision Recut
    - Re-run this decision packet after live proofs.
    - Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
+
+10. Optional Forgejo Read-Only Source
+   - Add public Forgejo/Codeberg repositories or docs to Company Brain as read-only sources only if it does not displace beta-blocker proof work.
+   - Required proof: scoped read-token strategy before private access, package visibility exclusion, and no Forgejo Actions/self-hosting dependency.
 
 ## Required Stop Rules
 
