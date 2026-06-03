@@ -183,6 +183,61 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     });
   });
 
+  it('fails closed when browser status lacks explicit customer proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_id: undefined })));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime customer proof.',
+    });
+  });
+
+  it('fails closed when browser status lacks runtime audit or source proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ audit_id: undefined })));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime evidence proof.',
+    });
+
+    fetchImpl.mockReset();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(
+        jsonResponse(browserRuntimeResponse({ source_pointer: 'broker:runtime_status:openclaw' }))
+      );
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime evidence proof.',
+    });
+  });
+
+  it('fails closed when browser status belongs to a different customer account', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_account_id: 'acct_other' })));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker returned browser runtime evidence for a different customer account.',
+    });
+  });
+
   it('denies browser mutations before action RPCs when policy proof is not backend-enforced', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
@@ -276,6 +331,35 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     ).rejects.toMatchObject({
       code: 'broker_invalid_response',
       message: 'The evaOS broker did not return browser action enforcement proof.',
+    });
+  });
+
+  it('fails closed when browser action returns unscoped nested runtime status', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'opened',
+          customer_id: 'david-poku',
+          source_pointer: 'broker:browser_open_url:david-poku',
+          audit_id: 'audit_open_123',
+          backend_enforced: true,
+          browser: browserRuntimeResponse({
+            customer_id: undefined,
+            source_pointer: 'broker:runtime_status:browser',
+            audit_id: 'audit_browser_after_open',
+          }),
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.openBusinessBrowserUrl({ customerId: 'david-poku', url: 'https://workspace.example.test/app' })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime customer proof.',
     });
   });
 

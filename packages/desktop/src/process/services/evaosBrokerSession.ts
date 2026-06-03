@@ -446,7 +446,7 @@ export class EvaosBrokerSessionClient {
       },
       session
     );
-    const runtime = sanitizeRuntimeStatus(raw, { customerId, runtime: 'browser' });
+    const runtime = sanitizeBusinessBrowserRuntimeStatus(raw, policy, customerId);
     return businessBrowserViewFromRuntime(runtime, policy, customerId);
   }
 
@@ -1209,7 +1209,7 @@ function sanitizeBusinessBrowserActionResult(
   const runtime = extractBusinessBrowserRuntime(record);
   const browser = runtime
     ? businessBrowserViewFromRuntime(
-        sanitizeRuntimeStatus(runtime, { customerId: fallback.customerId, runtime: 'browser' }),
+        sanitizeBusinessBrowserRuntimeStatus(runtime, fallback.policy, fallback.customerId),
         fallback.policy,
         fallback.customerId
       )
@@ -1228,6 +1228,45 @@ function sanitizeBusinessBrowserActionResult(
 
 function extractBusinessBrowserRuntime(record: Record<string, unknown>): unknown {
   return record.browser ?? record.browser_status ?? record.runtime_status ?? record.runtime;
+}
+
+function sanitizeBusinessBrowserRuntimeStatus(
+  raw: unknown,
+  policy: IEvaosPeopleAccessPolicyView,
+  fallbackCustomerId: string
+): IEvaosRuntimeStatusView {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const responseCustomerId = safeText(record.customer_id);
+  if (!responseCustomerId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return browser runtime customer proof.'
+    );
+  }
+  assertCustomerScopeMatches(responseCustomerId, policy, fallbackCustomerId, 'browser runtime');
+
+  const responseCustomerAccountId = safeText(record.customer_account_id);
+  if (responseCustomerAccountId && policy.customerAccountId && responseCustomerAccountId !== policy.customerAccountId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker returned browser runtime evidence for a different customer account.'
+    );
+  }
+
+  const sourcePointer = safeBusinessBrowserRuntimeSourcePointer(record.source_pointer);
+  const auditId = safeText(record.audit_id);
+  if (!sourcePointer || !auditId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return browser runtime evidence proof.'
+    );
+  }
+
+  return sanitizeRuntimeStatus(raw, { customerId: fallbackCustomerId, runtime: 'browser' });
 }
 
 function isBusinessBrowserActionAvailable(actions: string[], capability: 'launch' | 'open_url' | 'stop'): boolean {
@@ -2124,6 +2163,15 @@ function safeBusinessBrowserActionSourcePointer(
 
   const expectedActionPointer = `broker:${action}:${customerId}`;
   return text === expectedActionPointer ? text : undefined;
+}
+
+function safeBusinessBrowserRuntimeSourcePointer(value: unknown): string | undefined {
+  const text = safeText(value, 220);
+  if (!text) {
+    return undefined;
+  }
+
+  return text === 'broker:runtime_status:browser' ? text : undefined;
 }
 
 function hasOpaqueProviderHandle(value: unknown): boolean {
