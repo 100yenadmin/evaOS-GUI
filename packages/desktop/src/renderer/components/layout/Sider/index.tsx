@@ -9,9 +9,10 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
-import { EVAOS_APPROVAL_CENTER_ENABLED } from '@/common/config/constants';
+import { EVAOS_APPROVAL_CENTER_ENABLED, EVAOS_PROVIDER_HUB_ENABLED } from '@/common/config/constants';
 import {
   SiderApprovalCenterEntry,
+  SiderConnectedAppsEntry,
   SiderPeopleAccessEntry,
   SiderScheduledEntry,
   SiderSearchEntry,
@@ -131,6 +132,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
+  const handleConnectedAppsClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/connected-apps')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -218,6 +232,15 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               siderTooltipProps={siderTooltipProps}
               onClick={handlePeopleAccessClick}
             />
+            {EVAOS_PROVIDER_HUB_ENABLED ? (
+              <SiderConnectedAppsEntry
+                isMobile={isMobile}
+                isActive={pathname === '/connected-apps'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleConnectedAppsClick}
+              />
+            ) : null}
             {EVAOS_APPROVAL_CENTER_ENABLED ? (
               <SiderApprovalCenterEntry
                 isMobile={isMobile}

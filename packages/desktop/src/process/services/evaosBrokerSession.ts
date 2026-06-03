@@ -24,6 +24,14 @@ import type {
   IEvaosPeopleAccessMutationResult,
   IEvaosPeopleAccessPolicyRequest,
   IEvaosPeopleAccessPolicyView,
+  IEvaosProviderActionRequest,
+  IEvaosProviderActionResult,
+  IEvaosProviderAgentRuntime,
+  IEvaosProviderHubRequest,
+  IEvaosProviderHubView,
+  IEvaosProviderKey,
+  IEvaosProviderProfileView,
+  IEvaosProviderStatus,
   IEvaosRuntimeKey,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
@@ -54,6 +62,42 @@ const RUNTIME_LABELS: Record<IEvaosRuntimeKey, string> = {
   creative_studio: 'Creative Studio',
 };
 
+const VALID_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new Set([
+  'openai_codex',
+  'openclaw',
+  'hermes',
+  'google_workspace',
+  'pipedream',
+  'slack',
+  'notion',
+  'linear',
+  'github',
+]);
+
+const PROVIDER_LABELS: Record<IEvaosProviderKey, string> = {
+  openai_codex: 'Codex Desktop',
+  openclaw: 'OpenClaw',
+  hermes: 'Hermes',
+  google_workspace: 'Google Workspace',
+  pipedream: 'Pipedream Connection Service',
+  slack: 'Slack',
+  notion: 'Notion',
+  linear: 'Linear',
+  github: 'GitHub',
+};
+
+const VALID_PROVIDER_STATUSES: ReadonlySet<IEvaosProviderStatus> = new Set([
+  'connected',
+  'needs_login',
+  'approval_required',
+  'planned',
+  'revoked',
+  'expired',
+  'error',
+]);
+
+const VALID_PROVIDER_AGENT_RUNTIMES: ReadonlySet<IEvaosProviderAgentRuntime> = new Set(['openclaw', 'hermes']);
+
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
 const SECRET_VALUE_PATTERNS = [
@@ -73,6 +117,7 @@ export type EvaosBrokerErrorCode =
   | 'invalid_email'
   | 'invalid_role'
   | 'invalid_runtime'
+  | 'invalid_provider'
   | 'action_denied'
   | 'broker_http_error'
   | 'broker_invalid_response'
@@ -337,6 +382,58 @@ export class EvaosBrokerSessionClient {
     return sanitizeApprovalDecisionResult(raw, approval);
   }
 
+  async providerHub(request: IEvaosProviderHubRequest): Promise<IEvaosProviderHubView> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before loading Connected Apps.'
+    );
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+
+    if (!policy.scopes.includes('manage_integrations')) {
+      return {
+        schemaVersion: 'evaos.provider_hub.v1',
+        customerId,
+        customerAccountId: policy.customerAccountId,
+        membershipId: policy.membershipId,
+        membershipRole: policy.membershipRole,
+        routeDenied: true,
+        routeDenialReason: 'Connected Apps requires the manage_integrations scope for this customer account.',
+        backendEnforced: policy.backendEnforced,
+        profiles: [],
+        summaryText: 'Connected Apps denied by account policy',
+        policyAuditId: policy.auditId,
+      };
+    }
+
+    const raw = await this.postJson(
+      {
+        action: 'provider_profiles',
+        customer_id: customerId,
+      },
+      session
+    );
+
+    return sanitizeProviderHub(raw, policy, customerId);
+  }
+
+  async startProviderAuth(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
+    return this.providerAction(request, 'provider_auth_start');
+  }
+
+  async switchProvider(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
+    return this.providerAction(request, 'provider_switch');
+  }
+
+  async revokeProvider(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
+    return this.providerAction(request, 'provider_revoke');
+  }
+
+  async mintProviderGrant(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
+    return this.providerAction(request, 'provider_mint_grant');
+  }
+
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
     const session = this.session;
     this.session = null;
@@ -390,6 +487,71 @@ export class EvaosBrokerSessionClient {
       throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
     }
   }
+
+  private async providerAction(
+    request: IEvaosProviderActionRequest,
+    action: 'provider_auth_start' | 'provider_switch' | 'provider_revoke' | 'provider_mint_grant'
+  ): Promise<IEvaosProviderActionResult> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before changing Connected Apps.'
+    );
+    const providerKey = normalizeProviderKey(request.providerKey);
+    const agentRuntime =
+      action === 'provider_mint_grant' ? normalizeProviderAgentRuntime(request.agentRuntime ?? 'openclaw') : undefined;
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertPolicyScope(
+      policy,
+      'manage_integrations',
+      'You do not have permission to manage connected apps for this account.'
+    );
+    assertProviderPolicyProof(policy);
+
+    if (action === 'provider_switch' || action === 'provider_mint_grant') {
+      const currentHub = await this.loadProviderHubWithPolicy(customerId, policy, session);
+      const profile = currentHub.profiles.find((item) => item.providerKey === providerKey);
+      if (
+        !profile ||
+        profile.status !== 'connected' ||
+        profile.rawSecretsStoredInWorkbench ||
+        !profile.hasConnectionProof
+      ) {
+        throw new EvaosBrokerSessionError(
+          'action_denied',
+          'Connected app action denied until the broker returns a valid connected profile.'
+        );
+      }
+    }
+
+    const raw = await this.postJson(
+      stripUndefined({
+        action,
+        customer_id: customerId,
+        provider_key: providerKey,
+        agent_runtime: agentRuntime,
+      }),
+      session
+    );
+
+    return sanitizeProviderActionResult(raw, { action, customerId, providerKey, policy });
+  }
+
+  private async loadProviderHubWithPolicy(
+    customerId: string,
+    policy: IEvaosPeopleAccessPolicyView,
+    session: EvaosDesktopSession
+  ): Promise<IEvaosProviderHubView> {
+    const raw = await this.postJson(
+      {
+        action: 'provider_profiles',
+        customer_id: customerId,
+      },
+      session
+    );
+    return sanitizeProviderHub(raw, policy, customerId);
+  }
 }
 
 export function getDefaultEvaosBrokerSessionClient(): EvaosBrokerSessionClient {
@@ -433,6 +595,13 @@ function normalizeRuntime(runtime: IEvaosRuntimeKey): IEvaosRuntimeKey {
     return runtime;
   }
   throw new EvaosBrokerSessionError('invalid_runtime', 'Choose a supported evaOS runtime.');
+}
+
+function normalizeProviderKey(providerKey: IEvaosProviderKey): IEvaosProviderKey {
+  if (VALID_PROVIDER_KEYS.has(providerKey)) {
+    return providerKey;
+  }
+  throw new EvaosBrokerSessionError('invalid_provider', 'Choose a supported connected app.');
 }
 
 function normalizeRequiredText(value: string, code: EvaosBrokerErrorCode, message: string): string {
@@ -653,7 +822,7 @@ function sanitizePeopleAccessPolicy(
     routeDenialReason: routeDenied
       ? 'People Access requires the manage_members scope for this customer account.'
       : undefined,
-    backendEnforced: safeBoolean(permissions.backend_enforced) ?? true,
+    backendEnforced: safeBoolean(permissions.backend_enforced) ?? false,
     updatedAt: safeIsoDate(permissions.updated_at ?? account.updated_at),
     auditId: safeText(permissions.audit_id ?? account.audit_id),
   });
@@ -755,6 +924,188 @@ function sanitizeApprovalDecisionResult(
     auditId,
     backendEnforced,
   });
+}
+
+function sanitizeProviderHub(
+  raw: unknown,
+  policy: IEvaosPeopleAccessPolicyView,
+  fallbackCustomerId: string
+): IEvaosProviderHubView {
+  const record = asRecord(raw);
+  const source = Array.isArray(raw) ? raw : (record?.provider_profiles ?? record?.profiles ?? record?.providers);
+  if (!Array.isArray(source)) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const profiles = safeProviderProfiles(source);
+  const backendEnforced = safeBoolean(record?.backend_enforced);
+  const sourcePointer = safeText(record?.source_pointer);
+  const auditId = safeText(record?.audit_id);
+  if (backendEnforced !== true || !sourcePointer || !auditId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return provider profile enforcement proof.'
+    );
+  }
+  const connectedCount = profiles.filter(
+    (profile) => profile.status === 'connected' && profile.hasConnectionProof
+  ).length;
+  const needsAttentionCount = profiles.filter(
+    (profile) =>
+      profile.approvalRequired ||
+      profile.rawSecretsStoredInWorkbench ||
+      profile.status === 'approval_required' ||
+      profile.status === 'needs_login' ||
+      profile.status === 'expired' ||
+      profile.status === 'error'
+  ).length;
+
+  return stripUndefined({
+    schemaVersion: 'evaos.provider_hub.v1' as const,
+    customerId: safeText(record?.customer_id) ?? fallbackCustomerId,
+    customerAccountId: policy.customerAccountId,
+    membershipId: policy.membershipId,
+    membershipRole: policy.membershipRole,
+    routeDenied: false,
+    backendEnforced,
+    activeProviderKey: normalizeProviderKeyValue(record?.active_provider_key ?? record?.active_provider),
+    profiles,
+    summaryText:
+      profiles.length === 0
+        ? 'No connected app evidence returned'
+        : `${connectedCount} ready, ${needsAttentionCount} need attention`,
+    sourcePointer,
+    auditId,
+    policyAuditId: policy.auditId,
+  });
+}
+
+function sanitizeProviderActionResult(
+  raw: unknown,
+  fallback: {
+    action: 'provider_auth_start' | 'provider_switch' | 'provider_revoke' | 'provider_mint_grant';
+    customerId: string;
+    providerKey: IEvaosProviderKey;
+    policy: IEvaosPeopleAccessPolicyView;
+  }
+): IEvaosProviderActionResult {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const status = safeText(record.status);
+  const providerKey =
+    normalizeProviderKeyValue(record.provider_key ?? record.provider ?? record.key) ?? fallback.providerKey;
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  const hasProfiles = Array.isArray(record.provider_profiles ?? record.profiles ?? record.providers);
+  const providerHub = hasProfiles ? sanitizeProviderHub(record, fallback.policy, fallback.customerId) : undefined;
+  const sourcePointer = safeText(record.source_pointer) ?? providerHub?.sourcePointer;
+  const auditId = safeText(record.audit_id) ?? providerHub?.auditId;
+
+  if (!status || backendEnforced !== true || (!sourcePointer && !auditId)) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return provider action enforcement proof.'
+    );
+  }
+
+  return stripUndefined({
+    status,
+    providerKey,
+    message: safeText(record.message),
+    authUrlSummary: summarizeUrl(record.connect_url ?? record.target_url),
+    expiresAt: safeIsoDate(record.expires_at),
+    providerHub,
+    sourcePointer,
+    auditId,
+    backendEnforced,
+  });
+}
+
+function safeProviderProfiles(value: unknown): IEvaosProviderProfileView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item): IEvaosProviderProfileView => {
+    const profile = sanitizeSingleProviderProfile(item);
+    if (!profile) {
+      throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+    }
+    return profile;
+  });
+}
+
+function sanitizeSingleProviderProfile(raw: unknown): IEvaosProviderProfileView | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+
+  const nested = asRecord(record.provider_profile) ?? asRecord(record.profile);
+  if (nested) {
+    return sanitizeSingleProviderProfile(nested);
+  }
+
+  const providerKey = normalizeProviderKeyValue(record.provider_key ?? record.provider ?? record.key);
+  const rawStatus = safeText(record.status, 80);
+  const status = normalizeProviderStatusValue(rawStatus);
+  if (!providerKey || !status) {
+    return undefined;
+  }
+
+  const rawSecretsStoredInWorkbench =
+    safeBoolean(record.raw_secrets_stored_in_workbench ?? record.raw_secrets_present) ?? false;
+  const grantHandlePresent = hasOpaqueProviderHandle(record.grant_handle ?? record.handle);
+  const lastValidatedAt = safeIsoDate(record.last_validated_at ?? record.validated_at);
+  const display = asRecord(record.display);
+  const approvalRequired =
+    status === 'approval_required' || (safeBoolean(record.approval_required ?? record.requires_approval) ?? false);
+  const hasConnectionProof =
+    status === 'connected' && !rawSecretsStoredInWorkbench && Boolean(lastValidatedAt || grantHandlePresent);
+  const hasBrokeredGrant = status === 'connected' && !rawSecretsStoredInWorkbench && grantHandlePresent;
+
+  return stripUndefined({
+    providerKey,
+    title: safeText(record.title, 120) ?? PROVIDER_LABELS[providerKey],
+    subtitle: safeText(record.subtitle, 180),
+    status,
+    active: safeBoolean(record.active ?? record.is_active) ?? false,
+    rawSecretsStoredInWorkbench,
+    approvalRequired,
+    capabilities: safeStringList(record.capabilities, 120),
+    usageSummary: safeText(record.usage_summary, 220),
+    customerAccountId: safeText(record.customer_account_id),
+    ownerKind: safeText(record.owner_kind, 80),
+    ownerUserId: safeText(record.owner_user_id, 120),
+    grantedScopes: safeStringList(record.granted_scopes ?? record.scopes, 120),
+    expiresAt: safeIsoDate(record.expires_at),
+    accountLabel: safeText(display?.account_label ?? record.account_label, 180),
+    lastCheckedAt: safeIsoDate(display?.last_checked_at ?? record.last_checked_at),
+    sourcePointer: safeProviderProfileSourcePointer(record.source_pointer, providerKey),
+    auditId: safeText(record.audit_id),
+    lastValidatedAt,
+    hasConnectionProof,
+    hasBrokeredGrant,
+    summaryText: providerSummaryText({ status, rawSecretsStoredInWorkbench, approvalRequired, hasConnectionProof }),
+  });
+}
+
+function providerSummaryText(profile: {
+  status: IEvaosProviderStatus;
+  rawSecretsStoredInWorkbench: boolean;
+  approvalRequired: boolean;
+  hasConnectionProof: boolean;
+}): string {
+  if (profile.rawSecretsStoredInWorkbench) return 'Blocked';
+  if (profile.approvalRequired) return 'Approval required';
+  if (profile.status === 'connected' && profile.hasConnectionProof) return 'Ready';
+  if (profile.status === 'connected') return 'Needs verification';
+  if (profile.status === 'needs_login') return 'Needs login';
+  if (profile.status === 'approval_required') return 'Approval required';
+  if (profile.status === 'revoked') return 'Revoked';
+  if (profile.status === 'expired') return 'Needs reconnection';
+  if (profile.status === 'error') return 'Blocked';
+  return 'Unavailable';
 }
 
 function safeApprovalRequests(value: unknown): IEvaosApprovalRequestView[] {
@@ -1132,6 +1483,15 @@ function assertPolicyScope(
   }
 }
 
+function assertProviderPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
+  if (policy.backendEnforced !== true || !policy.auditId) {
+    throw new EvaosBrokerSessionError(
+      'action_denied',
+      'Connected app actions require backend-enforced account policy proof.'
+    );
+  }
+}
+
 function normalizeEmail(value: string): string {
   const text = safeText(value, 254)?.toLowerCase();
   if (!text || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
@@ -1254,6 +1614,42 @@ function normalizeRuntimeValue(value: unknown): IEvaosRuntimeKey | undefined {
     return undefined;
   }
   return VALID_RUNTIME_KEYS.has(text as IEvaosRuntimeKey) ? (text as IEvaosRuntimeKey) : undefined;
+}
+
+function normalizeProviderKeyValue(value: unknown): IEvaosProviderKey | undefined {
+  const text = safeText(value, 120);
+  if (!text) {
+    return undefined;
+  }
+  return VALID_PROVIDER_KEYS.has(text as IEvaosProviderKey) ? (text as IEvaosProviderKey) : undefined;
+}
+
+function normalizeProviderStatusValue(value: unknown): IEvaosProviderStatus | undefined {
+  const text = safeText(value, 80)?.toLowerCase();
+  if (!text) {
+    return undefined;
+  }
+  const aliases: Record<string, IEvaosProviderStatus> = {
+    needs_auth: 'needs_login',
+    needs_input: 'needs_login',
+    unavailable: 'planned',
+    coming_soon: 'planned',
+    disconnected: 'revoked',
+    blocked: 'error',
+    failed: 'error',
+  };
+  const normalized = aliases[text] ?? text;
+  return VALID_PROVIDER_STATUSES.has(normalized as IEvaosProviderStatus)
+    ? (normalized as IEvaosProviderStatus)
+    : undefined;
+}
+
+function normalizeProviderAgentRuntime(value: unknown): IEvaosProviderAgentRuntime {
+  const text = safeText(value, 80);
+  if (text && VALID_PROVIDER_AGENT_RUNTIMES.has(text as IEvaosProviderAgentRuntime)) {
+    return text as IEvaosProviderAgentRuntime;
+  }
+  throw new EvaosBrokerSessionError('invalid_provider', 'Choose a supported provider grant runtime.');
 }
 
 function summarizeUrl(value: unknown): IEvaosSafeUrlSummary | undefined {
@@ -1383,6 +1779,33 @@ function safeActionList(value: unknown): string[] | undefined {
   const actions = value.map((item) => safeText(item, 80)).filter((item): item is string => Boolean(item));
 
   return actions.length > 0 ? actions : undefined;
+}
+
+function safeStringList(value: unknown, maxLength = 120): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result = value.map((item) => safeText(item, maxLength)).filter((item): item is string => Boolean(item));
+  return [...new Set(result)];
+}
+
+function safeProviderProfileSourcePointer(value: unknown, providerKey: IEvaosProviderKey): string | undefined {
+  const text = safeText(value, 180);
+  if (!text) {
+    return undefined;
+  }
+
+  const expectedProfilePointer = `broker:provider_profile:${providerKey}`;
+  if (text === expectedProfilePointer) {
+    return text;
+  }
+
+  return undefined;
+}
+
+function hasOpaqueProviderHandle(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function safeBoolean(value: unknown): boolean | undefined {

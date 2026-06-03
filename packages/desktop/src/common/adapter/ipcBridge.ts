@@ -513,6 +513,91 @@ export interface IEvaosPeopleAccessMutationResult {
   backendEnforced: boolean;
 }
 
+export type IEvaosProviderKey =
+  | 'openai_codex'
+  | 'openclaw'
+  | 'hermes'
+  | 'google_workspace'
+  | 'pipedream'
+  | 'slack'
+  | 'notion'
+  | 'linear'
+  | 'github';
+
+export type IEvaosProviderStatus =
+  | 'connected'
+  | 'needs_login'
+  | 'approval_required'
+  | 'planned'
+  | 'revoked'
+  | 'expired'
+  | 'error';
+export type IEvaosProviderAgentRuntime = 'openclaw' | 'hermes';
+
+export interface IEvaosProviderHubRequest {
+  customerId: string;
+}
+
+export interface IEvaosProviderActionRequest {
+  customerId: string;
+  providerKey: IEvaosProviderKey;
+  agentRuntime?: IEvaosProviderAgentRuntime;
+}
+
+export interface IEvaosProviderProfileView {
+  providerKey: IEvaosProviderKey;
+  title: string;
+  subtitle?: string;
+  status: IEvaosProviderStatus;
+  active: boolean;
+  rawSecretsStoredInWorkbench: boolean;
+  approvalRequired: boolean;
+  capabilities: string[];
+  usageSummary?: string;
+  customerAccountId?: string;
+  ownerKind?: string;
+  ownerUserId?: string;
+  grantedScopes: string[];
+  expiresAt?: string;
+  accountLabel?: string;
+  lastCheckedAt?: string;
+  sourcePointer?: string;
+  auditId?: string;
+  lastValidatedAt?: string;
+  hasConnectionProof: boolean;
+  hasBrokeredGrant: boolean;
+  summaryText: string;
+}
+
+export interface IEvaosProviderHubView {
+  schemaVersion: 'evaos.provider_hub.v1';
+  customerId: string;
+  customerAccountId?: string;
+  membershipId?: string;
+  membershipRole?: IEvaosAccountPolicyRole;
+  routeDenied: boolean;
+  routeDenialReason?: string;
+  backendEnforced: boolean;
+  activeProviderKey?: IEvaosProviderKey;
+  profiles: IEvaosProviderProfileView[];
+  summaryText: string;
+  sourcePointer?: string;
+  auditId?: string;
+  policyAuditId?: string;
+}
+
+export interface IEvaosProviderActionResult {
+  status: string;
+  providerKey: IEvaosProviderKey;
+  message?: string;
+  authUrlSummary?: IEvaosSafeUrlSummary;
+  expiresAt?: string;
+  providerHub?: IEvaosProviderHubView;
+  sourcePointer?: string;
+  auditId?: string;
+  backendEnforced: boolean;
+}
+
 export type IEvaosApprovalDecision = 'allow-once' | 'allow-always' | 'deny';
 export type IEvaosApprovalScope = 'this-call' | 'this-agent';
 export type IEvaosApprovalRiskClass = 'critical' | 'warning' | 'info';
@@ -1383,6 +1468,24 @@ export const evaosApprovalCenter = {
   ),
   denyApproval: bridge.buildProvider<IBridgeResponse<IEvaosApprovalDecisionResult>, IEvaosApprovalDenyRequest>(
     'evaos.approval-center.deny'
+  ),
+};
+
+export const evaosProviderHub = {
+  getProfiles: bridge.buildProvider<IBridgeResponse<IEvaosProviderHubView>, IEvaosProviderHubRequest>(
+    'evaos.provider-hub.profiles'
+  ),
+  startAuth: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+    'evaos.provider-hub.start-auth'
+  ),
+  switchProvider: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+    'evaos.provider-hub.switch'
+  ),
+  revokeProvider: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+    'evaos.provider-hub.revoke'
+  ),
+  mintGrant: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+    'evaos.provider-hub.mint-grant'
   ),
 };
 

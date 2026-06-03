@@ -12,7 +12,11 @@ import { initWindowControlsBridge } from './windowControlsBridge';
 import { initNotificationBridge } from './notificationBridge';
 import { initWebuiBridge } from './webuiBridge';
 import { initEvaosBrokerBridge } from './evaosBrokerBridge';
-import { initEvaosApprovalCenterBridge, initEvaosPeopleAccessBridge } from './evaosPeopleAccessBridge';
+import {
+  initEvaosApprovalCenterBridge,
+  initEvaosPeopleAccessBridge,
+  initEvaosProviderHubBridge,
+} from './evaosPeopleAccessBridge';
 
 export type BridgeDependencies = Record<string, never>;
 
@@ -27,6 +31,7 @@ export function initAllBridges(_deps: BridgeDependencies = {}): void {
   initEvaosBrokerBridge();
   initEvaosPeopleAccessBridge();
   initEvaosApprovalCenterBridge();
+  initEvaosProviderHubBridge();
 }
 
 export {
@@ -35,6 +40,7 @@ export {
   initEvaosApprovalCenterBridge,
   initEvaosBrokerBridge,
   initEvaosPeopleAccessBridge,
+  initEvaosProviderHubBridge,
   initNotificationBridge,
   initSystemSettingsBridge,
   initUpdateBridge,

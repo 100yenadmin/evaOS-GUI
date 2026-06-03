@@ -10,6 +10,10 @@ import type {
   IEvaosApprovalCenterView,
   IEvaosApprovalDecisionResult,
   IEvaosApprovalDenyRequest,
+  IEvaosProviderActionRequest,
+  IEvaosProviderActionResult,
+  IEvaosProviderHubRequest,
+  IEvaosProviderHubView,
   IEvaosPeopleAccessInviteMemberRequest,
   IEvaosPeopleAccessMutationResult,
   IEvaosPeopleAccessPolicyRequest,
@@ -52,6 +56,35 @@ export function initEvaosApprovalCenterBridge(
   ipcBridge.evaosApprovalCenter.denyApproval.provider(
     async (request: IEvaosApprovalDenyRequest): Promise<BridgeResponse<IEvaosApprovalDecisionResult>> =>
       toBridgeResponse(() => client.denyApproval(request))
+  );
+}
+
+export function initEvaosProviderHubBridge(
+  client: EvaosBrokerSessionClient = getDefaultEvaosBrokerSessionClient()
+): void {
+  ipcBridge.evaosProviderHub.getProfiles.provider(
+    async (request: IEvaosProviderHubRequest): Promise<BridgeResponse<IEvaosProviderHubView>> =>
+      toBridgeResponse(() => client.providerHub(request))
+  );
+
+  ipcBridge.evaosProviderHub.startAuth.provider(
+    async (request: IEvaosProviderActionRequest): Promise<BridgeResponse<IEvaosProviderActionResult>> =>
+      toBridgeResponse(() => client.startProviderAuth(request))
+  );
+
+  ipcBridge.evaosProviderHub.switchProvider.provider(
+    async (request: IEvaosProviderActionRequest): Promise<BridgeResponse<IEvaosProviderActionResult>> =>
+      toBridgeResponse(() => client.switchProvider(request))
+  );
+
+  ipcBridge.evaosProviderHub.revokeProvider.provider(
+    async (request: IEvaosProviderActionRequest): Promise<BridgeResponse<IEvaosProviderActionResult>> =>
+      toBridgeResponse(() => client.revokeProvider(request))
+  );
+
+  ipcBridge.evaosProviderHub.mintGrant.provider(
+    async (request: IEvaosProviderActionRequest): Promise<BridgeResponse<IEvaosProviderActionResult>> =>
+      toBridgeResponse(() => client.mintProviderGrant(request))
   );
 }
 

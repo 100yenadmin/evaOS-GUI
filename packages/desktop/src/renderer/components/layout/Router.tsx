@@ -2,10 +2,15 @@ import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
-import { EVAOS_APPROVAL_CENTER_ENABLED, TEAM_MODE_ENABLED } from '@/common/config/constants';
+import {
+  EVAOS_APPROVAL_CENTER_ENABLED,
+  EVAOS_PROVIDER_HUB_ENABLED,
+  TEAM_MODE_ENABLED,
+} from '@/common/config/constants';
 const Conversation = React.lazy(() => import('@renderer/pages/conversation'));
 const Guid = React.lazy(() => import('@renderer/pages/guid'));
 const ApprovalCenter = React.lazy(() => import('@renderer/pages/approval-center'));
+const ConnectedApps = React.lazy(() => import('@renderer/pages/connected-apps'));
 const PeopleAccess = React.lazy(() => import('@renderer/pages/people-access'));
 const AgentSettings = React.lazy(() => import('@renderer/pages/settings/AgentSettings'));
 const AssistantSettings = React.lazy(() => import('@renderer/pages/settings/AssistantSettings'));
@@ -60,6 +65,10 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
             element={
               EVAOS_APPROVAL_CENTER_ENABLED ? withRouteFallback(ApprovalCenter) : <Navigate to='/guid' replace />
             }
+          />
+          <Route
+            path='/connected-apps'
+            element={EVAOS_PROVIDER_HUB_ENABLED ? withRouteFallback(ConnectedApps) : <Navigate to='/guid' replace />}
           />
           <Route path='/people-access' element={withRouteFallback(PeopleAccess)} />
           <Route path='/conversation/:id' element={withRouteFallback(Conversation)} />
