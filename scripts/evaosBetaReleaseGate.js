@@ -114,14 +114,33 @@ function isEvaosBetaTag(tag) {
   return /^evaos-beta-v?\d+\.\d+\.\d+/.test(tag);
 }
 
+function betaTagVersion(tag) {
+  let version = String(tag || '').replace(/^evaos-beta-/, '');
+  if (version.startsWith('v')) {
+    version = version.slice(1);
+  }
+  return version;
+}
+
+function hasEvaosBetaVersionMarker(tag) {
+  return betaTagVersion(tag).includes('evaos-beta');
+}
+
 function isDevBetaTag(tag) {
   return /(^|-)dev-/.test(tag) || /-dev\./.test(tag);
 }
 
-function assertPublicDistributionTag(tag) {
+function assertEvaosBetaReleaseTag(tag) {
   if (!isEvaosBetaTag(tag)) {
     throw new Error(`Refusing to distribute non-evaOS beta tag: ${tag}`);
   }
+  if (!hasEvaosBetaVersionMarker(tag)) {
+    throw new Error(`Refusing to distribute tag without evaos-beta version marker: ${tag}`);
+  }
+}
+
+function assertPublicDistributionTag(tag) {
+  assertEvaosBetaReleaseTag(tag);
   if (isDevBetaTag(tag)) {
     throw new Error(`Refusing to distribute development beta tag: ${tag}`);
   }
@@ -189,6 +208,19 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/build-and-release.yml',
     issues
   );
+  requireText(
+    buildRelease,
+    'scripts/verify-release-assets.sh release-assets',
+    '.github/workflows/build-and-release.yml',
+    issues
+  );
+  requireText(
+    buildRelease,
+    'actions/upload-artifact',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'trusted release manifest artifact upload'
+  );
 
   requireText(distribute, "beta_distribution_ack == 'evaos-beta'", '.github/workflows/release-distribute.yml', issues);
   requireText(
@@ -223,6 +255,15 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/release-distribute.yml',
     issues
   );
+  requireText(
+    distribute,
+    'gh run download',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'trusted release manifest artifact download'
+  );
+  requireText(distribute, 'EVAOS_BETA_TRUSTED_MANIFEST_PATH', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, 'scripts/verify-release-assets.sh dist', '.github/workflows/release-distribute.yml', issues);
 
   requireText(reusableBuild, 'assert-public-release-env', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'EVAOS_BETA_REQUIRE_SIGNING', '.github/workflows/_build-reusable.yml', issues);
@@ -273,9 +314,7 @@ function assertReleaseConfig(rootDir = process.cwd()) {
 }
 
 function createReleaseManifest(outputDir, tag, env = process.env) {
-  if (!isEvaosBetaTag(tag)) {
-    throw new Error(`Refusing to write release manifest for non-evaOS beta tag: ${tag}`);
-  }
+  assertEvaosBetaReleaseTag(tag);
 
   const assets = listReleaseAssetFiles(outputDir).map((name) => {
     const filePath = path.join(outputDir, name);
@@ -320,6 +359,32 @@ function readManifest(outputDir) {
   return JSON.parse(fs.readFileSync(path.join(outputDir, RELEASE_MANIFEST_NAME), 'utf8'));
 }
 
+function readManifestFile(manifestPath) {
+  return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+}
+
+function canonicalManifestJson(manifest) {
+  return JSON.stringify(manifest);
+}
+
+function selectTrustedManifest(outputDir, env = process.env) {
+  const releaseManifest = readManifest(outputDir);
+  const trustedManifestPath = env.EVAOS_BETA_TRUSTED_MANIFEST_PATH || '';
+
+  if (!trustedManifestPath) {
+    return releaseManifest;
+  }
+
+  const trustedManifest = readManifestFile(trustedManifestPath);
+  if (canonicalManifestJson(releaseManifest) !== canonicalManifestJson(trustedManifest)) {
+    throw new Error(
+      `Release manifest ${path.join(outputDir, RELEASE_MANIFEST_NAME)} does not match trusted workflow artifact ${trustedManifestPath}.`
+    );
+  }
+
+  return trustedManifest;
+}
+
 function verifyGitHubRun(manifest, env = process.env) {
   if (normalizeBoolean(env.EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY)) return;
 
@@ -357,7 +422,7 @@ function verifyGitHubRun(manifest, env = process.env) {
 function verifyReleaseManifest(outputDir, tag, env = process.env) {
   assertPublicDistributionTag(tag);
 
-  const manifest = readManifest(outputDir);
+  const manifest = selectTrustedManifest(outputDir, env);
   if (manifest.schema !== 'evaos-beta-release-manifest/v1') {
     throw new Error(`Unexpected release manifest schema: ${manifest.schema}`);
   }

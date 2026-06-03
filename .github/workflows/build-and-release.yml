@@ -311,8 +311,11 @@ jobs:
             echo "🔧 Creating development release: $TAG_NAME"
           fi
 
+          VERSION="${TAG_NAME#evaos-beta-}"
+          VERSION="${VERSION#v}"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "is_dev=$IS_DEV" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v7
@@ -325,6 +328,13 @@ jobs:
           INCLUDE_WEB_CLI_ASSETS: '0'
         run: bash scripts/prepare-release-assets.sh build-artifacts release-assets
 
+      - name: Verify release assets before manifest
+        shell: bash
+        env:
+          INCLUDE_WEB_CLI_ASSETS: '0'
+          MOCK_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/verify-release-assets.sh release-assets
+
       - name: Write evaOS beta release manifest
         shell: bash
         env:
@@ -333,6 +343,14 @@ jobs:
           EVAOS_BETA_RELEASE_BRANCH: ${{ vars.EVAOS_BETA_RELEASE_BRANCH }}
           EVAOS_BETA_RELEASE_PUBLISH_ENABLED: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
         run: node scripts/evaosBetaReleaseGate.js write-manifest release-assets "$TAG_NAME"
+
+      - name: Upload trusted evaOS beta release manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaos-beta-release-manifest-${{ steps.version.outputs.tag_name }}
+          path: release-assets/evaos-beta-release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

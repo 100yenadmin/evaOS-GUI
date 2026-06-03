@@ -128,6 +128,37 @@ jobs:
           echo "Downloaded files:"
           ls -la dist
 
+      - name: Download trusted release manifest artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ ! -f dist/evaos-beta-release-manifest.json ]; then
+            echo "::error::Release is missing evaOS beta release manifest."
+            exit 1
+          fi
+
+          RELEASE_RUN_ID=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseRunId || ''));")
+          if [ -z "$RELEASE_RUN_ID" ]; then
+            echo "::error::Release manifest is missing releaseRunId."
+            exit 1
+          fi
+
+          mkdir -p trusted-manifest
+          gh run download "$RELEASE_RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "evaos-beta-release-manifest-${TAG}" \
+            --dir trusted-manifest
+          TRUSTED_MANIFEST_PATH=$(find trusted-manifest -type f -name evaos-beta-release-manifest.json | head -n 1)
+          if [ -z "$TRUSTED_MANIFEST_PATH" ]; then
+            echo "::error::Trusted manifest artifact did not contain evaos-beta-release-manifest.json."
+            exit 1
+          fi
+          if [ "$TRUSTED_MANIFEST_PATH" != "trusted-manifest/evaos-beta-release-manifest.json" ]; then
+            cp "$TRUSTED_MANIFEST_PATH" trusted-manifest/evaos-beta-release-manifest.json
+          fi
+
       - name: Validate evaOS beta asset identity
         run: |
           shopt -s nullglob
@@ -162,10 +193,17 @@ jobs:
             esac
           done
 
+      - name: Verify release updater metadata
+        env:
+          INCLUDE_WEB_CLI_ASSETS: '0'
+          MOCK_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/verify-release-assets.sh dist
+
       - name: Validate release manifest and workflow provenance
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
         run: node scripts/evaosBetaReleaseGate.js verify-manifest dist "${{ steps.version.outputs.tag }}"
 
       - name: Upload assets
