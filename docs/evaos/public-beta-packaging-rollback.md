@@ -69,6 +69,29 @@ Before sharing a public beta link, attach proof to issue #12:
 - Updater/feed audit: no public beta artifact can auto-update from upstream channels.
 - Rollback smoke: old released macOS app still installs and launches independently.
 
+Create a machine-checkable release-candidate proof packet before asking for the
+final #13 public beta decision:
+
+```bash
+node scripts/evaosBetaReleaseGate.js write-rc-proof-template \
+  /Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/rc-proof/<tag> \
+  <tag>
+
+node scripts/evaosBetaReleaseGate.js verify-rc-proof \
+  /Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/rc-proof/<tag> \
+  <tag>
+```
+
+The proof packet must include:
+
+- `release-assets/` with the audited `evaos-beta-release-manifest.json`.
+- `trusted-manifest/evaos-beta-release-manifest.json` downloaded from the release workflow artifact, not copied from the mutable GitHub Release assets.
+- `codesign-macos-arm64.txt` and `spctl-macos-arm64.txt`.
+- `install-smoke.md`, `launch-smoke.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
+- macOS x64 signing/Gatekeeper proof, or a concrete `macosX64.status=blocked` reason in `evaos-beta-rc-proof.json`.
+
+`rollback-smoke.md` must explicitly record beta app absence, released fallback launch, beta data/cache disposition, protocol handler state, and broker login/session proof.
+
 ## Rollback
 
 The fallback remains the current released macOS app until #13 ships the public beta. Rollback procedure:

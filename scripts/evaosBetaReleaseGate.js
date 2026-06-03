@@ -44,7 +44,52 @@ const REQUIRED_NOTARIZATION_ENV = REQUIRED_PUBLIC_BETA_SIGNING_ENV.filter((entry
   ['appleId', 'appleIdPassword', 'teamId'].includes(entry.name)
 );
 const RELEASE_MANIFEST_NAME = 'evaos-beta-release-manifest.json';
+const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
+const REQUIRED_RC_PROOF_CHECKS = [
+  {
+    id: 'macos-arm64-codesign',
+    evidence: 'codesign-macos-arm64.txt',
+    requiredText: ['valid on disk', 'satisfies its Designated Requirement'],
+  },
+  {
+    id: 'macos-arm64-gatekeeper',
+    evidence: 'spctl-macos-arm64.txt',
+    requiredText: ['accepted'],
+  },
+  {
+    id: 'install-smoke',
+    evidence: 'install-smoke.md',
+    requiredText: ['PASS', '/Applications/evaOS Workbench Beta.app', 'released fallback app'],
+  },
+  {
+    id: 'launch-smoke',
+    evidence: 'launch-smoke.md',
+    requiredText: ['PASS', 'evaOS Workbench Beta', 'no upstream AionUi feed'],
+  },
+  {
+    id: 'updater-feed-audit',
+    evidence: 'updater-feed-audit.md',
+    requiredText: ['PASS', '100yenadmin/AionUi', 'iOfficeAI/AionUi blocked'],
+  },
+  {
+    id: 'rollback-smoke',
+    evidence: 'rollback-smoke.md',
+    requiredText: [
+      'PASS',
+      'beta app absent',
+      'released fallback app launched',
+      'data/cache disposition',
+      'protocol handler state',
+      'broker login/session',
+    ],
+  },
+  {
+    id: 'support-notes',
+    evidence: 'support-notes.md',
+    requiredText: ['100yenadmin/AionUi', 'released macOS app remains the fallback'],
+  },
+];
 
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
@@ -489,6 +534,160 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
   return true;
 }
 
+function requireExistingRelativeFile(rootDir, relativePath, label) {
+  if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes('..')) {
+    throw new Error(`${label} must be a safe relative path.`);
+  }
+
+  const filePath = path.join(rootDir, relativePath);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    throw new Error(`${label} is missing: ${relativePath}`);
+  }
+
+  return filePath;
+}
+
+function assertTextMarkers(filePath, requiredText, label) {
+  const text = fs.readFileSync(filePath, 'utf8');
+  const missing = requiredText.filter((needle) => !text.includes(needle));
+  if (missing.length > 0) {
+    throw new Error(`${label} evidence ${filePath} is missing required text: ${missing.join(', ')}`);
+  }
+}
+
+function assertSameStringArray(actual, expected, label) {
+  if (!Array.isArray(actual) || actual.length !== expected.length) {
+    throw new Error(`${label} requiredText must match the built-in RC proof gate markers.`);
+  }
+  for (let i = 0; i < expected.length; i += 1) {
+    if (actual[i] !== expected[i]) {
+      throw new Error(`${label} requiredText must match the built-in RC proof gate markers.`);
+    }
+  }
+}
+
+function assertConcreteBlockedReason(reason, label) {
+  const normalized = String(reason || '').trim();
+  if (normalized.length < 20) {
+    throw new Error(`${label} blocker must include a concrete reason.`);
+  }
+  if (/replace with|placeholder|exact reason|out of beta scope/i.test(normalized)) {
+    throw new Error(`${label} blocker must replace the template placeholder with concrete evidence.`);
+  }
+}
+
+function writeRcProofTemplate(proofDir, tag) {
+  assertPublicDistributionTag(tag);
+  fs.mkdirSync(proofDir, { recursive: true });
+
+  const manifest = {
+    schema: 'evaos-beta-rc-proof/v1',
+    tag,
+    repository: '100yenadmin/AionUi',
+    releaseAssetsDir: 'release-assets',
+    trustedManifestPath: 'trusted-manifest/evaos-beta-release-manifest.json',
+    macosX64: {
+      status: 'blocked',
+      reason:
+        'Replace with pass plus codesign/spctl evidence, or keep blocked with the exact reason x64 is out of beta scope.',
+    },
+    checks: REQUIRED_RC_PROOF_CHECKS.map((check) => ({
+      id: check.id,
+      status: 'pending',
+      evidence: check.evidence,
+      requiredText: check.requiredText,
+    })),
+  };
+
+  writeJson(path.join(proofDir, RC_PROOF_MANIFEST_NAME), manifest);
+
+  for (const check of REQUIRED_RC_PROOF_CHECKS) {
+    const templatePath = path.join(proofDir, check.evidence);
+    if (fs.existsSync(templatePath)) continue;
+    fs.writeFileSync(
+      templatePath,
+      [
+        `# ${check.id}`,
+        '',
+        'Status: pending',
+        '',
+        'Replace this template with command output or a short smoke transcript.',
+        `Required text markers: ${check.requiredText.join(', ')}`,
+        '',
+      ].join('\n')
+    );
+  }
+
+  return manifest;
+}
+
+function verifyRcProof(proofDir, tag, env = process.env) {
+  const manifestPath = requireExistingRelativeFile(proofDir, RC_PROOF_MANIFEST_NAME, 'RC proof manifest');
+  const manifest = readManifestFile(manifestPath);
+
+  if (manifest.schema !== 'evaos-beta-rc-proof/v1') {
+    throw new Error(`Unexpected RC proof schema: ${manifest.schema}`);
+  }
+  assertPublicDistributionTag(tag);
+  if (manifest.tag !== tag) {
+    throw new Error(`RC proof tag ${manifest.tag} does not match requested tag ${tag}.`);
+  }
+  if (manifest.repository !== '100yenadmin/AionUi') {
+    throw new Error(`RC proof repository must be 100yenadmin/AionUi, got ${manifest.repository}.`);
+  }
+
+  const releaseAssetsDir = manifest.releaseAssetsDir || 'release-assets';
+  if (path.isAbsolute(releaseAssetsDir) || releaseAssetsDir.includes('..')) {
+    throw new Error('releaseAssetsDir must be a safe relative path.');
+  }
+  const resolvedReleaseAssetsDir = path.join(proofDir, releaseAssetsDir);
+  if (!fs.existsSync(resolvedReleaseAssetsDir) || !fs.statSync(resolvedReleaseAssetsDir).isDirectory()) {
+    throw new Error(`RC proof release assets directory is missing: ${releaseAssetsDir}`);
+  }
+  requireExistingRelativeFile(resolvedReleaseAssetsDir, RELEASE_MANIFEST_NAME, 'RC proof release manifest');
+
+  const trustedManifestRelativePath = manifest.trustedManifestPath || '';
+  const trustedManifestPath = requireExistingRelativeFile(
+    proofDir,
+    trustedManifestRelativePath,
+    'RC proof trusted release manifest'
+  );
+  verifyReleaseManifest(resolvedReleaseAssetsDir, tag, {
+    ...env,
+    EVAOS_BETA_TRUSTED_MANIFEST_PATH: trustedManifestPath,
+  });
+
+  const checksById = new Map((manifest.checks || []).map((check) => [check.id, check]));
+  for (const required of REQUIRED_RC_PROOF_CHECKS) {
+    const check = checksById.get(required.id);
+    if (!check) {
+      throw new Error(`RC proof is missing check: ${required.id}`);
+    }
+    if (check.evidence !== required.evidence) {
+      throw new Error(`RC proof check ${required.id} evidence path must be ${required.evidence}.`);
+    }
+    assertSameStringArray(check.requiredText, required.requiredText, required.id);
+    if (check.status !== 'pass') {
+      throw new Error(`RC proof check ${required.id} must be pass, got ${check.status || 'missing'}.`);
+    }
+    const filePath = requireExistingRelativeFile(proofDir, required.evidence, `RC proof ${required.id}`);
+    assertTextMarkers(filePath, required.requiredText, required.id);
+  }
+
+  if (manifest.macosX64?.status === 'blocked') {
+    assertConcreteBlockedReason(manifest.macosX64.reason, 'macOS x64');
+  } else if (manifest.macosX64?.status === 'pass') {
+    const codesignPath = requireExistingRelativeFile(proofDir, 'codesign-macos-x64.txt', 'macOS x64 codesign proof');
+    assertTextMarkers(codesignPath, ['valid on disk', 'satisfies its Designated Requirement'], 'macos-x64-codesign');
+    const spctlPath = requireExistingRelativeFile(proofDir, 'spctl-macos-x64.txt', 'macOS x64 Gatekeeper proof');
+    assertTextMarkers(spctlPath, ['accepted'], 'macos-x64-gatekeeper');
+  } else {
+    throw new Error('macOS x64 proof must be pass with codesign/spctl evidence or blocked with a concrete reason.');
+  }
+
+  return true;
+}
+
 function main() {
   const command = process.argv[2] || 'audit-config';
 
@@ -530,6 +729,28 @@ function main() {
     return;
   }
 
+  if (command === 'write-rc-proof-template') {
+    const proofDir = process.argv[3];
+    const tag = process.argv[4] || process.env.TAG_NAME || '';
+    if (!proofDir || !tag) {
+      throw new Error('Usage: evaosBetaReleaseGate.js write-rc-proof-template <proof-dir> <tag>');
+    }
+    writeRcProofTemplate(proofDir, tag);
+    console.log(`Wrote ${path.join(proofDir, RC_PROOF_MANIFEST_NAME)}.`);
+    return;
+  }
+
+  if (command === 'verify-rc-proof') {
+    const proofDir = process.argv[3];
+    const tag = process.argv[4] || process.env.TAG_NAME || '';
+    if (!proofDir || !tag) {
+      throw new Error('Usage: evaosBetaReleaseGate.js verify-rc-proof <proof-dir> <tag>');
+    }
+    verifyRcProof(proofDir, tag, process.env);
+    console.log('evaOS beta release candidate proof verification passed.');
+    return;
+  }
+
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -553,5 +774,7 @@ module.exports = {
   getEnvValue,
   isStrictPublicBetaReleaseEnv,
   verifyReleaseManifest,
+  verifyRcProof,
   normalizeBoolean,
+  writeRcProofTemplate,
 };
