@@ -22,7 +22,7 @@ Reasoning:
 
 - Shell/fork/release safety foundation: 86/100.
 - Broker/session/provider/permission trust: 58/100.
-- Company Brain/browser/runtime live proof: 55/100.
+- Company Brain/browser/runtime live proof: 60/100.
 - Native companion and local trust boundary: 72/100.
 - Packaging/rollback release process: 75/100.
 - Stack mergeability and operating process: 61/100.
@@ -35,7 +35,7 @@ Public beta is blocked by Sev-1 and Sev-2 unknowns:
 
 - The stack is not merged. Root PR #15 still requires review before the stacked PR chain can land.
 - Most product slices are PR-local or mock-proven, not staging/live-proven.
-- Broker/session, provider grant, approval deny, People Access, Company Brain, and browser runtime flows still need role-scoped live scenario canaries.
+- Broker/session, provider grant, approval deny, People Access, Company Brain, and browser runtime flows still need role-scoped live scenario execution.
 - No signed/notarized public beta artifact has been produced.
 - No install smoke, launch smoke, updater/feed audit on a real artifact, or old-app rollback smoke has passed.
 - The issue #1 control-board/project setup remains blocked on GitHub Project token scope.
@@ -52,22 +52,22 @@ The fork path should continue because the sprint did produce useful, mergeable s
 
 ## Current Sprint State
 
-| Issue                                            | Status             |              Confidence | Public Beta Impact                                                                  |
-| ------------------------------------------------ | ------------------ | ----------------------: | ----------------------------------------------------------------------------------- |
-| #1 Sprint Control Board + Agent Handoff Template | Blocked            |                     40% | GitHub Project v2 token scope missing; milestone/issues are usable fallback.        |
-| #2 Upstream Sync + Fork Safety Baseline          | PR-local partial   |                     85% | Good baseline, still needs merge/review closeout.                                   |
-| #3 evaOS Shell Guardrails                        | PR-local partial   |                     85% | First guardrails exist; additional team/remote-agent claim fencing remains.         |
-| #4 Broker Auth + Desktop Session Handoff         | PR-local primitive |                     78% | Needs live/session scenario and secret-exposure proof after merge.                  |
-| #5 Session Center / Mission Control              | PR-local primitive |                     78% | Needs visual shell proof and live runtime scenario.                                 |
-| #6 Connected Apps Provider Hub                   | PR-local           |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.            |
-| #7 Approval Center + Deny Loop                   | PR-local           |                     93% | Needs requester/approver live fixture and audit enforcement proof.                  |
-| #8 People Access + Account Policy                | PR-local           |                     84% | Needs live account-policy fixture and role denial agreement.                        |
-| #9 Company Brain Directory + Account 360         | PR-local           |                     92% | Needs live org-scoped directory/account/query and cross-org denial proof.           |
-| #10 Business Browser / VM Control Proof          | PR-local           |                     90% | Needs real browser runtime before/after visual proof and action audit proof.        |
-| #11 Native Companion Boundary                    | PR-local           |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.  |
-| #12 Public Beta Packaging + Rollback             | PR-local passed    |                     95% | Release safety gate is strong; real signed artifact/install/rollback proof remains. |
-| #13 95% Confidence Decision Packet               | In progress        | 95% decision confidence | This packet recommends continue R&D with blockers.                                  |
-| #14 Forgejo Company Brain Sidecar Spike          | Sidecar only       |                     70% | Useful as read-only/reference, not a beta dependency.                               |
+| Issue                                            | Status             |              Confidence | Public Beta Impact                                                                                                                                    |
+| ------------------------------------------------ | ------------------ | ----------------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1 Sprint Control Board + Agent Handoff Template | Blocked            |                     40% | GitHub Project v2 token scope missing; milestone/issues are usable fallback.                                                                          |
+| #2 Upstream Sync + Fork Safety Baseline          | PR-local partial   |                     85% | Good baseline, still needs merge/review closeout.                                                                                                     |
+| #3 evaOS Shell Guardrails                        | PR-local partial   |                     85% | First guardrails exist; additional team/remote-agent claim fencing remains.                                                                           |
+| #4 Broker Auth + Desktop Session Handoff         | PR-local primitive |                     78% | Needs live/session scenario and secret-exposure proof after merge.                                                                                    |
+| #5 Session Center / Mission Control              | PR-local primitive |                     78% | Needs visual shell proof and live runtime scenario.                                                                                                   |
+| #6 Connected Apps Provider Hub                   | PR-local           |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.                                                                              |
+| #7 Approval Center + Deny Loop                   | PR-local           |                     93% | Needs requester/approver live fixture and audit enforcement proof.                                                                                    |
+| #8 People Access + Account Policy                | PR-local           |                     84% | Needs live account-policy fixture and role denial agreement.                                                                                          |
+| #9 Company Brain Directory + Account 360         | PR canary ready    |                     94% | Live canary now covers org-scoped directory/account/query plus mandatory directory/account/query negative fixtures; staging credentials still needed. |
+| #10 Business Browser / VM Control Proof          | PR-local           |                     90% | Needs real browser runtime before/after visual proof and action audit proof.                                                                          |
+| #11 Native Companion Boundary                    | PR-local           |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                                    |
+| #12 Public Beta Packaging + Rollback             | PR-local passed    |                     95% | Release safety gate is strong; real signed artifact/install/rollback proof remains.                                                                   |
+| #13 95% Confidence Decision Packet               | In progress        | 95% decision confidence | This packet recommends continue R&D with blockers.                                                                                                    |
+| #14 Forgejo Company Brain Sidecar Spike          | Sidecar only       |                     70% | Useful as read-only/reference, not a beta dependency.                                                                                                 |
 
 ## Verified Green Evidence
 
@@ -86,17 +86,17 @@ Local evidence root:
 
 ## Severity-Ranked Risks
 
-| Severity | Risk                                                                                                                   | Owner               | Next Test                                                                                                      |
-| -------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Sev-1    | Public beta artifact has not been signed, notarized, installed, launched, or rolled back.                              | Release agent       | Manual `Build and Release` on approved release branch, then install/launch/rollback smoke.                     |
-| Sev-1    | Root stack PR #15 still requires review before the stacked work can land.                                              | Repo maintainer     | Review/merge PR #15, then advance the stack in order with current-head CI.                                     |
-| Sev-1    | Permission and approval flows are not live-backend proven across requester/approver/denied roles.                      | Permissions agent   | Staging fixture with requester, approver, revoked member, backend denial, and audit evidence.                  |
-| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell. | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                          |
-| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.          | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                    |
-| Sev-2    | Company Brain access boundaries lack live cross-org denial and ingesting/error state proof.                            | Company Brain agent | Org A/Org B fixture with directory/account/query, denial, empty, ingesting, and error screenshots.             |
-| Sev-2    | Business Browser/VM control lacks real runtime before/after action evidence.                                           | Runtime agent       | Browser open/stop scenario with customer switch isolation and audit id proof.                                  |
-| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                             | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2. |
-| Sev-3    | Forgejo sidecar remains read-only research, not implementation.                                                        | Company Brain agent | Decide whether to index Forgejo metadata as a Company Brain source after beta blockers.                        |
+| Severity | Risk                                                                                                                                 | Owner               | Next Test                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Sev-1    | Public beta artifact has not been signed, notarized, installed, launched, or rolled back.                                            | Release agent       | Manual `Build and Release` on approved release branch, then install/launch/rollback smoke.                             |
+| Sev-1    | Root stack PR #15 still requires review before the stacked work can land.                                                            | Repo maintainer     | Review/merge PR #15, then advance the stack in order with current-head CI.                                             |
+| Sev-1    | Permission and approval flows are not live-backend proven across requester/approver/denied roles.                                    | Permissions agent   | Staging fixture with requester, approver, revoked member, backend denial, and audit evidence.                          |
+| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell.               | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                                  |
+| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.                        | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                            |
+| Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof. | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots. |
+| Sev-2    | Business Browser/VM control lacks real runtime before/after action evidence.                                                         | Runtime agent       | Browser open/stop scenario with customer switch isolation and audit id proof.                                          |
+| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                           | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.         |
+| Sev-3    | Forgejo sidecar remains read-only research, not implementation.                                                                      | Company Brain agent | Decide whether to index Forgejo metadata as a Company Brain source after beta blockers.                                |
 
 ## Next Sprint Issue Slate
 
@@ -132,6 +132,8 @@ Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
 7. Company Brain Live Boundary
    - Exercise org-scoped directory, account 360, query, empty, ingesting, error, and cross-org denial.
    - Required proof: visual screenshots and audit/source pointers.
+   - Canary command: `node scripts/evaosCompanyBrainLiveCanary.js` with `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_COMPANY_BRAIN_ACCOUNT_ID`, `AIONUI_EVAOS_COMPANY_BRAIN_QUERY`, and at least one negative fixture: `AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID` or `AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION`. Acceptance proof requires directory, account 360, and query denial source/audit evidence.
+   - Optional strict ingestion proof: `AIONUI_EVAOS_COMPANY_BRAIN_REQUIRED_INGESTION_STATES=ready,ingesting,error,empty`.
 
 8. Business Browser/VM Runtime Scenario
    - Launch/open/stop browser runtime across customer switch.
