@@ -9,6 +9,7 @@ import {
   CODEX_MODE_NATIVE_FULL_ACCESS,
   CODEX_MODE_READ_ONLY,
 } from '@/common/types/codex/codexModes';
+import { filterEvaosBetaAgentModes } from '@/common/types/agent/agentModes';
 
 /**
  * Agent mode option interface
@@ -92,7 +93,7 @@ export const AGENT_MODES: Record<string, AgentModeOption[]> = {
  */
 export function getAgentModes(backend: string | undefined): AgentModeOption[] {
   if (!backend) return [];
-  return AGENT_MODES[backend] || [];
+  return filterEvaosBetaAgentModes(AGENT_MODES[backend] || []);
 }
 
 /**
@@ -125,7 +126,9 @@ export function mergeWithCapabilities(
   }
 
   const staticMap = new Map(staticModes.map((m) => [m.value, m]));
-  return capabilityModes.map((value) => staticMap.get(value) ?? { value, label: toTitleCase(value) });
+  return filterEvaosBetaAgentModes(
+    capabilityModes.map((value) => staticMap.get(value) ?? { value, label: toTitleCase(value) })
+  );
 }
 
 /**
@@ -136,7 +139,7 @@ export function mergeWithCapabilities(
  */
 export function supportsModeSwitch(backend: string | undefined): boolean {
   if (!backend) return false;
-  return backend in AGENT_MODES && AGENT_MODES[backend].length > 0;
+  return getAgentModes(backend).length > 0;
 }
 
 /**

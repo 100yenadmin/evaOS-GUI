@@ -33,6 +33,8 @@ const FormItem = Form.Item;
 const PAIRING_POLL_INTERVAL = 5_000;
 const PAIRING_TIMEOUT = 5 * 60 * 1000;
 const REMOTE_AGENT_GUIDE_URL = 'https://github.com/iOfficeAI/AionUi/wiki/Remote-Agent-Guide-Chinese';
+const EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED = false;
+const EVAOS_BETA_REMOTE_AGENT_ALLOW_INSECURE = false;
 
 type PairingState = 'idle' | 'handshaking' | 'pending' | 'timeout';
 
@@ -129,6 +131,10 @@ const RemoteAgentFormModal: React.FC<{
   );
 
   const handleTestConnection = useCallback(async () => {
+    if (!EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED) {
+      Message.warning(t('settings.remoteAgent.betaDisabled'));
+      return;
+    }
     const values = form.getFieldsValue(['url', 'auth_type', 'auth_token', 'allow_insecure']) as {
       url?: string;
       auth_type?: string;
@@ -145,7 +151,7 @@ const RemoteAgentFormModal: React.FC<{
         url: values.url,
         auth_type: values.auth_type || 'none',
         auth_token: values.auth_token,
-        allow_insecure: values.allow_insecure,
+        allow_insecure: false,
       });
       if (result.success) {
         Message.success(t('settings.remoteAgent.testSuccess'));
@@ -160,10 +166,19 @@ const RemoteAgentFormModal: React.FC<{
   }, [form, t]);
 
   const handleSave = useCallback(async () => {
+    if (!EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED) {
+      Message.warning(t('settings.remoteAgent.betaDisabled'));
+      return;
+    }
     try {
       const values = await form.validate();
       setSaving(true);
-      const payload: RemoteAgentInput = { ...values, protocol: activeProtocol as RemoteAgentInput['protocol'], avatar };
+      const payload: RemoteAgentInput = {
+        ...values,
+        allow_insecure: false,
+        protocol: activeProtocol as RemoteAgentInput['protocol'],
+        avatar,
+      };
 
       let agentId: string;
       if (editAgent) {
@@ -291,7 +306,7 @@ const RemoteAgentFormModal: React.FC<{
             url: editAgent.url,
             auth_type: editAgent.auth_type,
             auth_token: editAgent.auth_token,
-            allow_insecure: editAgent.allow_insecure,
+            allow_insecure: false,
           });
         } else {
           setActiveProtocol('openclaw');
@@ -381,11 +396,13 @@ const RemoteAgentFormModal: React.FC<{
                   triggerPropName='checked'
                   extra={
                     <Typography.Text type='secondary' className='text-12px'>
-                      {t('settings.remoteAgent.allowInsecureHint')}
+                      {t('settings.remoteAgent.allowInsecureBetaDisabled', {
+                        defaultValue: 'Disabled in evaOS beta.',
+                      })}
                     </Typography.Text>
                   }
                 >
-                  <Switch />
+                  <Switch disabled={!EVAOS_BETA_REMOTE_AGENT_ALLOW_INSECURE} />
                 </FormItem>
               ) : null
             }
@@ -414,9 +431,13 @@ const RemoteAgentManagement: React.FC = () => {
   const remoteActionButtonClassName = '!rounded-10px !px-10px';
 
   const handleAdd = useCallback(() => {
+    if (!EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED) {
+      Message.warning(t('settings.remoteAgent.betaDisabled'));
+      return;
+    }
     setEditAgent(undefined);
     setModalVisible(true);
-  }, []);
+  }, [t]);
 
   const handleEdit = useCallback((agent: RemoteAgentConfig) => {
     setEditAgent(agent);
@@ -459,6 +480,7 @@ const RemoteAgentManagement: React.FC = () => {
           shape='round'
           size='small'
           icon={<Plus size='16' />}
+          disabled={!EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED}
           onClick={handleAdd}
           className='rd-100px border-1 border-solid border-[var(--color-border-2)] h-34px px-14px text-t-secondary hover:text-t-primary'
         >
@@ -476,6 +498,7 @@ const RemoteAgentManagement: React.FC = () => {
             shape='round'
             size='small'
             icon={<Plus size='16' />}
+            disabled={!EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED}
             onClick={handleAdd}
             className='rd-100px border-1 border-solid border-[var(--color-border-2)] h-34px px-14px text-t-secondary hover:text-t-primary'
           >
@@ -529,6 +552,7 @@ const RemoteAgentManagement: React.FC = () => {
                   type='secondary'
                   icon={<Edit theme='outline' size='14' />}
                   className={remoteActionButtonClassName}
+                  disabled={!EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED}
                   onClick={() => handleEdit(agent)}
                 >
                   {t('common.edit', { defaultValue: 'Edit' })}

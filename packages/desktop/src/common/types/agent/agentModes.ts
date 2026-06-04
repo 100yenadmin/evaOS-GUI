@@ -4,28 +4,43 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CODEX_MODE_NATIVE_FULL_ACCESS } from '@/common/types/codex/codexModes';
+import { CODEX_MODE_NATIVE_DEFAULT, CODEX_MODE_NATIVE_FULL_ACCESS } from '@/common/types/codex/codexModes';
 
-/**
- * Full-auto (YOLO) mode ID per backend.
- * Shared by renderer (cron task creation) and process (SessionLifecycle).
- */
-const FULL_AUTO_MODE: Record<string, string> = {
-  claude: 'bypassPermissions',
-  qwen: 'yolo',
-  opencode: 'build',
-  gemini: 'yolo',
-  aionrs: 'yolo',
-  codex: CODEX_MODE_NATIVE_FULL_ACCESS,
-  cursor: 'agent',
-  snow: 'yolo',
+const EVAOS_BETA_SAFE_MODE: Record<string, string> = {
+  claude: 'default',
+  qwen: 'default',
+  opencode: 'plan',
+  gemini: 'default',
+  aionrs: 'default',
+  codex: CODEX_MODE_NATIVE_DEFAULT,
+  cursor: 'ask',
+  snow: 'default',
 };
 
+export const EVAOS_BETA_UNSAFE_AGENT_MODE_VALUES = new Set([
+  'yolo',
+  'yoloNoSandbox',
+  'bypassPermissions',
+  CODEX_MODE_NATIVE_FULL_ACCESS,
+]);
+
+export function isEvaosBetaUnsafeAgentMode(mode: string | undefined): boolean {
+  return !!mode && EVAOS_BETA_UNSAFE_AGENT_MODE_VALUES.has(mode);
+}
+
+export function filterEvaosBetaAgentModes<T extends { value: string }>(modes: readonly T[]): T[] {
+  return modes.filter((mode) => !isEvaosBetaUnsafeAgentMode(mode.value));
+}
+
+export function getEvaosBetaSafeAgentMode(backend: string | undefined): string {
+  if (!backend) return 'default';
+  return EVAOS_BETA_SAFE_MODE[backend] || 'default';
+}
+
 /**
- * Get the full-auto mode value for a given backend.
- * Falls back to 'yolo' for unknown backends.
+ * Legacy helper for callers that request full-auto defaults.
+ * evaOS beta demotes those requests to safe backend defaults.
  */
 export function getFullAutoMode(backend: string | undefined): string {
-  if (!backend) return 'yolo';
-  return FULL_AUTO_MODE[backend] || 'yolo';
+  return getEvaosBetaSafeAgentMode(backend);
 }

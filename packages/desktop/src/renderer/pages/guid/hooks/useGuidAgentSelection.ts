@@ -470,7 +470,10 @@ export const useGuidAgentSelection = ({
             codex: CODEX_MODE_NATIVE_FULL_ACCESS,
             qwen: 'yolo',
           };
-          _setSelectedMode(yoloValues[configKey] || 'yolo');
+          const requestedMode = yoloValues[configKey] || 'yolo';
+          if (getAgentModes(configKey).some((mode) => mode.value === requestedMode)) {
+            _setSelectedMode(requestedMode);
+          }
         }
       } catch {
         /* silent */

@@ -14,6 +14,7 @@ import {
   EVAOS_BUSINESS_BROWSER_ENABLED,
   EVAOS_COMPANY_BRAIN_ENABLED,
   EVAOS_PROVIDER_HUB_ENABLED,
+  TEAM_MODE_ENABLED,
 } from '@/common/config/constants';
 import {
   SiderApprovalCenterEntry,
@@ -344,12 +345,14 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                   {...workspaceHistoryProps}
                   afterPinnedContent={
                     <>
-                      <TeamSiderSection
-                        collapsed={collapsed}
-                        pathname={pathname}
-                        siderTooltipProps={siderTooltipProps}
-                        onSessionClick={onSessionClick}
-                      />
+                      {TEAM_MODE_ENABLED ? (
+                        <TeamSiderSection
+                          collapsed={collapsed}
+                          pathname={pathname}
+                          siderTooltipProps={siderTooltipProps}
+                          onSessionClick={onSessionClick}
+                        />
+                      ) : null}
                       {!collapsed && (
                         <CronJobSiderSection jobs={cronJobs} pathname={pathname} onNavigate={handleCronNavigate} />
                       )}

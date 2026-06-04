@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import { configService } from '@/common/config/configService';
+import { filterEvaosBetaAgentModes } from '@/common/types/agent/agentModes';
 import type { AcpSessionConfigOption } from '@/common/types/platform/acpTypes';
 import { savePreferredMode } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import { getAgentModes, supportsModeSwitch, type AgentModeOption } from '@/renderer/utils/model/agentModes';
@@ -107,8 +108,8 @@ const AgentModeSelector: React.FC<AgentModeSelectorProps> = ({
   useEffect(() => {
     if (!backend) return;
 
-    const cachedModes = configService.get('acp.cachedModes');
-    const session_modes = cachedModes?.[backend];
+    const cachedModeConfig = configService.get('acp.cachedModes');
+    const session_modes = cachedModeConfig?.[backend];
     if (session_modes?.available_modes && session_modes.available_modes.length > 0) {
       setCachedModes(
         session_modes.available_modes.map((m) => ({
@@ -131,8 +132,8 @@ const AgentModeSelector: React.FC<AgentModeSelectorProps> = ({
 
   // Priority: dynamicModes (runtime) > cachedModes (from cache) > getAgentModes (static fallback)
   const modes = useMemo(() => {
-    if (dynamicModes && dynamicModes.length > 0) return dynamicModes;
-    if (cachedModes.length > 0) return cachedModes;
+    if (dynamicModes && dynamicModes.length > 0) return filterEvaosBetaAgentModes(dynamicModes);
+    if (cachedModes.length > 0) return filterEvaosBetaAgentModes(cachedModes);
     return getAgentModes(backend);
   }, [dynamicModes, cachedModes, backend]);
   const defaultMode = modes[0]?.value ?? 'default';

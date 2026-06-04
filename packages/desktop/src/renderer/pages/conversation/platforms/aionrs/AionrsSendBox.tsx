@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import { filterEvaosBetaAgentModes } from '@/common/types/agent/agentModes';
 import type { IConversationMcpStatus } from '@/common/config/storage';
 import AgentModeSelector from '@/renderer/components/agent/AgentModeSelector';
 import CommandQueuePanel from '@/renderer/components/chat/CommandQueuePanel';
@@ -424,14 +425,15 @@ const AionrsSendBox: React.FC<{
   const sheetEntries = useMemo<MobileActionSheetEntry[]>(() => {
     if (!isMobile) return [];
 
-    const availableModes: AgentModeOption[] =
+    const availableModes: AgentModeOption[] = filterEvaosBetaAgentModes(
       dynamicModes.length > 0
         ? dynamicModes
         : [
             { value: 'default', label: 'Default' },
             { value: 'auto_edit', label: 'Auto-Accept Edits' },
             { value: 'yolo', label: 'YOLO' },
-          ];
+          ]
+    );
     const modeOptions: MobileActionSheetOption[] = availableModes.map((mode) => ({
       key: mode.value,
       label: t(`agentMode.${mode.value}`, { defaultValue: mode.label }),
