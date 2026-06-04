@@ -22,6 +22,7 @@ import type {
   IEvaosCompanyBrainQueryResult,
   IEvaosProviderActionRequest,
   IEvaosProviderActionResult,
+  IEvaosProviderApprovalRequest,
   IEvaosProviderHubRequest,
   IEvaosProviderHubView,
   IEvaosPeopleAccessInviteMemberRequest,
@@ -118,6 +119,15 @@ export function initEvaosProviderHubBridge(
         isEvaosLocalProductFixtureEnabled()
           ? evaosLocalProductFixtureProviderAction(request, 'provider_mint_grant')
           : client.mintProviderGrant(request)
+      )
+  );
+
+  ipcBridge.evaosProviderHub.requestApproval.provider(
+    async (request: IEvaosProviderApprovalRequest): Promise<BridgeResponse<IEvaosProviderActionResult>> =>
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureProviderAction(request, 'provider_approval_request')
+          : client.requestProviderApproval(request)
       )
   );
 }

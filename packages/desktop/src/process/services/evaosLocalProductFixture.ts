@@ -8,6 +8,7 @@ import type {
   IEvaosCustomerTargetsView,
   IEvaosProviderActionRequest,
   IEvaosProviderActionResult,
+  IEvaosProviderApprovalRequest,
   IEvaosProviderHubRequest,
   IEvaosProviderHubView,
 } from '@/common/adapter/ipcBridge';
@@ -65,8 +66,13 @@ export function evaosLocalProductFixtureProviderHub(request: IEvaosProviderHubRe
 }
 
 export function evaosLocalProductFixtureProviderAction(
-  request: IEvaosProviderActionRequest,
-  action: 'provider_auth_start' | 'provider_switch' | 'provider_revoke' | 'provider_mint_grant'
+  request: IEvaosProviderActionRequest | IEvaosProviderApprovalRequest,
+  action:
+    | 'provider_auth_start'
+    | 'provider_switch'
+    | 'provider_revoke'
+    | 'provider_mint_grant'
+    | 'provider_approval_request'
 ): IEvaosProviderActionResult {
   const providerHub = evaosLocalProductFixtureProviderHub({ customerId: request.customerId });
   const provider = providerHub.profiles.find((item) => item.providerKey === request.providerKey);
@@ -88,6 +94,7 @@ export function evaosLocalProductFixtureProviderAction(
     provider_switch: 'switched',
     provider_revoke: 'revoked',
     provider_mint_grant: 'granted',
+    provider_approval_request: 'pending',
   } as const;
 
   const messageByAction = {
@@ -95,6 +102,7 @@ export function evaosLocalProductFixtureProviderAction(
     provider_switch: `${FIXTURE_LABEL}: active provider changed.`,
     provider_revoke: `${FIXTURE_LABEL}: provider access disconnected.`,
     provider_mint_grant: `${FIXTURE_LABEL}: opaque agent access handle minted.`,
+    provider_approval_request: `${FIXTURE_LABEL}: provider approval request opened.`,
   } as const;
 
   return clone({

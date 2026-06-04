@@ -14,6 +14,8 @@ import {
   evaosProviderHub,
   type IEvaosProviderActionResult,
   type IEvaosProviderAgentRuntime,
+  type IEvaosProviderApprovalRequest,
+  type IEvaosProviderActionRequest,
   type IEvaosProviderHubView,
   type IEvaosProviderKey,
   type IEvaosProviderProfileView,
@@ -183,7 +185,10 @@ const ConnectedAppsPage: React.FC = () => {
     customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
 
   const runProviderAction = useCallback(
-    async (providerKey: IEvaosProviderKey, action: 'startAuth' | 'switchProvider' | 'revokeProvider' | 'mintGrant') => {
+    async (
+      providerKey: IEvaosProviderKey,
+      action: 'startAuth' | 'switchProvider' | 'revokeProvider' | 'mintGrant' | 'requestApproval'
+    ) => {
       const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
       setActionStatus(null);
       setActionError(null);
@@ -194,11 +199,19 @@ const ConnectedAppsPage: React.FC = () => {
 
       setActionTarget(`${providerKey}:${action}`);
       try {
-        const request = {
-          customerId: selectedCustomerId,
-          providerKey,
-          agentRuntime: action === 'mintGrant' ? agentRuntime : undefined,
-        };
+        const request =
+          action === 'requestApproval'
+            ? ({
+                customerId: selectedCustomerId,
+                providerKey,
+                requestedAction: 'provider_mint_grant',
+                agentRuntime,
+              } satisfies IEvaosProviderApprovalRequest)
+            : ({
+                customerId: selectedCustomerId,
+                providerKey,
+                agentRuntime: action === 'mintGrant' ? agentRuntime : undefined,
+              } satisfies IEvaosProviderActionRequest);
         const response = await evaosProviderHub[action].invoke(request);
         if (!isSelectedCustomer(selectedCustomerId)) {
           return;
@@ -368,6 +381,7 @@ const ConnectedAppsPage: React.FC = () => {
                     onStartAuth={() => void runProviderAction(profile.providerKey, 'startAuth')}
                     onSwitch={() => void runProviderAction(profile.providerKey, 'switchProvider')}
                     onMintGrant={() => void runProviderAction(profile.providerKey, 'mintGrant')}
+                    onRequestApproval={() => void runProviderAction(profile.providerKey, 'requestApproval')}
                     onRevoke={() => void runProviderAction(profile.providerKey, 'revokeProvider')}
                   />
                 ))
@@ -401,8 +415,19 @@ const ProviderRow: React.FC<{
   onStartAuth: () => void;
   onSwitch: () => void;
   onMintGrant: () => void;
+  onRequestApproval: () => void;
   onRevoke: () => void;
-}> = ({ profile, activeProviderKey, routeDenied, actionTarget, onStartAuth, onSwitch, onMintGrant, onRevoke }) => {
+}> = ({
+  profile,
+  activeProviderKey,
+  routeDenied,
+  actionTarget,
+  onStartAuth,
+  onSwitch,
+  onMintGrant,
+  onRequestApproval,
+  onRevoke,
+}) => {
   const disabled = routeDenied || profile.status === 'planned' || profile.rawSecretsStoredInWorkbench;
   const canStartAuth =
     profile.status !== 'connected' &&
@@ -457,8 +482,10 @@ const ProviderRow: React.FC<{
               type='primary'
               icon={<Shield theme='outline' size='15' />}
               disabled={disabled || (!canRequestAccess && !canMintGrant)}
-              loading={actionTarget === `${profile.providerKey}:mintGrant`}
-              onClick={onMintGrant}
+              loading={
+                actionTarget === `${profile.providerKey}:${profile.approvalRequired ? 'requestApproval' : 'mintGrant'}`
+              }
+              onClick={profile.approvalRequired ? onRequestApproval : onMintGrant}
             >
               {profile.approvalRequired ? 'Request access' : 'Allow Eva'}
             </Button>

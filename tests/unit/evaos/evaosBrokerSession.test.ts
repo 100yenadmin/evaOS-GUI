@@ -486,6 +486,100 @@ describe('EvaosBrokerSessionClient', () => {
     });
   });
 
+  it('opens a provider approval request without requiring manage_integrations in the shell first', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          schema_version: 'evaos.account_policy.v1',
+          customer_account_id: 'acct_123',
+          membership_id: 'mem_requester',
+          membership_role: 'manager',
+          members: [],
+          invites: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          schema_version: 'evaos.account_policy.v1',
+          customer_account_id: 'acct_123',
+          selected_customer_id: 'david-poku',
+          membership_id: 'mem_requester',
+          membership_role: 'manager',
+          scopes: ['open_business_browser'],
+          advanced_surfaces: {},
+          backend_enforced: true,
+          audit_id: 'audit_policy_requester',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          provider_profiles: [
+            {
+              provider_key: 'linear',
+              title: 'Linear',
+              status: 'connected',
+              active: false,
+              capabilities: ['issues'],
+              last_validated_at: '2026-06-03T11:52:00.000Z',
+              source_pointer: 'broker:provider_profile:linear',
+              audit_id: 'audit_linear_profile',
+            },
+          ],
+          approval_request: {
+            id: 'apr_linear_123',
+            provider_key: 'linear',
+            requested_action: 'provider_mint_grant',
+            agent_runtime: 'openclaw',
+            status: 'pending',
+            source_pointer: 'broker:provider_approval_request:david-poku:apr_linear_123',
+            audit_id: 'audit_request_linear',
+          },
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {
+        AIONUI_EVAOS_DESKTOP_SESSION: 'eds_requester_session_for_test',
+        AIONUI_EVAOS_DESKTOP_SESSION_EXPIRES_AT: FUTURE,
+      },
+      now: () => NOW,
+    });
+
+    const result = await client.requestProviderApproval({
+      customerId: 'david-poku',
+      providerKey: 'linear',
+      requestedAction: 'provider_mint_grant',
+      agentRuntime: 'openclaw',
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'current_customer_account',
+      customer_id: 'david-poku',
+    });
+    expect(requestBody(fetchImpl.mock.calls[1])).toEqual({
+      action: 'current_customer_account_permissions',
+      customer_id: 'david-poku',
+    });
+    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+      action: 'provider_approval_request',
+      customer_id: 'david-poku',
+      provider_key: 'linear',
+      requested_action: 'provider_mint_grant',
+      agent_runtime: 'openclaw',
+    });
+    expect(result).toEqual({
+      status: 'pending',
+      providerKey: 'linear',
+      message: 'Approval request opened.',
+      sourcePointer: 'broker:provider_approval_request:david-poku:apr_linear_123',
+      auditId: 'audit_request_linear',
+      backendEnforced: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/eds_|provider_grant|desktop_session|Bearer/i);
+  });
+
   it('revokes the active desktop session without returning token material', async () => {
     const fetchImpl = fetchMock();
     fetchImpl

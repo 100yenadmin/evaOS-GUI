@@ -740,6 +740,15 @@ export interface IEvaosProviderActionRequest {
   agentRuntime?: IEvaosProviderAgentRuntime;
 }
 
+export type IEvaosProviderApprovalRequestedAction = 'provider_mint_grant' | 'provider_revoke';
+
+export interface IEvaosProviderApprovalRequest {
+  customerId: string;
+  providerKey: IEvaosProviderKey;
+  requestedAction: IEvaosProviderApprovalRequestedAction;
+  agentRuntime?: IEvaosProviderAgentRuntime;
+}
+
 export interface IEvaosProviderProfileView {
   providerKey: IEvaosProviderKey;
   title: string;
@@ -1688,6 +1697,9 @@ export const evaosProviderHub = {
   ),
   mintGrant: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
     'evaos.provider-hub.mint-grant'
+  ),
+  requestApproval: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderApprovalRequest>(
+    'evaos.provider-hub.request-approval'
   ),
 };
 

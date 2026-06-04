@@ -21,6 +21,7 @@ const providerHubMocks = vi.hoisted(() => ({
   switchProvider: vi.fn(),
   revokeProvider: vi.fn(),
   mintGrant: vi.fn(),
+  requestApproval: vi.fn(),
 }));
 
 vi.mock('@renderer/hooks/context/LayoutContext', () => ({
@@ -48,6 +49,9 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
     },
     mintGrant: {
       invoke: providerHubMocks.mintGrant,
+    },
+    requestApproval: {
+      invoke: providerHubMocks.requestApproval,
     },
   },
 }));
@@ -142,15 +146,16 @@ function providerHub(routeDenied = false, overrides: Record<string, unknown> = {
           {
             providerKey: 'linear',
             title: 'Linear',
-            status: 'approval_required',
+            status: 'connected',
             active: false,
             rawSecretsStoredInWorkbench: false,
             approvalRequired: true,
             capabilities: ['issues'],
             grantedScopes: ['linear.read'],
+            lastValidatedAt: '2026-06-03T11:52:00.000Z',
             sourcePointer: 'broker:provider_profile:linear',
             auditId: 'audit_linear_123',
-            hasConnectionProof: false,
+            hasConnectionProof: true,
             hasBrokeredGrant: false,
             summaryText: 'Approval required',
           },
@@ -210,6 +215,7 @@ describe('ConnectedAppsPage', () => {
     providerHubMocks.switchProvider.mockReset();
     providerHubMocks.revokeProvider.mockReset();
     providerHubMocks.mintGrant.mockReset();
+    providerHubMocks.requestApproval.mockReset();
   });
 
   it('loads provider states and sends brokered provider actions without rendering secrets', async () => {
@@ -414,6 +420,44 @@ describe('ConnectedAppsPage', () => {
     expect(screen.queryByText('Google Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('sales@example.test')).not.toBeInTheDocument();
     expect(screen.getByText('Load a customer account to view connected app evidence.')).toBeInTheDocument();
+  });
+
+  it('requests provider approval instead of minting a grant when approval is required', async () => {
+    const user = userEvent.setup();
+    providerHubMocks.getProfiles.mockResolvedValue({
+      success: true,
+      data: providerHub(false),
+    });
+    providerHubMocks.requestApproval.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'pending',
+        providerKey: 'linear',
+        message: 'Approval request opened.',
+        providerHub: providerHub(false),
+        auditId: 'audit_request_linear',
+        backendEnforced: true,
+      },
+    });
+
+    render(<ConnectedAppsPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    expect(await screen.findByText('Linear')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^request access$/i }));
+
+    await waitFor(() => {
+      expect(providerHubMocks.requestApproval).toHaveBeenCalledWith({
+        customerId: 'david-poku',
+        providerKey: 'linear',
+        requestedAction: 'provider_mint_grant',
+        agentRuntime: 'openclaw',
+      });
+    });
+    expect(providerHubMocks.mintGrant).not.toHaveBeenCalled();
+    expect(await screen.findByText('linear Approval request opened. Audit audit_request_linear.')).toBeInTheDocument();
   });
 
   it('renders backend denial without leaking broker secret text', async () => {
