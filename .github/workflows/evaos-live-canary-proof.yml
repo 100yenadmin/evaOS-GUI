@@ -1,0 +1,134 @@
+name: evaOS Live Canary Proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      live_canary_ack:
+        description: 'Type evaos-live-canary to acknowledge this uses staging evaOS sessions and may mutate staging approvals/browser runtimes.'
+        required: true
+        type: string
+      run_live_canaries:
+        description: 'Run the individual live canaries after strict readiness passes.'
+        required: false
+        default: false
+        type: boolean
+      proof_ref:
+        description: 'Non-secret issue or packet reference for this proof run.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  live-canary-proof:
+    name: Staging live canary proof
+    runs-on: ubuntu-latest
+    environment: evaos-staging
+    timeout-minutes: 30
+    env:
+      PROOF_DIR: live-canary-proof
+      AIONUI_EVAOS_APPROVAL_DENY_ACK: evaos-deny-test
+      AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK: evaos-browser-test
+      AIONUI_EVAOS_BROKER_ENDPOINT: ${{ vars.AIONUI_EVAOS_BROKER_ENDPOINT || secrets.AIONUI_EVAOS_BROKER_ENDPOINT }}
+      AIONUI_EVAOS_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_DESKTOP_SESSION }}
+      AIONUI_EVAOS_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID }}
+      AIONUI_EVAOS_RUNTIME: ${{ vars.AIONUI_EVAOS_RUNTIME }}
+      AIONUI_EVAOS_APPROVAL_ID: ${{ vars.AIONUI_EVAOS_APPROVAL_ID || secrets.AIONUI_EVAOS_APPROVAL_ID }}
+      AIONUI_EVAOS_REQUESTER_SESSION: ${{ secrets.AIONUI_EVAOS_REQUESTER_SESSION }}
+      AIONUI_EVAOS_APPROVER_SESSION: ${{ secrets.AIONUI_EVAOS_APPROVER_SESSION }}
+      AIONUI_EVAOS_REQUESTER_MEMBERSHIP_ID: ${{ vars.AIONUI_EVAOS_REQUESTER_MEMBERSHIP_ID }}
+      AIONUI_EVAOS_APPROVAL_DENY_REASON: ${{ vars.AIONUI_EVAOS_APPROVAL_DENY_REASON }}
+      AIONUI_EVAOS_DENIED_SESSION: ${{ secrets.AIONUI_EVAOS_DENIED_SESSION }}
+      AIONUI_EVAOS_PROVIDER_REQUIRED_STATES: ${{ vars.AIONUI_EVAOS_PROVIDER_REQUIRED_STATES }}
+      AIONUI_EVAOS_COMPANY_BRAIN_ACCOUNT_ID: ${{ vars.AIONUI_EVAOS_COMPANY_BRAIN_ACCOUNT_ID || secrets.AIONUI_EVAOS_COMPANY_BRAIN_ACCOUNT_ID }}
+      AIONUI_EVAOS_COMPANY_BRAIN_QUERY: ${{ vars.AIONUI_EVAOS_COMPANY_BRAIN_QUERY || secrets.AIONUI_EVAOS_COMPANY_BRAIN_QUERY }}
+      AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID || secrets.AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID }}
+      AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION: ${{ secrets.AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION }}
+      AIONUI_EVAOS_COMPANY_BRAIN_REQUIRED_INGESTION_STATES: ${{ vars.AIONUI_EVAOS_COMPANY_BRAIN_REQUIRED_INGESTION_STATES }}
+      AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL: ${{ vars.AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL || secrets.AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL }}
+      AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS: ${{ vars.AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS }}
+      AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID || secrets.AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID }}
+      AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION: ${{ secrets.AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION }}
+    steps:
+      - name: Validate proof inputs
+        env:
+          ACK: ${{ github.event.inputs.live_canary_ack }}
+          PROOF_REF: ${{ github.event.inputs.proof_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$ACK" != "evaos-live-canary" ]; then
+            echo "::error::Wrong live canary acknowledgement. Type evaos-live-canary."
+            exit 1
+          fi
+          if [ -z "$PROOF_REF" ] || [[ "$PROOF_REF" == *"Bearer "* || "$PROOF_REF" == *"eds_"* || "$PROOF_REF" == *"eyJ"* ]]; then
+            echo "::error::proof_ref must be a non-secret issue, PR, or packet reference."
+            exit 1
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare proof directory
+        env:
+          PROOF_REF: ${{ github.event.inputs.proof_ref }}
+        run: |
+          set -euo pipefail
+          rm -rf "$PROOF_DIR"
+          mkdir -p "$PROOF_DIR"
+          {
+            echo "# evaOS Live Canary Proof"
+            echo ""
+            echo "Proof reference: $PROOF_REF"
+            echo "Repository: ${{ github.repository }}"
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "Environment: evaos-staging"
+          } > "$PROOF_DIR/proof-run.md"
+
+      - name: Run strict readiness checklist
+        run: |
+          set -euo pipefail
+          node scripts/evaosLiveCanaryReadiness.js --markdown > "$PROOF_DIR/readiness.md"
+          node scripts/evaosLiveCanaryReadiness.js --strict > "$PROOF_DIR/readiness.json"
+
+      - name: Run live canaries
+        if: github.event.inputs.run_live_canaries == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosBrokerLiveCanary.js > "$PROOF_DIR/broker-runtime-status.json"
+          node scripts/evaosTrustSurfaceLiveCanary.js > "$PROOF_DIR/trust-surface.json"
+          node scripts/evaosProviderHubLiveCanary.js > "$PROOF_DIR/provider-hub.json"
+          node scripts/evaosPeopleApprovalLiveCanary.js > "$PROOF_DIR/people-approval-deny.json"
+          node scripts/evaosCompanyBrainLiveCanary.js > "$PROOF_DIR/company-brain.json"
+          node scripts/evaosBusinessBrowserLiveCanary.js > "$PROOF_DIR/business-browser.json"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### evaOS Live Canary Proof"
+            echo ""
+            echo "- Environment: \`evaos-staging\`"
+            echo "- Proof artifact: \`evaos-live-canary-proof-${{ github.run_id }}\`"
+            echo "- Individual canaries requested: \`${{ github.event.inputs.run_live_canaries }}\`"
+            echo ""
+            if [ -f "$PROOF_DIR/readiness.md" ]; then
+              cat "$PROOF_DIR/readiness.md"
+            else
+              echo "Readiness output was not produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload live canary proof packet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaos-live-canary-proof-${{ github.run_id }}
+          path: live-canary-proof
+          if-no-files-found: error
+          retention-days: 30
