@@ -79,7 +79,7 @@ function approvalCenter(routeDenied = false) {
           },
         ],
     summaryText: routeDenied ? 'Approval Center denied by account policy' : '1 pending approval',
-    auditId: 'audit_list_123',
+    auditId: routeDenied ? undefined : 'audit_list_123',
     policyAuditId: 'audit_policy_123',
   };
 }
@@ -160,6 +160,8 @@ describe('ApprovalCenterPage', () => {
     expect(
       screen.getByText('Approval Center requires the approve_actions scope for this customer account.')
     ).toBeInTheDocument();
+    expect(screen.queryByText('No pending approval evidence returned.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/audit_list_123/)).not.toBeInTheDocument();
     expect(approvalCenterMocks.denyApproval).not.toHaveBeenCalled();
   });
 
@@ -171,6 +173,7 @@ describe('ApprovalCenterPage', () => {
         ...approvalCenter(true),
         routeDenialReason: 'Approval Center requires backend-enforced account policy proof.',
         backendEnforced: false,
+        auditId: undefined,
         policyAuditId: undefined,
         summaryText: 'Approval Center denied until backend policy proof is available',
       },
@@ -184,6 +187,8 @@ describe('ApprovalCenterPage', () => {
     expect(await screen.findByText('Route denied')).toBeInTheDocument();
     expect(screen.getByText('Approval Center requires backend-enforced account policy proof.')).toBeInTheDocument();
     expect(screen.getByText('Approval Center denied until backend policy proof is available')).toBeInTheDocument();
+    expect(screen.queryByText('No pending approval evidence returned.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/audit_list_123/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^deny$/i })).not.toBeInTheDocument();
     expect(approvalCenterMocks.denyApproval).not.toHaveBeenCalled();
   });

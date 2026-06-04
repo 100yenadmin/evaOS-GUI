@@ -88,6 +88,17 @@ const approvalPayload = {
   audit_id: 'audit_request_123',
 };
 
+function approvalListPayload(requests: unknown[] = [approvalPayload], overrides: Record<string, unknown> = {}) {
+  return {
+    customer_id: 'david-poku',
+    backend_enforced: true,
+    source_pointer: 'approvals:pending',
+    audit_id: 'audit_list_123',
+    requests,
+    ...overrides,
+  };
+}
+
 describe('EvaosBrokerSessionClient Approval Center', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -157,14 +168,7 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
     fetchImpl
       .mockResolvedValueOnce(jsonResponse(accountPayload))
       .mockResolvedValueOnce(jsonResponse(policyPayload(['approve_actions'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          customer_id: 'david-poku',
-          source_pointer: 'approvals:pending',
-          audit_id: 'audit_list_123',
-          requests: [approvalPayload],
-        })
-      );
+      .mockResolvedValueOnce(jsonResponse(approvalListPayload()));
     const client = authenticatedClient(fetchImpl);
 
     const center = await client.approvalCenter({ customerId: 'david-poku', limit: 7 });
@@ -219,20 +223,55 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
     });
   });
 
+  it('fails closed when approval list responses lack backend enforcement proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['approve_actions'])))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          approvalListPayload([approvalPayload], {
+            backend_enforced: false,
+            audit_id: '',
+          })
+        )
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.approvalCenter({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return approval-list enforcement proof.',
+    });
+  });
+
+  it('fails closed when approval list proof points at a different customer', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['approve_actions'])))
+      .mockResolvedValueOnce(jsonResponse(approvalListPayload([approvalPayload], { customer_id: 'wrong-customer' })));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.approvalCenter({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return approval-list enforcement proof.',
+    });
+  });
+
   it('fails closed instead of dropping malformed approval rows from non-empty lists', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
       .mockResolvedValueOnce(jsonResponse(accountPayload))
       .mockResolvedValueOnce(jsonResponse(policyPayload(['approve_actions'])))
       .mockResolvedValueOnce(
-        jsonResponse({
-          requests: [
+        jsonResponse(
+          approvalListPayload([
             {
               ...approvalPayload,
               approval_id: '',
             },
-          ],
-        })
+          ])
+        )
       );
     const client = authenticatedClient(fetchImpl);
 
@@ -247,16 +286,16 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
       .mockResolvedValueOnce(jsonResponse(accountPayload))
       .mockResolvedValueOnce(jsonResponse(policyPayload(['approve_actions'])))
       .mockResolvedValueOnce(
-        jsonResponse({
-          requests: [
+        jsonResponse(
+          approvalListPayload([
             {
               ...approvalPayload,
               action_payload: {
                 display_name: 'Looks safe',
               },
             },
-          ],
-        })
+          ])
+        )
       );
     const client = authenticatedClient(fetchImpl);
 
@@ -281,8 +320,8 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
       .mockResolvedValueOnce(jsonResponse(accountPayload))
       .mockResolvedValueOnce(jsonResponse(policyPayload(['approve_actions'])))
       .mockResolvedValueOnce(
-        jsonResponse({
-          requests: [
+        jsonResponse(
+          approvalListPayload([
             {
               ...approvalPayload,
               tool_name: 'browser.fetch',
@@ -299,8 +338,8 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
                 actual_url: 'https://example.test/path?access_token=raw-token',
               },
             },
-          ],
-        })
+          ])
+        )
       );
     const client = authenticatedClient(fetchImpl);
 

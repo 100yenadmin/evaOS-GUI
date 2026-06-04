@@ -202,7 +202,7 @@ const ApprovalCenterPage: React.FC = () => {
             ) : null}
 
             <section className='flex flex-col gap-10px'>
-              {center.requests.length === 0 ? (
+              {center.routeDenied ? null : center.requests.length === 0 ? (
                 <div className='rounded-8px border border-dashed border-[var(--color-border-2)] bg-fill-1 p-16px text-13px leading-20px text-t-secondary'>
                   No pending approval evidence returned.
                 </div>

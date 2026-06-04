@@ -1068,21 +1068,31 @@ function sanitizeApprovalCenter(
   if (!record || !Array.isArray(source)) {
     throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
   }
+  const customerId = safeText(record.customer_id);
+  const sourcePointer = safeText(record.source_pointer);
+  const auditId = safeText(record.audit_id);
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  if (backendEnforced !== true || !sourcePointer || !auditId || customerId !== fallbackCustomerId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return approval-list enforcement proof.'
+    );
+  }
   const requests = safeApprovalRequests(source);
   const summaryText = requests.length === 0 ? 'No pending approvals' : `${requests.length} pending approvals`;
 
   return stripUndefined({
     schemaVersion: 'evaos.approval_center.v1' as const,
-    customerId: safeText(record?.customer_id) ?? fallbackCustomerId,
+    customerId,
     customerAccountId: policy.customerAccountId,
     membershipId: policy.membershipId,
     membershipRole: policy.membershipRole,
     routeDenied: false,
-    backendEnforced: safeBoolean(record?.backend_enforced) ?? policy.backendEnforced,
+    backendEnforced,
     requests,
     summaryText,
-    sourcePointer: safeText(record?.source_pointer),
-    auditId: safeText(record?.audit_id),
+    sourcePointer,
+    auditId,
     policyAuditId: policy.auditId,
   });
 }
