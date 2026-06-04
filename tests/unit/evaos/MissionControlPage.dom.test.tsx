@@ -12,6 +12,8 @@ import { clearEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustome
 import MissionControlPage from '@/renderer/pages/mission-control';
 
 const brokerMocks = vi.hoisted(() => ({
+  beginDesktopAuth: vi.fn(),
+  claimDeviceCode: vi.fn(),
   getSessionStatus: vi.fn(),
   getCustomerTargets: vi.fn(),
   runtimeStatus: vi.fn(),
@@ -23,6 +25,12 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
+    beginDesktopAuth: {
+      invoke: brokerMocks.beginDesktopAuth,
+    },
+    claimDeviceCode: {
+      invoke: brokerMocks.claimDeviceCode,
+    },
     getSessionStatus: {
       invoke: brokerMocks.getSessionStatus,
     },
@@ -141,6 +149,64 @@ describe('MissionControlPage', () => {
     expect(container.textContent).not.toContain('Stack approval');
     expect(container.textContent).not.toContain('Root PR #15');
     expect(container.textContent).not.toMatch(/ship public beta|ready to ship|eds_|desktop_session|Bearer/i);
+  });
+
+  it('claims a browser backup code from Mission Control without rendering desktop-session material', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'missing',
+        authenticated: false,
+        expired: false,
+        source: 'none',
+        message: 'Sign in to evaOS to connect this desktop shell.',
+      },
+    });
+    brokerMocks.beginDesktopAuth.mockResolvedValue({
+      success: true,
+      data: {
+        authUrlSummary: {
+          displayText: 'electricsheephq.com/desktop-auth',
+          host: 'electricsheephq.com',
+          path: '/desktop-auth',
+          redacted: true,
+          scheme: 'https',
+        },
+        fallbackDeviceCode: 'ABCD-EFGH',
+        message: 'Continue in the browser or paste the backup code.',
+        state: 'auth_state_123',
+      },
+    });
+    brokerMocks.claimDeviceCode.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'device-code',
+        userEmail: 'admin@100yen.org',
+        expiresAt: '2026-06-04T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+
+    const { container } = render(<MissionControlPage />);
+
+    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    expect(await screen.findByText('Continue in the browser or paste the backup code.')).toBeInTheDocument();
+    expect(screen.getByText('ABCD-EFGH')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: /backup code/i }), 'WXYZ-1234');
+    await user.click(screen.getByRole('button', { name: /claim backup code/i }));
+
+    await waitFor(() => {
+      expect(brokerMocks.claimDeviceCode).toHaveBeenCalledWith({ deviceCode: 'WXYZ-1234' });
+    });
+    expect(await screen.findByText('Session active')).toBeInTheDocument();
+    expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/eds_|desktop_session|Bearer/i);
   });
 
   it('loads sanitized runtime evidence for the chosen customer', async () => {
