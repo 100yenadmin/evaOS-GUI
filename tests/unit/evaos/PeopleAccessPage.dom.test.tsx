@@ -30,7 +30,7 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
   },
 }));
 
-function policy(scopes: string[]) {
+function policy(scopes: string[], overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 'evaos.account_policy.v1',
     customerAccountId: 'acct_123',
@@ -59,6 +59,7 @@ function policy(scopes: string[]) {
       : undefined,
     backendEnforced: true,
     auditId: 'audit_policy_123',
+    ...overrides,
   };
 }
 
@@ -130,6 +131,27 @@ describe('PeopleAccessPage', () => {
     expect(
       screen.getByText('People Access requires the manage_members scope for this customer account.')
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^invite$/i })).toBeDisabled();
+    expect(peopleAccessMocks.inviteMember).not.toHaveBeenCalled();
+  });
+
+  it('keeps invite actions disabled when backend policy proof is missing', async () => {
+    const user = userEvent.setup();
+    peopleAccessMocks.getPolicy.mockResolvedValue({
+      success: true,
+      data: policy(['manage_members'], {
+        backendEnforced: false,
+        auditId: undefined,
+      }),
+    });
+
+    render(<PeopleAccessPage />);
+
+    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect((await screen.findAllByText('Backend proof missing')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Invite actions require backend-enforced account policy proof.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^invite$/i })).toBeDisabled();
     expect(peopleAccessMocks.inviteMember).not.toHaveBeenCalled();
   });

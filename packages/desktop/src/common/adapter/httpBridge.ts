@@ -167,6 +167,27 @@ const FILE_PROTOCOL_OFFLINE_READ_DEFAULTS = new Map<string, unknown>([
   ['POST /api/extensions/i18n', {}],
 ]);
 
+const FILE_PROTOCOL_OFFLINE_LIST_DEFAULTS: ReadonlyArray<{
+  method: string;
+  pathname: string;
+  value: unknown;
+}> = [
+  {
+    method: 'GET',
+    pathname: '/api/cron/jobs',
+    value: [],
+  },
+  {
+    method: 'GET',
+    pathname: '/api/conversations',
+    value: {
+      items: [],
+      total: 0,
+      has_more: false,
+    },
+  },
+];
+
 const SENSITIVE_LOG_KEY_PATTERN = /api[_-]?key|authorization|auth[_-]?token|access[_-]?token|refresh[_-]?token|secret/i;
 const EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS_ENV = 'AIONUI_EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS';
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
@@ -237,6 +258,19 @@ function cloneOfflineDefault<T>(value: unknown): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function offlineDefaultForRequest<T>(method: string, path: string): T | undefined {
+  const exactDefault = FILE_PROTOCOL_OFFLINE_READ_DEFAULTS.get(`${method} ${path}`);
+  if (exactDefault !== undefined) {
+    return cloneOfflineDefault<T>(exactDefault);
+  }
+
+  const pathname = path.split('?')[0] || path;
+  const listDefault = FILE_PROTOCOL_OFFLINE_LIST_DEFAULTS.find(
+    (defaultSpec) => defaultSpec.method === method && defaultSpec.pathname === pathname
+  );
+  return listDefault ? cloneOfflineDefault<T>(listDefault.value) : undefined;
+}
+
 export async function httpRequest<T>(
   method: string,
   path: string,
@@ -245,10 +279,10 @@ export async function httpRequest<T>(
 ): Promise<T> {
   assertEvaosBetaLegacyLocalActionAllowed(path);
 
-  const offlineDefault = FILE_PROTOCOL_OFFLINE_READ_DEFAULTS.get(`${method} ${path}`);
+  const offlineDefault = offlineDefaultForRequest<T>(method, path);
   if (offlineDefault !== undefined && isFileProtocolRendererWithoutBackend()) {
     console.debug(`[httpBridge] ${method} ${path} → offline shell default`);
-    return cloneOfflineDefault<T>(offlineDefault);
+    return offlineDefault;
   }
 
   const url = `${getBaseUrl()}${path}`;

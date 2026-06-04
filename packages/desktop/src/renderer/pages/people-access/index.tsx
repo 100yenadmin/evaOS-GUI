@@ -55,6 +55,8 @@ const PeopleAccessPage: React.FC = () => {
   const [inviting, setInviting] = useState(false);
 
   const canManageMembers = policy?.scopes.includes('manage_members') ?? false;
+  const hasBackendPolicyProof = policy?.backendEnforced === true && Boolean(policy.auditId);
+  const canInviteMembers = canManageMembers && hasBackendPolicyProof && !policy?.routeDenied;
   const seatUsed = (policy?.activeSeats ?? 0) + (policy?.invitedSeats ?? 0);
   const seatLimit = policy?.seatLimit;
   const seatLabel = seatLimit === undefined ? `${seatUsed} used` : `${seatUsed} of ${seatLimit}`;
@@ -112,6 +114,10 @@ const PeopleAccessPage: React.FC = () => {
       setInviteError('Action denied by account policy.');
       return;
     }
+    if (!hasBackendPolicyProof) {
+      setInviteError('Invite actions require backend-enforced account policy proof.');
+      return;
+    }
 
     setInviting(true);
     try {
@@ -120,7 +126,7 @@ const PeopleAccessPage: React.FC = () => {
         email: inviteEmail,
         role: inviteRole,
       });
-      if (!response.success || !response.data) {
+      if (!response.success || !response.data || response.data.backendEnforced !== true) {
         setInviteError(safeUiText(response.msg, 'Backend denied the invite action.'));
         return;
       }
@@ -131,7 +137,7 @@ const PeopleAccessPage: React.FC = () => {
     } finally {
       setInviting(false);
     }
-  }, [canManageMembers, customerId, inviteEmail, inviteRole, loadPolicy, policy]);
+  }, [canManageMembers, customerId, hasBackendPolicyProof, inviteEmail, inviteRole, loadPolicy, policy]);
 
   return (
     <div
@@ -189,7 +195,10 @@ const PeopleAccessPage: React.FC = () => {
               <SummaryTile label='Role' value={roleLabel(policy.membershipRole)} />
               <SummaryTile label='Seats' value={seatLabel} />
               <SummaryTile label='Members' value={String(policy.members.length)} />
-              <SummaryTile label='Invites' value={String(policy.invites.length)} />
+              <SummaryTile
+                label='Policy'
+                value={hasBackendPolicyProof ? 'Backend enforced' : 'Backend proof missing'}
+              />
             </section>
 
             {policy.routeDenied ? (
@@ -212,6 +221,9 @@ const PeopleAccessPage: React.FC = () => {
                   <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Members</h2>
                   <Tag color={canManageMembers ? 'green' : 'orange'}>
                     {canManageMembers ? 'manage_members' : 'action denied'}
+                  </Tag>
+                  <Tag color={hasBackendPolicyProof ? 'green' : 'red'}>
+                    {hasBackendPolicyProof ? 'backend enforced' : 'Backend proof missing'}
                   </Tag>
                 </div>
                 <div className='flex flex-col gap-8px'>
@@ -262,7 +274,7 @@ const PeopleAccessPage: React.FC = () => {
                   <Button
                     type='primary'
                     icon={<Plus theme='outline' size='15' />}
-                    disabled={!canManageMembers || policy.routeDenied}
+                    disabled={!canInviteMembers}
                     loading={inviting}
                     onClick={() => void inviteMember()}
                   >
@@ -271,6 +283,11 @@ const PeopleAccessPage: React.FC = () => {
                   {!canManageMembers || policy.routeDenied ? (
                     <p className='m-0 text-12px leading-18px text-[rgb(var(--warning-6))]'>
                       Action denied by account policy.
+                    </p>
+                  ) : null}
+                  {canManageMembers && !hasBackendPolicyProof ? (
+                    <p className='m-0 text-12px leading-18px text-[rgb(var(--warning-6))]'>
+                      Invite actions require backend-enforced account policy proof.
                     </p>
                   ) : null}
                   {inviteStatus ? (
@@ -289,6 +306,7 @@ const PeopleAccessPage: React.FC = () => {
                 <span>Account: {policy.customerAccountId}</span>
                 <span>Customer: {policy.selectedCustomerId}</span>
                 <span>Audit: {policy.auditId ?? '-'}</span>
+                <span>Backend: {hasBackendPolicyProof ? 'enforced' : 'proof missing'}</span>
               </div>
               <div className='mt-12px flex flex-wrap gap-6px'>
                 {policy.scopes.map((scope) => (

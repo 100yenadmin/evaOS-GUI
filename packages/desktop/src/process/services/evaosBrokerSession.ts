@@ -307,6 +307,7 @@ export class EvaosBrokerSessionClient {
 
     const policy = await this.peopleAccessPolicy({ customerId });
     assertPolicyScope(policy, 'manage_members', 'You do not have permission to invite members for this account.');
+    assertPeopleAccessPolicyProof(policy);
 
     const raw = await this.postJson(
       stripUndefined({
@@ -1026,7 +1027,8 @@ function sanitizePeopleAccessMutationResult(raw: unknown): IEvaosPeopleAccessMut
   }
 
   const status = safeText(record.status);
-  if (!status) {
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  if (!status || backendEnforced !== true) {
     throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
   }
 
@@ -1036,7 +1038,7 @@ function sanitizePeopleAccessMutationResult(raw: unknown): IEvaosPeopleAccessMut
     inviteId: safeText(record.invite_id ?? record.invitation_id ?? record.id),
     memberId: safeText(record.member_id ?? record.membership_id),
     auditId: safeText(record.audit_id),
-    backendEnforced: safeBoolean(record.backend_enforced) ?? true,
+    backendEnforced,
   });
 }
 
@@ -2304,6 +2306,15 @@ function assertPolicyScope(
 ): void {
   if (!policy.scopes.includes(scope)) {
     throw new EvaosBrokerSessionError('action_denied', message);
+  }
+}
+
+function assertPeopleAccessPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
+  if (policy.backendEnforced !== true || !policy.auditId) {
+    throw new EvaosBrokerSessionError(
+      'action_denied',
+      'People Access actions require backend-enforced account policy proof.'
+    );
   }
 }
 
