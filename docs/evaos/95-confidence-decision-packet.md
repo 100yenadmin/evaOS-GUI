@@ -101,6 +101,20 @@ Local evidence root:
 
 - `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`
 
+## Local Shell Smoke Gate
+
+Before adding new feature slices, run an interactive local AionUi shell smoke from a Lexar-backed checkout. Start the app, capture screenshots for Mission Control, People Access, Approval Center, Connected Apps, Business Browser, Company Brain, and Agent Settings, then verify unsafe or overclaim surfaces remain hidden and empty/error states are honest.
+
+This local shell smoke does not wait for staging fixtures. Staging fixtures only block live backend canaries, including real session creation, provider grant/revoke, role denial, Company Brain cross-org denial, browser/VM action evidence, and signed release acceptance.
+
+Required local smoke proof:
+
+- App launch succeeds from the built desktop shell with no blank page or framework overlay.
+- Main beta routes render screenshot evidence under `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`.
+- Team, full-auto, unsafe remote-agent, upstream publish/update, and raw-secret surfaces do not appear as actionable beta controls.
+- Missing session, empty data, offline, and unavailable broker states fail closed with user-honest copy.
+- Any launch or UX blocker found during the smoke is filed, fixed, and re-smoked before the next feature slice starts.
+
 ## Post-Merge Sprint State
 
 - The sprint stack is landed on `evaos/dev`.
@@ -129,49 +143,54 @@ Local evidence root:
 
 Sprint 2 should be one proof sprint, not a feature-expansion sprint.
 
-1. Provision Staging And Release Credentials
+1. Local AionUi Shell Smoke
+   - Start the app locally before adding new feature slices.
+   - Required proof: route screenshots for Mission Control, People Access, Approval Center, Connected Apps, Business Browser, Company Brain, and Agent Settings; unsafe surfaces hidden; honest empty/error states.
+
+2. Provision Staging And Release Credentials
    - Add required `evaos-staging` live canary fixtures and issue #12 release credential names.
    - Required proof: name-only inventory passes without printing values; strict readiness is still allowed to fail only on intentionally deferred live actions.
 
-2. Signed Artifact Release Candidate
+3. Signed Artifact Release Candidate
    - Run manual Build and Release from the approved release branch.
    - Required proof: signed/notarized artifact, release manifest, trusted manifest artifact, no upstream feed collision, no dev tag distribution.
 
-3. Install, Launch, Rollback Smoke
+4. Install, Launch, Rollback Smoke
    - Install the signed beta on macOS, launch it, verify bundle id/protocol/app identity, then roll back to the released macOS app.
    - Required proof: screenshots/logs, Gatekeeper/notarization evidence, rollback commands and results.
 
-4. Broker Session Live Secret Audit
+5. Broker Session Live Secret Audit
    - Exercise login/session creation, missing session, expired session, and runtime status in a live or staging shell.
    - Required proof: no desktop-session token in renderer state, logs, URLs, localStorage, screenshots, or generic IPC.
 
-5. People Access And Approval Live Fixture
+6. People Access And Approval Live Fixture
    - Use requester, approver, denied member, and revoked member fixtures.
    - Required proof: route denial, action denial, backend denial, deny audit id, and requester-cannot-approve evidence.
    - Canary command: `node scripts/evaosPeopleApprovalLiveCanary.js` with `AIONUI_EVAOS_APPROVAL_DENY_ACK=evaos-deny-test`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_APPROVAL_ID`, `AIONUI_EVAOS_REQUESTER_SESSION`, and `AIONUI_EVAOS_APPROVER_SESSION`; optional `AIONUI_EVAOS_DENIED_SESSION` proves a denied member cannot list approvals.
 
-6. Provider Hub Live Fixture
+7. Provider Hub Live Fixture
    - Exercise connected, needs-auth, expired, revoked, and approval-required provider states.
    - Required proof: no raw provider secrets in renderer, logs, URLs, screenshots, or generic IPC.
    - Canary command: `node scripts/evaosProviderHubLiveCanary.js` with `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, and optional `AIONUI_EVAOS_PROVIDER_REQUIRED_STATES=connected,needs_login,expired,revoked,approval_required`.
 
-7. Company Brain Live Boundary
+8. Company Brain Live Boundary
    - Exercise org-scoped directory, account 360, query, empty, ingesting, error, and cross-org denial.
    - Required proof: visual screenshots and audit/source pointers.
    - Canary command: `node scripts/evaosCompanyBrainLiveCanary.js` with `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_COMPANY_BRAIN_ACCOUNT_ID`, `AIONUI_EVAOS_COMPANY_BRAIN_QUERY`, and at least one negative fixture: `AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID` or `AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION`. Acceptance proof requires directory, account 360, and query denial source/audit evidence.
    - Optional strict ingestion proof: `AIONUI_EVAOS_COMPANY_BRAIN_REQUIRED_INGESTION_STATES=ready,ingesting,error,empty`.
 
-8. Business Browser/VM Runtime Scenario
+9. Business Browser/VM Runtime Scenario
    - Launch/open/stop browser runtime across customer switch.
    - Required proof: before/after visual state, backend action proof, audit id, and customer isolation evidence.
    - Canary command: `node scripts/evaosBusinessBrowserLiveCanary.js` with `AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK=evaos-browser-test`, `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL`, `AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS`, `AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION`, and `AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID`.
    - Acceptance proof requires runtime status, open URL, post-open running status, stop, post-stop stopped status, denied runtime/open/stop source/audit evidence, and wrong-customer isolation. Denied-session-only proof is non-acceptance evidence.
 
-9. Final Public Beta Decision Recut
-   - Re-run this decision packet after live proofs.
-   - Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
+10. Final Public Beta Decision Recut
 
-10. Optional Forgejo Read-Only Source
+- Re-run this decision packet after live proofs.
+- Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
+
+11. Optional Forgejo Read-Only Source
 
 - Add public Forgejo/Codeberg repositories or docs to Company Brain as read-only sources only if it does not displace beta-blocker proof work.
 - Required proof: scoped read-token strategy before private access, package visibility exclusion, and no Forgejo Actions/self-hosting dependency.

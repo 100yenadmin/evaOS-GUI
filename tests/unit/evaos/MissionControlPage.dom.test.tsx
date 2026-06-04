@@ -70,12 +70,17 @@ describe('MissionControlPage', () => {
     const { container } = render(<MissionControlPage />);
 
     expect(await screen.findByText('Public beta gated')).toBeInTheDocument();
-    expect(screen.getByText('Stack approval')).toBeInTheDocument();
+    expect(screen.getByText('Local shell smoke')).toBeInTheDocument();
     expect(screen.getByText('Live staging canaries')).toBeInTheDocument();
     expect(screen.getByText('Signed macOS artifact')).toBeInTheDocument();
     expect(screen.getByText('Role and org denial proof')).toBeInTheDocument();
     expect(screen.getByText('Rollback and support path')).toBeInTheDocument();
     expect(container.textContent).toContain('Continue R&D with blockers');
+    expect(container.textContent).toContain(
+      'Start AionUi locally and screenshot the beta routes before new feature slices.'
+    );
+    expect(container.textContent).not.toContain('Stack approval');
+    expect(container.textContent).not.toContain('Root PR #15');
     expect(container.textContent).not.toMatch(/ship public beta|ready to ship|eds_|desktop_session|Bearer/i);
   });
 

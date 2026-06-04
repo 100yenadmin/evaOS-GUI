@@ -59,7 +59,7 @@ export const WEBUI_DEFAULT_PORT = (() => {
 })();
 
 export const TEAM_MODE_ENABLED = process.env.AIONUI_EVAOS_TEAM_MODE === '1';
-export const EVAOS_APPROVAL_CENTER_ENABLED = process.env.AIONUI_EVAOS_APPROVAL_CENTER === '1';
+export const EVAOS_APPROVAL_CENTER_ENABLED = process.env.AIONUI_EVAOS_APPROVAL_CENTER !== '0';
 export const EVAOS_PROVIDER_HUB_ENABLED = process.env.AIONUI_EVAOS_PROVIDER_HUB !== '0';
 export const EVAOS_BUSINESS_BROWSER_ENABLED = process.env.AIONUI_EVAOS_BUSINESS_BROWSER !== '0';
 export const EVAOS_COMPANY_BRAIN_ENABLED = process.env.AIONUI_EVAOS_COMPANY_BRAIN !== '0';

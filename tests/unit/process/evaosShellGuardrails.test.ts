@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { TEAM_MODE_ENABLED } from '../../../packages/desktop/src/common/config/constants';
+import {
+  EVAOS_APPROVAL_CENTER_ENABLED,
+  TEAM_MODE_ENABLED,
+} from '../../../packages/desktop/src/common/config/constants';
 import { getFullAutoMode } from '../../../packages/desktop/src/common/types/agent/agentModes';
 import {
   CODEX_MODE_NATIVE_DEFAULT,
@@ -14,6 +17,10 @@ const repoRoot = resolve(__dirname, '../../..');
 describe('evaOS shell guardrails', () => {
   it('keeps team mode disabled by default for the public beta shell', () => {
     expect(TEAM_MODE_ENABLED).toBe(false);
+  });
+
+  it('keeps core evaOS beta routes visible unless explicitly disabled', () => {
+    expect(EVAOS_APPROVAL_CENTER_ENABLED).toBe(true);
   });
 
   it('filters full-auto and unrestricted modes from static and dynamic selectors', () => {
