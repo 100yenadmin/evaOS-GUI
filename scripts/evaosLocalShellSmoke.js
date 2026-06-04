@@ -198,6 +198,108 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
   },
   {
+    name: 'business-browser-loaded-fixture',
+    hash: '/business-browser',
+    title: 'Business Browser',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Business Browser',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Business Browser Fixture',
+      'fixture.example.test/dashboard',
+      'fixture-audit-browser-running',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
+    action: 'click-load',
+    isolateRendererState: true,
+    expected: [
+      'Business Browser',
+      'Brokered browser and VM runtime state',
+      'Acme Fixture Co',
+      'Denied Browser Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Business Browser Fixture',
+      'fixture.example.test/dashboard',
+      'Source: local-fixture:business-browser:running',
+      'fixture-audit-browser-running',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'business-browser-launch-fixture',
+    hash: '/business-browser',
+    title: 'Business Browser',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Business Browser',
+      'Synthetic browser launch requested',
+      'local-fixture:business-browser:launching',
+      'fixture-audit-browser-launch',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
+    action: 'click-business-browser-launch',
+    isolateRendererState: true,
+    expected: [
+      'Business Browser',
+      'Acme Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Synthetic browser launch requested',
+      'Source: local-fixture:business-browser:launching',
+      'fixture-audit-browser-launch',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'business-browser-stop-fixture',
+    hash: '/business-browser',
+    title: 'Business Browser',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Business Browser',
+      'Synthetic browser stop completed',
+      'local-fixture:business-browser:stopped',
+      'fixture-audit-browser-stop',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
+    action: 'click-business-browser-stop',
+    isolateRendererState: true,
+    expected: [
+      'Business Browser',
+      'Acme Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Synthetic browser stop completed',
+      'Source: local-fixture:business-browser:stopped',
+      'fixture-audit-browser-stop',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'business-browser-denied-fixture',
+    hash: '/business-browser',
+    title: 'Business Browser',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Business Browser',
+      'Denied Browser Fixture Co',
+      'Route denied',
+      'account policy lacks open_business_browser',
+      'fixture-audit-browser-denied-policy',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
+    action: 'click-business-browser-denied-customer',
+    isolateRendererState: true,
+    expected: [
+      'Business Browser',
+      'Denied Browser Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Route denied',
+      'account policy lacks open_business_browser',
+      'Source: local-fixture:business-browser:denied',
+      'fixture-audit-browser-denied-policy',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
     name: 'company-brain-loaded-fixture',
     hash: '/company-brain',
     title: 'Company Brain',
@@ -409,6 +511,43 @@ async function askCompanyBrainFixtureQuestion(page) {
     .scrollIntoViewIfNeeded({ timeout: 10000 });
 }
 
+async function clickBusinessBrowserLaunch(page) {
+  await clickLoad(page);
+  const stopButton = page.getByRole('button', { name: /^Stop$/ }).first();
+  if (await stopButton.isEnabled().catch(() => false)) {
+    await stopButton.click();
+    await page.waitForFunction(() => document.body.innerText.includes('Synthetic browser stop completed'), {
+      timeout: 10000,
+    });
+  }
+  const launchButton = page.getByRole('button', { name: /^Launch$/ }).first();
+  await launchButton.waitFor({ state: 'visible', timeout: 10000 });
+  await launchButton.click();
+  await page.waitForFunction(() => document.body.innerText.includes('Synthetic browser launch requested'), {
+    timeout: 10000,
+  });
+}
+
+async function clickBusinessBrowserStop(page) {
+  await clickLoad(page);
+  const stopButton = page.getByRole('button', { name: /^Stop$/ }).first();
+  await stopButton.waitFor({ state: 'visible', timeout: 10000 });
+  await stopButton.click();
+  await page.waitForFunction(() => document.body.innerText.includes('Synthetic browser stop completed'), {
+    timeout: 10000,
+  });
+}
+
+async function clickBusinessBrowserDeniedCustomer(page) {
+  const deniedCustomerButton = page.getByRole('button', { name: /^Denied Browser Fixture Co$/ }).first();
+  await deniedCustomerButton.waitFor({ state: 'visible', timeout: 10000 });
+  await deniedCustomerButton.click();
+  await clickLoad(page);
+  await page.waitForFunction(() => document.body.innerText.includes('account policy lacks open_business_browser'), {
+    timeout: 10000,
+  });
+}
+
 async function bodyText(page, timeout = 1500) {
   return page
     .locator('body')
@@ -584,6 +723,12 @@ async function runLocalShellSmoke(options = {}) {
         await clickLoad(page);
         await clickFirstCompanyBrainAccount(page);
         await askCompanyBrainFixtureQuestion(page);
+      } else if (check.action === 'click-business-browser-launch') {
+        await clickBusinessBrowserLaunch(page);
+      } else if (check.action === 'click-business-browser-stop') {
+        await clickBusinessBrowserStop(page);
+      } else if (check.action === 'click-business-browser-denied-customer') {
+        await clickBusinessBrowserDeniedCustomer(page);
       } else if (check.action === 'click-refresh-targets') {
         await clickRefreshTargets(page);
       }
