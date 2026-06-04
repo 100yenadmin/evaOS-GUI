@@ -46,6 +46,12 @@ Public beta publishing requires real macOS signing and notarization. When `EVAOS
 - `APPLE_ID_PASSWORD`
 - `TEAM_ID`
 
+Run the name-only credential inventory before attempting a signed beta candidate. It lists required repository secret and variable names without printing credential values:
+
+```bash
+node scripts/evaosBetaReleaseCredentialInventory.js --repo 100yenadmin/AionUi --strict --markdown
+```
+
 In public beta mode, ad-hoc signing is a hard failure and notarization failure is a hard failure. The ad-hoc path remains available only for internal smoke builds where public publishing is disabled.
 
 ## Updater And Feed Boundary
