@@ -38,6 +38,17 @@ type BetaGateItem = {
   detail: string;
 };
 
+type MissionRealitySnapshot = {
+  customerLabel: string;
+  customerStatus: string;
+  customerHealth: string;
+  loadedRuntimeCount: number;
+  sessionSource: string;
+  latestEvidenceAt?: string;
+  auditRefs: string[];
+  sourceRefs: string[];
+};
+
 const RUNTIME_TARGETS: RuntimeTarget[] = [
   {
     key: 'browser',
@@ -155,6 +166,16 @@ function formatDate(value?: string): string | undefined {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(time));
+}
+
+function latestTimestamp(values: Array<string | undefined>): string | undefined {
+  const latest = values.reduce<number | undefined>((acc, value) => {
+    if (!value) return acc;
+    const time = Date.parse(value);
+    if (!Number.isFinite(time)) return acc;
+    return acc === undefined || time > acc ? time : acc;
+  }, undefined);
+  return latest === undefined ? undefined : new Date(latest).toISOString();
 }
 
 const MissionControlPage: React.FC = () => {
@@ -302,6 +323,24 @@ const MissionControlPage: React.FC = () => {
   const expiresAt = formatDate(session?.expiresAt);
   const refreshedAt = formatDate(lastRefreshedAt ?? undefined);
   const selectedCustomerLabel = customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId;
+  const realitySnapshot = useMemo<MissionRealitySnapshot>(() => {
+    const views = runtimeStates
+      .map((state) => state.view)
+      .filter((view): view is IEvaosRuntimeStatusView => Boolean(view));
+    const auditRefs = views.map((view) => view.auditId).filter((value): value is string => Boolean(value));
+    const sourceRefs = views.map((view) => view.sourcePointer).filter((value): value is string => Boolean(value));
+
+    return {
+      customerLabel: selectedCustomerLabel ?? 'No customer selected',
+      customerStatus: safeUiText(customerContext.selectedTarget?.status, 'unknown'),
+      customerHealth: safeUiText(customerContext.selectedTarget?.healthStatus, 'unknown'),
+      loadedRuntimeCount: views.length,
+      sessionSource: session?.source ?? 'none',
+      latestEvidenceAt: latestTimestamp(views.flatMap((view) => [view.lastActivityAt, view.lastCheckedAt])),
+      auditRefs,
+      sourceRefs,
+    };
+  }, [customerContext.selectedTarget, runtimeStates, selectedCustomerLabel, session?.source]);
 
   return (
     <div
@@ -344,7 +383,7 @@ const MissionControlPage: React.FC = () => {
                   gates below pass.
                 </p>
               </div>
-              <Tag color='gray'>Issue #13</Tag>
+              <Tag color='gray'>Issue #73</Tag>
             </div>
             <div className='mt-12px grid grid-cols-1 gap-8px md:grid-cols-5'>
               {PUBLIC_BETA_GATE_ITEMS.map((item) => (
@@ -438,6 +477,26 @@ const MissionControlPage: React.FC = () => {
           <SummaryTile label='Waiting' value={counts.waiting} bucket='waiting' />
         </section>
 
+        <section
+          className='grid grid-cols-1 gap-10px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px md:grid-cols-4'
+          aria-label='Mission reality snapshot'
+        >
+          <SnapshotCell label='Customer' value={realitySnapshot.customerLabel} />
+          <SnapshotCell
+            label='Customer state'
+            value={`${realitySnapshot.customerStatus} / ${realitySnapshot.customerHealth}`}
+          />
+          <SnapshotCell
+            label='Loaded runtimes'
+            value={`${realitySnapshot.loadedRuntimeCount} of ${RUNTIME_TARGETS.length}`}
+          />
+          <SnapshotCell label='Session source' value={realitySnapshot.sessionSource} />
+          <SnapshotCell label='Latest evidence' value={formatDate(realitySnapshot.latestEvidenceAt) ?? 'none'} />
+          <SnapshotCell label='Audit refs' value={realitySnapshot.auditRefs[0] ?? 'none'} />
+          <SnapshotCell label='Source refs' value={realitySnapshot.sourceRefs[0] ?? 'none'} />
+          <SnapshotCell label='Proof scope' value='Broker or fixture evidence only' />
+        </section>
+
         <section className='grid grid-cols-1 gap-12px lg:grid-cols-2' aria-label='Runtime cards'>
           {runtimeStates.map((state) => (
             <RuntimeCard key={state.target.key} state={state} />
@@ -465,6 +524,13 @@ const SummaryTile: React.FC<{ label: string; value: number; bucket: StatusBucket
       <Tag color={statusColor(bucket)}>{statusLabel(bucket)}</Tag>
     </div>
     <div className='mt-8px text-26px font-semibold leading-30px text-t-primary'>{value}</div>
+  </div>
+);
+
+const SnapshotCell: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className='min-w-0 rounded-8px bg-fill-2 px-10px py-9px'>
+    <div className='text-11px font-medium uppercase leading-16px text-t-tertiary'>{label}</div>
+    <div className='mt-3px break-words text-13px leading-20px text-t-primary'>{safeUiText(value, '-')}</div>
   </div>
 );
 
@@ -509,8 +575,10 @@ const RuntimeCard: React.FC<{ state: RuntimeLoadState }> = ({ state }) => {
         <EvidenceRow label='Status' value={statusText} />
         <EvidenceRow label='Customer' value={view?.customerId} />
         <EvidenceRow label='Owner' value={view?.owner} />
+        <EvidenceRow label='Account' value={view?.customerAccountId} />
         <EvidenceRow label='Activity' value={activityAt} />
         <EvidenceRow label='Audit' value={view?.auditId} />
+        <EvidenceRow label='Source' value={view?.sourcePointer} />
         <EvidenceRow
           label='URL'
           value={view?.currentUrlSummary?.displayText}

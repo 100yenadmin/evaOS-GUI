@@ -65,6 +65,20 @@ function customerTargets() {
   };
 }
 
+function emptyCustomerTargets() {
+  return {
+    success: true,
+    data: {
+      roles: ['admin'],
+      isOperator: true,
+      defaultCustomerId: undefined,
+      selectedCustomerId: undefined,
+      customers: [],
+      summaryText: 'No customer targets loaded',
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => {
@@ -153,7 +167,11 @@ describe('MissionControlPage', () => {
           status: runtime === 'browser' ? 'running' : 'done',
           healthSummary: runtime === 'browser' ? 'Browser is ready' : 'Runtime is complete',
           owner: 'operations',
+          customerAccountId: 'acct_david_poku',
           auditId: runtime === 'browser' ? 'audit_123' : undefined,
+          sourcePointer: runtime === 'browser' ? 'broker://runtime/browser/audit_123' : `broker://runtime/${runtime}`,
+          lastCheckedAt: '2026-06-03T17:45:00.000Z',
+          lastActivityAt: runtime === 'browser' ? '2026-06-03T17:50:00.000Z' : undefined,
           currentUrlSummary:
             runtime === 'browser'
               ? {
@@ -178,9 +196,19 @@ describe('MissionControlPage', () => {
       expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(4);
     });
     expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'browser' });
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('David Poku Co');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('Loaded runtimes');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('4 of 4');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('memory');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('audit_123');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent(
+      'broker://runtime/browser/audit_123'
+    );
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('Browser is ready');
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('acct_david_poku');
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('broker://runtime/browser/audit_123');
     expect(screen.getByText('app.example.test/work')).toBeInTheDocument();
-    expect(screen.getByText('audit_123')).toBeInTheDocument();
+    expect(screen.getAllByText('audit_123').length).toBeGreaterThan(1);
     expect(container.textContent).not.toMatch(/eds_|epg_|access_token|desktop_session|provider_grant|Bearer/i);
   });
 
@@ -215,6 +243,102 @@ describe('MissionControlPage', () => {
     expect(browserCard).toHaveTextContent('The evaOS broker returned no runtime evidence.');
     expect(browserCard).toHaveTextContent('Fail-closed until evaOS broker evidence is available.');
     expect(browserCard).not.toHaveTextContent('eds_raw_session');
+  });
+
+  it('keeps runtime cards waiting when an authenticated operator has no selected customer', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+    brokerMocks.getCustomerTargets.mockResolvedValue(emptyCustomerTargets());
+
+    render(<MissionControlPage />);
+
+    expect(await screen.findByText('Session active')).toBeInTheDocument();
+    expect(await screen.findByText('No customer targets loaded')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('No customer selected');
+    await user.click(screen.getByRole('button', { name: /check/i }));
+
+    expect(brokerMocks.runtimeStatus).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent(
+      'Choose a customer target before checking runtime status.'
+    );
+  });
+
+  it('renders expired session state as blocked and avoids runtime queries', async () => {
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'expired',
+        authenticated: false,
+        expired: true,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session expired. Sign in again.',
+      },
+    });
+
+    render(<MissionControlPage />);
+
+    expect(await screen.findByText('Session expired')).toBeInTheDocument();
+    expect(screen.getByText('evaOS desktop session expired. Sign in again.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('none');
+    expect(brokerMocks.runtimeStatus).not.toHaveBeenCalled();
+  });
+
+  it('renders broker-denied runtime evidence without live proof claims', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+    brokerMocks.runtimeStatus.mockImplementation(({ customerId, runtime }) =>
+      Promise.resolve({
+        success: true,
+        data: {
+          customerId,
+          runtimeKey: runtime,
+          displayLabel: runtime,
+          status: runtime === 'browser' ? 'denied' : 'waiting',
+          healthSummary: runtime === 'browser' ? 'Backend policy denied Business Browser control.' : 'Waiting.',
+          owner: 'access-control',
+          sourcePointer: 'fixture://mission-control/denied',
+          auditId: runtime === 'browser' ? 'deny_audit_73' : undefined,
+        },
+      })
+    );
+
+    const { container } = render(<MissionControlPage />);
+
+    expect(await screen.findByText('Session active')).toBeInTheDocument();
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /check/i }));
+
+    const browserCard = screen.getByTestId('mission-runtime-card-browser');
+    await waitFor(() => {
+      expect(browserCard).toHaveTextContent('Backend policy denied Business Browser control.');
+    });
+    expect(browserCard).toHaveTextContent('Blocked');
+    expect(browserCard).toHaveTextContent('deny_audit_73');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent(
+      'fixture://mission-control/denied'
+    );
+    expect(container.textContent).not.toMatch(/live beta proof|ready to ship|ship public beta/i);
   });
 
   it('clears runtime evidence when the selected customer changes', async () => {
