@@ -163,6 +163,31 @@ describe('ApprovalCenterPage', () => {
     expect(approvalCenterMocks.denyApproval).not.toHaveBeenCalled();
   });
 
+  it('renders missing backend proof as a route denial instead of approval actions', async () => {
+    const user = userEvent.setup();
+    approvalCenterMocks.getApprovals.mockResolvedValue({
+      success: true,
+      data: {
+        ...approvalCenter(true),
+        routeDenialReason: 'Approval Center requires backend-enforced account policy proof.',
+        backendEnforced: false,
+        policyAuditId: undefined,
+        summaryText: 'Approval Center denied until backend policy proof is available',
+      },
+    });
+
+    render(<ApprovalCenterPage />);
+
+    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(await screen.findByText('Route denied')).toBeInTheDocument();
+    expect(screen.getByText('Approval Center requires backend-enforced account policy proof.')).toBeInTheDocument();
+    expect(screen.getByText('Approval Center denied until backend policy proof is available')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^deny$/i })).not.toBeInTheDocument();
+    expect(approvalCenterMocks.denyApproval).not.toHaveBeenCalled();
+  });
+
   it('clears approval evidence when customer context changes before loading the next customer', async () => {
     const user = userEvent.setup();
     approvalCenterMocks.getApprovals.mockResolvedValue({

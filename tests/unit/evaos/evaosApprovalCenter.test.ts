@@ -127,6 +127,31 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
     });
   });
 
+  it('returns route denial without listing approvals when backend policy proof is missing', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse(accountPayload)).mockResolvedValueOnce(
+      jsonResponse({
+        ...policyPayload(['approve_actions']),
+        backend_enforced: false,
+        audit_id: '',
+      })
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    const center = await client.approvalCenter({ customerId: 'david-poku' });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(center).toMatchObject({
+      schemaVersion: 'evaos.approval_center.v1',
+      routeDenied: true,
+      routeDenialReason: 'Approval Center requires backend-enforced account policy proof.',
+      requests: [],
+      summaryText: 'Approval Center denied until backend policy proof is available',
+      backendEnforced: false,
+    });
+    expect(center.policyAuditId).toBeUndefined();
+  });
+
   it('lists approvals with actual-destination proof and no renderer-visible secrets', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
@@ -334,6 +359,26 @@ describe('EvaosBrokerSessionClient Approval Center', () => {
       message: 'Approval requester and approver evidence is required before denying.',
     });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails closed before fetching approval details when deny policy proof is missing', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse(accountPayload)).mockResolvedValueOnce(
+      jsonResponse({
+        ...policyPayload(['approve_actions']),
+        backend_enforced: false,
+        audit_id: '',
+      })
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.denyApproval({ customerId: 'david-poku', approvalId: 'approval-email-1' })
+    ).rejects.toMatchObject({
+      code: 'action_denied',
+      message: 'Approval decisions require backend-enforced account policy proof.',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('does not accept generic requester ids as membership evidence for deny decisions', async () => {

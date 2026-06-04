@@ -348,6 +348,21 @@ export class EvaosBrokerSessionClient {
         policyAuditId: policy.auditId,
       };
     }
+    if (policy.backendEnforced !== true || !policy.auditId) {
+      return {
+        schemaVersion: 'evaos.approval_center.v1',
+        customerId,
+        customerAccountId: policy.customerAccountId,
+        membershipId: policy.membershipId,
+        membershipRole: policy.membershipRole,
+        routeDenied: true,
+        routeDenialReason: 'Approval Center requires backend-enforced account policy proof.',
+        backendEnforced: policy.backendEnforced,
+        requests: [],
+        summaryText: 'Approval Center denied until backend policy proof is available',
+        policyAuditId: policy.auditId,
+      };
+    }
 
     const raw = await this.postJson(
       {
@@ -373,6 +388,7 @@ export class EvaosBrokerSessionClient {
 
     const policy = await this.peopleAccessPolicy({ customerId });
     assertPolicyScope(policy, 'approve_actions', 'You do not have permission to deny approvals for this account.');
+    assertApprovalPolicyProof(policy);
 
     const approvalRaw = await this.postJson(
       {
@@ -2323,6 +2339,15 @@ function assertProviderPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
     throw new EvaosBrokerSessionError(
       'action_denied',
       'Connected app actions require backend-enforced account policy proof.'
+    );
+  }
+}
+
+function assertApprovalPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
+  if (policy.backendEnforced !== true || !policy.auditId) {
+    throw new EvaosBrokerSessionError(
+      'action_denied',
+      'Approval decisions require backend-enforced account policy proof.'
     );
   }
 }
