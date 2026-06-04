@@ -71,6 +71,37 @@ describe('evaOS PR check plan', () => {
     expect(plan.reasons).toContain('packages/desktop/src/preload/main.ts');
   });
 
+  it('skips Windows checks for common mappers and shared type declarations', () => {
+    const plan = prCheckPlan.planPrChecks([
+      'packages/desktop/src/common/adapter/apiModelMapper.ts',
+      'packages/desktop/src/common/adapter/searchMapper.ts',
+      'packages/desktop/src/common/types/agent/assistantTypes.ts',
+      'packages/desktop/src/common/types/office/preview.ts',
+    ]);
+
+    expect(plan.runWindowsChecks).toBe(false);
+    expect(plan.reasons).toEqual([]);
+  });
+
+  it('runs Windows checks for common platform, config, update, and bridge runtime surfaces', () => {
+    const plan = prCheckPlan.planPrChecks([
+      'packages/desktop/src/common/adapter/httpBridge.ts',
+      'packages/desktop/src/common/adapter/ipcBridge.ts',
+      'packages/desktop/src/common/config/storage.ts',
+      'packages/desktop/src/common/platform/ElectronPlatformServices.ts',
+      'packages/desktop/src/common/update/updateTypes.ts',
+    ]);
+
+    expect(plan.runWindowsChecks).toBe(true);
+    expect(plan.reasons).toEqual([
+      'packages/desktop/src/common/adapter/httpBridge.ts',
+      'packages/desktop/src/common/adapter/ipcBridge.ts',
+      'packages/desktop/src/common/config/storage.ts',
+      'packages/desktop/src/common/platform/ElectronPlatformServices.ts',
+      'packages/desktop/src/common/update/updateTypes.ts',
+    ]);
+  });
+
   it('allows manual workflow dispatch to force Windows checks', () => {
     const plan = prCheckPlan.planPrChecks(['docs/evaos/readme.md'], { runWindowsChecks: true });
 
