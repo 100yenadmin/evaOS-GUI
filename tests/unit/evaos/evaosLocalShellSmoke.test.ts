@@ -12,11 +12,19 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
+  PROOF_STAGES: {
+    SHELL_SMOKE: string;
+    PRODUCT_LOADED_STATE: string;
+  };
   ROUTE_CHECKS: Array<{
     name: string;
     hash: string;
+    title: string;
     expected: string[];
     forbidden: string[];
+    proofStage: string;
+    settledMarkers: string[];
+    loadedStateRequiredMarkers: string[];
     action?: string;
     isolateRendererState?: boolean;
   }>;
@@ -50,6 +58,45 @@ describe('evaOS local shell smoke', () => {
       'agent-settings-remote-guardrail',
     ]);
     expect(localShellSmoke.TEAM_ROUTE_CHECK.name).toBe('team-route-redirect');
+  });
+
+  it('marks current route screenshots as shell smoke instead of loaded-state proof', () => {
+    expect(localShellSmoke.PROOF_STAGES).toEqual({
+      SHELL_SMOKE: 'shell-smoke',
+      PRODUCT_LOADED_STATE: 'product-loaded-state',
+    });
+
+    for (const route of localShellSmoke.ROUTE_CHECKS) {
+      expect(route.proofStage).toBe(localShellSmoke.PROOF_STAGES.SHELL_SMOKE);
+      expect(route.settledMarkers.length).toBeGreaterThan(0);
+      expect(route.settledMarkers.every((marker) => marker === route.title || route.expected.includes(marker))).toBe(
+        true
+      );
+      expect(route.settledMarkers.some((marker) => marker !== route.title)).toBe(true);
+    }
+  });
+
+  it('keeps future loaded-state proof markers distinct from title-only waits', () => {
+    const loadedProofMarkers = new Map([
+      ['mission-control', ['desktop session card', 'broker source pointer', 'current audit id']],
+      ['people-access-empty-error', ['member rows', 'role badges', 'account policy source pointer']],
+      ['approval-center-empty-error', ['approval request rows', 'deny/approve policy source', 'decision audit id']],
+      [
+        'connected-apps-empty-error',
+        ['provider profile cards', 'grant/revoke status badges', 'provider source pointer'],
+      ],
+      ['business-browser-empty-error', ['browser runtime status', 'current URL summary', 'browser audit id']],
+      [
+        'company-brain-empty-error',
+        ['account directory rows', 'ingest/query status cards', 'directory source pointer'],
+      ],
+      ['agent-settings-remote-guardrail', ['local agent inventory result', 'remote guardrail copy']],
+    ]);
+
+    for (const route of localShellSmoke.ROUTE_CHECKS) {
+      expect(route.loadedStateRequiredMarkers).toEqual(loadedProofMarkers.get(route.name));
+      expect(route.loadedStateRequiredMarkers).not.toContain(route.title);
+    }
   });
 
   it('exercises customer-target recovery on product routes that depend on Workbench customer context', () => {
