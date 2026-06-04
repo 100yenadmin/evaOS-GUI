@@ -42,11 +42,43 @@ function roleLabel(role: string): string {
     .join(' ');
 }
 
+function statusLabel(status: string): string {
+  const label = roleLabel(status);
+  return label || 'Unknown';
+}
+
+function seatTypeLabel(seatType: string | undefined): string {
+  return `${seatType ? roleLabel(seatType).toLowerCase() : 'unassigned'} seat`;
+}
+
+function policySourceLabel(source: PolicySource): string {
+  switch (source) {
+    case 'backend-denied':
+      return 'backend denied';
+    case 'backend-unavailable':
+      return 'backend unavailable';
+    case 'backend-policy':
+      return 'backend account policy';
+    case 'missing-backend-proof':
+      return 'missing backend proof';
+    default:
+      return 'not loaded';
+  }
+}
+
+type PolicySource =
+  | 'not-loaded'
+  | 'backend-policy'
+  | 'missing-backend-proof'
+  | 'backend-denied'
+  | 'backend-unavailable';
+
 const PeopleAccessPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const [policy, setPolicy] = useState<IEvaosPeopleAccessPolicyView | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policySource, setPolicySource] = useState<PolicySource>('not-loaded');
   const [loadingPolicy, setLoadingPolicy] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<IEvaosAccountPolicyRole>('member');
@@ -63,6 +95,14 @@ const PeopleAccessPage: React.FC = () => {
   const seatUsed = (policy?.activeSeats ?? 0) + (policy?.invitedSeats ?? 0);
   const seatLimit = policy?.seatLimit;
   const seatLabel = seatLimit === undefined ? `${seatUsed} used` : `${seatUsed} of ${seatLimit}`;
+  const seatLimitReached = seatLimit !== undefined && seatUsed >= seatLimit;
+  const inviteCount = policy?.invites.length ?? 0;
+  const pendingInviteCount = policy?.invites.filter((invite) => invite.status === 'pending').length ?? 0;
+  const effectivePolicySource = policy
+    ? hasBackendPolicyProof
+      ? 'backend-policy'
+      : 'missing-backend-proof'
+    : policySource;
 
   const advancedSurfaceRows = useMemo(() => {
     return Object.entries(policy?.advancedSurfaces ?? {}).toSorted(([left], [right]) => left.localeCompare(right));
@@ -88,6 +128,7 @@ const PeopleAccessPage: React.FC = () => {
       customerContext.selectCustomer(customerId);
       setPolicy(null);
       setPolicyError(null);
+      setPolicySource('not-loaded');
       setInviteStatus(null);
       setInviteError(null);
       setLoadingPolicy(false);
@@ -100,6 +141,7 @@ const PeopleAccessPage: React.FC = () => {
     selectedCustomerRef.current = undefined;
     setPolicy(null);
     setPolicyError(null);
+    setPolicySource('not-loaded');
     setInviteStatus(null);
     setInviteError(null);
     setLoadingPolicy(false);
@@ -116,6 +158,7 @@ const PeopleAccessPage: React.FC = () => {
       if (!selectedCustomerId) {
         setPolicy(null);
         setPolicyError('Choose a customer before loading People Access.');
+        setPolicySource('not-loaded');
         return;
       }
 
@@ -124,6 +167,7 @@ const PeopleAccessPage: React.FC = () => {
       selectedCustomerRef.current = selectedCustomerId;
       setLoadingPolicy(true);
       setPolicyError(null);
+      setPolicySource('not-loaded');
       try {
         const response = await evaosPeopleAccess.getPolicy.invoke({ customerId: selectedCustomerId });
         if (!isCurrentRequest(requestEpoch, selectedCustomerId)) {
@@ -132,20 +176,26 @@ const PeopleAccessPage: React.FC = () => {
         if (!response.success || !response.data) {
           setPolicy(null);
           setPolicyError(safeUiText(response.msg, 'People Access failed closed.'));
+          setPolicySource('backend-denied');
           return;
         }
         if (response.data.selectedCustomerId !== selectedCustomerId) {
           setPolicy(null);
           setPolicyError('People Access broker returned evidence for a different customer.');
+          setPolicySource('backend-denied');
           return;
         }
         setPolicy(response.data);
+        setPolicySource(
+          response.data.backendEnforced === true && response.data.auditId ? 'backend-policy' : 'missing-backend-proof'
+        );
       } catch {
         if (!isCurrentRequest(requestEpoch, selectedCustomerId)) {
           return;
         }
         setPolicy(null);
         setPolicyError('People Access broker request failed closed.');
+        setPolicySource('backend-unavailable');
       } finally {
         if (isCurrentRequest(requestEpoch, selectedCustomerId)) {
           setLoadingPolicy(false);
@@ -277,7 +327,10 @@ const PeopleAccessPage: React.FC = () => {
             {customerContext.summaryText}. People Access stays scoped to the selected customer.
           </p>
           {policyError ? (
-            <p className='m-0 mt-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>{policyError}</p>
+            <div className='mt-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>
+              <p className='m-0'>{policyError}</p>
+              <p className='m-0 mt-2px'>Policy source: {policySourceLabel(policySource)}</p>
+            </div>
           ) : null}
         </section>
 
@@ -291,10 +344,17 @@ const PeopleAccessPage: React.FC = () => {
               <SummaryTile label='Role' value={roleLabel(policy.membershipRole)} />
               <SummaryTile label='Seats' value={seatLabel} />
               <SummaryTile label='Members' value={String(policy.members.length)} />
-              <SummaryTile
-                label='Policy'
-                value={hasBackendPolicyProof ? 'Backend enforced' : 'Backend proof missing'}
-              />
+              <SummaryTile label='Invites' value={`${inviteCount} invites`} />
+            </section>
+            <section className='flex flex-wrap gap-8px'>
+              <Tag color={hasBackendPolicyProof ? 'green' : 'red'}>
+                {hasBackendPolicyProof ? 'Backend enforced' : 'Backend proof missing'}
+              </Tag>
+              {seatLimitReached ? <Tag color='orange'>Seat limit reached</Tag> : null}
+              <Tag>Policy source: {policySourceLabel(effectivePolicySource)}</Tag>
+              <Tag>Backend denial source: backend account policy</Tag>
+              {policy.planCode ? <Tag>Plan: {policy.planCode}</Tag> : null}
+              {policy.updatedAt ? <Tag>Updated: {policy.updatedAt}</Tag> : null}
             </section>
 
             {policy.routeDenied ? (
@@ -305,6 +365,9 @@ const PeopleAccessPage: React.FC = () => {
                     <h2 className='m-0 text-15px font-semibold leading-22px'>Route denied</h2>
                     <p className='m-0 mt-4px text-13px leading-20px'>
                       {policy.routeDenialReason ?? 'This customer account does not allow People Access.'}
+                    </p>
+                    <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>
+                      Route denial source: {policySourceLabel(effectivePolicySource)}
                     </p>
                   </div>
                 </div>
@@ -339,6 +402,11 @@ const PeopleAccessPage: React.FC = () => {
                           </div>
                           <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
                             {member.email ?? member.memberId}
+                          </div>
+                          <div className='mt-2px flex flex-wrap gap-6px text-12px leading-18px text-t-secondary'>
+                            <span>{seatTypeLabel(member.seatType)}</span>
+                            {member.joinedAt ? <span>Joined: {member.joinedAt}</span> : null}
+                            {member.lastActiveAt ? <span>Last active: {member.lastActiveAt}</span> : null}
                           </div>
                         </div>
                         <div className='flex shrink-0 items-center gap-6px'>
@@ -381,6 +449,11 @@ const PeopleAccessPage: React.FC = () => {
                       Action denied by account policy.
                     </p>
                   ) : null}
+                  {!canManageMembers || policy.routeDenied || !hasBackendPolicyProof ? (
+                    <p className='m-0 text-12px leading-18px text-t-secondary'>
+                      Action denial source: {policySourceLabel(effectivePolicySource)}
+                    </p>
+                  ) : null}
                   {canManageMembers && !hasBackendPolicyProof ? (
                     <p className='m-0 text-12px leading-18px text-[rgb(var(--warning-6))]'>
                       Invite actions require backend-enforced account policy proof.
@@ -394,6 +467,39 @@ const PeopleAccessPage: React.FC = () => {
                   ) : null}
                 </div>
               </aside>
+            </section>
+
+            <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+              <div className='mb-12px flex items-center justify-between gap-10px'>
+                <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Invites</h2>
+                <Tag color={seatLimitReached ? 'orange' : 'blue'}>{pendingInviteCount} pending</Tag>
+              </div>
+              <div className='flex flex-col gap-8px'>
+                {policy.invites.length === 0 ? (
+                  <div className='rounded-8px border border-dashed border-[var(--color-border-2)] p-12px text-13px text-t-secondary'>
+                    No invite evidence returned.
+                  </div>
+                ) : (
+                  policy.invites.map((invite) => (
+                    <div
+                      key={invite.inviteId}
+                      className='grid grid-cols-[minmax(0,1fr)_auto] items-center gap-10px rounded-8px border border-solid border-[var(--color-border-2)] px-12px py-10px'
+                    >
+                      <div className='min-w-0'>
+                        <div className='truncate text-14px font-medium leading-20px text-t-primary'>{invite.email}</div>
+                        <div className='mt-2px flex flex-wrap gap-6px text-12px leading-18px text-t-secondary'>
+                          {invite.invitedAt ? <span>Invited: {invite.invitedAt}</span> : null}
+                          {invite.expiresAt ? <span>Expires: {invite.expiresAt}</span> : null}
+                        </div>
+                      </div>
+                      <div className='flex shrink-0 items-center gap-6px'>
+                        <Tag>{roleLabel(invite.role)}</Tag>
+                        <Tag color={invite.status === 'pending' ? 'blue' : 'gray'}>{statusLabel(invite.status)}</Tag>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </section>
 
             <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>

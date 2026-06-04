@@ -102,6 +102,20 @@ function customerTargets() {
   };
 }
 
+function noCustomerTargets() {
+  return {
+    success: true,
+    data: {
+      roles: [],
+      isOperator: false,
+      defaultCustomerId: undefined,
+      selectedCustomerId: undefined,
+      customers: [],
+      summaryText: 'No customer targets loaded',
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => {
@@ -117,6 +131,88 @@ describe('PeopleAccessPage', () => {
     brokerMocks.getCustomerTargets.mockResolvedValue(customerTargets());
     peopleAccessMocks.getPolicy.mockReset();
     peopleAccessMocks.inviteMember.mockReset();
+  });
+
+  it('renders loaded members, roles, seats, invites, policy badges, and backend source metadata', async () => {
+    const user = userEvent.setup();
+    peopleAccessMocks.getPolicy.mockResolvedValue({
+      success: true,
+      data: policy(['manage_members', 'open_business_browser', 'view_company_brain'], {
+        membershipRole: 'billing_admin',
+        seatLimit: 4,
+        activeSeats: 2,
+        invitedSeats: 2,
+        planCode: 'beta-team',
+        updatedAt: '2026-06-04T10:00:00.000Z',
+        advancedSurfaces: {
+          business_browser: true,
+          company_brain: true,
+          terminal: false,
+        },
+        members: [
+          {
+            memberId: 'mem_owner',
+            email: 'owner@example.test',
+            displayName: 'Owner Persona',
+            role: 'admin',
+            seatType: 'full',
+            status: 'active',
+            joinedAt: '2026-05-01T00:00:00.000Z',
+            lastActiveAt: '2026-06-03T11:00:00.000Z',
+          },
+          {
+            memberId: 'mem_agent',
+            email: 'agent@example.test',
+            displayName: 'Agent Seat',
+            role: 'agent_only',
+            seatType: 'agent',
+            status: 'suspended',
+          },
+        ],
+        invites: [
+          {
+            inviteId: 'inv_pending',
+            email: 'pending@example.test',
+            role: 'member',
+            status: 'pending',
+            expiresAt: '2026-06-11T00:00:00.000Z',
+            invitedAt: '2026-06-04T00:00:00.000Z',
+          },
+          {
+            inviteId: 'inv_expired',
+            email: 'expired@example.test',
+            role: 'manager',
+            status: 'expired',
+            expiresAt: '2026-06-01T00:00:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    render(<PeopleAccessPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(await screen.findByText('Owner Persona')).toBeInTheDocument();
+    expect(screen.getByText('Agent Seat')).toBeInTheDocument();
+    expect(screen.getByText('Agent Only')).toBeInTheDocument();
+    expect(screen.getByText('suspended')).toBeInTheDocument();
+    expect(screen.getByText('full seat')).toBeInTheDocument();
+    expect(screen.getByText('agent seat')).toBeInTheDocument();
+    expect(screen.getByText('4 of 4')).toBeInTheDocument();
+    expect(screen.getByText('Seat limit reached')).toBeInTheDocument();
+    expect(screen.getByText('2 invites')).toBeInTheDocument();
+    expect(screen.getByText('1 pending')).toBeInTheDocument();
+    expect(screen.getByText('pending@example.test')).toBeInTheDocument();
+    expect(screen.getByText('expired@example.test')).toBeInTheDocument();
+    expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(screen.getByText('Policy source: backend account policy')).toBeInTheDocument();
+    expect(screen.getByText('Backend denial source: backend account policy')).toBeInTheDocument();
+    expect(screen.getByText('Plan: beta-team')).toBeInTheDocument();
+    expect(screen.getByText('Updated: 2026-06-04T10:00:00.000Z')).toBeInTheDocument();
+    expect(screen.getByText('business_browser: allowed')).toBeInTheDocument();
+    expect(screen.getByText('terminal: denied')).toBeInTheDocument();
   });
 
   it('loads policy evidence and sends member invites through the broker bridge', async () => {
@@ -181,6 +277,8 @@ describe('PeopleAccessPage', () => {
     expect(
       screen.getByText('People Access requires the manage_members scope for this customer account.')
     ).toBeInTheDocument();
+    expect(screen.getByText('Route denial source: backend account policy')).toBeInTheDocument();
+    expect(screen.getByText('Action denial source: backend account policy')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^invite$/i })).toBeDisabled();
     expect(peopleAccessMocks.inviteMember).not.toHaveBeenCalled();
   });
@@ -202,8 +300,53 @@ describe('PeopleAccessPage', () => {
 
     expect((await screen.findAllByText('Backend proof missing')).length).toBeGreaterThan(0);
     expect(screen.getByText('Invite actions require backend-enforced account policy proof.')).toBeInTheDocument();
+    expect(screen.getByText('Action denial source: missing backend proof')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^invite$/i })).toBeDisabled();
     expect(peopleAccessMocks.inviteMember).not.toHaveBeenCalled();
+  });
+
+  it('renders honest no-customer copy without calling the People Access policy bridge', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getCustomerTargets.mockReset();
+    brokerMocks.getCustomerTargets.mockResolvedValue(noCustomerTargets());
+
+    render(<PeopleAccessPage />);
+
+    expect(await screen.findByText('No customer targets loaded')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    expect(screen.getByText('Choose a customer before loading People Access.')).toBeInTheDocument();
+    expect(peopleAccessMocks.getPolicy).not.toHaveBeenCalled();
+  });
+
+  it('renders offline policy load denial with backend source metadata', async () => {
+    const user = userEvent.setup();
+    peopleAccessMocks.getPolicy.mockRejectedValue(new Error('offline'));
+
+    render(<PeopleAccessPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(await screen.findByText('People Access broker request failed closed.')).toBeInTheDocument();
+    expect(screen.getByText('Policy source: backend unavailable')).toBeInTheDocument();
+  });
+
+  it('renders backend policy denial without leaking broker secret text', async () => {
+    const user = userEvent.setup();
+    peopleAccessMocks.getPolicy.mockResolvedValue({
+      success: false,
+      msg: 'eds_raw_policy_secret should not render',
+    });
+
+    const { container } = render(<PeopleAccessPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(await screen.findByText('People Access failed closed.')).toBeInTheDocument();
+    expect(screen.getByText('Policy source: backend denied')).toBeInTheDocument();
+    expect(container.textContent).not.toContain('eds_raw_policy_secret');
   });
 
   it('clears policy evidence when customer context changes before loading the next customer', async () => {
