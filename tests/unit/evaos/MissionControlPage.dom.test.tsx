@@ -77,7 +77,7 @@ describe('MissionControlPage', () => {
     expect(screen.getByText('Rollback and support path')).toBeInTheDocument();
     expect(container.textContent).toContain('Continue R&D with blockers');
     expect(container.textContent).toContain(
-      'Start AionUi locally and screenshot the beta routes before new feature slices.'
+      'Start evaOS Workbench Beta locally and screenshot the beta routes before new feature slices.'
     );
     expect(container.textContent).not.toContain('Stack approval');
     expect(container.textContent).not.toContain('Root PR #15');

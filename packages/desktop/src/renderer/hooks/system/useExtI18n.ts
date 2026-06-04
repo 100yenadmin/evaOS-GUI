@@ -47,7 +47,10 @@ export function useExtI18n(): {
     void extensionsIpc.getExtI18nForLocale
       .invoke({ locale })
       .then((data) => setExtI18nData(data ?? {}))
-      .catch((err) => console.error('[useExtI18n] Failed to load ext i18n:', err));
+      .catch((err) => {
+        console.debug('[useExtI18n] Extension i18n unavailable:', err);
+        setExtI18nData({});
+      });
   }, [i18n.language]);
 
   const resolveExtTabName = useCallback(
