@@ -12,6 +12,11 @@ on:
         type: boolean
         required: false
         default: false
+      run_windows_checks:
+        description: 'Force Windows unit/build checks for this PR'
+        type: boolean
+        required: false
+        default: false
   pull_request:
     types: [opened, synchronize, edited, closed, ready_for_review]
     branches: [main, dev, evaos/dev, 'evaos/**']
@@ -43,6 +48,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "PR closed, cancelling in-progress runs via concurrency."
+
+  pr-check-plan:
+    name: PR Check Plan
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_windows_checks: ${{ steps.plan.outputs.run_windows_checks }}
+      windows_reasons_json: ${{ steps.plan.outputs.windows_reasons_json }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve PR context
+        uses: ./.github/actions/checkout-pr
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          github_token: ${{ github.token }}
+
+      - name: List changed files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_NUMBER="$WORKFLOW_DISPATCH_PR_NUMBER"
+          else
+            PR_NUMBER="$PULL_REQUEST_NUMBER"
+          fi
+
+          gh api --paginate "repos/${{ github.repository }}/pulls/${PR_NUMBER}/files" --jq '.[].filename' | tee changed-files.txt
+
+      - name: Plan macOS-first PR checks
+        id: plan
+        shell: bash
+        env:
+          RUN_WINDOWS_CHECKS: ${{ inputs.run_windows_checks }}
+        run: |
+          node scripts/evaosPrCheckPlan.js github-output < changed-files.txt | tee pr-check-plan.out
+          cat pr-check-plan.out >> "$GITHUB_OUTPUT"
+
+      - name: Publish check plan summary
+        shell: bash
+        run: |
+          {
+            echo "## PR check plan"
+            echo "Windows checks: ${{ steps.plan.outputs.run_windows_checks }}"
+            echo "Reasons: ${{ steps.plan.outputs.windows_reasons_json }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Job 1: Code quality checks (TypeScript, Oxlint, Oxfmt)
   code-quality:
@@ -85,7 +143,7 @@ jobs:
       - name: Run prek checks
         run: prek run --from-ref origin/${{ env.PR_BASE_REF }} --to-ref HEAD
 
-  # Job 2: Unit tests across all platforms
+  # Job 2: Unit tests for the macOS-first beta lane.
   unit-tests:
     name: Unit Tests (${{ matrix.os }})
     if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.draft == false)
@@ -94,7 +152,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-2022]
+        os: [ubuntu-latest, macos-14]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -116,8 +174,43 @@ jobs:
           bun-version: latest
           cache: true
 
-      - name: Disable Windows Defender (Windows only)
-        if: matrix.os == 'windows-2022'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run postinstall
+        run: npm run postinstall || true
+
+      - name: Run extension system tests
+        run: bunx vitest run
+
+  windows-unit-tests:
+    name: Unit Tests (windows-2022)
+    needs: pr-check-plan
+    if: needs.pr-check-plan.outputs.run_windows_checks == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve PR context
+        uses: ./.github/actions/checkout-pr
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          github_token: ${{ github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+          cache: true
+
+      - name: Disable Windows Defender
         shell: pwsh
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true
@@ -225,6 +318,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve PR context
+        uses: ./.github/actions/checkout-pr
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          github_token: ${{ github.token }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -267,7 +366,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
 
-  # Job 4: Build test across all platforms (parallel with code-quality and unit-tests)
+  # Job 4: Build test for the macOS-first beta lane plus Linux compatibility.
   build-test:
     name: Build Test (${{ matrix.platform }})
     if: github.event.action != 'closed' && github.event.pull_request.draft == false && inputs.skip_build_test != true
@@ -289,18 +388,6 @@ jobs:
             target: '--mac'
             build_args: '--mac --x64'
             unpacked_dir: 'mac'
-          - platform: 'windows-x64'
-            os: 'windows-2022'
-            arch: 'x64'
-            target: '--win'
-            build_args: '--win --x64'
-            unpacked_dir: 'win-unpacked'
-          - platform: 'windows-arm64'
-            os: 'windows-2022'
-            arch: 'arm64'
-            target: '--win'
-            build_args: '--win --arm64'
-            unpacked_dir: 'win-arm64-unpacked'
           - platform: 'linux'
             os: 'ubuntu-latest'
             arch: 'x64'
@@ -311,6 +398,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Resolve PR context
+        uses: ./.github/actions/checkout-pr
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          github_token: ${{ github.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -379,48 +472,7 @@ jobs:
           ELECTRON_CACHE: ${{ runner.temp }}/.cache/electron
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/.cache/electron-builder
 
-      - name: Setup MSBuild (Windows only)
-        if: startsWith(matrix.platform, 'windows')
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: '17.0'
-
-      - name: Build test (Windows x64)
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          Write-Host "=========================================="
-          Write-Host "BUILD TEST: ${{ matrix.platform }}"
-          Write-Host "=========================================="
-          node scripts/build-with-builder.js x64 --win --x64
-          Write-Host "✓Build test passed for ${{ matrix.platform }}"
-        env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-          MSVS_VERSION: 2022
-          GYP_MSVS_VERSION: 2022
-          WindowsTargetPlatformVersion: 10.0.19041.0
-          CI: true
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Build test (Windows arm64)
-        if: matrix.platform == 'windows-arm64'
-        shell: pwsh
-        run: |
-          Write-Host "=========================================="
-          Write-Host "BUILD TEST: ${{ matrix.platform }}"
-          Write-Host "=========================================="
-          node scripts/build-with-builder.js arm64 --win --arm64
-          Write-Host "✓Build test passed for ${{ matrix.platform }}"
-        env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-          MSVS_VERSION: 2022
-          GYP_MSVS_VERSION: 2022
-          WindowsTargetPlatformVersion: 10.0.19041.0
-          CI: true
-          GH_TOKEN: ${{ github.token }}
-
       - name: Build test (non-Windows)
-        if: "!startsWith(matrix.platform, 'windows')"
         shell: bash
         run: |
           echo "=========================================="
@@ -447,9 +499,6 @@ jobs:
           ls -lah out || true
 
           case "${{ matrix.platform }}" in
-            windows-*)
-              ls out/*.exe >/dev/null
-              ;;
             macos-*)
               ls out/*.dmg out/*.zip >/dev/null
               ;;
@@ -457,6 +506,165 @@ jobs:
               ls out/*.deb >/dev/null
               ;;
           esac
+
+      - name: Install smoke test (macOS arm64)
+        if: matrix.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=========================================="
+          echo "SMOKE INSTALL: macos-arm64"
+          echo "=========================================="
+
+          DMG_FILE=$(ls out/*.dmg | head -n 1)
+          MOUNT_POINT="/tmp/aionui-smoke-mount"
+          APP_DIR="/tmp/aionui-smoke-app"
+
+          rm -rf "$MOUNT_POINT" "$APP_DIR"
+          mkdir -p "$MOUNT_POINT" "$APP_DIR"
+
+          hdiutil attach "$DMG_FILE" -nobrowse -mountpoint "$MOUNT_POINT"
+          cp -R "$MOUNT_POINT"/*.app "$APP_DIR"/
+          hdiutil detach "$MOUNT_POINT"
+
+          APP_PATH=$(ls -d "$APP_DIR"/*.app | head -n 1)
+          APP_BIN="$APP_PATH/Contents/MacOS/EvaOSWorkbenchBeta"
+
+          test -x "$APP_BIN"
+          "$APP_BIN" --version || true
+
+      - name: Skip executable smoke for macOS x64 cross build
+        if: matrix.platform == 'macos-x64'
+        shell: bash
+        run: |
+          echo "Skipping runtime launch smoke for macos-x64 cross build on arm64 runner."
+          ls -lah out/*.dmg out/*.zip
+
+      - name: Install smoke test (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=========================================="
+          echo "SMOKE INSTALL: linux"
+          echo "=========================================="
+
+          DEB_FILE=$(ls out/*.deb | head -n 1)
+          PKG_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
+          sudo dpkg -i "$DEB_FILE" || sudo apt-get install -f -y
+
+          INSTALLED_BIN=$(dpkg -L "$PKG_NAME" | grep -Ei '/(bin|opt)/.*(EvaOSWorkbenchBeta|evaos-workbench-beta|evaosworkbenchbeta)$' | head -n 1 || true)
+          if [ -z "$INSTALLED_BIN" ]; then
+            echo "Package files:"
+            dpkg -L "$PKG_NAME" | head -n 50
+            echo "No installed executable path matched expected pattern"
+            exit 1
+          fi
+
+          test -x "$INSTALLED_BIN"
+
+  windows-build-test:
+    name: Build Test (${{ matrix.platform }})
+    needs: pr-check-plan
+    if: needs.pr-check-plan.outputs.run_windows_checks == 'true' && inputs.skip_build_test != true
+    runs-on: windows-2022
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-x64'
+            arch: 'x64'
+            build_mode: 'x64'
+            build_args: '--win --x64'
+          - platform: 'windows-arm64'
+            arch: 'arm64'
+            build_mode: 'arm64'
+            build_args: '--win --arm64'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve PR context
+        uses: ./.github/actions/checkout-pr
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          github_token: ${{ github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run postinstall
+        run: npm run postinstall || true
+
+      - name: Cache Electron artifacts
+        id: electron-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/.cache/electron
+            ${{ runner.temp }}/.cache/electron-builder
+            ${{ env.LOCALAPPDATA }}\electron-builder\Cache
+          key: electron-cache-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'bun.lock') }}
+          restore-keys: |
+            electron-cache-${{ matrix.platform }}-${{ matrix.arch }}-
+            electron-cache-${{ matrix.platform }}-
+
+      - name: Cache status
+        shell: pwsh
+        run: Write-Host "electron-cache-hit=${{ steps.electron-cache.outputs.cache-hit }}"
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '17.0'
+
+      - name: Build test
+        shell: pwsh
+        run: |
+          Write-Host "=========================================="
+          Write-Host "BUILD TEST: ${{ matrix.platform }}"
+          Write-Host "=========================================="
+          node scripts/build-with-builder.js ${{ matrix.build_mode }} ${{ matrix.build_args }}
+          Write-Host "✓Build test passed for ${{ matrix.platform }}"
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          MSVS_VERSION: 2022
+          GYP_MSVS_VERSION: 2022
+          WindowsTargetPlatformVersion: 10.0.19041.0
+          CI: true
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify build artifacts exist
+        shell: pwsh
+        run: |
+          Write-Host "=========================================="
+          Write-Host "VERIFY ARTIFACTS: ${{ matrix.platform }}"
+          Write-Host "=========================================="
+          Get-ChildItem -Path out | Format-Table Name, Length, LastWriteTime
+          $installer = Get-ChildItem -Path out -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            throw "No Windows installer found in out/"
+          }
 
       - name: Silent install smoke test (Windows x64)
         if: matrix.platform == 'windows-x64'
@@ -533,62 +741,6 @@ jobs:
         run: |
           Write-Host "Skipping runtime install smoke for windows-arm64: runner is windows-x64, cannot reliably execute arm64 installer."
           Get-ChildItem -Path out -Filter "evaOS Workbench Beta-*-win-*.exe" | Format-Table Name, Length
-
-      - name: Install smoke test (macOS arm64)
-        if: matrix.platform == 'macos-arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "=========================================="
-          echo "SMOKE INSTALL: macos-arm64"
-          echo "=========================================="
-
-          DMG_FILE=$(ls out/*.dmg | head -n 1)
-          MOUNT_POINT="/tmp/aionui-smoke-mount"
-          APP_DIR="/tmp/aionui-smoke-app"
-
-          rm -rf "$MOUNT_POINT" "$APP_DIR"
-          mkdir -p "$MOUNT_POINT" "$APP_DIR"
-
-          hdiutil attach "$DMG_FILE" -nobrowse -mountpoint "$MOUNT_POINT"
-          cp -R "$MOUNT_POINT"/*.app "$APP_DIR"/
-          hdiutil detach "$MOUNT_POINT"
-
-          APP_PATH=$(ls -d "$APP_DIR"/*.app | head -n 1)
-          APP_BIN="$APP_PATH/Contents/MacOS/EvaOSWorkbenchBeta"
-
-          test -x "$APP_BIN"
-          "$APP_BIN" --version || true
-
-      - name: Skip executable smoke for macOS x64 cross build
-        if: matrix.platform == 'macos-x64'
-        shell: bash
-        run: |
-          echo "Skipping runtime launch smoke for macos-x64 cross build on arm64 runner."
-          ls -lah out/*.dmg out/*.zip
-
-      - name: Install smoke test (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "=========================================="
-          echo "SMOKE INSTALL: linux"
-          echo "=========================================="
-
-          DEB_FILE=$(ls out/*.deb | head -n 1)
-          PKG_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
-          sudo dpkg -i "$DEB_FILE" || sudo apt-get install -f -y
-
-          INSTALLED_BIN=$(dpkg -L "$PKG_NAME" | grep -Ei '/(bin|opt)/.*(EvaOSWorkbenchBeta|evaos-workbench-beta|evaosworkbenchbeta)$' | head -n 1 || true)
-          if [ -z "$INSTALLED_BIN" ]; then
-            echo "Package files:"
-            dpkg -L "$PKG_NAME" | head -n 50
-            echo "No installed executable path matched expected pattern"
-            exit 1
-          fi
-
-          test -x "$INSTALLED_BIN"
 
   # Job 5: Test release scripts (fast, no build required)
   release-script-test:
