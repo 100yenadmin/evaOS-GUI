@@ -25,6 +25,7 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     forbidden: string[];
   };
   relevantConsoleErrors: (messages: Array<{ type: string; text: string }>) => Array<{ type: string; text: string }>;
+  loadPlaywrightElectron: (repoRoot: string, requirePlaywright?: (id: string) => unknown) => unknown;
   shellSmokeEnv: (artifactsDir: string, env?: NodeJS.ProcessEnv) => NodeJS.ProcessEnv;
   textFindings: (
     route: string,
@@ -99,6 +100,30 @@ describe('evaOS local shell smoke', () => {
     });
     expect(env.AIONUI_EXTENSIONS_PATH).toBe(path.join(artifactsDir, 'extensions'));
     expect(env.AIONUI_EXTENSION_STATES_FILE).toBe(path.join(artifactsDir, 'extension-states.json'));
+  });
+
+  it('surfaces a clear setup error when Playwright is missing', () => {
+    const missingPlaywright = new Error("Cannot find module 'playwright'") as Error & {
+      code?: string;
+    };
+    missingPlaywright.code = 'MODULE_NOT_FOUND';
+
+    expect(() =>
+      localShellSmoke.loadPlaywrightElectron('/Volumes/LEXAR/repos/AionUi', () => {
+        throw missingPlaywright;
+      })
+    ).toThrow(/requires Playwright from the repo dependencies/);
+  });
+
+  it('loads the Electron launcher from the repo Playwright dependency', () => {
+    const launcher = { launch: async () => undefined };
+
+    expect(
+      localShellSmoke.loadPlaywrightElectron('/Volumes/LEXAR/repos/AionUi', (id) => {
+        expect(id).toBe('playwright');
+        return { _electron: launcher };
+      })
+    ).toBe(launcher);
   });
 
   it('ignores known offline defaults but keeps real console errors visible', () => {
