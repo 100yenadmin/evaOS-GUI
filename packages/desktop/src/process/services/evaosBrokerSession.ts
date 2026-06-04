@@ -46,6 +46,8 @@ import type {
   IEvaosPeopleAccessPolicyView,
   IEvaosProviderActionRequest,
   IEvaosProviderActionResult,
+  IEvaosProviderApprovalRequest,
+  IEvaosProviderApprovalRequestedAction,
   IEvaosProviderAgentRuntime,
   IEvaosProviderHubRequest,
   IEvaosProviderHubView,
@@ -630,6 +632,36 @@ export class EvaosBrokerSessionClient {
 
   async mintProviderGrant(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
     return this.providerAction(request, 'provider_mint_grant');
+  }
+
+  async requestProviderApproval(request: IEvaosProviderApprovalRequest): Promise<IEvaosProviderActionResult> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before requesting Connected Apps access.'
+    );
+    const providerKey = normalizeProviderKey(request.providerKey);
+    const requestedAction = normalizeProviderApprovalRequestedAction(request.requestedAction);
+    const agentRuntime =
+      requestedAction === 'provider_mint_grant'
+        ? normalizeProviderAgentRuntime(request.agentRuntime ?? 'openclaw')
+        : undefined;
+    const session = this.requireActiveSession();
+    const policy = await this.peopleAccessPolicy({ customerId });
+    assertProviderPolicyProof(policy);
+
+    const raw = await this.postJson(
+      stripUndefined({
+        action: 'provider_approval_request',
+        customer_id: customerId,
+        provider_key: providerKey,
+        requested_action: requestedAction,
+        agent_runtime: agentRuntime,
+      }),
+      session
+    );
+
+    return sanitizeProviderApprovalRequestResult(raw, { customerId, providerKey, requestedAction, policy });
   }
 
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
@@ -1465,6 +1497,65 @@ function sanitizeProviderActionResult(
     sourcePointer,
     auditId,
     backendEnforced,
+  });
+}
+
+function sanitizeProviderApprovalRequestResult(
+  raw: unknown,
+  fallback: {
+    customerId: string;
+    providerKey: IEvaosProviderKey;
+    requestedAction: IEvaosProviderApprovalRequestedAction;
+    policy: IEvaosPeopleAccessPolicyView;
+  }
+): IEvaosProviderActionResult {
+  const record = asRecord(raw);
+  const approvalRequest = asRecord(record?.approval_request);
+  if (!record || !approvalRequest) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const providerKey =
+    normalizeProviderKeyValue(approvalRequest.provider_key ?? record.provider_key ?? record.provider) ??
+    fallback.providerKey;
+  const requestedAction = safeText(approvalRequest.requested_action, 80);
+  const status = safeText(approvalRequest.status, 80);
+  const sourcePointer = safeProviderApprovalRequestSourcePointer(
+    approvalRequest.source_pointer,
+    fallback.customerId,
+    safeText(approvalRequest.id ?? approvalRequest.approval_id)
+  );
+  const auditId = safeText(approvalRequest.audit_id);
+  const hasProviderHubProof =
+    Array.isArray(record.provider_profiles ?? record.profiles ?? record.providers) &&
+    safeBoolean(record.backend_enforced) === true &&
+    Boolean(safeText(record.source_pointer)) &&
+    Boolean(safeText(record.audit_id));
+  const providerHub = hasProviderHubProof
+    ? sanitizeProviderHub(record, fallback.policy, fallback.customerId)
+    : undefined;
+
+  if (
+    providerKey !== fallback.providerKey ||
+    requestedAction !== fallback.requestedAction ||
+    !status ||
+    !sourcePointer ||
+    !auditId
+  ) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return provider approval request proof.'
+    );
+  }
+
+  return stripUndefined({
+    status,
+    providerKey,
+    message: safeText(record.message) ?? 'Approval request opened.',
+    providerHub,
+    sourcePointer,
+    auditId,
+    backendEnforced: true,
   });
 }
 
@@ -2814,6 +2905,14 @@ function normalizeProviderAgentRuntime(value: unknown): IEvaosProviderAgentRunti
   throw new EvaosBrokerSessionError('invalid_provider', 'Choose a supported provider grant runtime.');
 }
 
+function normalizeProviderApprovalRequestedAction(value: unknown): IEvaosProviderApprovalRequestedAction {
+  const text = safeText(value, 80);
+  if (text === 'provider_mint_grant' || text === 'provider_revoke') {
+    return text;
+  }
+  throw new EvaosBrokerSessionError('invalid_provider', 'Choose a supported provider approval action.');
+}
+
 function normalizeBusinessBrowserUrl(value: string): string {
   if (typeof value !== 'string' || containsSecretMaterial(value)) {
     throw new EvaosBrokerSessionError('invalid_browser_url', 'Enter a safe http(s) URL for Business Browser.');
@@ -3017,6 +3116,20 @@ function safeProviderActionSourcePointer(
   }
 
   const expectedActionPointer = `broker:${action}:${providerKey}`;
+  return text === expectedActionPointer ? text : undefined;
+}
+
+function safeProviderApprovalRequestSourcePointer(
+  value: unknown,
+  customerId: string,
+  approvalId?: string
+): string | undefined {
+  const text = safeText(value, 240);
+  if (!text || !approvalId) {
+    return undefined;
+  }
+
+  const expectedActionPointer = `broker:provider_approval_request:${customerId}:${approvalId}`;
   return text === expectedActionPointer ? text : undefined;
 }
 
