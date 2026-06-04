@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AboutModalContent, {
   EVAOS_BETA_ABOUT_LINKS,
+  EVAOS_BETA_SUPPORT_NOTICE,
 } from '@/renderer/components/settings/SettingsModal/contents/AboutModalContent';
 
 const platformMocks = vi.hoisted(() => ({
@@ -55,6 +56,14 @@ describe('AboutModalContent evaOS beta identity', () => {
 
     expect(screen.getByText(EVAOS_BETA_ABOUT_LINKS.appName)).toBeInTheDocument();
     expect(screen.queryByText('AionUi')).not.toBeInTheDocument();
+  });
+
+  it('shows the beta support and released macOS fallback notice', () => {
+    renderAbout();
+
+    expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.title)).toBeInTheDocument();
+    expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.body)).toBeInTheDocument();
+    expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.supportRoute)).toBeInTheDocument();
   });
 
   it('routes About support links to evaOS-owned surfaces', async () => {

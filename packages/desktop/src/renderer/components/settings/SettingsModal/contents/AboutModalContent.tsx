@@ -32,6 +32,12 @@ export const EVAOS_BETA_ABOUT_LINKS = {
   support: 'https://github.com/100yenadmin/AionUi/issues/13',
 } as const;
 
+export const EVAOS_BETA_SUPPORT_NOTICE = {
+  title: 'Beta support',
+  body: 'The released macOS app remains the fallback until public beta gates pass.',
+  supportRoute: 'Support: GitHub issue #13',
+} as const;
+
 const checkUpdate = () => {
   // 使用 window 自定义事件在渲染进程内部通信（buildEmitter 只支持主进程->渲染进程）
   // Use window custom event for renderer-side communication (buildEmitter only works main->renderer)
@@ -139,6 +145,25 @@ const AboutModalContent: React.FC = () => {
                 </div>
               </div>
             )}
+
+            <div className='w-full mt-16px p-14px rd-8px bg-fill-2 border border-border flex flex-col gap-6px'>
+              <Typography.Text className='text-13px font-600 text-t-primary'>
+                {EVAOS_BETA_SUPPORT_NOTICE.title}
+              </Typography.Text>
+              <Typography.Text className='text-12px text-t-secondary leading-18px'>
+                {EVAOS_BETA_SUPPORT_NOTICE.body}
+              </Typography.Text>
+              <Typography.Text
+                className='text-12px text-brand cursor-pointer hover:opacity-80'
+                onClick={() =>
+                  openLink(EVAOS_BETA_ABOUT_LINKS.support).catch((error) =>
+                    console.error('Failed to open support link:', error)
+                  )
+                }
+              >
+                {EVAOS_BETA_SUPPORT_NOTICE.supportRoute}
+              </Typography.Text>
+            </div>
           </div>
 
           {/* Divider */}
