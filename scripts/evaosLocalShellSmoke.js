@@ -7,11 +7,19 @@ const { createRequire } = require('module');
 const DEFAULT_ARTIFACT_ROOT =
   process.env.AIONUI_SMOKE_ARTIFACT_ROOT || '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/38-local-shell-smoke';
 
+const PROOF_STAGES = {
+  SHELL_SMOKE: 'shell-smoke',
+  PRODUCT_LOADED_STATE: 'product-loaded-state',
+};
+
 const ROUTE_CHECKS = [
   {
     name: 'mission-control',
     hash: '/mission-control',
     title: 'Mission Control',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Mission Control', 'Public beta gated', 'Local shell smoke', 'No runtime evidence loaded yet.'],
+    loadedStateRequiredMarkers: ['desktop session card', 'broker source pointer', 'current audit id'],
     expected: [
       'Public beta gated',
       'Local shell smoke',
@@ -25,6 +33,14 @@ const ROUTE_CHECKS = [
     name: 'people-access-empty-error',
     hash: '/people-access',
     title: 'People Access',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: [
+      'People Access',
+      'Customer context',
+      'Refresh targets',
+      'Sign in to evaOS before loading customer targets.',
+    ],
+    loadedStateRequiredMarkers: ['member rows', 'role badges', 'account policy source pointer'],
     action: 'click-refresh-targets',
     isolateRendererState: true,
     expected: [
@@ -41,6 +57,9 @@ const ROUTE_CHECKS = [
     name: 'approval-center-empty-error',
     hash: '/approval-center',
     title: 'Approval Center',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Approval Center', 'Load a customer account to review pending approval requests.'],
+    loadedStateRequiredMarkers: ['approval request rows', 'deny/approve policy source', 'decision audit id'],
     action: 'click-load',
     expected: [
       'Approval Center',
@@ -54,6 +73,14 @@ const ROUTE_CHECKS = [
     name: 'connected-apps-empty-error',
     hash: '/connected-apps',
     title: 'Connected Apps',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: [
+      'Connected Apps',
+      'Customer context',
+      'Refresh targets',
+      'Sign in to evaOS before loading customer targets.',
+    ],
+    loadedStateRequiredMarkers: ['provider profile cards', 'grant/revoke status badges', 'provider source pointer'],
     action: 'click-refresh-targets',
     isolateRendererState: true,
     expected: [
@@ -70,6 +97,14 @@ const ROUTE_CHECKS = [
     name: 'business-browser-empty-error',
     hash: '/business-browser',
     title: 'Business Browser',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: [
+      'Business Browser',
+      'Customer context',
+      'Refresh targets',
+      'Sign in to evaOS before loading customer targets.',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
     action: 'click-refresh-targets',
     isolateRendererState: true,
     expected: [
@@ -86,6 +121,9 @@ const ROUTE_CHECKS = [
     name: 'company-brain-empty-error',
     hash: '/company-brain',
     title: 'Company Brain',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Company Brain', 'Load a customer account to view Company Brain evidence.'],
+    loadedStateRequiredMarkers: ['account directory rows', 'ingest/query status cards', 'directory source pointer'],
     action: 'click-load',
     expected: [
       'Company Brain',
@@ -99,6 +137,9 @@ const ROUTE_CHECKS = [
     name: 'agent-settings-remote-guardrail',
     hash: '/settings/agent',
     title: 'Agent',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Local Agents', 'No local agents detected'],
+    loadedStateRequiredMarkers: ['local agent inventory result', 'remote guardrail copy'],
     expected: ['Local Agents', 'No local agents detected'],
     forbidden: ['Root PR #15', 'Stack approval', 'Remote Agents', 'Allow insecure', 'Handshake', 'Connect remote'],
   },
@@ -296,6 +337,9 @@ function writeProof({ artifactRoot, artifactsDir, report }) {
       '',
       'Scenario canary: interactive local AionUi shell smoke.',
       '',
+      'Proof stage: shell-smoke. These screenshots prove route launch, guardrails, and honest empty/error copy only.',
+      'They do not prove product loaded state until fixture-backed screenshots wait for route-specific loaded markers.',
+      '',
       'Command:',
       '',
       '```bash',
@@ -304,7 +348,12 @@ function writeProof({ artifactRoot, artifactsDir, report }) {
       '',
       '## Routes',
       '',
-      ...report.routes.map((result) => `- ${result.route}: ${result.screenshotPath}`),
+      ...report.routes.map(
+        (result) =>
+          `- ${result.route}: ${result.screenshotPath} (${result.proofStage}; loaded markers pending: ${result.loadedStateRequiredMarkers.join(
+            ', '
+          )})`
+      ),
       '',
       '## Findings',
       '',
@@ -385,6 +434,9 @@ async function runLocalShellSmoke(options = {}) {
         hash: check.hash,
         screenshotPath,
         textLength: text.trim().length,
+        proofStage: check.proofStage,
+        settledMarkers: check.settledMarkers,
+        loadedStateRequiredMarkers: check.loadedStateRequiredMarkers,
       });
     }
 
@@ -400,6 +452,9 @@ async function runLocalShellSmoke(options = {}) {
       hash: TEAM_ROUTE_CHECK.hash,
       screenshotPath: teamRedirectPath,
       textLength: teamRedirectText.trim().length,
+      proofStage: PROOF_STAGES.SHELL_SMOKE,
+      settledMarkers: TEAM_ROUTE_CHECK.expected,
+      loadedStateRequiredMarkers: ['redirected #/guid route', 'beta shell fallback copy'],
     });
 
     for (const error of pageErrors) {
@@ -449,6 +504,7 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_ARTIFACT_ROOT,
   GLOBAL_FORBIDDEN_PATTERNS,
+  PROOF_STAGES,
   ROUTE_CHECKS,
   TEAM_ROUTE_CHECK,
   loadPlaywrightElectron,
