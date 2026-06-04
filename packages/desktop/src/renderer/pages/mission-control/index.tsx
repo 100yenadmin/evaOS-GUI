@@ -32,6 +32,11 @@ type RuntimeLoadState = {
 
 type StatusBucket = 'running' | 'done' | 'blocked' | 'waiting';
 
+type BetaGateItem = {
+  label: string;
+  detail: string;
+};
+
 const RUNTIME_TARGETS: RuntimeTarget[] = [
   {
     key: 'browser',
@@ -56,6 +61,29 @@ const RUNTIME_TARGETS: RuntimeTarget[] = [
     label: 'Paperclip',
     role: 'Execution queue',
     kind: 'execution',
+  },
+];
+
+const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
+  {
+    label: 'Stack approval',
+    detail: 'Root PR #15 needs independent writer approval before the AionUi evaOS stack can land.',
+  },
+  {
+    label: 'Live staging canaries',
+    detail: 'evaos-staging still needs real session, customer, provider, Company Brain, and browser fixtures.',
+  },
+  {
+    label: 'Signed macOS artifact',
+    detail: 'No signed and notarized beta artifact has install and launch evidence yet.',
+  },
+  {
+    label: 'Role and org denial proof',
+    detail: 'People, approvals, providers, Company Brain, and browser controls still need live denial evidence.',
+  },
+  {
+    label: 'Rollback and support path',
+    detail: 'Fallback app launch, rollback state, and support notes still need artifact-backed proof.',
   },
 ];
 
@@ -259,6 +287,30 @@ const MissionControlPage: React.FC = () => {
             </Button>
           </div>
 
+          <section
+            className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'
+            aria-label='Public beta gate'
+          >
+            <div className='flex flex-wrap items-start justify-between gap-10px'>
+              <div className='min-w-0'>
+                <div className='flex flex-wrap items-center gap-8px'>
+                  <span className='text-14px font-semibold leading-20px text-t-primary'>Public beta gated</span>
+                  <Tag color='orange'>Continue R&amp;D with blockers</Tag>
+                </div>
+                <p className='m-0 mt-4px max-w-760px text-13px leading-20px text-t-secondary'>
+                  AionUi is the evaOS beta shell candidate. Public distribution stays blocked until the proof gates
+                  below pass.
+                </p>
+              </div>
+              <Tag color='gray'>Issue #13</Tag>
+            </div>
+            <div className='mt-12px grid grid-cols-1 gap-8px md:grid-cols-5'>
+              {PUBLIC_BETA_GATE_ITEMS.map((item) => (
+                <BetaGateCard key={item.label} item={item} />
+              ))}
+            </div>
+          </section>
+
           <section className='grid grid-cols-1 gap-10px md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]'>
             <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
               <div className='flex flex-wrap items-center justify-between gap-10px'>
@@ -333,6 +385,16 @@ const MissionControlPage: React.FC = () => {
     </div>
   );
 };
+
+const BetaGateCard: React.FC<{ item: BetaGateItem }> = ({ item }) => (
+  <div className='min-h-96px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-10px'>
+    <div className='flex items-center gap-6px'>
+      <Attention theme='outline' size='14' />
+      <span className='text-12px font-semibold leading-18px text-t-primary'>{item.label}</span>
+    </div>
+    <p className='m-0 mt-6px text-12px leading-18px text-t-secondary'>{item.detail}</p>
+  </div>
+);
 
 const SummaryTile: React.FC<{ label: string; value: number; bucket: StatusBucket }> = ({ label, value, bucket }) => (
   <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 px-14px py-12px'>

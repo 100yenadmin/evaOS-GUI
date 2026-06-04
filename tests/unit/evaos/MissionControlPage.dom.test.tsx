@@ -55,6 +55,30 @@ describe('MissionControlPage', () => {
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('No runtime evidence loaded yet.');
   });
 
+  it('renders public beta gate blockers without claiming the shell is shippable', async () => {
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'missing',
+        authenticated: false,
+        expired: false,
+        source: 'none',
+        message: 'Sign in to evaOS to connect this desktop shell.',
+      },
+    });
+
+    const { container } = render(<MissionControlPage />);
+
+    expect(await screen.findByText('Public beta gated')).toBeInTheDocument();
+    expect(screen.getByText('Stack approval')).toBeInTheDocument();
+    expect(screen.getByText('Live staging canaries')).toBeInTheDocument();
+    expect(screen.getByText('Signed macOS artifact')).toBeInTheDocument();
+    expect(screen.getByText('Role and org denial proof')).toBeInTheDocument();
+    expect(screen.getByText('Rollback and support path')).toBeInTheDocument();
+    expect(container.textContent).toContain('Continue R&D with blockers');
+    expect(container.textContent).not.toMatch(/ship public beta|ready to ship|eds_|desktop_session|Bearer/i);
+  });
+
   it('loads sanitized runtime evidence for the chosen customer', async () => {
     const user = userEvent.setup();
     brokerMocks.getSessionStatus.mockResolvedValue({
