@@ -172,6 +172,41 @@ function relevantConsoleErrors(consoleMessages) {
   );
 }
 
+function isMissingPlaywrightError(error) {
+  return (
+    error &&
+    error.code === 'MODULE_NOT_FOUND' &&
+    typeof error.message === 'string' &&
+    error.message.includes('playwright')
+  );
+}
+
+function loadPlaywrightElectron(repoRoot, requirePlaywright) {
+  const requireFromRepo = requirePlaywright || createRequire(path.join(repoRoot, 'package.json'));
+
+  try {
+    const playwright = requireFromRepo('playwright');
+    if (!playwright || !playwright._electron) {
+      throw new Error('The repo Playwright dependency does not expose _electron.');
+    }
+    return playwright._electron;
+  } catch (error) {
+    if (isMissingPlaywrightError(error)) {
+      const setupError = new Error(
+        [
+          'evaOS local shell smoke requires Playwright from the repo dependencies.',
+          `Repo: ${repoRoot}`,
+          'Run from a dependency-ready checkout, or install dependencies before running `npm run evaos:local-shell-smoke`.',
+        ].join('\n')
+      );
+      setupError.code = 'AIONUI_SMOKE_PLAYWRIGHT_MISSING';
+      setupError.cause = error;
+      throw setupError;
+    }
+    throw error;
+  }
+}
+
 async function clickLoad(page) {
   const loadButton = page.getByRole('button', { name: /^Load$/ }).first();
   await loadButton.click();
@@ -268,8 +303,7 @@ async function runLocalShellSmoke(options = {}) {
   const repoRoot = options.repoRoot || process.env.AIONUI_SMOKE_REPO_ROOT || process.cwd();
   const artifactRoot = options.artifactRoot || DEFAULT_ARTIFACT_ROOT;
   const { screenshotsDir, artifactsDir } = ensureDirs(artifactRoot);
-  const requireFromRepo = createRequire(path.join(repoRoot, 'package.json'));
-  const { _electron: electron } = options.electron || requireFromRepo('playwright');
+  const electron = options.electron?._electron || options.electron || loadPlaywrightElectron(repoRoot);
   const consoleMessages = [];
   const pageErrors = [];
   const results = [];
@@ -376,6 +410,11 @@ async function main() {
 
 if (require.main === module) {
   main().catch((error) => {
+    if (error?.code === 'AIONUI_SMOKE_PLAYWRIGHT_MISSING') {
+      console.error(error.message);
+      process.exitCode = 1;
+      return;
+    }
     console.error(error);
     process.exitCode = 1;
   });
@@ -386,6 +425,7 @@ module.exports = {
   GLOBAL_FORBIDDEN_PATTERNS,
   ROUTE_CHECKS,
   TEAM_ROUTE_CHECK,
+  loadPlaywrightElectron,
   relevantConsoleErrors,
   runLocalShellSmoke,
   shellSmokeEnv,
