@@ -176,12 +176,16 @@ function valuePlaceholder(name) {
   return `<replace-${String(name).toLowerCase().replaceAll('_', '-')}>`;
 }
 
+function shellArg(value) {
+  return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
+}
+
 function secretCommand(name, repo, environment) {
-  return `gh secret set ${name} -R ${repo} --env ${environment}`;
+  return `gh secret set ${name} -R ${shellArg(repo)} --env ${shellArg(environment)}`;
 }
 
 function variableCommand(name, repo, environment, value = valuePlaceholder(name)) {
-  return `gh variable set ${name} -R ${repo} --env ${environment} --body '${value}'`;
+  return `gh variable set ${name} -R ${shellArg(repo)} --env ${shellArg(environment)} --body ${shellArg(value)}`;
 }
 
 function commandForFixture(fixture, repo, environment) {
@@ -244,16 +248,16 @@ function renderProvisioningTemplate(options = {}) {
     '',
     '## Verify Inventory',
     '',
-    `node scripts/evaosLiveCanaryEnvInventory.js --repo ${repo} --env ${environment} --strict --markdown`,
+    `node scripts/evaosLiveCanaryEnvInventory.js --repo ${shellArg(repo)} --env ${shellArg(environment)} --strict --markdown`,
     '',
     '## Dispatch Live Canary Proof',
     '',
     [
-      `gh workflow run evaos-live-canary-proof.yml -R ${repo}`,
-      `--ref ${branch}`,
+      `gh workflow run evaos-live-canary-proof.yml -R ${shellArg(repo)}`,
+      `--ref ${shellArg(branch)}`,
       '-f live_canary_ack=evaos-live-canary',
       '-f run_live_canaries=true',
-      `-f proof_ref=${proofRef}`,
+      `-f proof_ref=${shellArg(proofRef)}`,
     ].join(' ')
   );
 
