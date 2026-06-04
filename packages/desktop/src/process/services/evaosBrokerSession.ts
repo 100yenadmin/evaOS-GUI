@@ -57,6 +57,7 @@ import type {
   IEvaosRuntimeStatusView,
   IEvaosSafeUrlSummary,
 } from '@/common/adapter/ipcBridge';
+import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
 
@@ -120,6 +121,8 @@ const VALID_PROVIDER_STATUSES: ReadonlySet<IEvaosProviderStatus> = new Set([
 const VALID_PROVIDER_AGENT_RUNTIMES: ReadonlySet<IEvaosProviderAgentRuntime> = new Set(['openclaw', 'hermes']);
 const PROVIDER_CONNECTION_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const BUSINESS_BROWSER_DEFAULT_URL = 'https://chatgpt.com/codex';
+const RELEASED_WORKBENCH_KEYCHAIN_SERVICE = 'com.electricsheephq.EvaDesktop.session';
+const RELEASED_WORKBENCH_KEYCHAIN_ACCOUNT = 'desktop-session';
 
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
@@ -176,7 +179,7 @@ export interface EvaosDesktopSession {
   accessToken: string;
   userEmail?: string;
   expiresAt?: string;
-  source?: 'environment' | 'memory' | 'callback';
+  source?: 'environment' | 'memory' | 'callback' | 'workbench-keychain';
 }
 
 export type EvaosBrokerFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -185,6 +188,7 @@ export interface EvaosBrokerSessionClientOptions {
   endpoint?: string;
   fetchImpl?: EvaosBrokerFetch;
   env?: Record<string, string | undefined>;
+  legacyWorkbenchSessionLoader?: () => EvaosDesktopSession | null;
   now?: () => Date;
 }
 
@@ -207,7 +211,14 @@ export class EvaosBrokerSessionClient {
     this.endpoint = normalizeEndpoint(options.endpoint ?? process.env.AIONUI_EVAOS_BROKER_ENDPOINT);
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
-    this.session = loadSessionFromEnvironment(options.env ?? process.env);
+    const env = options.env ?? process.env;
+    this.session =
+      loadSessionFromEnvironment(env) ??
+      loadLegacyWorkbenchSession({
+        env,
+        loader: options.legacyWorkbenchSessionLoader,
+        allowDefaultLoader: options.env === undefined,
+      });
   }
 
   getSessionStatus(): IEvaosBrokerSessionStatus {
@@ -927,6 +938,93 @@ function loadSessionFromEnvironment(env: Record<string, string | undefined>): Ev
     userEmail: safeText(env.AIONUI_EVAOS_DESKTOP_SESSION_EMAIL),
     expiresAt: safeIsoDate(env.AIONUI_EVAOS_DESKTOP_SESSION_EXPIRES_AT),
     source: 'environment',
+  };
+}
+
+function loadLegacyWorkbenchSession({
+  env,
+  loader,
+  allowDefaultLoader,
+}: {
+  env: Record<string, string | undefined>;
+  loader?: () => EvaosDesktopSession | null;
+  allowDefaultLoader: boolean;
+}): EvaosDesktopSession | null {
+  const chosenLoader =
+    loader ??
+    (shouldTryReleasedWorkbenchKeychain(env, allowDefaultLoader) ? loadReleasedWorkbenchKeychainSession : undefined);
+  if (!chosenLoader) {
+    return null;
+  }
+
+  try {
+    return normalizeLegacyWorkbenchSession(chosenLoader());
+  } catch {
+    return null;
+  }
+}
+
+function shouldTryReleasedWorkbenchKeychain(
+  env: Record<string, string | undefined>,
+  allowDefaultLoader: boolean
+): boolean {
+  const preference = env.AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN?.trim();
+  if (preference === '0' || preference === 'false') {
+    return false;
+  }
+  if (preference === '1' || preference === 'true') {
+    return process.platform === 'darwin';
+  }
+  return allowDefaultLoader && process.platform === 'darwin';
+}
+
+function loadReleasedWorkbenchKeychainSession(): EvaosDesktopSession | null {
+  let raw: string;
+  try {
+    raw = execFileSync(
+      'security',
+      [
+        'find-generic-password',
+        '-s',
+        RELEASED_WORKBENCH_KEYCHAIN_SERVICE,
+        '-a',
+        RELEASED_WORKBENCH_KEYCHAIN_ACCOUNT,
+        '-w',
+      ],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 1500,
+      }
+    );
+  } catch {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw.trim()) as unknown;
+    return normalizeLegacyWorkbenchSession(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeLegacyWorkbenchSession(value: unknown): EvaosDesktopSession | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const accessToken = safeRawSecret(record.accessToken ?? record.access_token ?? record.desktop_session);
+  if (!accessToken) {
+    return null;
+  }
+
+  return {
+    accessToken,
+    userEmail: safeText(record.userEmail ?? record.user_email ?? record.email),
+    expiresAt: safeIsoDate(record.expiresAt ?? record.expires_at ?? record.desktop_session_expires_at),
+    source: 'workbench-keychain',
   };
 }
 

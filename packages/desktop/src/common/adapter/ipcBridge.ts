@@ -382,7 +382,7 @@ export interface IEvaosBrokerSessionStatus {
   expired: boolean;
   userEmail?: string;
   expiresAt?: string;
-  source: 'none' | 'environment' | 'memory' | 'callback';
+  source: 'none' | 'environment' | 'memory' | 'callback' | 'workbench-keychain';
   message: string;
 }
 

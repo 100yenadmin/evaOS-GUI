@@ -284,6 +284,59 @@ describe('EvaosBrokerSessionClient', () => {
     );
   });
 
+  it('can adopt the released Workbench keychain desktop session without returning its token', async () => {
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      legacyWorkbenchSessionLoader: () => ({
+        accessToken: 'eds_workbench_keychain_session_secret_for_test',
+        userEmail: 'admin@100yen.org',
+        expiresAt: FUTURE,
+        source: 'workbench-keychain',
+      }),
+    });
+
+    const status = client.getSessionStatus();
+
+    expect(status).toEqual({
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+      source: 'workbench-keychain',
+      message: 'evaOS desktop session is active.',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(JSON.stringify(status)).not.toContain('eds_workbench_keychain_session_secret_for_test');
+  });
+
+  it('keeps explicit AionUi environment sessions ahead of the released Workbench keychain import', () => {
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl: fetchMock(),
+      env: {
+        AIONUI_EVAOS_DESKTOP_SESSION: 'eds_environment_session_secret_for_test',
+        AIONUI_EVAOS_DESKTOP_SESSION_EMAIL: 'operator@example.test',
+        AIONUI_EVAOS_DESKTOP_SESSION_EXPIRES_AT: FUTURE,
+      },
+      now: () => NOW,
+      legacyWorkbenchSessionLoader: () => ({
+        accessToken: 'eds_workbench_keychain_session_secret_for_test',
+        userEmail: 'admin@100yen.org',
+        expiresAt: FUTURE,
+        source: 'workbench-keychain',
+      }),
+    });
+
+    expect(client.getSessionStatus()).toMatchObject({
+      state: 'authenticated',
+      userEmail: 'operator@example.test',
+      source: 'environment',
+    });
+  });
+
   it('redacts object-shaped current_url query and fragment material', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
