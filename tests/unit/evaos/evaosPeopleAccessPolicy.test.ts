@@ -285,6 +285,30 @@ describe('EvaosBrokerSessionClient People Access policy', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('denies invite actions locally when account policy lacks backend enforcement proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse(accountPayload)).mockResolvedValueOnce(
+      jsonResponse({
+        ...policyPayload(['manage_members']),
+        backend_enforced: false,
+        audit_id: undefined,
+      })
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.invitePeopleAccessMember({
+        customerId: 'david-poku',
+        email: 'employee@example.test',
+        role: 'member',
+      })
+    ).rejects.toMatchObject({
+      code: 'action_denied',
+      message: 'People Access actions require backend-enforced account policy proof.',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('surfaces backend denial when policy allows the action but the invite RPC rejects it', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
@@ -309,6 +333,25 @@ describe('EvaosBrokerSessionClient People Access policy', () => {
       customer_id: 'david-poku',
       email: 'new@example.test',
       role: 'member',
+    });
+  });
+
+  it('fails closed when invite mutation omits backend enforcement proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['manage_members'])))
+      .mockResolvedValueOnce(jsonResponse({ status: 'created', invite_id: 'inv_456' }));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.invitePeopleAccessMember({
+        customerId: 'david-poku',
+        email: 'new@example.test',
+        role: 'member',
+      })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
     });
   });
 });
