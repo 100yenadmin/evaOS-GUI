@@ -12,10 +12,10 @@
     "clearWorkspace": "Remove project",
     "openFolder": "Open Folder",
     "none": "None",
-    "quickActionsTitle": "What can AionUi do?",
+    "quickActionsTitle": "What can evaOS Workbench Beta do?",
     "quickActionFeedback": "Report Issue",
     "quickActionStar": "Like us? Give us a star!",
-    "skillsMarket": "AionUi Skills Market",
+    "skillsMarket": "evaOS Workbench Beta Skills Market",
     "skillsMarketDesc": "Search and activate community Skills on demand. Configure once, available for all agents.",
     "skillsMarketDetails": "View More >>"
   },
@@ -263,8 +263,8 @@
       },
       "WORKSPACE_PATH_CONTAINS_WHITESPACE_RUNTIME_UNSUPPORTED": {
         "title": "This workspace path is no longer supported for execution",
-        "body": "This existing conversation or task uses a workspace path whose directory names contain spaces or other whitespace characters. AionUi no longer supports sending messages on paths like this. Create a new conversation or task with a workspace path that contains no whitespace.",
-        "bodyWithPath": "The existing workspace path \"{{workspacePath}}\" contains spaces or other whitespace characters. AionUi no longer supports sending messages in conversations or tasks that use this path. Create a new conversation or task with a workspace path that contains no whitespace."
+        "body": "This existing conversation or task uses a workspace path whose directory names contain spaces or other whitespace characters. evaOS Workbench Beta no longer supports sending messages on paths like this. Create a new conversation or task with a workspace path that contains no whitespace.",
+        "bodyWithPath": "The existing workspace path \"{{workspacePath}}\" contains spaces or other whitespace characters. evaOS Workbench Beta no longer supports sending messages in conversations or tasks that use this path. Create a new conversation or task with a workspace path that contains no whitespace."
       },
       "UNKNOWN_UPSTREAM_ERROR": {
         "title": "The upstream agent or provider failed",

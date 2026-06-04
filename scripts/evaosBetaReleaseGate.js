@@ -210,10 +210,27 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const prepareAssets = readText(rootDir, 'scripts/prepare-release-assets.sh');
   const rollbackDoc = readText(rootDir, 'docs/evaos/public-beta-packaging-rollback.md');
   const changelog = readText(rootDir, 'CHANGELOG.md');
+  const webManifest = readText(rootDir, 'public/manifest.webmanifest');
+  const rendererHtml = readText(rootDir, 'packages/desktop/src/renderer/index.html');
+  const titlebar = readText(rootDir, 'packages/desktop/src/renderer/components/layout/Titlebar/index.tsx');
+  const layout = readText(rootDir, 'packages/desktop/src/renderer/components/layout/Layout.tsx');
+  const missionControl = readText(rootDir, 'packages/desktop/src/renderer/pages/mission-control/index.tsx');
+  const channelModal = readText(
+    rootDir,
+    'packages/desktop/src/renderer/components/settings/SettingsModal/contents/channels/ChannelModalContent.tsx'
+  );
+  const tray = readText(rootDir, 'packages/desktop/src/process/utils/tray.ts');
   const about = readText(
     rootDir,
     'packages/desktop/src/renderer/components/settings/SettingsModal/contents/AboutModalContent.tsx'
   );
+  const commonEn = readText(rootDir, 'packages/desktop/src/renderer/services/i18n/locales/en-US/common.json');
+  const loginEn = readText(rootDir, 'packages/desktop/src/renderer/services/i18n/locales/en-US/login.json');
+  const conversationEn = readText(
+    rootDir,
+    'packages/desktop/src/renderer/services/i18n/locales/en-US/conversation.json'
+  );
+  const settingsEn = readText(rootDir, 'packages/desktop/src/renderer/services/i18n/locales/en-US/settings.json');
 
   if (!String(packageJson.version || '').includes('evaos-beta')) {
     issues.push('package.json: version must contain evaos-beta');
@@ -366,6 +383,29 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(changelog, 'Public Beta Packaging', 'CHANGELOG.md', issues);
   requireText(changelog, 'real macOS signing/notarization', 'CHANGELOG.md', issues);
   requireText(changelog, 'validates release provenance', 'CHANGELOG.md', issues);
+
+  requireText(webManifest, '"name": "evaOS Workbench Beta"', 'public/manifest.webmanifest', issues);
+  requireText(webManifest, '"short_name": "evaOS Beta"', 'public/manifest.webmanifest', issues);
+  requireText(rendererHtml, 'content="evaOS Workbench Beta"', 'packages/desktop/src/renderer/index.html', issues);
+  requireText(rendererHtml, '<title>evaOS Workbench Beta</title>', 'packages/desktop/src/renderer/index.html', issues);
+  requireText(titlebar, "const appTitle = useMemo(() => 'evaOS Workbench Beta', []);", 'Titlebar/index.tsx', issues);
+  requireText(layout, '>evaOS Workbench Beta</div>', 'Layout.tsx', issues);
+  requireText(missionControl, 'Start evaOS Workbench Beta locally', 'mission-control/index.tsx', issues);
+  requireText(missionControl, 'evaOS Workbench Beta is the beta shell candidate', 'mission-control/index.tsx', issues);
+  if (missionControl.includes('AionUi is the evaOS beta shell candidate')) {
+    issues.push('mission-control/index.tsx: public beta gate still exposes upstream AionUi shell copy');
+  }
+  requireText(channelModal, 'Chat with evaOS Workbench Beta assistant via Telegram', 'ChannelModalContent.tsx', issues);
+  requireText(channelModal, 'interact with evaOS Workbench Beta from IM apps', 'ChannelModalContent.tsx', issues);
+  requireText(tray, "tray.setToolTip('evaOS Workbench Beta');", 'tray.ts', issues);
+  requireText(commonEn, 'Show evaOS Workbench Beta', 'en-US/common.json', issues);
+  requireText(commonEn, 'About evaOS Workbench Beta', 'en-US/common.json', issues);
+  requireText(commonEn, 'evaOS Workbench Beta installation is incomplete', 'en-US/common.json', issues);
+  requireText(loginEn, 'evaOS Workbench Beta - Sign In', 'en-US/login.json', issues);
+  requireText(loginEn, '"brand": "evaOS Workbench Beta"', 'en-US/login.json', issues);
+  requireText(conversationEn, 'What can evaOS Workbench Beta do?', 'en-US/conversation.json', issues);
+  requireText(settingsEn, 'Launch evaOS Workbench Beta automatically', 'en-US/settings.json', issues);
+  requireText(settingsEn, 'Beta Repository', 'en-US/settings.json', issues);
 
   requireText(about, 'evaOS Workbench Beta', 'AboutModalContent.tsx', issues);
   requireText(about, 'https://github.com/100yenadmin/AionUi', 'AboutModalContent.tsx', issues);

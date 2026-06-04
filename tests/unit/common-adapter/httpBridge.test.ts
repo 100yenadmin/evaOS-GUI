@@ -371,6 +371,35 @@ describe('httpBridge', () => {
       expect(fetchSpy.mock.calls[0][1]?.body).toBe('{"key":"value"}');
       expect(fetchSpy.mock.calls[0][1]?.headers).toEqual({ 'Content-Type': 'application/json' });
     });
+
+    it('returns read-only offline defaults for file-protocol renderer smoke before backend handoff', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('window', { location: { protocol: 'file:' } });
+      vi.stubGlobal('document', {});
+      vi.stubGlobal('fetch', fetchSpy);
+      vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      await expect(httpRequest('GET', '/api/agents')).resolves.toEqual([]);
+      await expect(httpRequest('GET', '/api/extensions/settings-tabs')).resolves.toEqual([]);
+      await expect(httpRequest('POST', '/api/extensions/i18n', { locale: 'en-US' })).resolves.toEqual({});
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not mask unknown file-protocol API calls with offline defaults', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { live: true } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      vi.stubGlobal('window', { location: { protocol: 'file:' } });
+      vi.stubGlobal('document', {});
+      vi.stubGlobal('fetch', fetchSpy);
+      vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      await expect(httpRequest('GET', '/api/customers')).resolves.toEqual({ live: true });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('httpPut', () => {

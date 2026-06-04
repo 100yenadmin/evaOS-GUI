@@ -49,6 +49,15 @@ function isWebUiBrowserMode(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined' && !(window as Window).__backendPort;
 }
 
+function isFileProtocolRendererWithoutBackend(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    !(window as Window).__backendPort &&
+    window.location?.protocol === 'file:'
+  );
+}
+
 export function getBaseUrl(): string {
   if (isWebUiBrowserMode()) {
     // Same-origin: calls like fetch(`${baseUrl}/api/foo`) resolve to `/api/foo`
@@ -152,6 +161,12 @@ export type HttpRequestOptions = {
   silentStatuses?: number[];
 };
 
+const FILE_PROTOCOL_OFFLINE_READ_DEFAULTS = new Map<string, unknown>([
+  ['GET /api/agents', []],
+  ['GET /api/extensions/settings-tabs', []],
+  ['POST /api/extensions/i18n', {}],
+]);
+
 const SENSITIVE_LOG_KEY_PATTERN = /api[_-]?key|authorization|auth[_-]?token|access[_-]?token|refresh[_-]?token|secret/i;
 const EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS_ENV = 'AIONUI_EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS';
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
@@ -218,6 +233,10 @@ function redactForLog(value: unknown, depth = 0): unknown {
   );
 }
 
+function cloneOfflineDefault<T>(value: unknown): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export async function httpRequest<T>(
   method: string,
   path: string,
@@ -225,6 +244,12 @@ export async function httpRequest<T>(
   options?: HttpRequestOptions
 ): Promise<T> {
   assertEvaosBetaLegacyLocalActionAllowed(path);
+
+  const offlineDefault = FILE_PROTOCOL_OFFLINE_READ_DEFAULTS.get(`${method} ${path}`);
+  if (offlineDefault !== undefined && isFileProtocolRendererWithoutBackend()) {
+    console.debug(`[httpBridge] ${method} ${path} → offline shell default`);
+    return cloneOfflineDefault<T>(offlineDefault);
+  }
 
   const url = `${getBaseUrl()}${path}`;
   const headers: Record<string, string> = {};

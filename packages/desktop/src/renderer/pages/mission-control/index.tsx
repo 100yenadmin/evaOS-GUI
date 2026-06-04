@@ -67,7 +67,7 @@ const RUNTIME_TARGETS: RuntimeTarget[] = [
 const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
   {
     label: 'Local shell smoke',
-    detail: 'Start AionUi locally and screenshot the beta routes before new feature slices.',
+    detail: 'Start evaOS Workbench Beta locally and screenshot the beta routes before new feature slices.',
   },
   {
     label: 'Live staging canaries',
@@ -298,8 +298,8 @@ const MissionControlPage: React.FC = () => {
                   <Tag color='orange'>Continue R&amp;D with blockers</Tag>
                 </div>
                 <p className='m-0 mt-4px max-w-760px text-13px leading-20px text-t-secondary'>
-                  AionUi is the evaOS beta shell candidate. Public distribution stays blocked until the proof gates
-                  below pass.
+                  evaOS Workbench Beta is the beta shell candidate. Public distribution stays blocked until the proof
+                  gates below pass.
                 </p>
               </div>
               <Tag color='gray'>Issue #13</Tag>
