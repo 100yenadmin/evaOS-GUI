@@ -20,6 +20,7 @@ export const EVAOS_BETA_IDENTITY = {
   executableName: 'EvaOSWorkbenchBeta',
   appId: 'com.evaos.workbench.beta',
   protocolScheme: 'evaos-workbench-beta',
+  loopbackCallbackPath: '/auth/evaos-workbench-beta/callback',
 } as const;
 
 export const EVAOS_BETA_UPDATE_DISABLED_MESSAGE =

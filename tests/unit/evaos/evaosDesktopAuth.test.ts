@@ -56,7 +56,9 @@ describe('beginEvaosDesktopAuth', () => {
     expect(authUrl.searchParams.get('prompt')).toBe('select_account');
     const callbackState = authUrl.searchParams.get('desktop_auth_state');
     expect(callbackState).toMatch(/^[A-F0-9-]{36}$/);
-    expect(handoff.callbackUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback\?desktop_auth_state=/);
+    expect(handoff.callbackUrl).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/auth\/evaos-workbench-beta\/callback\?desktop_auth_state=/
+    );
     expect(JSON.stringify(handoff)).not.toMatch(/eds_|desktop_session|access_token|Bearer/i);
 
     const callbackUrl = new URL(handoff.callbackUrl);
@@ -97,6 +99,30 @@ describe('beginEvaosDesktopAuth', () => {
     wrongStateCallback.searchParams.set('desktop_session_expires_at', '2026-06-03T16:00:00.000Z');
     const wrongStateResponse = await fetch(wrongStateCallback);
     expect(wrongStateResponse.status).toBe(400);
+    expect(importCallback).not.toHaveBeenCalled();
+  });
+
+  it('does not accept callbacks on the released Workbench loopback path', async () => {
+    const importCallback = vi.fn();
+    const client = {
+      importDesktopSessionFromCallbackUrl: importCallback,
+    } as unknown as EvaosBrokerSessionClient;
+
+    const handoff = await beginEvaosDesktopAuth(client, {
+      dashboardBaseUrl: 'https://www.electricsheephq.com',
+      openExternal: async () => undefined,
+      timeoutMs: 5000,
+    });
+
+    const betaCallback = new URL(handoff.callbackUrl);
+    const releasedWorkbenchCallback = new URL(betaCallback.toString());
+    releasedWorkbenchCallback.pathname = '/auth/callback';
+    releasedWorkbenchCallback.searchParams.set('desktop_session', 'eds_loopback_session_secret_for_test');
+    releasedWorkbenchCallback.searchParams.set('desktop_session_expires_at', '2026-06-03T16:00:00.000Z');
+
+    const response = await fetch(releasedWorkbenchCallback);
+
+    expect(response.status).toBe(404);
     expect(importCallback).not.toHaveBeenCalled();
   });
 });

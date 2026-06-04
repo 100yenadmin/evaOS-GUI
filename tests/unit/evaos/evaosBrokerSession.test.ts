@@ -165,7 +165,7 @@ describe('EvaosBrokerSessionClient', () => {
     });
 
     const status = client.importDesktopSessionFromCallbackUrl(
-      `http://127.0.0.1:49201/auth/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
         FUTURE
       )}&email=admin%40100yen.org`
     );
@@ -186,6 +186,25 @@ describe('EvaosBrokerSessionClient', () => {
     expect(targets.selectedCustomerId).toBe('real-admin-customer');
     expect(JSON.stringify(status)).not.toContain('eds_callback_session_secret_for_test');
     expect(JSON.stringify(targets)).not.toContain('eds_callback_session_secret_for_test');
+  });
+
+  it('rejects released Workbench loopback callback paths for the evaOS beta session importer', async () => {
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    expect(() =>
+      client.importDesktopSessionFromCallbackUrl(
+        `http://127.0.0.1:49201/auth/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+          FUTURE
+        )}&email=admin%40100yen.org`
+      )
+    ).toThrow(EvaosBrokerSessionError);
+    await expect(client.customerTargets()).rejects.toMatchObject({ code: 'missing_session' });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('rejects invalid desktop sign-in callbacks without creating a session', async () => {
