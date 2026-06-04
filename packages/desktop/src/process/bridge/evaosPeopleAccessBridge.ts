@@ -165,7 +165,7 @@ export function initEvaosCompanyBrainBridge(
   );
 }
 
-async function toBridgeResponse<D>(operation: () => Promise<D>): Promise<BridgeResponse<D>> {
+async function toBridgeResponse<D>(operation: () => D | Promise<D>): Promise<BridgeResponse<D>> {
   try {
     const data = await operation();
     assertEvaosRendererSafePayload(data);
