@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const prCheckPlan = require('../../../scripts/evaosPrCheckPlan.js') as {
-  planPrChecks: (changedFiles: string[], options?: { runWindowsChecks?: boolean }) => {
+  planPrChecks: (
+    changedFiles: string[],
+    options?: { runWindowsChecks?: boolean }
+  ) => {
     runWindowsChecks: boolean;
     reasons: string[];
   };
@@ -24,10 +27,7 @@ describe('evaOS PR check plan', () => {
   });
 
   it('runs Windows checks for Windows packaging and installer surfaces', () => {
-    const plan = prCheckPlan.planPrChecks([
-      'packages/desktop/electron-builder.yml',
-      '.github/workflows/pr-checks.yml',
-    ]);
+    const plan = prCheckPlan.planPrChecks(['packages/desktop/electron-builder.yml', '.github/workflows/pr-checks.yml']);
 
     expect(plan.runWindowsChecks).toBe(true);
     expect(plan.reasons).toContain('packages/desktop/electron-builder.yml');

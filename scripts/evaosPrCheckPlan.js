@@ -25,7 +25,9 @@ function normalizeFilePath(value) {
 
 function normalizeBoolean(value) {
   if (typeof value === 'boolean') return value;
-  const text = String(value ?? '').trim().toLowerCase();
+  const text = String(value ?? '')
+    .trim()
+    .toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
