@@ -58,7 +58,7 @@ The fork path should continue because the sprint did produce useful, mergeable s
 | #2 Upstream Sync + Fork Safety Baseline          | PR-local partial   |                     85% | Good baseline, still needs merge/review closeout.                                                                                                     |
 | #3 evaOS Shell Guardrails                        | PR-local partial   |                     85% | First guardrails exist; additional team/remote-agent claim fencing remains.                                                                           |
 | #4 Broker Auth + Desktop Session Handoff         | PR-local primitive |                     78% | Needs live/session scenario and secret-exposure proof after merge.                                                                                    |
-| #5 Session Center / Mission Control              | PR #37 pending CI  |                     82% | Linearized onto active stack; needs visual shell proof and live runtime scenario.                                                                      |
+| #5 Session Center / Mission Control              | PR #37 green       |                     82% | Linearized onto active stack; needs visual shell proof and live runtime scenario.                                                                     |
 | #6 Connected Apps Provider Hub                   | PR-local           |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.                                                                              |
 | #7 Approval Center + Deny Loop                   | PR-local           |                     93% | Needs requester/approver live fixture and audit enforcement proof.                                                                                    |
 | #8 People Access + Account Policy                | PR-local           |                     84% | Needs live account-policy fixture and role denial agreement.                                                                                          |
@@ -66,7 +66,7 @@ The fork path should continue because the sprint did produce useful, mergeable s
 | #10 Business Browser / VM Control Proof          | PR canary green    |                     93% | PR #36 is green; staging execution, screenshots, and customer isolation proof still needed.                                                           |
 | #11 Native Companion Boundary                    | PR-local           |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                                    |
 | #12 Public Beta Packaging + Rollback             | PR-local passed    |                     95% | Release safety gate is strong; real signed artifact/install/rollback proof remains.                                                                   |
-| #13 95% Confidence Decision Packet               | Current            | 95% decision confidence | This packet recommends continue R&D with blockers and is updated through PR #37/#14 closeout.                                                         |
+| #13 95% Confidence Decision Packet               | Current            | 95% decision confidence | This packet recommends continue R&D with blockers and is updated through PR #43/#41 live-fixture inventory.                                           |
 | #14 Forgejo Company Brain Sidecar Spike          | Completed/closed   |                     80% | Use now only as read-only Company Brain public-source input; defer infrastructure, packages, Actions, private indexing, and code copy/porting.        |
 
 ## Verified Green Evidence
@@ -80,15 +80,26 @@ Issue #12 final attached PR Checks run passed at head `f412346d693bab7a550fada1f
 - CodeRabbit passed.
 - Current-head review-thread query returned zero unresolved threads.
 
+## macOS-First CI Policy
+
+The public beta target is macOS-first. The current PR gate keeps code quality, unit tests, coverage, release-script safety, macOS builds, Linux build coverage, and CodeRabbit review as normal required evidence for beta slices.
+
+Windows checks are release/nightly or Windows-touching gates during this public-beta sprint. They should run for Windows packaging, Electron builder config, installer metadata, workflow/build surfaces, dependency lockfiles, preload/main-process/common runtime code, or manual override. They should be skipped for docs, canary scripts, renderer-only beta routes, and macOS beta packaging slices that do not touch cross-platform runtime code.
+
+Intentionally skipped Windows jobs are not public-beta blockers when the `PR Check Plan` job reports `run_windows_checks=false` and no Windows-touching path is present. They remain required before any Windows release, nightly matrix, or Windows-touching change.
+
 Local evidence root:
 
 - `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`
 
 Active stack evidence as of 2026-06-04:
 
-- PRs #31 through #36 are mergeable and have no non-success reported checks.
-- PR #36 Business Browser runtime canary is green at head `cd35c6a71334c68e61883d3bd1998bc381d37b98`.
-- PR #37 Mission Control linearization is mergeable at head `df76cb316029331b04838a0efed24a308eabdc29`; Windows build checks were still pending when this packet was updated.
+- PRs #31 through #43 are mergeable and have no non-success reported checks, except root PR #15 still requires independent approval before the stack can land.
+- PR #39 codifies the macOS-first PR-check planner.
+- PR #40 adds the live canary readiness checklist.
+- PR #42 adds the manual `evaOS Live Canary Proof` workflow.
+- PR #43 adds the `evaos-staging` environment inventory audit at head `371fb3927865a6b1cc8fce8b09e6c87e0a52ebdf`.
+- PR #43 GitHub checks are green, with Windows unit/build jobs skipped by policy and non-Windows beta checks passing.
 - Issue #14 Forgejo Company Brain Sidecar Spike is closed as completed for read-only spike scope; packet is under `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/14-forgejo-company-brain-sidecar-spike/`.
 
 ## Severity-Ranked Risks
@@ -153,8 +164,9 @@ Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
    - Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
 
 10. Optional Forgejo Read-Only Source
-   - Add public Forgejo/Codeberg repositories or docs to Company Brain as read-only sources only if it does not displace beta-blocker proof work.
-   - Required proof: scoped read-token strategy before private access, package visibility exclusion, and no Forgejo Actions/self-hosting dependency.
+
+- Add public Forgejo/Codeberg repositories or docs to Company Brain as read-only sources only if it does not displace beta-blocker proof work.
+- Required proof: scoped read-token strategy before private access, package visibility exclusion, and no Forgejo Actions/self-hosting dependency.
 
 ## Required Stop Rules
 
