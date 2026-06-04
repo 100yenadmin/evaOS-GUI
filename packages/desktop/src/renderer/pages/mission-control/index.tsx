@@ -6,7 +6,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { Button, Spin, Tag } from '@arco-design/web-react';
+import { Button, Input, Spin, Tag } from '@arco-design/web-react';
 import { Attention, CheckOne, Computer, Login, Refresh, Robot } from '@icon-park/react';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
@@ -190,6 +190,10 @@ const MissionControlPage: React.FC = () => {
   const [startingAuth, setStartingAuth] = useState(false);
   const [authHandoff, setAuthHandoff] = useState<IEvaosBrokerBeginDesktopAuthResult | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [deviceCode, setDeviceCode] = useState('');
+  const [deviceCodeError, setDeviceCodeError] = useState<string | null>(null);
+  const [deviceCodeStatus, setDeviceCodeStatus] = useState<string | null>(null);
+  const [claimingDeviceCode, setClaimingDeviceCode] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const customerContext = useEvaosCustomerContext(session?.authenticated === true);
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
@@ -209,6 +213,8 @@ const MissionControlPage: React.FC = () => {
       if (response.data.authenticated) {
         setAuthHandoff(null);
         setAuthError(null);
+        setDeviceCode('');
+        setDeviceCodeError(null);
       }
       return response.data;
     } catch {
@@ -223,6 +229,8 @@ const MissionControlPage: React.FC = () => {
   const beginDesktopAuth = useCallback(async () => {
     setStartingAuth(true);
     setAuthError(null);
+    setDeviceCodeError(null);
+    setDeviceCodeStatus(null);
     try {
       const response = await evaosBroker.beginDesktopAuth.invoke();
       if (!response.success || !response.data) {
@@ -238,6 +246,38 @@ const MissionControlPage: React.FC = () => {
       setStartingAuth(false);
     }
   }, []);
+
+  const claimBrowserDeviceCode = useCallback(async () => {
+    const nextDeviceCode = deviceCode.trim();
+    setDeviceCodeError(null);
+    setDeviceCodeStatus(null);
+    if (!nextDeviceCode) {
+      setDeviceCodeError('Enter the browser backup code.');
+      return;
+    }
+
+    setClaimingDeviceCode(true);
+    try {
+      const response = await evaosBroker.claimDeviceCode.invoke({ deviceCode: nextDeviceCode });
+      if (!response.success || !response.data) {
+        setDeviceCodeError(safeUiText(response.msg, 'The evaOS broker could not claim that backup code.'));
+        return;
+      }
+      setSession(response.data);
+      if (response.data.authenticated) {
+        setAuthHandoff(null);
+        setAuthError(null);
+        setDeviceCode('');
+        setDeviceCodeStatus('Backup code connected.');
+      } else {
+        setDeviceCodeError(safeUiText(response.data.message, 'The backup code was rejected safely.'));
+      }
+    } catch {
+      setDeviceCodeError('The evaOS broker could not claim that backup code.');
+    } finally {
+      setClaimingDeviceCode(false);
+    }
+  }, [deviceCode]);
 
   useEffect(() => {
     selectedCustomerRef.current = customerContext.selectedCustomerId;
@@ -466,12 +506,42 @@ const MissionControlPage: React.FC = () => {
                 <div className='mt-10px rounded-8px bg-fill-2 px-10px py-9px text-12px leading-18px text-t-secondary'>
                   <div>{authError ?? authHandoff?.message}</div>
                   {authHandoff ? (
-                    <div className='mt-4px flex flex-wrap items-center gap-6px'>
-                      <span>Backup code:</span>
-                      <code className='max-w-full break-all rounded-4px border border-solid border-[var(--color-border-2)] px-6px py-2px font-mono text-t-primary'>
-                        {authHandoff.fallbackDeviceCode}
-                      </code>
-                    </div>
+                    <>
+                      <div className='mt-4px flex flex-wrap items-center gap-6px'>
+                        <span>Backup code:</span>
+                        <code className='max-w-full break-all rounded-4px border border-solid border-[var(--color-border-2)] px-6px py-2px font-mono text-t-primary'>
+                          {authHandoff.fallbackDeviceCode}
+                        </code>
+                      </div>
+                      <div className='mt-8px flex flex-col gap-6px sm:flex-row'>
+                        <Input
+                          aria-label='Backup code'
+                          value={deviceCode}
+                          placeholder='Paste backup code'
+                          disabled={claimingDeviceCode}
+                          onChange={setDeviceCode}
+                          onPressEnter={() => void claimBrowserDeviceCode()}
+                        />
+                        <Button
+                          type='primary'
+                          loading={claimingDeviceCode}
+                          disabled={!deviceCode.trim()}
+                          onClick={() => void claimBrowserDeviceCode()}
+                        >
+                          Claim backup code
+                        </Button>
+                      </div>
+                      {deviceCodeError || deviceCodeStatus ? (
+                        <div
+                          className={classNames(
+                            'mt-6px text-12px leading-18px',
+                            deviceCodeError ? 'text-[rgb(var(--warning-6))]' : 'text-[rgb(var(--success-6))]'
+                          )}
+                        >
+                          {deviceCodeError ?? deviceCodeStatus}
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               ) : null}
