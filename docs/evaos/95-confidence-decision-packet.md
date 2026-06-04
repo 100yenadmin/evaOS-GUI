@@ -186,8 +186,9 @@ Sprint 2 should be one proof sprint, not a feature-expansion sprint.
    - Acceptance proof requires runtime status, open URL, post-open running status, stop, post-stop stopped status, denied runtime/open/stop source/audit evidence, and wrong-customer isolation. Denied-session-only proof is non-acceptance evidence.
 
 10. Final Public Beta Decision Recut
-   - Re-run this decision packet after live proofs.
-   - Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
+
+- Re-run this decision packet after live proofs.
+- Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
 
 11. Optional Forgejo Read-Only Source
 
