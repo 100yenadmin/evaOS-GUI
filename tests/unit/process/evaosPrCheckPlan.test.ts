@@ -47,16 +47,25 @@ describe('evaOS PR check plan', () => {
     expect(plan.reasons).toEqual([]);
   });
 
-  it('runs Windows checks for cross-platform runtime process and dependency surfaces', () => {
+  it('keeps package script and local canary smoke changes out of the Windows build gate', () => {
     const plan = prCheckPlan.planPrChecks([
       'package.json',
+      'scripts/evaosLocalShellSmoke.js',
+      'tests/unit/evaos/evaosLocalShellSmoke.test.ts',
+    ]);
+
+    expect(plan.runWindowsChecks).toBe(false);
+    expect(plan.reasons).toEqual([]);
+  });
+
+  it('runs Windows checks for cross-platform runtime process and dependency surfaces', () => {
+    const plan = prCheckPlan.planPrChecks([
       'bun.lock',
       'packages/desktop/src/process/services/evaosBrokerSession.ts',
       'packages/desktop/src/preload/main.ts',
     ]);
 
     expect(plan.runWindowsChecks).toBe(true);
-    expect(plan.reasons).toContain('package.json');
     expect(plan.reasons).toContain('bun.lock');
     expect(plan.reasons).toContain('packages/desktop/src/process/services/evaosBrokerSession.ts');
     expect(plan.reasons).toContain('packages/desktop/src/preload/main.ts');

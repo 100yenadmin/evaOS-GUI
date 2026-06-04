@@ -3,7 +3,6 @@
 const WINDOWS_REQUIRED_PATTERNS = [
   /^\.github\/workflows\/(?:pr-checks|_build-reusable|build-and-release|release-distribute)\.ya?ml$/,
   /^\.github\/actions\/checkout-pr\//,
-  /^package\.json$/,
   /^bun\.lockb?$/,
   /^package-lock\.json$/,
   /^packages\/desktop\/electron-builder\.ya?ml$/,
