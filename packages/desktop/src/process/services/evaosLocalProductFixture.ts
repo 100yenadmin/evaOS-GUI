@@ -226,14 +226,15 @@ export function evaosLocalProductFixtureCompanyBrainAccount360(
 export function evaosLocalProductFixtureCompanyBrainQuery(
   request: IEvaosCompanyBrainQueryRequest
 ): IEvaosCompanyBrainQueryResult {
-  if (request.customerId !== CUSTOMER_ID) {
+  const account = companyBrainAccounts.find((item) => item.accountId === request.accountId);
+  if (request.customerId !== CUSTOMER_ID || !account) {
     return clone({
       schemaVersion: 'evaos.company_brain.query.v1',
       customerId: request.customerId,
       customerAccountId: CUSTOMER_ACCOUNT_ID,
       accountId: request.accountId,
       status: 'denied',
-      answer: `${FIXTURE_LABEL}: wrong customer fixture query was denied by account policy.`,
+      answer: `${FIXTURE_LABEL}: Company Brain query was denied by local fixture policy.`,
       citations: [],
       sourcePointer: 'local-fixture:company-brain:query:denied',
       auditId: 'fixture-audit-company-query-denied',
@@ -241,16 +242,13 @@ export function evaosLocalProductFixtureCompanyBrainQuery(
     });
   }
 
-  const account = companyBrainAccounts.find((item) => item.accountId === request.accountId);
-  const accountName = account?.name ?? 'Unknown Fixture Account';
-
   return clone({
     schemaVersion: 'evaos.company_brain.query.v1',
     customerId: CUSTOMER_ID,
     customerAccountId: CUSTOMER_ACCOUNT_ID,
     accountId: request.accountId,
     status: 'answered',
-    answer: `${FIXTURE_LABEL}: ${accountName} needs renewal follow-up and ingest exception review.`,
+    answer: `${FIXTURE_LABEL}: ${account.name} needs renewal follow-up and ingest exception review.`,
     citations: [
       {
         citationId: 'fixture-citation-renewal',

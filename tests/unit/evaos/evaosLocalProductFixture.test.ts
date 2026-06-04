@@ -91,6 +91,11 @@ describe('evaOS local product fixture', () => {
       accountId: 'fixture-company-renewal',
       query: 'What needs attention?',
     });
+    const deniedQuery = evaosLocalProductFixtureCompanyBrainQuery({
+      customerId: 'fixture-customer-acme',
+      accountId: 'missing-fixture-account',
+      query: 'What needs attention?',
+    });
     const denied = evaosLocalProductFixtureCompanyBrainDirectory({ customerId: 'wrong-customer' });
 
     expect(directory.summaryText).toContain('LOCAL FIXTURE - NOT LIVE BETA PROOF');
@@ -100,8 +105,10 @@ describe('evaOS local product fixture', () => {
     expect(account.sourcePointer).toBe('local-fixture:company-brain:account-360:fixture-company-renewal');
     expect(query.status).toBe('answered');
     expect(query.sourcePointer).toBe('local-fixture:company-brain:query:fixture-company-renewal');
+    expect(deniedQuery.status).toBe('denied');
+    expect(deniedQuery.sourcePointer).toBe('local-fixture:company-brain:query:denied');
     expect(denied.routeDenied).toBe(true);
     expect(denied.routeDenialReason).toContain('wrong customer fixture');
-    expect(stringValues({ directory, account, query, denied }).join('\n')).not.toMatch(SECRET_PATTERN);
+    expect(stringValues({ directory, account, query, deniedQuery, denied }).join('\n')).not.toMatch(SECRET_PATTERN);
   });
 });

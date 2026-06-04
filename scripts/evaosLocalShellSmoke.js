@@ -470,6 +470,7 @@ async function routeScreenshot(page, screenshotsDir, routeName) {
 }
 
 function writeProof({ artifactRoot, artifactsDir, report }) {
+  const hasProductLoadedState = report.routes.some((result) => result.proofStage === PROOF_STAGES.PRODUCT_LOADED_STATE);
   fs.writeFileSync(path.join(artifactsDir, 'local-shell-smoke-report.json'), JSON.stringify(report, null, 2));
   fs.writeFileSync(
     path.join(artifactRoot, 'proof.md'),
@@ -486,8 +487,12 @@ function writeProof({ artifactRoot, artifactsDir, report }) {
       '',
       'Scenario canary: interactive local AionUi shell smoke.',
       '',
-      'Proof stage: shell-smoke. These screenshots prove route launch, guardrails, and honest empty/error copy only.',
-      'They do not prove product loaded state until fixture-backed screenshots wait for route-specific loaded markers.',
+      hasProductLoadedState
+        ? 'Proof stage: mixed shell-smoke and fixture-backed product-loaded-state.'
+        : 'Proof stage: shell-smoke. These screenshots prove route launch, guardrails, and honest empty/error copy only.',
+      hasProductLoadedState
+        ? 'Product-loaded screenshots wait for route-specific fixture markers and do not prove live backend readiness.'
+        : 'They do not prove product loaded state until fixture-backed screenshots wait for route-specific loaded markers.',
       '',
       'Command:',
       '',
