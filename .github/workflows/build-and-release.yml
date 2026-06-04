@@ -47,6 +47,9 @@ jobs:
       - name: Run postinstall
         run: bun run postinstall || true
 
+      - name: Audit evaOS beta release config
+        run: node scripts/evaosBetaReleaseGate.js audit-config
+
       - name: Run ESLint
         run: bun run lint
 
@@ -158,6 +161,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.create_tag.outputs.tag_name }}
       is_dev: ${{ steps.create_tag.outputs.is_dev }}
+      tag_commit: ${{ steps.create_tag.outputs.tag_commit }}
 
     steps:
       - name: Checkout code
@@ -269,6 +273,9 @@ jobs:
           git tag $TAG_NAME
           git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git
           git push origin $TAG_NAME
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG_NAME")
+          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "Tag commit: $TAG_COMMIT"
           echo "✅ Successfully created and pushed tag: $TAG_NAME"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -304,8 +311,11 @@ jobs:
             echo "🔧 Creating development release: $TAG_NAME"
           fi
 
+          VERSION="${TAG_NAME#evaos-beta-}"
+          VERSION="${VERSION#v}"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "is_dev=$IS_DEV" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v7
@@ -317,6 +327,30 @@ jobs:
         env:
           INCLUDE_WEB_CLI_ASSETS: '0'
         run: bash scripts/prepare-release-assets.sh build-artifacts release-assets
+
+      - name: Verify release assets before manifest
+        shell: bash
+        env:
+          INCLUDE_WEB_CLI_ASSETS: '0'
+          MOCK_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/verify-release-assets.sh release-assets
+
+      - name: Write evaOS beta release manifest
+        shell: bash
+        env:
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          EVAOS_BETA_RELEASE_COMMIT: ${{ needs.create-tag.outputs.tag_commit || github.sha }}
+          EVAOS_BETA_RELEASE_BRANCH: ${{ vars.EVAOS_BETA_RELEASE_BRANCH }}
+          EVAOS_BETA_RELEASE_PUBLISH_ENABLED: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+        run: node scripts/evaosBetaReleaseGate.js write-manifest release-assets "$TAG_NAME"
+
+      - name: Upload trusted evaOS beta release manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaos-beta-release-manifest-${{ steps.version.outputs.tag_name }}
+          path: release-assets/evaos-beta-release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -330,6 +364,7 @@ jobs:
             release-assets/**/*.deb
             release-assets/**/*.zip
             release-assets/**/*.yml
+            release-assets/evaos-beta-release-manifest.json
           generate_release_notes: true
           draft: true
           prerelease: ${{ steps.version.outputs.is_dev == 'true' || contains(steps.version.outputs.tag_name, 'beta') || contains(steps.version.outputs.tag_name, 'alpha') || contains(steps.version.outputs.tag_name, 'rc') }}

@@ -193,10 +193,25 @@ jobs:
           echo "Commit: ${{ steps.commit.outputs.short }}"
           echo "=========================================="
 
+      - name: Audit evaOS public beta signing inputs (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          identity: ${{ secrets.IDENTITY }}
+          appleId: ${{ secrets.APPLE_ID }}
+          appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
+          teamId: ${{ secrets.TEAM_ID }}
+        run: node scripts/evaosBetaReleaseGate.js assert-public-release-env
+
       # macOS code signing certificate installation
       - name: Setup macOS code signing (macOS only)
         if: startsWith(matrix.platform, 'macos')
         env:
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'temp-keychain-password' }}
@@ -221,6 +236,10 @@ jobs:
 
             echo "Certificate imported successfully"
           else
+            if [ "${EVAOS_BETA_PUBLIC_RELEASE:-}" = "true" ] || [ "${EVAOS_BETA_PUBLIC_RELEASE:-}" = "1" ] || [ "${EVAOS_BETA_REQUIRE_SIGNING:-}" = "true" ] || [ "${EVAOS_BETA_REQUIRE_SIGNING:-}" = "1" ]; then
+              echo "::error::Missing BUILD_CERTIFICATE_BASE64 for evaOS public beta release."
+              exit 1
+            fi
             echo "No certificate provided - building unsigned application"
             echo "To enable code signing, add BUILD_CERTIFICATE_BASE64 and P12_PASSWORD secrets"
           fi
@@ -431,6 +450,10 @@ jobs:
               echo "Users may see Gatekeeper warnings when opening the app for the first time." >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "To fix: Right-click the app → Open → Open" >> $GITHUB_STEP_SUMMARY
+              if [ "${EVAOS_BETA_PUBLIC_RELEASE:-}" = "true" ] || [ "${EVAOS_BETA_PUBLIC_RELEASE:-}" = "1" ] || [ "${EVAOS_BETA_REQUIRE_SIGNING:-}" = "true" ] || [ "${EVAOS_BETA_REQUIRE_SIGNING:-}" = "1" ]; then
+                echo "::error title=Notarization failed during public beta release::Public beta artifacts must be notarized."
+                exit 1
+              fi
               exit 0  # Allow CI to continue
             fi
           fi
@@ -443,6 +466,8 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=8192'
           npm_config_arch: ${{ matrix.arch }}
           APP_ID: ${{ secrets.APP_ID }}
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}

@@ -1,4 +1,9 @@
 const { execSync } = require('child_process');
+const {
+  assertPublicBetaNotarizationEnv,
+  getEnvValue,
+  isStrictPublicBetaReleaseEnv,
+} = require('./evaosBetaReleaseGate');
 
 exports.default = async function afterSign(context) {
   const { electronPlatformName, appOutDir } = context;
@@ -13,12 +18,17 @@ exports.default = async function afterSign(context) {
   const appName = context.packager.appInfo.productFilename;
   const appBundleId = context.packager.appInfo.id;
   const appPath = `${appOutDir}/${appName}.app`;
+  // Strict mode is controlled by EVAOS_BETA_PUBLIC_RELEASE / EVAOS_BETA_REQUIRE_SIGNING.
+  const strictPublicBetaRelease = isStrictPublicBetaReleaseEnv(process.env);
 
   // Check if app is actually signed before attempting notarization
   try {
     execSync(`codesign --verify --verbose "${appPath}"`, { stdio: 'pipe' });
     console.log(`App ${appName} is properly code signed`);
   } catch (error) {
+    if (strictPublicBetaRelease) {
+      throw new Error(`Ad-hoc signing is not allowed for evaOS public beta release: ${appName}`);
+    }
     console.log(`App ${appName} is not code signed, applying ad-hoc signature...`);
     try {
       execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
@@ -30,9 +40,19 @@ exports.default = async function afterSign(context) {
   }
 
   // Skip notarization if credentials are not provided
-  if (!process.env.appleId || !process.env.appleIdPassword) {
+  if (
+    !getEnvValue(process.env, { aliases: ['appleId', 'APPLE_ID'] }) ||
+    !getEnvValue(process.env, { aliases: ['appleIdPassword', 'APPLE_ID_PASSWORD'] })
+  ) {
+    if (strictPublicBetaRelease) {
+      assertPublicBetaNotarizationEnv(process.env);
+    }
     console.log('Skipping notarization - missing Apple ID credentials');
     return;
+  }
+
+  if (strictPublicBetaRelease) {
+    assertPublicBetaNotarizationEnv(process.env);
   }
 
   console.log(`Starting notarization for ${appName} (${appBundleId})...`);
@@ -42,9 +62,9 @@ exports.default = async function afterSign(context) {
       tool: 'notarytool',
       appBundleId,
       appPath: appPath,
-      appleId: process.env.appleId,
-      appleIdPassword: process.env.appleIdPassword,
-      teamId: process.env.teamId,
+      appleId: getEnvValue(process.env, { aliases: ['appleId', 'APPLE_ID'] }),
+      appleIdPassword: getEnvValue(process.env, { aliases: ['appleIdPassword', 'APPLE_ID_PASSWORD'] }),
+      teamId: getEnvValue(process.env, { aliases: ['teamId', 'TEAM_ID'] }),
     });
     console.log('Notarization completed successfully');
   } catch (error) {

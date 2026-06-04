@@ -153,6 +153,54 @@ export type HttpRequestOptions = {
 };
 
 const SENSITIVE_LOG_KEY_PATTERN = /api[_-]?key|authorization|auth[_-]?token|access[_-]?token|refresh[_-]?token|secret/i;
+const EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS_ENV = 'AIONUI_EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS';
+const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
+const EVAOS_BETA_BLOCKED_LEGACY_LOCAL_ACTION_PATTERNS = [
+  /^\/api\/shell\//,
+  /^\/api\/fs\/(?:write|remove|rename|copy|zip|temp|upload)(?:\/|$)/,
+  /^\/api\/fs\/watch\//,
+  /^\/api\/fs\/office-watch\//,
+  /^\/api\/fs\/snapshot\/(?:init|dispose|stage|stage-all|unstage|unstage-all|discard|reset)(?:\/|$)/,
+  /^\/api\/(?:ppt|word|excel)-preview\//,
+] as const;
+
+export class EvaosBetaLegacyLocalActionError extends Error {
+  readonly code = 'EVAOS_BETA_LEGACY_LOCAL_ACTION_BLOCKED';
+  readonly path: string;
+
+  constructor(path: string) {
+    super(
+      `Blocked legacy local machine action in evaOS beta: ${path}. Use broker/native-companion authorization instead.`
+    );
+    this.name = 'EvaosBetaLegacyLocalActionError';
+    this.path = path;
+  }
+}
+
+function getEnvValue(name: string): string | undefined {
+  if (typeof process === 'undefined' || !process.env) return undefined;
+  return process.env[name];
+}
+
+function isTruthyEnv(value: string | undefined): boolean {
+  return TRUE_ENV_VALUES.has((value ?? '').trim().toLowerCase());
+}
+
+export function isEvaosBetaLocalActionFenceEnabled(): boolean {
+  return getEnvValue('AIONUI_EVAOS_BETA') !== '0' && !isTruthyEnv(getEnvValue(EVAOS_ALLOW_LEGACY_LOCAL_ACTIONS_ENV));
+}
+
+export function isEvaosBetaBlockedLegacyLocalActionPath(path: string): boolean {
+  if (!isEvaosBetaLocalActionFenceEnabled()) return false;
+  const pathname = path.split('?')[0] || path;
+  return EVAOS_BETA_BLOCKED_LEGACY_LOCAL_ACTION_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+export function assertEvaosBetaLegacyLocalActionAllowed(path: string): void {
+  if (isEvaosBetaBlockedLegacyLocalActionPath(path)) {
+    throw new EvaosBetaLegacyLocalActionError(path);
+  }
+}
 
 function redactForLog(value: unknown, depth = 0): unknown {
   if (depth > 8 || value === null || typeof value !== 'object') {
@@ -176,6 +224,8 @@ export async function httpRequest<T>(
   body?: unknown,
   options?: HttpRequestOptions
 ): Promise<T> {
+  assertEvaosBetaLegacyLocalActionAllowed(path);
+
   const url = `${getBaseUrl()}${path}`;
   const headers: Record<string, string> = {};
 

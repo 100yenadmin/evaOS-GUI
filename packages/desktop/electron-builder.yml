@@ -107,7 +107,7 @@ files:
 extraResources:
   - from: public
     to: .
-  - from: resources/app.png
+  - from: resources/evaos-beta/app.png
     to: app.png
   # aioncore binary (pre-compiled per platform/arch, ships its own bun runtime)
   - from: resources/bundled-aioncore
@@ -119,7 +119,7 @@ win:
     - nsis
     #    - msi
     - zip
-  icon: resources/app.ico # Use the checked-in Windows icon resource for executable metadata/icon patching
+  icon: resources/evaos-beta/app.ico
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 nsis:
@@ -136,7 +136,7 @@ mac:
   target:
     - dmg
     - zip
-  icon: resources/app.icns
+  icon: resources/evaos-beta/app.icns
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
   category: public.app-category.productivity
   hardenedRuntime: true
@@ -169,7 +169,7 @@ afterSign: scripts/afterSign.js
 linux:
   target:
     - deb
-  icon: resources/app.png
+  icon: resources/evaos-beta/app.png
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
   category: Utility
   maintainer: evaos

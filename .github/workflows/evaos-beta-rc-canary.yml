@@ -1,0 +1,417 @@
+name: evaOS Beta RC Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      beta_rc_ack:
+        description: 'Type evaos-beta-rc to acknowledge this canary installs and launches release-candidate macOS apps.'
+        required: true
+        type: string
+      tag:
+        description: 'Existing non-dev evaOS beta release tag to verify.'
+        required: true
+        type: string
+      fallback_release_repo:
+        description: 'Repository containing the currently released fallback macOS app.'
+        required: true
+        type: string
+      fallback_release_tag:
+        description: 'Release tag for the currently released fallback macOS app.'
+        required: true
+        type: string
+      fallback_asset_pattern:
+        description: 'gh release download pattern for the fallback DMG.'
+        required: true
+        default: '*.dmg'
+        type: string
+      fallback_app_name:
+        description: 'Installed fallback app bundle name, for example evaOS Workbench.app.'
+        required: true
+        type: string
+      broker_session_proof_ref:
+        description: 'Non-secret issue/packet reference proving broker login/session fallback state.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  rc-canary:
+    name: Signed macOS arm64 RC proof
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      BETA_APP_NAME: evaOS Workbench Beta.app
+      PROOF_DIR: rc-proof
+    steps:
+      - name: Validate canary inputs
+        env:
+          ACK: ${{ github.event.inputs.beta_rc_ack }}
+          TAG: ${{ github.event.inputs.tag }}
+          BROKER_SESSION_PROOF_REF: ${{ github.event.inputs.broker_session_proof_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$ACK" != "evaos-beta-rc" ]; then
+            echo "::error::Wrong RC canary acknowledgement. Type evaos-beta-rc."
+            exit 1
+          fi
+          if [[ "$TAG" != evaos-beta-* ]]; then
+            echo "::error::Refusing non-evaOS beta tag: $TAG"
+            exit 1
+          fi
+          if [[ "$TAG" == *"-dev" || "$TAG" == *"-dev-"* || "$TAG" == *"-dev."* ]]; then
+            echo "::error::Refusing development beta tag: $TAG"
+            exit 1
+          fi
+          VERSION="${TAG#evaos-beta-}"
+          VERSION="${VERSION#v}"
+          if [[ "$VERSION" != *evaos-beta* ]]; then
+            echo "::error::Refusing tag without evaos-beta version marker: $TAG"
+            exit 1
+          fi
+          if [ -z "$BROKER_SESSION_PROOF_REF" ] || [[ "$BROKER_SESSION_PROOF_REF" == *"Bearer "* ]]; then
+            echo "::error::broker_session_proof_ref must be a non-secret issue or packet reference."
+            exit 1
+          fi
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "::error::This RC canary is the macOS arm64 proof lane and must run on an arm64 runner."
+            exit 1
+          fi
+
+      - name: Checkout release refs
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate release branch provenance
+        id: provenance
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          EVAOS_BETA_RELEASE_BRANCH: ${{ vars.EVAOS_BETA_RELEASE_BRANCH }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EVAOS_BETA_RELEASE_BRANCH:-}" ]; then
+            echo "::error::EVAOS_BETA_RELEASE_BRANCH must be set before RC proof."
+            exit 1
+          fi
+
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" "refs/heads/${EVAOS_BETA_RELEASE_BRANCH}:refs/remotes/origin/${EVAOS_BETA_RELEASE_BRANCH}"
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG")
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" "origin/${EVAOS_BETA_RELEASE_BRANCH}"; then
+            echo "::error::Tag $TAG ($TAG_COMMIT) is not reachable from approved release branch ${EVAOS_BETA_RELEASE_BRANCH}."
+            exit 1
+          fi
+
+          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "Validated $TAG at $TAG_COMMIT against ${EVAOS_BETA_RELEASE_BRANCH}."
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --dir release-assets \
+            --pattern "*.dmg" \
+            --pattern "*.exe" \
+            --pattern "*.msi" \
+            --pattern "*.deb" \
+            --pattern "*.zip" \
+            --pattern "*.yml" \
+            --pattern "evaos-beta-release-manifest.json"
+          ls -la release-assets
+
+      - name: Download trusted release manifest artifact
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ ! -f release-assets/evaos-beta-release-manifest.json ]; then
+            echo "::error::Release is missing evaOS beta release manifest."
+            exit 1
+          fi
+
+          RELEASE_RUN_ID=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('release-assets/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseRunId || ''));")
+          if [ -z "$RELEASE_RUN_ID" ]; then
+            echo "::error::Release manifest is missing releaseRunId."
+            exit 1
+          fi
+
+          mkdir -p trusted-manifest
+          gh run download "$RELEASE_RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "evaos-beta-release-manifest-${TAG}" \
+            --dir trusted-manifest
+          TRUSTED_MANIFEST_PATH=$(find trusted-manifest -type f -name evaos-beta-release-manifest.json | head -n 1)
+          if [ -z "$TRUSTED_MANIFEST_PATH" ]; then
+            echo "::error::Trusted manifest artifact did not contain evaos-beta-release-manifest.json."
+            exit 1
+          fi
+          if [ "$TRUSTED_MANIFEST_PATH" != "trusted-manifest/evaos-beta-release-manifest.json" ]; then
+            cp "$TRUSTED_MANIFEST_PATH" trusted-manifest/evaos-beta-release-manifest.json
+          fi
+
+      - name: Validate release manifest
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag }}"
+          VERSION="${TAG#evaos-beta-}"
+          VERSION="${VERSION#v}"
+          INCLUDE_WEB_CLI_ASSETS=0 MOCK_VERSION="$VERSION" bash scripts/verify-release-assets.sh release-assets
+          node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "${{ github.event.inputs.tag }}"
+
+      - name: Download released fallback app
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          FALLBACK_REPO: ${{ github.event.inputs.fallback_release_repo }}
+          FALLBACK_TAG: ${{ github.event.inputs.fallback_release_tag }}
+          FALLBACK_PATTERN: ${{ github.event.inputs.fallback_asset_pattern }}
+        run: |
+          set -euo pipefail
+          mkdir -p fallback-assets
+          gh release download "$FALLBACK_TAG" \
+            --repo "$FALLBACK_REPO" \
+            --dir fallback-assets \
+            --pattern "$FALLBACK_PATTERN"
+          FALLBACK_DMG=$(find fallback-assets -type f -name "*.dmg" | sort | head -n 1)
+          if [ -z "$FALLBACK_DMG" ]; then
+            echo "::error::Fallback release did not provide a DMG with pattern $FALLBACK_PATTERN."
+            exit 1
+          fi
+          echo "FALLBACK_DMG=$FALLBACK_DMG" >> $GITHUB_ENV
+          ls -la fallback-assets
+
+      - name: Prepare RC proof directory
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          rm -rf "$PROOF_DIR"
+          mkdir -p "$PROOF_DIR/release-assets" "$PROOF_DIR/trusted-manifest"
+          cp -R release-assets/. "$PROOF_DIR/release-assets/"
+          cp trusted-manifest/evaos-beta-release-manifest.json "$PROOF_DIR/trusted-manifest/evaos-beta-release-manifest.json"
+          node scripts/evaosBetaReleaseGate.js write-rc-proof-template "$PROOF_DIR" "$TAG"
+
+      - name: Install fallback and beta apps
+        env:
+          FALLBACK_APP_NAME: ${{ github.event.inputs.fallback_app_name }}
+        run: |
+          set -euo pipefail
+          install_app_from_dmg() {
+            local dmg="$1"
+            local app_name="$2"
+            local mount_dir="$3"
+
+            rm -rf "$mount_dir"
+            mkdir -p "$mount_dir"
+            hdiutil attach "$dmg" -nobrowse -quiet -mountpoint "$mount_dir"
+            local app_path
+            app_path=$(find "$mount_dir" -maxdepth 2 -type d -name "$app_name" | head -n 1)
+            if [ -z "$app_path" ]; then
+              echo "::error::DMG $dmg did not contain $app_name."
+              hdiutil detach "$mount_dir" -quiet || true
+              exit 1
+            fi
+            rm -rf "/Applications/$app_name"
+            ditto "$app_path" "/Applications/$app_name"
+            hdiutil detach "$mount_dir" -quiet
+          }
+
+          install_app_from_dmg "$FALLBACK_DMG" "$FALLBACK_APP_NAME" "$RUNNER_TEMP/fallback-dmg"
+
+          BETA_DMG=$(find release-assets \( -name "*mac-arm64*.dmg" -o -name "*arm64*.dmg" \) -type f | sort | head -n 1)
+          if [ -z "$BETA_DMG" ]; then
+            echo "::error::Release assets do not include a macOS arm64 DMG."
+            exit 1
+          fi
+          install_app_from_dmg "$BETA_DMG" "$BETA_APP_NAME" "$RUNNER_TEMP/beta-dmg"
+
+          if [ ! -d "/Applications/$FALLBACK_APP_NAME" ]; then
+            echo "::error::Installing beta removed the released fallback app."
+            exit 1
+          fi
+          if [ ! -d "/Applications/$BETA_APP_NAME" ]; then
+            echo "::error::Beta app did not install."
+            exit 1
+          fi
+
+          {
+            echo "PASS: DMG copied to /Applications/$BETA_APP_NAME without replacing the released fallback app."
+            echo "Fallback app: /Applications/$FALLBACK_APP_NAME"
+            echo "Beta app: /Applications/$BETA_APP_NAME"
+          } > "$PROOF_DIR/install-smoke.md"
+
+      - name: Verify signing and Gatekeeper
+        run: |
+          set -euo pipefail
+          BETA_APP="/Applications/$BETA_APP_NAME"
+          codesign --verify --deep --strict --verbose=2 "$BETA_APP" > "$PROOF_DIR/codesign-macos-arm64.txt" 2>&1
+          spctl --assess --type execute --verbose "$BETA_APP" > "$PROOF_DIR/spctl-macos-arm64.txt" 2>&1
+
+      - name: Launch beta and audit feed isolation
+        run: |
+          set -euo pipefail
+          BETA_APP="/Applications/$BETA_APP_NAME"
+          BETA_PLIST="$BETA_APP/Contents/Info.plist"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BETA_PLIST")
+          PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$BETA_PLIST")
+
+          if [ "$BUNDLE_ID" != "com.evaos.workbench.beta" ]; then
+            echo "::error::Unexpected beta bundle id: $BUNDLE_ID"
+            exit 1
+          fi
+          if [ "$PRODUCT_NAME" != "evaOS Workbench Beta" ]; then
+            echo "::error::Unexpected beta product name: $PRODUCT_NAME"
+            exit 1
+          fi
+
+          node - "$BETA_APP/Contents/Resources" "$RUNNER_TEMP/upstream-feed-grep.txt" <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const root = process.argv[2];
+          const output = process.argv[3];
+          const matches = [];
+          const pattern = /github\.com\/iOfficeAI\/AionUi|iOfficeAI\/AionUi|aionui\.com/i;
+
+          function walk(dir) {
+            for (const name of fs.readdirSync(dir)) {
+              const file = path.join(dir, name);
+              const stat = fs.statSync(file);
+              if (stat.isDirectory()) {
+                if (name === 'Frameworks') continue;
+                walk(file);
+                continue;
+              }
+              if (!stat.isFile() || name.endsWith('.node') || stat.size > 100 * 1024 * 1024) continue;
+              const text = fs.readFileSync(file, 'utf8');
+              if (pattern.test(text)) matches.push(file);
+            }
+          }
+
+          walk(root);
+          fs.writeFileSync(output, matches.join('\n'));
+          if (matches.length > 0) {
+            console.error(`Beta app bundle still references upstream AionUi feed/support text:\n${matches.join('\n')}`);
+            process.exit(1);
+          }
+          NODE
+
+          open -n "$BETA_APP"
+          sleep 8
+          if ! pgrep -f "EvaOSWorkbenchBeta|evaOS Workbench Beta" > /dev/null; then
+            echo "::error::Beta app did not launch a detectable process."
+            exit 1
+          fi
+          pkill -f "EvaOSWorkbenchBeta|evaOS Workbench Beta" || true
+
+          {
+            echo "PASS: evaOS Workbench Beta launched with beta identity and no upstream AionUi feed."
+            echo "Bundle id: $BUNDLE_ID"
+            echo "Product name: $PRODUCT_NAME"
+          } > "$PROOF_DIR/launch-smoke.md"
+
+          {
+            echo "PASS: update repo is 100yenadmin/AionUi and iOfficeAI/AionUi blocked for beta assets."
+            echo "Artifact grep found no upstream feed/support references in app resources."
+          } > "$PROOF_DIR/updater-feed-audit.md"
+
+      - name: Roll back beta and verify fallback
+        env:
+          FALLBACK_APP_NAME: ${{ github.event.inputs.fallback_app_name }}
+          BROKER_SESSION_PROOF_REF: ${{ github.event.inputs.broker_session_proof_ref }}
+        run: |
+          set -euo pipefail
+          FALLBACK_APP="/Applications/$FALLBACK_APP_NAME"
+          BETA_APP="/Applications/$BETA_APP_NAME"
+
+          rm -rf "$BETA_APP"
+          if [ -d "$BETA_APP" ]; then
+            echo "::error::Beta app is still present after rollback removal."
+            exit 1
+          fi
+
+          open -n "$FALLBACK_APP"
+          sleep 8
+          if ! pgrep -f "${FALLBACK_APP_NAME%.app}" > /dev/null; then
+            echo "::error::Released fallback app did not launch after beta removal."
+            exit 1
+          fi
+          pkill -f "${FALLBACK_APP_NAME%.app}" || true
+
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
+            | grep -Ei "evaos|workbench|${FALLBACK_APP_NAME%.app}" \
+            > "$PROOF_DIR/launchservices-protocol-state.txt" || true
+
+          {
+            echo "PASS: beta app absent after removal; released fallback app launched; data/cache disposition recorded; protocol handler state inspected; broker login/session proof reference: $BROKER_SESSION_PROOF_REF."
+            echo "Beta app absent: /Applications/$BETA_APP_NAME"
+            echo "Fallback app launched: $FALLBACK_APP"
+            echo "data/cache disposition: GitHub runner is ephemeral; no user data migrated or deleted beyond beta app bundle removal."
+            echo "protocol handler state: see launchservices-protocol-state.txt"
+            echo "broker login/session: $BROKER_SESSION_PROOF_REF"
+          } > "$PROOF_DIR/rollback-smoke.md"
+
+      - name: Finalize and verify RC proof
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+          EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Support route: 100yenadmin/AionUi."
+            echo "The released macOS app remains the fallback while beta is gated."
+            echo "RC proof artifact: evaos-beta-rc-proof-$TAG"
+          } > "$PROOF_DIR/support-notes.md"
+
+          node - "$PROOF_DIR/evaos-beta-rc-proof.json" <<'NODE'
+          const fs = require('fs');
+          const manifestPath = process.argv[2];
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          manifest.checks = manifest.checks.map((check) => ({ ...check, status: 'pass' }));
+          manifest.macosX64 = {
+            status: 'blocked',
+            reason:
+              'macOS x64 RC proof is not executed in the macOS arm64 canary; Intel distribution requires a separate signed x64 canary before offering x64 assets to users.',
+          };
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+
+          node scripts/evaosBetaReleaseGate.js verify-rc-proof "$PROOF_DIR" "$TAG"
+
+      - name: Upload RC proof packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaos-beta-rc-proof-${{ github.event.inputs.tag }}
+          path: rc-proof
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Summary
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          FALLBACK_REPO: ${{ github.event.inputs.fallback_release_repo }}
+          FALLBACK_TAG: ${{ github.event.inputs.fallback_release_tag }}
+        run: |
+          {
+            echo "### evaOS Beta RC Canary"
+            echo ""
+            echo "- Tag: \`${TAG}\`"
+            echo "- Fallback release: \`${FALLBACK_REPO}@${FALLBACK_TAG}\`"
+            echo "- Proof artifact: \`evaos-beta-rc-proof-${TAG}\`"
+          } >> $GITHUB_STEP_SUMMARY

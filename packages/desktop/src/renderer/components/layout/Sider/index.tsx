@@ -9,7 +9,23 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
-import { SiderToolbar, SiderSearchEntry, SiderScheduledEntry } from './SiderNav';
+import {
+  EVAOS_APPROVAL_CENTER_ENABLED,
+  EVAOS_BUSINESS_BROWSER_ENABLED,
+  EVAOS_COMPANY_BRAIN_ENABLED,
+  EVAOS_PROVIDER_HUB_ENABLED,
+} from '@/common/config/constants';
+import {
+  SiderApprovalCenterEntry,
+  SiderBusinessBrowserEntry,
+  SiderCompanyBrainEntry,
+  SiderConnectedAppsEntry,
+  SiderMissionControlEntry,
+  SiderPeopleAccessEntry,
+  SiderScheduledEntry,
+  SiderSearchEntry,
+  SiderToolbar,
+} from './SiderNav';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
 import TeamSiderSection from './TeamSiderSection';
@@ -37,7 +53,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { jobs: cronJobs } = useAllCronJobs();
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
-  const lastNonSettingsPathRef = useRef('/guid');
+  const lastNonSettingsPathRef = useRef('/mission-control');
   const showLogout =
     typeof window !== 'undefined' && !(window as { electronAPI?: unknown }).electronAPI && status === 'authenticated';
 
@@ -91,6 +107,84 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     closePreview();
     setIsBatchMode(false);
     Promise.resolve(navigate('/scheduled')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleMissionControlClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/mission-control')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handlePeopleAccessClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/people-access')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleApprovalCenterClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/approval-center')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleConnectedAppsClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/connected-apps')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleBusinessBrowserClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/business-browser')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleCompanyBrainClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/company-brain')).catch((error) => {
       console.error('Navigation failed:', error);
     });
     if (onSessionClick) {
@@ -178,6 +272,56 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               onConversationSelect={handleConversationSelect}
               onSessionClick={onSessionClick}
             />
+            <SiderMissionControlEntry
+              isMobile={isMobile}
+              isActive={pathname === '/mission-control'}
+              collapsed={collapsed}
+              siderTooltipProps={siderTooltipProps}
+              onClick={handleMissionControlClick}
+            />
+            <SiderPeopleAccessEntry
+              isMobile={isMobile}
+              isActive={pathname === '/people-access'}
+              collapsed={collapsed}
+              siderTooltipProps={siderTooltipProps}
+              onClick={handlePeopleAccessClick}
+            />
+            {EVAOS_PROVIDER_HUB_ENABLED ? (
+              <SiderConnectedAppsEntry
+                isMobile={isMobile}
+                isActive={pathname === '/connected-apps'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleConnectedAppsClick}
+              />
+            ) : null}
+            {EVAOS_BUSINESS_BROWSER_ENABLED ? (
+              <SiderBusinessBrowserEntry
+                isMobile={isMobile}
+                isActive={pathname === '/business-browser'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleBusinessBrowserClick}
+              />
+            ) : null}
+            {EVAOS_COMPANY_BRAIN_ENABLED ? (
+              <SiderCompanyBrainEntry
+                isMobile={isMobile}
+                isActive={pathname === '/company-brain'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleCompanyBrainClick}
+              />
+            ) : null}
+            {EVAOS_APPROVAL_CENTER_ENABLED ? (
+              <SiderApprovalCenterEntry
+                isMobile={isMobile}
+                isActive={pathname === '/approval-center'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleApprovalCenterClick}
+              />
+            ) : null}
             {/* Scheduled tasks nav entry - fixed above scroll */}
             <SiderScheduledEntry
               isMobile={isMobile}

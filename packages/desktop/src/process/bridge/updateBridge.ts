@@ -82,7 +82,8 @@ const isAllowedAssetName = (name: string) => {
 
 const normalizeTagToSemver = (tag: string): string | null => {
   const trimmed = tag.trim();
-  const withoutV = trimmed.startsWith('v') ? trimmed.slice(1) : trimmed;
+  const withoutBetaPrefix = trimmed.startsWith('evaos-beta-') ? trimmed.slice('evaos-beta-'.length) : trimmed;
+  const withoutV = withoutBetaPrefix.startsWith('v') ? withoutBetaPrefix.slice(1) : withoutBetaPrefix;
   // Ensure it looks like a semver prefix at least.
   if (!/^\d+\.\d+\.\d+/.test(withoutV)) return null;
   return semver.valid(withoutV);

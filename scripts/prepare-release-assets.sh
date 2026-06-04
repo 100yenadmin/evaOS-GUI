@@ -123,11 +123,37 @@ echo "==> Writing architecture-specific updater metadata ..."
 echo "==> Validating required metadata ..."
 
 MISSING=0
+
+assert_evaos_beta_asset_identity() {
+  local base="$1"
+
+  case "$base" in
+    *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
+      echo "::error::Refusing upstream-branded beta asset: $base"
+      exit 1
+      ;;
+  esac
+
+  case "$base" in
+    *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+      ;;
+    *)
+      echo "::error::Refusing beta asset without evaOS beta identity marker: $base"
+      exit 1
+      ;;
+  esac
+}
+
 for required in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
   if [ ! -f "$OUTPUT_DIR/$required" ]; then
     echo "::error::Missing required updater metadata: $required"
     MISSING=1
   fi
+done
+
+for file in "$OUTPUT_DIR"/*.{exe,msi,dmg,deb,zip}; do
+  [ -e "$file" ] || continue
+  assert_evaos_beta_asset_identity "$(basename "$file")"
 done
 
 if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then

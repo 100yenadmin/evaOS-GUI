@@ -9,6 +9,27 @@ MOCK_PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench Beta}"
 ERRORS=0
 shopt -s nullglob
 
+assert_evaos_beta_asset_identity() {
+  local base="$1"
+
+  case "$base" in
+    *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
+      echo "FAIL: upstream-branded beta asset is not allowed: $base"
+      ERRORS=$((ERRORS + 1))
+      return
+      ;;
+  esac
+
+  case "$base" in
+    *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+      ;;
+    *)
+      echo "FAIL: beta asset lacks evaOS identity marker: $base"
+      ERRORS=$((ERRORS + 1))
+      ;;
+  esac
+}
+
 for f in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
     echo "FAIL: missing canonical metadata: $f"
@@ -82,6 +103,11 @@ for f in \
   else
     echo "PASS: $f exists"
   fi
+done
+
+for f in "$OUTPUT_DIR"/*.{exe,msi,dmg,deb,zip}; do
+  [ -e "$f" ] || continue
+  assert_evaos_beta_asset_identity "$(basename "$f")"
 done
 
 if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then

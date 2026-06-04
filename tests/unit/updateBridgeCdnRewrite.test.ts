@@ -101,6 +101,27 @@ const makeGitHubReleaseResponse = () => [
   },
 ];
 
+const makeBetaGitHubReleaseResponse = () => [
+  {
+    tag_name: 'evaos-beta-v2.1.11-evaos-beta.0',
+    name: 'evaOS Workbench Beta 2.1.11',
+    body: 'beta release notes',
+    html_url: 'https://github.com/100yenadmin/AionUi/releases/tag/evaos-beta-v2.1.11-evaos-beta.0',
+    published_at: '2026-06-04T00:00:00Z',
+    prerelease: true,
+    draft: false,
+    assets: [
+      {
+        name: 'evaOS Workbench Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
+        browser_download_url:
+          'https://github.com/100yenadmin/AionUi/releases/download/evaos-beta-v2.1.11-evaos-beta.0/evaOS%20Workbench%20Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
+        size: 123,
+        content_type: 'application/x-apple-diskimage',
+      },
+    ],
+  },
+];
+
 const getCheckHandler = async () => {
   vi.resetModules();
   const { initUpdateBridge } = await import('@process/bridge/updateBridge');
@@ -287,6 +308,32 @@ describe('updateBridge allowlist includes CDN host', () => {
 
       expect(result.success).toBe(true);
       expect(result.data?.downloadId).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('parses evaOS beta release tags when checking the configured beta feed', async () => {
+    vi.clearAllMocks();
+    process.env.AIONUI_EVAOS_BETA = '1';
+    process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/AionUi';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => makeBetaGitHubReleaseResponse(),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const handler = await getCheckHandler();
+      const result = await handler({ includePrerelease: true });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.updateAvailable).toBe(true);
+      expect(result.data?.latest?.tagName).toBe('evaos-beta-v2.1.11-evaos-beta.0');
+      expect(result.data?.latest?.version).toBe('2.1.11-evaos-beta.0');
+      expect(result.data?.latest?.assets[0]?.url).toContain('github.com/100yenadmin/AionUi');
     } finally {
       vi.unstubAllGlobals();
     }

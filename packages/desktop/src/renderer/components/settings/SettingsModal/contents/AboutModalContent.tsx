@@ -18,10 +18,31 @@ import FeedbackReportModal from './FeedbackReportModal';
 // '../../../../../../package.json'` resolved to packages/desktop/package.json
 // which is a workspace placeholder permanently pinned at "0.0.0".
 declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? '0.0.0' : __APP_VERSION__;
 
 type LinkItem =
   | { title: string; url: string; icon: React.ReactNode; onClick?: never }
   | { title: string; onClick: () => void; icon: React.ReactNode; url?: never };
+
+export const EVAOS_BETA_ABOUT_LINKS = {
+  appName: 'evaOS Workbench Beta',
+  repository: 'https://github.com/100yenadmin/AionUi',
+  documentation: 'https://github.com/100yenadmin/AionUi/blob/evaos/dev/docs/evaos/public-beta-packaging-rollback.md',
+  releases: 'https://github.com/100yenadmin/AionUi/releases',
+  support: 'https://github.com/100yenadmin/AionUi/issues/13',
+} as const;
+
+export const EVAOS_BETA_SUPPORT_NOTICE = {
+  title: 'Beta support',
+  body: 'The released macOS app remains the fallback until public beta gates pass.',
+  supportRoute: 'Support: GitHub issue #13',
+} as const;
+
+const checkUpdate = () => {
+  // 使用 window 自定义事件在渲染进程内部通信（buildEmitter 只支持主进程->渲染进程）
+  // Use window custom event for renderer-side communication (buildEmitter only works main->renderer)
+  window.dispatchEvent(new CustomEvent('aionui-open-update-modal', { detail: { source: 'about' } }));
+};
 
 const AboutModalContent: React.FC = () => {
   const { t } = useTranslation();
@@ -50,21 +71,15 @@ const AboutModalContent: React.FC = () => {
     }
   };
 
-  const checkUpdate = () => {
-    // 使用 window 自定义事件在渲染进程内部通信（buildEmitter 只支持主进程->渲染进程）
-    // Use window custom event for renderer-side communication (buildEmitter only works main->renderer)
-    window.dispatchEvent(new CustomEvent('aionui-open-update-modal', { detail: { source: 'about' } }));
-  };
-
   const linkItems: LinkItem[] = [
     {
       title: t('settings.helpDocumentation'),
-      url: 'https://github.com/iOfficeAI/AionUi/wiki',
+      url: EVAOS_BETA_ABOUT_LINKS.documentation,
       icon: <Right theme='outline' size='16' />,
     },
     {
       title: t('settings.updateLog'),
-      url: 'https://github.com/iOfficeAI/AionUi/releases',
+      url: EVAOS_BETA_ABOUT_LINKS.releases,
       icon: <Right theme='outline' size='16' />,
     },
     {
@@ -74,12 +89,12 @@ const AboutModalContent: React.FC = () => {
     },
     {
       title: t('settings.contactMe'),
-      url: 'https://x.com/WailiVery',
+      url: EVAOS_BETA_ABOUT_LINKS.support,
       icon: <Right theme='outline' size='16' />,
     },
     {
       title: t('settings.officialWebsite'),
-      url: 'https://www.aionui.com',
+      url: EVAOS_BETA_ABOUT_LINKS.repository,
       icon: <Right theme='outline' size='16' />,
     },
   ];
@@ -97,19 +112,17 @@ const AboutModalContent: React.FC = () => {
           {/* App Info Section */}
           <div className='flex flex-col items-center pb-24px'>
             <Typography.Title heading={3} className='text-24px font-bold text-t-primary mb-8px'>
-              AionUi
+              {EVAOS_BETA_ABOUT_LINKS.appName}
             </Typography.Title>
             <Typography.Text className='text-14px text-t-secondary mb-12px text-center'>
               {t('settings.appDescription')}
             </Typography.Text>
             <div className='flex items-center justify-center gap-8px mb-16px'>
-              <span className='px-10px py-4px rd-6px text-13px bg-fill-2 text-t-primary font-500'>
-                v{__APP_VERSION__}
-              </span>
+              <span className='px-10px py-4px rd-6px text-13px bg-fill-2 text-t-primary font-500'>v{APP_VERSION}</span>
               <div
                 className='text-t-primary cursor-pointer hover:text-t-secondary transition-colors p-4px'
                 onClick={() =>
-                  openLink('https://github.com/iOfficeAI/AionUi').catch((error) =>
+                  openLink(EVAOS_BETA_ABOUT_LINKS.repository).catch((error) =>
                     console.error('Failed to open link:', error)
                   )
                 }
@@ -132,6 +145,25 @@ const AboutModalContent: React.FC = () => {
                 </div>
               </div>
             )}
+
+            <div className='w-full mt-16px p-14px rd-8px bg-fill-2 border border-border flex flex-col gap-6px'>
+              <Typography.Text className='text-13px font-600 text-t-primary'>
+                {EVAOS_BETA_SUPPORT_NOTICE.title}
+              </Typography.Text>
+              <Typography.Text className='text-12px text-t-secondary leading-18px'>
+                {EVAOS_BETA_SUPPORT_NOTICE.body}
+              </Typography.Text>
+              <Typography.Text
+                className='text-12px text-brand cursor-pointer hover:opacity-80'
+                onClick={() =>
+                  openLink(EVAOS_BETA_ABOUT_LINKS.support).catch((error) =>
+                    console.error('Failed to open support link:', error)
+                  )
+                }
+              >
+                {EVAOS_BETA_SUPPORT_NOTICE.supportRoute}
+              </Typography.Text>
+            </div>
           </div>
 
           {/* Divider */}
