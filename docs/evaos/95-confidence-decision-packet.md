@@ -12,11 +12,11 @@ Continue R&D with blockers.
 
 Do not ship a public beta from the current stack. Do not kill the AionUi fork path. The sprint produced enough evidence to keep AionUi as the evaOS shell/control-board candidate, but it did not produce enough live trust proof to distribute a public beta to customers.
 
-The current best path is to continue the AionUi fork for one more gated sprint, focused only on converting mock/static/PR-local proofs into live broker, signed artifact, install, rollback, and role-scoped scenario proof.
+The current best path is to continue the AionUi fork for one more gated sprint, focused only on converting merged mock/static proofs into live broker, signed artifact, install, rollback, and role-scoped scenario proof.
 
 ## Readiness Score
 
-Overall public beta readiness: 66/100.
+Overall public beta readiness: 70/100.
 
 Reasoning:
 
@@ -25,7 +25,7 @@ Reasoning:
 - Company Brain/browser/runtime live proof: 68/100.
 - Native companion and local trust boundary: 72/100.
 - Packaging/rollback release process: 75/100.
-- Stack mergeability and operating process: 61/100.
+- Stack mergeability and operating process: 82/100.
 
 This is not a 95% ship gate. It is a 95% confidence decision that the correct recommendation is to continue R&D with blockers.
 
@@ -33,10 +33,10 @@ This is not a 95% ship gate. It is a 95% confidence decision that the correct re
 
 Public beta is blocked by Sev-1 and Sev-2 unknowns:
 
-- The stack is not merged. Root PR #15 still requires review before the stacked PR chain can land.
-- Most product slices are PR-local or mock-proven, not staging/live-proven.
+- The integration stack is merged, but most product slices are still mock/static-proven rather than staging/live-proven.
 - Broker/session, provider grant, approval deny, People Access, Company Brain, and browser runtime flows still need role-scoped live scenario execution.
 - No signed/notarized public beta artifact has been produced.
+- Required beta signing/distribution credential names and live staging fixture names are not provisioned.
 - No install smoke, launch smoke, updater/feed audit on a real artifact, or old-app rollback smoke has passed.
 - The issue #1 control-board/project setup remains blocked on GitHub Project token scope.
 
@@ -52,24 +52,33 @@ The fork path should continue because the sprint did produce useful, mergeable s
 
 ## Current Sprint State
 
-| Issue                                            | Status             |              Confidence | Public Beta Impact                                                                                                                                    |
-| ------------------------------------------------ | ------------------ | ----------------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #1 Sprint Control Board + Agent Handoff Template | Blocked            |                     40% | GitHub Project v2 token scope missing; milestone/issues are usable fallback.                                                                          |
-| #2 Upstream Sync + Fork Safety Baseline          | PR-local partial   |                     85% | Good baseline, still needs merge/review closeout.                                                                                                     |
-| #3 evaOS Shell Guardrails                        | PR-local partial   |                     85% | First guardrails exist; additional team/remote-agent claim fencing remains.                                                                           |
-| #4 Broker Auth + Desktop Session Handoff         | PR-local primitive |                     78% | Needs live/session scenario and secret-exposure proof after merge.                                                                                    |
-| #5 Session Center / Mission Control              | PR #37 green       |                     82% | Linearized onto active stack; needs visual shell proof and live runtime scenario.                                                                     |
-| #6 Connected Apps Provider Hub                   | PR-local           |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.                                                                              |
-| #7 Approval Center + Deny Loop                   | PR-local           |                     93% | Needs requester/approver live fixture and audit enforcement proof.                                                                                    |
-| #8 People Access + Account Policy                | PR-local           |                     84% | Needs live account-policy fixture and role denial agreement.                                                                                          |
-| #9 Company Brain Directory + Account 360         | PR canary ready    |                     94% | Live canary now covers org-scoped directory/account/query plus mandatory directory/account/query negative fixtures; staging credentials still needed. |
-| #10 Business Browser / VM Control Proof          | PR canary green    |                     93% | PR #36 is green; staging execution, screenshots, and customer isolation proof still needed.                                                           |
-| #11 Native Companion Boundary                    | PR-local           |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                                    |
-| #12 Public Beta Packaging + Rollback             | PR-local passed    |                     95% | Release safety gate is strong; real signed artifact/install/rollback proof remains.                                                                   |
-| #13 95% Confidence Decision Packet               | Current            | 95% decision confidence | This packet recommends continue R&D with blockers and is updated through PR #43/#41 live-fixture inventory.                                           |
-| #14 Forgejo Company Brain Sidecar Spike          | Completed/closed   |                     80% | Use now only as read-only Company Brain public-source input; defer infrastructure, packages, Actions, private indexing, and code copy/porting.        |
+| Issue                                            | Status            |              Confidence | Public Beta Impact                                                                                                                             |
+| ------------------------------------------------ | ----------------- | ----------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| #1 Sprint Control Board + Agent Handoff Template | Blocked           |                     40% | GitHub Project v2 token scope missing; milestone/issues are usable fallback.                                                                   |
+| #2 Upstream Sync + Fork Safety Baseline          | Merged            |                     86% | Baseline is landed; upstream intake remains frozen unless security-critical while beta blockers are resolved.                                  |
+| #3 evaOS Shell Guardrails                        | Merged            |                     86% | Guardrails are landed; final beta review still needs read-only legacy surface confirmation.                                                    |
+| #4 Broker Auth + Desktop Session Handoff         | Merged primitive  |                     78% | Needs live/session scenario and secret-exposure proof.                                                                                         |
+| #5 Session Center / Mission Control              | Merged            |                     84% | Mission Control is landed with beta-gate strip; needs visual shell proof and live runtime scenario.                                            |
+| #6 Connected Apps Provider Hub                   | Merged            |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.                                                                       |
+| #7 Approval Center + Deny Loop                   | Merged            |                     93% | Needs requester/approver live fixture and audit enforcement proof.                                                                             |
+| #8 People Access + Account Policy                | Merged            |                     84% | Needs live account-policy fixture and role denial agreement.                                                                                   |
+| #9 Company Brain Directory + Account 360         | Merged canary     |                     94% | Canary script covers org-scoped directory/account/query plus mandatory negative fixtures; staging credentials still needed.                    |
+| #10 Business Browser / VM Control Proof          | Merged canary     |                     93% | Runtime canary is landed; staging execution, screenshots, and customer isolation proof still needed.                                           |
+| #11 Native Companion Boundary                    | Merged static     |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                             |
+| #12 Public Beta Packaging + Rollback             | Merged guardrails |                     95% | Release safety and credential inventory gates are strong; real signed artifact/install/rollback proof remains.                                 |
+| #13 95% Confidence Decision Packet               | Current           | 95% decision confidence | This packet recommends continue R&D with blockers and is updated through PR #48/#49 merged-stack evidence.                                     |
+| #14 Forgejo Company Brain Sidecar Spike          | Completed/closed  |                     80% | Use now only as read-only Company Brain public-source input; defer infrastructure, packages, Actions, private indexing, and code copy/porting. |
 
 ## Verified Green Evidence
+
+Merged integration evidence:
+
+- PR #48 merged the combined stack into `evaos/dev` at merge commit `bbead8b7f83f127d18b178d5b90d729afadae9c1`.
+- PR #48 CI passed PR Check Plan, Code Quality, Ubuntu/macOS unit tests, Coverage, I18n, Release Script Test, macOS arm64/x64 builds, Linux build, and Windows unit tests.
+- PR #48 CI run: https://github.com/100yenadmin/AionUi/actions/runs/26934731469
+- PR #49 added the beta release credential inventory and merged into `evaos/dev` at merge commit `6d1e58375c7c40c2395c5f18f971b1c0ef7c8a5e`.
+- PR #49 CI passed PR Check Plan, Code Quality, Coverage, Ubuntu/macOS unit tests, I18n, Release Script Test, macOS arm64/x64 builds, and Linux build; Windows checks were skipped by path gate.
+- PR #49 CI run: https://github.com/100yenadmin/AionUi/actions/runs/26935552051
 
 Issue #12 final attached PR Checks run passed at head `f412346d693bab7a550fada1f6cbf29193078089`:
 
@@ -92,38 +101,37 @@ Local evidence root:
 
 - `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`
 
-Active stack evidence as of 2026-06-04:
+## Post-Merge Sprint State
 
-- PRs #31 through #43 are mergeable and have no non-success reported checks, except root PR #15 still requires independent approval before the stack can land.
+- The sprint stack is landed on `evaos/dev`.
 - PR #39 codifies the macOS-first PR-check planner.
 - PR #40 adds the live canary readiness checklist.
 - PR #42 adds the manual `evaOS Live Canary Proof` workflow.
-- PR #43 adds the `evaos-staging` environment inventory audit at head `371fb3927865a6b1cc8fce8b09e6c87e0a52ebdf`.
-- PR #43 GitHub checks are green, with Windows unit/build jobs skipped by policy and non-Windows beta checks passing.
+- PR #43 adds the `evaos-staging` environment inventory audit.
+- PR #48 proves the fast route for stacked work: retarget the top integration PR, run one combined PR gate, then close contained PRs after ancestry verification.
+- PR #49 adds a safe release credential inventory; the current live repo has zero required release secret names and zero required release variable names configured.
 - Issue #14 Forgejo Company Brain Sidecar Spike is closed as completed for read-only spike scope; packet is under `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/14-forgejo-company-brain-sidecar-spike/`.
 
 ## Severity-Ranked Risks
 
-| Severity | Risk                                                                                                                                 | Owner               | Next Test                                                                                                                   |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Sev-1    | Public beta artifact has not been signed, notarized, installed, launched, or rolled back.                                            | Release agent       | Manual `Build and Release` on approved release branch, then install/launch/rollback smoke.                                  |
-| Sev-1    | Root stack PR #15 still requires review before the stacked work can land.                                                            | Repo maintainer     | Review/merge PR #15, then advance the stack in order with current-head CI.                                                  |
-| Sev-1    | Permission and approval flows are not live-backend proven across requester/approver/denied roles.                                    | Permissions agent   | Staging fixture with requester, approver, revoked member, backend denial, and audit evidence.                               |
-| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell.               | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                                       |
-| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.                        | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                                 |
-| Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof. | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots.      |
-| Sev-2    | Business Browser/VM control has a PR-local action canary but still needs staging execution with visual/customer isolation evidence.  | Runtime agent       | Run `scripts/evaosBusinessBrowserLiveCanary.js` with action ack, denied-session or wrong-customer fixture, and screenshots. |
-| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                           | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.              |
-| Sev-3    | Forgejo sidecar is safe only as a read-only public source; private/package indexing and self-hosting remain unreviewed.              | Company Brain agent | Add read-only public-source indexing only if it does not compete with beta blockers; defer private/self-hosted paths.       |
+| Severity | Risk                                                                                                                                 | Owner               | Next Test                                                                                                                         |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Sev-1    | Public beta artifact has not been signed, notarized, installed, launched, or rolled back.                                            | Release agent       | Provision release credentials, then run manual `Build and Release` on approved release branch plus install/launch/rollback smoke. |
+| Sev-1    | Permission and approval flows are not live-backend proven across requester/approver/denied roles.                                    | Permissions agent   | Staging fixture with requester, approver, revoked member, backend denial, and audit evidence.                                     |
+| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell.               | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                                             |
+| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.                        | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                                       |
+| Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof. | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots.            |
+| Sev-2    | Business Browser/VM control has a PR-local action canary but still needs staging execution with visual/customer isolation evidence.  | Runtime agent       | Run `scripts/evaosBusinessBrowserLiveCanary.js` with action ack, denied-session or wrong-customer fixture, and screenshots.       |
+| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                           | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.                    |
+| Sev-3    | Forgejo sidecar is safe only as a read-only public source; private/package indexing and self-hosting remain unreviewed.              | Company Brain agent | Add read-only public-source indexing only if it does not compete with beta blockers; defer private/self-hosted paths.             |
 
 ## Next Sprint Issue Slate
 
-Sprint 2 should be one merge-and-proof sprint, not a feature-expansion sprint.
+Sprint 2 should be one proof sprint, not a feature-expansion sprint.
 
-1. Merge Stack Root And Retarget
-   - Merge or unblock PR #15.
-   - Retarget and merge PRs #16 through #24 in dependency order.
-   - Required proof: current-head PR Checks green after each merge or retarget; no unresolved review threads.
+1. Provision Staging And Release Credentials
+   - Add required `evaos-staging` live canary fixtures and issue #12 release credential names.
+   - Required proof: name-only inventory passes without printing values; strict readiness is still allowed to fail only on intentionally deferred live actions.
 
 2. Signed Artifact Release Candidate
    - Run manual Build and Release from the approved release branch.
