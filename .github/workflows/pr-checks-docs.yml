@@ -3,7 +3,7 @@ name: 'PR Checks (docs only)'
 on:
   pull_request:
     types: [opened, synchronize, edited, ready_for_review]
-    branches: [main, dev]
+    branches: [main, dev, evaos/dev, 'evaos/**']
     paths:
       - '**/*.md'
       - 'docs/**'
@@ -52,6 +52,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "Docs-only PR, skipping unit tests."
+
+  coverage-test:
+    name: Coverage Test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Docs-only PR, skipping coverage tests."
+
+  i18n-check:
+    name: I18n Check
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Docs-only PR, skipping i18n checks."
+
+  release-script-test:
+    name: Release Script Test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Docs-only PR, skipping release script tests."
 
   unit-tests-macos:
     name: Unit Tests (macos-14)
