@@ -5,6 +5,11 @@
  */
 
 import type {
+  IEvaosBusinessBrowserActionResult,
+  IEvaosBusinessBrowserOpenUrlRequest,
+  IEvaosBusinessBrowserRequest,
+  IEvaosBusinessBrowserView,
+  IEvaosSafeUrlSummary,
   IEvaosCompanyBrainAccount360View,
   IEvaosCompanyBrainAccountRequest,
   IEvaosCompanyBrainAccountSummaryView,
@@ -21,6 +26,7 @@ import type {
 } from '@/common/adapter/ipcBridge';
 
 const CUSTOMER_ID = 'fixture-customer-acme';
+const BROWSER_DENIED_CUSTOMER_ID = 'fixture-customer-browser-denied';
 const CUSTOMER_ACCOUNT_ID = 'fixture-account-acme';
 const MEMBERSHIP_ID = 'fixture-member-owner';
 const NOW = '2026-06-04T10:00:00.000Z';
@@ -45,8 +51,16 @@ export function evaosLocalProductFixtureCustomerTargets(): IEvaosCustomerTargets
         healthStatus: 'ready',
         isDefault: true,
       },
+      {
+        customerId: BROWSER_DENIED_CUSTOMER_ID,
+        displayName: 'Denied Browser Fixture Co',
+        email: 'agent-only@example.test',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: false,
+      },
     ],
-    summaryText: `${FIXTURE_LABEL}: 1 customer target loaded`,
+    summaryText: `${FIXTURE_LABEL}: 2 customer targets loaded`,
   });
 }
 
@@ -129,6 +143,92 @@ export function evaosLocalProductFixtureProviderAction(
     providerHub,
     sourcePointer: `local-fixture:${action}:${request.providerKey}`,
     auditId: `fixture-audit-${action}-${request.providerKey}`,
+    backendEnforced: true,
+  });
+}
+
+export function evaosLocalProductFixtureBusinessBrowserStatus(
+  request: IEvaosBusinessBrowserRequest
+): IEvaosBusinessBrowserView {
+  if (request.customerId === BROWSER_DENIED_CUSTOMER_ID) {
+    return clone(deniedBusinessBrowser(request.customerId));
+  }
+
+  if (request.customerId !== CUSTOMER_ID) {
+    return clone(
+      deniedBusinessBrowser(
+        request.customerId,
+        `${FIXTURE_LABEL}: customer target is not available in the local fixture.`,
+        'fixture-audit-browser-wrong-customer-policy'
+      )
+    );
+  }
+
+  return clone(activeBusinessBrowser);
+}
+
+export function evaosLocalProductFixtureBusinessBrowserAction(
+  request: IEvaosBusinessBrowserRequest | IEvaosBusinessBrowserOpenUrlRequest,
+  action: 'browser_launch' | 'browser_open_url' | 'browser_stop'
+): IEvaosBusinessBrowserActionResult {
+  const current = evaosLocalProductFixtureBusinessBrowserStatus({ customerId: request.customerId });
+
+  if (current.routeDenied) {
+    return clone({
+      status: 'denied',
+      message: `${FIXTURE_LABEL}: Business Browser action denied by local fixture policy.`,
+      browser: current,
+      sourcePointer: `local-fixture:business-browser:${action}:denied`,
+      auditId: 'fixture-audit-browser-action-denied',
+      backendEnforced: true,
+    });
+  }
+
+  if (action === 'browser_launch') {
+    return clone({
+      status: 'launching',
+      message: `${FIXTURE_LABEL}: Synthetic browser launch requested.`,
+      browser: browserView('launching', {
+        healthSummary: `${FIXTURE_LABEL}: Synthetic browser launch requested.`,
+        controlSessionActive: false,
+        canLaunch: false,
+        canOpenUrl: false,
+        canStop: false,
+        actions: ['browser_launch'],
+        sourcePointer: 'local-fixture:business-browser:launching',
+        auditId: 'fixture-audit-browser-launch',
+      }),
+      sourcePointer: 'local-fixture:business-browser:launch',
+      auditId: 'fixture-audit-browser-launch',
+      backendEnforced: true,
+    });
+  }
+
+  if (action === 'browser_stop') {
+    return clone({
+      status: 'stopped',
+      message: `${FIXTURE_LABEL}: Synthetic browser stop completed.`,
+      browser: stoppedBusinessBrowser,
+      sourcePointer: 'local-fixture:business-browser:stop',
+      auditId: 'fixture-audit-browser-stop',
+      backendEnforced: true,
+    });
+  }
+
+  const urlSummary = safeUrlSummary('url' in request ? request.url : undefined);
+  return clone({
+    status: 'opened',
+    message: `${FIXTURE_LABEL}: Synthetic browser URL opened.`,
+    browser: browserView('running', {
+      healthSummary: `${FIXTURE_LABEL}: Synthetic browser runtime state with brokered URL action proof.`,
+      currentUrlSummary: urlSummary,
+      lastActivityAt: NOW,
+      sourcePointer: 'local-fixture:business-browser:open-url',
+      auditId: 'fixture-audit-browser-open-url',
+    }),
+    urlSummary,
+    sourcePointer: 'local-fixture:business-browser:open-url',
+    auditId: 'fixture-audit-browser-open-url',
     backendEnforced: true,
   });
 }
@@ -372,6 +472,102 @@ const providerHub: IEvaosProviderHubView = {
     },
   ],
 };
+
+function browserView(status: string, overrides: Partial<IEvaosBusinessBrowserView> = {}): IEvaosBusinessBrowserView {
+  return {
+    schemaVersion: 'evaos.browser_status.v1',
+    customerId: CUSTOMER_ID,
+    customerAccountId: CUSTOMER_ACCOUNT_ID,
+    membershipId: MEMBERSHIP_ID,
+    membershipRole: 'owner',
+    routeDenied: false,
+    backendEnforced: true,
+    displayLabel: 'Business Browser Fixture',
+    status,
+    healthSummary: `${FIXTURE_LABEL}: Synthetic browser runtime state.`,
+    authNeeded: false,
+    captchaNeeded: false,
+    waitingOnUser: false,
+    controlSessionActive: status === 'running',
+    canLaunch: status !== 'running',
+    canOpenUrl: status === 'running',
+    canStop: status === 'running',
+    lastCheckedAt: NOW,
+    actions: status === 'running' ? ['browser_open_url', 'browser_stop'] : ['browser_launch'],
+    sourcePointer: `local-fixture:business-browser:${status}`,
+    auditId: `fixture-audit-browser-${status}`,
+    policyAuditId: 'fixture-audit-policy',
+    ...overrides,
+  };
+}
+
+const activeBusinessBrowser = browserView('running', {
+  currentUrlSummary: {
+    scheme: 'https',
+    host: 'fixture.example.test',
+    path: '/dashboard',
+    displayText: 'fixture.example.test/dashboard',
+    redacted: false,
+  },
+  lastActivityAt: '2026-06-04T09:58:00.000Z',
+  auditId: 'fixture-audit-browser-running',
+});
+
+const stoppedBusinessBrowser = browserView('stopped', {
+  healthSummary: `${FIXTURE_LABEL}: Synthetic browser runtime stopped cleanly.`,
+  controlSessionActive: false,
+  canLaunch: true,
+  canOpenUrl: false,
+  canStop: false,
+  actions: ['browser_launch'],
+  sourcePointer: 'local-fixture:business-browser:stopped',
+  auditId: 'fixture-audit-browser-stop',
+});
+
+function deniedBusinessBrowser(
+  customerId: string,
+  reason = `${FIXTURE_LABEL}: account policy lacks open_business_browser for this fixture customer.`,
+  policyAuditId = 'fixture-audit-browser-denied-policy'
+): IEvaosBusinessBrowserView {
+  return browserView('denied', {
+    customerId,
+    membershipId: 'fixture-member-agent',
+    membershipRole: 'agent_only',
+    routeDenied: true,
+    routeDenialReason: reason,
+    healthSummary: `${FIXTURE_LABEL}: Business Browser denied by local fixture policy.`,
+    controlSessionActive: false,
+    canLaunch: false,
+    canOpenUrl: false,
+    canStop: false,
+    actions: [],
+    sourcePointer: 'local-fixture:business-browser:denied',
+    auditId: undefined,
+    policyAuditId,
+  });
+}
+
+function safeUrlSummary(rawUrl: string | undefined): IEvaosSafeUrlSummary {
+  try {
+    const parsed = new URL(rawUrl || 'https://fixture.example.test/dashboard');
+    const path = parsed.pathname === '/' ? '' : parsed.pathname;
+    return {
+      scheme: parsed.protocol.replace(':', ''),
+      host: parsed.hostname,
+      path,
+      displayText: `${parsed.hostname}${path}`,
+      redacted: parsed.search.length > 0 || parsed.hash.length > 0 || parsed.username.length > 0,
+    };
+  } catch {
+    return {
+      scheme: 'https',
+      host: 'fixture.example.test',
+      path: '/dashboard',
+      displayText: 'fixture.example.test/dashboard',
+      redacted: true,
+    };
+  }
+}
 
 const companyBrainAccounts: IEvaosCompanyBrainAccountSummaryView[] = [
   {

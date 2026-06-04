@@ -103,6 +103,10 @@ describe('evaOS local shell smoke', () => {
   it('keeps local loaded product proof separate from default shell smoke', () => {
     expect(localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.map((check) => check.name)).toEqual([
       'connected-apps-loaded-fixture',
+      'business-browser-loaded-fixture',
+      'business-browser-launch-fixture',
+      'business-browser-stop-fixture',
+      'business-browser-denied-fixture',
       'company-brain-loaded-fixture',
     ]);
 
@@ -125,7 +129,57 @@ describe('evaOS local shell smoke', () => {
       expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle'])
     );
 
-    const companyBrainLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[1];
+    const businessBrowserLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[1];
+    expect(businessBrowserLoaded.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
+    expect(businessBrowserLoaded.action).toBe('click-load');
+    expect(businessBrowserLoaded.expected).toEqual(
+      expect.arrayContaining([
+        'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+        'Business Browser Fixture',
+        'fixture.example.test/dashboard',
+        'Source: local-fixture:business-browser:running',
+        'fixture-audit-browser-running',
+      ])
+    );
+    expect(businessBrowserLoaded.loadedStateRequiredMarkers).toEqual([
+      'browser runtime status',
+      'current URL summary',
+      'browser audit id',
+    ]);
+
+    const businessBrowserLaunch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[2];
+    expect(businessBrowserLaunch.action).toBe('click-business-browser-launch');
+    expect(businessBrowserLaunch.expected).toEqual(
+      expect.arrayContaining([
+        'Synthetic browser launch requested',
+        'Source: local-fixture:business-browser:launching',
+        'fixture-audit-browser-launch',
+      ])
+    );
+
+    const businessBrowserStop = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[3];
+    expect(businessBrowserStop.action).toBe('click-business-browser-stop');
+    expect(businessBrowserStop.expected).toEqual(
+      expect.arrayContaining([
+        'Synthetic browser stop completed',
+        'Source: local-fixture:business-browser:stopped',
+        'fixture-audit-browser-stop',
+      ])
+    );
+
+    const businessBrowserDenied = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[4];
+    expect(businessBrowserDenied.action).toBe('click-business-browser-denied-customer');
+    expect(businessBrowserDenied.expected).toEqual(
+      expect.arrayContaining([
+        'Denied Browser Fixture Co',
+        'Route denied',
+        'account policy lacks open_business_browser',
+        'Source: local-fixture:business-browser:denied',
+        'fixture-audit-browser-denied-policy',
+      ])
+    );
+
+    const companyBrainLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[5];
     expect(companyBrainLoaded.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
     expect(companyBrainLoaded.action).toBe('click-load-company-brain');
     expect(companyBrainLoaded.expected).toEqual(

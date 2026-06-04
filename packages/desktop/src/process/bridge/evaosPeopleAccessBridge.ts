@@ -36,6 +36,8 @@ import {
   type EvaosBrokerSessionClient,
 } from '@process/services/evaosBrokerSession';
 import {
+  evaosLocalProductFixtureBusinessBrowserAction,
+  evaosLocalProductFixtureBusinessBrowserStatus,
   evaosLocalProductFixtureCompanyBrainAccount360,
   evaosLocalProductFixtureCompanyBrainDirectory,
   evaosLocalProductFixtureCompanyBrainQuery,
@@ -140,22 +142,38 @@ export function initEvaosBusinessBrowserBridge(
 ): void {
   ipcBridge.evaosBusinessBrowser.getStatus.provider(
     async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserView>> =>
-      toBridgeResponse(() => client.businessBrowserStatus(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureBusinessBrowserStatus(request)
+          : client.businessBrowserStatus(request)
+      )
   );
 
   ipcBridge.evaosBusinessBrowser.launch.provider(
     async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
-      toBridgeResponse(() => client.launchBusinessBrowser(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureBusinessBrowserAction(request, 'browser_launch')
+          : client.launchBusinessBrowser(request)
+      )
   );
 
   ipcBridge.evaosBusinessBrowser.openUrl.provider(
     async (request: IEvaosBusinessBrowserOpenUrlRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
-      toBridgeResponse(() => client.openBusinessBrowserUrl(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureBusinessBrowserAction(request, 'browser_open_url')
+          : client.openBusinessBrowserUrl(request)
+      )
   );
 
   ipcBridge.evaosBusinessBrowser.stop.provider(
     async (request: IEvaosBusinessBrowserRequest): Promise<BridgeResponse<IEvaosBusinessBrowserActionResult>> =>
-      toBridgeResponse(() => client.stopBusinessBrowser(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureBusinessBrowserAction(request, 'browser_stop')
+          : client.stopBusinessBrowser(request)
+      )
   );
 }
 
