@@ -6,8 +6,9 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import classNames from 'classnames';
-import { Button, Input, Select, Spin, Tag } from '@arco-design/web-react';
+import { Button, Select, Spin, Tag } from '@arco-design/web-react';
 import { Attention, CheckOne, CloseOne, Connection, Refresh, Shield } from '@icon-park/react';
+import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosProviderHub,
@@ -53,7 +54,6 @@ function statusLabel(profile: IEvaosProviderProfileView): string {
 const ConnectedAppsPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
-  const [customerId, setCustomerId] = useState('');
   const [hub, setHub] = useState<IEvaosProviderHubView | null>(null);
   const [hubError, setHubError] = useState<string | null>(null);
   const [loadingHub, setLoadingHub] = useState(false);
@@ -61,6 +61,7 @@ const ConnectedAppsPage: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<string | null>(null);
   const [agentRuntime, setAgentRuntime] = useState<IEvaosProviderAgentRuntime>('openclaw');
+  const customerContext = useEvaosCustomerContext(true);
 
   const canManageIntegrations = !hub?.routeDenied;
   const readyCount = useMemo(
@@ -80,23 +81,26 @@ const ConnectedAppsPage: React.FC = () => {
     [hub?.profiles]
   );
 
-  const handleCustomerChange = useCallback((value: string) => {
-    setCustomerId(value);
-    setHub(null);
-    setHubError(null);
-    setActionStatus(null);
-    setActionError(null);
-    setActionTarget(null);
-  }, []);
+  const selectCustomer = useCallback(
+    (customerId: string) => {
+      customerContext.selectCustomer(customerId);
+      setHub(null);
+      setHubError(null);
+      setActionStatus(null);
+      setActionError(null);
+      setActionTarget(null);
+    },
+    [customerContext]
+  );
 
   const loadHub = useCallback(
     async (options: { resetActionStatus?: boolean } = {}) => {
-      const trimmedCustomerId = customerId.trim();
+      const selectedCustomerId = customerContext.selectedCustomerId;
       if (options.resetActionStatus !== false) {
         setActionStatus(null);
         setActionError(null);
       }
-      if (!trimmedCustomerId) {
+      if (!selectedCustomerId) {
         setHub(null);
         setHubError('Choose a customer before loading Connected Apps.');
         return;
@@ -105,7 +109,7 @@ const ConnectedAppsPage: React.FC = () => {
       setLoadingHub(true);
       setHubError(null);
       try {
-        const response = await evaosProviderHub.getProfiles.invoke({ customerId: trimmedCustomerId });
+        const response = await evaosProviderHub.getProfiles.invoke({ customerId: selectedCustomerId });
         if (!response.success || !response.data) {
           setHub(null);
           setHubError(safeUiText(response.msg, 'Connected Apps failed closed.'));
@@ -119,15 +123,25 @@ const ConnectedAppsPage: React.FC = () => {
         setLoadingHub(false);
       }
     },
-    [customerId]
+    [customerContext.selectedCustomerId]
   );
+
+  const clearLoadedHubForTargetChange = useCallback(
+    (customerId: string) => {
+      selectCustomer(customerId);
+    },
+    [selectCustomer]
+  );
+
+  const selectedCustomerLabel =
+    customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
 
   const runProviderAction = useCallback(
     async (providerKey: IEvaosProviderKey, action: 'startAuth' | 'switchProvider' | 'revokeProvider' | 'mintGrant') => {
-      const trimmedCustomerId = customerId.trim();
+      const selectedCustomerId = customerContext.selectedCustomerId;
       setActionStatus(null);
       setActionError(null);
-      if (!hub || hub.routeDenied || !canManageIntegrations) {
+      if (!hub || hub.routeDenied || !canManageIntegrations || !selectedCustomerId) {
         setActionError('Action denied by account policy.');
         return;
       }
@@ -135,7 +149,7 @@ const ConnectedAppsPage: React.FC = () => {
       setActionTarget(`${providerKey}:${action}`);
       try {
         const request = {
-          customerId: trimmedCustomerId,
+          customerId: selectedCustomerId,
           providerKey,
           agentRuntime: action === 'mintGrant' ? agentRuntime : undefined,
         };
@@ -156,7 +170,7 @@ const ConnectedAppsPage: React.FC = () => {
         setActionTarget(null);
       }
     },
-    [agentRuntime, canManageIntegrations, customerId, hub, loadHub]
+    [agentRuntime, canManageIntegrations, customerContext.selectedCustomerId, hub, loadHub]
   );
 
   return (
@@ -195,21 +209,43 @@ const ConnectedAppsPage: React.FC = () => {
         </header>
 
         <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-          <label className='block text-13px font-medium leading-20px text-t-primary' htmlFor='providers-customer-id'>
-            Customer context
-          </label>
-          <div className='mt-8px flex gap-8px max-[520px]:flex-col'>
-            <Input
-              id='providers-customer-id'
-              value={customerId}
-              placeholder='Customer ID or slug'
-              onChange={handleCustomerChange}
-              onPressEnter={() => void loadHub()}
-            />
-            <Button className='shrink-0' loading={loadingHub} onClick={() => void loadHub()}>
+          <div className='flex flex-wrap items-center justify-between gap-10px'>
+            <div className='min-w-0'>
+              <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
+              <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
+                {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
+              </div>
+            </div>
+            <Button
+              className='shrink-0'
+              loading={loadingHub || customerContext.loading}
+              disabled={!customerContext.selectedCustomerId}
+              onClick={() => void loadHub()}
+            >
               Load
             </Button>
           </div>
+          <div className='mt-10px flex flex-wrap gap-8px'>
+            {customerContext.targets.length === 0 ? (
+              <Tag color={customerContext.error ? 'orange' : 'gray'}>
+                {customerContext.error ?? customerContext.summaryText}
+              </Tag>
+            ) : (
+              customerContext.targets.map((target) => (
+                <Button
+                  key={target.customerId}
+                  size='small'
+                  type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                  onClick={() => clearLoadedHubForTargetChange(target.customerId)}
+                >
+                  {target.displayName}
+                </Button>
+              ))
+            )}
+          </div>
+          <p className='m-0 mt-8px text-12px leading-18px text-t-secondary'>
+            {customerContext.summaryText}. Connected Apps stays scoped to the selected customer.
+          </p>
           {hubError ? (
             <p className='m-0 mt-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>{hubError}</p>
           ) : null}

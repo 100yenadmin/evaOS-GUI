@@ -36,6 +36,8 @@ import type {
   IEvaosCompanyBrainQueryRequest,
   IEvaosCompanyBrainQueryResult,
   IEvaosCompanyBrainTimelineEntryView,
+  IEvaosCustomerTargetView,
+  IEvaosCustomerTargetsView,
   IEvaosPeopleAccessInviteMemberRequest,
   IEvaosPeopleAccessInviteView,
   IEvaosPeopleAccessMemberView,
@@ -262,6 +264,12 @@ export class EvaosBrokerSessionClient {
     )) as unknown;
 
     return sanitizeRuntimeStatus(raw, { customerId, runtime });
+  }
+
+  async customerTargets(): Promise<IEvaosCustomerTargetsView> {
+    const session = this.requireActiveSession('Sign in to evaOS before loading customer targets.');
+    const raw = await this.postJson({ action: 'list_customer_targets' }, session);
+    return sanitizeCustomerTargets(raw);
   }
 
   async peopleAccessPolicy(request: IEvaosPeopleAccessPolicyRequest): Promise<IEvaosPeopleAccessPolicyView> {
@@ -617,9 +625,11 @@ export class EvaosBrokerSessionClient {
     return this.getSessionStatus();
   }
 
-  private requireActiveSession(): EvaosDesktopSession {
+  private requireActiveSession(
+    missingSessionMessage = 'Sign in to evaOS before checking runtime status.'
+  ): EvaosDesktopSession {
     if (!this.session) {
-      throw new EvaosBrokerSessionError('missing_session', 'Sign in to evaOS before checking runtime status.');
+      throw new EvaosBrokerSessionError('missing_session', missingSessionMessage);
     }
 
     if (isSessionExpired(this.session, this.now())) {
@@ -905,6 +915,58 @@ function sanitizeRuntimeStatus(
     sourcePointer: safeText(record.source_pointer),
     auditId: safeText(record.audit_id),
   });
+}
+
+function sanitizeCustomerTargets(raw: unknown): IEvaosCustomerTargetsView {
+  const record = asRecord(raw);
+  if (!record) {
+    throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
+  }
+
+  const customers = safeCustomerTargets(record.customers);
+  const defaultCustomerId = safeText(record.default_customer_id);
+  const selectedCustomerId =
+    customers.find((target) => target.customerId === defaultCustomerId)?.customerId ??
+    customers.find((target) => target.isDefault)?.customerId ??
+    customers[0]?.customerId;
+
+  return stripUndefined({
+    roles: safeTextList(record.roles, 80),
+    isOperator: safeBoolean(record.is_operator) ?? false,
+    defaultCustomerId: selectedCustomerId === defaultCustomerId ? defaultCustomerId : undefined,
+    selectedCustomerId,
+    customers,
+    summaryText: customers.length === 1 ? '1 customer target loaded' : `${customers.length} customer targets loaded`,
+  });
+}
+
+function safeCustomerTargets(value: unknown): IEvaosCustomerTargetView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): IEvaosCustomerTargetView | undefined => {
+      const record = asRecord(item);
+      if (!record) {
+        return undefined;
+      }
+      const customerId = safeText(record.customer_id);
+      const displayName = safeText(record.display_name);
+      if (!customerId || !displayName) {
+        return undefined;
+      }
+
+      return stripUndefined({
+        customerId,
+        displayName,
+        email: safeText(record.email),
+        status: safeText(record.status),
+        healthStatus: safeText(record.health_status),
+        isDefault: safeBoolean(record.is_default) ?? false,
+      });
+    })
+    .filter((target): target is IEvaosCustomerTargetView => Boolean(target));
 }
 
 const ACCOUNT_POLICY_SCHEMA_VERSION: IEvaosPeopleAccessPolicyView['schemaVersion'] = 'evaos.account_policy.v1';
@@ -2871,6 +2933,16 @@ function safeText(value: unknown, maxLength = MAX_SAFE_TEXT_LENGTH): string | un
     return undefined;
   }
   return trimmed;
+}
+
+function safeTextList(value: unknown, maxLength = MAX_SAFE_TEXT_LENGTH): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const text = safeText(item, maxLength);
+    return text ? [text] : [];
+  });
 }
 
 function safeIsoDate(value: unknown): string | undefined {

@@ -8,7 +8,12 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { clearEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustomerContext';
 import ConnectedAppsPage from '@/renderer/pages/connected-apps';
+
+const brokerMocks = vi.hoisted(() => ({
+  getCustomerTargets: vi.fn(),
+}));
 
 const providerHubMocks = vi.hoisted(() => ({
   getProfiles: vi.fn(),
@@ -23,6 +28,11 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 }));
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
+  evaosBroker: {
+    getCustomerTargets: {
+      invoke: brokerMocks.getCustomerTargets,
+    },
+  },
   evaosProviderHub: {
     getProfiles: {
       invoke: providerHubMocks.getProfiles,
@@ -153,6 +163,34 @@ function providerHub(routeDenied = false) {
 
 describe('ConnectedAppsPage', () => {
   beforeEach(() => {
+    clearEvaosCustomerContext();
+    brokerMocks.getCustomerTargets.mockReset();
+    brokerMocks.getCustomerTargets.mockResolvedValue({
+      success: true,
+      data: {
+        roles: ['admin'],
+        isOperator: true,
+        defaultCustomerId: 'david-poku',
+        selectedCustomerId: 'david-poku',
+        customers: [
+          {
+            customerId: 'david-poku',
+            displayName: 'David Poku Co',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: true,
+          },
+          {
+            customerId: 'second-customer',
+            displayName: 'Second Customer',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: false,
+          },
+        ],
+        summaryText: '2 customer targets loaded',
+      },
+    });
     providerHubMocks.getProfiles.mockReset();
     providerHubMocks.startAuth.mockReset();
     providerHubMocks.switchProvider.mockReset();
@@ -197,7 +235,7 @@ describe('ConnectedAppsPage', () => {
 
     const { container } = render(<ConnectedAppsPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect(await screen.findByText('Google Workspace')).toBeInTheDocument();
@@ -244,7 +282,7 @@ describe('ConnectedAppsPage', () => {
 
     render(<ConnectedAppsPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect(await screen.findByText('Route denied')).toBeInTheDocument();
@@ -264,19 +302,18 @@ describe('ConnectedAppsPage', () => {
 
     render(<ConnectedAppsPage />);
 
-    const customerInput = screen.getByLabelText('Customer context');
-    await user.type(customerInput, 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect(await screen.findByText('Google Workspace')).toBeInTheDocument();
     expect(screen.getByText('sales@example.test')).toBeInTheDocument();
 
-    await user.clear(customerInput);
-    await user.type(customerInput, 'second-customer');
+    await user.click(screen.getByRole('button', { name: 'Second Customer' }));
 
     expect(screen.queryByText('Google Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('sales@example.test')).not.toBeInTheDocument();
     expect(screen.getByText('Load a customer account to view connected app evidence.')).toBeInTheDocument();
+    expect(providerHubMocks.getProfiles).toHaveBeenCalledTimes(1);
   });
 
   it('renders backend denial without leaking broker secret text', async () => {
@@ -292,7 +329,7 @@ describe('ConnectedAppsPage', () => {
 
     const { container } = render(<ConnectedAppsPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
     await screen.findByText('Google Workspace');
 

@@ -8,7 +8,12 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { clearEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustomerContext';
 import PeopleAccessPage from '@/renderer/pages/people-access';
+
+const brokerMocks = vi.hoisted(() => ({
+  getCustomerTargets: vi.fn(),
+}));
 
 const peopleAccessMocks = vi.hoisted(() => ({
   getPolicy: vi.fn(),
@@ -20,6 +25,11 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 }));
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
+  evaosBroker: {
+    getCustomerTargets: {
+      invoke: brokerMocks.getCustomerTargets,
+    },
+  },
   evaosPeopleAccess: {
     getPolicy: {
       invoke: peopleAccessMocks.getPolicy,
@@ -65,6 +75,34 @@ function policy(scopes: string[], overrides: Record<string, unknown> = {}) {
 
 describe('PeopleAccessPage', () => {
   beforeEach(() => {
+    clearEvaosCustomerContext();
+    brokerMocks.getCustomerTargets.mockReset();
+    brokerMocks.getCustomerTargets.mockResolvedValue({
+      success: true,
+      data: {
+        roles: ['admin'],
+        isOperator: true,
+        defaultCustomerId: 'david-poku',
+        selectedCustomerId: 'david-poku',
+        customers: [
+          {
+            customerId: 'david-poku',
+            displayName: 'David Poku Co',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: true,
+          },
+          {
+            customerId: 'second-customer',
+            displayName: 'Second Customer',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: false,
+          },
+        ],
+        summaryText: '2 customer targets loaded',
+      },
+    });
     peopleAccessMocks.getPolicy.mockReset();
     peopleAccessMocks.inviteMember.mockReset();
   });
@@ -95,7 +133,7 @@ describe('PeopleAccessPage', () => {
 
     const { container } = render(<PeopleAccessPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect((await screen.findAllByText('owner@example.test')).length).toBeGreaterThan(0);
@@ -124,7 +162,7 @@ describe('PeopleAccessPage', () => {
 
     render(<PeopleAccessPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect(await screen.findByText('Route denied')).toBeInTheDocument();
@@ -147,7 +185,7 @@ describe('PeopleAccessPage', () => {
 
     render(<PeopleAccessPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect((await screen.findAllByText('Backend proof missing')).length).toBeGreaterThan(0);
@@ -165,19 +203,18 @@ describe('PeopleAccessPage', () => {
 
     render(<PeopleAccessPage />);
 
-    const customerInput = screen.getByLabelText('Customer context');
-    await user.type(customerInput, 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect((await screen.findAllByText('owner@example.test')).length).toBeGreaterThan(0);
     expect(screen.getByText(/audit_policy_123/)).toBeInTheDocument();
 
-    await user.clear(customerInput);
-    await user.type(customerInput, 'second-customer');
+    await user.click(screen.getByRole('button', { name: 'Second Customer' }));
 
     expect(screen.queryByText('owner@example.test')).not.toBeInTheDocument();
     expect(screen.queryByText(/audit_policy_123/)).not.toBeInTheDocument();
     expect(screen.getByText('Load a customer account policy to view People Access.')).toBeInTheDocument();
+    expect(peopleAccessMocks.getPolicy).toHaveBeenCalledTimes(1);
   });
 
   it('renders backend denial without leaking broker secret text', async () => {
@@ -193,7 +230,7 @@ describe('PeopleAccessPage', () => {
 
     const { container } = render(<PeopleAccessPage />);
 
-    await user.type(screen.getByLabelText('Customer context'), 'david-poku');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /^load$/i }));
     await screen.findAllByText('owner@example.test');
 

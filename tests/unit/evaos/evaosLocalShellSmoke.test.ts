@@ -71,14 +71,14 @@ describe('evaOS local shell smoke', () => {
     const findings = localShellSmoke.textFindings(
       'connected-apps-empty-error',
       'Connected Apps desktop_session=eds_secret_example Authorization: Bearer token',
-      ['Connected Apps', 'Choose a customer before loading Connected Apps.'],
+      ['Connected Apps', 'Sign in to evaOS before loading customer targets.'],
       ['desktop_session', 'Bearer'],
       10
     );
 
     expect(findings.map((finding) => finding.message)).toEqual(
       expect.arrayContaining([
-        'Missing expected text: Choose a customer before loading Connected Apps.',
+        'Missing expected text: Sign in to evaOS before loading customer targets.',
         'Forbidden text is visible: desktop_session',
         'Forbidden text is visible: Bearer',
       ])

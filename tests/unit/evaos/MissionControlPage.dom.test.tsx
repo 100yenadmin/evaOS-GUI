@@ -8,10 +8,12 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { clearEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustomerContext';
 import MissionControlPage from '@/renderer/pages/mission-control';
 
 const brokerMocks = vi.hoisted(() => ({
   getSessionStatus: vi.fn(),
+  getCustomerTargets: vi.fn(),
   runtimeStatus: vi.fn(),
 }));
 
@@ -24,6 +26,9 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
     getSessionStatus: {
       invoke: brokerMocks.getSessionStatus,
     },
+    getCustomerTargets: {
+      invoke: brokerMocks.getCustomerTargets,
+    },
     runtimeStatus: {
       invoke: brokerMocks.runtimeStatus,
     },
@@ -33,6 +38,34 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
 describe('MissionControlPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearEvaosCustomerContext();
+    brokerMocks.getCustomerTargets.mockResolvedValue({
+      success: true,
+      data: {
+        roles: ['admin'],
+        isOperator: true,
+        defaultCustomerId: 'david-poku',
+        selectedCustomerId: 'david-poku',
+        customers: [
+          {
+            customerId: 'david-poku',
+            displayName: 'David Poku Co',
+            email: 'ops@example.test',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: true,
+          },
+          {
+            customerId: 'second-customer',
+            displayName: 'Second Customer',
+            status: 'active',
+            healthStatus: 'needs_attention',
+            isDefault: false,
+          },
+        ],
+        summaryText: '2 customer targets loaded',
+      },
+    });
   });
 
   it('fails closed without querying runtime status when the desktop session is missing', async () => {
@@ -126,13 +159,13 @@ describe('MissionControlPage', () => {
     const { container } = render(<MissionControlPage />);
 
     expect(await screen.findByText('Session active')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Customer context'), 'cus_123');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /check/i }));
 
     await waitFor(() => {
       expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(4);
     });
-    expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'cus_123', runtime: 'browser' });
+    expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'browser' });
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('Browser is ready');
     expect(screen.getByText('app.example.test/work')).toBeInTheDocument();
     expect(screen.getByText('audit_123')).toBeInTheDocument();
@@ -160,7 +193,7 @@ describe('MissionControlPage', () => {
     render(<MissionControlPage />);
 
     expect(await screen.findByText('Session active')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Customer context'), 'cus_123');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /check/i }));
 
     const browserCard = screen.getByTestId('mission-runtime-card-browser');
@@ -170,5 +203,44 @@ describe('MissionControlPage', () => {
     expect(browserCard).toHaveTextContent('The evaOS broker returned no runtime evidence.');
     expect(browserCard).toHaveTextContent('Fail-closed until evaOS broker evidence is available.');
     expect(browserCard).not.toHaveTextContent('eds_raw_session');
+  });
+
+  it('clears runtime evidence when the selected customer changes', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+    brokerMocks.runtimeStatus.mockResolvedValue({
+      success: true,
+      data: {
+        customerId: 'david-poku',
+        runtimeKey: 'browser',
+        displayLabel: 'Business Browser',
+        status: 'running',
+        healthSummary: 'Browser is ready',
+      },
+    });
+
+    render(<MissionControlPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /check/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('Browser is ready');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Second Customer' }));
+
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('No runtime evidence loaded yet.');
+    expect(screen.getByText(/2 customer targets loaded/)).toBeInTheDocument();
   });
 });

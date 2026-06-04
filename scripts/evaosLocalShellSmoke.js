@@ -25,12 +25,12 @@ const ROUTE_CHECKS = [
     name: 'people-access-empty-error',
     hash: '/people-access',
     title: 'People Access',
-    action: 'click-load',
     expected: [
       'People Access',
       'Members, roles, invites, and seats from the evaOS account policy plane.',
+      'Customer context',
       'Load a customer account policy to view People Access.',
-      'Choose a customer before loading People Access.',
+      'Sign in to evaOS before loading customer targets.',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant'],
   },
@@ -51,12 +51,12 @@ const ROUTE_CHECKS = [
     name: 'connected-apps-empty-error',
     hash: '/connected-apps',
     title: 'Connected Apps',
-    action: 'click-load',
     expected: [
       'Connected Apps',
       'Brokered provider status, grants, and revocation',
+      'Customer context',
       'Load a customer account to view connected app evidence.',
-      'Choose a customer before loading Connected Apps.',
+      'Sign in to evaOS before loading customer targets.',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle'],
   },
@@ -328,6 +328,7 @@ async function runLocalShellSmoke(options = {}) {
       pageErrors.push({ message: error.message, stack: error.stack });
     });
 
+    await navigate(page, '/mission-control');
     await waitForRoute(page, 'Mission Control');
 
     for (const check of ROUTE_CHECKS) {

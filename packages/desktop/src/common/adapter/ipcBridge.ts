@@ -390,6 +390,24 @@ export interface IEvaosBrokerClaimDeviceCodeRequest {
   deviceCode: string;
 }
 
+export interface IEvaosCustomerTargetView {
+  customerId: string;
+  displayName: string;
+  email?: string;
+  status?: string;
+  healthStatus?: string;
+  isDefault: boolean;
+}
+
+export interface IEvaosCustomerTargetsView {
+  roles: string[];
+  isOperator: boolean;
+  defaultCustomerId?: string;
+  selectedCustomerId?: string;
+  customers: IEvaosCustomerTargetView[];
+  summaryText: string;
+}
+
 export interface IEvaosRuntimeStatusRequest {
   customerId: string;
   runtime: IEvaosRuntimeKey;
@@ -1616,6 +1634,9 @@ export const evaosBroker = {
   ),
   getSessionStatus: bridge.buildProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>(
     'evaos.broker.session-status'
+  ),
+  getCustomerTargets: bridge.buildProvider<IBridgeResponse<IEvaosCustomerTargetsView>, void>(
+    'evaos.broker.customer-targets'
   ),
   runtimeStatus: bridge.buildProvider<IBridgeResponse<IEvaosRuntimeStatusView>, IEvaosRuntimeStatusRequest>(
     'evaos.broker.runtime-status'
