@@ -89,6 +89,7 @@ describe('evaosBetaSafety', () => {
       executableName: 'EvaOSWorkbenchBeta',
       appId: 'com.evaos.workbench.beta',
       protocolScheme: 'evaos-workbench-beta',
+      loopbackCallbackPath: '/auth/evaos-workbench-beta/callback',
     });
   });
 });

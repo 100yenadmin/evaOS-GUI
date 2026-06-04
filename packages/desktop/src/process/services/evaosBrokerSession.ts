@@ -910,7 +910,7 @@ function isAllowedDesktopSessionCallback(url: URL): boolean {
   const isLoopbackCallback =
     url.protocol === 'http:' &&
     ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) &&
-    url.pathname === '/auth/callback';
+    url.pathname === EVAOS_BETA_IDENTITY.loopbackCallbackPath;
   return isBetaProtocolCallback || isLoopbackCallback;
 }
 

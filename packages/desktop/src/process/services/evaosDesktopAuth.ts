@@ -17,7 +17,7 @@ import {
 
 const DEFAULT_DASHBOARD_BASE_URL = 'https://www.electricsheephq.com';
 const AUTH_LOOPBACK_HOST = '127.0.0.1';
-const AUTH_LOOPBACK_PATH = '/auth/callback';
+const AUTH_LOOPBACK_PATH = EVAOS_BETA_IDENTITY.loopbackCallbackPath;
 const AUTH_LOOPBACK_STATE_PARAM = 'desktop_auth_state';
 const AUTH_LOOPBACK_TIMEOUT_MS = 180_000;
 
