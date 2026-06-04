@@ -6,12 +6,14 @@
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { clearEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustomerContext';
 import MissionControlPage from '@/renderer/pages/mission-control';
 
 const brokerMocks = vi.hoisted(() => ({
   getSessionStatus: vi.fn(),
+  getCustomerTargets: vi.fn(),
   runtimeStatus: vi.fn(),
 }));
 
@@ -24,15 +26,58 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
     getSessionStatus: {
       invoke: brokerMocks.getSessionStatus,
     },
+    getCustomerTargets: {
+      invoke: brokerMocks.getCustomerTargets,
+    },
     runtimeStatus: {
       invoke: brokerMocks.runtimeStatus,
     },
   },
 }));
 
+function customerTargets() {
+  return {
+    success: true,
+    data: {
+      roles: ['admin'],
+      isOperator: true,
+      defaultCustomerId: 'david-poku',
+      selectedCustomerId: 'david-poku',
+      customers: [
+        {
+          customerId: 'david-poku',
+          displayName: 'David Poku Co',
+          email: 'ops@example.test',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: true,
+        },
+        {
+          customerId: 'second-customer',
+          displayName: 'Second Customer',
+          status: 'active',
+          healthStatus: 'needs_attention',
+          isDefault: false,
+        },
+      ],
+      summaryText: '2 customer targets loaded',
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
 describe('MissionControlPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearEvaosCustomerContext();
+    brokerMocks.getCustomerTargets.mockResolvedValue(customerTargets());
   });
 
   it('fails closed without querying runtime status when the desktop session is missing', async () => {
@@ -126,13 +171,13 @@ describe('MissionControlPage', () => {
     const { container } = render(<MissionControlPage />);
 
     expect(await screen.findByText('Session active')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Customer context'), 'cus_123');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /check/i }));
 
     await waitFor(() => {
       expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(4);
     });
-    expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'cus_123', runtime: 'browser' });
+    expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'browser' });
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('Browser is ready');
     expect(screen.getByText('app.example.test/work')).toBeInTheDocument();
     expect(screen.getByText('audit_123')).toBeInTheDocument();
@@ -160,7 +205,7 @@ describe('MissionControlPage', () => {
     render(<MissionControlPage />);
 
     expect(await screen.findByText('Session active')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Customer context'), 'cus_123');
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /check/i }));
 
     const browserCard = screen.getByTestId('mission-runtime-card-browser');
@@ -170,5 +215,187 @@ describe('MissionControlPage', () => {
     expect(browserCard).toHaveTextContent('The evaOS broker returned no runtime evidence.');
     expect(browserCard).toHaveTextContent('Fail-closed until evaOS broker evidence is available.');
     expect(browserCard).not.toHaveTextContent('eds_raw_session');
+  });
+
+  it('clears runtime evidence when the selected customer changes', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+    brokerMocks.runtimeStatus.mockResolvedValue({
+      success: true,
+      data: {
+        customerId: 'david-poku',
+        runtimeKey: 'browser',
+        displayLabel: 'Business Browser',
+        status: 'running',
+        healthSummary: 'Browser is ready',
+      },
+    });
+
+    render(<MissionControlPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /check/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('Browser is ready');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Second Customer' }));
+
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('No runtime evidence loaded yet.');
+    expect(screen.getByText(/2 customer targets loaded/)).toBeInTheDocument();
+  });
+
+  it('lets operators retry customer targets after a broker failure', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+    brokerMocks.getCustomerTargets.mockReset();
+    brokerMocks.getCustomerTargets
+      .mockResolvedValueOnce({
+        success: false,
+        msg: 'eds_raw_customer_target_secret should not render',
+      })
+      .mockResolvedValueOnce(customerTargets());
+
+    const { container } = render(<MissionControlPage />);
+
+    expect(await screen.findByText('Customer targets failed closed.')).toBeInTheDocument();
+    expect(container.textContent).not.toContain('eds_raw_customer_target_secret');
+
+    await user.click(screen.getByRole('button', { name: /^refresh targets$/i }));
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores stale customer targets that resolve after the session becomes unauthenticated', async () => {
+    const user = userEvent.setup();
+    const pendingTargets = deferred<ReturnType<typeof customerTargets>>();
+    brokerMocks.getSessionStatus
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          state: 'authenticated',
+          authenticated: true,
+          expired: false,
+          source: 'memory',
+          expiresAt: '2026-06-03T18:00:00.000Z',
+          message: 'evaOS desktop session is active.',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          state: 'missing',
+          authenticated: false,
+          expired: false,
+          source: 'none',
+          message: 'Sign in to evaOS to connect this desktop shell.',
+        },
+      });
+    brokerMocks.getCustomerTargets.mockReset();
+    brokerMocks.getCustomerTargets.mockReturnValueOnce(pendingTargets.promise);
+
+    render(<MissionControlPage />);
+
+    expect(await screen.findByText('Session active')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^refresh$/i }));
+    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+
+    await act(async () => {
+      pendingTargets.resolve(customerTargets());
+      await pendingTargets.promise;
+    });
+
+    expect(screen.queryByText('David Poku Co')).not.toBeInTheDocument();
+    expect(screen.getByText('No customer targets loaded')).toBeInTheDocument();
+  });
+
+  it('does not render stale runtime evidence when the selected customer changes before the broker responds', async () => {
+    const user = userEvent.setup();
+    const pendingRuntimeResponses = Array.from({ length: 4 }, () =>
+      deferred<{
+        success: boolean;
+        data: {
+          customerId: string;
+          runtimeKey: string;
+          displayLabel: string;
+          status: string;
+          healthSummary: string;
+        };
+      }>()
+    );
+    const pendingRuntimeQueue = [...pendingRuntimeResponses];
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        source: 'memory',
+        expiresAt: '2026-06-03T18:00:00.000Z',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+    brokerMocks.runtimeStatus.mockImplementation(({ runtime }) => {
+      const next = pendingRuntimeQueue.shift();
+      if (!next) throw new Error('unexpected runtime request');
+      return next.promise.then((response) => ({
+        ...response,
+        data: {
+          ...response.data,
+          runtimeKey: runtime,
+        },
+      }));
+    });
+
+    render(<MissionControlPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /check/i }));
+    await waitFor(() => {
+      expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(4);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Second Customer' }));
+
+    await act(async () => {
+      pendingRuntimeResponses.forEach((pending) => {
+        pending.resolve({
+          success: true,
+          data: {
+            customerId: 'david-poku',
+            runtimeKey: 'browser',
+            displayLabel: 'Business Browser',
+            status: 'running',
+            healthSummary: 'Browser is ready',
+          },
+        });
+      });
+      await Promise.all(pendingRuntimeResponses.map((pending) => pending.promise));
+    });
+
+    expect(screen.getByTestId('mission-runtime-card-browser')).not.toHaveTextContent('Browser is ready');
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('No runtime evidence loaded yet.');
   });
 });

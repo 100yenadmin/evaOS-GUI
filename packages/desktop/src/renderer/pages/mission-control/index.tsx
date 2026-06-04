@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { Button, Input, Spin, Tag } from '@arco-design/web-react';
+import { Button, Spin, Tag } from '@arco-design/web-react';
 import { Attention, CheckOne, Computer, Refresh, Robot } from '@icon-park/react';
+import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosBroker,
@@ -161,11 +162,13 @@ const MissionControlPage: React.FC = () => {
   const isMobile = layout?.isMobile ?? false;
   const [session, setSession] = useState<IEvaosBrokerSessionStatus | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState('');
   const [runtimeStates, setRuntimeStates] = useState<RuntimeLoadState[]>(() => emptyRuntimeStates());
   const [loadingSession, setLoadingSession] = useState(true);
   const [loadingRuntime, setLoadingRuntime] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+  const customerContext = useEvaosCustomerContext(session?.authenticated === true);
+  const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
+  const requestEpochRef = useRef(0);
 
   const loadSession = useCallback(async (): Promise<IEvaosBrokerSessionStatus | null> => {
     setLoadingSession(true);
@@ -188,27 +191,41 @@ const MissionControlPage: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    selectedCustomerRef.current = customerContext.selectedCustomerId;
+    requestEpochRef.current += 1;
+  }, [customerContext.selectedCustomerId]);
+
+  const isCurrentRequest = useCallback((epoch: number, customerId: string) => {
+    return requestEpochRef.current === epoch && selectedCustomerRef.current === customerId;
+  }, []);
+
   const refreshMissionControl = useCallback(async () => {
     const nextSession = await loadSession();
-    const trimmedCustomerId = customerId.trim();
     if (!nextSession?.authenticated) {
+      requestEpochRef.current += 1;
       setRuntimeStates(emptyRuntimeStates());
       setLastRefreshedAt(null);
+      setLoadingRuntime(false);
       return;
     }
 
-    if (!trimmedCustomerId) {
+    const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
+    if (!selectedCustomerId) {
       setRuntimeStates(
         RUNTIME_TARGETS.map((target) => ({
           target,
           loading: false,
-          error: 'Choose a customer before checking runtime status.',
+          error: 'Choose a customer target before checking runtime status.',
         }))
       );
       setLastRefreshedAt(null);
       return;
     }
 
+    const requestEpoch = requestEpochRef.current + 1;
+    requestEpochRef.current = requestEpoch;
+    selectedCustomerRef.current = selectedCustomerId;
     setLoadingRuntime(true);
     setRuntimeStates(RUNTIME_TARGETS.map((target) => ({ target, loading: true })));
 
@@ -216,7 +233,7 @@ const MissionControlPage: React.FC = () => {
       RUNTIME_TARGETS.map(async (target): Promise<RuntimeLoadState> => {
         try {
           const response = await evaosBroker.runtimeStatus.invoke({
-            customerId: trimmedCustomerId,
+            customerId: selectedCustomerId,
             runtime: target.key,
           });
           if (!response.success || !response.data) {
@@ -237,10 +254,34 @@ const MissionControlPage: React.FC = () => {
       })
     );
 
+    if (!isCurrentRequest(requestEpoch, selectedCustomerId)) {
+      return;
+    }
     setRuntimeStates(results);
     setLastRefreshedAt(new Date().toISOString());
     setLoadingRuntime(false);
-  }, [customerId, loadSession]);
+  }, [customerContext.selectedCustomerId, isCurrentRequest, loadSession]);
+
+  const selectCustomer = useCallback(
+    (customerId: string) => {
+      selectedCustomerRef.current = customerId;
+      requestEpochRef.current += 1;
+      customerContext.selectCustomer(customerId);
+      setRuntimeStates(emptyRuntimeStates());
+      setLastRefreshedAt(null);
+      setLoadingRuntime(false);
+    },
+    [customerContext]
+  );
+
+  const refreshCustomerTargets = useCallback(async () => {
+    requestEpochRef.current += 1;
+    selectedCustomerRef.current = undefined;
+    setRuntimeStates(emptyRuntimeStates());
+    setLastRefreshedAt(null);
+    setLoadingRuntime(false);
+    await customerContext.refreshTargets();
+  }, [customerContext]);
 
   useEffect(() => {
     void loadSession();
@@ -260,6 +301,7 @@ const MissionControlPage: React.FC = () => {
   const sessionMessage = sessionError ?? session?.message ?? 'Checking evaOS broker session status.';
   const expiresAt = formatDate(session?.expiresAt);
   const refreshedAt = formatDate(lastRefreshedAt ?? undefined);
+  const selectedCustomerLabel = customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId;
 
   return (
     <div
@@ -342,28 +384,48 @@ const MissionControlPage: React.FC = () => {
             </div>
 
             <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-              <label className='block text-13px font-medium leading-20px text-t-primary' htmlFor='mission-customer-id'>
-                Customer context
-              </label>
-              <div className='mt-8px flex gap-8px max-[520px]:flex-col'>
-                <Input
-                  id='mission-customer-id'
-                  value={customerId}
-                  placeholder='Customer ID or slug'
-                  onChange={setCustomerId}
-                  onPressEnter={() => void refreshMissionControl()}
-                />
-                <Button
-                  className='shrink-0'
-                  icon={<Refresh theme='outline' size='15' />}
-                  loading={loadingRuntime}
-                  onClick={() => void refreshMissionControl()}
-                >
-                  Check
-                </Button>
+              <div className='flex items-center justify-between gap-10px'>
+                <div className='min-w-0'>
+                  <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
+                  <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
+                    {customerContext.loading
+                      ? 'Loading customer targets...'
+                      : (selectedCustomerLabel ?? 'No customer selected')}
+                  </div>
+                </div>
+                <div className='flex shrink-0 flex-wrap gap-8px'>
+                  <Button loading={customerContext.loading} onClick={() => void refreshCustomerTargets()}>
+                    Refresh targets
+                  </Button>
+                  <Button
+                    icon={<Refresh theme='outline' size='15' />}
+                    loading={loadingRuntime || customerContext.loading}
+                    onClick={() => void refreshMissionControl()}
+                  >
+                    Check
+                  </Button>
+                </div>
+              </div>
+              <div className='mt-10px flex flex-wrap gap-8px'>
+                {customerContext.targets.length === 0 ? (
+                  <Tag color={customerContext.error ? 'orange' : 'gray'}>
+                    {customerContext.error ?? customerContext.summaryText}
+                  </Tag>
+                ) : (
+                  customerContext.targets.map((target) => (
+                    <Button
+                      key={target.customerId}
+                      size='small'
+                      type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                      onClick={() => selectCustomer(target.customerId)}
+                    >
+                      {target.displayName}
+                    </Button>
+                  ))
+                )}
               </div>
               <p className='m-0 mt-8px text-12px leading-18px text-t-secondary'>
-                Runtime checks stay scoped to the customer entered here.
+                {customerContext.summaryText}. Runtime checks stay scoped to the selected customer.
               </p>
             </div>
           </section>

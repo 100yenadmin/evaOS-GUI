@@ -65,6 +65,21 @@ describe('EvaosBrokerSessionClient', () => {
     });
   });
 
+  it('fails closed without calling the broker when customer targets have no desktop session', async () => {
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await expect(client.customerTargets()).rejects.toMatchObject({
+      code: 'missing_session',
+      message: 'Sign in to evaOS before loading customer targets.',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('fails closed without calling the broker when the desktop session is expired', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
@@ -244,6 +259,89 @@ describe('EvaosBrokerSessionClient', () => {
       redacted: true,
     });
     expect(JSON.stringify(status)).not.toMatch(/code=|providerGrant|grantHandle|epg_|abc123|eyJ/);
+  });
+
+  it('loads customer targets through the broker while returning only safe selector metadata', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+          email: 'operator@example.test',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          roles: ['admin', 'support'],
+          is_operator: true,
+          default_customer_id: 'david-poku',
+          customers: [
+            {
+              customer_id: 'david-poku',
+              display_name: 'David Poku Co',
+              email: 'ops@example.test',
+              status: 'active',
+              health_status: 'ready',
+              is_default: true,
+              desktop_session: 'eds_should_not_render',
+            },
+            {
+              customer_id: 'second-customer',
+              display_name: 'Second Customer',
+              email: 'owner@example.test',
+              status: 'active',
+              health_status: 'needs_attention',
+            },
+            {
+              customer_id: 'bad-secret',
+              display_name: 'Bearer eds_hidden',
+              email: 'secret@example.test',
+            },
+          ],
+          access_token: 'should-not-leave-broker-response',
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const targets = await client.customerTargets();
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(requestHeaders(fetchImpl.mock.calls[1]).Authorization).toBe('Bearer eds_created_session_secret_for_test');
+    expect(requestBody(fetchImpl.mock.calls[1])).toEqual({ action: 'list_customer_targets' });
+    expect(targets).toEqual({
+      roles: ['admin', 'support'],
+      isOperator: true,
+      defaultCustomerId: 'david-poku',
+      customers: [
+        {
+          customerId: 'david-poku',
+          displayName: 'David Poku Co',
+          email: 'ops@example.test',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: true,
+        },
+        {
+          customerId: 'second-customer',
+          displayName: 'Second Customer',
+          email: 'owner@example.test',
+          status: 'active',
+          healthStatus: 'needs_attention',
+          isDefault: false,
+        },
+      ],
+      selectedCustomerId: 'david-poku',
+      summaryText: '2 customer targets loaded',
+    });
+    expect(JSON.stringify(targets)).not.toMatch(
+      /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access_token|desktop_session|Bearer/i
+    );
   });
 
   it('fails closed when runtime_status is malformed', async () => {

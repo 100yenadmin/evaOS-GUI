@@ -8,6 +8,7 @@ import { ipcBridge } from '@/common';
 import type {
   IEvaosBrokerClaimDeviceCodeRequest,
   IEvaosBrokerSessionStatus,
+  IEvaosCustomerTargetsView,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
 } from '@/common/adapter/ipcBridge';
@@ -34,6 +35,10 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
 
   ipcBridge.evaosBroker.getSessionStatus.provider(
     async (): Promise<BridgeResponse<IEvaosBrokerSessionStatus>> => toBridgeResponse(() => client.getSessionStatus())
+  );
+
+  ipcBridge.evaosBroker.getCustomerTargets.provider(
+    async (): Promise<BridgeResponse<IEvaosCustomerTargetsView>> => toBridgeResponse(() => client.customerTargets())
   );
 
   ipcBridge.evaosBroker.runtimeStatus.provider(

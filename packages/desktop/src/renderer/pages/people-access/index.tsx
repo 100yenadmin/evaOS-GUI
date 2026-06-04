@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Button, Input, Select, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Peoples, Plus, Refresh } from '@icon-park/react';
+import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosPeopleAccess,
@@ -44,7 +45,6 @@ function roleLabel(role: string): string {
 const PeopleAccessPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
-  const [customerId, setCustomerId] = useState('');
   const [policy, setPolicy] = useState<IEvaosPeopleAccessPolicyView | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [loadingPolicy, setLoadingPolicy] = useState(false);
@@ -53,6 +53,9 @@ const PeopleAccessPage: React.FC = () => {
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
+  const customerContext = useEvaosCustomerContext(true);
+  const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
+  const requestEpochRef = useRef(0);
 
   const canManageMembers = policy?.scopes.includes('manage_members') ?? false;
   const hasBackendPolicyProof = policy?.backendEnforced === true && Boolean(policy.auditId);
@@ -65,52 +68,98 @@ const PeopleAccessPage: React.FC = () => {
     return Object.entries(policy?.advancedSurfaces ?? {}).toSorted(([left], [right]) => left.localeCompare(right));
   }, [policy?.advancedSurfaces]);
 
-  const handleCustomerChange = useCallback((value: string) => {
-    setCustomerId(value);
+  useEffect(() => {
+    selectedCustomerRef.current = customerContext.selectedCustomerId;
+    requestEpochRef.current += 1;
+  }, [customerContext.selectedCustomerId]);
+
+  const isCurrentRequest = useCallback((epoch: number, customerId: string) => {
+    return requestEpochRef.current === epoch && selectedCustomerRef.current === customerId;
+  }, []);
+
+  const isSelectedCustomer = useCallback((customerId: string) => {
+    return selectedCustomerRef.current === customerId;
+  }, []);
+
+  const selectCustomer = useCallback(
+    (customerId: string) => {
+      selectedCustomerRef.current = customerId;
+      requestEpochRef.current += 1;
+      customerContext.selectCustomer(customerId);
+      setPolicy(null);
+      setPolicyError(null);
+      setInviteStatus(null);
+      setInviteError(null);
+      setLoadingPolicy(false);
+    },
+    [customerContext]
+  );
+
+  const refreshCustomerTargets = useCallback(async () => {
+    requestEpochRef.current += 1;
+    selectedCustomerRef.current = undefined;
     setPolicy(null);
     setPolicyError(null);
     setInviteStatus(null);
     setInviteError(null);
-  }, []);
+    setLoadingPolicy(false);
+    await customerContext.refreshTargets();
+  }, [customerContext]);
 
   const loadPolicy = useCallback(
     async (options: { resetInviteStatus?: boolean } = {}) => {
-      const trimmedCustomerId = customerId.trim();
+      const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
       if (options.resetInviteStatus !== false) {
         setInviteStatus(null);
         setInviteError(null);
       }
-      if (!trimmedCustomerId) {
+      if (!selectedCustomerId) {
         setPolicy(null);
         setPolicyError('Choose a customer before loading People Access.');
         return;
       }
 
+      const requestEpoch = requestEpochRef.current + 1;
+      requestEpochRef.current = requestEpoch;
+      selectedCustomerRef.current = selectedCustomerId;
       setLoadingPolicy(true);
       setPolicyError(null);
       try {
-        const response = await evaosPeopleAccess.getPolicy.invoke({ customerId: trimmedCustomerId });
+        const response = await evaosPeopleAccess.getPolicy.invoke({ customerId: selectedCustomerId });
+        if (!isCurrentRequest(requestEpoch, selectedCustomerId)) {
+          return;
+        }
         if (!response.success || !response.data) {
           setPolicy(null);
           setPolicyError(safeUiText(response.msg, 'People Access failed closed.'));
           return;
         }
+        if (response.data.selectedCustomerId !== selectedCustomerId) {
+          setPolicy(null);
+          setPolicyError('People Access broker returned evidence for a different customer.');
+          return;
+        }
         setPolicy(response.data);
       } catch {
+        if (!isCurrentRequest(requestEpoch, selectedCustomerId)) {
+          return;
+        }
         setPolicy(null);
         setPolicyError('People Access broker request failed closed.');
       } finally {
-        setLoadingPolicy(false);
+        if (isCurrentRequest(requestEpoch, selectedCustomerId)) {
+          setLoadingPolicy(false);
+        }
       }
     },
-    [customerId]
+    [customerContext.selectedCustomerId, isCurrentRequest]
   );
 
   const inviteMember = useCallback(async () => {
-    const trimmedCustomerId = customerId.trim();
+    const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
     setInviteStatus(null);
     setInviteError(null);
-    if (!policy || policy.routeDenied || !canManageMembers) {
+    if (!policy || policy.routeDenied || !canManageMembers || !selectedCustomerId) {
       setInviteError('Action denied by account policy.');
       return;
     }
@@ -122,22 +171,43 @@ const PeopleAccessPage: React.FC = () => {
     setInviting(true);
     try {
       const response = await evaosPeopleAccess.inviteMember.invoke({
-        customerId: trimmedCustomerId,
+        customerId: selectedCustomerId,
         email: inviteEmail,
         role: inviteRole,
       });
+      if (!isSelectedCustomer(selectedCustomerId)) {
+        return;
+      }
       if (!response.success || !response.data || response.data.backendEnforced !== true) {
         setInviteError(safeUiText(response.msg, 'Backend denied the invite action.'));
         return;
       }
       await loadPolicy({ resetInviteStatus: false });
+      if (!isSelectedCustomer(selectedCustomerId)) {
+        return;
+      }
       setInviteStatus(safeUiText(response.data.message, `Invite ${response.data.status}.`));
     } catch {
+      if (!isSelectedCustomer(selectedCustomerId)) {
+        return;
+      }
       setInviteError('Backend denied the invite action.');
     } finally {
       setInviting(false);
     }
-  }, [canManageMembers, customerId, hasBackendPolicyProof, inviteEmail, inviteRole, loadPolicy, policy]);
+  }, [
+    canManageMembers,
+    customerContext.selectedCustomerId,
+    hasBackendPolicyProof,
+    inviteEmail,
+    inviteRole,
+    isSelectedCustomer,
+    loadPolicy,
+    policy,
+  ]);
+
+  const selectedCustomerLabel =
+    customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
 
   return (
     <div
@@ -165,21 +235,47 @@ const PeopleAccessPage: React.FC = () => {
         </header>
 
         <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-          <label className='block text-13px font-medium leading-20px text-t-primary' htmlFor='people-customer-id'>
-            Customer context
-          </label>
-          <div className='mt-8px flex gap-8px max-[520px]:flex-col'>
-            <Input
-              id='people-customer-id'
-              value={customerId}
-              placeholder='Customer ID or slug'
-              onChange={handleCustomerChange}
-              onPressEnter={() => void loadPolicy()}
-            />
-            <Button className='shrink-0' loading={loadingPolicy} onClick={() => void loadPolicy()}>
-              Load
-            </Button>
+          <div className='flex flex-wrap items-center justify-between gap-10px'>
+            <div className='min-w-0'>
+              <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
+              <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
+                {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
+              </div>
+            </div>
+            <div className='flex shrink-0 flex-wrap gap-8px'>
+              <Button loading={customerContext.loading} onClick={() => void refreshCustomerTargets()}>
+                Refresh targets
+              </Button>
+              <Button
+                loading={loadingPolicy || customerContext.loading}
+                disabled={!customerContext.selectedCustomerId}
+                onClick={() => void loadPolicy()}
+              >
+                Load
+              </Button>
+            </div>
           </div>
+          <div className='mt-10px flex flex-wrap gap-8px'>
+            {customerContext.targets.length === 0 ? (
+              <Tag color={customerContext.error ? 'orange' : 'gray'}>
+                {customerContext.error ?? customerContext.summaryText}
+              </Tag>
+            ) : (
+              customerContext.targets.map((target) => (
+                <Button
+                  key={target.customerId}
+                  size='small'
+                  type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                  onClick={() => selectCustomer(target.customerId)}
+                >
+                  {target.displayName}
+                </Button>
+              ))
+            )}
+          </div>
+          <p className='m-0 mt-8px text-12px leading-18px text-t-secondary'>
+            {customerContext.summaryText}. People Access stays scoped to the selected customer.
+          </p>
           {policyError ? (
             <p className='m-0 mt-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>{policyError}</p>
           ) : null}
