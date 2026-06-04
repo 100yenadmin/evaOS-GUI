@@ -97,6 +97,13 @@ const VALID_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new Set([
   'linear',
   'github',
 ]);
+const PIPEDREAM_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new Set([
+  'google_workspace',
+  'slack',
+  'notion',
+  'linear',
+  'github',
+]);
 
 const PROVIDER_LABELS: Record<IEvaosProviderKey, string> = {
   openai_codex: 'Codex Desktop',
@@ -185,6 +192,11 @@ export interface EvaosDesktopSession {
 }
 
 export type EvaosBrokerFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type EvaosProviderAuthUrlOpener = (url: string) => Promise<void> | void;
+
+export interface EvaosProviderAuthOptions {
+  openAuthUrl?: EvaosProviderAuthUrlOpener;
+}
 
 export interface EvaosBrokerSessionClientOptions {
   endpoint?: string;
@@ -618,8 +630,11 @@ export class EvaosBrokerSessionClient {
     return sanitizeCompanyBrainQuery(raw, { accountId, customerId, policy });
   }
 
-  async startProviderAuth(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
-    return this.providerAction(request, 'provider_auth_start');
+  async startProviderAuth(
+    request: IEvaosProviderActionRequest,
+    options: EvaosProviderAuthOptions = {}
+  ): Promise<IEvaosProviderActionResult> {
+    return this.providerAction(request, 'provider_auth_start', options);
   }
 
   async switchProvider(request: IEvaosProviderActionRequest): Promise<IEvaosProviderActionResult> {
@@ -722,7 +737,8 @@ export class EvaosBrokerSessionClient {
 
   private async providerAction(
     request: IEvaosProviderActionRequest,
-    action: 'provider_auth_start' | 'provider_switch' | 'provider_revoke' | 'provider_mint_grant'
+    action: 'provider_auth_start' | 'provider_switch' | 'provider_revoke' | 'provider_mint_grant',
+    options: EvaosProviderAuthOptions = {}
   ): Promise<IEvaosProviderActionResult> {
     const customerId = normalizeRequiredText(
       request.customerId,
@@ -767,6 +783,10 @@ export class EvaosBrokerSessionClient {
       }),
       session
     );
+
+    if (action === 'provider_auth_start') {
+      await openProviderAuthUrlIfRequested(raw, providerKey, options.openAuthUrl);
+    }
 
     return sanitizeProviderActionResult(raw, { action, customerId, providerKey, policy });
   }
@@ -1498,6 +1518,48 @@ function sanitizeProviderActionResult(
     auditId,
     backendEnforced,
   });
+}
+
+async function openProviderAuthUrlIfRequested(
+  raw: unknown,
+  providerKey: IEvaosProviderKey,
+  openAuthUrl?: EvaosProviderAuthUrlOpener
+): Promise<void> {
+  if (!openAuthUrl || !PIPEDREAM_PROVIDER_KEYS.has(providerKey)) {
+    return;
+  }
+  const record = asRecord(raw);
+  const authUrl = providerAuthOpenUrl(record?.connect_url ?? record?.target_url);
+  if (!authUrl) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return an approved provider auth handoff URL.'
+    );
+  }
+  try {
+    await openAuthUrl(authUrl);
+  } catch {
+    throw new EvaosBrokerSessionError('broker_network_error', 'AionUi could not open the provider auth handoff page.');
+  }
+}
+
+function providerAuthOpenUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(value.trim());
+    const host = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== 'https:') {
+      return undefined;
+    }
+    if (host === 'pipedream.com' || host === 'connect.pipedream.com' || host.endsWith('.pipedream.com')) {
+      return parsed.toString();
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 function sanitizeProviderApprovalRequestResult(

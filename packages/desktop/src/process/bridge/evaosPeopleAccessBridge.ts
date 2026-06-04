@@ -35,6 +35,7 @@ import {
   getDefaultEvaosBrokerSessionClient,
   type EvaosBrokerSessionClient,
 } from '@process/services/evaosBrokerSession';
+import { shell } from 'electron';
 import {
   evaosLocalProductFixtureBusinessBrowserAction,
   evaosLocalProductFixtureBusinessBrowserStatus,
@@ -96,7 +97,7 @@ export function initEvaosProviderHubBridge(
       toBridgeResponse(() =>
         isEvaosLocalProductFixtureEnabled()
           ? evaosLocalProductFixtureProviderAction(request, 'provider_auth_start')
-          : client.startProviderAuth(request)
+          : client.startProviderAuth(request, { openAuthUrl: (url) => shell.openExternal(url) })
       )
   );
 

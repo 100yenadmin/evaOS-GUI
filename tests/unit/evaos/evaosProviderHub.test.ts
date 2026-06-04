@@ -385,6 +385,73 @@ describe('EvaosBrokerSessionClient provider hub', () => {
     );
   });
 
+  it('opens allowlisted provider auth URLs from the main process without returning raw URLs', async () => {
+    const fetchImpl = fetchMock();
+    const openAuthUrl = vi.fn(async () => undefined);
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['manage_integrations'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          provider_key: 'google_workspace',
+          status: 'pending',
+          message: 'Auth handoff prepared.',
+          connect_url: 'https://connect.pipedream.com/oauth/start?token=short-lived-provider-token#state',
+          expires_at: '2026-06-03T12:05:00.000Z',
+          source_pointer: 'broker:provider_auth_start:google_workspace',
+          audit_id: 'audit_auth_123',
+          backend_enforced: true,
+          provider_profiles: [connectedGoogleProfile],
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    const result = await client.startProviderAuth(
+      { customerId: 'david-poku', providerKey: 'google_workspace' },
+      { openAuthUrl }
+    );
+
+    expect(openAuthUrl).toHaveBeenCalledWith(
+      'https://connect.pipedream.com/oauth/start?token=short-lived-provider-token#state'
+    );
+    expect(result.authUrlSummary).toEqual({
+      scheme: 'https',
+      host: 'connect.pipedream.com',
+      path: '/oauth/start',
+      displayText: 'connect.pipedream.com/oauth/start',
+      redacted: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/short-lived-provider-token|connect_url|target_url|access_token/i);
+  });
+
+  it('fails closed instead of opening non-Pipedream provider auth URLs', async () => {
+    const fetchImpl = fetchMock();
+    const openAuthUrl = vi.fn(async () => undefined);
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['manage_integrations'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          provider_key: 'google_workspace',
+          status: 'pending',
+          connect_url: 'https://evil.example.test/oauth/start?token=short-lived-provider-token',
+          source_pointer: 'broker:provider_auth_start:google_workspace',
+          audit_id: 'audit_auth_123',
+          backend_enforced: true,
+          provider_profiles: [connectedGoogleProfile],
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.startProviderAuth({ customerId: 'david-poku', providerKey: 'google_workspace' }, { openAuthUrl })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return an approved provider auth handoff URL.',
+    });
+    expect(openAuthUrl).not.toHaveBeenCalled();
+  });
+
   it('fails closed when provider action proof lacks its own audit id', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
