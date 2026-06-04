@@ -8,6 +8,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  evaosLocalProductFixtureCompanyBrainAccount360,
+  evaosLocalProductFixtureCompanyBrainDirectory,
+  evaosLocalProductFixtureCompanyBrainQuery,
   evaosLocalProductFixtureCustomerTargets,
   evaosLocalProductFixtureProviderAction,
   evaosLocalProductFixtureProviderHub,
@@ -75,5 +78,37 @@ describe('evaOS local product fixture', () => {
     });
     expect(result.message).toContain('opaque agent access handle minted');
     expect(stringValues(result).join('\n')).not.toMatch(SECRET_PATTERN);
+  });
+
+  it('provides loaded Company Brain directory, account, query, and denial proof without secrets', () => {
+    const directory = evaosLocalProductFixtureCompanyBrainDirectory({ customerId: 'fixture-customer-acme' });
+    const account = evaosLocalProductFixtureCompanyBrainAccount360({
+      customerId: 'fixture-customer-acme',
+      accountId: 'fixture-company-renewal',
+    });
+    const query = evaosLocalProductFixtureCompanyBrainQuery({
+      customerId: 'fixture-customer-acme',
+      accountId: 'fixture-company-renewal',
+      query: 'What needs attention?',
+    });
+    const deniedQuery = evaosLocalProductFixtureCompanyBrainQuery({
+      customerId: 'fixture-customer-acme',
+      accountId: 'missing-fixture-account',
+      query: 'What needs attention?',
+    });
+    const denied = evaosLocalProductFixtureCompanyBrainDirectory({ customerId: 'wrong-customer' });
+
+    expect(directory.summaryText).toContain('LOCAL FIXTURE - NOT LIVE BETA PROOF');
+    expect(directory.accounts.map((item) => item.ingestionState)).toEqual(['ready', 'ingesting', 'error']);
+    expect(directory.sourcePointer).toBe('local-fixture:company-brain:directory');
+    expect(account.brief?.title).toBe('Renewal fixture brief');
+    expect(account.sourcePointer).toBe('local-fixture:company-brain:account-360:fixture-company-renewal');
+    expect(query.status).toBe('answered');
+    expect(query.sourcePointer).toBe('local-fixture:company-brain:query:fixture-company-renewal');
+    expect(deniedQuery.status).toBe('denied');
+    expect(deniedQuery.sourcePointer).toBe('local-fixture:company-brain:query:denied');
+    expect(denied.routeDenied).toBe(true);
+    expect(denied.routeDenialReason).toContain('wrong customer fixture');
+    expect(stringValues({ directory, account, query, deniedQuery, denied }).join('\n')).not.toMatch(SECRET_PATTERN);
   });
 });

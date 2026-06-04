@@ -103,6 +103,7 @@ describe('evaOS local shell smoke', () => {
   it('keeps local loaded product proof separate from default shell smoke', () => {
     expect(localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.map((check) => check.name)).toEqual([
       'connected-apps-loaded-fixture',
+      'company-brain-loaded-fixture',
     ]);
 
     const connectedAppsLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[0];
@@ -123,6 +124,31 @@ describe('evaOS local shell smoke', () => {
     expect(connectedAppsLoaded.forbidden).toEqual(
       expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle'])
     );
+
+    const companyBrainLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[1];
+    expect(companyBrainLoaded.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
+    expect(companyBrainLoaded.action).toBe('click-load-company-brain');
+    expect(companyBrainLoaded.expected).toEqual(
+      expect.arrayContaining([
+        'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+        'Northstar Fixture Account',
+        'Atlas Fixture Account',
+        'Source local-fixture:company-brain:directory',
+        'Renewal fixture brief',
+        'Fixture kickoff call',
+        'Synthetic ingest still running',
+        'Source local-fixture:company-brain:account-360:fixture-company-renewal',
+        'Brief source local-fixture:company-brain:brief:fixture-company-renewal',
+        'Source local-fixture:company-brain:query:fixture-company-renewal',
+        'fixture-audit-company-directory',
+      ])
+    );
+    expect(companyBrainLoaded.loadedStateRequiredMarkers).toEqual([
+      'account directory rows',
+      'account 360 panel',
+      'query answer source pointer',
+      'directory source pointer',
+    ]);
   });
 
   it('selects loaded product checks only when local fixture mode is explicitly enabled', () => {

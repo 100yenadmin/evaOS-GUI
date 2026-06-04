@@ -391,6 +391,14 @@ const CompanyBrainPage: React.FC = () => {
               <SummaryTile label='Audit' value={directory.auditId ?? directory.policyAuditId ?? '-'} />
             </section>
 
+            <EvidenceMeta
+              items={[
+                ['Source', directory.sourcePointer],
+                ['Policy audit', directory.policyAuditId],
+                ['Directory audit', directory.auditId],
+              ]}
+            />
+
             {directory.routeDenied ? (
               <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
                 <div className='flex items-start gap-10px text-[rgb(var(--warning-6))]'>
@@ -484,6 +492,16 @@ const SummaryTile: React.FC<{ label: string; value: string }> = ({ label, value 
   </div>
 );
 
+const EvidenceMeta: React.FC<{ items: Array<[string, string | undefined]> }> = ({ items }) => (
+  <div className='flex flex-wrap gap-8px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-10px'>
+    {items.map(([label, value]) => (
+      <span key={label} className='break-words text-12px leading-18px text-t-secondary'>
+        {label} {safeUiText(value, '-')}
+      </span>
+    ))}
+  </div>
+);
+
 const AccountRow: React.FC<{
   account: IEvaosCompanyBrainAccountSummaryView;
   selected: boolean;
@@ -537,6 +555,9 @@ const Account360Panel: React.FC<{
         <p className='m-0 mt-4px break-words text-13px leading-20px text-t-secondary'>
           Audit {account360.auditId ?? account360.policyAuditId ?? '-'}
         </p>
+        <p className='m-0 mt-2px break-words text-12px leading-18px text-t-secondary'>
+          Source {safeUiText(account360.sourcePointer, '-')}
+        </p>
       </div>
     </div>
 
@@ -546,6 +567,9 @@ const Account360Panel: React.FC<{
       </h3>
       <p className='m-0 mt-6px whitespace-pre-wrap text-13px leading-20px text-t-secondary'>
         {account360.brief?.summary ?? 'No brief summary returned.'}
+      </p>
+      <p className='m-0 mt-6px break-words text-12px leading-18px text-t-secondary'>
+        Brief source {safeUiText(account360.brief?.sourcePointer, '-')}
       </p>
     </section>
 
@@ -620,6 +644,9 @@ const Account360Panel: React.FC<{
           <div className='flex flex-wrap items-center gap-8px'>
             <Tag color='green'>{queryResult.status}</Tag>
             <span className='text-12px leading-18px text-t-secondary'>Audit {queryResult.auditId ?? '-'}</span>
+            <span className='text-12px leading-18px text-t-secondary'>
+              Source {safeUiText(queryResult.sourcePointer, '-')}
+            </span>
           </div>
           <p className='m-0 mt-8px whitespace-pre-wrap text-13px leading-20px text-t-primary'>
             {queryResult.answer ?? 'No answer returned.'}

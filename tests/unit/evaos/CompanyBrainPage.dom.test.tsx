@@ -234,11 +234,15 @@ describe('CompanyBrainPage', () => {
 
     expect(await screen.findByText('Acme Co')).toBeInTheDocument();
     expect(screen.getByText('Google Drive ingesting 21 source files')).toBeInTheDocument();
+    expect(screen.getByText('Source broker:company_brain_directory:david-poku')).toBeInTheDocument();
+    expect(screen.getByText('Policy audit audit_policy_123')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^view$/i }));
     expect(await screen.findByText('Renewal account')).toBeInTheDocument();
     expect(screen.getByText('Renewal call')).toBeInTheDocument();
     expect(screen.getByText('Drive connector still ingesting')).toBeInTheDocument();
+    expect(screen.getByText('Source broker:company_brain_account_360:account_acme')).toBeInTheDocument();
+    expect(screen.getByText('Brief source broker:company_brain_brief:account_acme')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Ask Company Brain'), 'What changed after the renewal call?');
     await user.click(screen.getByRole('button', { name: /^ask$/i }));
@@ -252,6 +256,7 @@ describe('CompanyBrainPage', () => {
     });
     expect(await screen.findByText('Acme asked for rollout options after the renewal call.')).toBeInTheDocument();
     expect(screen.getByText('Audit audit_query_123')).toBeInTheDocument();
+    expect(screen.getByText('Source broker:company_brain_query:account_acme')).toBeInTheDocument();
     expect(container.textContent).not.toMatch(
       /\beds_[A-Za-z0-9_-]+\b|access_token|refresh_token|desktop_session|raw_prompt|raw_embedding_text|Bearer/i
     );

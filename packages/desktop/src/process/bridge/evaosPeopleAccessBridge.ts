@@ -36,6 +36,9 @@ import {
   type EvaosBrokerSessionClient,
 } from '@process/services/evaosBrokerSession';
 import {
+  evaosLocalProductFixtureCompanyBrainAccount360,
+  evaosLocalProductFixtureCompanyBrainDirectory,
+  evaosLocalProductFixtureCompanyBrainQuery,
   evaosLocalProductFixtureProviderAction,
   evaosLocalProductFixtureProviderHub,
   isEvaosLocalProductFixtureEnabled,
@@ -161,17 +164,29 @@ export function initEvaosCompanyBrainBridge(
 ): void {
   ipcBridge.evaosCompanyBrain.getDirectory.provider(
     async (request: IEvaosCompanyBrainDirectoryRequest): Promise<BridgeResponse<IEvaosCompanyBrainDirectoryView>> =>
-      toBridgeResponse(() => client.companyBrainDirectory(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureCompanyBrainDirectory(request)
+          : client.companyBrainDirectory(request)
+      )
   );
 
   ipcBridge.evaosCompanyBrain.getAccount360.provider(
     async (request: IEvaosCompanyBrainAccountRequest): Promise<BridgeResponse<IEvaosCompanyBrainAccount360View>> =>
-      toBridgeResponse(() => client.companyBrainAccount360(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureCompanyBrainAccount360(request)
+          : client.companyBrainAccount360(request)
+      )
   );
 
   ipcBridge.evaosCompanyBrain.query.provider(
     async (request: IEvaosCompanyBrainQueryRequest): Promise<BridgeResponse<IEvaosCompanyBrainQueryResult>> =>
-      toBridgeResponse(() => client.companyBrainQuery(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureCompanyBrainQuery(request)
+          : client.companyBrainQuery(request)
+      )
   );
 }
 
