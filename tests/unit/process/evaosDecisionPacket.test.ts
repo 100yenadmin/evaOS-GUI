@@ -22,4 +22,15 @@ describe('evaOS decision packet', () => {
     expect(decisionPacket).not.toContain('Root stack PR #15 still requires review');
     expect(decisionPacket).not.toContain('The stack is not merged');
   });
+
+  it('requires a local interactive shell smoke before adding more feature slices', () => {
+    const decisionPacket = fs.readFileSync(path.join(repoRoot, 'docs/evaos/95-confidence-decision-packet.md'), 'utf8');
+
+    expect(decisionPacket).toContain('## Local Shell Smoke Gate');
+    expect(decisionPacket).toContain('Before adding new feature slices');
+    expect(decisionPacket).toContain(
+      'capture screenshots for Mission Control, People Access, Approval Center, Connected Apps, Business Browser, Company Brain, and Agent Settings'
+    );
+    expect(decisionPacket).toContain('Staging fixtures only block live backend canaries');
+  });
 });

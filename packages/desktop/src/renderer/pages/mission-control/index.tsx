@@ -66,8 +66,8 @@ const RUNTIME_TARGETS: RuntimeTarget[] = [
 
 const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
   {
-    label: 'Stack approval',
-    detail: 'Root PR #15 needs independent writer approval before the AionUi evaOS stack can land.',
+    label: 'Local shell smoke',
+    detail: 'Start AionUi locally and screenshot the beta routes before new feature slices.',
   },
   {
     label: 'Live staging canaries',
