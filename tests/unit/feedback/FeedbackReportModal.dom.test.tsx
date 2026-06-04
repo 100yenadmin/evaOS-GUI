@@ -58,12 +58,14 @@ describe('FeedbackReportModal — prefill', () => {
   beforeEach(() => {
     // Ensure no leftover global electronAPI from other tests interferes.
     (window as unknown as { electronAPI?: unknown }).electronAPI = undefined;
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     sentryMocks.setTag.mockClear();
     sentryMocks.captureEvent.mockClear();
     sentryMocks.withScope.mockClear();
   });
 
   afterEach(() => {
+    delete process.env.SENTRY_DSN;
     cleanup();
   });
 

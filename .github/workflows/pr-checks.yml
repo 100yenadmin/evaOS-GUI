@@ -14,7 +14,7 @@ on:
         default: false
   pull_request:
     types: [opened, synchronize, edited, closed, ready_for_review]
-    branches: [main, dev]
+    branches: [main, dev, evaos/dev]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -448,13 +448,13 @@ jobs:
 
           case "${{ matrix.platform }}" in
             windows-*)
-              ls out/*.exe out/*latest*.yml >/dev/null
+              ls out/*.exe >/dev/null
               ;;
             macos-*)
-              ls out/*.dmg out/*.zip out/*latest*.yml >/dev/null
+              ls out/*.dmg out/*.zip >/dev/null
               ;;
             linux)
-              ls out/*.deb out/*latest*.yml >/dev/null
+              ls out/*.deb >/dev/null
               ;;
           esac
 
@@ -466,23 +466,63 @@ jobs:
           Write-Host "SMOKE INSTALL: windows-x64"
           Write-Host "=========================================="
 
-          $installer = Get-ChildItem -Path out -Filter "AionUi-*-win-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $installer = Get-ChildItem -Path out -Filter "evaOS Workbench Beta-*-win-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $installer) {
             throw "No Windows installer found in out/"
           }
 
           Write-Host "Using installer: $($installer.FullName)"
-          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait -NoNewWindow
+          $installerProcess = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru -NoNewWindow
+          if (-not $installerProcess.WaitForExit(180000)) {
+            Write-Host "Installer did not exit within 180 seconds. Recent installer-related processes:"
+            Get-Process -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProcessName -match 'EvaOSWorkbenchBeta|AionUi|electron|nsis' } |
+              Select-Object Id, ProcessName, StartTime, Path |
+              Format-Table -AutoSize
+            Stop-Process -Id $installerProcess.Id -Force -ErrorAction SilentlyContinue
+            throw "Silent installer did not exit within 180 seconds"
+          }
+
+          if ($installerProcess.ExitCode -ne 0) {
+            throw "Silent installer exited with code $($installerProcess.ExitCode)"
+          }
 
           $candidates = @(
-            "$env:LOCALAPPDATA\\Programs\\AionUi\\AionUi.exe",
-            "$env:ProgramFiles\\AionUi\\AionUi.exe",
-            "$env:ProgramFiles(x86)\\AionUi\\AionUi.exe"
+            "$env:LOCALAPPDATA\\Programs\\evaOS Workbench Beta\\EvaOSWorkbenchBeta.exe",
+            "$env:ProgramFiles\\evaOS Workbench Beta\\EvaOSWorkbenchBeta.exe",
+            "${env:ProgramFiles(x86)}\\evaOS Workbench Beta\\EvaOSWorkbenchBeta.exe"
           )
 
           $installedExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $installedExe) {
-            throw "Silent install finished but app executable not found in expected locations"
+            $searchRoots = @(
+              "$env:LOCALAPPDATA\\Programs",
+              "$env:ProgramFiles",
+              "${env:ProgramFiles(x86)}"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+
+            Write-Host "Expected paths were not present. Checking immediate install-root directories..."
+            $candidateDirs = Get-ChildItem -Path $searchRoots -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match 'eva|EvaOS|AionUi|Workbench' } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 20
+
+            foreach ($dir in $candidateDirs) {
+              $candidateExe = Join-Path $dir.FullName "EvaOSWorkbenchBeta.exe"
+              if (Test-Path $candidateExe) {
+                $installedExe = $candidateExe
+                break
+              }
+            }
+          }
+
+          if (-not $installedExe) {
+            Write-Host "Recent immediate entries under standard install roots:"
+            Get-ChildItem -Path $searchRoots -Directory -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 20 Name, FullName, LastWriteTime |
+              Format-Table -AutoSize
+            throw "Silent install finished but app executable not found in expected locations or standard install roots"
           }
 
           Write-Host "Installed executable: $installedExe"
@@ -492,7 +532,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Skipping runtime install smoke for windows-arm64: runner is windows-x64, cannot reliably execute arm64 installer."
-          Get-ChildItem -Path out -Filter "AionUi-*-win-*.exe" | Format-Table Name, Length
+          Get-ChildItem -Path out -Filter "evaOS Workbench Beta-*-win-*.exe" | Format-Table Name, Length
 
       - name: Install smoke test (macOS arm64)
         if: matrix.platform == 'macos-arm64'
@@ -515,7 +555,7 @@ jobs:
           hdiutil detach "$MOUNT_POINT"
 
           APP_PATH=$(ls -d "$APP_DIR"/*.app | head -n 1)
-          APP_BIN="$APP_PATH/Contents/MacOS/AionUi"
+          APP_BIN="$APP_PATH/Contents/MacOS/EvaOSWorkbenchBeta"
 
           test -x "$APP_BIN"
           "$APP_BIN" --version || true
@@ -540,7 +580,7 @@ jobs:
           PKG_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
           sudo dpkg -i "$DEB_FILE" || sudo apt-get install -f -y
 
-          INSTALLED_BIN=$(dpkg -L "$PKG_NAME" | grep -Ei '/(bin|opt)/.*(aionui)$' | head -n 1 || true)
+          INSTALLED_BIN=$(dpkg -L "$PKG_NAME" | grep -Ei '/(bin|opt)/.*(EvaOSWorkbenchBeta|evaos-workbench-beta|evaosworkbenchbeta)$' | head -n 1 || true)
           if [ -z "$INSTALLED_BIN" ]; then
             echo "Package files:"
             dpkg -L "$PKG_NAME" | head -n 50
@@ -568,8 +608,11 @@ jobs:
         shell: bash
         env:
           MOCK_VERSION: '1.0.0'
+          INCLUDE_WEB_CLI_ASSETS: '0'
         run: bash scripts/prepare-release-assets.sh build-artifacts release-assets
 
       - name: Validate script output
         shell: bash
+        env:
+          INCLUDE_WEB_CLI_ASSETS: '0'
         run: bash scripts/verify-release-assets.sh release-assets

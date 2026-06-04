@@ -1,14 +1,7 @@
-name: Distribute Release Assets
+name: Distribute evaOS Beta Release Assets
 
-# Triggered after a GitHub Release is officially published.
-# Mirrors installer assets to the configured distribution endpoint for external download.
-#
-# Why `published` (not `released`)?
-#   - `released` is supposed to fire when a non-prerelease release is published,
-#     but GitHub sometimes only emits `published` (not `released`) when a pre-existing
-#     draft is publicly released, causing the workflow to be silently skipped.
-#   - `published` reliably fires on every draft → public transition, including
-#     prereleases. The `if` guard on the job filters out prereleases explicitly.
+# evaOS beta fork: manual-only distribution. This workflow must never mirror
+# upstream AionUi assets or historical upstream tags.
 #
 # All credentials / identifiers are read from repository secrets:
 #   - AWS_REGION
@@ -17,14 +10,16 @@ name: Distribute Release Assets
 # Do NOT hardcode these values in this file.
 
 on:
-  release:
-    types: [published]
   # Manual trigger for smoke testing or for retrying a missed release:
   # pick any existing release tag to re-run the distribution against.
   workflow_dispatch:
     inputs:
+      beta_distribution_ack:
+        description: 'Type evaos-beta to acknowledge this distribution workflow is manual-only on the evaOS beta fork.'
+        required: true
+        type: string
       tag:
-        description: 'Existing release tag to redistribute (e.g. v1.9.21)'
+        description: 'Existing evaOS beta release tag to distribute (must start with evaos-beta-)'
         required: true
         type: string
 
@@ -36,8 +31,7 @@ jobs:
   distribute:
     name: Distribute release assets
     runs-on: ubuntu-latest
-    # Skip prereleases: manual dispatch always runs, automatic event runs only when not a prerelease.
-    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    if: github.event.inputs.beta_distribution_ack == 'evaos-beta'
     steps:
       - name: Extract version from tag
         id: version
@@ -50,7 +44,16 @@ jobs:
             echo "::error::No tag provided (event did not supply one)."
             exit 1
           fi
-          VERSION="${TAG#v}"
+          if [[ "$TAG" != evaos-beta-* ]]; then
+            echo "::error::Refusing to distribute non-evaOS beta tag: $TAG"
+            exit 1
+          fi
+          VERSION="${TAG#evaos-beta-}"
+          VERSION="${VERSION#v}"
+          if [[ "$VERSION" != *evaos-beta* ]]; then
+            echo "::error::Refusing to distribute tag without evaos-beta version marker: $TAG"
+            exit 1
+          fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Tag: $TAG / Version: $VERSION"
@@ -90,6 +93,34 @@ jobs:
             --pattern "*.zip"
           echo "Downloaded files:"
           ls -la dist
+
+      - name: Validate evaOS beta asset identity
+        run: |
+          shopt -s nullglob
+          files=(dist/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No release assets downloaded."
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            base="$(basename "$file")"
+            case "$base" in
+              *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
+                echo "::error::Refusing to distribute upstream AionUi asset: $base"
+                exit 1
+                ;;
+            esac
+
+            case "$base" in
+              *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+                ;;
+              *)
+                echo "::error::Refusing to distribute asset without evaOS beta identity marker: $base"
+                exit 1
+                ;;
+            esac
+          done
 
       - name: Upload assets
         env:

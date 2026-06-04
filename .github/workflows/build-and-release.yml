@@ -1,5 +1,9 @@
 name: Build and Release
 
+concurrency:
+  group: build-and-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: read
@@ -7,10 +11,12 @@ permissions:
   actions: write
 
 on:
-  push:
-    branches: [dev]
-    tags:
-      - '*'
+  workflow_dispatch:
+    inputs:
+      beta_release_ack:
+        description: 'Type evaos-beta to acknowledge this workflow is manual-only on the evaOS beta fork.'
+        required: true
+        type: string
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -20,7 +26,7 @@ jobs:
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/dev' || (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-dev-'))
+    if: github.event.inputs.beta_release_ack == 'evaos-beta'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -57,8 +63,9 @@ jobs:
     name: Build Pipeline
     uses: ./.github/workflows/_build-reusable.yml
     needs: code-quality
-    # dev 分支或正式 tag 触发构建（排除 -dev- tag，避免重复构建）
-    if: needs.code-quality.result == 'success' && (github.ref == 'refs/heads/dev' || (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-dev-')))
+    # evaOS beta fork: release builds are manual-only until issue #12 creates
+    # an audited beta release feed. Do not trigger from branch or tag pushes.
+    if: needs.code-quality.result == 'success' && github.event.inputs.beta_release_ack == 'evaos-beta'
     with:
       skip_code_quality: true
       matrix: >-
@@ -76,8 +83,9 @@ jobs:
     name: Pack Web CLI
     uses: ./.github/workflows/pack-web-cli.yml
     needs: code-quality
-    # 与桌面构建同频触发：dev 分支或正式 tag（排除 -dev- tag）
-    if: needs.code-quality.result == 'success' && (github.ref == 'refs/heads/dev' || (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-dev-')))
+    # evaOS beta fork: release builds are manual-only until issue #12 creates
+    # an audited beta release feed. Do not trigger from branch or tag pushes.
+    if: needs.code-quality.result == 'success' && github.event.inputs.beta_release_ack == 'evaos-beta'
     with:
       ref: ''
       append_commit_hash: false
@@ -93,7 +101,7 @@ jobs:
     if: |
       failure() &&
       github.run_attempt == 1 &&
-      (github.event_name == 'push' || github.event_name == 'schedule')
+      github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Log retry information
@@ -140,12 +148,13 @@ jobs:
             exit 1
           fi
 
-  # 自动创建tag（仅 dev 分支推送时）
+  # evaOS beta fork: tag creation is disabled until issue #12 creates an
+  # audited beta release process.
   create-tag:
     name: Create Tag from Branch
     runs-on: ubuntu-latest
     needs: [build-pipeline]
-    if: success() && github.ref == 'refs/heads/dev'
+    if: vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'
     outputs:
       tag_name: ${{ steps.create_tag.outputs.tag_name }}
       is_dev: ${{ steps.create_tag.outputs.is_dev }}
@@ -176,16 +185,30 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           COMMIT_SHORT=$(git rev-parse --short HEAD)
           BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          APPROVED_RELEASE_BRANCH="${EVAOS_BETA_RELEASE_BRANCH:-}"
+
+          make_beta_tag() {
+            local version="$1"
+            local suffix="${2:-}"
+            if [[ "$version" != *evaos-beta* ]]; then
+              version="${version}-evaos-beta"
+            fi
+            echo "evaos-beta-v${version}${suffix}"
+          }
 
           # 根据分支确定 tag 格式
-          if [ "$BRANCH_NAME" = "dev" ]; then
-            TAG_NAME="v${VERSION}-dev-${COMMIT_SHORT}"
+          if [ "$BRANCH_NAME" = "dev" ] || [ "$BRANCH_NAME" = "evaos/dev" ]; then
+            TAG_NAME="$(make_beta_tag "$VERSION" "-dev-${COMMIT_SHORT}")"
             IS_DEV="true"
             echo "🔧 Development release: $TAG_NAME"
-          else
-            TAG_NAME="v$VERSION"
+          elif [ -n "$APPROVED_RELEASE_BRANCH" ] && [ "$BRANCH_NAME" = "$APPROVED_RELEASE_BRANCH" ]; then
+            TAG_NAME="$(make_beta_tag "$VERSION")"
             IS_DEV="false"
             echo "🚀 Production release: $TAG_NAME"
+          else
+            echo "❌ Refusing to create beta release tag from unapproved branch: $BRANCH_NAME"
+            echo "Set EVAOS_BETA_RELEASE_BRANCH to the audited issue #12 release branch before enabling production beta tags."
+            exit 1
           fi
 
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
@@ -221,12 +244,12 @@ jobs:
 
                 # 获取新的 commit ID
                 COMMIT_SHORT=$(git rev-parse --short HEAD)
-                TAG_NAME="v${NEW_VERSION}-${COMMIT_SHORT}"
+                TAG_NAME="$(make_beta_tag "$NEW_VERSION" "-${COMMIT_SHORT}")"
 
                 echo "🚀 New tag with updated version: $TAG_NAME"
                 echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
               else
-                TAG_NAME="v${VERSION}-${COMMIT_SHORT}"
+                TAG_NAME="$(make_beta_tag "$VERSION" "-${COMMIT_SHORT}")"
                 echo "⚠️ Fallback: creating tag with commit ID: $TAG_NAME"
                 echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
               fi
@@ -249,6 +272,7 @@ jobs:
           echo "✅ Successfully created and pushed tag: $TAG_NAME"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          EVAOS_BETA_RELEASE_BRANCH: ${{ vars.EVAOS_BETA_RELEASE_BRANCH }}
 
   # 发布到 GitHub Releases
   release:
@@ -256,7 +280,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-pipeline, create-tag, pack-web-cli]
     # Tag 推送时 create-tag 会被跳过，所以需要检查两种情况（排除 -dev- tag 避免重复）
-    if: always() && needs.build-pipeline.result == 'success' && needs.pack-web-cli.result == 'success' && (needs.create-tag.result == 'success' || (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-dev-')))
+    if: vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'
     # dev 分支使用 dev-release 环境，正式 tag 使用 release 环境
     environment: ${{ needs.create-tag.outputs.is_dev == 'true' && 'dev-release' || 'release' }}
 
@@ -290,6 +314,8 @@ jobs:
 
       - name: Prepare release assets (normalize updater metadata)
         shell: bash
+        env:
+          INCLUDE_WEB_CLI_ASSETS: '0'
         run: bash scripts/prepare-release-assets.sh build-artifacts release-assets
 
       - name: Create Release
@@ -304,9 +330,6 @@ jobs:
             release-assets/**/*.deb
             release-assets/**/*.zip
             release-assets/**/*.yml
-            release-assets/**/*.tar.gz
-            release-assets/**/*.sha256
-            release-assets/install-web.sh
           generate_release_notes: true
           draft: true
           prerelease: ${{ steps.version.outputs.is_dev == 'true' || contains(steps.version.outputs.tag_name, 'beta') || contains(steps.version.outputs.tag_name, 'alpha') || contains(steps.version.outputs.tag_name, 'rc') }}

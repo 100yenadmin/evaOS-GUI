@@ -3,7 +3,11 @@
 set -euo pipefail
 
 OUTPUT_DIR="${1:-release-assets}"
+INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
+MOCK_VERSION="${MOCK_VERSION:-1.0.0}"
+MOCK_PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench Beta}"
 ERRORS=0
+shopt -s nullglob
 
 for f in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
@@ -65,7 +69,13 @@ for f in latest-win-arm64.yml latest-arm64-mac.yml; do
   fi
 done
 
-for f in AionUi-1.0.0-win-x64.exe AionUi-1.0.0-win-arm64.exe AionUi-1.0.0-mac-x64.dmg AionUi-1.0.0-mac-arm64.dmg AionUi-1.0.0.deb AionUi-1.0.0-arm64.deb; do
+for f in \
+  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-x64.exe" \
+  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-arm64.exe" \
+  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.dmg" \
+  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.dmg" \
+  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-x64.deb" \
+  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-arm64.deb"; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
     echo "FAIL: missing distributable: $f"
     ERRORS=$((ERRORS + 1))
@@ -74,24 +84,38 @@ for f in AionUi-1.0.0-win-x64.exe AionUi-1.0.0-win-arm64.exe AionUi-1.0.0-mac-x6
   fi
 done
 
-# Web-CLI tarballs + checksums
-for plat in darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64; do
-  tarball="aionui-web-1.0.0-${plat}.tar.gz"
-  for f in "$tarball" "${tarball}.sha256"; do
-    if [ ! -f "$OUTPUT_DIR/$f" ]; then
-      echo "FAIL: missing web-cli asset: $f"
-      ERRORS=$((ERRORS + 1))
-    else
-      echo "PASS: $f exists"
-    fi
+if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
+  # Web-CLI tarballs + checksums
+  for plat in darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64; do
+    tarball="aionui-web-${MOCK_VERSION}-${plat}.tar.gz"
+    for f in "$tarball" "${tarball}.sha256"; do
+      if [ ! -f "$OUTPUT_DIR/$f" ]; then
+        echo "FAIL: missing web-cli asset: $f"
+        ERRORS=$((ERRORS + 1))
+      else
+        echo "PASS: $f exists"
+      fi
+    done
   done
-done
 
-if [ ! -f "$OUTPUT_DIR/install-web.sh" ]; then
-  echo "FAIL: missing install-web.sh"
-  ERRORS=$((ERRORS + 1))
+  if [ ! -f "$OUTPUT_DIR/install-web.sh" ]; then
+    echo "FAIL: missing install-web.sh"
+    ERRORS=$((ERRORS + 1))
+  else
+    echo "PASS: install-web.sh exists"
+  fi
 else
-  echo "PASS: install-web.sh exists"
+  WEB_CLI_ASSETS=("$OUTPUT_DIR"/aionui-web-*.tar.gz "$OUTPUT_DIR"/aionui-web-*.tar.gz.sha256)
+  if [ -f "$OUTPUT_DIR/install-web.sh" ]; then
+    WEB_CLI_ASSETS+=("$OUTPUT_DIR/install-web.sh")
+  fi
+  if [ "${#WEB_CLI_ASSETS[@]}" -gt 0 ]; then
+    echo "FAIL: web-cli assets are excluded for beta releases but were found:"
+    printf '  %s\n' "${WEB_CLI_ASSETS[@]}"
+    ERRORS=$((ERRORS + ${#WEB_CLI_ASSETS[@]}))
+  else
+    echo "PASS: web-cli assets are excluded"
+  fi
 fi
 
 echo ""

@@ -13,6 +13,7 @@ import { getOrCreateAnalyticsId } from './process/utils/analyticsId';
 import { readAutoUpdateDiagnostics } from './process/services/autoUpdateDiagnostics';
 import { collectBackendInstallDiagnostics } from './process/startup/backendInstallDiagnostics';
 import { classifyBackendStartupFailure } from './process/startup/backendStartupFailure';
+import { shouldAttachSentryDeviceId, shouldDisableSentry, shouldSendStartupLogReport } from './process/evaosBetaSafety';
 
 // 抑制 Chromium GPU 崩溃噪声（参见 ELECTRON-9A / ELECTRON-9D）：
 // 自愈逻辑在 gpuRecovery 中处理，事件流量已无价值。
@@ -96,8 +97,13 @@ function isBackendStartupSecondaryEvent(event: { tags?: Record<string, unknown> 
 }
 
 export function initSentry(): void {
+  if (shouldDisableSentry()) {
+    console.info('[sentry] disabled by environment or evaOS beta safety policy');
+    return;
+  }
+
   Sentry.init({
-    dsn: process.env.SENTRY_DSN,
+    dsn: process.env.SENTRY_DSN!,
     environment: app.isPackaged ? 'production' : 'development',
     beforeSend(event) {
       const haystacks = collectEventSearchText(event);
@@ -122,6 +128,11 @@ export function initSentry(): void {
  * a stable device identifier.
  */
 export function setSentryDeviceId(): void {
+  if (!shouldAttachSentryDeviceId()) {
+    console.info('[sentry] persistent device id disabled by evaOS beta safety policy');
+    return;
+  }
+
   const id = getOrCreateAnalyticsId();
   Sentry.setUser({ id });
   Sentry.setTag('device_id', id);
@@ -491,6 +502,11 @@ async function runStartupLogReport(): Promise<void> {
  * retries.
  */
 export function scheduleStartupLogReport(window: BrowserWindow): void {
+  if (!shouldSendStartupLogReport()) {
+    console.info('[sentry] startup log report disabled by evaOS beta safety policy');
+    return;
+  }
+
   const trigger = () => {
     setTimeout(() => {
       runStartupLogReport().catch((err) => {

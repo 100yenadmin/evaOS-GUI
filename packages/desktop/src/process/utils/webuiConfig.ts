@@ -12,6 +12,7 @@ import { getSystemDir } from './initStorage';
 import { httpRequest } from '@/common/adapter/httpBridge';
 import { startWebHost, type WebHostHandle } from '@aionui/web-host';
 import { getDataPath } from './utils';
+import { shouldAllowRemoteWebUI } from '../evaosBetaSafety';
 
 const WEBUI_CONFIG_FILE = 'webui.config.json';
 const DESKTOP_WEBUI_ENABLED_KEY = 'webui.desktop.enabled';
@@ -151,6 +152,10 @@ export const resolveWebUIPort = (
 };
 
 export const resolveRemoteAccess = (config: WebUIUserConfig, isRemoteMode: boolean): boolean => {
+  if (!shouldAllowRemoteWebUI()) {
+    return false;
+  }
+
   const envRemote = parseBooleanEnv(process.env.AIONUI_ALLOW_REMOTE || process.env.AIONUI_REMOTE);
   const hostHint = process.env.AIONUI_HOST?.trim();
   const hostRequestsRemote = hostHint ? ['0.0.0.0', '::', '::0'].includes(hostHint) : false;
@@ -221,7 +226,7 @@ export async function startDesktopWebUI(opts: { port?: number; allowRemote?: boo
     await stopDesktopWebUI();
   }
 
-  const allowRemote = opts.allowRemote === true;
+  const allowRemote = shouldAllowRemoteWebUI() && opts.allowRemote === true;
   const preferredPort = parsePortValue(opts.port) ?? DEFAULT_WEBUI_PORT;
   const sysDir = getSystemDir();
 
@@ -318,11 +323,12 @@ export function getDesktopWebUIStatus(): {
 export const restoreDesktopWebUIFromPreferences = async (): Promise<void> => {
   const { enabled, allowRemote, port } = await readWebUIDesktopPreferences();
   if (!enabled) return;
+  const safeAllowRemote = shouldAllowRemoteWebUI() && allowRemote;
 
   const preferredPort = port ?? DEFAULT_WEBUI_PORT;
 
   try {
-    const handle = await startDesktopWebUI({ port: preferredPort, allowRemote });
+    const handle = await startDesktopWebUI({ port: preferredPort, allowRemote: safeAllowRemote });
     console.log(
       `[WebUI] Auto-restored from desktop preferences (port=${handle.port}, allowRemote=${handle.allowRemote})`
     );

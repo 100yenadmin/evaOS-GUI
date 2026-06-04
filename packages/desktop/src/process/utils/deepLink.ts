@@ -6,14 +6,15 @@
 
 import type { BrowserWindow } from 'electron';
 import { ipcBridge } from '@/common';
+import { EVAOS_BETA_IDENTITY, isEvaosBetaBuild } from '../evaosBetaSafety';
 
-export const PROTOCOL_SCHEME = 'aionui';
+export const PROTOCOL_SCHEME = isEvaosBetaBuild() ? EVAOS_BETA_IDENTITY.protocolScheme : 'aionui';
 
 /**
- * Parse an aionui:// URL into action and params.
+ * Parse an app deep-link URL into action and params.
  * Supports two formats:
- *   1. aionui://add-provider?base_url=xxx&api_key=xxx
- *   2. aionui://provider/add?v=1&data=<base64 JSON>  (one-api / new-api style)
+ *   1. <scheme>://add-provider?base_url=xxx&api_key=xxx
+ *   2. <scheme>://provider/add?v=1&data=<base64 JSON>  (one-api / new-api style)
  */
 export const parseDeepLinkUrl = (url: string): { action: string; params: Record<string, string> } | null => {
   try {

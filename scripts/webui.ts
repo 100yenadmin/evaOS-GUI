@@ -26,6 +26,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { startWebHost } from '@aionui/web-host';
 import { openBrowserUrl, shouldAutoOpenBrowser } from '../packages/web-cli/src/browser.js';
+import { shouldAllowRemoteWebUI } from '../packages/desktop/src/process/evaosBetaSafety';
 
 // Aligned with packages/desktop/src/common/config/constants.ts WEBUI_DEFAULT_PORT.
 const DEFAULT_PORT = (() => {
@@ -106,6 +107,7 @@ function resolvePort(): number {
 }
 
 function resolveAllowRemote(): boolean {
+  if (!shouldAllowRemoteWebUI()) return false;
   if (has('--remote')) return true;
   const host = process.env.AIONUI_HOST?.trim();
   if (host && ['0.0.0.0', '::', '::0'].includes(host)) return true;
@@ -204,6 +206,9 @@ async function main(): Promise<void> {
   runPackageIfNeeded();
   const port = resolvePort();
   const allowRemote = resolveAllowRemote();
+  if (!allowRemote && (has('--remote') || parseBoolean(process.env.AIONUI_ALLOW_REMOTE ?? process.env.AIONUI_REMOTE))) {
+    console.warn('[webui] remote access disabled by evaOS beta safety policy');
+  }
   const autoOpenBrowser = shouldAutoOpenBrowser({
     allowRemote,
     env: process.env,

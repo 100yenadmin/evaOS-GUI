@@ -6,6 +6,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import UnoCSS from 'unocss/vite';
 import unoConfig from '../../uno.config.ts';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import { shouldDisableSentry } from './src/process/evaosBetaSafety';
 
 // Read the real AionUi version from the repo-root package.json.
 // `packages/desktop/package.json` is a workspace-internal placeholder pinned
@@ -13,6 +14,19 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 const rootPackageJson = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8')) as {
   version: string;
 };
+
+function getSafeSentryEnv(): { dsn: string; authToken: string; org: string | undefined; project: string | undefined } {
+  if (shouldDisableSentry(process.env)) {
+    return { dsn: '', authToken: '', org: undefined, project: undefined };
+  }
+
+  return {
+    dsn: process.env.SENTRY_DSN ?? '',
+    authToken: process.env.SENTRY_AUTH_TOKEN ?? '',
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+  };
+}
 
 // Build builtin MCP servers after main process bundle so they survive out/main/ cleanup.
 function buildMcpServersPlugin() {
@@ -67,12 +81,13 @@ const mainAliases = {
 
 export default defineConfig(({ mode }) => {
   const isDevelopment = mode === 'development';
-  const enableSentrySourceMaps = !isDevelopment && !!process.env.SENTRY_AUTH_TOKEN;
+  const safeSentryEnv = getSafeSentryEnv();
+  const enableSentrySourceMaps = !isDevelopment && !!safeSentryEnv.authToken;
 
   const sentryPluginOptions = {
-    org: process.env.SENTRY_ORG,
-    project: process.env.SENTRY_PROJECT,
-    authToken: process.env.SENTRY_AUTH_TOKEN,
+    org: safeSentryEnv.org,
+    project: safeSentryEnv.project,
+    authToken: safeSentryEnv.authToken,
     sourcemaps: {
       filesToDeleteAfterUpload: ['./out/**/*.map'],
       rewriteSources: (source: string) => {
@@ -142,7 +157,7 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.NODE_ENV': JSON.stringify(mode),
         'process.env.env': JSON.stringify(process.env.env),
-        'process.env.SENTRY_DSN': JSON.stringify(process.env.SENTRY_DSN ?? ''),
+        'process.env.SENTRY_DSN': JSON.stringify(safeSentryEnv.dsn),
       },
     },
 
@@ -271,7 +286,7 @@ export default defineConfig(({ mode }) => {
         'process.env.NODE_ENV': JSON.stringify(mode),
         'process.env.env': JSON.stringify(process.env.env),
         'process.env.AIONUI_MULTI_INSTANCE': JSON.stringify(process.env.AIONUI_MULTI_INSTANCE ?? ''),
-        'process.env.SENTRY_DSN': JSON.stringify(process.env.SENTRY_DSN ?? ''),
+        'process.env.SENTRY_DSN': JSON.stringify(safeSentryEnv.dsn),
         // Inject the real AionUi version (root package.json) so renderer code
         // can show it without importing packages/desktop/package.json, which is
         // a workspace-internal placeholder frozen at "0.0.0".

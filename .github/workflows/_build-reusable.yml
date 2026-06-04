@@ -329,12 +329,12 @@ jobs:
             Write-Host "Windows build completed successfully"
           } catch {
             $BuildFailed = $true
-            Write-Warning "${{ matrix.platform }} build failed but will not block the workflow"
-            Write-Host "::notice title=Windows build skipped::${{ matrix.platform }} build failed (see logs above) but workflow is allowed to continue."
+            Write-Host "::error title=Windows build failed::${{ matrix.platform }} build failed; failing the reusable build job."
           }
 
           if ($BuildFailed) {
             "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 1
           } else {
             "result=success" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
@@ -366,11 +366,11 @@ jobs:
           GYP_MSVS_VERSION: 2022
           WindowsTargetPlatformVersion: 10.0.19041.0
           _WIN32_WINNT: 0x0A00
-          # Sentry DSN (injected at build time via vite define)
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          # evaOS beta: Sentry is disabled by default until issue #12 approves a fork-owned telemetry policy.
+          SENTRY_DSN: ''
+          SENTRY_AUTH_TOKEN: ''
+          SENTRY_ORG: ''
+          SENTRY_PROJECT: ''
           # CI flag & GitHub token / CI 标识与 GitHub Token
           CI: true
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -458,10 +458,10 @@ jobs:
           npm_config_disturl: https://electronjs.org/headers
           npm_config_runtime: electron
           npm_config_target_arch: ${{ matrix.arch }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_DSN: ''
+          SENTRY_AUTH_TOKEN: ''
+          SENTRY_ORG: ''
+          SENTRY_PROJECT: ''
           CI: true
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -487,10 +487,10 @@ jobs:
           npm_config_disturl: https://electronjs.org/headers
           npm_config_runtime: electron
           npm_config_target_arch: ${{ matrix.arch }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_DSN: ''
+          SENTRY_AUTH_TOKEN: ''
+          SENTRY_ORG: ''
+          SENTRY_PROJECT: ''
           CI: true
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -562,6 +562,23 @@ jobs:
           fi
           echo "✅ asar isolation verified: no packages/web-cli entries"
 
+      - name: Verify Windows ZIP artifact
+        if: >-
+          !inputs.upload_installers_only && success() &&
+          startsWith(matrix.platform, 'windows') &&
+          steps.windows-build.outputs.result == 'success'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          zips=(out/evaOS\ Workbench\ Beta-*-win-*.zip)
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "::error::Missing Windows ZIP artifact matching out/evaOS Workbench Beta-*-win-*.zip"
+            ls -lh out || true
+            exit 1
+          fi
+          printf 'Found Windows ZIP artifact(s):\n'
+          printf '  %s\n' "${zips[@]}"
+
       # Upload artifacts when:
       # - Build succeeded (all platforms)
       # - macOS: notarization timeout but artifacts exist (handled in build step)
@@ -593,8 +610,8 @@ jobs:
             out/*.msi
             out/*.dmg
             out/*.deb
-            out/AionUi-*-win32-*.zip
-            out/AionUi-*-mac-*.zip
+            out/evaOS Workbench Beta-*-win-*.zip
+            out/evaOS Workbench Beta-*-mac-*.zip
             out/*.yml
           if-no-files-found: warn
           retention-days: 7

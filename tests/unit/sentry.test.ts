@@ -8,7 +8,7 @@
  * suite runs under the `node` Vitest project.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { gunzipSync } from 'node:zlib';
 import { randomBytes } from 'node:crypto';
 
@@ -231,6 +231,17 @@ describe('captureBackendStartupFailure', () => {
 });
 
 describe('initSentry beforeSend', () => {
+  beforeEach(() => {
+    sentryInitOptions = undefined;
+    process.env.AIONUI_EVAOS_BETA = '0';
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
+    delete process.env.SENTRY_DSN;
+  });
+
   it('drops native GPU unusable crashes reported only through crashpad context', () => {
     initSentry();
 

@@ -10,6 +10,12 @@ import { app } from 'electron';
 import log from 'electron-log';
 import { EventEmitter } from 'events';
 import { recordAutoUpdateQuitAndInstall, recordAutoUpdateStatus } from './autoUpdateDiagnostics';
+import {
+  EVAOS_BETA_UPDATE_DISABLED_MESSAGE,
+  getEvaosBetaUpdateRepo,
+  isEvaosBetaBuild,
+  shouldDisableAutoUpdate,
+} from '../evaosBetaSafety';
 
 /**
  * Returns the appropriate update channel name based on the current platform and architecture.
@@ -79,7 +85,8 @@ class AutoUpdaterService extends EventEmitter {
 
     // Disable auto-download for manual control
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoInstallOnAppQuit = !shouldDisableAutoUpdate();
+    this.configureEvaosBetaFeed();
 
     // Set the correct update channel based on platform and architecture before
     // any update checks are performed
@@ -88,6 +95,24 @@ class AutoUpdaterService extends EventEmitter {
       autoUpdater.channel = channel;
       log.info(`Update channel set to: ${channel}`);
     }
+  }
+
+  private configureEvaosBetaFeed(): void {
+    if (!isEvaosBetaBuild() || shouldDisableAutoUpdate()) return;
+
+    const repo = getEvaosBetaUpdateRepo();
+    const [owner, name] = repo?.split('/') ?? [];
+    if (!owner || !name) {
+      log.warn(EVAOS_BETA_UPDATE_DISABLED_MESSAGE);
+      return;
+    }
+
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner,
+      repo: name,
+    });
+    log.info(`evaOS beta update feed set to ${owner}/${name}`);
   }
 
   /**
@@ -263,6 +288,10 @@ class AutoUpdaterService extends EventEmitter {
 
   async checkForUpdates(): Promise<{ success: boolean; updateInfo?: UpdateInfo; error?: string }> {
     try {
+      if (shouldDisableAutoUpdate()) {
+        return { success: false, error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+      }
+
       if (!this._isInitialized) {
         throw new Error('AutoUpdaterService not initialized');
       }
@@ -294,6 +323,10 @@ class AutoUpdaterService extends EventEmitter {
 
   async downloadUpdate(): Promise<{ success: boolean; error?: string }> {
     try {
+      if (shouldDisableAutoUpdate()) {
+        return { success: false, error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+      }
+
       if (!this._isInitialized) {
         throw new Error('AutoUpdaterService not initialized');
       }
@@ -311,6 +344,11 @@ class AutoUpdaterService extends EventEmitter {
   }
 
   quitAndInstall(): void {
+    if (shouldDisableAutoUpdate()) {
+      log.warn(EVAOS_BETA_UPDATE_DISABLED_MESSAGE);
+      return;
+    }
+
     log.info('Quitting and installing update...');
     recordAutoUpdateQuitAndInstall({
       currentAppVersion: app.getVersion(),
@@ -332,6 +370,11 @@ class AutoUpdaterService extends EventEmitter {
    */
   async checkForUpdatesAndNotify(): Promise<void> {
     try {
+      if (shouldDisableAutoUpdate()) {
+        log.warn(EVAOS_BETA_UPDATE_DISABLED_MESSAGE);
+        return;
+      }
+
       // Ensure clean state: prevent stale allowDowngrade=true from prior setAllowPrerelease(true) calls
       autoUpdater.allowDowngrade = false;
       await autoUpdater.checkForUpdatesAndNotify();

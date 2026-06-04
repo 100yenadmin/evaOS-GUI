@@ -163,6 +163,9 @@ const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({
       // Submit via Sentry
       // Use hint.attachments instead of scope.addAttachment to avoid
       // @sentry/electron's ScopeToMain normalize() corrupting Uint8Array binary data.
+      if (!process.env.SENTRY_DSN) {
+        throw new Error('Sentry feedback reporting is disabled');
+      }
       const Sentry = await import('@sentry/electron/renderer');
 
       const attachments: Array<{ filename: string; data: Uint8Array; contentType: string }> = [];

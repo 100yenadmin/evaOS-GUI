@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@office-ai/platform', () => ({
   bridge: {
@@ -49,6 +49,7 @@ vi.mock('electron-updater', () => ({
     autoInstallOnAppQuit: true,
     allowPrerelease: false,
     allowDowngrade: false,
+    setFeedURL: vi.fn(),
     on: vi.fn(),
     removeListener: vi.fn(),
     checkForUpdates: vi.fn(),
@@ -113,9 +114,27 @@ const getCheckHandler = async () => {
   return lastCall[0];
 };
 
+const getDownloadHandler = async () => {
+  vi.resetModules();
+  const { initUpdateBridge } = await import('@process/bridge/updateBridge');
+  const { ipcBridge } = await import('@/common');
+
+  initUpdateBridge();
+
+  const provider = vi.mocked(ipcBridge.update.download.provider);
+  const lastCall = provider.mock.calls.at(-1);
+  if (!lastCall) throw new Error('update.download handler not registered');
+  return lastCall[0];
+};
+
 describe('updateBridge CDN URL rewriting', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.AIONUI_EVAOS_BETA = '0';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
   });
 
   it('rewrites asset.url to the CDN path and keeps GitHub URL in fallbackUrl', async () => {
@@ -167,6 +186,16 @@ describe('updateBridge CDN URL rewriting', () => {
 });
 
 describe('updateBridge allowlist includes CDN host', () => {
+  beforeEach(() => {
+    process.env.AIONUI_EVAOS_BETA = '0';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
+    delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
+    delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+  });
+
   it('accepts static.aionui.com URLs for download', async () => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -183,15 +212,7 @@ describe('updateBridge allowlist includes CDN host', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      const { initUpdateBridge } = await import('@process/bridge/updateBridge');
-      const { ipcBridge } = await import('@/common');
-
-      initUpdateBridge();
-
-      const provider = vi.mocked(ipcBridge.update.download.provider);
-      const lastCall = provider.mock.calls.at(-1);
-      if (!lastCall) throw new Error('update.download handler not registered');
-      const handler = lastCall[0];
+      const handler = await getDownloadHandler();
 
       const result = await handler({
         url: 'https://static.aionui.com/releases/1.9.22/AionUi-1.9.22-mac-arm64.dmg',
@@ -206,18 +227,9 @@ describe('updateBridge allowlist includes CDN host', () => {
   });
 
   it('rejects non-allowlisted hosts', async () => {
-    vi.resetModules();
     vi.clearAllMocks();
 
-    const { initUpdateBridge } = await import('@process/bridge/updateBridge');
-    const { ipcBridge } = await import('@/common');
-
-    initUpdateBridge();
-
-    const provider = vi.mocked(ipcBridge.update.download.provider);
-    const lastCall = provider.mock.calls.at(-1);
-    if (!lastCall) throw new Error('update.download handler not registered');
-    const handler = lastCall[0];
+    const handler = await getDownloadHandler();
 
     const result = await handler({
       url: 'https://evil.example.com/fake.dmg',
@@ -226,5 +238,57 @@ describe('updateBridge allowlist includes CDN host', () => {
 
     // Download is refused before any network I/O; exact error text comes from i18n and isn't asserted here.
     expect(result.success).toBe(false);
+  });
+
+  it('rejects upstream GitHub release URLs for beta manual downloads', async () => {
+    vi.clearAllMocks();
+    process.env.AIONUI_EVAOS_BETA = '1';
+    process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/AionUi';
+
+    const handler = await getDownloadHandler();
+
+    const result = await handler({
+      url: 'https://github.com/iOfficeAI/AionUi/releases/download/v1.9.22/AionUi-1.9.22-mac-arm64.dmg',
+      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v1.9.22/AionUi-1.9.22-mac-arm64.dmg',
+      file_name: 'AionUi-1.9.22-mac-arm64.dmg',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.msg).toContain('evaOS beta update feed');
+  });
+
+  it('accepts configured beta repo GitHub release URLs for beta manual downloads', async () => {
+    vi.clearAllMocks();
+    process.env.AIONUI_EVAOS_BETA = '1';
+    process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/AionUi';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-length': '0' }),
+      body: {
+        getReader: () => ({
+          read: async () => ({ done: true, value: undefined }),
+        }),
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const handler = await getDownloadHandler();
+
+      const result = await handler({
+        url: 'https://github.com/100yenadmin/AionUi/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
+        fallbackUrl:
+          'https://github.com/100yenadmin/AionUi/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
+        file_name: 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.downloadId).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

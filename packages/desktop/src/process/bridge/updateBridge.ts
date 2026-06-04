@@ -19,6 +19,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import semver from 'semver';
 import { autoUpdaterService } from '../services/autoUpdaterService';
+import {
+  EVAOS_BETA_UPDATE_DISABLED_MESSAGE,
+  getEvaosBetaUpdateRepo,
+  isAllowedEvaosBetaUpdateRepo,
+  isEvaosBetaBuild,
+  shouldDisableAutoUpdate,
+} from '../evaosBetaSafety';
 
 /** Lazily loads i18n to avoid pulling in initStorage chain at module load time */
 let _i18nCache: Promise<typeof import('../services/i18n')> | null = null;
@@ -92,7 +99,7 @@ const rewriteAssetUrlToCDN = (assetName: string, version: string): string => {
 
 const mapAsset = (asset: GitHubReleaseApiAsset, version: string): GitHubReleaseAsset => ({
   name: asset.name,
-  url: rewriteAssetUrlToCDN(asset.name, version),
+  url: isEvaosBetaBuild() ? asset.browser_download_url : rewriteAssetUrlToCDN(asset.name, version),
   fallbackUrl: asset.browser_download_url,
   size: asset.size,
   contentType: asset.content_type,
@@ -193,6 +200,10 @@ export const pickRecommendedAsset = (
 };
 
 const resolveRepo = (requestRepo?: string): string => {
+  if (isEvaosBetaBuild()) {
+    return getEvaosBetaUpdateRepo() ?? '';
+  }
+
   const envRepo = process.env.AIONUI_GITHUB_REPO?.trim();
   const repo = (requestRepo || envRepo || DEFAULT_REPO).trim();
   return repo || DEFAULT_REPO;
@@ -211,6 +222,32 @@ const assertAllowedUrl = async (rawUrl: string) => {
   }
   if (!ALLOWED_DOWNLOAD_HOSTS.has(parsed.hostname)) {
     throw new Error((await getI18n()).t('update.errors.hostNotAllowed', { host: parsed.hostname }));
+  }
+};
+
+const extractGitHubReleaseRepo = (rawUrl: string): string | undefined => {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return undefined;
+  }
+
+  if (parsed.hostname !== 'github.com') return undefined;
+  const [owner, repo, releases, download] = parsed.pathname.split('/').filter(Boolean);
+  if (!owner || !repo || releases !== 'releases' || download !== 'download') return undefined;
+  return `${owner}/${repo}`;
+};
+
+const assertAllowedDownloadRequestUrl = async (rawUrl: string) => {
+  await assertAllowedUrl(rawUrl);
+
+  if (!isEvaosBetaBuild()) return;
+
+  const betaRepo = getEvaosBetaUpdateRepo();
+  const requestRepo = extractGitHubReleaseRepo(rawUrl);
+  if (!isAllowedEvaosBetaUpdateRepo(betaRepo) || requestRepo !== betaRepo) {
+    throw new Error('Update download URL is not from the configured evaOS beta update feed.');
   }
 };
 
@@ -522,7 +559,14 @@ export function initUpdateBridge(): void {
   ipcBridge.update.check.provider(
     async (params): Promise<{ success: boolean; data?: UpdateCheckResult; msg?: string }> => {
       try {
+        if (shouldDisableAutoUpdate()) {
+          return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+        }
+
         const repo = resolveRepo(params?.repo);
+        if (!repo) {
+          return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+        }
         const includePrerelease = Boolean(params?.includePrerelease);
         const currentVersion = app.getVersion();
 
@@ -576,17 +620,20 @@ export function initUpdateBridge(): void {
   ipcBridge.update.download.provider(
     async (params: UpdateDownloadRequest): Promise<{ success: boolean; data?: UpdateDownloadResult; msg?: string }> => {
       try {
+        if (shouldDisableAutoUpdate()) {
+          return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+        }
+
         if (!params?.url) {
           return { success: false, msg: (await getI18n()).t('update.errors.missingUrl') };
         }
 
         // Defense-in-depth: do not allow arbitrary downloads from renderer.
-        // EN: Only allowlisted hosts (CDN + GitHub release hosts) are permitted;
-        // each redirect hop is re-validated against the allowlist.
-        // 中文：仅允许白名单内的域名（CDN + GitHub release 相关），并手动处理重定向，每一跳都校验白名单。
-        await assertAllowedUrl(params.url);
+        // Non-beta allows known CDN/GitHub release hosts. Beta additionally
+        // binds renderer-provided URLs to the configured evaOS-owned feed.
+        await assertAllowedDownloadRequestUrl(params.url);
         if (params.fallbackUrl) {
-          await assertAllowedUrl(params.fallbackUrl);
+          await assertAllowedDownloadRequestUrl(params.fallbackUrl);
         }
 
         const downloadId = uuid();
@@ -620,6 +667,10 @@ export function initUpdateBridge(): void {
       msg?: string;
     }> => {
       try {
+        if (shouldDisableAutoUpdate()) {
+          return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+        }
+
         // Set prerelease preference before checking
         const includePrerelease = Boolean(params?.includePrerelease);
         autoUpdaterService.setAllowPrerelease(includePrerelease);
@@ -649,6 +700,10 @@ export function initUpdateBridge(): void {
 
   ipcBridge.autoUpdate.download.provider(async (): Promise<{ success: boolean; msg?: string }> => {
     try {
+      if (shouldDisableAutoUpdate()) {
+        return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+      }
+
       const result = await autoUpdaterService.downloadUpdate();
       return { success: result.success, msg: result.error };
     } catch (err: unknown) {
@@ -658,6 +713,11 @@ export function initUpdateBridge(): void {
 
   ipcBridge.autoUpdate.quitAndInstall.provider(async (): Promise<void> => {
     try {
+      if (shouldDisableAutoUpdate()) {
+        console.warn(`[updateBridge] ${EVAOS_BETA_UPDATE_DISABLED_MESSAGE}`);
+        return;
+      }
+
       autoUpdaterService.quitAndInstall();
     } catch (err: unknown) {
       console.error('quitAndInstall failed:', err);

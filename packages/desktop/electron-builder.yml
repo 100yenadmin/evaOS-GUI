@@ -1,12 +1,12 @@
-appId: com.aionui.app
-productName: AionUi
-executableName: AionUi
-copyright: Copyright © 2024 AionUi
+appId: com.evaos.workbench.beta
+productName: evaOS Workbench Beta
+executableName: EvaOSWorkbenchBeta
+copyright: Copyright © 2026 evaOS
 
 protocols:
-  - name: AionUi Protocol
+  - name: evaOS Workbench Beta Protocol
     schemes:
-      - aionui
+      - evaos-workbench-beta
 
 asar:
   smartUnpack: true
@@ -172,17 +172,17 @@ linux:
   icon: resources/app.png
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
   category: Utility
-  maintainer: aionui
-  vendor: aionui
+  maintainer: evaos
+  vendor: evaos
   synopsis: ${description}
   description: ${description}
   desktop:
     entry:
-      Name: AionUi
+      Name: evaOS Workbench Beta
       Comment: ${description}
-      Icon: aionui
+      Icon: app
       Categories: Office;Utility;
-      MimeType: x-scheme-handler/aionui;
+      MimeType: x-scheme-handler/evaos-workbench-beta;
 
 npmRebuild: false
 buildDependenciesFromSource: false
@@ -221,7 +221,7 @@ electronDownload:
 
 publish:
   provider: github
-  owner: iOfficeAI
+  owner: 100yenadmin
   repo: AionUi
-  publishAutoUpdate: true
-  releaseType: release
+  publishAutoUpdate: false
+  releaseType: draft
