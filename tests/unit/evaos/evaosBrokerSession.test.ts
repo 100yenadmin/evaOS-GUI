@@ -303,11 +303,37 @@ describe('EvaosBrokerSessionClient', () => {
     );
   });
 
-  it('can adopt the released Workbench keychain desktop session without returning its token', async () => {
+  it('does not adopt the released Workbench keychain desktop session by default', () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
       fetchImpl,
       env: {},
+      now: () => NOW,
+      legacyWorkbenchSessionLoader: () => ({
+        accessToken: 'eds_workbench_keychain_session_secret_for_test',
+        userEmail: 'admin@electricsheephq.com',
+        expiresAt: FUTURE,
+        source: 'workbench-keychain',
+      }),
+    });
+
+    expect(client.getSessionStatus()).toEqual({
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in to evaOS to connect this desktop shell.',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('can explicitly adopt the released Workbench keychain desktop session without returning its token', async () => {
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {
+        AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN: '1',
+      },
       now: () => NOW,
       legacyWorkbenchSessionLoader: () => ({
         accessToken: 'eds_workbench_keychain_session_secret_for_test',

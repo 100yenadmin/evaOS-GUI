@@ -982,9 +982,12 @@ function loadLegacyWorkbenchSession({
   loader?: () => EvaosDesktopSession | null;
   allowDefaultLoader: boolean;
 }): EvaosDesktopSession | null {
+  if (!shouldTryReleasedWorkbenchKeychain(env)) {
+    return null;
+  }
+
   const chosenLoader =
-    loader ??
-    (shouldTryReleasedWorkbenchKeychain(env, allowDefaultLoader) ? loadReleasedWorkbenchKeychainSession : undefined);
+    loader ?? (allowDefaultLoader && process.platform === 'darwin' ? loadReleasedWorkbenchKeychainSession : undefined);
   if (!chosenLoader) {
     return null;
   }
@@ -996,18 +999,15 @@ function loadLegacyWorkbenchSession({
   }
 }
 
-function shouldTryReleasedWorkbenchKeychain(
-  env: Record<string, string | undefined>,
-  allowDefaultLoader: boolean
-): boolean {
-  const preference = env.AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN?.trim();
+function shouldTryReleasedWorkbenchKeychain(env: Record<string, string | undefined>): boolean {
+  const preference = env.AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN?.trim().toLowerCase();
+  if (preference === '1' || preference === 'true') {
+    return true;
+  }
   if (preference === '0' || preference === 'false') {
     return false;
   }
-  if (preference === '1' || preference === 'true') {
-    return process.platform === 'darwin';
-  }
-  return allowDefaultLoader && process.platform === 'darwin';
+  return false;
 }
 
 function loadReleasedWorkbenchKeychainSession(): EvaosDesktopSession | null {
