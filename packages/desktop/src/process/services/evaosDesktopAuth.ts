@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { createServer, type Server } from 'http';
 import { shell } from 'electron';
 import type { IEvaosBrokerBeginDesktopAuthResult } from '@/common/adapter/ipcBridge';
+import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
 import {
   EvaosBrokerSessionError,
   getDefaultEvaosBrokerSessionClient,
@@ -17,6 +18,7 @@ import {
 const DEFAULT_DASHBOARD_BASE_URL = 'https://www.electricsheephq.com';
 const AUTH_LOOPBACK_HOST = '127.0.0.1';
 const AUTH_LOOPBACK_PATH = '/auth/callback';
+const AUTH_LOOPBACK_STATE_PARAM = 'desktop_auth_state';
 const AUTH_LOOPBACK_TIMEOUT_MS = 180_000;
 
 type OpenExternal = (url: string) => Promise<void>;
@@ -41,8 +43,9 @@ export async function beginEvaosDesktopAuth(
   stopActiveLoopback();
 
   const fallbackDeviceCode = randomUUID().toUpperCase();
+  const desktopAuthState = randomUUID().toUpperCase();
   const timeoutMs = options.timeoutMs ?? AUTH_LOOPBACK_TIMEOUT_MS;
-  const { server, callbackUrl } = await startLoopbackReceiver(client);
+  const { server, callbackUrl } = await startLoopbackReceiver(client, desktopAuthState);
   const timeout = setTimeout(() => stopActiveLoopback(server), timeoutMs);
   activeLoopback = { server, timeout };
 
@@ -50,6 +53,7 @@ export async function beginEvaosDesktopAuth(
     dashboardBaseUrl: options.dashboardBaseUrl ?? process.env.AIONUI_EVAOS_DASHBOARD_BASE_URL,
     fallbackDeviceCode,
     callbackUrl,
+    desktopAuthState,
   });
 
   try {
@@ -67,7 +71,8 @@ export async function beginEvaosDesktopAuth(
     authUrl,
     callbackUrl,
     fallbackDeviceCode,
-    message: 'ElectricSheep sign-in opened. Finish Google sign-in, then return and refresh Mission Control.',
+    message:
+      'ElectricSheep sign-in opened. Choose the intended Google account, finish sign-in, then return and refresh Mission Control.',
   };
 }
 
@@ -79,10 +84,12 @@ function buildDesktopAuthUrl({
   dashboardBaseUrl,
   fallbackDeviceCode,
   callbackUrl,
+  desktopAuthState,
 }: {
   dashboardBaseUrl?: string;
   fallbackDeviceCode: string;
   callbackUrl: string;
+  desktopAuthState: string;
 }): string {
   let baseUrl: URL;
   try {
@@ -93,21 +100,42 @@ function buildDesktopAuthUrl({
 
   const authUrl = new URL('/desktop-auth', baseUrl);
   authUrl.searchParams.set('desktop_app', '1');
+  authUrl.searchParams.set('app_id', EVAOS_BETA_IDENTITY.appId);
+  authUrl.searchParams.set('callback_scheme', EVAOS_BETA_IDENTITY.protocolScheme);
   authUrl.searchParams.set('fresh', fallbackDeviceCode);
+  authUrl.searchParams.set(AUTH_LOOPBACK_STATE_PARAM, desktopAuthState);
   authUrl.searchParams.set('desktop_callback', callbackUrl);
+  authUrl.searchParams.set('switch_account', '1');
+  authUrl.searchParams.set('prompt', 'select_account');
   return authUrl.toString();
 }
 
 async function startLoopbackReceiver(
-  client: EvaosBrokerSessionClient
+  client: EvaosBrokerSessionClient,
+  desktopAuthState: string
 ): Promise<{ server: Server; callbackUrl: string }> {
   const server = createServer((request, response) => {
     const requestUrl = request.url ?? '';
     const host = typeof request.headers.host === 'string' ? request.headers.host : AUTH_LOOPBACK_HOST;
     const callbackUrl = `http://${host}${requestUrl}`;
-    if (!requestUrl.startsWith(`${AUTH_LOOPBACK_PATH}?`) && requestUrl !== AUTH_LOOPBACK_PATH) {
+    let parsedCallback: URL;
+    try {
+      parsedCallback = new URL(callbackUrl);
+    } catch {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('evaOS Workbench Beta callback route not found.');
+      return;
+    }
+
+    if (parsedCallback.pathname !== AUTH_LOOPBACK_PATH) {
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('evaOS Workbench Beta callback route not found.');
+      return;
+    }
+
+    if (parsedCallback.searchParams.get(AUTH_LOOPBACK_STATE_PARAM) !== desktopAuthState) {
+      response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Invalid evaOS Workbench Beta callback.');
       return;
     }
 
@@ -138,7 +166,9 @@ async function startLoopbackReceiver(
 
   return {
     server,
-    callbackUrl: `http://${AUTH_LOOPBACK_HOST}:${address.port}${AUTH_LOOPBACK_PATH}`,
+    callbackUrl: `http://${AUTH_LOOPBACK_HOST}:${address.port}${AUTH_LOOPBACK_PATH}?${AUTH_LOOPBACK_STATE_PARAM}=${encodeURIComponent(
+      desktopAuthState
+    )}`,
   };
 }
 
