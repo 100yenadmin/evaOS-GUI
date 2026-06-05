@@ -62,74 +62,19 @@ import type {
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
+import {
+  EVAOS_PIPEDREAM_PROVIDER_KEYS,
+  EVAOS_PROVIDER_LABELS,
+  EVAOS_RUNTIME_LABELS,
+  VALID_EVAOS_PROVIDER_AGENT_RUNTIMES,
+  VALID_EVAOS_PROVIDER_KEYS,
+  VALID_EVAOS_PROVIDER_STATUSES,
+  VALID_EVAOS_RUNTIME_KEYS,
+} from '../evaos/brokerCatalog';
 
 export const EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT =
   'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session';
 
-const VALID_RUNTIME_KEYS: ReadonlySet<IEvaosRuntimeKey> = new Set([
-  'openclaw',
-  'hermes',
-  'paperclip',
-  'browser',
-  'terminal',
-  'opendesign',
-  'creative_studio',
-  'team_chat',
-]);
-
-const RUNTIME_LABELS: Record<IEvaosRuntimeKey, string> = {
-  openclaw: 'OpenClaw',
-  hermes: 'Hermes',
-  paperclip: 'Paperclip',
-  browser: 'Business Browser',
-  terminal: 'Terminal',
-  opendesign: 'Open Design',
-  creative_studio: 'Creative Studio',
-  team_chat: 'Team Chat',
-};
-
-const VALID_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new Set([
-  'openai_codex',
-  'openclaw',
-  'hermes',
-  'google_workspace',
-  'pipedream',
-  'slack',
-  'notion',
-  'linear',
-  'github',
-]);
-const PIPEDREAM_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new Set([
-  'google_workspace',
-  'slack',
-  'notion',
-  'linear',
-  'github',
-]);
-
-const PROVIDER_LABELS: Record<IEvaosProviderKey, string> = {
-  openai_codex: 'Codex Desktop',
-  openclaw: 'OpenClaw',
-  hermes: 'Hermes',
-  google_workspace: 'Google Workspace',
-  pipedream: 'Pipedream Connection Service',
-  slack: 'Slack',
-  notion: 'Notion',
-  linear: 'Linear',
-  github: 'GitHub',
-};
-
-const VALID_PROVIDER_STATUSES: ReadonlySet<IEvaosProviderStatus> = new Set([
-  'connected',
-  'needs_login',
-  'approval_required',
-  'planned',
-  'revoked',
-  'expired',
-  'error',
-]);
-
-const VALID_PROVIDER_AGENT_RUNTIMES: ReadonlySet<IEvaosProviderAgentRuntime> = new Set(['openclaw', 'hermes']);
 const PROVIDER_CONNECTION_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const BUSINESS_BROWSER_DEFAULT_URL = 'https://chatgpt.com/codex';
 const RELEASED_WORKBENCH_KEYCHAIN_SERVICE = 'com.electricsheephq.EvaDesktop.session';
@@ -938,14 +883,14 @@ function isAllowedDesktopSessionCallback(url: URL): boolean {
 }
 
 function normalizeRuntime(runtime: IEvaosRuntimeKey): IEvaosRuntimeKey {
-  if (VALID_RUNTIME_KEYS.has(runtime)) {
+  if (VALID_EVAOS_RUNTIME_KEYS.has(runtime)) {
     return runtime;
   }
   throw new EvaosBrokerSessionError('invalid_runtime', 'Choose a supported evaOS runtime.');
 }
 
 function normalizeProviderKey(providerKey: IEvaosProviderKey): IEvaosProviderKey {
-  if (VALID_PROVIDER_KEYS.has(providerKey)) {
+  if (VALID_EVAOS_PROVIDER_KEYS.has(providerKey)) {
     return providerKey;
   }
   throw new EvaosBrokerSessionError('invalid_provider', 'Choose a supported connected app.');
@@ -1106,7 +1051,7 @@ function sanitizeRuntimeStatus(
     throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
   }
 
-  const displayLabel = safeText(record.display_label) ?? RUNTIME_LABELS[runtime];
+  const displayLabel = safeText(record.display_label) ?? EVAOS_RUNTIME_LABELS[runtime];
   const customerId = safeText(record.customer_id) ?? fallback.customerId;
 
   return stripUndefined({
@@ -1528,7 +1473,7 @@ async function openProviderAuthUrlIfRequested(
   providerKey: IEvaosProviderKey,
   openAuthUrl?: EvaosProviderAuthUrlOpener
 ): Promise<void> {
-  if (!openAuthUrl || !PIPEDREAM_PROVIDER_KEYS.has(providerKey)) {
+  if (!openAuthUrl || !EVAOS_PIPEDREAM_PROVIDER_KEYS.has(providerKey)) {
     return;
   }
   const record = asRecord(raw);
@@ -2297,7 +2242,7 @@ function sanitizeSingleProviderProfile(
 
   return stripUndefined({
     providerKey,
-    title: safeText(record.title, 120) ?? PROVIDER_LABELS[providerKey],
+    title: safeText(record.title, 120) ?? EVAOS_PROVIDER_LABELS[providerKey],
     subtitle: safeText(record.subtitle, 180),
     status,
     active: safeBoolean(record.active ?? record.is_active) ?? false,
@@ -2931,7 +2876,7 @@ function normalizeRuntimeValue(value: unknown): IEvaosRuntimeKey | undefined {
   if (!text) {
     return undefined;
   }
-  return VALID_RUNTIME_KEYS.has(text as IEvaosRuntimeKey) ? (text as IEvaosRuntimeKey) : undefined;
+  return VALID_EVAOS_RUNTIME_KEYS.has(text as IEvaosRuntimeKey) ? (text as IEvaosRuntimeKey) : undefined;
 }
 
 function normalizeProviderKeyValue(value: unknown): IEvaosProviderKey | undefined {
@@ -2939,7 +2884,7 @@ function normalizeProviderKeyValue(value: unknown): IEvaosProviderKey | undefine
   if (!text) {
     return undefined;
   }
-  return VALID_PROVIDER_KEYS.has(text as IEvaosProviderKey) ? (text as IEvaosProviderKey) : undefined;
+  return VALID_EVAOS_PROVIDER_KEYS.has(text as IEvaosProviderKey) ? (text as IEvaosProviderKey) : undefined;
 }
 
 function normalizeProviderStatusValue(value: unknown): IEvaosProviderStatus | undefined {
@@ -2957,14 +2902,14 @@ function normalizeProviderStatusValue(value: unknown): IEvaosProviderStatus | un
     failed: 'error',
   };
   const normalized = aliases[text] ?? text;
-  return VALID_PROVIDER_STATUSES.has(normalized as IEvaosProviderStatus)
+  return VALID_EVAOS_PROVIDER_STATUSES.has(normalized as IEvaosProviderStatus)
     ? (normalized as IEvaosProviderStatus)
     : undefined;
 }
 
 function normalizeProviderAgentRuntime(value: unknown): IEvaosProviderAgentRuntime {
   const text = safeText(value, 80);
-  if (text && VALID_PROVIDER_AGENT_RUNTIMES.has(text as IEvaosProviderAgentRuntime)) {
+  if (text && VALID_EVAOS_PROVIDER_AGENT_RUNTIMES.has(text as IEvaosProviderAgentRuntime)) {
     return text as IEvaosProviderAgentRuntime;
   }
   throw new EvaosBrokerSessionError('invalid_provider', 'Choose a supported provider grant runtime.');
