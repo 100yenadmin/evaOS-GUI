@@ -63,6 +63,28 @@ function emptyCustomerTargets() {
   };
 }
 
+function memberCustomerTargets() {
+  return {
+    success: true,
+    data: {
+      roles: ['member'],
+      isOperator: false,
+      defaultCustomerId: 'member-customer',
+      selectedCustomerId: 'member-customer',
+      customers: [
+        {
+          customerId: 'member-customer',
+          displayName: 'Member Customer',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: true,
+        },
+      ],
+      summaryText: '1 customer target loaded',
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => {
@@ -162,6 +184,31 @@ describe('EvaosCustomerContext', () => {
 
     await waitFor(() => expect(result.current.selectedCustomerId).toBe('second-customer'));
     expect(result.current.selectedTarget?.displayName).toBe('Second Customer');
+  });
+
+  it('clears and refetches role state when the authenticated broker session identity changes', async () => {
+    brokerMocks.getCustomerTargets
+      .mockResolvedValueOnce(customerTargets())
+      .mockResolvedValueOnce(memberCustomerTargets());
+
+    const { result, rerender } = renderHook(
+      ({ authenticated, sessionKey }) => useEvaosCustomerContext(authenticated, sessionKey),
+      {
+        initialProps: { authenticated: true, sessionKey: 'admin-session' },
+      }
+    );
+
+    await waitFor(() => expect(result.current.roles).toEqual(['admin']));
+    expect(result.current.isOperator).toBe(true);
+    expect(result.current.selectedCustomerId).toBe('david-poku');
+
+    rerender({ authenticated: true, sessionKey: 'member-session' });
+
+    await waitFor(() => expect(result.current.roles).toEqual(['member']));
+    expect(result.current.isOperator).toBe(false);
+    expect(result.current.selectedCustomerId).toBe('member-customer');
+    expect(result.current.selectedTarget?.displayName).toBe('Member Customer');
+    expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
   });
 
   it('sanitizes broker denial text before it can enter renderer-visible context state', async () => {
