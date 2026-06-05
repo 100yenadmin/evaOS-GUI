@@ -20,6 +20,7 @@
     "webui": "tsx scripts/webui.ts",
     "evaos:local-shell-smoke": "node scripts/evaosLocalShellSmoke.js",
     "evaos:live-canary-fixtures": "node scripts/evaosLiveCanaryEnvInventory.js --provisioning-template",
+    "evaos:provision-live-canary-fixtures": "node scripts/evaosProvisionLiveCanaryFixtures.js provision",
     "webui:remote": "tsx scripts/webui.ts --remote",
     "webui:prod": "cross-env NODE_ENV=production tsx scripts/webui.ts",
     "webui:prod:remote": "cross-env NODE_ENV=production tsx scripts/webui.ts --remote",

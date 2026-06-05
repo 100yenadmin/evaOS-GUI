@@ -4,7 +4,13 @@ const DEFAULT_ENDPOINT = 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/
 
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
+const SAFE_FALSE_SECRET_ASSERTION_FIELDS = new Set([
+  'raw_secrets_stored_in_workbench',
+  'rawSecretsStoredInWorkbench',
+  'raw_secrets_present',
+]);
 const SECRET_VALUE_PATTERNS = [
+  /[?&#](?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|api[_-]?key|service[_-]?role|token|secret|password|credential)=/i,
   /\beds_[A-Za-z0-9_-]{8,}\b/,
   /\bepg_[A-Za-z0-9_-]{8,}\b/,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/,
@@ -22,10 +28,7 @@ const SECRET_VALUE_PATTERNS = [
 ];
 
 function containsSecretMaterial(value) {
-  return (
-    typeof value === 'string' &&
-    (SECRET_FIELD_PATTERN.test(value) || SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value)))
-  );
+  return typeof value === 'string' && SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
 }
 
 function assertNoSecretMaterial(value, path = '$', seen = new WeakSet()) {
@@ -51,7 +54,10 @@ function assertNoSecretMaterial(value, path = '$', seen = new WeakSet()) {
   }
 
   for (const [key, child] of Object.entries(value)) {
-    if (containsSecretMaterial(key)) {
+    if (SECRET_FIELD_PATTERN.test(key)) {
+      if (SAFE_FALSE_SECRET_ASSERTION_FIELDS.has(key) && child === false) {
+        continue;
+      }
       throw new Error(`Broker canary response exposed secret material at ${path}.${key}.`);
     }
     assertNoSecretMaterial(child, `${path}.${key}`, seen);

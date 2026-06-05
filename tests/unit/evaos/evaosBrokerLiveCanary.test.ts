@@ -68,6 +68,38 @@ describe('evaOS broker live canary', () => {
         { customerId: 'cus_123', runtime: 'browser' }
       )
     ).toThrow(/secret material/);
+
+    expect(() =>
+      liveCanary.sanitizeBrokerRuntimeCanaryResponse(
+        {
+          customer_id: 'cus_123',
+          runtime_key: 'browser',
+          status: 'running',
+          provider_secret: 'redacted',
+        },
+        { customerId: 'cus_123', runtime: 'browser' }
+      )
+    ).toThrow(/secret material/);
+  });
+
+  it('allows normal beta copy that refers to secret-safety policy without raw secret material', () => {
+    const proof = liveCanary.sanitizeBrokerRuntimeCanaryResponse(
+      {
+        customer_id: 'cus_123',
+        runtime_key: 'browser',
+        status: 'running',
+        provider_profiles: [
+          {
+            key: 'slack',
+            status: 'connected',
+            subtitle: 'No raw provider secrets in the Mac app.',
+          },
+        ],
+      },
+      { customerId: 'cus_123', runtime: 'browser' }
+    );
+
+    expect(proof.secretScan).toBe('passed');
   });
 
   it('dispatches runtime_status with Authorization but does not include the session in proof output', async () => {
