@@ -13,7 +13,7 @@ import {
   SiderConnectedAppsEntry,
   SiderMissionControlEntry,
   SiderPeopleAccessEntry,
-} from '@renderer/components/layout/Sider/SiderNav';
+} from '@renderer/evaos/sidebar';
 import {
   EVAOS_APPROVAL_CENTER_ENABLED,
   EVAOS_BUSINESS_BROWSER_ENABLED,
