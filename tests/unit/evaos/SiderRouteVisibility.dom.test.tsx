@@ -178,4 +178,16 @@ describe('Sider runtime route visibility', () => {
       expect.stringContaining('admin@100yen.org')
     );
   });
+
+  it('keeps evaOS sidebar broker context warm while settings are open', async () => {
+    customerContextMock.roles = ['owner'];
+
+    renderSider('/settings/model');
+
+    expect(await screen.findByTestId('mock-settings-sider')).toBeInTheDocument();
+    expect(customerContextMock.useEvaosCustomerContext).toHaveBeenCalledWith(
+      true,
+      expect.stringContaining('admin@100yen.org')
+    );
+  });
 });

@@ -10,6 +10,7 @@ import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
 import EvaosSidebarSection from '@renderer/evaos/EvaosSidebarSection';
+import { useEvaosSidebarState } from '@renderer/evaos/useEvaosSidebarState';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import { SiderScheduledEntry, SiderSearchEntry, SiderToolbar } from './SiderNav';
 import SiderFooter from './SiderFooter';
@@ -37,6 +38,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { theme, setTheme } = useThemeContext();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const { jobs: cronJobs } = useAllCronJobs();
+  const evaosSidebarState = useEvaosSidebarState();
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/mission-control');
@@ -201,6 +203,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               collapsed={collapsed}
               pathname={pathname}
               siderTooltipProps={siderTooltipProps}
+              canSeeMissionControl={evaosSidebarState.canSeeMissionControl}
               onNavigate={handleEvaosNavigate}
             />
             {/* Scheduled tasks nav entry - fixed above scroll */}
