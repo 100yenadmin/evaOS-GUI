@@ -209,6 +209,79 @@ describe('MissionControlPage', () => {
     expect(container.textContent).not.toMatch(/eds_|desktop_session|Bearer/i);
   });
 
+  it('falls back to the auth URL fresh code when the broker handoff omits a display code', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'missing',
+        authenticated: false,
+        expired: false,
+        source: 'none',
+        message: 'Sign in to evaOS to connect this desktop shell.',
+      },
+    });
+    brokerMocks.beginDesktopAuth.mockResolvedValue({
+      success: true,
+      data: {
+        authUrl: 'https://www.electricsheephq.com/desktop-auth?fresh=abcd-efgh-1234-5678-9012-3456',
+        callbackUrl: 'http://127.0.0.1:51234/auth/evaos-workbench-beta/callback?desktop_auth_state=state-123',
+        fallbackDeviceCode: '',
+        message: 'Continue in the browser or paste the backup code.',
+      },
+    });
+
+    const { container } = render(<MissionControlPage />);
+
+    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    expect(await screen.findByText('Continue in the browser or paste the backup code.')).toBeInTheDocument();
+    expect(screen.getByText('ABCD-EFGH-1234-5678-9012-3456')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/desktop_session|Bearer|eds_/i);
+  });
+
+  it('clears a stale backup-code handoff before starting a new sign-in', async () => {
+    const user = userEvent.setup();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'missing',
+        authenticated: false,
+        expired: false,
+        source: 'none',
+        message: 'Sign in to evaOS to connect this desktop shell.',
+      },
+    });
+    brokerMocks.beginDesktopAuth
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          authUrl: 'https://www.electricsheephq.com/desktop-auth?fresh=stal-ecod-1234-5678-9012-3456',
+          callbackUrl: 'http://127.0.0.1:51234/auth/evaos-workbench-beta/callback?desktop_auth_state=state-123',
+          fallbackDeviceCode: 'STAL-ECOD-1234-5678-9012-3456',
+          message: 'Continue in the browser or paste the backup code.',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        msg: 'ElectricSheep sign-in could not start safely.',
+      });
+
+    render(<MissionControlPage />);
+
+    expect(await screen.findByText('Sign in required')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    expect(await screen.findByText('STAL-ECOD-1234-5678-9012-3456')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: /backup code/i }), 'STAL-ECOD-1234');
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    expect(await screen.findByText('ElectricSheep sign-in could not start safely.')).toBeInTheDocument();
+    expect(screen.queryByText('STAL-ECOD-1234-5678-9012-3456')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('STAL-ECOD-1234')).not.toBeInTheDocument();
+  });
+
   it('loads sanitized runtime evidence for the chosen customer', async () => {
     const user = userEvent.setup();
     brokerMocks.getSessionStatus.mockResolvedValue({
