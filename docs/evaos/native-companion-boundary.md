@@ -33,6 +33,20 @@ The evaOS native companion and broker remain authoritative for Mac pairing, TCC/
 - Broker owns desktop session cache truth; AionUi may render status and clear its shell-local view.
 - Unknown local trust actions fail closed until the native companion contract explicitly allows them.
 
+## Status And Handoff Matrix
+
+The AionUi beta shell may render these status-only native companion states. It may show a handoff label and target, but Mac pairing, TCC prompts, helper state, iPhone readiness, local control, and native audit truth remain owned by the native companion or released Workbench fallback.
+
+| State               | Source                              | Handoff                             | Shell enabled | Owner                         |
+| ------------------- | ----------------------------------- | ----------------------------------- | ------------- | ----------------------------- |
+| `not_installed`     | `native-companion:missing`          | Install released Workbench fallback | `false`       | `released-workbench-fallback` |
+| `not_paired`        | `native-companion:pairing-required` | Open native pairing handoff         | `false`       | `evaos-native-companion`      |
+| `permission_needed` | `native-companion:tcc-required`     | Open native permission handoff      | `false`       | `evaos-native-companion`      |
+| `ready`             | `native-companion:ready`            | Open native companion               | `true`        | `evaos-native-companion`      |
+| `unavailable`       | `native-companion:unavailable`      | Use support and rollback path       | `false`       | `released-workbench-fallback` |
+
+The ready handoff target is `evaos-workbench-beta://native-companion/status`. It is protocol metadata for the package/protocol proof path, not proof that AionUi owns local device control.
+
 ## Legacy Local Action Fence
 
 Public beta mode blocks legacy shell-launch and filesystem mutation endpoints by default. This includes `/api/shell/*`, `/api/fs/write`, `/api/fs/remove`, `/api/fs/rename`, `/api/fs/copy`, `/api/fs/upload`, `/api/fs/watch/*`, `/api/fs/office-watch/*`, mutating `/api/fs/snapshot/*` routes, and Office preview watch routes under `/api/ppt-preview/*`, `/api/word-preview/*`, and `/api/excel-preview/*`.
