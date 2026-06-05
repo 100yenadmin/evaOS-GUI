@@ -725,7 +725,8 @@ export class EvaosBrokerSessionClient {
     }
 
     if (!response.ok) {
-      throw new EvaosBrokerSessionError('broker_http_error', brokerHttpMessage(response.status), response.status);
+      const message = await brokerHttpMessageFromResponse(response);
+      throw new EvaosBrokerSessionError('broker_http_error', message, response.status);
     }
 
     try {
@@ -3316,6 +3317,26 @@ function stripUndefined<T extends Record<string, unknown>>(record: T): T {
     }
   }
   return record;
+}
+
+async function brokerHttpMessageFromResponse(response: Response): Promise<string> {
+  const fallback = brokerHttpMessage(response.status);
+
+  if (!canSurfaceBrokerResponseMessage(response.status)) {
+    return fallback;
+  }
+
+  try {
+    const record = asRecord(await response.clone().json());
+    const message = safeText(record?.error ?? record?.message, 180);
+    return message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function canSurfaceBrokerResponseMessage(status: number): boolean {
+  return status === 400 || status === 409 || status === 422;
 }
 
 function brokerHttpMessage(status: number): string {
