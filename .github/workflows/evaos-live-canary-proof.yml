@@ -105,7 +105,15 @@ jobs:
         if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
         run: |
           set -euo pipefail
-          node scripts/evaosProvisionLiveCanaryFixtures.js provision > "$PROOF_DIR/fixture-provisioning.stdout.json"
+          node scripts/evaosProvisionLiveCanaryFixtures.js provision | awk -v out="$PROOF_DIR/fixture-provisioning.stdout.json" '
+            /^::add-mask::/ { print; next }
+            { print > out }
+          '
+          test -s "$PROOF_DIR/fixture-provisioning.stdout.json"
+          if grep -q '^::add-mask::' "$PROOF_DIR/fixture-provisioning.stdout.json"; then
+            echo "::error::Fixture proof artifact contains GitHub mask commands."
+            exit 1
+          fi
 
       - name: Run strict readiness checklist
         run: |

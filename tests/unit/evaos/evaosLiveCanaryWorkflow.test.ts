@@ -24,6 +24,8 @@ describe('evaOS live canary proof workflow', () => {
     const workflow = readWorkflow();
 
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision');
+    expect(workflow).toContain('awk -v out="$PROOF_DIR/fixture-provisioning.stdout.json"');
+    expect(workflow).toContain("grep -q '^::add-mask::'");
     expect(workflow).toContain('node scripts/evaosLiveCanaryReadiness.js --strict');
     expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosTrustSurfaceLiveCanary.js');
