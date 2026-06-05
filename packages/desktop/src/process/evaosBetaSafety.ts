@@ -77,3 +77,13 @@ export function shouldAllowRemoteWebUI(env: Env = process.env): boolean {
   if (!isEvaosBetaBuild(env)) return true;
   return isTruthyEnv(env[EVAOS_BETA_ALLOW_REMOTE_WEBUI_ENV]);
 }
+
+type DefaultProtocolClientRegistrationInput = {
+  protocolScheme: string;
+  isPackaged: boolean;
+  isDefaultApp: boolean;
+};
+
+export function shouldRegisterDefaultProtocolClient(input: DefaultProtocolClientRegistrationInput): boolean {
+  return !(input.protocolScheme === EVAOS_BETA_IDENTITY.protocolScheme && input.isDefaultApp && !input.isPackaged);
+}

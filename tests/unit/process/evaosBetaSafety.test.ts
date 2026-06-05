@@ -8,6 +8,7 @@ import {
   shouldAttachSentryDeviceId,
   shouldDisableAutoUpdate,
   shouldDisableSentry,
+  shouldRegisterDefaultProtocolClient,
   shouldSendStartupLogReport,
 } from '../../../packages/desktop/src/process/evaosBetaSafety';
 
@@ -91,5 +92,33 @@ describe('evaosBetaSafety', () => {
       protocolScheme: 'evaos-workbench-beta',
       loopbackCallbackPath: '/auth/evaos-workbench-beta/callback',
     });
+  });
+
+  it('does not let raw dev Electron claim the evaOS beta URL scheme', () => {
+    expect(
+      shouldRegisterDefaultProtocolClient({
+        protocolScheme: EVAOS_BETA_IDENTITY.protocolScheme,
+        isPackaged: false,
+        isDefaultApp: true,
+      })
+    ).toBe(false);
+  });
+
+  it('allows packaged beta builds and non-beta dev schemes to register protocol clients', () => {
+    expect(
+      shouldRegisterDefaultProtocolClient({
+        protocolScheme: EVAOS_BETA_IDENTITY.protocolScheme,
+        isPackaged: true,
+        isDefaultApp: false,
+      })
+    ).toBe(true);
+
+    expect(
+      shouldRegisterDefaultProtocolClient({
+        protocolScheme: 'aionui',
+        isPackaged: false,
+        isDefaultApp: true,
+      })
+    ).toBe(true);
   });
 });
