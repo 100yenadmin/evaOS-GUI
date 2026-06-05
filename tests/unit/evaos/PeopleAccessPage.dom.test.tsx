@@ -202,6 +202,9 @@ describe('PeopleAccessPage', () => {
     expect(screen.getByText('agent seat')).toBeInTheDocument();
     expect(screen.getByText('4 of 4')).toBeInTheDocument();
     expect(screen.getByText('Seat limit reached')).toBeInTheDocument();
+    expect(screen.getByText('Seat limit reached. Add seats before inviting another member.')).toBeInTheDocument();
+    expect(screen.getByText('Action denial source: backend account policy')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^invite$/i })).toBeDisabled();
     expect(screen.getByText('2 invites')).toBeInTheDocument();
     expect(screen.getByText('1 pending')).toBeInTheDocument();
     expect(screen.getByText('pending@example.test')).toBeInTheDocument();

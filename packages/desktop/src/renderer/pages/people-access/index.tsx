@@ -91,11 +91,11 @@ const PeopleAccessPage: React.FC = () => {
 
   const canManageMembers = policy?.scopes.includes('manage_members') ?? false;
   const hasBackendPolicyProof = policy?.backendEnforced === true && Boolean(policy.auditId);
-  const canInviteMembers = canManageMembers && hasBackendPolicyProof && !policy?.routeDenied;
   const seatUsed = (policy?.activeSeats ?? 0) + (policy?.invitedSeats ?? 0);
   const seatLimit = policy?.seatLimit;
   const seatLabel = seatLimit === undefined ? `${seatUsed} used` : `${seatUsed} of ${seatLimit}`;
   const seatLimitReached = seatLimit !== undefined && seatUsed >= seatLimit;
+  const canInviteMembers = canManageMembers && hasBackendPolicyProof && !policy?.routeDenied && !seatLimitReached;
   const inviteCount = policy?.invites.length ?? 0;
   const pendingInviteCount = policy?.invites.filter((invite) => invite.status === 'pending').length ?? 0;
   const effectivePolicySource = policy
@@ -217,6 +217,10 @@ const PeopleAccessPage: React.FC = () => {
       setInviteError('Invite actions require backend-enforced account policy proof.');
       return;
     }
+    if (seatLimitReached) {
+      setInviteError('Seat limit reached. Add seats before inviting another member.');
+      return;
+    }
 
     setInviting(true);
     try {
@@ -254,6 +258,7 @@ const PeopleAccessPage: React.FC = () => {
     isSelectedCustomer,
     loadPolicy,
     policy,
+    seatLimitReached,
   ]);
 
   const selectedCustomerLabel =
@@ -449,7 +454,12 @@ const PeopleAccessPage: React.FC = () => {
                       Action denied by account policy.
                     </p>
                   ) : null}
-                  {!canManageMembers || policy.routeDenied || !hasBackendPolicyProof ? (
+                  {seatLimitReached ? (
+                    <p className='m-0 text-12px leading-18px text-[rgb(var(--warning-6))]'>
+                      Seat limit reached. Add seats before inviting another member.
+                    </p>
+                  ) : null}
+                  {!canManageMembers || policy.routeDenied || !hasBackendPolicyProof || seatLimitReached ? (
                     <p className='m-0 text-12px leading-18px text-t-secondary'>
                       Action denial source: {policySourceLabel(effectivePolicySource)}
                     </p>

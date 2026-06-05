@@ -430,7 +430,7 @@ const peoplePolicy: IEvaosPeopleAccessPolicyView = {
   membershipId: MEMBERSHIP_ID,
   membershipRole: 'owner',
   planCode: 'fixture-beta',
-  seatLimit: 8,
+  seatLimit: 6,
   activeSeats: 4,
   invitedSeats: 2,
   scopes: [
