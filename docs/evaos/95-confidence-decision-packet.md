@@ -4,243 +4,154 @@ Issue: https://github.com/100yenadmin/AionUi/issues/13
 
 Milestone: https://github.com/100yenadmin/AionUi/milestone/1
 
-Decision date: 2026-06-04
+Decision date: 2026-06-05
 
 ## Final Recommendation
 
 Continue R&D with blockers.
 
-Do not ship a public beta from the current stack. Do not kill the AionUi fork path. The sprint produced enough evidence to keep AionUi as the evaOS shell/control-board candidate, but it did not produce enough live trust proof to distribute a public beta to customers.
+Do not ship the public beta from this packet. Do not kill the AionUi fork path. The sprint has enough evidence to continue using AionUi as the updateable evaOS shell, and the latest product and packaging proofs materially changed the risk profile. The remaining blockers are now operating and release-channel gates, not a lack of basic product proof.
 
-The current best path is to continue the AionUi fork for one more gated sprint, focused only on converting merged mock/static proofs into live broker, signed artifact, install, rollback, and role-scoped scenario proof.
+The next move is a short containment-and-release-control pass: provision reusable staging canary fixtures, finish or formally waive the GitHub Project v2 board gate, rehearse the publish channel without touching upstream AionUi release paths, and keep the current released macOS app as fallback.
 
 ## Internal Evidence Maturity Score
 
-Internal R&D evidence maturity: 74/100.
-
-Customer-distributable public beta readiness remains blocked. No ship score is assigned while any Sev-1 or Sev-2 unknown remains.
-
-Reasoning:
-
-- Shell/fork/release safety foundation: 86/100.
-- Broker/session/provider/permission trust: 66/100.
-- Company Brain/browser/runtime live proof: 68/100.
-- Native companion and local trust boundary: 72/100.
-- Packaging/rollback release process: 75/100.
-- Stack mergeability and operating process: 86/100.
+Internal R&D evidence maturity: 91/100.
 
 This is not a 95% ship gate. It is a 95% confidence decision that the correct recommendation is to continue R&D with blockers.
 
+Reasoning:
+
+- Upstream-maintainable shell containment: 92/100.
+- Real admin product proof across core surfaces: 91/100.
+- Broker/session/provider/permission trust proof: 90/100.
+- Company Brain/browser/runtime/native-boundary proof: 90/100.
+- Packaging/signing/rollback proof: 94/100.
+- Reusable CI/staging/operator workflow: 76/100.
+
+Customer-distributable public beta readiness remains blocked while any unwaived release-channel or reusable-canary Sev-2 risk remains.
+
 ## Why Not Ship
 
-Public beta is blocked by Sev-1 and Sev-2 unknowns:
+Public beta distribution is blocked by operating gates:
 
-- The integration stack is merged, but most product slices are still mock/static-proven rather than staging/live-proven.
-- Broker/session, provider grant, approval deny, People Access, Company Brain, and browser runtime flows still need role-scoped live scenario execution.
-- Local shell smoke, People Access backend-proof hardening, and Approval Center policy/list-proof hardening passed after the combined stack landed, but they do not replace live staging proof.
-- No signed/notarized public beta artifact has been produced.
-- Release signing/distribution credential names are not provisioned; `evaos-staging` exists with `AIONUI_EVAOS_RUNTIME`, `AIONUI_EVAOS_PROVIDER_REQUIRED_STATES`, and `AIONUI_EVAOS_APPROVAL_DENY_REASON`, but required session/customer/account/negative fixture secrets and most fixture variables are still missing.
-- No install smoke, launch smoke, updater/feed audit on a real artifact, or old-app rollback smoke has passed.
-- The issue #1 control-board/project setup remains blocked on GitHub Project token scope.
+- Issue #41 is still open. The sprint now has real `admin@100yen.org` product proof, but the same live canaries are not yet provisioned as reusable GitHub/staging fixtures that any agent can run safely.
+- Issue #1 is still open. The milestone and issue queue are usable, but the GitHub Project v2 control board still needs the required token scope or an explicit milestone-only waiver.
+- The signed/notarized/stapled macOS candidate exists as a local app-only artifact. The public publish channel still needs final release/feed control review before customers are pointed at it.
+- The release must not auto-publish into upstream AionUi channels, reuse upstream updater feeds, or collide with the released evaOS macOS fallback app.
 
 ## Why Not Kill
 
-The fork path should continue because the sprint did produce useful, mergeable structure:
+The fork path should continue because the sprint now has concrete evidence rather than shell optimism:
 
-- AionUi now has an evaOS shell direction instead of extending the old browser-wrapper app.
-- The trust boundary is explicit: evaOS owns broker, permissions, provider grants, Company Brain, VM/browser runtime, audit, and native companion authority; AionUi owns presentation/workflow composition.
-- Issue #12 proved the packaging/release guardrail can be made rigorous with remote CI and adversarial review.
-- The stack now contains concrete routes, adapters, tests, and takeover packets that another agent can continue.
-- The current released macOS app remains fallback while the fork continues.
+- AionUi is contained as the shell/workflow layer; evaOS remains authority for auth, customer/session context, permissions, broker state, provider grants, Company Brain, VM/browser runtime, audit, and native Mac trust.
+- The real `admin@100yen.org` product pass proved loaded or backend-denied states for the core surfaces that previously looked empty.
+- Connected Apps now has current-state proof plus controlled lifecycle proof for connected, needs-login, expired, and revoked states without touching real Google/OpenAI grants.
+- The macOS beta candidate was signed, notarized, stapled, separated by bundle id/protocol, and rollback-proofed against the released app.
+- The old released macOS app remains fallback, so continuing R&D does not force users onto an unproven shell.
 
 ## Current Sprint State
 
-| Issue                                            | Issue Gate                        |              Confidence | Public Beta Impact                                                                                                                                                                  |
-| ------------------------------------------------ | --------------------------------- | ----------------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #1 Sprint Control Board + Agent Handoff Template | Blocked                           |                     40% | GitHub Project v2 token scope missing; milestone/issues are usable fallback.                                                                                                        |
-| #2 Upstream Sync + Fork Safety Baseline          | Closed; baseline merged           |                     86% | Baseline is landed; upstream intake remains frozen unless security-critical while beta blockers are resolved.                                                                       |
-| #3 evaOS Shell Guardrails                        | Closed; guardrails merged         |                     90% | Team mode, remote-agent pairing, insecure remote-agent connections, and full-auto modes are fenced by default; final beta review still needs read-only legacy surface confirmation. |
-| #4 Broker Auth + Desktop Session Handoff         | Open; primitive merged            |                     78% | Needs live/session scenario and secret-exposure proof.                                                                                                                              |
-| #5 Session Center / Mission Control              | Open; route and gate strip merged |                     84% | Mission Control is landed with beta-gate strip; needs live runtime scenario.                                                                                                        |
-| #6 Connected Apps Provider Hub                   | Open; local provider hub merged   |                     93% | Needs live provider grant/auth/revoke scenario and backend denial proof.                                                                                                            |
-| #7 Approval Center + Deny Loop                   | Open; local hardening merged      |                     94% | Local policy proof, list-response proof, route-denied UI honesty, and no-secret paths are hardened; needs requester/approver live fixture and audit enforcement proof.              |
-| #8 People Access + Account Policy                | Open; local hardening merged      |                     87% | Local backend-policy proof and optimistic invite denial are hardened; needs live account-policy fixture and role denial agreement.                                                  |
-| #9 Company Brain Directory + Account 360         | Open; canary merged               |                     94% | Canary script covers org-scoped directory/account/query plus mandatory negative fixtures; staging credentials still needed.                                                         |
-| #10 Business Browser / VM Control Proof          | Open; canary merged               |                     93% | Runtime canary is landed; staging execution, screenshots, and customer isolation proof still needed.                                                                                |
-| #11 Native Companion Boundary                    | Closed; static boundary merged    |                     93% | Static boundary is strong; live native pairing/helper proof remains outside shell.                                                                                                  |
-| #12 Public Beta Packaging + Rollback             | Open; release guardrails merged   |                     95% | Release safety and credential inventory gates are strong; real signed artifact/install/rollback proof remains.                                                                      |
-| #13 95% Confidence Decision Packet               | Current                           | 95% decision confidence | This packet recommends continue R&D with blockers and is updated through PR #58 merged evidence.                                                                                    |
-| #14 Forgejo Company Brain Sidecar Spike          | Closed; read-only spike completed |                     80% | Use now only as read-only Company Brain public-source input; defer infrastructure, packages, Actions, private indexing, and code copy/porting.                                      |
+| Issue                                                            | Issue Gate                                  |              Confidence | Public Beta Impact                                                                                                         |
+| ---------------------------------------------------------------- | ------------------------------------------- | ----------------------: | -------------------------------------------------------------------------------------------------------------------------- |
+| #1 Sprint Control Board + Agent Handoff Template                 | Open; blocked on Project v2 scope or waiver |                     70% | Milestone/issues are usable fallback. Project board remains an operating blocker, not a product blocker.                   |
+| #2 Upstream Sync + Fork Safety Baseline                          | Closed                                      |                     95% | Fork safety baseline and upstream intake rules are in place.                                                               |
+| #3 evaOS Shell Guardrails                                        | Closed                                      |                     95% | Unsafe or overclaiming beta surfaces are fenced by default.                                                                |
+| #4 Broker Auth + Desktop Session Handoff                         | Closed for sprint proof                     |                     91% | Real session/customer proof exists; reusable staging canary wiring still belongs to #41.                                   |
+| #5 Session Center / Mission Control                              | Closed for sprint proof                     |                     91% | Product status surfaces render honestly with real context or settled denied/empty states.                                  |
+| #6 Connected Apps Provider Hub                                   | Closed                                      |                     94% | Current and lifecycle provider states proved; direct provider secrets remain outside the shell.                            |
+| #7 Approval Center + Deny Loop                                   | Closed for sprint proof                     |                     91% | Requester/approver deny proof and backend/audit enforcement are covered in the product pass.                               |
+| #8 People Access + Account Policy                                | Closed for sprint proof                     |                     90% | Real member/account policy proof exists; reusable role fixtures are tracked in #41.                                        |
+| #9 Company Brain Directory + Account 360                         | Closed for sprint proof                     |                     90% | Org-scoped loaded/denied behavior is covered in the product pass.                                                          |
+| #10 Business Browser / VM Control Proof                          | Closed for sprint proof                     |                     90% | Runtime and customer isolation proof exists; reusable live canary fixtures remain #41.                                     |
+| #11 Native Companion Boundary                                    | Closed                                      |                     95% | AionUi remains shell/workflow composition only, not local trust authority.                                                 |
+| #12 Public Beta Packaging + Rollback                             | Closed as packaging-ready                   |                     94% | Signed/notarized/stapled app-only candidate exists; public release-channel publish remains blocked.                        |
+| #13 95% Confidence Decision Packet                               | Current closeout                            | 95% decision confidence | Recommendation is continue R&D with blockers, not ship beta.                                                               |
+| #14 Forgejo Company Brain Sidecar Spike                          | Closed                                      |                     80% | Use only as optional read-only reference/source work; do not merge Forgejo into AionUi.                                    |
+| #41 Provision staging fixtures for live beta canaries            | Open                                        |                     72% | Main reusable proof blocker. Product proof passed locally/with real admin context, but CI-ready fixtures are not complete. |
+| #67 Product Reality Pass: admin@100yen.org Real Customer Context | Closed                                      |                     92% | Real admin product proof is complete enough for the decision packet.                                                       |
+| #81 Live Customer End-to-End Proof Run                           | Closed                                      |                     92% | Aggregate live-product proof is complete enough for the decision packet.                                                   |
 
-## Verified Green Evidence
+## Verified Evidence
 
-Merged integration evidence:
+Repository and issue evidence:
 
-- PR #48 merged the combined stack into `evaos/dev` at merge commit `bbead8b7f83f127d18b178d5b90d729afadae9c1`.
-- PR #48 CI passed PR Check Plan, Code Quality, Ubuntu/macOS unit tests, Coverage, I18n, Release Script Test, macOS arm64/x64 builds, Linux build, and Windows unit tests.
-- PR #48 CI run: https://github.com/100yenadmin/AionUi/actions/runs/26934731469
-- PR #49 added the beta release credential inventory and merged into `evaos/dev` at merge commit `6d1e58375c7c40c2395c5f18f971b1c0ef7c8a5e`.
-- PR #49 CI passed PR Check Plan, Code Quality, Coverage, Ubuntu/macOS unit tests, I18n, Release Script Test, macOS arm64/x64 builds, and Linux build; Windows checks were skipped by path gate.
-- PR #49 CI run: https://github.com/100yenadmin/AionUi/actions/runs/26935552051
-- PR #52 merged the Local Shell Smoke Gate into `evaos/dev` and made interactive local route screenshots a required pre-feature-slice gate.
-- PR #52 CI passed the macOS-first required PR gate, including code quality, Ubuntu/macOS unit tests, coverage, I18n, release-script safety, macOS arm64/x64 builds, Linux build, and CodeRabbit.
-- Local shell smoke packet: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/38-local-shell-smoke/`.
-- PR #56 merged People Access backend-proof hardening into `evaos/dev` at `414940b57b072d0fd06be634bb2815d89c12249b`.
-- PR #56 evidence: https://github.com/100yenadmin/AionUi/issues/8#issuecomment-4620565290
-- PR #57 merged Approval Center policy-proof hardening into `evaos/dev` at `86c5736c75da21fd93699209da76bdc0a01d0aec`.
-- PR #57 evidence: https://github.com/100yenadmin/AionUi/issues/7#issuecomment-4620653983
-- PR #58 merged Approval Center list-proof and route-denied UI honesty follow-up into `evaos/dev` at `4819c07d9e53c88a450fef85af8f3d728ef66d0a`.
-- PR #58 evidence: https://github.com/100yenadmin/AionUi/issues/7#issuecomment-4620741702
-- For PRs #57 and #58, required checks and both macOS build legs passed before merge; nonrequired Linux/Windows jobs that showed as failed in watch output were cancelled after merge, not accepted as public-beta blockers.
+- Issue #115 closed the upstream-maintainability containment pass and reduced route/sidebar/broker risk behind evaOS modules.
+- Issue #6 was closed after provider current-state and lifecycle proof against `admin@100yen.org`/`golden`.
+- Dashboard PR #373 was merged and deployed to support provider `expired` lifecycle state end to end.
+- Issues #67 and #81 were closed as real admin product-proof lanes, not as public beta ship approval.
+- Issue #12 was closed as packaging-ready, not beta-ready.
 
-Issue #12 final attached PR Checks run passed at head `f412346d693bab7a550fada1f6cbf29193078089`:
+Local proof artifacts:
 
-- https://github.com/100yenadmin/AionUi/actions/runs/26913870744
-- Release Script Test, Code Quality, I18n Check, Coverage Test.
-- Unit tests on Ubuntu, macOS, and Windows.
-- Build tests on macOS arm64, macOS x64, Linux, Windows arm64, and Windows x64.
-- CodeRabbit passed.
-- Current-head review-thread query returned zero unresolved threads.
+- Product proof root: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/67-real-admin-product-reality-pass/`
+- Provider lifecycle proof: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/06-connected-apps-provider-hub/artifacts/provider-lifecycle-live-proof-20260605.json`
+- Provider current-state proof: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/06-connected-apps-provider-hub/artifacts/provider-current-live-proof-20260605.json`
+- Packaging proof root: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/12-public-beta-packaging-rollback/`
+- Decision packet root: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/13-95-confidence-decision-packet/`
 
-## macOS-First CI Policy
+Signed macOS app-only candidate:
 
-The public beta target is macOS-first. The current PR gate keeps code quality, unit tests, coverage, release-script safety, macOS builds, Linux build coverage, and CodeRabbit review as normal required evidence for beta slices.
+- Artifact: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/12-public-beta-packaging-rollback/artifacts/notarization-2026-06-05-current/EvaOSWorkbenchBeta-2.1.10-evaos-beta.0-mac-arm64-notarized-stapled-app.zip`
+- SHA256: `4c67fcb1a4c15c1edf813b2c9e965e5e9cab4f64c5777fdfb34cbd56a33b9e04`
+- Notary submission: `486cc244-81ce-4157-8ac4-90640f8fb386`
+- Bundle id: `com.evaos.workbench.beta`
+- Protocol: `evaos-workbench-beta`
+- Fallback app: `/Applications/evaOS.app`, version `0.6.27`, protocol `evaos://`
 
-Windows checks are release/nightly or Windows-touching gates during this public-beta sprint. They should run for Windows packaging, Electron builder config, installer metadata, workflow/build surfaces, dependency lockfiles, preload/main-process/common runtime code, or manual override. They should be skipped for docs, canary scripts, renderer-only beta routes, and macOS beta packaging slices that do not touch cross-platform runtime code.
+Validation evidence:
 
-Intentionally skipped Windows jobs are not public-beta blockers when the `PR Check Plan` job reports `run_windows_checks=false` and no Windows-touching path is present. They remain required before any Windows release, nightly matrix, or Windows-touching change.
-
-Local evidence root:
-
-- `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`
-
-## Local Shell Smoke Gate
-
-Before adding new feature slices, run an interactive local AionUi shell smoke from a Lexar-backed checkout. Start the app, capture screenshots for Mission Control, People Access, Approval Center, Connected Apps, Business Browser, Company Brain, and Agent Settings, then verify unsafe or overclaim surfaces remain hidden and empty/error states are honest.
-
-This local shell smoke does not wait for staging fixtures. Staging fixtures only block live backend canaries, including real session creation, provider grant/revoke, role denial, Company Brain cross-org denial, browser/VM action evidence, and signed release acceptance.
-
-Required local smoke proof:
-
-- App launch succeeds from the built desktop shell with no blank page or framework overlay.
-- Main beta routes render screenshot evidence under `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/`.
-- Team, full-auto, unsafe remote-agent, upstream publish/update, and raw-secret surfaces do not appear as actionable beta controls.
-- Missing session, empty data, offline, and unavailable broker states fail closed with user-honest copy.
-- Any launch or UX blocker found during the smoke is filed, fixed, and re-smoked before the next feature slice starts.
-
-## Live Canary Fixture Provisioning
-
-Use the repo-owned placeholder template to provision `evaos-staging` fixture names instead of copying one-off issue comments:
+- Sprint packet audit passed:
 
 ```bash
-npm run evaos:live-canary-fixtures -- \
-  --repo 100yenadmin/AionUi \
-  --env evaos-staging \
-  --branch evaos/dev \
-  --proof-ref https://github.com/100yenadmin/AionUi/issues/41
+node scripts/evaosSprintPacketAudit.js audit-packets /Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta
 ```
 
-The package script runs `node scripts/evaosLiveCanaryEnvInventory.js --provisioning-template`. The template is placeholder-only and must never be committed or posted with real session, token, provider grant, customer credential, or browser URL secret values filled in.
-
-After provisioning, rerun the strict inventory:
+- Dashboard provider lifecycle validation passed before PR #373 merge:
 
 ```bash
-node scripts/evaosLiveCanaryEnvInventory.js --repo 100yenadmin/AionUi --env evaos-staging --strict --markdown
+npm test -- src/pages/dashboard/providers-route.test.ts src/lib/workbench-provider-hub.test.ts src/lib/agent-runtimes.test.ts src/services/runtime-authority-policy.test.ts
+deno check supabase/functions/desktop-runtime-session/index.ts
 ```
 
-Only after the strict inventory passes should an agent dispatch `evaOS Live Canary Proof` with `run_live_canaries=true`.
+## Remaining Risks
 
-## Post-Merge Sprint State
+| Severity | Risk                                                                                | Owner               | Next Test                                                                                               |
+| -------- | ----------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------- |
+| Sev-2    | Reusable staging canary fixtures are not provisioned for every agent/CI run.        | Ops/admin           | Complete #41 and run strict live-canary inventory plus proof workflow.                                  |
+| Sev-2    | Public publish channel is not final-reviewed even though app-only packaging passed. | Release agent       | Dry-run or formally review beta feed/update/release publishing without upstream channel collision.      |
+| Sev-3    | GitHub Project v2 board remains blocked by token scope.                             | Ops/admin           | Grant Project v2 scope and finish #1, or explicitly waive to milestone-only operation.                  |
+| Sev-3    | Forgejo remains reference/sidecar only.                                             | Company Brain agent | Keep it read-only unless security, backups, SSO, runner isolation, and package visibility are reviewed. |
 
-- The sprint stack is landed on `evaos/dev`.
-- Contained stacked PRs #39, #40, #42, and #43 contributed the macOS-first PR-check planner, live canary readiness checklist, manual `evaOS Live Canary Proof` workflow, and `evaos-staging` environment inventory audit. They were closed after ancestry verification; the landed merge vehicle was PR #48.
-- PR #48 proves the fast route for stacked work: retarget the top integration PR, run one combined PR gate, then close contained PRs after ancestry verification.
-- PR #49 adds a safe release credential inventory; the current live repo has zero required release secret names and zero required release variable names configured.
-- Issue #14 Forgejo Company Brain Sidecar Spike is closed as completed for read-only spike scope; packet is under `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/14-forgejo-company-brain-sidecar-spike/`.
-- PR #56, #57, and #58 add the latest local trust hardening after the stack merge: People Access now requires backend-enforced account-policy proof before invite mutations, Approval Center denies route/list/actions without backend/audit policy proof, and approval-list responses require backend/audit/source/customer proof before rows render.
-- The latest interactive local shell smoke passed on 2026-06-04 after the Approval Center follow-up, with refreshed screenshots for Mission Control, People Access, Approval Center, Connected Apps, Business Browser, Company Brain, Agent Settings remote guardrail, and team-route redirect.
-
-## Severity-Ranked Risks
-
-| Severity | Risk                                                                                                                                                                                         | Owner               | Next Test                                                                                                                                                                                                                                                |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sev-1    | Public beta artifact cannot be produced because release signing/distribution credentials are not provisioned; no signed, notarized, installed, launched, or rolled-back beta exists.         | Release agent       | Provision release credentials and variables, run `node scripts/evaosBetaReleaseCredentialInventory.js --repo 100yenadmin/AionUi --strict --markdown`, then run manual `Build and Release` on approved release branch plus install/launch/rollback smoke. |
-| Sev-1    | Permission and approval flows are locally hardened but not live-backend proven across requester/approver/denied roles.                                                                       | Permissions agent   | Provision #41 staging fixtures, then run requester/approver/denied-member canaries with backend denial and audit evidence.                                                                                                                               |
-| Sev-2    | Broker/session handoff is primitive-proven but not live expired-session/no-token/secret-scan proven in a signed shell.                                                                       | Broker agent        | Signed or debug shell scenario canary with renderer storage/log/URL/IPC secret audit.                                                                                                                                                                    |
-| Sev-2    | Provider grant hub lacks live provider states for connected, needs-auth, expired, revoked, approval-required.                                                                                | Provider agent      | Broker fixture exercising provider profile/auth/revoke/mint-grant with no renderer secrets.                                                                                                                                                              |
-| Sev-2    | Staging live canary fixtures are name-only scoped but not provisioned; `evaos-staging` has only three non-secret defaults and no required session/customer/account/negative fixture secrets. | Ops/admin           | Provision #41 fixtures; rerun strict staging inventory/readiness.                                                                                                                                                                                        |
-| Sev-2    | Company Brain access boundaries have a PR-local live canary but still need staging execution with cross-org or denied-session proof.                                                         | Company Brain agent | Run `scripts/evaosCompanyBrainLiveCanary.js` against Org A/Org B fixtures and attach sanitized proof plus screenshots.                                                                                                                                   |
-| Sev-2    | Business Browser/VM control has a PR-local action canary but still needs staging execution with visual/customer isolation evidence.                                                          | Runtime agent       | Run `scripts/evaosBusinessBrowserLiveCanary.js` with action ack, denied-session or wrong-customer fixture, and screenshots.                                                                                                                              |
-| Sev-3    | GitHub Project board is blocked by token scope; milestone is the fallback control surface.                                                                                                   | Ops/admin           | Grant Project v2 scope and create the Project board, or formally accept milestone-only operation for sprint 2.                                                                                                                                           |
-| Sev-3    | Forgejo sidecar is safe only as a read-only public source; private/package indexing and self-hosting remain unreviewed.                                                                      | Company Brain agent | Add read-only public-source indexing only if it does not compete with beta blockers; defer private/self-hosted paths.                                                                                                                                    |
+No current Sev-1 unknown is known after product proof and packaging proof. Public beta is still blocked because unwaived Sev-2 operating/release risks remain.
 
 ## Next Sprint Issue Slate
 
-Sprint 2 should be one proof sprint, not a feature-expansion sprint.
+Sprint 2 should be a release-control sprint, not a feature-expansion sprint.
 
-1. Local AionUi Shell Smoke
-   - Start the app locally before adding new feature slices.
-   - Required proof: route screenshots for Mission Control, People Access, Approval Center, Connected Apps, Business Browser, Company Brain, and Agent Settings; unsafe surfaces hidden; honest empty/error states.
+1. Finish #41 reusable staging/live canary fixtures.
+   - Required proof: strict inventory passes, canaries run from GitHub or a documented agent command, and no secret values appear in logs/artifacts.
 
-2. Provision Staging And Release Credentials
-   - Add required `evaos-staging` live canary fixtures and issue #12 release credential names.
-   - Required proof: name-only inventory passes without printing values; strict readiness is still allowed to fail only on intentionally deferred live actions.
-   - Required release names: `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `IDENTITY`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `TEAM_ID`, `GH_TOKEN`, `AWS_REGION`, `AWS_ROLE_ARN`, `AWS_S3_BUCKET`, `EVAOS_BETA_RELEASE_BRANCH`, and `EVAOS_BETA_RELEASE_PUBLISH_ENABLED`.
-   - Inventory command: `node scripts/evaosBetaReleaseCredentialInventory.js --repo 100yenadmin/AionUi --strict --markdown`.
+2. Finish or waive #1 Project v2 board setup.
+   - Required proof: Project board exists and issues are mapped, or a maintainer comment accepts milestone-only control for this sprint.
 
-3. Signed Artifact Release Candidate
-   - Run manual Build and Release from the approved release branch.
-   - Command: `gh workflow run build-and-release.yml --repo 100yenadmin/AionUi --ref <approved-release-branch> -f beta_release_ack=evaos-beta`.
-   - Required proof: signed/notarized artifact, release manifest, trusted manifest artifact, no upstream feed collision, no dev tag distribution.
+3. Run public publish-channel dry run or formal release review.
+   - Required proof: beta release cannot publish to upstream AionUi channels, cannot hijack the released evaOS updater/protocol, and has a documented rollback/support path.
 
-4. Install, Launch, Rollback Smoke
-   - Install the signed beta on macOS, launch it, verify bundle id/protocol/app identity, then roll back to the released macOS app.
-   - Required proof: screenshots/logs, Gatekeeper/notarization evidence, rollback commands and results.
+4. Re-run the product proof only after #41 canaries are reusable.
+   - Required proof: screenshots are captured after loaded/denied states settle, not immediately after route navigation.
 
-5. Broker Session Live Secret Audit
-   - Exercise login/session creation, missing session, expired session, and runtime status in a live or staging shell.
-   - Required proof: no desktop-session token in renderer state, logs, URLs, localStorage, screenshots, or generic IPC.
-
-6. People Access And Approval Live Fixture
-   - Use requester, approver, denied member, and revoked member fixtures.
-   - Required proof: route denial, action denial, backend denial, deny audit id, and requester-cannot-approve evidence.
-   - Canary command: `node scripts/evaosPeopleApprovalLiveCanary.js` with `AIONUI_EVAOS_APPROVAL_DENY_ACK=evaos-deny-test`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_APPROVAL_ID`, `AIONUI_EVAOS_REQUESTER_SESSION`, and `AIONUI_EVAOS_APPROVER_SESSION`; optional `AIONUI_EVAOS_DENIED_SESSION` proves a denied member cannot list approvals.
-
-7. Provider Hub Live Fixture
-   - Exercise connected, needs-auth, expired, revoked, and approval-required provider states.
-   - Required proof: no raw provider secrets in renderer, logs, URLs, screenshots, or generic IPC.
-   - Canary command: `node scripts/evaosProviderHubLiveCanary.js` with `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, and optional `AIONUI_EVAOS_PROVIDER_REQUIRED_STATES=connected,needs_login,expired,revoked,approval_required`.
-
-8. Company Brain Live Boundary
-   - Exercise org-scoped directory, account 360, query, empty, ingesting, error, and cross-org denial.
-   - Required proof: visual screenshots and audit/source pointers.
-   - Canary command: `node scripts/evaosCompanyBrainLiveCanary.js` with `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_COMPANY_BRAIN_ACCOUNT_ID`, `AIONUI_EVAOS_COMPANY_BRAIN_QUERY`, and at least one negative fixture: `AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID` or `AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION`. Acceptance proof requires directory, account 360, and query denial source/audit evidence.
-   - Optional strict ingestion proof: `AIONUI_EVAOS_COMPANY_BRAIN_REQUIRED_INGESTION_STATES=ready,ingesting,error,empty`.
-
-9. Business Browser/VM Runtime Scenario
-   - Launch/open/stop browser runtime across customer switch.
-   - Required proof: before/after visual state, backend action proof, audit id, and customer isolation evidence.
-   - Canary command: `node scripts/evaosBusinessBrowserLiveCanary.js` with `AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK=evaos-browser-test`, `AIONUI_EVAOS_DESKTOP_SESSION`, `AIONUI_EVAOS_CUSTOMER_ID`, `AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL`, `AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS`, `AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION`, and `AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID`.
-   - Acceptance proof requires runtime status, open URL, post-open running status, stop, post-stop stopped status, denied runtime/open/stop source/audit evidence, and wrong-customer isolation. Denied-session-only proof is non-acceptance evidence.
-
-10. Final Public Beta Decision Recut
-
-- Re-run this decision packet after live proofs.
-- Required proof: zero Sev-1/Sev-2 unknowns, all beta blockers green, support path reviewed.
-
-11. Optional Forgejo Read-Only Source
-
-- Add public Forgejo/Codeberg repositories or docs to Company Brain as read-only sources only if it does not displace beta-blocker proof work.
-- Required proof: scoped read-token strategy before private access, package visibility exclusion, and no Forgejo Actions/self-hosting dependency.
+5. Recut #13 only if blockers change.
+   - Required output must say exactly one: `ship beta`, `continue R&D with blockers`, or `kill/revert to released macOS app`.
 
 ## Required Stop Rules
 
-- Do not publish a public beta while any Sev-1 or Sev-2 unknown remains.
-- Do not treat a mock release artifact as customer-distributable.
-- Do not close issue #12 as shipped until signed/notarized install/rollback proof exists.
-- Do not claim People Access, Approval Center, Provider Hub, Company Brain, or Browser/VM as beta-ready until live role/org/customer denial proof exists.
-- Do not replace GitHub with Forgejo during sprint 2.
+- Do not publish a public beta while #41 remains open or unwaived.
+- Do not publish a public beta while release/feed/update behavior is not explicitly reviewed.
+- Do not treat shell smoke, mocked rows, or immediate route-load screenshots as product readiness.
+- Do not move Mac pairing, TCC/local control, signed helper behavior, secure callbacks, or local audit authority into AionUi.
+- Do not copy Forgejo code into AionUi or replace GitHub as this sprint control surface.
 
 ## Fallback
 
-The current released macOS app remains the fallback if sprint 2 cannot close the Sev-1 and Sev-2 gates. Nothing in this decision requires forcing users onto an unproven shell.
+The current released macOS app remains the fallback. Continuing AionUi R&D is justified, but public beta distribution waits for the remaining operating gates.
