@@ -16,6 +16,7 @@ type EvaosCustomerContextState = {
   isOperator: boolean;
   selectedCustomerId?: string;
   summaryText: string;
+  loaded: boolean;
   loading: boolean;
   error?: string;
 };
@@ -26,6 +27,7 @@ const EMPTY_STATE: EvaosCustomerContextState = {
   isOperator: false,
   selectedCustomerId: undefined,
   summaryText: 'No customer targets loaded',
+  loaded: false,
   loading: false,
   error: undefined,
 };
@@ -123,6 +125,7 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
   emit({
     ...state,
     loading: true,
+    loaded: false,
     error: undefined,
   });
 
@@ -134,6 +137,7 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
     if (!response.success || !response.data) {
       emit({
         ...EMPTY_STATE,
+        loaded: true,
         error: safeUiText(response.msg, 'Customer targets failed closed.'),
       });
       return;
@@ -155,6 +159,7 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
       isOperator: sanitizedView.isOperator === true,
       selectedCustomerId: chooseSelectedCustomer(sanitizedView),
       summaryText: sanitizedView.summaryText,
+      loaded: true,
       loading: false,
       error: undefined,
     });
@@ -164,6 +169,7 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
     }
     emit({
       ...EMPTY_STATE,
+      loaded: true,
       error: 'Customer targets broker request failed closed.',
     });
   }
@@ -190,7 +196,7 @@ export function useEvaosCustomerContext(
       void refreshEvaosCustomerTargets();
       return;
     }
-    if (state.targets.length === 0 && !state.loading) {
+    if (!state.loaded && !state.loading) {
       void refreshEvaosCustomerTargets();
     }
   }, [authenticated, normalizedSessionKey]);

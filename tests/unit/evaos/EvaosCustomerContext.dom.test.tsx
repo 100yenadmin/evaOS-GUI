@@ -119,6 +119,7 @@ describe('EvaosCustomerContext', () => {
     expect(result.current.selectedCustomerId).toBeUndefined();
     expect(result.current.selectedTarget).toBeUndefined();
     expect(result.current.summaryText).toBe('No customer targets loaded');
+    expect(result.current.loaded).toBe(false);
     expect(brokerMocks.getCustomerTargets).not.toHaveBeenCalled();
   });
 
@@ -131,6 +132,7 @@ describe('EvaosCustomerContext', () => {
     expect(result.current.selectedTarget?.displayName).toBe('David Poku Co');
     expect(result.current.roles).toEqual(['admin']);
     expect(result.current.isOperator).toBe(true);
+    expect(result.current.loaded).toBe(true);
 
     act(() => {
       result.current.selectCustomer('second-customer');
@@ -152,6 +154,7 @@ describe('EvaosCustomerContext', () => {
     expect(result.current.targets).toEqual([]);
     expect(result.current.selectedCustomerId).toBeUndefined();
     expect(result.current.selectedTarget).toBeUndefined();
+    expect(result.current.loaded).toBe(true);
   });
 
   it('clears customer state on session loss and ignores stale target responses', async () => {
@@ -171,6 +174,7 @@ describe('EvaosCustomerContext', () => {
     expect(result.current.selectedCustomerId).toBeUndefined();
     expect(result.current.roles).toEqual([]);
     expect(result.current.isOperator).toBe(false);
+    expect(result.current.loaded).toBe(false);
 
     await act(async () => {
       staleTargets.resolve(customerTargets());
@@ -220,6 +224,7 @@ describe('EvaosCustomerContext', () => {
     const { result } = renderHook(() => useEvaosCustomerContext(true));
 
     await waitFor(() => expect(result.current.error).toBe('Customer targets failed closed.'));
+    expect(result.current.loaded).toBe(true);
     expect(JSON.stringify(result.current)).not.toMatch(/eds_raw_customer_target_secret|Bearer|desktop_session/);
   });
 

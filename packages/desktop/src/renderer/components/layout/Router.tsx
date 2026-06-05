@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppLoader from '@renderer/components/layout/AppLoader';
+import { EvaosRuntimeRouteGuard } from '@renderer/components/layout/EvaosRuntimeRouteGuard';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import {
   EVAOS_APPROVAL_CENTER_ENABLED,
@@ -38,6 +39,10 @@ const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentT
   </Suspense>
 );
 
+const withEvaosRuntimeRouteGuard = (routePath: string, Component: React.LazyExoticComponent<React.ComponentType>) => (
+  <EvaosRuntimeRouteGuard routePath={routePath}>{withRouteFallback(Component)}</EvaosRuntimeRouteGuard>
+);
+
 const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
   const { status } = useAuth();
 
@@ -66,7 +71,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
         />
         <Route element={<ProtectedLayout layout={layout} />}>
           <Route index element={<Navigate to='/mission-control' replace />} />
-          <Route path='/mission-control' element={withRouteFallback(MissionControl)} />
+          <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />
           <Route path='/guid' element={withRouteFallback(Guid)} />
           <Route
             path='/approval-center'

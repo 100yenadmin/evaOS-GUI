@@ -1,14 +1,17 @@
 import classNames from 'classnames';
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePreviewContext } from '@renderer/pages/conversation/Preview/context/PreviewContext';
 import { cleanupSiderTooltips, getSiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
+import { canAccessEvaosAdminRuntimes } from '@renderer/evaos/evaosRuntimeVisibility';
 import {
   EVAOS_APPROVAL_CENTER_ENABLED,
   EVAOS_BUSINESS_BROWSER_ENABLED,
@@ -48,7 +51,16 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
 
   const navigate = useNavigate();
   const { closePreview } = usePreviewContext();
-  const { logout, status } = useAuth();
+  const { logout, status, user } = useAuth();
+  const brokerSessionStatus = useEvaosBrokerSessionStatus(status === 'authenticated');
+  const brokerAuthenticated =
+    status === 'authenticated' &&
+    brokerSessionStatus.session?.authenticated === true &&
+    !brokerSessionStatus.session.expired;
+  const customerContext = useEvaosCustomerContext(
+    brokerAuthenticated,
+    evaosBrokerSessionKey(brokerSessionStatus.session)
+  );
   const { theme, setTheme } = useThemeContext();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const { jobs: cronJobs } = useAllCronJobs();
@@ -238,6 +250,28 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
 
   const tooltipEnabled = collapsed && !isMobile;
   const siderTooltipProps = getSiderTooltipProps(tooltipEnabled);
+  const canSeeMissionControl = useMemo(() => {
+    if (status !== 'authenticated' || brokerSessionStatus.loading) return false;
+    if (!brokerAuthenticated) return true;
+    return (
+      customerContext.loaded &&
+      canAccessEvaosAdminRuntimes({
+        authenticated: status === 'authenticated',
+        roles: customerContext.roles,
+        isOperator: customerContext.isOperator,
+        userEmail: brokerSessionStatus.session?.userEmail ?? user?.username,
+      })
+    );
+  }, [
+    brokerAuthenticated,
+    brokerSessionStatus.loading,
+    brokerSessionStatus.session?.userEmail,
+    customerContext.isOperator,
+    customerContext.loaded,
+    customerContext.roles,
+    status,
+    user?.username,
+  ]);
 
   const workspaceHistoryProps = {
     collapsed,
@@ -273,13 +307,15 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               onConversationSelect={handleConversationSelect}
               onSessionClick={onSessionClick}
             />
-            <SiderMissionControlEntry
-              isMobile={isMobile}
-              isActive={pathname === '/mission-control'}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={handleMissionControlClick}
-            />
+            {canSeeMissionControl ? (
+              <SiderMissionControlEntry
+                isMobile={isMobile}
+                isActive={pathname === '/mission-control'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={handleMissionControlClick}
+              />
+            ) : null}
             <SiderPeopleAccessEntry
               isMobile={isMobile}
               isActive={pathname === '/people-access'}
