@@ -75,6 +75,12 @@ const RUNTIME_TARGETS: RuntimeTarget[] = [
     role: 'Execution queue',
     kind: 'execution',
   },
+  {
+    key: 'terminal',
+    label: 'Terminal',
+    role: 'Customer VM shell runtime',
+    kind: 'execution',
+  },
 ];
 
 const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
