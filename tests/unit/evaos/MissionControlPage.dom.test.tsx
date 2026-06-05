@@ -335,12 +335,13 @@ describe('MissionControlPage', () => {
     await user.click(screen.getByRole('button', { name: /check/i }));
 
     await waitFor(() => {
-      expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(4);
+      expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(5);
     });
     expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'browser' });
+    expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'terminal' });
     expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('David Poku Co');
     expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('Loaded runtimes');
-    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('4 of 4');
+    expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('5 of 5');
     expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('memory');
     expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent('audit_123');
     expect(screen.getByRole('region', { name: 'Mission reality snapshot' })).toHaveTextContent(
@@ -349,6 +350,7 @@ describe('MissionControlPage', () => {
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('Browser is ready');
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('acct_david_poku');
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('broker://runtime/browser/audit_123');
+    expect(screen.getByTestId('mission-runtime-card-terminal')).toHaveTextContent('Runtime is complete');
     expect(screen.getByText('app.example.test/work')).toBeInTheDocument();
     expect(screen.getAllByText('audit_123').length).toBeGreaterThan(1);
     expect(container.textContent).not.toMatch(/eds_|epg_|access_token|desktop_session|provider_grant|Bearer/i);
@@ -379,12 +381,15 @@ describe('MissionControlPage', () => {
     await user.click(screen.getByRole('button', { name: /check/i }));
 
     const browserCard = screen.getByTestId('mission-runtime-card-browser');
+    const terminalCard = screen.getByTestId('mission-runtime-card-terminal');
     await waitFor(() => {
       expect(within(browserCard).getAllByText('Blocked').length).toBeGreaterThan(0);
     });
     expect(browserCard).toHaveTextContent('The evaOS broker returned no runtime evidence.');
     expect(browserCard).toHaveTextContent('Fail-closed until evaOS broker evidence is available.');
     expect(browserCard).not.toHaveTextContent('eds_raw_session');
+    expect(terminalCard).toHaveTextContent('The evaOS broker returned no runtime evidence.');
+    expect(terminalCard).not.toHaveTextContent('eds_raw_session');
   });
 
   it('keeps runtime cards waiting when an authenticated operator has no selected customer', async () => {
@@ -411,6 +416,9 @@ describe('MissionControlPage', () => {
 
     expect(brokerMocks.runtimeStatus).not.toHaveBeenCalled();
     expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent(
+      'Choose a customer target before checking runtime status.'
+    );
+    expect(screen.getByTestId('mission-runtime-card-terminal')).toHaveTextContent(
       'Choose a customer target before checking runtime status.'
     );
   });
@@ -599,7 +607,7 @@ describe('MissionControlPage', () => {
 
   it('does not render stale runtime evidence when the selected customer changes before the broker responds', async () => {
     const user = userEvent.setup();
-    const pendingRuntimeResponses = Array.from({ length: 4 }, () =>
+    const pendingRuntimeResponses = Array.from({ length: 5 }, () =>
       deferred<{
         success: boolean;
         data: {
@@ -640,7 +648,7 @@ describe('MissionControlPage', () => {
     expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /check/i }));
     await waitFor(() => {
-      expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(4);
+      expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(5);
     });
 
     await user.click(screen.getByRole('button', { name: 'Second Customer' }));
