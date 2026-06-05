@@ -36,6 +36,7 @@ describe('evaOS PR check plan', () => {
 
   it('keeps macOS beta packaging release-safety scripts out of the Windows build gate', () => {
     const plan = prCheckPlan.planPrChecks([
+      '.github/workflows/_build-reusable.yml',
       '.github/workflows/evaos-beta-rc-canary.yml',
       'docs/evaos/public-beta-packaging-rollback.md',
       'scripts/evaosBetaReleaseGate.js',

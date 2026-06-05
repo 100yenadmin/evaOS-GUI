@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const WINDOWS_REQUIRED_PATTERNS = [
-  /^\.github\/workflows\/(?:pr-checks|_build-reusable|build-and-release|release-distribute)\.ya?ml$/,
+  /^\.github\/workflows\/pr-checks\.ya?ml$/,
   /^\.github\/actions\/checkout-pr\//,
   /^bun\.lockb?$/,
   /^package-lock\.json$/,

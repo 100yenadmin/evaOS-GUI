@@ -204,6 +204,10 @@ jobs:
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
+          appleApiKey: ${{ secrets.APPLE_API_KEY }}
+          appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
+          appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
         run: node scripts/evaosBetaReleaseGate.js assert-public-release-env
 
       # macOS code signing certificate installation
@@ -377,6 +381,10 @@ jobs:
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
+          appleApiKey: ${{ secrets.APPLE_API_KEY }}
+          appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
+          appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
           identity: ${{ secrets.IDENTITY }}
           CSC_NAME: ${{ secrets.IDENTITY }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -471,6 +479,10 @@ jobs:
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
+          appleApiKey: ${{ secrets.APPLE_API_KEY }}
+          appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
+          appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
           identity: ${{ secrets.IDENTITY }}
           CSC_NAME: ${{ secrets.IDENTITY }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
