@@ -56,4 +56,42 @@ describe('EvaosBrokerSessionClient broker errors', () => {
       status: 409,
     });
   });
+
+  it('keeps generic auth-denial copy for 403 broker responses', async () => {
+    const client = clientForBrokerResponse(
+      {
+        error: 'Internal policy failure for membership abc123',
+        backend_enforced: true,
+      },
+      403
+    );
+
+    const error = await client.customerTargets().catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(EvaosBrokerSessionError);
+    expect(error).toMatchObject({
+      code: 'broker_http_error',
+      message: 'The evaOS broker denied this desktop session. Sign in again.',
+      status: 403,
+    });
+  });
+
+  it('keeps generic outage copy for 500 broker responses', async () => {
+    const client = clientForBrokerResponse(
+      {
+        error: 'Database exception: tenant lookup failed',
+        backend_enforced: true,
+      },
+      500
+    );
+
+    const error = await client.customerTargets().catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(EvaosBrokerSessionError);
+    expect(error).toMatchObject({
+      code: 'broker_http_error',
+      message: 'The evaOS broker is temporarily unavailable.',
+      status: 500,
+    });
+  });
 });

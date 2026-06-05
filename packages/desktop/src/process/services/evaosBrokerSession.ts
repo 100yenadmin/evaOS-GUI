@@ -3322,6 +3322,10 @@ function stripUndefined<T extends Record<string, unknown>>(record: T): T {
 async function brokerHttpMessageFromResponse(response: Response): Promise<string> {
   const fallback = brokerHttpMessage(response.status);
 
+  if (!canSurfaceBrokerResponseMessage(response.status)) {
+    return fallback;
+  }
+
   try {
     const record = asRecord(await response.clone().json());
     const message = safeText(record?.error ?? record?.message, 180);
@@ -3329,6 +3333,10 @@ async function brokerHttpMessageFromResponse(response: Response): Promise<string
   } catch {
     return fallback;
   }
+}
+
+function canSurfaceBrokerResponseMessage(status: number): boolean {
+  return status === 400 || status === 409 || status === 422;
 }
 
 function brokerHttpMessage(status: number): string {
