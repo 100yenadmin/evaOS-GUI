@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 30
     env:
       PROOF_DIR: live-canary-proof
-      AIONUI_EVAOS_FIXTURE_STATE_PATH: ${{ runner.temp }}/evaos-live-canary-fixtures.json
+      AIONUI_EVAOS_FIXTURE_STATE_PATH: .evaos-live-canary-fixtures.json
       AIONUI_EVAOS_FIXTURE_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_URL || secrets.SUPABASE_URL }}
       AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SECRET_KEY }}
       AIONUI_EVAOS_FIXTURE_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_FIXTURE_CUSTOMER_ID || vars.AIONUI_EVAOS_CUSTOMER_ID || 'golden' }}
