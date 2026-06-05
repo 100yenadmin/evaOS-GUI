@@ -16,6 +16,7 @@ interface CustomWindow extends Window {
 }
 
 const win = window as CustomWindow;
+const ELECTRON_PROVIDER_REQUEST_DELAY_MS = 25;
 
 /**
  * 适配electron的API到浏览器中,建立renderer和main的通信桥梁, 与preload.ts中的注入对应
@@ -24,7 +25,7 @@ if (win.electronAPI) {
   // Electron 环境 - 使用 IPC 通信
   bridge.adapter({
     emit(name, data) {
-      return win.electronAPI.emit(name, data);
+      return emitElectronBridge(name, data);
     },
     on(emitter) {
       win.electronAPI?.on((event) => {
@@ -91,7 +92,7 @@ if (win.electronAPI) {
 
     try {
       socket = new WebSocket(socketUrl);
-    } catch (error) {
+    } catch {
       scheduleReconnect();
       return;
     }
@@ -162,7 +163,7 @@ if (win.electronAPI) {
         }
 
         emitterRef.emit(payload.name, payload.data);
-      } catch (error) {
+      } catch {
         // 忽略格式错误的消息 / Ignore malformed payloads
       }
     });
@@ -215,6 +216,10 @@ if (win.electronAPI) {
 
   bridge.adapter({
     emit(name, data) {
+      if (win.electronAPI) {
+        return emitElectronBridge(name, data);
+      }
+
       const message: QueuedMessage = { name, data };
 
       ensureSocket();
@@ -223,7 +228,7 @@ if (win.electronAPI) {
         try {
           socket.send(JSON.stringify(message));
           return;
-        } catch (error) {
+        } catch {
           scheduleReconnect();
         }
       }
@@ -252,6 +257,25 @@ if (win.electronAPI) {
     reconnectDelay = 500;
     connect();
   };
+}
+
+function isProviderRequest(name: string): boolean {
+  return name.startsWith('subscribe-');
+}
+
+function emitElectronBridge(name: string, data: unknown): Promise<unknown> | void {
+  if (isProviderRequest(name)) {
+    return deferElectronProviderRequest(() => win.electronAPI?.emit(name, data));
+  }
+  return win.electronAPI?.emit(name, data);
+}
+
+function deferElectronProviderRequest(operation: () => Promise<unknown> | void | undefined): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    window.setTimeout(() => {
+      Promise.resolve(operation()).then(resolve, reject);
+    }, ELECTRON_PROVIDER_REQUEST_DELAY_MS);
+  });
 }
 
 logger.provider({

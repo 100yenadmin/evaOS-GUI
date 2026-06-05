@@ -137,6 +137,15 @@ describe('EvaosRuntimeRouteGuard', () => {
     );
   });
 
+  it('lets Mission Control render while customer context is still loading', () => {
+    customerContextMock.loaded = false;
+    customerContextMock.loading = true;
+
+    renderGuardedMissionControl();
+
+    expect(screen.getByText('Mission Control loaded')).toBeInTheDocument();
+  });
+
   it('fails closed to the assistant route for member sessions that deep-link into admin runtimes', async () => {
     customerContextMock.roles = ['member'];
     brokerSessionMock.session = {

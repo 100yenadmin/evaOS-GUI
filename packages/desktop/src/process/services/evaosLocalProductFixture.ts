@@ -10,6 +10,8 @@ import type {
   IEvaosBusinessBrowserOpenUrlRequest,
   IEvaosBusinessBrowserRequest,
   IEvaosBusinessBrowserView,
+  IEvaosRuntimeStatusRequest,
+  IEvaosRuntimeStatusView,
   IEvaosSafeUrlSummary,
   IEvaosCompanyBrainAccount360View,
   IEvaosCompanyBrainAccountRequest,
@@ -30,11 +32,14 @@ import type {
 
 const CUSTOMER_ID = 'fixture-customer-acme';
 const BROWSER_DENIED_CUSTOMER_ID = 'fixture-customer-browser-denied';
+const BROWSER_OFFLINE_CUSTOMER_ID = 'fixture-customer-browser-offline';
+const BROWSER_FAILED_CUSTOMER_ID = 'fixture-customer-browser-failed';
 const CUSTOMER_ACCOUNT_ID = 'fixture-account-acme';
 const MEMBERSHIP_ID = 'fixture-member-owner';
 const NOW = '2026-06-04T10:00:00.000Z';
 const FIXTURE_LABEL = 'LOCAL FIXTURE - NOT LIVE BETA PROOF';
 type EvaosLocalProductFixturePersona = 'owner' | 'member';
+type EvaosRuntimeFixture = Pick<IEvaosRuntimeStatusView, 'displayLabel' | 'status'> & Partial<IEvaosRuntimeStatusView>;
 
 export function isEvaosLocalProductFixtureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.AIONUI_E2E_TEST === '1' && env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE === '1';
@@ -83,8 +88,24 @@ export function evaosLocalProductFixtureCustomerTargets(
         healthStatus: 'ready',
         isDefault: false,
       },
+      {
+        customerId: BROWSER_OFFLINE_CUSTOMER_ID,
+        displayName: 'Offline Browser Fixture Co',
+        email: 'offline@example.test',
+        status: 'active',
+        healthStatus: 'offline',
+        isDefault: false,
+      },
+      {
+        customerId: BROWSER_FAILED_CUSTOMER_ID,
+        displayName: 'Failed Browser Fixture Co',
+        email: 'failed@example.test',
+        status: 'active',
+        healthStatus: 'needs_attention',
+        isDefault: false,
+      },
     ],
-    summaryText: `${FIXTURE_LABEL}: 2 customer targets loaded for ${persona} persona`,
+    summaryText: `${FIXTURE_LABEL}: 4 customer targets loaded for ${persona} persona`,
   });
 }
 
@@ -213,6 +234,14 @@ export function evaosLocalProductFixtureBusinessBrowserStatus(
     return clone(deniedBusinessBrowser(request.customerId));
   }
 
+  if (request.customerId === BROWSER_OFFLINE_CUSTOMER_ID) {
+    return clone(offlineBusinessBrowser);
+  }
+
+  if (request.customerId === BROWSER_FAILED_CUSTOMER_ID) {
+    return clone(failedBusinessBrowser);
+  }
+
   if (request.customerId !== CUSTOMER_ID) {
     return clone(
       deniedBusinessBrowser(
@@ -224,6 +253,69 @@ export function evaosLocalProductFixtureBusinessBrowserStatus(
   }
 
   return clone(activeBusinessBrowser);
+}
+
+export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStatusRequest): IEvaosRuntimeStatusView {
+  if (request.runtime === 'browser') {
+    return businessBrowserToRuntimeStatus(
+      evaosLocalProductFixtureBusinessBrowserStatus({ customerId: request.customerId })
+    );
+  }
+
+  const runtimeByKey: Record<string, EvaosRuntimeFixture> = {
+    openclaw: {
+      displayLabel: 'OpenClaw',
+      status: 'running',
+      healthSummary: `${FIXTURE_LABEL}: OpenClaw workspace is accepting customer-scoped agent work.`,
+      owner: 'operations',
+      lastActivityAt: '2026-06-04T09:57:00.000Z',
+      sourcePointer: 'local-fixture:runtime:openclaw',
+      auditId: 'fixture-audit-runtime-openclaw',
+    },
+    hermes: {
+      displayLabel: 'Hermes',
+      status: 'done',
+      healthSummary: `${FIXTURE_LABEL}: Hermes dashboard sync completed for the selected customer.`,
+      owner: 'operations',
+      lastActivityAt: '2026-06-04T09:54:00.000Z',
+      sourcePointer: 'local-fixture:runtime:hermes',
+      auditId: 'fixture-audit-runtime-hermes',
+    },
+    paperclip: {
+      displayLabel: 'Paperclip',
+      status: 'waiting',
+      healthSummary: `${FIXTURE_LABEL}: Paperclip queue is waiting on the next approved task.`,
+      owner: 'operations',
+      sourcePointer: 'local-fixture:runtime:paperclip',
+      auditId: 'fixture-audit-runtime-paperclip',
+    },
+    terminal: {
+      displayLabel: 'Terminal',
+      status: 'offline',
+      healthSummary: `${FIXTURE_LABEL}: Customer VM shell is offline in this local fixture.`,
+      owner: 'support',
+      sourcePointer: 'local-fixture:runtime:terminal-offline',
+      auditId: 'fixture-audit-runtime-terminal-offline',
+    },
+  };
+
+  const selected: EvaosRuntimeFixture = runtimeByKey[request.runtime] ?? {
+    displayLabel: request.runtime,
+    status: 'offline',
+    healthSummary: `${FIXTURE_LABEL}: Runtime is not configured in this local fixture.`,
+    sourcePointer: `local-fixture:runtime:${request.runtime}:missing`,
+    auditId: `fixture-audit-runtime-${request.runtime}-missing`,
+  };
+
+  return clone({
+    schemaVersion: 'evaos.runtime_status.v1',
+    customerId: request.customerId,
+    customerAccountId: CUSTOMER_ACCOUNT_ID,
+    runtimeKey: request.runtime,
+    lastCheckedAt: NOW,
+    actions: [],
+    ...selected,
+  });
 }
 
 export function evaosLocalProductFixtureBusinessBrowserAction(
@@ -673,6 +765,32 @@ const stoppedBusinessBrowser = browserView('stopped', {
   auditId: 'fixture-audit-browser-stop',
 });
 
+const offlineBusinessBrowser = browserView('offline', {
+  customerId: BROWSER_OFFLINE_CUSTOMER_ID,
+  displayLabel: 'Offline Browser Fixture',
+  healthSummary: `${FIXTURE_LABEL}: Synthetic browser runtime is offline.`,
+  controlSessionActive: false,
+  canLaunch: true,
+  canOpenUrl: false,
+  canStop: false,
+  actions: ['browser_launch'],
+  sourcePointer: 'local-fixture:business-browser:offline',
+  auditId: 'fixture-audit-browser-offline',
+});
+
+const failedBusinessBrowser = browserView('failed', {
+  customerId: BROWSER_FAILED_CUSTOMER_ID,
+  displayLabel: 'Failed Browser Fixture',
+  healthSummary: `${FIXTURE_LABEL}: Synthetic browser launch failed safely.`,
+  controlSessionActive: false,
+  canLaunch: true,
+  canOpenUrl: false,
+  canStop: false,
+  actions: ['browser_launch'],
+  sourcePointer: 'local-fixture:business-browser:failed',
+  auditId: 'fixture-audit-browser-failed',
+});
+
 function deniedBusinessBrowser(
   customerId: string,
   reason = `${FIXTURE_LABEL}: account policy lacks open_business_browser for this fixture customer.`,
@@ -694,6 +812,29 @@ function deniedBusinessBrowser(
     auditId: undefined,
     policyAuditId,
   });
+}
+
+function businessBrowserToRuntimeStatus(view: IEvaosBusinessBrowserView): IEvaosRuntimeStatusView {
+  return {
+    schemaVersion: 'evaos.runtime_status.v1',
+    customerId: view.customerId,
+    customerAccountId: view.customerAccountId,
+    runtimeKey: 'browser',
+    displayLabel: view.displayLabel,
+    status: view.status,
+    healthSummary: view.routeDenied ? (view.routeDenialReason ?? view.healthSummary) : view.healthSummary,
+    lastCheckedAt: view.lastCheckedAt,
+    lastActivityAt: view.lastActivityAt,
+    currentUrlSummary: view.currentUrlSummary,
+    owner: view.membershipRole,
+    authNeeded: view.authNeeded,
+    captchaNeeded: view.captchaNeeded,
+    waitingOnUser: view.waitingOnUser,
+    controlSessionActive: view.controlSessionActive,
+    actions: view.actions,
+    sourcePointer: view.sourcePointer,
+    auditId: view.auditId ?? view.policyAuditId,
+  };
 }
 
 function safeUrlSummary(rawUrl: string | undefined): IEvaosSafeUrlSummary {

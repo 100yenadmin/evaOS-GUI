@@ -46,6 +46,8 @@ function lastProviderHandler(provider: { mock: { calls: Array<[Function]> } }): 
 describe('evaOS broker bridge renderer secret boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.AIONUI_E2E_TEST;
+    delete process.env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE;
   });
 
   it('accepts sanitized broker status payloads', async () => {
@@ -118,5 +120,32 @@ describe('evaOS broker bridge renderer secret boundary', () => {
       success: false,
       msg: 'The evaOS broker response included renderer-visible secret material at $.desktop_session.',
     });
+  });
+
+  it('routes runtime status through the local product fixture only when explicitly enabled', async () => {
+    process.env.AIONUI_E2E_TEST = '1';
+    process.env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE = '1';
+    const { initEvaosBrokerBridge, ipcBridge } = await loadBrokerBridge();
+    const client = {
+      runtimeStatus: vi.fn(async () => {
+        throw new Error('live runtime status should not be called in local fixture mode');
+      }),
+    } as unknown as EvaosBrokerSessionClient;
+
+    initEvaosBrokerBridge(client);
+
+    const handler = lastProviderHandler(vi.mocked(ipcBridge.evaosBroker.runtimeStatus.provider));
+    const response = await handler({ customerId: 'fixture-customer-acme', runtime: 'openclaw' });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        runtimeKey: 'openclaw',
+        status: 'running',
+        sourcePointer: 'local-fixture:runtime:openclaw',
+        auditId: 'fixture-audit-runtime-openclaw',
+      },
+    });
+    expect(client.runtimeStatus).not.toHaveBeenCalled();
   });
 });
