@@ -113,6 +113,8 @@ describe('evaOS local shell smoke', () => {
 
   it('keeps local loaded product proof separate from default shell smoke', () => {
     expect(localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.map((check) => check.name)).toEqual([
+      'people-access-loaded-fixture',
+      'people-access-switch-clears-fixture',
       'connected-apps-loaded-fixture',
       'business-browser-loaded-fixture',
       'business-browser-launch-fixture',
@@ -124,10 +126,45 @@ describe('evaOS local shell smoke', () => {
       'company-brain-switch-clears-fixture',
     ]);
 
-    const connectedAppsLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[0];
-    expect(connectedAppsLoaded.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(connectedAppsLoaded.action).toBe('click-load');
-    expect(connectedAppsLoaded.expected).toEqual(
+    const peopleAccessLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'people-access-loaded-fixture'
+    );
+    expect(peopleAccessLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
+    expect(peopleAccessLoaded?.action).toBe('click-load');
+    expect(peopleAccessLoaded?.expected).toEqual(
+      expect.arrayContaining([
+        'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+        'Fixture Owner',
+        'Fixture Admin',
+        'pending-member@example.test',
+        'Audit: fixture-audit-people-policy',
+      ])
+    );
+    expect(peopleAccessLoaded?.forbidden).toEqual(
+      expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle'])
+    );
+
+    const peopleAccessSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'people-access-switch-clears-fixture'
+    );
+    expect(peopleAccessSwitch).toEqual(
+      expect.objectContaining({
+        action: 'click-people-access-switch-clears',
+        loadedStateRequiredMarkers: ['people stale-state clearing', 'account policy audit id'],
+        forbidden: expect.arrayContaining([
+          'Fixture Owner',
+          'pending-member@example.test',
+          'fixture-audit-people-policy',
+        ]),
+      })
+    );
+
+    const connectedAppsLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'connected-apps-loaded-fixture'
+    );
+    expect(connectedAppsLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
+    expect(connectedAppsLoaded?.action).toBe('click-load');
+    expect(connectedAppsLoaded?.expected).toEqual(
       expect.arrayContaining([
         'LOCAL FIXTURE - NOT LIVE BETA PROOF',
         'Google Workspace',
@@ -139,14 +176,16 @@ describe('evaOS local shell smoke', () => {
         'fixture-audit-providers',
       ])
     );
-    expect(connectedAppsLoaded.forbidden).toEqual(
+    expect(connectedAppsLoaded?.forbidden).toEqual(
       expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle'])
     );
 
-    const businessBrowserLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[1];
-    expect(businessBrowserLoaded.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(businessBrowserLoaded.action).toBe('click-load');
-    expect(businessBrowserLoaded.expected).toEqual(
+    const businessBrowserLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'business-browser-loaded-fixture'
+    );
+    expect(businessBrowserLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
+    expect(businessBrowserLoaded?.action).toBe('click-load');
+    expect(businessBrowserLoaded?.expected).toEqual(
       expect.arrayContaining([
         'LOCAL FIXTURE - NOT LIVE BETA PROOF',
         'Business Browser Fixture',
@@ -155,15 +194,17 @@ describe('evaOS local shell smoke', () => {
         'fixture-audit-browser-running',
       ])
     );
-    expect(businessBrowserLoaded.loadedStateRequiredMarkers).toEqual([
+    expect(businessBrowserLoaded?.loadedStateRequiredMarkers).toEqual([
       'browser runtime status',
       'current URL summary',
       'browser audit id',
     ]);
 
-    const businessBrowserLaunch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[2];
-    expect(businessBrowserLaunch.action).toBe('click-business-browser-launch');
-    expect(businessBrowserLaunch.expected).toEqual(
+    const businessBrowserLaunch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'business-browser-launch-fixture'
+    );
+    expect(businessBrowserLaunch?.action).toBe('click-business-browser-launch');
+    expect(businessBrowserLaunch?.expected).toEqual(
       expect.arrayContaining([
         'Synthetic browser launch requested',
         'Source: local-fixture:business-browser:launching',
@@ -171,9 +212,11 @@ describe('evaOS local shell smoke', () => {
       ])
     );
 
-    const businessBrowserStop = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS[3];
-    expect(businessBrowserStop.action).toBe('click-business-browser-stop');
-    expect(businessBrowserStop.expected).toEqual(
+    const businessBrowserStop = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'business-browser-stop-fixture'
+    );
+    expect(businessBrowserStop?.action).toBe('click-business-browser-stop');
+    expect(businessBrowserStop?.expected).toEqual(
       expect.arrayContaining([
         'Synthetic browser stop completed',
         'Source: local-fixture:business-browser:stopped',

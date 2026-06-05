@@ -19,6 +19,8 @@ import type {
   IEvaosCompanyBrainQueryRequest,
   IEvaosCompanyBrainQueryResult,
   IEvaosCustomerTargetsView,
+  IEvaosPeopleAccessPolicyRequest,
+  IEvaosPeopleAccessPolicyView,
   IEvaosProviderActionRequest,
   IEvaosProviderActionResult,
   IEvaosProviderApprovalRequest,
@@ -84,6 +86,41 @@ export function evaosLocalProductFixtureCustomerTargets(
     ],
     summaryText: `${FIXTURE_LABEL}: 2 customer targets loaded for ${persona} persona`,
   });
+}
+
+export function evaosLocalProductFixturePeopleAccessPolicy(
+  request: IEvaosPeopleAccessPolicyRequest
+): IEvaosPeopleAccessPolicyView {
+  if (request.customerId !== CUSTOMER_ID) {
+    return clone({
+      schemaVersion: 'evaos.account_policy.v1',
+      customerAccountId: CUSTOMER_ACCOUNT_ID,
+      selectedCustomerId: request.customerId,
+      membershipId: 'fixture-member-agent',
+      membershipRole: 'agent_only',
+      planCode: 'fixture-beta',
+      seatLimit: 8,
+      activeSeats: 0,
+      invitedSeats: 0,
+      scopes: [],
+      advancedSurfaces: {
+        peopleAccess: false,
+        providerHub: false,
+        approvalCenter: false,
+        companyBrain: false,
+        businessBrowser: false,
+      },
+      members: [],
+      invites: [],
+      routeDenied: true,
+      routeDenialReason: `${FIXTURE_LABEL}: People Access denied for wrong customer fixture.`,
+      backendEnforced: true,
+      updatedAt: NOW,
+      auditId: 'fixture-audit-people-denied-policy',
+    });
+  }
+
+  return clone(peoplePolicy);
 }
 
 export function evaosLocalProductFixtureProviderHub(request: IEvaosProviderHubRequest): IEvaosProviderHubView {
@@ -385,6 +422,96 @@ export function evaosLocalProductFixtureCompanyBrainQuery(
     backendEnforced: true,
   });
 }
+
+const peoplePolicy: IEvaosPeopleAccessPolicyView = {
+  schemaVersion: 'evaos.account_policy.v1',
+  customerAccountId: CUSTOMER_ACCOUNT_ID,
+  selectedCustomerId: CUSTOMER_ID,
+  membershipId: MEMBERSHIP_ID,
+  membershipRole: 'owner',
+  planCode: 'fixture-beta',
+  seatLimit: 8,
+  activeSeats: 4,
+  invitedSeats: 2,
+  scopes: [
+    'manage_members',
+    'manage_integrations',
+    'approve_actions',
+    'open_business_browser',
+    'view_company_brain',
+    'manage_company_brain',
+  ],
+  advancedSurfaces: {
+    peopleAccess: true,
+    providerHub: true,
+    approvalCenter: true,
+    companyBrain: true,
+    businessBrowser: true,
+  },
+  members: [
+    {
+      memberId: MEMBERSHIP_ID,
+      email: 'owner@example.test',
+      displayName: 'Fixture Owner',
+      role: 'owner',
+      seatType: 'full',
+      status: 'active',
+      joinedAt: '2026-05-20T09:00:00.000Z',
+      lastActiveAt: NOW,
+    },
+    {
+      memberId: 'fixture-member-admin',
+      email: 'admin@example.test',
+      displayName: 'Fixture Admin',
+      role: 'admin',
+      seatType: 'full',
+      status: 'active',
+      joinedAt: '2026-05-21T09:00:00.000Z',
+      lastActiveAt: '2026-06-04T09:50:00.000Z',
+    },
+    {
+      memberId: 'fixture-member-operator',
+      email: 'operator@example.test',
+      displayName: 'Fixture Operator',
+      role: 'member',
+      seatType: 'operator',
+      status: 'active',
+      joinedAt: '2026-05-22T09:00:00.000Z',
+      lastActiveAt: '2026-06-04T09:30:00.000Z',
+    },
+    {
+      memberId: 'fixture-member-agent',
+      email: 'agent-seat@example.test',
+      displayName: 'Fixture Agent Seat',
+      role: 'agent_only',
+      seatType: 'agent',
+      status: 'suspended',
+      joinedAt: '2026-05-23T09:00:00.000Z',
+    },
+  ],
+  invites: [
+    {
+      inviteId: 'fixture-invite-pending',
+      email: 'pending-member@example.test',
+      role: 'member',
+      status: 'pending',
+      invitedAt: '2026-06-03T09:00:00.000Z',
+      expiresAt: '2026-06-10T09:00:00.000Z',
+    },
+    {
+      inviteId: 'fixture-invite-expired',
+      email: 'expired-admin@example.test',
+      role: 'technical_admin',
+      status: 'expired',
+      invitedAt: '2026-05-20T09:00:00.000Z',
+      expiresAt: '2026-05-27T09:00:00.000Z',
+    },
+  ],
+  routeDenied: false,
+  backendEnforced: true,
+  updatedAt: NOW,
+  auditId: 'fixture-audit-people-policy',
+};
 
 const providerHub: IEvaosProviderHubView = {
   schemaVersion: 'evaos.provider_hub.v1',

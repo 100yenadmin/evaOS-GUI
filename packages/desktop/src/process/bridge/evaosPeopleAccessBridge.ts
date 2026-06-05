@@ -42,6 +42,7 @@ import {
   evaosLocalProductFixtureCompanyBrainAccount360,
   evaosLocalProductFixtureCompanyBrainDirectory,
   evaosLocalProductFixtureCompanyBrainQuery,
+  evaosLocalProductFixturePeopleAccessPolicy,
   evaosLocalProductFixtureProviderAction,
   evaosLocalProductFixtureProviderHub,
   isEvaosLocalProductFixtureEnabled,
@@ -59,7 +60,11 @@ export function initEvaosPeopleAccessBridge(
 ): void {
   ipcBridge.evaosPeopleAccess.getPolicy.provider(
     async (request: IEvaosPeopleAccessPolicyRequest): Promise<BridgeResponse<IEvaosPeopleAccessPolicyView>> =>
-      toBridgeResponse(() => client.peopleAccessPolicy(request))
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixturePeopleAccessPolicy(request)
+          : client.peopleAccessPolicy(request)
+      )
   );
 
   ipcBridge.evaosPeopleAccess.inviteMember.provider(
