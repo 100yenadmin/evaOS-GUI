@@ -58,7 +58,7 @@ import type {
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
   IEvaosSafeUrlSummary,
-} from '@/common/adapter/ipcBridge';
+} from '@/common/evaos/bridgeTypes';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';

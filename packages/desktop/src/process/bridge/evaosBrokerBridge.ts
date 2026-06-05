@@ -12,7 +12,7 @@ import type {
   IEvaosCustomerTargetsView,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
-} from '@/common/adapter/ipcBridge';
+} from '@/common/evaos/bridgeTypes';
 import {
   evaosBrokerErrorMessage,
   getDefaultEvaosBrokerSessionClient,

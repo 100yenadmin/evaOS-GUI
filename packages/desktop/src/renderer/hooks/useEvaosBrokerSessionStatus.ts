@@ -5,7 +5,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { evaosBroker, type IEvaosBrokerSessionStatus } from '@/common/adapter/ipcBridge';
+import { evaosBroker } from '@/common/adapter/ipcBridge';
+import type { IEvaosBrokerSessionStatus } from '@/common/evaos/bridgeTypes';
 
 interface EvaosBrokerSessionStatusState {
   session: IEvaosBrokerSessionStatus | null;

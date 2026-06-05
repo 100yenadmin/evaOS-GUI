@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IEvaosAccountPolicyScope, IEvaosRuntimeKey } from '@/common/adapter/ipcBridge';
+import type { IEvaosAccountPolicyScope, IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
 
 type EvaosRuntimeSection = 'workspace' | 'technical';
 type EvaosRuntimeFeatureFlag = 'team_chat';

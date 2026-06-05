@@ -5,7 +5,8 @@
  */
 
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { evaosBroker, type IEvaosCustomerTargetView, type IEvaosCustomerTargetsView } from '@/common/adapter/ipcBridge';
+import { evaosBroker } from '@/common/adapter/ipcBridge';
+import type { IEvaosCustomerTargetView, IEvaosCustomerTargetsView } from '@/common/evaos/bridgeTypes';
 
 const SECRET_TEXT_PATTERN =
   /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|authorization|bearer|secret|password/i;
