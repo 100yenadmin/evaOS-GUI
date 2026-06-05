@@ -1,35 +1,17 @@
 import classNames from 'classnames';
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePreviewContext } from '@renderer/pages/conversation/Preview/context/PreviewContext';
 import { cleanupSiderTooltips, getSiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
-import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
-import { canAccessEvaosAdminRuntimes } from '@renderer/evaos/evaosRuntimeVisibility';
-import {
-  EVAOS_APPROVAL_CENTER_ENABLED,
-  EVAOS_BUSINESS_BROWSER_ENABLED,
-  EVAOS_COMPANY_BRAIN_ENABLED,
-  EVAOS_PROVIDER_HUB_ENABLED,
-  TEAM_MODE_ENABLED,
-} from '@/common/config/constants';
-import {
-  SiderApprovalCenterEntry,
-  SiderBusinessBrowserEntry,
-  SiderCompanyBrainEntry,
-  SiderConnectedAppsEntry,
-  SiderMissionControlEntry,
-  SiderPeopleAccessEntry,
-  SiderScheduledEntry,
-  SiderSearchEntry,
-  SiderToolbar,
-} from './SiderNav';
+import EvaosSidebarSection from '@renderer/evaos/EvaosSidebarSection';
+import { TEAM_MODE_ENABLED } from '@/common/config/constants';
+import { SiderScheduledEntry, SiderSearchEntry, SiderToolbar } from './SiderNav';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
 import TeamSiderSection from './TeamSiderSection';
@@ -51,16 +33,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
 
   const navigate = useNavigate();
   const { closePreview } = usePreviewContext();
-  const { logout, status, user } = useAuth();
-  const brokerSessionStatus = useEvaosBrokerSessionStatus(status === 'authenticated');
-  const brokerAuthenticated =
-    status === 'authenticated' &&
-    brokerSessionStatus.session?.authenticated === true &&
-    !brokerSessionStatus.session.expired;
-  const customerContext = useEvaosCustomerContext(
-    brokerAuthenticated,
-    evaosBrokerSessionKey(brokerSessionStatus.session)
-  );
+  const { logout, status } = useAuth();
   const { theme, setTheme } = useThemeContext();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const { jobs: cronJobs } = useAllCronJobs();
@@ -127,83 +100,21 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   };
 
-  const handleMissionControlClick = () => {
-    cleanupSiderTooltips();
-    blurActiveElement();
-    closePreview();
-    setIsBatchMode(false);
-    Promise.resolve(navigate('/mission-control')).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-    if (onSessionClick) {
-      onSessionClick();
-    }
-  };
-
-  const handlePeopleAccessClick = () => {
-    cleanupSiderTooltips();
-    blurActiveElement();
-    closePreview();
-    setIsBatchMode(false);
-    Promise.resolve(navigate('/people-access')).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-    if (onSessionClick) {
-      onSessionClick();
-    }
-  };
-
-  const handleApprovalCenterClick = () => {
-    cleanupSiderTooltips();
-    blurActiveElement();
-    closePreview();
-    setIsBatchMode(false);
-    Promise.resolve(navigate('/approval-center')).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-    if (onSessionClick) {
-      onSessionClick();
-    }
-  };
-
-  const handleConnectedAppsClick = () => {
-    cleanupSiderTooltips();
-    blurActiveElement();
-    closePreview();
-    setIsBatchMode(false);
-    Promise.resolve(navigate('/connected-apps')).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-    if (onSessionClick) {
-      onSessionClick();
-    }
-  };
-
-  const handleBusinessBrowserClick = () => {
-    cleanupSiderTooltips();
-    blurActiveElement();
-    closePreview();
-    setIsBatchMode(false);
-    Promise.resolve(navigate('/business-browser')).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-    if (onSessionClick) {
-      onSessionClick();
-    }
-  };
-
-  const handleCompanyBrainClick = () => {
-    cleanupSiderTooltips();
-    blurActiveElement();
-    closePreview();
-    setIsBatchMode(false);
-    Promise.resolve(navigate('/company-brain')).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-    if (onSessionClick) {
-      onSessionClick();
-    }
-  };
+  const handleEvaosNavigate = useCallback(
+    (path: string) => {
+      cleanupSiderTooltips();
+      blurActiveElement();
+      closePreview();
+      setIsBatchMode(false);
+      Promise.resolve(navigate(path)).catch((error) => {
+        console.error('Navigation failed:', error);
+      });
+      if (onSessionClick) {
+        onSessionClick();
+      }
+    },
+    [closePreview, navigate, onSessionClick]
+  );
 
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
@@ -250,28 +161,6 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
 
   const tooltipEnabled = collapsed && !isMobile;
   const siderTooltipProps = getSiderTooltipProps(tooltipEnabled);
-  const canSeeMissionControl = useMemo(() => {
-    if (status !== 'authenticated' || brokerSessionStatus.loading) return false;
-    if (!brokerAuthenticated) return true;
-    return (
-      customerContext.loaded &&
-      canAccessEvaosAdminRuntimes({
-        authenticated: status === 'authenticated',
-        roles: customerContext.roles,
-        isOperator: customerContext.isOperator,
-        userEmail: brokerSessionStatus.session?.userEmail ?? user?.username,
-      })
-    );
-  }, [
-    brokerAuthenticated,
-    brokerSessionStatus.loading,
-    brokerSessionStatus.session?.userEmail,
-    customerContext.isOperator,
-    customerContext.loaded,
-    customerContext.roles,
-    status,
-    user?.username,
-  ]);
 
   const workspaceHistoryProps = {
     collapsed,
@@ -307,58 +196,13 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               onConversationSelect={handleConversationSelect}
               onSessionClick={onSessionClick}
             />
-            {canSeeMissionControl ? (
-              <SiderMissionControlEntry
-                isMobile={isMobile}
-                isActive={pathname === '/mission-control'}
-                collapsed={collapsed}
-                siderTooltipProps={siderTooltipProps}
-                onClick={handleMissionControlClick}
-              />
-            ) : null}
-            <SiderPeopleAccessEntry
+            <EvaosSidebarSection
               isMobile={isMobile}
-              isActive={pathname === '/people-access'}
               collapsed={collapsed}
+              pathname={pathname}
               siderTooltipProps={siderTooltipProps}
-              onClick={handlePeopleAccessClick}
+              onNavigate={handleEvaosNavigate}
             />
-            {EVAOS_PROVIDER_HUB_ENABLED ? (
-              <SiderConnectedAppsEntry
-                isMobile={isMobile}
-                isActive={pathname === '/connected-apps'}
-                collapsed={collapsed}
-                siderTooltipProps={siderTooltipProps}
-                onClick={handleConnectedAppsClick}
-              />
-            ) : null}
-            {EVAOS_BUSINESS_BROWSER_ENABLED ? (
-              <SiderBusinessBrowserEntry
-                isMobile={isMobile}
-                isActive={pathname === '/business-browser'}
-                collapsed={collapsed}
-                siderTooltipProps={siderTooltipProps}
-                onClick={handleBusinessBrowserClick}
-              />
-            ) : null}
-            {EVAOS_COMPANY_BRAIN_ENABLED ? (
-              <SiderCompanyBrainEntry
-                isMobile={isMobile}
-                isActive={pathname === '/company-brain'}
-                collapsed={collapsed}
-                siderTooltipProps={siderTooltipProps}
-                onClick={handleCompanyBrainClick}
-              />
-            ) : null}
-            {EVAOS_APPROVAL_CENTER_ENABLED ? (
-              <SiderApprovalCenterEntry
-                isMobile={isMobile}
-                isActive={pathname === '/approval-center'}
-                collapsed={collapsed}
-                siderTooltipProps={siderTooltipProps}
-                onClick={handleApprovalCenterClick}
-              />
-            ) : null}
             {/* Scheduled tasks nav entry - fixed above scroll */}
             <SiderScheduledEntry
               isMobile={isMobile}

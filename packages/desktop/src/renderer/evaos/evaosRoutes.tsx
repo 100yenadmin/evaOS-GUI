@@ -1,0 +1,58 @@
+/**
+ * @license
+ * Copyright 2025 AionUi (aionui.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { Suspense } from 'react';
+import { Navigate, Route } from 'react-router-dom';
+import AppLoader from '@renderer/components/layout/AppLoader';
+import { EvaosRuntimeRouteGuard } from '@renderer/components/layout/EvaosRuntimeRouteGuard';
+import {
+  EVAOS_APPROVAL_CENTER_ENABLED,
+  EVAOS_BUSINESS_BROWSER_ENABLED,
+  EVAOS_COMPANY_BRAIN_ENABLED,
+  EVAOS_PROVIDER_HUB_ENABLED,
+} from '@/common/config/constants';
+
+const ApprovalCenter = React.lazy(() => import('@renderer/pages/approval-center'));
+const BusinessBrowser = React.lazy(() => import('@renderer/pages/business-browser'));
+const CompanyBrain = React.lazy(() => import('@renderer/pages/company-brain'));
+const ConnectedApps = React.lazy(() => import('@renderer/pages/connected-apps'));
+const MissionControl = React.lazy(() => import('@renderer/pages/mission-control'));
+const PeopleAccess = React.lazy(() => import('@renderer/pages/people-access'));
+
+const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentType>) => (
+  <Suspense fallback={<AppLoader />}>
+    <Component />
+  </Suspense>
+);
+
+const withEvaosRuntimeRouteGuard = (routePath: string, Component: React.LazyExoticComponent<React.ComponentType>) => (
+  <EvaosRuntimeRouteGuard routePath={routePath}>{withRouteFallback(Component)}</EvaosRuntimeRouteGuard>
+);
+
+export function renderEvaosRoutes(): React.ReactNode {
+  return (
+    <>
+      <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />
+      <Route
+        path='/approval-center'
+        element={EVAOS_APPROVAL_CENTER_ENABLED ? withRouteFallback(ApprovalCenter) : <Navigate to='/guid' replace />}
+      />
+      <Route
+        path='/connected-apps'
+        element={EVAOS_PROVIDER_HUB_ENABLED ? withRouteFallback(ConnectedApps) : <Navigate to='/guid' replace />}
+      />
+      <Route
+        path='/business-browser'
+        element={EVAOS_BUSINESS_BROWSER_ENABLED ? withRouteFallback(BusinessBrowser) : <Navigate to='/guid' replace />}
+      />
+      <Route
+        path='/company-brain'
+        element={EVAOS_COMPANY_BRAIN_ENABLED ? withRouteFallback(CompanyBrain) : <Navigate to='/guid' replace />}
+      />
+      <Route path='/people-access' element={withRouteFallback(PeopleAccess)} />
+    </>
+  );
+}
