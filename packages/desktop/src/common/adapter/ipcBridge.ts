@@ -372,7 +372,8 @@ export type IEvaosRuntimeKey =
   | 'browser'
   | 'terminal'
   | 'opendesign'
-  | 'creative_studio';
+  | 'creative_studio'
+  | 'team_chat';
 
 export type IEvaosBrokerSessionState = 'missing' | 'authenticated' | 'expired';
 

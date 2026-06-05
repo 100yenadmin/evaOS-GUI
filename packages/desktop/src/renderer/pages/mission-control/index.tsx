@@ -185,6 +185,11 @@ function latestTimestamp(values: Array<string | undefined>): string | undefined 
   return latest === undefined ? undefined : new Date(latest).toISOString();
 }
 
+function customerContextSessionKey(session: IEvaosBrokerSessionStatus | null): string | undefined {
+  if (!session?.authenticated) return undefined;
+  return [session.state, session.source, session.userEmail, session.expiresAt].filter(Boolean).join('|') || 'active';
+}
+
 const MissionControlPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
@@ -201,7 +206,7 @@ const MissionControlPage: React.FC = () => {
   const [deviceCodeStatus, setDeviceCodeStatus] = useState<string | null>(null);
   const [claimingDeviceCode, setClaimingDeviceCode] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
-  const customerContext = useEvaosCustomerContext(session?.authenticated === true);
+  const customerContext = useEvaosCustomerContext(session?.authenticated === true, customerContextSessionKey(session));
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
 

@@ -12,6 +12,8 @@ const SECRET_TEXT_PATTERN =
 
 type EvaosCustomerContextState = {
   targets: IEvaosCustomerTargetView[];
+  roles: string[];
+  isOperator: boolean;
   selectedCustomerId?: string;
   summaryText: string;
   loading: boolean;
@@ -20,6 +22,8 @@ type EvaosCustomerContextState = {
 
 const EMPTY_STATE: EvaosCustomerContextState = {
   targets: [],
+  roles: [],
+  isOperator: false,
   selectedCustomerId: undefined,
   summaryText: 'No customer targets loaded',
   loading: false,
@@ -28,6 +32,7 @@ const EMPTY_STATE: EvaosCustomerContextState = {
 
 let state: EvaosCustomerContextState = EMPTY_STATE;
 let requestEpoch = 0;
+let activeSessionKey: string | undefined;
 const listeners = new Set<() => void>();
 
 function emit(next: EvaosCustomerContextState): void {
@@ -60,6 +65,14 @@ function safeOptionalUiText(value: unknown): string | undefined {
   return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
 }
 
+function safeRoleList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => safeOptionalUiText(item))
+    .filter((item): item is string => Boolean(item))
+    .map((item) => item.slice(0, 80));
+}
+
 function customerTargetsSummary(count: number): string {
   return count === 1 ? '1 customer target loaded' : `${count} customer targets loaded`;
 }
@@ -84,6 +97,13 @@ function chooseSelectedCustomer(view: IEvaosCustomerTargetsView): string | undef
 }
 
 export function clearEvaosCustomerContext(): void {
+  activeSessionKey = undefined;
+  requestEpoch += 1;
+  emit(EMPTY_STATE);
+}
+
+function resetEvaosCustomerContextForSession(sessionKey: string): void {
+  activeSessionKey = sessionKey;
   requestEpoch += 1;
   emit(EMPTY_STATE);
 }
@@ -131,6 +151,8 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
 
     emit({
       targets: sanitizedView.customers,
+      roles: safeRoleList(sanitizedView.roles),
+      isOperator: sanitizedView.isOperator === true,
       selectedCustomerId: chooseSelectedCustomer(sanitizedView),
       summaryText: sanitizedView.summaryText,
       loading: false,
@@ -147,22 +169,31 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
   }
 }
 
-export function useEvaosCustomerContext(authenticated: boolean): EvaosCustomerContextState & {
+export function useEvaosCustomerContext(
+  authenticated: boolean,
+  sessionKey?: string | null
+): EvaosCustomerContextState & {
   selectedTarget?: IEvaosCustomerTargetView;
   refreshTargets: () => Promise<void>;
   selectCustomer: (customerId: string) => void;
 } {
   const current = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const normalizedSessionKey = authenticated ? normalizeSessionKey(sessionKey) : undefined;
 
   useEffect(() => {
     if (!authenticated) {
       clearEvaosCustomerContext();
       return;
     }
+    if (normalizedSessionKey && activeSessionKey !== normalizedSessionKey) {
+      resetEvaosCustomerContextForSession(normalizedSessionKey);
+      void refreshEvaosCustomerTargets();
+      return;
+    }
     if (state.targets.length === 0 && !state.loading) {
       void refreshEvaosCustomerTargets();
     }
-  }, [authenticated]);
+  }, [authenticated, normalizedSessionKey]);
 
   const refreshTargets = useCallback(async () => {
     if (!authenticated) {
@@ -182,4 +213,9 @@ export function useEvaosCustomerContext(authenticated: boolean): EvaosCustomerCo
     refreshTargets,
     selectCustomer,
   };
+}
+
+function normalizeSessionKey(sessionKey: string | null | undefined): string {
+  const normalized = sessionKey?.trim();
+  return normalized || 'authenticated';
 }

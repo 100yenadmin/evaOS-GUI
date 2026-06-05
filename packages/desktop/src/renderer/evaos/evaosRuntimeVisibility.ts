@@ -1,0 +1,204 @@
+/**
+ * @license
+ * Copyright 2025 AionUi (aionui.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { IEvaosAccountPolicyScope, IEvaosRuntimeKey } from '@/common/adapter/ipcBridge';
+
+type EvaosRuntimeSection = 'workspace' | 'technical';
+type EvaosRuntimeFeatureFlag = 'team_chat';
+type EvaosRouteDenialReason = 'signed_out' | 'admin_runtime_required' | 'scope_required' | 'unknown_route';
+
+export interface EvaosRuntimeDefinition {
+  key: IEvaosRuntimeKey;
+  title: string;
+  subtitle: string;
+  section: EvaosRuntimeSection;
+  routePath: string;
+  brokered: boolean;
+  requiresAdmin: boolean;
+  technicalDashboard: boolean;
+  deferred?: boolean;
+  featureFlag?: EvaosRuntimeFeatureFlag;
+  externalUrl?: string;
+  requiredScopes?: IEvaosAccountPolicyScope[];
+}
+
+export interface EvaosRuntimeVisibilityContext {
+  authenticated: boolean;
+  roles?: string[];
+  isOperator?: boolean;
+  userEmail?: string | null;
+  scopes?: IEvaosAccountPolicyScope[];
+  teamChatEnabled?: boolean;
+}
+
+export interface EvaosRuntimeRouteDecision {
+  allowed: boolean;
+  fallbackPath: '/login' | '/guid';
+  reason?: EvaosRouteDenialReason;
+}
+
+const ADMIN_RUNTIME_ROLES = new Set(['owner', 'admin', 'technical_admin']);
+const OPERATOR_ADMIN_ROLES = new Set(['customer_service', 'support']);
+
+export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
+  {
+    key: 'openclaw',
+    title: 'Eva Workspace',
+    subtitle: 'Main Eva dashboard and chat workspace.',
+    section: 'technical',
+    routePath: '/openclaw',
+    brokered: true,
+    requiresAdmin: true,
+    technicalDashboard: true,
+    requiredScopes: ['access_openclaw_dashboard'],
+  },
+  {
+    key: 'hermes',
+    title: 'Agent Workspace',
+    subtitle: 'Hermes agent workspace.',
+    section: 'technical',
+    routePath: '/hermes',
+    brokered: true,
+    requiresAdmin: true,
+    technicalDashboard: true,
+    requiredScopes: ['access_hermes_dashboard'],
+  },
+  {
+    key: 'paperclip',
+    title: 'Mission Control',
+    subtitle: 'Agent run dashboard and operating queue.',
+    section: 'technical',
+    routePath: '/mission-control',
+    brokered: true,
+    requiresAdmin: true,
+    technicalDashboard: true,
+  },
+  {
+    key: 'opendesign',
+    title: 'Design Workspace',
+    subtitle: 'OpenDesign workspace.',
+    section: 'workspace',
+    routePath: '/design-workspace',
+    brokered: true,
+    requiresAdmin: false,
+    technicalDashboard: false,
+    requiredScopes: ['use_design_workspace'],
+  },
+  {
+    key: 'browser',
+    title: 'Business Browser',
+    subtitle: 'Brokered customer browser workspace.',
+    section: 'workspace',
+    routePath: '/business-browser',
+    brokered: true,
+    requiresAdmin: false,
+    technicalDashboard: false,
+    requiredScopes: ['open_business_browser'],
+  },
+  {
+    key: 'terminal',
+    title: 'Terminal',
+    subtitle: 'Admin terminal surface.',
+    section: 'technical',
+    routePath: '/terminal',
+    brokered: true,
+    requiresAdmin: true,
+    technicalDashboard: true,
+    requiredScopes: ['access_terminal'],
+  },
+  {
+    key: 'creative_studio',
+    title: 'Creative Studio',
+    subtitle: 'External creative generation workspace.',
+    section: 'workspace',
+    routePath: '/creative-studio',
+    brokered: false,
+    requiresAdmin: false,
+    technicalDashboard: false,
+    externalUrl: 'https://www.comfy.org/cloud',
+    requiredScopes: ['use_creative_studio'],
+  },
+  {
+    key: 'team_chat',
+    title: 'Team Chat',
+    subtitle: 'Company chat workspace.',
+    section: 'workspace',
+    routePath: '/team',
+    brokered: true,
+    requiresAdmin: false,
+    technicalDashboard: false,
+    deferred: true,
+    featureFlag: 'team_chat',
+  },
+];
+
+const RUNTIME_BY_ROUTE_PATH = new Map(EVAOS_RUNTIME_CATALOG.map((runtime) => [runtime.routePath, runtime]));
+
+export function canAccessEvaosAdminRuntimes(context: EvaosRuntimeVisibilityContext): boolean {
+  if (!context.authenticated) return false;
+  if (normalizeEmail(context.userEmail) === 'admin@100yen.org') return true;
+
+  const roles = normalizedRoles(context.roles);
+  if (roles.some((role) => ADMIN_RUNTIME_ROLES.has(role))) return true;
+  return Boolean(context.isOperator && roles.some((role) => OPERATOR_ADMIN_ROLES.has(role)));
+}
+
+export function visibleEvaosRuntimeCatalog(context: EvaosRuntimeVisibilityContext): EvaosRuntimeDefinition[] {
+  if (!context.authenticated) return [];
+  return EVAOS_RUNTIME_CATALOG.filter((runtime) => canOpenRuntime(runtime, context));
+}
+
+export function evaosRuntimeRouteDecision(
+  routePath: string,
+  context: EvaosRuntimeVisibilityContext
+): EvaosRuntimeRouteDecision {
+  if (!context.authenticated) {
+    return { allowed: false, fallbackPath: '/login', reason: 'signed_out' };
+  }
+
+  const runtime = RUNTIME_BY_ROUTE_PATH.get(normalizeRoutePath(routePath));
+  if (!runtime) {
+    return { allowed: false, fallbackPath: '/guid', reason: 'unknown_route' };
+  }
+
+  if (canOpenRuntime(runtime, context)) {
+    return { allowed: true, fallbackPath: '/guid' };
+  }
+
+  return {
+    allowed: false,
+    fallbackPath: '/guid',
+    reason: runtime.requiresAdmin ? 'admin_runtime_required' : 'scope_required',
+  };
+}
+
+function canOpenRuntime(runtime: EvaosRuntimeDefinition, context: EvaosRuntimeVisibilityContext): boolean {
+  if (!context.authenticated) return false;
+  if (runtime.deferred && runtime.featureFlag === 'team_chat' && !context.teamChatEnabled) return false;
+  if (runtime.requiresAdmin) return canAccessEvaosAdminRuntimes(context);
+  if (!hasRequiredScopes(runtime, context.scopes)) return false;
+  return true;
+}
+
+function hasRequiredScopes(runtime: EvaosRuntimeDefinition, scopes: IEvaosAccountPolicyScope[] | undefined): boolean {
+  if (!runtime.requiredScopes?.length) return true;
+  if (!scopes) return false;
+  return runtime.requiredScopes.every((scope) => scopes.includes(scope));
+}
+
+function normalizedRoles(roles: string[] | undefined): string[] {
+  return (roles ?? []).map((role) => role.trim().toLowerCase().replace(/-/g, '_')).filter(Boolean);
+}
+
+function normalizeEmail(email: string | null | undefined): string | undefined {
+  const normalized = email?.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+function normalizeRoutePath(path: string): string {
+  const [routePath] = path.split(/[?#]/, 1);
+  return routePath || '/';
+}
