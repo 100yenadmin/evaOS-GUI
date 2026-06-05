@@ -7,7 +7,7 @@
 import { randomUUID } from 'crypto';
 import { createServer, type Server } from 'http';
 import { shell } from 'electron';
-import type { IEvaosBrokerBeginDesktopAuthResult } from '@/common/adapter/ipcBridge';
+import type { IEvaosBrokerBeginDesktopAuthResult } from '@/common/evaos/bridgeTypes';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
 import {
   EvaosBrokerSessionError,

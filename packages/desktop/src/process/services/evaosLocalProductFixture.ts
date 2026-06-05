@@ -23,7 +23,7 @@ import type {
   IEvaosProviderApprovalRequest,
   IEvaosProviderHubRequest,
   IEvaosProviderHubView,
-} from '@/common/adapter/ipcBridge';
+} from '@/common/evaos/bridgeTypes';
 
 const CUSTOMER_ID = 'fixture-customer-acme';
 const BROWSER_DENIED_CUSTOMER_ID = 'fixture-customer-browser-denied';
