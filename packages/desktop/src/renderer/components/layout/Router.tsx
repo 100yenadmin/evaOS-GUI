@@ -1,23 +1,11 @@
 import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppLoader from '@renderer/components/layout/AppLoader';
-import { EvaosRuntimeRouteGuard } from '@renderer/components/layout/EvaosRuntimeRouteGuard';
+import { renderEvaosRoutes } from '@renderer/evaos/evaosRoutes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
-import {
-  EVAOS_APPROVAL_CENTER_ENABLED,
-  EVAOS_BUSINESS_BROWSER_ENABLED,
-  EVAOS_COMPANY_BRAIN_ENABLED,
-  EVAOS_PROVIDER_HUB_ENABLED,
-  TEAM_MODE_ENABLED,
-} from '@/common/config/constants';
+import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 const Conversation = React.lazy(() => import('@renderer/pages/conversation'));
 const Guid = React.lazy(() => import('@renderer/pages/guid'));
-const ApprovalCenter = React.lazy(() => import('@renderer/pages/approval-center'));
-const BusinessBrowser = React.lazy(() => import('@renderer/pages/business-browser'));
-const CompanyBrain = React.lazy(() => import('@renderer/pages/company-brain'));
-const ConnectedApps = React.lazy(() => import('@renderer/pages/connected-apps'));
-const MissionControl = React.lazy(() => import('@renderer/pages/mission-control'));
-const PeopleAccess = React.lazy(() => import('@renderer/pages/people-access'));
 const AgentSettings = React.lazy(() => import('@renderer/pages/settings/AgentSettings'));
 const AssistantSettings = React.lazy(() => import('@renderer/pages/settings/AssistantSettings'));
 const CapabilitiesSettings = React.lazy(() => import('@renderer/pages/settings/CapabilitiesSettings'));
@@ -37,10 +25,6 @@ const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentT
   <Suspense fallback={<AppLoader />}>
     <Component />
   </Suspense>
-);
-
-const withEvaosRuntimeRouteGuard = (routePath: string, Component: React.LazyExoticComponent<React.ComponentType>) => (
-  <EvaosRuntimeRouteGuard routePath={routePath}>{withRouteFallback(Component)}</EvaosRuntimeRouteGuard>
 );
 
 const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
@@ -71,29 +55,8 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
         />
         <Route element={<ProtectedLayout layout={layout} />}>
           <Route index element={<Navigate to='/mission-control' replace />} />
-          <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />
           <Route path='/guid' element={withRouteFallback(Guid)} />
-          <Route
-            path='/approval-center'
-            element={
-              EVAOS_APPROVAL_CENTER_ENABLED ? withRouteFallback(ApprovalCenter) : <Navigate to='/guid' replace />
-            }
-          />
-          <Route
-            path='/connected-apps'
-            element={EVAOS_PROVIDER_HUB_ENABLED ? withRouteFallback(ConnectedApps) : <Navigate to='/guid' replace />}
-          />
-          <Route
-            path='/business-browser'
-            element={
-              EVAOS_BUSINESS_BROWSER_ENABLED ? withRouteFallback(BusinessBrowser) : <Navigate to='/guid' replace />
-            }
-          />
-          <Route
-            path='/company-brain'
-            element={EVAOS_COMPANY_BRAIN_ENABLED ? withRouteFallback(CompanyBrain) : <Navigate to='/guid' replace />}
-          />
-          <Route path='/people-access' element={withRouteFallback(PeopleAccess)} />
+          {renderEvaosRoutes()}
           <Route path='/conversation/:id' element={withRouteFallback(Conversation)} />
           <Route
             path='/team/:id'
