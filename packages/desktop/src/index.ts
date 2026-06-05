@@ -70,7 +70,7 @@ import {
   setIsQuitting,
 } from './process/utils/tray';
 import { readCloseToTraySetting } from './process/utils/closeToTraySetting';
-import { shouldDisableAutoUpdate } from './process/evaosBetaSafety';
+import { shouldDisableAutoUpdate, shouldRegisterDefaultProtocolClient } from './process/evaosBetaSafety';
 // @ts-expect-error - electron-squirrel-startup doesn't have types
 import electronSquirrelStartup from 'electron-squirrel-startup';
 
@@ -796,7 +796,17 @@ const handleAppReady = async (): Promise<void> => {
 
 // ============ Protocol Registration ============
 // Register the beta-safe app protocol as the default protocol client.
-if (process.defaultApp) {
+const shouldRegisterProtocolClient = shouldRegisterDefaultProtocolClient({
+  protocolScheme: PROTOCOL_SCHEME,
+  isPackaged: app.isPackaged,
+  isDefaultApp: Boolean(process.defaultApp),
+});
+
+if (!shouldRegisterProtocolClient) {
+  console.warn(
+    `[AionUi] Skipping default protocol registration for ${PROTOCOL_SCHEME} in raw Electron dev mode; packaged app owns this scheme.`
+  );
+} else if (process.defaultApp) {
   // Dev mode: need to pass execPath explicitly
   app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
 } else {
