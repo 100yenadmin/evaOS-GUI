@@ -24,6 +24,15 @@ const signingSecrets = [
   'TEAM_ID',
 ];
 
+const apiKeySigningSecrets = [
+  'BUILD_CERTIFICATE_BASE64',
+  'P12_PASSWORD',
+  'IDENTITY',
+  'APPLE_API_KEY',
+  'APPLE_API_KEY_ID',
+  'APPLE_API_ISSUER',
+];
+
 const distributionSecrets = ['GH_TOKEN', 'AWS_REGION', 'AWS_ROLE_ARN', 'AWS_S3_BUCKET'];
 
 const releaseVariables = ['EVAOS_BETA_RELEASE_BRANCH', 'EVAOS_BETA_RELEASE_PUBLISH_ENABLED'];
@@ -53,6 +62,21 @@ describe('evaOS beta release credential inventory', () => {
     expect(report.readyForDistribution).toBe(false);
     expect(report.missingSecrets).toEqual(distributionSecrets);
     expect(report.missingVariables).toEqual(releaseVariables);
+  });
+
+  it('accepts App Store Connect API key notarization names as a signed candidate alternative', () => {
+    const report = inventory.auditReleaseCredentialInventory({
+      secrets: apiKeySigningSecrets,
+      variables: [],
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.readyForSignedCandidate).toBe(true);
+    expect(report.readyForDistribution).toBe(false);
+    expect(report.missingSecrets).toEqual(distributionSecrets);
+    expect(report.satisfiedSecrets).toContain('APPLE_API_KEY');
+    expect(report.satisfiedSecrets).toContain('APPLE_API_ISSUER');
+    expect(report.satisfiedSecrets).not.toContain('APPLE_ID_PASSWORD');
   });
 
   it('marks inventory ready when all required names are present', () => {

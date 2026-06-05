@@ -15,6 +15,9 @@ const SIGNED_CANDIDATE_SECRETS = [
     name: 'IDENTITY',
     reason: 'Developer ID Application signing identity used by electron-builder',
   },
+];
+
+const APPLE_ID_NOTARIZATION_SECRETS = [
   {
     name: 'APPLE_ID',
     reason: 'Apple ID used for notarization',
@@ -26,6 +29,21 @@ const SIGNED_CANDIDATE_SECRETS = [
   {
     name: 'TEAM_ID',
     reason: 'Apple Developer Team ID used by notarytool',
+  },
+];
+
+const API_KEY_NOTARIZATION_SECRETS = [
+  {
+    name: 'APPLE_API_KEY',
+    reason: 'absolute path to App Store Connect API key for notarization',
+  },
+  {
+    name: 'APPLE_API_KEY_ID',
+    reason: 'App Store Connect API key id for notarization',
+  },
+  {
+    name: 'APPLE_API_ISSUER',
+    reason: 'App Store Connect issuer UUID for team API-key notarization',
   },
 ];
 
@@ -67,17 +85,33 @@ function auditReleaseCredentialInventory(input) {
   const secrets = normalizeNames(input.secrets);
   const variables = normalizeNames(input.variables);
   const signingNames = SIGNED_CANDIDATE_SECRETS.map((entry) => entry.name);
+  const appleIdNotarizationNames = APPLE_ID_NOTARIZATION_SECRETS.map((entry) => entry.name);
+  const apiKeyNotarizationNames = API_KEY_NOTARIZATION_SECRETS.map((entry) => entry.name);
   const distributionNames = DISTRIBUTION_SECRETS.map((entry) => entry.name);
   const variableNames = RELEASE_VARIABLES.map((entry) => entry.name);
-  const allSecretNames = [...signingNames, ...distributionNames];
+  const allSecretNames = [
+    ...signingNames,
+    ...appleIdNotarizationNames,
+    ...apiKeyNotarizationNames,
+    ...distributionNames,
+  ];
+  const hasAppleIdNotarizationNames = appleIdNotarizationNames.every((name) => secrets.has(name));
+  const hasApiKeyNotarizationNames = apiKeyNotarizationNames.every((name) => secrets.has(name));
+  const missingSigningSecrets = signingNames.filter((name) => !secrets.has(name));
+  const missingAppleIdNotarizationSecrets = appleIdNotarizationNames.filter((name) => !secrets.has(name));
+  const missingApiKeyNotarizationSecrets = apiKeyNotarizationNames.filter((name) => !secrets.has(name));
+  const readyForNotarization = hasAppleIdNotarizationNames || hasApiKeyNotarizationNames;
 
-  const missingSecrets = allSecretNames.filter((name) => !secrets.has(name));
+  const missingSecrets = [
+    ...missingSigningSecrets,
+    ...(!readyForNotarization ? [...missingAppleIdNotarizationSecrets, ...missingApiKeyNotarizationSecrets] : []),
+    ...distributionNames.filter((name) => !secrets.has(name)),
+  ];
   const missingVariables = variableNames.filter((name) => !variables.has(name));
   const satisfiedSecrets = allSecretNames.filter((name) => secrets.has(name));
   const satisfiedVariables = variableNames.filter((name) => variables.has(name));
-  const missingSignedCandidateSecrets = signingNames.filter((name) => !secrets.has(name));
 
-  const readyForSignedCandidate = missingSignedCandidateSecrets.length === 0;
+  const readyForSignedCandidate = missingSigningSecrets.length === 0 && readyForNotarization;
   const readyForDistribution = missingSecrets.length === 0 && missingVariables.length === 0;
 
   return {
@@ -134,6 +168,9 @@ function renderMarkdown(report) {
 
   lines.push('## Notes', '');
   lines.push('- This inventory is name-only and does not print secret values.');
+  lines.push(
+    '- Signed candidate readiness accepts either Apple ID notarization names or App Store Connect API-key names.'
+  );
   lines.push('- Keep `EVAOS_BETA_RELEASE_PUBLISH_ENABLED` disabled until issue #13 says `ship public beta`.');
   lines.push(
     '- Passing this inventory does not replace signed install, launch, updater/feed, rollback, and support proof.'
@@ -194,6 +231,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  APPLE_ID_NOTARIZATION_SECRETS,
+  API_KEY_NOTARIZATION_SECRETS,
   DISTRIBUTION_SECRETS,
   RELEASE_VARIABLES,
   SIGNED_CANDIDATE_SECRETS,

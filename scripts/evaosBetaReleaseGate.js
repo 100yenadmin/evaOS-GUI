@@ -7,7 +7,7 @@ const { execFileSync } = require('child_process');
 
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 
-const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
+const REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV = [
   {
     name: 'BUILD_CERTIFICATE_BASE64',
     aliases: ['BUILD_CERTIFICATE_BASE64'],
@@ -23,6 +23,9 @@ const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
     aliases: ['identity', 'IDENTITY', 'CSC_NAME'],
     description: 'Developer ID Application signing identity',
   },
+];
+
+const REQUIRED_APPLE_ID_NOTARIZATION_ENV = [
   {
     name: 'appleId',
     aliases: ['appleId', 'APPLE_ID'],
@@ -40,9 +43,35 @@ const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
   },
 ];
 
-const REQUIRED_NOTARIZATION_ENV = REQUIRED_PUBLIC_BETA_SIGNING_ENV.filter((entry) =>
-  ['appleId', 'appleIdPassword', 'teamId'].includes(entry.name)
-);
+const REQUIRED_API_KEY_NOTARIZATION_ENV = [
+  {
+    name: 'appleApiKey',
+    aliases: ['appleApiKey', 'APPLE_API_KEY'],
+    description: 'absolute path to App Store Connect API key for notarization',
+  },
+  {
+    name: 'appleApiKeyId',
+    aliases: ['appleApiKeyId', 'APPLE_API_KEY_ID'],
+    description: 'App Store Connect API key id for notarization',
+  },
+];
+
+const API_KEY_ISSUER_ENV = {
+  name: 'appleApiIssuer',
+  aliases: ['appleApiIssuer', 'APPLE_API_ISSUER'],
+  description: 'App Store Connect issuer UUID for team API keys',
+};
+
+const API_KEY_INDIVIDUAL_ACK_ENV = {
+  name: 'APPLE_API_INDIVIDUAL_KEY',
+  aliases: ['APPLE_API_INDIVIDUAL_KEY', 'appleApiIndividualKey'],
+  description: 'explicit acknowledgement that the API key is an individual App Store Connect key',
+};
+
+const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
+  ...REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV,
+  ...REQUIRED_APPLE_ID_NOTARIZATION_ENV,
+];
 const RELEASE_MANIFEST_NAME = 'evaos-beta-release-manifest.json';
 const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
@@ -117,15 +146,63 @@ function formatMissing(entries, env) {
   return entries.filter((entry) => !getEnvValue(env, entry)).map((entry) => `${entry.name} (${entry.description})`);
 }
 
+function hasAny(entries, env) {
+  return entries.some((entry) => Boolean(getEnvValue(env, entry)));
+}
+
+function hasIndividualApiKeyAck(env) {
+  return normalizeBoolean(getEnvValue(env, API_KEY_INDIVIDUAL_ACK_ENV));
+}
+
+function formatMissingApiKeyIssuer(env) {
+  if (getEnvValue(env, API_KEY_ISSUER_ENV) || hasIndividualApiKeyAck(env)) {
+    return [];
+  }
+  return [
+    `${API_KEY_ISSUER_ENV.name} (${API_KEY_ISSUER_ENV.description}) or ${API_KEY_INDIVIDUAL_ACK_ENV.name} (${API_KEY_INDIVIDUAL_ACK_ENV.description})`,
+  ];
+}
+
+function formatMissingNotarizationEnv(env) {
+  const appleIdMissing = formatMissing(REQUIRED_APPLE_ID_NOTARIZATION_ENV, env);
+  if (appleIdMissing.length === 0) {
+    return [];
+  }
+
+  const apiKeyMissing = formatMissing(REQUIRED_API_KEY_NOTARIZATION_ENV, env);
+  const apiKeyIssuerMissing = apiKeyMissing.length === 0 ? formatMissingApiKeyIssuer(env) : [];
+  if (apiKeyMissing.length === 0 && apiKeyIssuerMissing.length === 0) {
+    return [];
+  }
+
+  const hasAppleIdInput = hasAny(REQUIRED_APPLE_ID_NOTARIZATION_ENV, env);
+  const hasApiKeyInput =
+    hasAny(REQUIRED_API_KEY_NOTARIZATION_ENV, env) ||
+    Boolean(getEnvValue(env, API_KEY_ISSUER_ENV)) ||
+    hasIndividualApiKeyAck(env);
+
+  if (hasApiKeyInput && !hasAppleIdInput) {
+    return [...apiKeyMissing, ...apiKeyIssuerMissing];
+  }
+  if (hasAppleIdInput && !hasApiKeyInput) {
+    return appleIdMissing;
+  }
+
+  return [
+    `Apple ID notarization path missing: ${appleIdMissing.join(', ')}`,
+    `API key notarization path missing: ${[...apiKeyMissing, ...apiKeyIssuerMissing].join(', ')}`,
+  ];
+}
+
 function assertPublicBetaReleaseSigningEnv(env = process.env) {
-  const missing = formatMissing(REQUIRED_PUBLIC_BETA_SIGNING_ENV, env);
+  const missing = [...formatMissing(REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV, env), ...formatMissingNotarizationEnv(env)];
   if (missing.length > 0) {
     throw new Error(`evaOS public beta release requires signing and notarization inputs: ${missing.join(', ')}`);
   }
 }
 
 function assertPublicBetaNotarizationEnv(env = process.env) {
-  const missing = formatMissing(REQUIRED_NOTARIZATION_ENV, env);
+  const missing = formatMissingNotarizationEnv(env);
   if (missing.length > 0) {
     throw new Error(`evaOS public beta release requires notarization inputs: ${missing.join(', ')}`);
   }
@@ -353,6 +430,8 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
 
   requireText(reusableBuild, 'assert-public-release-env', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'EVAOS_BETA_REQUIRE_SIGNING', '.github/workflows/_build-reusable.yml', issues);
+  requireText(reusableBuild, 'appleApiKey', '.github/workflows/_build-reusable.yml', issues);
+  requireText(reusableBuild, 'APPLE_API_INDIVIDUAL_KEY', '.github/workflows/_build-reusable.yml', issues);
   requireText(
     reusableBuild,
     'Notarization failed during public beta release',
@@ -361,6 +440,8 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
 
   requireText(afterSign, 'assertPublicBetaNotarizationEnv', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'getNotarizationOptions', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'appleApiKey', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_BETA_REQUIRE_SIGNING', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'Ad-hoc signing is not allowed', 'scripts/afterSign.js', issues);
 

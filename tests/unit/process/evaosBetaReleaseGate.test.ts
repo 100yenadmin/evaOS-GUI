@@ -18,6 +18,12 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
 };
+const afterSign = require('../../../scripts/afterSign.js') as {
+  getNotarizationOptions: (
+    env: Record<string, string | undefined>,
+    baseOptions: Record<string, string>
+  ) => Record<string, string> | undefined;
+};
 
 const repoRoot = path.resolve(__dirname, '../../..');
 
@@ -43,6 +49,16 @@ describe('evaOS beta release gate', () => {
         teamId: 'TEAMID',
       })
     ).not.toThrow();
+    expect(() =>
+      releaseGate.assertPublicBetaReleaseSigningEnv({
+        BUILD_CERTIFICATE_BASE64: 'cert',
+        P12_PASSWORD: 'password',
+        identity: 'Developer ID Application: evaOS',
+        APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+        APPLE_API_KEY_ID: 'ABC123',
+        APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+      })
+    ).not.toThrow();
   });
 
   it('fails closed when notarization inputs are missing', () => {
@@ -56,6 +72,81 @@ describe('evaOS beta release gate', () => {
         TEAM_ID: 'TEAMID',
       })
     ).not.toThrow();
+    expect(() =>
+      releaseGate.assertPublicBetaNotarizationEnv({
+        APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+        APPLE_API_KEY_ID: 'ABC123',
+      })
+    ).toThrow(/appleApiIssuer|APPLE_API_INDIVIDUAL_KEY/);
+    expect(() =>
+      releaseGate.assertPublicBetaNotarizationEnv({
+        APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+        APPLE_API_KEY_ID: 'ABC123',
+        APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+      })
+    ).not.toThrow();
+    expect(() =>
+      releaseGate.assertPublicBetaNotarizationEnv({
+        APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+        APPLE_API_KEY_ID: 'ABC123',
+        APPLE_API_INDIVIDUAL_KEY: 'true',
+      })
+    ).not.toThrow();
+  });
+
+  it('builds afterSign notarization options for Apple ID and API-key credential paths', () => {
+    const baseOptions = {
+      tool: 'notarytool',
+      appBundleId: 'com.evaos.workbench.beta',
+      appPath: '/Applications/evaOS Workbench Beta.app',
+    };
+
+    expect(
+      afterSign.getNotarizationOptions(
+        {
+          APPLE_ID: 'release@example.com',
+          APPLE_ID_PASSWORD: 'app-password',
+          TEAM_ID: 'TEAMID',
+          APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+          APPLE_API_KEY_ID: 'ABC123',
+          APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+        },
+        baseOptions
+      )
+    ).toMatchObject({
+      ...baseOptions,
+      appleId: 'release@example.com',
+      appleIdPassword: 'app-password',
+      teamId: 'TEAMID',
+    });
+
+    expect(
+      afterSign.getNotarizationOptions(
+        {
+          APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+          APPLE_API_KEY_ID: 'ABC123',
+          APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+        },
+        baseOptions
+      )
+    ).toMatchObject({
+      ...baseOptions,
+      appleApiKey: '/secure/AuthKey_ABC123.p8',
+      appleApiKeyId: 'ABC123',
+      appleApiIssuer: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+    });
+
+    expect(
+      afterSign.getNotarizationOptions(
+        {
+          APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+          APPLE_API_KEY_ID: 'ABC123',
+          APPLE_API_ISSUER: 'should-be-omitted',
+          APPLE_API_INDIVIDUAL_KEY: 'true',
+        },
+        baseOptions
+      )
+    ).not.toHaveProperty('appleApiIssuer');
   });
 
   it('passes the repository release config audit', () => {
