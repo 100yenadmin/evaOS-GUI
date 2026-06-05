@@ -20,6 +20,30 @@ export interface EvaosBoundaryCapability {
   proofRequired: readonly string[];
 }
 
+export type EvaosNativeCompanionStatusKey =
+  | 'not_installed'
+  | 'not_paired'
+  | 'permission_needed'
+  | 'ready'
+  | 'unavailable';
+
+export type EvaosNativeCompanionStatusSeverity = 'blocked' | 'warning' | 'ready';
+
+export interface EvaosNativeCompanionStatusScenario {
+  key: EvaosNativeCompanionStatusKey;
+  label: string;
+  severity: EvaosNativeCompanionStatusSeverity;
+  summary: string;
+  statusSource: string;
+  evidence: readonly string[];
+  handoff: {
+    label: string;
+    owner: EvaosTrustOwner;
+    enabled: boolean;
+    target: string;
+  };
+}
+
 export interface EvaosLocalActionBoundaryDecision {
   allowed: boolean;
   reason: string;
@@ -37,6 +61,81 @@ export const EVAOS_FORBIDDEN_LOCAL_TRUST_ACTIONS = [
   'local-machine-audit-write',
   'local-credential-vault',
 ] as const;
+
+export const EVAOS_NATIVE_COMPANION_STATUS_MATRIX = [
+  {
+    key: 'not_installed',
+    label: 'Not installed',
+    severity: 'blocked',
+    summary:
+      'No native companion is registered for this Mac. Use the released Workbench fallback until setup proof exists.',
+    statusSource: 'native-companion:missing',
+    evidence: ['No native companion id', 'No helper identity', 'No local audit source'],
+    handoff: {
+      label: 'Install released Workbench fallback',
+      owner: 'released-workbench-fallback',
+      enabled: false,
+      target: 'support://released-workbench-fallback',
+    },
+  },
+  {
+    key: 'not_paired',
+    label: 'Not paired',
+    severity: 'blocked',
+    summary: 'The Mac is not paired to evaOS. Pairing codes and trust claims must come from the native companion.',
+    statusSource: 'native-companion:pairing-required',
+    evidence: ['Pairing audit missing', 'Broker pairing session missing'],
+    handoff: {
+      label: 'Open native pairing handoff',
+      owner: 'evaos-native-companion',
+      enabled: false,
+      target: 'evaos-workbench-beta://native-companion/pair',
+    },
+  },
+  {
+    key: 'permission_needed',
+    label: 'Permission needed',
+    severity: 'warning',
+    summary:
+      'Accessibility or Screen Recording permission is missing. AionUi can show this status but cannot grant it.',
+    statusSource: 'native-companion:tcc-required',
+    evidence: ['Accessibility not ready', 'Screen Recording not ready', 'Permission audit missing'],
+    handoff: {
+      label: 'Open native permission handoff',
+      owner: 'evaos-native-companion',
+      enabled: false,
+      target: 'evaos-workbench-beta://native-companion/permissions',
+    },
+  },
+  {
+    key: 'ready',
+    label: 'Ready',
+    severity: 'ready',
+    summary: 'Native companion reports Mac connector readiness. AionUi may display proof and request brokered actions.',
+    statusSource: 'native-companion:ready',
+    evidence: ['Native companion id present', 'Helper identity verified', 'Append-only audit source present'],
+    handoff: {
+      label: 'Open native companion',
+      owner: 'evaos-native-companion',
+      enabled: true,
+      target: 'evaos-workbench-beta://native-companion/status',
+    },
+  },
+  {
+    key: 'unavailable',
+    label: 'Unavailable',
+    severity: 'blocked',
+    summary: 'Native status is offline or stale. Local control and device readiness must fail closed.',
+    statusSource: 'native-companion:unavailable',
+    evidence: ['Status source offline', 'Last proof is stale', 'Local action requests blocked'],
+    handoff: {
+      label: 'Use support and rollback path',
+      owner: 'released-workbench-fallback',
+      enabled: false,
+      target: 'support://native-companion-unavailable',
+    },
+  },
+] satisfies readonly EvaosNativeCompanionStatusScenario[];
 
 export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
   version: EVAOS_NATIVE_COMPANION_BOUNDARY_VERSION,

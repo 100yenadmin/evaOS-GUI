@@ -417,10 +417,12 @@ describe('evaOS local shell smoke', () => {
     );
     expect(nativeCompanion).toEqual(
       expect.objectContaining({
-        loadedStateRequiredMarkers: ['native companion boundary', 'deep-link policy', 'fallback requirement'],
+        loadedStateRequiredMarkers: ['native companion status matrix', 'open-native handoff', 'deep-link policy'],
         expected: expect.arrayContaining([
           'Mac & iPhone',
+          'Native companion status matrix',
           'Native companion boundary',
+          'Open native companion',
           'Deep-link scheme: evaos-workbench-beta',
           'Renderer receives callback secrets: false',
         ]),
@@ -472,7 +474,7 @@ describe('evaOS local shell smoke', () => {
         ['account directory rows', 'ingest/query status cards', 'directory source pointer'],
       ],
       ['agent-settings-remote-guardrail', ['local agent inventory result', 'remote guardrail copy']],
-      ['native-companion-boundary', ['native companion boundary', 'deep-link policy', 'fallback requirement']],
+      ['native-companion-boundary', ['native companion status matrix', 'open-native handoff', 'deep-link policy']],
     ]);
 
     for (const route of localShellSmoke.ROUTE_CHECKS) {

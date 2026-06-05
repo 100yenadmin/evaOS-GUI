@@ -9,8 +9,12 @@ export {
   EVAOS_FORBIDDEN_LOCAL_TRUST_ACTIONS,
   EVAOS_NATIVE_COMPANION_BOUNDARY,
   EVAOS_NATIVE_COMPANION_BOUNDARY_VERSION,
+  EVAOS_NATIVE_COMPANION_STATUS_MATRIX,
   getEvaosNativeCompanionBoundaryViolations,
   type EvaosBoundaryCapability,
   type EvaosLocalActionBoundaryDecision,
+  type EvaosNativeCompanionStatusKey,
+  type EvaosNativeCompanionStatusScenario,
+  type EvaosNativeCompanionStatusSeverity,
   type EvaosTrustOwner,
 } from '@/common/evaos/nativeCompanionBoundary';

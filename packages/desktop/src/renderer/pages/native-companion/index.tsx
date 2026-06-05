@@ -12,8 +12,11 @@ import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import {
   EVAOS_NATIVE_COMPANION_BOUNDARY,
+  EVAOS_NATIVE_COMPANION_STATUS_MATRIX,
   getEvaosNativeCompanionBoundaryViolations,
   type EvaosBoundaryCapability,
+  type EvaosNativeCompanionStatusScenario,
+  type EvaosNativeCompanionStatusSeverity,
 } from '@/common/evaos/nativeCompanionBoundary';
 
 const NativeCompanionPage: React.FC = () => {
@@ -42,11 +45,33 @@ const NativeCompanionPage: React.FC = () => {
           </Tag>
         </header>
 
-        <section className='grid grid-cols-1 gap-10px md:grid-cols-4'>
+        <section className='grid grid-cols-1 gap-10px md:grid-cols-5'>
+          <StatusTile label='Install' value='Not installed' />
           <StatusTile label='Pairing' value='Not paired' />
-          <StatusTile label='Permissions' value='Needs permission' />
-          <StatusTile label='iPhone' value='Blocked' />
+          <StatusTile label='Permissions' value='Permission needed' />
+          <StatusTile label='iPhone' value='Unavailable' />
           <StatusTile label='Trust authority' value='Native companion' />
+        </section>
+
+        <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'>
+          <div className='flex flex-wrap items-start justify-between gap-12px'>
+            <div className='min-w-0'>
+              <h2 className='m-0 text-18px font-semibold leading-24px text-t-primary'>
+                Native companion status matrix
+              </h2>
+              <p className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
+                Status-only proof for install, pairing, permission, ready, and unavailable states. AionUi may show the
+                handoff target, but native trust remains outside the shell.
+              </p>
+            </div>
+            <Tag color='gray'>Status source required</Tag>
+          </div>
+
+          <div className='mt-14px grid grid-cols-1 gap-10px lg:grid-cols-2'>
+            {EVAOS_NATIVE_COMPANION_STATUS_MATRIX.map((scenario) => (
+              <NativeStatusCard key={scenario.key} scenario={scenario} />
+            ))}
+          </div>
         </section>
 
         <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'>
@@ -95,8 +120,8 @@ const NativeCompanionPage: React.FC = () => {
             <div className='min-w-0'>
               <h2 className='m-0 text-17px font-semibold leading-24px text-t-primary'>Secure callback policy</h2>
               <p className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
-                Deep-link callbacks stay main-process and broker-owned. Renderer status proof shows the scheme and
-                policy, not callback secrets.
+                Deep-link policy stays main-process and broker-owned. Renderer status proof shows the scheme, handoff
+                target, and owner, not callback secrets.
               </p>
             </div>
           </div>
@@ -136,6 +161,26 @@ const StatusTile: React.FC<{ label: string; value: string }> = ({ label, value }
   </div>
 );
 
+const NativeStatusCard: React.FC<{ scenario: EvaosNativeCompanionStatusScenario }> = ({ scenario }) => (
+  <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-14px'>
+    <div className='flex flex-wrap items-start justify-between gap-8px'>
+      <div className='min-w-0'>
+        <h3 className='m-0 text-15px font-semibold leading-22px text-t-primary'>{scenario.label}</h3>
+        <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>{scenario.summary}</p>
+      </div>
+      <Tag color={statusSeverityColor(scenario.severity)}>{scenario.severity}</Tag>
+    </div>
+    <div className='mt-12px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary'>
+      <EvidenceRow label='Status source' value={scenario.statusSource} />
+      <EvidenceRow label='Evidence' value={scenario.evidence.join('; ')} />
+      <EvidenceRow label='Open-native handoff' value={scenario.handoff.label} />
+      <EvidenceRow label='Handoff owner' value={scenario.handoff.owner} />
+      <EvidenceRow label='Handoff enabled by shell' value={String(scenario.handoff.enabled)} />
+      <EvidenceRow label='Handoff target' value={scenario.handoff.target} />
+    </div>
+  </article>
+);
+
 const EvidenceRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className='min-w-0'>
     <span className='text-t-tertiary'>{label}: </span>
@@ -172,6 +217,16 @@ function capabilityDisplayName(id: string): string {
     return 'broker session handoff';
   }
   return id;
+}
+
+function statusSeverityColor(severity: EvaosNativeCompanionStatusSeverity): string {
+  if (severity === 'ready') {
+    return 'green';
+  }
+  if (severity === 'warning') {
+    return 'orange';
+  }
+  return 'red';
 }
 
 export default NativeCompanionPage;

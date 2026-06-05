@@ -5,6 +5,7 @@ import {
   canEvaosShellPerformLocalTrustAction,
   EVAOS_FORBIDDEN_LOCAL_TRUST_ACTIONS,
   EVAOS_NATIVE_COMPANION_BOUNDARY,
+  EVAOS_NATIVE_COMPANION_STATUS_MATRIX,
   getEvaosNativeCompanionBoundaryViolations,
 } from '../../../packages/desktop/src/process/evaosNativeCompanionBoundary';
 import { EVAOS_BETA_IDENTITY } from '../../../packages/desktop/src/process/evaosBetaSafety';
@@ -51,6 +52,12 @@ describe('evaosNativeCompanionBoundary', () => {
         expect(doc, `${capability.id}:${proof}`).toContain(`\`${proof}\``);
       }
     }
+
+    for (const scenario of EVAOS_NATIVE_COMPANION_STATUS_MATRIX) {
+      expect(doc, scenario.key).toContain(`\`${scenario.key}\``);
+      expect(doc, scenario.statusSource).toContain(`\`${scenario.statusSource}\``);
+      expect(doc, scenario.handoff.owner).toContain(`\`${scenario.handoff.owner}\``);
+    }
   });
 
   it('keeps callback/session policy aligned with beta identity and away from renderer secrets', () => {
@@ -60,6 +67,35 @@ describe('evaosNativeCompanionBoundary', () => {
     expect(EVAOS_NATIVE_COMPANION_BOUNDARY.callbackPolicy.mainProcessValidatesScheme).toBe(true);
     expect(EVAOS_NATIVE_COMPANION_BOUNDARY.callbackPolicy.rendererReceivesCallbackSecrets).toBe(false);
     expect(EVAOS_NATIVE_COMPANION_BOUNDARY.callbackPolicy.sessionCacheOwner).toBe('evaos-broker');
+  });
+
+  it('defines the beta native-companion status and handoff matrix without making the shell authority', () => {
+    expect(EVAOS_NATIVE_COMPANION_STATUS_MATRIX.map((scenario) => scenario.key)).toEqual([
+      'not_installed',
+      'not_paired',
+      'permission_needed',
+      'ready',
+      'unavailable',
+    ]);
+
+    for (const scenario of EVAOS_NATIVE_COMPANION_STATUS_MATRIX) {
+      expect(scenario.statusSource).toMatch(/^native-companion:/);
+      expect(scenario.evidence.length).toBeGreaterThan(0);
+      expect(scenario.handoff.target).not.toMatch(/token|secret|grant|session/i);
+      expect(['evaos-native-companion', 'released-workbench-fallback']).toContain(scenario.handoff.owner);
+    }
+
+    const readyScenario = EVAOS_NATIVE_COMPANION_STATUS_MATRIX.find((scenario) => scenario.key === 'ready');
+    expect(readyScenario?.handoff).toEqual({
+      label: 'Open native companion',
+      owner: 'evaos-native-companion',
+      enabled: true,
+      target: 'evaos-workbench-beta://native-companion/status',
+    });
+
+    for (const scenario of EVAOS_NATIVE_COMPANION_STATUS_MATRIX.filter((entry) => entry.key !== 'ready')) {
+      expect(scenario.handoff.enabled, scenario.key).toBe(false);
+    }
   });
 
   it('does not grant macOS automation, capture, or device-control entitlements to the beta shell', () => {
