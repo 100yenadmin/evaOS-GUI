@@ -132,6 +132,7 @@ function statusBucket(state: RuntimeLoadState): StatusBucket {
   if (!status) return 'waiting';
   if (/(running|active|ready|online|healthy)/.test(status)) return 'running';
   if (/(done|complete|completed|idle|ok|available)/.test(status)) return 'done';
+  if (/(waiting|pending|queued|starting)/.test(status)) return 'waiting';
   return 'blocked';
 }
 

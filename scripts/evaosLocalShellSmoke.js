@@ -163,6 +163,74 @@ const ROUTE_CHECKS = [
 
 const LOCAL_PRODUCT_ROUTE_CHECKS = [
   {
+    name: 'mission-control-loaded-fixture',
+    hash: '/mission-control',
+    title: 'Mission Control',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Mission Control',
+      'Session active',
+      'LOADED RUNTIMES',
+      '5 of 5',
+      'fixture-audit-browser-running',
+      'local-fixture:runtime:openclaw',
+    ],
+    loadedStateRequiredMarkers: ['desktop session card', 'broker source pointer', 'current audit id'],
+    action: 'click-mission-control-check',
+    isolateRendererState: true,
+    expected: [
+      'Mission Control',
+      'Runtime, customer session, and agent status from evaOS broker evidence.',
+      'Acme Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'admin@100yen.org',
+      'LOADED RUNTIMES',
+      '5 of 5',
+      'Customer browser session',
+      'OpenClaw workspace is accepting customer-scoped agent work',
+      'Hermes dashboard sync completed',
+      'Paperclip queue is waiting',
+      'Customer VM shell is offline',
+      'fixture.example.test/dashboard',
+      'fixture-audit-browser-running',
+      'local-fixture:runtime:openclaw',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'mission-control-switch-clears-fixture',
+    hash: '/mission-control',
+    title: 'Mission Control',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Mission Control',
+      'Denied Browser Fixture Co',
+      'account policy lacks open_business_browser',
+      'fixture-audit-browser-denied-policy',
+    ],
+    loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'runtime denied source pointer'],
+    action: 'click-mission-control-switch-clears',
+    isolateRendererState: true,
+    expected: [
+      'Mission Control',
+      'Denied Browser Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'account policy lacks open_business_browser',
+      'Source: local-fixture:business-browser:denied',
+      'fixture-audit-browser-denied-policy',
+    ],
+    forbidden: [
+      'fixture-audit-browser-running',
+      'fixture.example.test/dashboard',
+      'desktop_session',
+      'Bearer',
+      'provider_grant',
+      'grant_handle',
+      'access_token',
+      'refresh_token',
+    ],
+  },
+  {
     name: 'people-access-loaded-fixture',
     hash: '/people-access',
     title: 'People Access',
@@ -174,7 +242,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'fixture-audit-people-policy',
     ],
     loadedStateRequiredMarkers: ['member rows', 'role badges', 'account policy audit id'],
-    action: 'click-load',
+    action: 'click-load-default-customer',
     isolateRendererState: true,
     expected: [
       'People Access',
@@ -238,7 +306,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'fixture-audit-providers',
     ],
     loadedStateRequiredMarkers: ['provider profile cards', 'grant/revoke status badges', 'provider source pointer'],
-    action: 'click-load',
+    action: 'click-load-default-customer',
     isolateRendererState: true,
     expected: [
       'Connected Apps',
@@ -274,7 +342,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'fixture-audit-browser-running',
     ],
     loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
-    action: 'click-load',
+    action: 'click-load-default-customer',
     isolateRendererState: true,
     expected: [
       'Business Browser',
@@ -360,6 +428,56 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'account policy lacks open_business_browser',
       'Source: local-fixture:business-browser:denied',
       'fixture-audit-browser-denied-policy',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'business-browser-offline-fixture',
+    hash: '/business-browser',
+    title: 'Business Browser',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Business Browser',
+      'Offline Browser Fixture Co',
+      'Synthetic browser runtime is offline',
+      'fixture-audit-browser-offline',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'offline browser audit id'],
+    action: 'click-business-browser-offline-customer',
+    isolateRendererState: true,
+    expected: [
+      'Business Browser',
+      'Offline Browser Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Offline Browser Fixture',
+      'Synthetic browser runtime is offline',
+      'Source: local-fixture:business-browser:offline',
+      'fixture-audit-browser-offline',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'business-browser-failed-fixture',
+    hash: '/business-browser',
+    title: 'Business Browser',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Business Browser',
+      'Failed Browser Fixture Co',
+      'Synthetic browser launch failed safely',
+      'fixture-audit-browser-failed',
+    ],
+    loadedStateRequiredMarkers: ['browser runtime status', 'failed browser audit id'],
+    action: 'click-business-browser-failed-customer',
+    isolateRendererState: true,
+    expected: [
+      'Business Browser',
+      'Failed Browser Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Failed Browser Fixture',
+      'Synthetic browser launch failed safely',
+      'Source: local-fixture:business-browser:failed',
+      'fixture-audit-browser-failed',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
   },
@@ -677,6 +795,11 @@ async function clickLoad(page) {
   await page.waitForTimeout(250);
 }
 
+async function clickLoadDefaultCustomer(page) {
+  await clickCustomerTarget(page, 'Acme Fixture Co');
+  await clickLoad(page);
+}
+
 async function clickRefreshTargets(page) {
   const refreshTargetsButton = page.getByRole('button', { name: /^Refresh targets$/ }).first();
   await refreshTargetsButton.click();
@@ -740,6 +863,48 @@ async function clickBusinessBrowserDeniedCustomer(page) {
   });
 }
 
+async function clickBusinessBrowserOfflineCustomer(page) {
+  await clickCustomerTarget(page, 'Offline Browser Fixture Co');
+  await clickLoad(page);
+  await page.waitForFunction(() => document.body.innerText.includes('Synthetic browser runtime is offline'), {
+    timeout: 10000,
+  });
+}
+
+async function clickBusinessBrowserFailedCustomer(page) {
+  await clickCustomerTarget(page, 'Failed Browser Fixture Co');
+  await clickLoad(page);
+  await page.waitForFunction(() => document.body.innerText.includes('Synthetic browser launch failed safely'), {
+    timeout: 10000,
+  });
+}
+
+async function clickMissionControlCheck(page, expectedMarker = 'fixture-audit-browser-running') {
+  await page.waitForFunction(() => document.body.innerText.includes('Customer context'), {
+    timeout: 20000,
+  });
+  const checkButton = page
+    .locator('button')
+    .filter({ hasText: /^Check$/ })
+    .first();
+  await checkButton.waitFor({ state: 'visible', timeout: 10000 });
+  await checkButton.click();
+  await page.waitForFunction((marker) => document.body.innerText.includes(marker), expectedMarker, { timeout: 10000 });
+}
+
+async function clickMissionControlSwitchClears(page) {
+  await clickMissionControlCheck(page);
+  await clickCustomerTarget(page, 'Denied Browser Fixture Co');
+  await waitForStaleMarkersCleared(page, 'mission-control-switch-clears-fixture', [
+    'fixture-audit-browser-running',
+    'fixture.example.test/dashboard',
+  ]);
+  await clickMissionControlCheck(page, 'fixture-audit-browser-denied-policy');
+  await page.waitForFunction(() => document.body.innerText.includes('account policy lacks open_business_browser'), {
+    timeout: 10000,
+  });
+}
+
 async function clickCustomerTarget(page, name) {
   const customerButton = page.getByRole('button', { name: new RegExp(`^${name}$`) }).first();
   await customerButton.waitFor({ state: 'visible', timeout: 10000 });
@@ -762,7 +927,7 @@ async function waitForStaleMarkersCleared(page, route, staleMarkers) {
 }
 
 async function clickPeopleAccessSwitchClears(page) {
-  await clickLoad(page);
+  await clickLoadDefaultCustomer(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-people-policy'), {
     timeout: 10000,
   });
@@ -783,7 +948,7 @@ async function clickPeopleAccessSwitchClears(page) {
 }
 
 async function clickConnectedAppsSwitchClears(page) {
-  await clickLoad(page);
+  await clickLoadDefaultCustomer(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-providers'), { timeout: 10000 });
   await clickCustomerTarget(page, 'Denied Browser Fixture Co');
   await waitForStaleMarkersCleared(page, 'connected-apps-switch-clears-fixture', [
@@ -801,7 +966,7 @@ async function clickConnectedAppsSwitchClears(page) {
 }
 
 async function clickBusinessBrowserSwitchClears(page) {
-  await clickLoad(page);
+  await clickLoadDefaultCustomer(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-browser-running'), {
     timeout: 10000,
   });
@@ -817,7 +982,7 @@ async function clickBusinessBrowserSwitchClears(page) {
 }
 
 async function clickCompanyBrainSwitchClears(page) {
-  await clickLoad(page);
+  await clickLoadDefaultCustomer(page);
   await clickFirstCompanyBrainAccount(page);
   await askCompanyBrainFixtureQuestion(page);
   await clickCustomerTarget(page, 'Denied Browser Fixture Co');
@@ -869,8 +1034,9 @@ async function navigate(page, hash) {
   }, hash);
 }
 
-async function isolateRendererState(page) {
-  await page.reload({ waitUntil: 'domcontentloaded' });
+async function isolateRendererState(page, hash) {
+  const baseUrl = page.url().split('#')[0];
+  await page.goto(`${baseUrl}#${hash.replace(/^#?/, '')}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(350);
 }
 
@@ -981,14 +1147,11 @@ async function runLocalShellSmoke(options = {}) {
       pageErrors.push({ message: error.message, stack: error.stack });
     });
 
-    await navigate(page, '/mission-control');
-    await waitForRoute(page, routeChecks[0]?.title || 'Mission Control');
-
     for (const check of routeChecks) {
       console.log(`[evaos-local-shell-smoke] route ${check.name} -> #${check.hash}`);
       await navigate(page, check.hash);
       if (check.isolateRendererState) {
-        await isolateRendererState(page);
+        await isolateRendererState(page, check.hash);
       }
       try {
         await waitForRoute(page, check.title);
@@ -1007,8 +1170,10 @@ async function runLocalShellSmoke(options = {}) {
       }
       if (check.action === 'click-load') {
         await clickLoad(page);
+      } else if (check.action === 'click-load-default-customer') {
+        await clickLoadDefaultCustomer(page);
       } else if (check.action === 'click-load-company-brain') {
-        await clickLoad(page);
+        await clickLoadDefaultCustomer(page);
         await clickFirstCompanyBrainAccount(page);
         await askCompanyBrainFixtureQuestion(page);
       } else if (check.action === 'click-business-browser-launch') {
@@ -1017,6 +1182,14 @@ async function runLocalShellSmoke(options = {}) {
         await clickBusinessBrowserStop(page);
       } else if (check.action === 'click-business-browser-denied-customer') {
         await clickBusinessBrowserDeniedCustomer(page);
+      } else if (check.action === 'click-business-browser-offline-customer') {
+        await clickBusinessBrowserOfflineCustomer(page);
+      } else if (check.action === 'click-business-browser-failed-customer') {
+        await clickBusinessBrowserFailedCustomer(page);
+      } else if (check.action === 'click-mission-control-check') {
+        await clickMissionControlCheck(page);
+      } else if (check.action === 'click-mission-control-switch-clears') {
+        await clickMissionControlSwitchClears(page);
       } else if (check.action === 'click-people-access-switch-clears') {
         await clickPeopleAccessSwitchClears(page);
       } else if (check.action === 'click-connected-apps-switch-clears') {

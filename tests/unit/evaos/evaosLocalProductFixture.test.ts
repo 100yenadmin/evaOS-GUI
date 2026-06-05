@@ -17,6 +17,7 @@ import {
   evaosLocalProductFixturePersona,
   evaosLocalProductFixtureProviderAction,
   evaosLocalProductFixtureProviderHub,
+  evaosLocalProductFixtureRuntimeStatus,
   evaosLocalProductFixtureSessionStatus,
   isEvaosLocalProductFixtureEnabled,
 } from '@/process/services/evaosLocalProductFixture';
@@ -49,6 +50,8 @@ describe('evaOS local product fixture', () => {
     expect(customers.customers.map((customer) => customer.displayName)).toEqual([
       'Acme Fixture Co',
       'Denied Browser Fixture Co',
+      'Offline Browser Fixture Co',
+      'Failed Browser Fixture Co',
     ]);
     expect(hub.summaryText).toContain('LOCAL FIXTURE - NOT LIVE BETA PROOF');
     expect(hub.profiles.map((profile) => profile.status)).toEqual([
@@ -109,6 +112,8 @@ describe('evaOS local product fixture', () => {
 
   it('provides loaded Business Browser runtime and action proof without secrets', () => {
     const status = evaosLocalProductFixtureBusinessBrowserStatus({ customerId: 'fixture-customer-acme' });
+    const offline = evaosLocalProductFixtureBusinessBrowserStatus({ customerId: 'fixture-customer-browser-offline' });
+    const failed = evaosLocalProductFixtureBusinessBrowserStatus({ customerId: 'fixture-customer-browser-failed' });
     const launch = evaosLocalProductFixtureBusinessBrowserAction(
       { customerId: 'fixture-customer-acme' },
       'browser_launch'
@@ -132,6 +137,20 @@ describe('evaOS local product fixture', () => {
       auditId: 'fixture-audit-browser-running',
     });
     expect(status.currentUrlSummary?.displayText).toBe('fixture.example.test/dashboard');
+    expect(offline).toMatchObject({
+      customerId: 'fixture-customer-browser-offline',
+      status: 'offline',
+      routeDenied: false,
+      sourcePointer: 'local-fixture:business-browser:offline',
+      auditId: 'fixture-audit-browser-offline',
+    });
+    expect(failed).toMatchObject({
+      customerId: 'fixture-customer-browser-failed',
+      status: 'failed',
+      routeDenied: false,
+      sourcePointer: 'local-fixture:business-browser:failed',
+      auditId: 'fixture-audit-browser-failed',
+    });
     expect(launch).toMatchObject({
       status: 'launching',
       backendEnforced: true,
@@ -154,7 +173,53 @@ describe('evaOS local product fixture', () => {
       auditId: 'fixture-audit-browser-stop',
     });
     expect(stop.browser?.status).toBe('stopped');
-    expect(stringValues({ status, launch, openUrl, stop }).join('\n')).not.toMatch(SECRET_PATTERN);
+    expect(stringValues({ status, offline, failed, launch, openUrl, stop }).join('\n')).not.toMatch(SECRET_PATTERN);
+  });
+
+  it('provides Mission Control runtime fixture evidence without secrets', () => {
+    const browser = evaosLocalProductFixtureRuntimeStatus({ customerId: 'fixture-customer-acme', runtime: 'browser' });
+    const openclaw = evaosLocalProductFixtureRuntimeStatus({
+      customerId: 'fixture-customer-acme',
+      runtime: 'openclaw',
+    });
+    const hermes = evaosLocalProductFixtureRuntimeStatus({ customerId: 'fixture-customer-acme', runtime: 'hermes' });
+    const paperclip = evaosLocalProductFixtureRuntimeStatus({
+      customerId: 'fixture-customer-acme',
+      runtime: 'paperclip',
+    });
+    const terminal = evaosLocalProductFixtureRuntimeStatus({
+      customerId: 'fixture-customer-acme',
+      runtime: 'terminal',
+    });
+    const deniedBrowser = evaosLocalProductFixtureRuntimeStatus({
+      customerId: 'fixture-customer-browser-denied',
+      runtime: 'browser',
+    });
+
+    expect(browser).toMatchObject({
+      runtimeKey: 'browser',
+      status: 'running',
+      sourcePointer: 'local-fixture:business-browser:running',
+      auditId: 'fixture-audit-browser-running',
+    });
+    expect(openclaw).toMatchObject({
+      runtimeKey: 'openclaw',
+      status: 'running',
+      sourcePointer: 'local-fixture:runtime:openclaw',
+      auditId: 'fixture-audit-runtime-openclaw',
+    });
+    expect(hermes.status).toBe('done');
+    expect(paperclip.status).toBe('waiting');
+    expect(terminal.status).toBe('offline');
+    expect(deniedBrowser).toMatchObject({
+      runtimeKey: 'browser',
+      status: 'denied',
+      sourcePointer: 'local-fixture:business-browser:denied',
+      auditId: 'fixture-audit-browser-denied-policy',
+    });
+    expect(stringValues({ browser, openclaw, hermes, paperclip, terminal, deniedBrowser }).join('\n')).not.toMatch(
+      SECRET_PATTERN
+    );
   });
 
   it('fails Business Browser closed for denied and wrong customer fixture paths', () => {

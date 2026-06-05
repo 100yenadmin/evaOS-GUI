@@ -113,6 +113,8 @@ describe('evaOS local shell smoke', () => {
 
   it('keeps local loaded product proof separate from default shell smoke', () => {
     expect(localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.map((check) => check.name)).toEqual([
+      'mission-control-loaded-fixture',
+      'mission-control-switch-clears-fixture',
       'people-access-loaded-fixture',
       'people-access-switch-clears-fixture',
       'connected-apps-loaded-fixture',
@@ -120,17 +122,45 @@ describe('evaOS local shell smoke', () => {
       'business-browser-launch-fixture',
       'business-browser-stop-fixture',
       'business-browser-denied-fixture',
+      'business-browser-offline-fixture',
+      'business-browser-failed-fixture',
       'connected-apps-switch-clears-fixture',
       'business-browser-switch-clears-fixture',
       'company-brain-loaded-fixture',
       'company-brain-switch-clears-fixture',
     ]);
 
+    const missionControlLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'mission-control-loaded-fixture'
+    );
+    expect(missionControlLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
+    expect(missionControlLoaded?.action).toBe('click-mission-control-check');
+    expect(missionControlLoaded?.expected).toEqual(
+      expect.arrayContaining([
+        'LOADED RUNTIMES',
+        '5 of 5',
+        'Customer browser session',
+        'fixture-audit-browser-running',
+        'local-fixture:runtime:openclaw',
+      ])
+    );
+
+    const missionControlSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'mission-control-switch-clears-fixture'
+    );
+    expect(missionControlSwitch).toEqual(
+      expect.objectContaining({
+        action: 'click-mission-control-switch-clears',
+        loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'runtime denied source pointer'],
+        forbidden: expect.arrayContaining(['fixture-audit-browser-running', 'fixture.example.test/dashboard']),
+      })
+    );
+
     const peopleAccessLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
       (check) => check.name === 'people-access-loaded-fixture'
     );
     expect(peopleAccessLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(peopleAccessLoaded?.action).toBe('click-load');
+    expect(peopleAccessLoaded?.action).toBe('click-load-default-customer');
     expect(peopleAccessLoaded?.expected).toEqual(
       expect.arrayContaining([
         'LOCAL FIXTURE - NOT LIVE BETA PROOF',
@@ -163,7 +193,7 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'connected-apps-loaded-fixture'
     );
     expect(connectedAppsLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(connectedAppsLoaded?.action).toBe('click-load');
+    expect(connectedAppsLoaded?.action).toBe('click-load-default-customer');
     expect(connectedAppsLoaded?.expected).toEqual(
       expect.arrayContaining([
         'LOCAL FIXTURE - NOT LIVE BETA PROOF',
@@ -184,7 +214,7 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'business-browser-loaded-fixture'
     );
     expect(businessBrowserLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(businessBrowserLoaded?.action).toBe('click-load');
+    expect(businessBrowserLoaded?.action).toBe('click-load-default-customer');
     expect(businessBrowserLoaded?.expected).toEqual(
       expect.arrayContaining([
         'LOCAL FIXTURE - NOT LIVE BETA PROOF',
@@ -236,6 +266,34 @@ describe('evaOS local shell smoke', () => {
         'Source: local-fixture:business-browser:denied',
         'fixture-audit-browser-denied-policy',
       ])
+    );
+
+    const businessBrowserOffline = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'business-browser-offline-fixture'
+    );
+    expect(businessBrowserOffline).toEqual(
+      expect.objectContaining({
+        action: 'click-business-browser-offline-customer',
+        expected: expect.arrayContaining([
+          'Offline Browser Fixture Co',
+          'Synthetic browser runtime is offline',
+          'fixture-audit-browser-offline',
+        ]),
+      })
+    );
+
+    const businessBrowserFailed = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'business-browser-failed-fixture'
+    );
+    expect(businessBrowserFailed).toEqual(
+      expect.objectContaining({
+        action: 'click-business-browser-failed-customer',
+        expected: expect.arrayContaining([
+          'Failed Browser Fixture Co',
+          'Synthetic browser launch failed safely',
+          'fixture-audit-browser-failed',
+        ]),
+      })
     );
 
     const connectedAppsSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(

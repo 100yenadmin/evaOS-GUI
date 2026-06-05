@@ -51,6 +51,9 @@ export const EvaosRuntimeRouteGuard: React.FC<EvaosRuntimeRouteGuardProps> = ({ 
   }
 
   if (customerContext.loading || !customerContext.loaded) {
+    if (routePath === '/mission-control') {
+      return <>{children}</>;
+    }
     return <AppLoader />;
   }
 

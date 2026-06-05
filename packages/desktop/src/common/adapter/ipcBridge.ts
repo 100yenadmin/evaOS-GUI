@@ -84,6 +84,95 @@ import {
   fromBackendTeamOptional,
   toBackendAgent,
 } from './teamMapper';
+
+const EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS = 15000;
+
+type EvaosElectronBridgeAPI = {
+  emit: (name: string, data: unknown) => Promise<unknown> | void;
+  on: (callback: (event: { value: string }) => void) => void;
+};
+
+type EvaosRendererWindow = Window & {
+  electronAPI?: EvaosElectronBridgeAPI;
+  __evaosProviderCallbackInstalled?: boolean;
+  __evaosProviderCallbacks?: Map<string, (data: unknown) => void>;
+};
+
+function buildEvaosProvider<Response, Request>(name: string) {
+  const platformProvider = bridge.buildProvider<Response, Request>(name);
+  return {
+    provider: platformProvider.provider,
+    invoke(request: Request): Promise<Response> {
+      return invokeEvaosElectronProvider<Response, Request>(name, request) ?? platformProvider.invoke(request);
+    },
+  };
+}
+
+function invokeEvaosElectronProvider<Response, Request>(name: string, request: Request): Promise<Response> | undefined {
+  const rendererWindow = getEvaosRendererWindow();
+  const electronAPI = rendererWindow?.electronAPI;
+  if (!rendererWindow || !electronAPI) {
+    return undefined;
+  }
+
+  installEvaosElectronProviderCallbackListener(rendererWindow, electronAPI);
+
+  const id = `evaos-${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
+  const callbackName = `subscribe.callback-${name}${id}`;
+  return new Promise((resolve, reject) => {
+    const callbacks = getEvaosProviderCallbacks(rendererWindow);
+    const timeout = rendererWindow.setTimeout(() => {
+      callbacks.delete(callbackName);
+      reject(new Error(`Timed out waiting for evaOS provider response: ${name}`));
+    }, EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS);
+
+    callbacks.set(callbackName, (data) => {
+      rendererWindow.clearTimeout(timeout);
+      callbacks.delete(callbackName);
+      resolve(data as Response);
+    });
+
+    Promise.resolve(electronAPI.emit(`subscribe-${name}`, { id, data: request })).catch((error: unknown) => {
+      rendererWindow.clearTimeout(timeout);
+      callbacks.delete(callbackName);
+      reject(error instanceof Error ? error : new Error(`Failed to emit evaOS provider request: ${name}`));
+    });
+  });
+}
+
+function getEvaosRendererWindow(): EvaosRendererWindow | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  return window as EvaosRendererWindow;
+}
+
+function getEvaosProviderCallbacks(rendererWindow: EvaosRendererWindow): Map<string, (data: unknown) => void> {
+  rendererWindow.__evaosProviderCallbacks ??= new Map();
+  return rendererWindow.__evaosProviderCallbacks;
+}
+
+function installEvaosElectronProviderCallbackListener(
+  rendererWindow: EvaosRendererWindow,
+  electronAPI: EvaosElectronBridgeAPI
+): void {
+  if (rendererWindow.__evaosProviderCallbackInstalled) {
+    return;
+  }
+
+  electronAPI.on((event) => {
+    try {
+      const payload = JSON.parse(event.value) as { name?: string; data?: unknown };
+      if (!payload.name?.startsWith('subscribe.callback-evaos.')) {
+        return;
+      }
+      getEvaosProviderCallbacks(rendererWindow).get(payload.name)?.(payload.data);
+    } catch {
+      // Ignore non-bridge messages.
+    }
+  });
+  rendererWindow.__evaosProviderCallbackInstalled = true;
+}
 import { fromBackendCompareResult, type RawCompareResult } from './fileSnapshotMapper';
 import {
   absoluteToRelativePath,
@@ -1233,90 +1322,87 @@ export const notification = {
 // ---------------------------------------------------------------------------
 
 export const evaosBroker = {
-  beginDesktopAuth: bridge.buildProvider<IBridgeResponse<IEvaosBrokerBeginDesktopAuthResult>, void>(
+  beginDesktopAuth: buildEvaosProvider<IBridgeResponse<IEvaosBrokerBeginDesktopAuthResult>, void>(
     'evaos.broker.begin-desktop-auth'
   ),
-  claimDeviceCode: bridge.buildProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, IEvaosBrokerClaimDeviceCodeRequest>(
+  claimDeviceCode: buildEvaosProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, IEvaosBrokerClaimDeviceCodeRequest>(
     'evaos.broker.claim-device-code'
   ),
-  getSessionStatus: bridge.buildProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>(
-    'evaos.broker.session-status'
-  ),
-  getCustomerTargets: bridge.buildProvider<IBridgeResponse<IEvaosCustomerTargetsView>, void>(
+  getSessionStatus: buildEvaosProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>('evaos.broker.session-status'),
+  getCustomerTargets: buildEvaosProvider<IBridgeResponse<IEvaosCustomerTargetsView>, void>(
     'evaos.broker.customer-targets'
   ),
-  runtimeStatus: bridge.buildProvider<IBridgeResponse<IEvaosRuntimeStatusView>, IEvaosRuntimeStatusRequest>(
+  runtimeStatus: buildEvaosProvider<IBridgeResponse<IEvaosRuntimeStatusView>, IEvaosRuntimeStatusRequest>(
     'evaos.broker.runtime-status'
   ),
-  revokeSession: bridge.buildProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>('evaos.broker.revoke-session'),
+  revokeSession: buildEvaosProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>('evaos.broker.revoke-session'),
 };
 
 export const evaosPeopleAccess = {
-  getPolicy: bridge.buildProvider<IBridgeResponse<IEvaosPeopleAccessPolicyView>, IEvaosPeopleAccessPolicyRequest>(
+  getPolicy: buildEvaosProvider<IBridgeResponse<IEvaosPeopleAccessPolicyView>, IEvaosPeopleAccessPolicyRequest>(
     'evaos.people-access.policy'
   ),
-  inviteMember: bridge.buildProvider<
+  inviteMember: buildEvaosProvider<
     IBridgeResponse<IEvaosPeopleAccessMutationResult>,
     IEvaosPeopleAccessInviteMemberRequest
   >('evaos.people-access.invite-member'),
 };
 
 export const evaosApprovalCenter = {
-  getApprovals: bridge.buildProvider<IBridgeResponse<IEvaosApprovalCenterView>, IEvaosApprovalCenterRequest>(
+  getApprovals: buildEvaosProvider<IBridgeResponse<IEvaosApprovalCenterView>, IEvaosApprovalCenterRequest>(
     'evaos.approval-center.approvals'
   ),
-  denyApproval: bridge.buildProvider<IBridgeResponse<IEvaosApprovalDecisionResult>, IEvaosApprovalDenyRequest>(
+  denyApproval: buildEvaosProvider<IBridgeResponse<IEvaosApprovalDecisionResult>, IEvaosApprovalDenyRequest>(
     'evaos.approval-center.deny'
   ),
 };
 
 export const evaosProviderHub = {
-  getProfiles: bridge.buildProvider<IBridgeResponse<IEvaosProviderHubView>, IEvaosProviderHubRequest>(
+  getProfiles: buildEvaosProvider<IBridgeResponse<IEvaosProviderHubView>, IEvaosProviderHubRequest>(
     'evaos.provider-hub.profiles'
   ),
-  startAuth: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+  startAuth: buildEvaosProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
     'evaos.provider-hub.start-auth'
   ),
-  switchProvider: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+  switchProvider: buildEvaosProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
     'evaos.provider-hub.switch'
   ),
-  revokeProvider: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+  revokeProvider: buildEvaosProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
     'evaos.provider-hub.revoke'
   ),
-  mintGrant: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
+  mintGrant: buildEvaosProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderActionRequest>(
     'evaos.provider-hub.mint-grant'
   ),
-  requestApproval: bridge.buildProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderApprovalRequest>(
+  requestApproval: buildEvaosProvider<IBridgeResponse<IEvaosProviderActionResult>, IEvaosProviderApprovalRequest>(
     'evaos.provider-hub.request-approval'
   ),
 };
 
 export const evaosBusinessBrowser = {
-  getStatus: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserView>, IEvaosBusinessBrowserRequest>(
+  getStatus: buildEvaosProvider<IBridgeResponse<IEvaosBusinessBrowserView>, IEvaosBusinessBrowserRequest>(
     'evaos.business-browser.status'
   ),
-  launch: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
+  launch: buildEvaosProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
     'evaos.business-browser.launch'
   ),
-  openUrl: bridge.buildProvider<
-    IBridgeResponse<IEvaosBusinessBrowserActionResult>,
-    IEvaosBusinessBrowserOpenUrlRequest
-  >('evaos.business-browser.open-url'),
-  stop: bridge.buildProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
+  openUrl: buildEvaosProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserOpenUrlRequest>(
+    'evaos.business-browser.open-url'
+  ),
+  stop: buildEvaosProvider<IBridgeResponse<IEvaosBusinessBrowserActionResult>, IEvaosBusinessBrowserRequest>(
     'evaos.business-browser.stop'
   ),
 };
 
 export const evaosCompanyBrain = {
-  getDirectory: bridge.buildProvider<
+  getDirectory: buildEvaosProvider<
     IBridgeResponse<IEvaosCompanyBrainDirectoryView>,
     IEvaosCompanyBrainDirectoryRequest
   >('evaos.company-brain.directory'),
-  getAccount360: bridge.buildProvider<
+  getAccount360: buildEvaosProvider<
     IBridgeResponse<IEvaosCompanyBrainAccount360View>,
     IEvaosCompanyBrainAccountRequest
   >('evaos.company-brain.account-360'),
-  query: bridge.buildProvider<IBridgeResponse<IEvaosCompanyBrainQueryResult>, IEvaosCompanyBrainQueryRequest>(
+  query: buildEvaosProvider<IBridgeResponse<IEvaosCompanyBrainQueryResult>, IEvaosCompanyBrainQueryRequest>(
     'evaos.company-brain.query'
   ),
 };
