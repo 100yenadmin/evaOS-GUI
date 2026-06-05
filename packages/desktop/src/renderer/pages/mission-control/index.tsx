@@ -103,29 +103,6 @@ const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
 const SECRET_TEXT_PATTERN =
   /(eds_|epg_|access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|authorization|bearer|secret|password)/i;
 
-function normalizedBackupCode(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value
-    .toUpperCase()
-    .split('')
-    .filter((char) => /[A-Z0-9]/.test(char))
-    .join('')
-    .slice(0, 80);
-  if (normalized.length < 8) return null;
-  return normalized.match(/.{1,4}/g)?.join('-') ?? normalized;
-}
-
-function backupCodeFromHandoff(handoff: IEvaosBrokerBeginDesktopAuthResult): string | null {
-  const directCode = normalizedBackupCode(handoff.fallbackDeviceCode);
-  if (directCode) return directCode;
-
-  try {
-    return normalizedBackupCode(new URL(handoff.authUrl).searchParams.get('fresh'));
-  } catch {
-    return null;
-  }
-}
-
 function safeUiText(value: unknown, fallback: string): string {
   if (typeof value !== 'string') {
     return fallback;
@@ -412,7 +389,6 @@ const MissionControlPage: React.FC = () => {
 
   const activeSessionBucket = sessionBucket(session, sessionError);
   const sessionMessage = sessionError ?? session?.message ?? 'Checking evaOS broker session status.';
-  const authHandoffBackupCode = authHandoff ? backupCodeFromHandoff(authHandoff) : null;
   const expiresAt = formatDate(session?.expiresAt);
   const refreshedAt = formatDate(lastRefreshedAt ?? undefined);
   const selectedCustomerLabel = customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId;
@@ -535,13 +511,7 @@ const MissionControlPage: React.FC = () => {
                     <>
                       <div className='mt-4px flex flex-wrap items-center gap-6px'>
                         <span>Backup code:</span>
-                        {authHandoffBackupCode ? (
-                          <code className='max-w-full break-all rounded-4px border border-solid border-[var(--color-border-2)] px-6px py-2px font-mono text-t-primary'>
-                            {authHandoffBackupCode}
-                          </code>
-                        ) : (
-                          <span className='text-t-secondary'>Use the backup code shown in the browser page.</span>
-                        )}
+                        <span className='text-t-secondary'>Paste the short code shown on the browser page.</span>
                       </div>
                       <div className='mt-8px flex flex-col gap-6px sm:flex-row'>
                         <Input

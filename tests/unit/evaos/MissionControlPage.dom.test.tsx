@@ -196,7 +196,8 @@ describe('MissionControlPage', () => {
     expect(await screen.findByText('Sign in required')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
     expect(await screen.findByText('Continue in the browser or paste the backup code.')).toBeInTheDocument();
-    expect(screen.getByText('ABCD-EFGH')).toBeInTheDocument();
+    expect(screen.getByText('Paste the short code shown on the browser page.')).toBeInTheDocument();
+    expect(screen.queryByText('ABCD-EFGH')).not.toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: /backup code/i }), 'WXYZ-1234');
     await user.click(screen.getByRole('button', { name: /claim backup code/i }));
@@ -209,7 +210,7 @@ describe('MissionControlPage', () => {
     expect(container.textContent).not.toMatch(/eds_|desktop_session|Bearer/i);
   });
 
-  it('falls back to the auth URL fresh code when the broker handoff omits a display code', async () => {
+  it('does not render the auth URL fresh code as a browser backup code', async () => {
     const user = userEvent.setup();
     brokerMocks.getSessionStatus.mockResolvedValue({
       success: true,
@@ -237,7 +238,8 @@ describe('MissionControlPage', () => {
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     expect(await screen.findByText('Continue in the browser or paste the backup code.')).toBeInTheDocument();
-    expect(screen.getByText('ABCD-EFGH-1234-5678-9012-3456')).toBeInTheDocument();
+    expect(screen.getByText('Paste the short code shown on the browser page.')).toBeInTheDocument();
+    expect(screen.queryByText('ABCD-EFGH-1234-5678-9012-3456')).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/desktop_session|Bearer|eds_/i);
   });
 
@@ -272,7 +274,8 @@ describe('MissionControlPage', () => {
 
     expect(await screen.findByText('Sign in required')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
-    expect(await screen.findByText('STAL-ECOD-1234-5678-9012-3456')).toBeInTheDocument();
+    expect(await screen.findByText('Paste the short code shown on the browser page.')).toBeInTheDocument();
+    expect(screen.queryByText('STAL-ECOD-1234-5678-9012-3456')).not.toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: /backup code/i }), 'STAL-ECOD-1234');
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
