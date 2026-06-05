@@ -12,6 +12,8 @@ const SECRET_TEXT_PATTERN =
 
 type EvaosCustomerContextState = {
   targets: IEvaosCustomerTargetView[];
+  roles: string[];
+  isOperator: boolean;
   selectedCustomerId?: string;
   summaryText: string;
   loading: boolean;
@@ -20,6 +22,8 @@ type EvaosCustomerContextState = {
 
 const EMPTY_STATE: EvaosCustomerContextState = {
   targets: [],
+  roles: [],
+  isOperator: false,
   selectedCustomerId: undefined,
   summaryText: 'No customer targets loaded',
   loading: false,
@@ -58,6 +62,14 @@ function safeOptionalUiText(value: unknown): string | undefined {
   const trimmed = value.trim();
   if (!trimmed || SECRET_TEXT_PATTERN.test(trimmed)) return undefined;
   return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
+}
+
+function safeRoleList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => safeOptionalUiText(item))
+    .filter((item): item is string => Boolean(item))
+    .map((item) => item.slice(0, 80));
 }
 
 function customerTargetsSummary(count: number): string {
@@ -131,6 +143,8 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
 
     emit({
       targets: sanitizedView.customers,
+      roles: safeRoleList(sanitizedView.roles),
+      isOperator: sanitizedView.isOperator === true,
       selectedCustomerId: chooseSelectedCustomer(sanitizedView),
       summaryText: sanitizedView.summaryText,
       loading: false,

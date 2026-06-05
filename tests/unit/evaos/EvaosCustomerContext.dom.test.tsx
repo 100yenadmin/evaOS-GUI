@@ -107,6 +107,8 @@ describe('EvaosCustomerContext', () => {
 
     await waitFor(() => expect(result.current.selectedCustomerId).toBe('david-poku'));
     expect(result.current.selectedTarget?.displayName).toBe('David Poku Co');
+    expect(result.current.roles).toEqual(['admin']);
+    expect(result.current.isOperator).toBe(true);
 
     act(() => {
       result.current.selectCustomer('second-customer');
@@ -145,6 +147,8 @@ describe('EvaosCustomerContext', () => {
     rerender({ authenticated: false });
     expect(result.current.targets).toEqual([]);
     expect(result.current.selectedCustomerId).toBeUndefined();
+    expect(result.current.roles).toEqual([]);
+    expect(result.current.isOperator).toBe(false);
 
     await act(async () => {
       staleTargets.resolve(customerTargets());

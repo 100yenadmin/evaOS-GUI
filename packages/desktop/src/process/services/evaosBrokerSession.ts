@@ -74,6 +74,7 @@ const VALID_RUNTIME_KEYS: ReadonlySet<IEvaosRuntimeKey> = new Set([
   'terminal',
   'opendesign',
   'creative_studio',
+  'team_chat',
 ]);
 
 const RUNTIME_LABELS: Record<IEvaosRuntimeKey, string> = {
@@ -84,6 +85,7 @@ const RUNTIME_LABELS: Record<IEvaosRuntimeKey, string> = {
   terminal: 'Terminal',
   opendesign: 'Open Design',
   creative_studio: 'Creative Studio',
+  team_chat: 'Team Chat',
 };
 
 const VALID_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new Set([
