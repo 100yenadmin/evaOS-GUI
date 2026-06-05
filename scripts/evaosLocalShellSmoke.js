@@ -163,6 +163,67 @@ const ROUTE_CHECKS = [
 
 const LOCAL_PRODUCT_ROUTE_CHECKS = [
   {
+    name: 'people-access-loaded-fixture',
+    hash: '/people-access',
+    title: 'People Access',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'People Access',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Fixture Owner',
+      'fixture-audit-people-policy',
+    ],
+    loadedStateRequiredMarkers: ['member rows', 'role badges', 'account policy audit id'],
+    action: 'click-load',
+    isolateRendererState: true,
+    expected: [
+      'People Access',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Acme Fixture Co',
+      'Fixture Owner',
+      'Fixture Admin',
+      'pending-member@example.test',
+      'Backend enforced',
+      'Audit: fixture-audit-people-policy',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+  },
+  {
+    name: 'people-access-switch-clears-fixture',
+    hash: '/people-access',
+    title: 'People Access',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'People Access',
+      'Denied Browser Fixture Co',
+      'People Access denied for wrong customer fixture',
+      'fixture-audit-people-denied-policy',
+    ],
+    loadedStateRequiredMarkers: ['people stale-state clearing', 'account policy audit id'],
+    action: 'click-people-access-switch-clears',
+    isolateRendererState: true,
+    expected: [
+      'People Access',
+      'Denied Browser Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'People Access denied for wrong customer fixture',
+      'Route denied',
+      'Audit: fixture-audit-people-denied-policy',
+    ],
+    forbidden: [
+      'Fixture Owner',
+      'Fixture Admin',
+      'pending-member@example.test',
+      'fixture-audit-people-policy',
+      'desktop_session',
+      'Bearer',
+      'provider_grant',
+      'grant_handle',
+      'access_token',
+      'refresh_token',
+    ],
+  },
+  {
     name: 'connected-apps-loaded-fixture',
     hash: '/connected-apps',
     title: 'Connected Apps',
@@ -697,6 +758,27 @@ async function waitForStaleMarkersCleared(page, route, staleMarkers) {
   }
 }
 
+async function clickPeopleAccessSwitchClears(page) {
+  await clickLoad(page);
+  await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-people-policy'), {
+    timeout: 10000,
+  });
+  await clickCustomerTarget(page, 'Denied Browser Fixture Co');
+  await waitForStaleMarkersCleared(page, 'people-access-switch-clears-fixture', [
+    'Fixture Owner',
+    'Fixture Admin',
+    'pending-member@example.test',
+    'fixture-audit-people-policy',
+  ]);
+  await clickLoad(page);
+  await page.waitForFunction(
+    () => document.body.innerText.includes('People Access denied for wrong customer fixture'),
+    {
+      timeout: 10000,
+    }
+  );
+}
+
 async function clickConnectedAppsSwitchClears(page) {
   await clickLoad(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-providers'), { timeout: 10000 });
@@ -932,6 +1014,8 @@ async function runLocalShellSmoke(options = {}) {
         await clickBusinessBrowserStop(page);
       } else if (check.action === 'click-business-browser-denied-customer') {
         await clickBusinessBrowserDeniedCustomer(page);
+      } else if (check.action === 'click-people-access-switch-clears') {
+        await clickPeopleAccessSwitchClears(page);
       } else if (check.action === 'click-connected-apps-switch-clears') {
         await clickConnectedAppsSwitchClears(page);
       } else if (check.action === 'click-business-browser-switch-clears') {
