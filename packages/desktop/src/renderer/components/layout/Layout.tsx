@@ -10,6 +10,7 @@ import { configService } from '@/common/config/configService';
 import type { ICssTheme } from '@/common/config/storage';
 import PwaPullToRefresh from '@/renderer/components/layout/PwaPullToRefresh';
 import Titlebar from '@/renderer/components/layout/Titlebar';
+import EvaosSupportBubble from '@/renderer/components/base/EvaosSupportBubble';
 import { Layout as ArcoLayout } from '@arco-design/web-react';
 import classNames from 'classnames';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -549,6 +550,7 @@ const Layout: React.FC<{
               <Suspense fallback={null}>
                 <UpdateModal />
               </Suspense>
+              <EvaosSupportBubble />
             </ArcoLayout.Content>
           </ArcoLayout>
         </div>

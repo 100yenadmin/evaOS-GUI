@@ -12,13 +12,16 @@ import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
 import { isElectronDesktop, openExternalUrl } from '@/renderer/utils/platform';
 import FeedbackReportModal from './FeedbackReportModal';
+import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 
 // __APP_VERSION__ is injected by electron.vite.config.ts `define:` from the
 // repo-root package.json. The previous `import packageJson from
 // '../../../../../../package.json'` resolved to packages/desktop/package.json
 // which is a workspace placeholder permanently pinned at "0.0.0".
 declare const __APP_VERSION__: string;
+declare const __APP_COMMIT__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? '0.0.0' : __APP_VERSION__;
+const APP_COMMIT = typeof __APP_COMMIT__ === 'undefined' ? 'local' : __APP_COMMIT__;
 
 type LinkItem =
   | { title: string; url: string; icon: React.ReactNode; onClick?: never }
@@ -37,6 +40,15 @@ export const EVAOS_BETA_SUPPORT_NOTICE = {
   body: 'The released macOS app remains the fallback until public beta gates pass.',
   supportRoute: 'Support: GitHub issue #13',
 } as const;
+
+export const EVAOS_BETA_BUILD_METADATA = [
+  { label: 'Channel', value: 'controlled beta' },
+  { label: 'Version', value: `v${APP_VERSION}` },
+  { label: 'Commit', value: APP_COMMIT },
+  { label: 'Bundle ID', value: EVAOS_BETA_IDENTITY.appId },
+  { label: 'Protocol', value: EVAOS_BETA_IDENTITY.protocolScheme },
+  { label: 'Fallback', value: 'released macOS app' },
+] as const;
 
 const checkUpdate = () => {
   // 使用 window 自定义事件在渲染进程内部通信（buildEmitter 只支持主进程->渲染进程）
@@ -163,6 +175,18 @@ const AboutModalContent: React.FC = () => {
               >
                 {EVAOS_BETA_SUPPORT_NOTICE.supportRoute}
               </Typography.Text>
+            </div>
+
+            <div className='w-full mt-12px p-14px rd-8px bg-fill-2 border border-border'>
+              <Typography.Text className='text-13px font-600 text-t-primary'>Build identity</Typography.Text>
+              <div className='mt-10px grid grid-cols-1 gap-8px'>
+                {EVAOS_BETA_BUILD_METADATA.map((item) => (
+                  <div key={item.label} className='flex items-center justify-between gap-12px text-12px leading-18px'>
+                    <span className='text-t-tertiary'>{item.label}</span>
+                    <span className='text-t-primary text-right [word-break:break-word]'>{item.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AboutModalContent, {
   EVAOS_BETA_ABOUT_LINKS,
+  EVAOS_BETA_BUILD_METADATA,
   EVAOS_BETA_SUPPORT_NOTICE,
 } from '@/renderer/components/settings/SettingsModal/contents/AboutModalContent';
 
@@ -64,6 +65,15 @@ describe('AboutModalContent evaOS beta identity', () => {
     expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.title)).toBeInTheDocument();
     expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.body)).toBeInTheDocument();
     expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.supportRoute)).toBeInTheDocument();
+  });
+
+  it('shows support-grade beta build identity metadata', () => {
+    renderAbout();
+
+    EVAOS_BETA_BUILD_METADATA.forEach((item) => {
+      expect(screen.getByText(item.label)).toBeInTheDocument();
+      expect(screen.getAllByText(item.value).length).toBeGreaterThan(0);
+    });
   });
 
   it('routes About support links to evaOS-owned surfaces', async () => {

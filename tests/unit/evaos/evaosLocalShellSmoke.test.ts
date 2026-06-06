@@ -95,6 +95,7 @@ describe('evaOS local shell smoke', () => {
       'mission-control',
       'beta-readiness',
       'agent-settings-remote-guardrail',
+      'about-support-metadata',
       'native-companion-boundary',
     ]);
     expect(localShellSmoke.BROKER_GUARDED_ROUTE_CHECKS.map((check) => check.name)).toEqual([
@@ -483,6 +484,7 @@ describe('evaOS local shell smoke', () => {
       ['mission-control', ['paperclip runtime status', 'customer scoped runtime proof']],
       ['beta-readiness', ['desktop session card', 'broker source pointer', 'current audit id']],
       ['agent-settings-remote-guardrail', ['local agent inventory result', 'remote guardrail copy']],
+      ['about-support-metadata', ['exact release candidate version', 'commit and support path']],
       [
         'native-companion-boundary',
         ['native companion status matrix', 'open-native handoff', 'deep-link policy', 'RC native canary contract'],

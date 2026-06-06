@@ -16,6 +16,16 @@ const rootPackageJson = JSON.parse(readFileSync(resolve(__dirname, '../../packag
   version: string;
 };
 
+function getBuildCommit(): string {
+  const envSha = process.env.GITHUB_SHA?.trim();
+  if (envSha) return envSha.slice(0, 12);
+  try {
+    return execSync('git rev-parse --short=12 HEAD', { encoding: 'utf-8' }).trim();
+  } catch {
+    return 'local';
+  }
+}
+
 function getSafeSentryEnv(): { dsn: string; authToken: string; org: string | undefined; project: string | undefined } {
   if (shouldDisableSentry(process.env)) {
     return { dsn: '', authToken: '', org: undefined, project: undefined };
@@ -84,6 +94,7 @@ export default defineConfig(({ mode }) => {
   const isDevelopment = mode === 'development';
   const safeSentryEnv = getSafeSentryEnv();
   const enableSentrySourceMaps = !isDevelopment && !!safeSentryEnv.authToken;
+  const buildCommit = getBuildCommit();
 
   const sentryPluginOptions = {
     org: safeSentryEnv.org,
@@ -278,6 +289,7 @@ export default defineConfig(({ mode }) => {
         // can show it without importing packages/desktop/package.json, which is
         // a workspace-internal placeholder frozen at "0.0.0".
         __APP_VERSION__: JSON.stringify(rootPackageJson.version),
+        __APP_COMMIT__: JSON.stringify(buildCommit),
         global: 'globalThis',
       },
       optimizeDeps: {
