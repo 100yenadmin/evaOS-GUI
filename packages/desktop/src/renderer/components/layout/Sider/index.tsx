@@ -264,7 +264,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         siderTooltipProps={siderTooltipProps}
         onSettingsClick={handleSettingsClick}
         onThemeToggle={handleQuickThemeToggle}
-        accountLabel={user?.username}
+        accountLabel={user?.username ?? evaosSidebarState.accountLabel}
         showLogout={showLogout}
         onLogoutClick={handleLogout}
       />

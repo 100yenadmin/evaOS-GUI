@@ -230,6 +230,16 @@ describe('Sider runtime route visibility', () => {
     );
   });
 
+  it('shows broker session identity in the footer when desktop auth has no web user', () => {
+    authMock.user = null;
+    customerContextMock.roles = ['owner'];
+
+    renderSider();
+
+    expect(screen.getByText('Viewing')).toBeInTheDocument();
+    expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+  });
+
   it('keeps evaOS sidebar broker context warm while settings are open', async () => {
     customerContextMock.roles = ['owner'];
 
