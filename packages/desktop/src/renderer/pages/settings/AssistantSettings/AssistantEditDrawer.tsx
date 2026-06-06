@@ -6,9 +6,10 @@ import type { AssistantListItem, BuiltinAutoSkill, SkillInfo } from './types';
 import type { AvailableBackend } from '@/renderer/hooks/assistant';
 import EmojiPicker from '@/renderer/components/chat/EmojiPicker';
 import MarkdownView from '@/renderer/components/Markdown';
+import { evaosBetaVisibleSkillCards } from '@renderer/evaos/evaosBetaShellPolicy';
 import { Avatar, Button, Checkbox, Collapse, Drawer, Input, Select, Tag, Typography } from '@arco-design/web-react';
 import { Close, Delete, Info, Plus, Robot } from '@icon-park/react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -138,9 +139,14 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
 
   const agentOptions = availableBackends;
 
-  const customSkillItems = availableSkills.filter((skill) => skill.source === 'custom');
-  const builtinSkillItems = availableSkills.filter((skill) => skill.source === 'builtin');
-  const extensionSkillItems = availableSkills.filter((skill) => skill.source === 'extension');
+  const betaVisibleAvailableSkills = useMemo(() => evaosBetaVisibleSkillCards(availableSkills), [availableSkills]);
+  const betaVisibleBuiltinAutoSkills = useMemo(
+    () => evaosBetaVisibleSkillCards(builtinAutoSkills),
+    [builtinAutoSkills]
+  );
+  const customSkillItems = betaVisibleAvailableSkills.filter((skill) => skill.source === 'custom');
+  const builtinSkillItems = betaVisibleAvailableSkills.filter((skill) => skill.source === 'builtin');
+  const extensionSkillItems = betaVisibleAvailableSkills.filter((skill) => skill.source === 'extension');
   const customActiveCount = selectedSkills.filter(
     (name) =>
       pendingSkills.some((skill) => skill.name === name) || customSkillItems.some((skill) => skill.name === name)
@@ -151,7 +157,7 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
   const extensionActiveCount = selectedSkills.filter((name) =>
     extensionSkillItems.some((skill) => skill.name === name)
   ).length;
-  const autoInjectedActiveCount = builtinAutoSkills.filter(
+  const autoInjectedActiveCount = betaVisibleBuiltinAutoSkills.filter(
     (skill) => !disabledBuiltinSkills.includes(skill.name)
   ).length;
   const customStatusDotColor = customActiveCount > 0 ? 'rgb(var(--success-6))' : 'var(--color-text-4)';
@@ -163,11 +169,12 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
     customSkillItems.length +
     builtinSkillItems.length +
     extensionSkillItems.length +
-    builtinAutoSkills.length;
+    betaVisibleBuiltinAutoSkills.length;
   const totalActiveSkillsCount =
     selectedSkills.filter(
       (name) =>
-        pendingSkills.some((skill) => skill.name === name) || availableSkills.some((skill) => skill.name === name)
+        pendingSkills.some((skill) => skill.name === name) ||
+        betaVisibleAvailableSkills.some((skill) => skill.name === name)
     ).length + autoInjectedActiveCount;
   const isBuiltin = activeAssistant?.source === 'builtin';
   const isRuleEditable = !isBuiltin;
@@ -626,9 +633,11 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
                             }}
                           />
                           <div className='flex-1 min-w-0'>
-                            <div className='text-13px font-medium text-t-primary'>{skill.name}</div>
-                            {skill.description && (
-                              <div className='text-12px text-t-secondary mt-2px line-clamp-2'>{skill.description}</div>
+                            <div className='text-13px font-medium text-t-primary'>{skill.evaosDisplayName}</div>
+                            {skill.evaosDisplayDescription && (
+                              <div className='text-12px text-t-secondary mt-2px line-clamp-2'>
+                                {skill.evaosDisplayDescription}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -681,13 +690,15 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
                           />
                           <div className='flex-1 min-w-0'>
                             <div className='flex items-center gap-6px'>
-                              <div className='text-13px font-medium text-t-primary'>{skill.name}</div>
+                              <div className='text-13px font-medium text-t-primary'>{skill.evaosDisplayName}</div>
                               <span className='bg-[rgba(var(--primary-6),0.08)] text-primary-6 border border-[rgba(var(--primary-6),0.2)] text-10px px-4px py-1px rd-4px font-medium uppercase'>
                                 {t('settings.extensionSkillsBadge', { defaultValue: 'Extension' })}
                               </span>
                             </div>
-                            {skill.description && (
-                              <div className='text-12px text-t-secondary mt-2px line-clamp-2'>{skill.description}</div>
+                            {skill.evaosDisplayDescription && (
+                              <div className='text-12px text-t-secondary mt-2px line-clamp-2'>
+                                {skill.evaosDisplayDescription}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -697,7 +708,7 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
                 )}
 
                 {/* Auto-injected Builtin Skills */}
-                {builtinAutoSkills.length > 0 && (
+                {betaVisibleBuiltinAutoSkills.length > 0 && (
                   <Collapse.Item
                     header={
                       <span className='text-13px font-medium'>
@@ -713,13 +724,13 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
                           aria-hidden='true'
                         />
                         <span className='text-12px text-t-secondary'>
-                          {`${autoInjectedActiveCount}/${builtinAutoSkills.length}`}
+                          {`${autoInjectedActiveCount}/${betaVisibleBuiltinAutoSkills.length}`}
                         </span>
                       </div>
                     }
                   >
                     <div className='space-y-4px'>
-                      {builtinAutoSkills.map((skill) => (
+                      {betaVisibleBuiltinAutoSkills.map((skill) => (
                         <div key={skill.name} className='flex items-start gap-8px p-8px hover:bg-fill-1 rounded-4px'>
                           <Checkbox
                             checked={!disabledBuiltinSkills.includes(skill.name)}
@@ -735,13 +746,15 @@ const AssistantEditDrawer: React.FC<AssistantEditDrawerProps> = ({
                           />
                           <div className='flex-1 min-w-0'>
                             <div className='flex items-center gap-6px'>
-                              <div className='text-13px font-medium text-t-primary'>{skill.name}</div>
+                              <div className='text-13px font-medium text-t-primary'>{skill.evaosDisplayName}</div>
                               <span className='bg-[rgba(var(--success-6),0.08)] text-[rgb(var(--success-6))] border border-[rgba(var(--success-6),0.2)] text-10px px-4px py-1px rd-4px font-medium uppercase'>
                                 {t('settings.autoInjectedSkillsBadge', { defaultValue: 'Auto' })}
                               </span>
                             </div>
-                            {skill.description && (
-                              <div className='text-12px text-t-secondary mt-2px line-clamp-2'>{skill.description}</div>
+                            {skill.evaosDisplayDescription && (
+                              <div className='text-12px text-t-secondary mt-2px line-clamp-2'>
+                                {skill.evaosDisplayDescription}
+                              </div>
                             )}
                           </div>
                         </div>

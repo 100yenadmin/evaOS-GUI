@@ -1,6 +1,7 @@
 import { ipcBridge } from '@/common';
-import { Button, Message, Modal, Typography } from '@arco-design/web-react';
+import { Message, Modal } from '@arco-design/web-react';
 import { Delete, FolderOpen, Info, Lightning, Puzzle, Search, Refresh } from '@icon-park/react';
+import { evaosBetaVisibleSkillCards } from '@renderer/evaos/evaosBetaShellPolicy';
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -60,15 +61,21 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
   const [search_query, setSearchQuery] = useState('');
   const [builtinAutoSkills, setBuiltinAutoSkills] = useState<Array<{ name: string; description: string }>>([]);
 
-  const mySkills = useMemo(() => availableSkills.filter((s) => s.source !== 'extension'), [availableSkills]);
-  const extensionSkills = useMemo(() => availableSkills.filter((s) => s.source === 'extension'), [availableSkills]);
+  const betaVisibleSkills = useMemo(() => evaosBetaVisibleSkillCards(availableSkills), [availableSkills]);
+  const betaVisibleBuiltinAutoSkills = useMemo(
+    () => evaosBetaVisibleSkillCards(builtinAutoSkills),
+    [builtinAutoSkills]
+  );
+  const mySkills = useMemo(() => betaVisibleSkills.filter((s) => s.source !== 'extension'), [betaVisibleSkills]);
+  const extensionSkills = useMemo(() => betaVisibleSkills.filter((s) => s.source === 'extension'), [betaVisibleSkills]);
 
   const filteredSkills = useMemo(() => {
     if (!search_query.trim()) return mySkills;
     const lowerQuery = search_query.toLowerCase();
     return mySkills.filter(
       (s) =>
-        s.name.toLowerCase().includes(lowerQuery) || (s.description && s.description.toLowerCase().includes(lowerQuery))
+        s.evaosDisplayName.toLowerCase().includes(lowerQuery) ||
+        s.evaosDisplayDescription.toLowerCase().includes(lowerQuery)
     );
   }, [mySkills, search_query]);
 
@@ -246,13 +253,15 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                     <div
                       className={`w-40px h-40px rd-10px flex items-center justify-center font-bold text-16px shadow-sm text-transform-uppercase ${getAvatarColorClass(skill.name)}`}
                     >
-                      {skill.name.charAt(0).toUpperCase()}
+                      {skill.evaosDisplayName.charAt(0).toUpperCase()}
                     </div>
                   </div>
 
                   <div className='flex-1 min-w-0 flex flex-col justify-center gap-6px'>
                     <div className='flex items-center gap-10px flex-wrap'>
-                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.name}</h3>
+                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>
+                        {skill.evaosDisplayName}
+                      </h3>
                       {skill.source === 'custom' ? (
                         <span className='bg-[rgba(var(--orange-6),0.08)] text-orange-6 border border-[rgba(var(--orange-6),0.2)] text-11px px-6px py-1px rd-4px font-medium'>
                           {t('settings.skillsHub.custom', { defaultValue: 'Custom' })}
@@ -263,12 +272,12 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                         </span>
                       )}
                     </div>
-                    {skill.description && (
+                    {skill.evaosDisplayDescription && (
                       <p
                         className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'
-                        title={skill.description}
+                        title={skill.evaosDisplayDescription}
                       >
-                        {skill.description}
+                        {skill.evaosDisplayDescription}
                       </p>
                     )}
                   </div>
@@ -342,13 +351,17 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                   </div>
                   <div className='flex-1 min-w-0 flex flex-col justify-center gap-4px'>
                     <div className='flex items-center gap-10px'>
-                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.name}</h3>
+                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>
+                        {skill.evaosDisplayName}
+                      </h3>
                       <span className='bg-[rgba(var(--primary-6),0.08)] text-primary-6 border border-[rgba(var(--primary-6),0.2)] text-10px px-6px py-1px rd-4px font-medium uppercase'>
                         {t('settings.extensionSkillsBadge', { defaultValue: 'Extension' })}
                       </span>
                     </div>
-                    {skill.description && (
-                      <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'>{skill.description}</p>
+                    {skill.evaosDisplayDescription && (
+                      <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'>
+                        {skill.evaosDisplayDescription}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -358,7 +371,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
         )}
 
         {/* ======== Builtin Auto-injected Skills ======== */}
-        {builtinAutoSkills.length > 0 && (
+        {betaVisibleBuiltinAutoSkills.length > 0 && (
           <div
             data-testid='auto-skills-section'
             className='px-[16px] md:px-[32px] py-32px bg-base rd-16px md:rd-24px shadow-sm border border-b-base relative overflow-hidden transition-all'
@@ -369,11 +382,11 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                 {t('settings.autoInjectedSkills')}
               </span>
               <span className='bg-[rgba(var(--success-6),0.08)] text-[rgb(var(--success-6))] text-12px px-10px py-2px rd-[100px] font-medium ml-4px'>
-                {builtinAutoSkills.length}
+                {betaVisibleBuiltinAutoSkills.length}
               </span>
             </div>
             <div className='w-full flex flex-col gap-6px'>
-              {builtinAutoSkills.map((skill) => (
+              {betaVisibleBuiltinAutoSkills.map((skill) => (
                 <div
                   key={skill.name}
                   ref={(el) => {
@@ -388,13 +401,17 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                   </div>
                   <div className='flex-1 min-w-0 flex flex-col justify-center gap-4px'>
                     <div className='flex items-center gap-10px'>
-                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.name}</h3>
+                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>
+                        {skill.evaosDisplayName}
+                      </h3>
                       <span className='bg-[rgba(var(--success-6),0.08)] text-[rgb(var(--success-6))] border border-[rgba(var(--success-6),0.2)] text-10px px-6px py-1px rd-4px font-medium uppercase'>
                         {t('settings.autoInjectedSkillsBadge')}
                       </span>
                     </div>
-                    {skill.description && (
-                      <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'>{skill.description}</p>
+                    {skill.evaosDisplayDescription && (
+                      <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'>
+                        {skill.evaosDisplayDescription}
+                      </p>
                     )}
                   </div>
                 </div>

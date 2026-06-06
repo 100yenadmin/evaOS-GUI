@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  evaosBetaVisibleSkillCards,
   evaosBetaWebUIRouteElement,
   isEvaosBetaSettingsTabVisible,
   isEvaosBetaWebUISettingsEnabled,
@@ -29,5 +30,32 @@ describe('evaOS beta WebUI guardrail', () => {
 
   it('blocks direct WebUI route rendering by default', () => {
     expect(evaosBetaWebUIRouteElement('allowed', 'blocked')).toBe('blocked');
+  });
+
+  it('sanitizes beta-visible Skills Hub cards without mutating backend skill ids', () => {
+    const cards = evaosBetaVisibleSkillCards([
+      {
+        name: 'aionui-skills',
+        description: 'Access the AionUI Skills registry and manage credentials on the AionUI Skills platform.',
+        source: 'builtin' as const,
+      },
+      {
+        name: 'aionui-webui-setup',
+        description: 'AionUi WebUI configuration expert for remote access through the settings interface.',
+        source: 'builtin' as const,
+      },
+      {
+        name: 'cron',
+        description: 'Scheduled task management.',
+        source: 'builtin' as const,
+      },
+    ]);
+
+    expect(cards.map((skill) => skill.name)).toEqual(['aionui-skills', 'cron']);
+    expect(cards[0].evaosDisplayName).toBe('upstream-skills-registry');
+    expect(cards[0].evaosDisplayDescription).toBe(
+      'Discover and manage reusable agent skills from the upstream shell registry.'
+    );
+    expect(JSON.stringify(cards)).not.toMatch(/AionUI|AionUi WebUI|remote access/);
   });
 });
