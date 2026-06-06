@@ -10,7 +10,7 @@ import { Delete, EditTwo, Robot } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
-import { getEvaosAgentDisplayName } from '@/renderer/evaos/evaosAgentPresentation';
+import { getEvaosAgentDisplayName, isEvaosCustomAgentPresentation } from '@/renderer/evaos/evaosAgentPresentation';
 import type { EvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
 
 type DetectedAgent = {
@@ -59,6 +59,7 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
   if (props.type === 'detected') {
     const { agent, nativeAvailability, onGoToChat } = props;
     const displayName = getEvaosAgentDisplayName(agent);
+    const useNeutralCustomVisual = isEvaosCustomAgentPresentation(agent);
     const statusLabel = nativeAvailability
       ? t(nativeAvailability.statusLabelKey, {
           displayName: nativeAvailability.displayName,
@@ -73,14 +74,15 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
       : t('settings.agentManagement.goToChat');
     const isRepairRequired = nativeAvailability?.status === 'repair_required';
     const extensionAvatar = resolveExtensionAssetUrl(agent.isExtension ? agent.avatar : undefined);
-    const logo =
-      extensionAvatar ||
-      resolveAgentLogo({
-        icon: agent.icon,
-        backend: agent.backend || agent.agent_type,
-        custom_agent_id: agent.custom_agent_id,
-        isExtension: agent.isExtension,
-      });
+    const logo = useNeutralCustomVisual
+      ? undefined
+      : extensionAvatar ||
+        resolveAgentLogo({
+          icon: agent.icon,
+          backend: agent.backend || agent.agent_type,
+          custom_agent_id: agent.custom_agent_id,
+          isExtension: agent.isExtension,
+        });
 
     return (
       <div className='flex min-h-[154px] flex-col rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--color-bg-2)] p-12px transition-colors hover:border-[var(--color-border-3)]'>

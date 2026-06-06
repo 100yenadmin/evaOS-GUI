@@ -80,6 +80,8 @@ describe('AboutModalContent evaOS beta identity', () => {
     const user = userEvent.setup();
     renderAbout();
 
+    expect(Object.values(EVAOS_BETA_ABOUT_LINKS).join(' ')).not.toMatch(/AionUi|iOfficeAI|aionui\.com/i);
+
     await user.click(screen.getByText('settings.helpDocumentation'));
     await user.click(screen.getByText('settings.updateLog'));
     await user.click(screen.getByText('settings.contactMe'));

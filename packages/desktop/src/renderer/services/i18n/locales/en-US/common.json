@@ -73,12 +73,12 @@
   "backendStartup": {
     "incompatibleRuntime": {
       "title": "This system is not supported by the bundled backend",
-      "description": "evaOS Workbench Beta opened, but the local AionCore backend cannot run on this Linux version. Please upgrade to a supported Linux distribution and restart evaOS Workbench Beta.",
+      "description": "evaOS Workbench Beta opened, but the local managed runtime backend cannot run on this Linux version. Please upgrade to a supported Linux distribution and restart evaOS Workbench Beta.",
       "requiredVersions": "Required runtime symbols: {{versions}}"
     },
     "incompleteInstallation": {
       "title": "evaOS Workbench Beta installation is incomplete",
-      "description": "This installation is missing required local resources, so AionCore cannot start. Please download and reinstall the latest evaOS Workbench Beta. If the issue returns after reinstalling, check whether security or antivirus software quarantined AionCore.",
+      "description": "This installation is missing required local resources, so managed runtime cannot start. Please download and reinstall the latest evaOS Workbench Beta. If the issue returns after reinstalling, check whether security or antivirus software quarantined managed runtime.",
       "downloadLatest": "Download latest",
       "sendDiagnostics": "Send diagnostics"
     }
