@@ -20,9 +20,9 @@ on:
         required: true
         type: string
       fallback_asset_pattern:
-        description: 'gh release download pattern for the fallback DMG.'
+        description: 'gh release download pattern for the fallback macOS app asset. ZIP and DMG are supported.'
         required: true
-        default: '*.dmg'
+        default: '*.zip'
         type: string
       fallback_app_name:
         description: 'Installed fallback app bundle name, for example evaOS Workbench.app.'
@@ -188,12 +188,12 @@ jobs:
             --repo "$FALLBACK_REPO" \
             --dir fallback-assets \
             --pattern "$FALLBACK_PATTERN"
-          FALLBACK_DMG=$(find fallback-assets -type f -name "*.dmg" | sort | head -n 1)
-          if [ -z "$FALLBACK_DMG" ]; then
-            echo "::error::Fallback release did not provide a DMG with pattern $FALLBACK_PATTERN."
+          FALLBACK_ASSET=$(find fallback-assets -type f \( -name "*.dmg" -o -name "*.zip" \) | sort | head -n 1)
+          if [ -z "$FALLBACK_ASSET" ]; then
+            echo "::error::Fallback release did not provide a ZIP or DMG with pattern $FALLBACK_PATTERN."
             exit 1
           fi
-          echo "FALLBACK_DMG=$FALLBACK_DMG" >> $GITHUB_ENV
+          echo "FALLBACK_ASSET=$FALLBACK_ASSET" >> $GITHUB_ENV
           ls -la fallback-assets
 
       - name: Prepare RC proof directory
@@ -232,7 +232,47 @@ jobs:
             hdiutil detach "$mount_dir" -quiet
           }
 
-          install_app_from_dmg "$FALLBACK_DMG" "$FALLBACK_APP_NAME" "$RUNNER_TEMP/fallback-dmg"
+          install_app_from_zip() {
+            local zip="$1"
+            local app_name="$2"
+            local extract_dir="$3"
+
+            rm -rf "$extract_dir"
+            mkdir -p "$extract_dir"
+            ditto -x -k "$zip" "$extract_dir"
+            local app_path
+            app_path=$(find "$extract_dir" -maxdepth 4 -type d -name "$app_name" | head -n 1)
+            if [ -z "$app_path" ]; then
+              echo "::error::ZIP $zip did not contain $app_name."
+              exit 1
+            fi
+            rm -rf "/Applications/$app_name"
+            ditto "$app_path" "/Applications/$app_name"
+          }
+
+          install_fallback_app() {
+            local asset="$1"
+            local app_name="$2"
+
+            case "$asset" in
+              *.dmg)
+                FALLBACK_ASSET_KIND=dmg
+                echo "FALLBACK_ASSET_KIND=dmg" >> "$GITHUB_ENV"
+                install_app_from_dmg "$asset" "$app_name" "$RUNNER_TEMP/fallback-dmg"
+                ;;
+              *.zip)
+                FALLBACK_ASSET_KIND=zip
+                echo "FALLBACK_ASSET_KIND=zip" >> "$GITHUB_ENV"
+                install_app_from_zip "$asset" "$app_name" "$RUNNER_TEMP/fallback-zip"
+                ;;
+              *)
+                echo "::error::Unsupported fallback asset type: $asset"
+                exit 1
+                ;;
+            esac
+          }
+
+          install_fallback_app "$FALLBACK_ASSET" "$FALLBACK_APP_NAME"
 
           BETA_DMG=$(find release-assets \( -name "*mac-arm64*.dmg" -o -name "*arm64*.dmg" \) -type f | sort | head -n 1)
           if [ -z "$BETA_DMG" ]; then
@@ -251,8 +291,10 @@ jobs:
           fi
 
           {
-            echo "PASS: DMG copied to /Applications/$BETA_APP_NAME without replacing the released fallback app."
+            echo "PASS: beta DMG copied to /Applications/$BETA_APP_NAME without replacing the released fallback app."
             echo "Fallback app: /Applications/$FALLBACK_APP_NAME"
+            echo "Fallback asset: $FALLBACK_ASSET"
+            echo "Fallback asset kind: ${FALLBACK_ASSET_KIND:-unknown}"
             echo "Beta app: /Applications/$BETA_APP_NAME"
           } > "$PROOF_DIR/install-smoke.md"
 
