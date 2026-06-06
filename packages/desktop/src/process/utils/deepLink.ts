@@ -13,6 +13,8 @@ export const PROTOCOL_SCHEME = isEvaosBetaBuild() ? EVAOS_BETA_IDENTITY.protocol
 
 export type DeepLinkPayload = { action: string; params: Record<string, string> };
 
+export const EVAOS_DESKTOP_SESSION_IMPORTED_ACTION = 'evaos-auth/session-imported';
+
 const RENDERER_SECRET_PARAM_NAMES = new Set([
   'api_key',
   'apikey',
@@ -137,20 +139,32 @@ export const clearPendingDeepLinkPayload = (): void => {
  * Send the deep-link payload to the renderer via IPC bridge.
  * If the window isn't ready yet, queue it.
  */
+function emitOrQueueDeepLinkPayload(payload: DeepLinkPayload): void {
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) {
+    pendingDeepLinkPayload = payload;
+    return;
+  }
+
+  ipcBridge.deepLink.received.emit(payload);
+}
+
+export function notifyEvaosDesktopSessionImported(source: 'loopback' | 'protocol'): void {
+  emitOrQueueDeepLinkPayload({
+    action: EVAOS_DESKTOP_SESSION_IMPORTED_ACTION,
+    params: { source },
+  });
+}
+
 export const handleDeepLinkUrl = (url: string): void => {
   if (desktopSessionImporter(url)) {
+    notifyEvaosDesktopSessionImported('protocol');
     return;
   }
 
   const parsed = parseDeepLinkUrl(url);
   if (!parsed) return;
 
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) {
-    pendingDeepLinkPayload = parsed;
-    return;
-  }
-
-  ipcBridge.deepLink.received.emit(parsed);
+  emitOrQueueDeepLinkPayload(parsed);
 };
 
 export const emitDeepLinkPayload = (payload: DeepLinkPayload): void => {
