@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      provision_fixtures:
+        description: 'Provision fresh short-lived staging fixtures before strict readiness and live canaries.'
+        required: false
+        default: true
+        type: boolean
       proof_ref:
         description: 'Non-secret issue or packet reference for this proof run.'
         required: true
@@ -28,6 +33,12 @@ jobs:
     timeout-minutes: 30
     env:
       PROOF_DIR: live-canary-proof
+      AIONUI_EVAOS_FIXTURE_STATE_PATH: .evaos-live-canary-fixtures.json
+      AIONUI_EVAOS_FIXTURE_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_URL || secrets.SUPABASE_URL }}
+      AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SECRET_KEY }}
+      AIONUI_EVAOS_FIXTURE_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_FIXTURE_CUSTOMER_ID || vars.AIONUI_EVAOS_CUSTOMER_ID || 'golden' }}
+      AIONUI_EVAOS_FIXTURE_WRONG_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_FIXTURE_WRONG_CUSTOMER_ID || vars.AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID || vars.AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID || 'aionui-wrong-customer-proof' }}
+      AIONUI_EVAOS_FIXTURE_TTL_MINUTES: ${{ vars.AIONUI_EVAOS_FIXTURE_TTL_MINUTES || '180' }}
       AIONUI_EVAOS_APPROVAL_DENY_ACK: evaos-deny-test
       AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK: evaos-browser-test
       AIONUI_EVAOS_BROKER_ENDPOINT: ${{ vars.AIONUI_EVAOS_BROKER_ENDPOINT || secrets.AIONUI_EVAOS_BROKER_ENDPOINT }}
@@ -90,6 +101,20 @@ jobs:
             echo "Environment: evaos-staging"
           } > "$PROOF_DIR/proof-run.md"
 
+      - name: Provision reusable live canary fixtures
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosProvisionLiveCanaryFixtures.js provision | awk -v out="$PROOF_DIR/fixture-provisioning.stdout.json" '
+            /^::add-mask::/ { print; next }
+            { print > out }
+          '
+          test -s "$PROOF_DIR/fixture-provisioning.stdout.json"
+          if grep -q '^::add-mask::' "$PROOF_DIR/fixture-provisioning.stdout.json"; then
+            echo "::error::Fixture proof artifact contains GitHub mask commands."
+            exit 1
+          fi
+
       - name: Run strict readiness checklist
         run: |
           set -euo pipefail
@@ -107,6 +132,12 @@ jobs:
           node scripts/evaosCompanyBrainLiveCanary.js > "$PROOF_DIR/company-brain.json"
           node scripts/evaosBusinessBrowserLiveCanary.js > "$PROOF_DIR/business-browser.json"
 
+      - name: Cleanup reusable live canary fixtures
+        if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosProvisionLiveCanaryFixtures.js cleanup > "$PROOF_DIR/fixture-cleanup.stdout.json"
+
       - name: Write summary
         if: always()
         run: |
@@ -116,6 +147,7 @@ jobs:
             echo "- Environment: \`evaos-staging\`"
             echo "- Proof artifact: \`evaos-live-canary-proof-${{ github.run_id }}\`"
             echo "- Individual canaries requested: \`${{ github.event.inputs.run_live_canaries }}\`"
+            echo "- Fixture provisioning requested: \`${{ github.event.inputs.provision_fixtures }}\`"
             echo ""
             if [ -f "$PROOF_DIR/readiness.md" ]; then
               cat "$PROOF_DIR/readiness.md"

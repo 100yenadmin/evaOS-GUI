@@ -73,6 +73,13 @@ const REQUIRED_ONE_OF_FIXTURES = [
   },
 ];
 
+const REQUIRED_PROVISIONED_SECRET_GROUPS = [
+  {
+    names: ['AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY'],
+    reason: 'service-role key used only by the workflow-time fixture provisioner',
+  },
+];
+
 function normalizeNames(values) {
   return new Set((values ?? []).map((value) => String(value ?? '').trim()).filter(Boolean));
 }
@@ -81,30 +88,41 @@ function hasName(inventory, name) {
   return inventory.secrets.has(name) || inventory.variables.has(name);
 }
 
-function auditEnvironmentInventory(input) {
+function auditEnvironmentInventory(input, options = {}) {
   const inventory = {
     secrets: normalizeNames(input.secrets),
     variables: normalizeNames(input.variables),
   };
   const missing = [];
   const satisfied = [];
-
-  for (const fixture of REQUIRED_SINGLE_FIXTURES) {
-    const ok = fixture.kind === 'secret' ? inventory.secrets.has(fixture.name) : hasName(inventory, fixture.name);
-    if (ok) {
-      satisfied.push(fixture.name);
-    } else {
-      missing.push(fixture.name);
-    }
-  }
-
   const missingOneOf = [];
   const satisfiedOneOf = [];
-  for (const group of REQUIRED_ONE_OF_FIXTURES) {
-    if (group.names.some((name) => hasName(inventory, name))) {
-      satisfiedOneOf.push(group.names);
-    } else {
-      missingOneOf.push(group.names);
+  const provisioned = options.provisioned === true;
+
+  if (provisioned) {
+    for (const group of REQUIRED_PROVISIONED_SECRET_GROUPS) {
+      if (group.names.some((name) => inventory.secrets.has(name))) {
+        satisfiedOneOf.push(group.names);
+      } else {
+        missingOneOf.push(group.names);
+      }
+    }
+  } else {
+    for (const fixture of REQUIRED_SINGLE_FIXTURES) {
+      const ok = fixture.kind === 'secret' ? inventory.secrets.has(fixture.name) : hasName(inventory, fixture.name);
+      if (ok) {
+        satisfied.push(fixture.name);
+      } else {
+        missing.push(fixture.name);
+      }
+    }
+
+    for (const group of REQUIRED_ONE_OF_FIXTURES) {
+      if (group.names.some((name) => hasName(inventory, name))) {
+        satisfiedOneOf.push(group.names);
+      } else {
+        missingOneOf.push(group.names);
+      }
     }
   }
 
@@ -114,6 +132,7 @@ function auditEnvironmentInventory(input) {
   return {
     schema: 'evaos-live-canary-github-env-inventory/v1',
     checkedAt: new Date().toISOString(),
+    fixtureMode: provisioned ? 'workflow-provisioned' : 'static',
     ready: missing.length === 0 && missingOneOf.length === 0,
     missing,
     missingOneOf,
@@ -131,6 +150,8 @@ function renderMarkdown(report) {
     '# evaOS Live Canary GitHub Environment Inventory',
     '',
     `Checked: ${report.checkedAt}`,
+    '',
+    `Fixture mode: ${report.fixtureMode ?? 'static'}`,
     '',
     `Overall: ${report.ready ? 'ready' : 'blocked'}`,
     '',
@@ -248,7 +269,7 @@ function renderProvisioningTemplate(options = {}) {
     '',
     '## Verify Inventory',
     '',
-    `node scripts/evaosLiveCanaryEnvInventory.js --repo ${shellArg(repo)} --env ${shellArg(environment)} --strict --markdown`,
+    `node scripts/evaosLiveCanaryEnvInventory.js --repo ${shellArg(repo)} --env ${shellArg(environment)} --strict --markdown --provisioned`,
     '',
     '## Dispatch Live Canary Proof',
     '',
@@ -257,6 +278,7 @@ function renderProvisioningTemplate(options = {}) {
       `--ref ${shellArg(branch)}`,
       '-f live_canary_ack=evaos-live-canary',
       '-f run_live_canaries=true',
+      '-f provision_fixtures=true',
       `-f proof_ref=${shellArg(proofRef)}`,
     ].join(' ')
   );
@@ -285,6 +307,7 @@ function parseArgs(argv) {
     markdown: false,
     strict: false,
     provisioningTemplate: false,
+    provisioned: false,
     branch: 'evaos/dev',
     proofRef: 'https://github.com/100yenadmin/AionUi/issues/41',
   };
@@ -296,6 +319,7 @@ function parseArgs(argv) {
     if (arg === '--markdown') options.markdown = true;
     if (arg === '--strict') options.strict = true;
     if (arg === '--provisioning-template') options.provisioningTemplate = true;
+    if (arg === '--provisioned' || arg === '--workflow-provisioned') options.provisioned = true;
     if (arg === '--branch') options.branch = argv[(index += 1)];
     if (arg === '--proof-ref') options.proofRef = argv[(index += 1)];
   }
@@ -318,7 +342,7 @@ function main() {
   }
 
   const inventory = listGithubEnvironmentInventory(options.repo, options.environment);
-  const report = auditEnvironmentInventory(inventory);
+  const report = auditEnvironmentInventory(inventory, { provisioned: options.provisioned });
 
   if (options.markdown) {
     process.stdout.write(renderMarkdown(report));
@@ -337,6 +361,7 @@ if (require.main === module) {
 
 module.exports = {
   REQUIRED_ONE_OF_FIXTURES,
+  REQUIRED_PROVISIONED_SECRET_GROUPS,
   REQUIRED_SINGLE_FIXTURES,
   auditEnvironmentInventory,
   listGithubEnvironmentInventory,

@@ -36,7 +36,10 @@ describe('evaOS trust-surface live canary', () => {
       {
         schema_version: 'evaos.provider_hub.v1',
         customer_id: 'cus_123',
-        provider_profiles: [{ provider_key: 'google_workspace', status: 'connected' }],
+        provider_profiles: [
+          { provider_key: 'google_workspace', status: 'connected', raw_secrets_stored_in_workbench: false },
+        ],
+        raw_secrets_stored_in_workbench: false,
         backend_enforced: true,
         source_pointer: 'broker:provider_profiles:cus_123',
         audit_id: 'audit_provider_123',
@@ -65,6 +68,24 @@ describe('evaOS trust-surface live canary', () => {
         {
           customer_id: 'cus_123',
           provider_profiles: [{ provider_key: 'github', access_token: 'raw-token' }],
+        },
+        { action: 'provider_profiles', customerId: 'cus_123' }
+      )
+    ).toThrow(/secret material/);
+  });
+
+  it('fails closed when a provider profile reports raw Workbench secret storage', () => {
+    expect(() =>
+      trustCanary.summarizeTrustSurfaceResponse(
+        {
+          customer_id: 'cus_123',
+          provider_profiles: [
+            {
+              provider_key: 'github',
+              status: 'connected',
+              raw_secrets_stored_in_workbench: true,
+            },
+          ],
         },
         { action: 'provider_profiles', customerId: 'cus_123' }
       )

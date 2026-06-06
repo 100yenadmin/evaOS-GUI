@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const inventory = require('../../../scripts/evaosLiveCanaryEnvInventory.js') as {
-  auditEnvironmentInventory: (input: { secrets: string[]; variables: string[] }) => {
+  auditEnvironmentInventory: (
+    input: { secrets: string[]; variables: string[] },
+    options?: { provisioned?: boolean }
+  ) => {
     ready: boolean;
+    fixtureMode: string;
     missing: string[];
     satisfied: string[];
     missingOneOf: string[][];
@@ -81,6 +85,37 @@ describe('evaOS live canary GitHub environment inventory', () => {
     expect(report.satisfied).toContain('AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS');
   });
 
+  it('supports workflow-time fixture provisioning with only provisioner secrets configured', () => {
+    const report = inventory.auditEnvironmentInventory(
+      {
+        secrets: ['AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY', 'AIONUI_EVAOS_FIXTURE_SUPABASE_URL'],
+        variables: ['AIONUI_EVAOS_RUNTIME', 'AIONUI_EVAOS_PROVIDER_REQUIRED_STATES'],
+      },
+      { provisioned: true }
+    );
+
+    expect(report.ready).toBe(true);
+    expect(report.fixtureMode).toBe('workflow-provisioned');
+    expect(report.missing).toEqual([]);
+    expect(report.missingOneOf).toEqual([]);
+  });
+
+  it('fails workflow-time fixture inventory when no provisioner service key is configured', () => {
+    const report = inventory.auditEnvironmentInventory(
+      {
+        secrets: ['AIONUI_EVAOS_FIXTURE_SUPABASE_URL'],
+        variables: ['AIONUI_EVAOS_RUNTIME'],
+      },
+      { provisioned: true }
+    );
+
+    expect(report.ready).toBe(false);
+    expect(report.missingOneOf).toContainEqual([
+      'AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_SECRET_KEY',
+    ]);
+  });
+
   it('renders a name-only Markdown checklist without values', () => {
     const report = inventory.auditEnvironmentInventory({
       secrets: ['AIONUI_EVAOS_DESKTOP_SESSION'],
@@ -109,9 +144,10 @@ describe('evaOS live canary GitHub environment inventory', () => {
     expect(template).toContain('gh workflow run evaos-live-canary-proof.yml');
     expect(template).toContain("--ref 'evaos/dev'");
     expect(template).toContain('-f live_canary_ack=evaos-live-canary');
+    expect(template).toContain('-f provision_fixtures=true');
     expect(template).toContain("-f proof_ref='https://github.com/100yenadmin/AionUi/issues/41'");
     expect(template).toContain(
-      "node scripts/evaosLiveCanaryEnvInventory.js --repo '100yenadmin/AionUi' --env 'evaos-staging' --strict --markdown"
+      "node scripts/evaosLiveCanaryEnvInventory.js --repo '100yenadmin/AionUi' --env 'evaos-staging' --strict --markdown --provisioned"
     );
     expect(template).not.toContain('eds_live_session_for_test');
     expect(template).not.toContain('https://workspace.example.test');
