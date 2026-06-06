@@ -56,9 +56,7 @@ describe('beginEvaosDesktopAuth', () => {
     expect(authUrl.searchParams.get('prompt')).toBe('select_account');
     const callbackState = authUrl.searchParams.get('desktop_auth_state');
     expect(callbackState).toMatch(/^[A-F0-9-]{36}$/);
-    expect(handoff.callbackUrl).toMatch(
-      /^http:\/\/127\.0\.0\.1:\d+\/auth\/evaos-workbench-beta\/callback\?desktop_auth_state=/
-    );
+    expect(handoff.callbackUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback\?desktop_auth_state=/);
     expect(JSON.stringify(handoff)).not.toMatch(/eds_|desktop_session|access_token|Bearer/i);
 
     const callbackUrl = new URL(handoff.callbackUrl);
@@ -70,7 +68,10 @@ describe('beginEvaosDesktopAuth', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('connected');
     expect(importCallback).toHaveBeenCalledTimes(1);
-    expect(importCallback).toHaveBeenCalledWith(callbackUrl.toString());
+    const importedUrl = new URL(importCallback.mock.calls[0][0]);
+    expect(importedUrl.pathname).toBe('/auth/evaos-workbench-beta/callback');
+    expect(importedUrl.searchParams.get('desktop_auth_state')).toBe(callbackState);
+    expect(importedUrl.searchParams.get('desktop_session')).toBe('eds_loopback_session_secret_for_test');
   });
 
   it('rejects loopback callbacks that do not match the AionUi auth state', async () => {
@@ -102,7 +103,7 @@ describe('beginEvaosDesktopAuth', () => {
     expect(importCallback).not.toHaveBeenCalled();
   });
 
-  it('does not accept callbacks on the released Workbench loopback path', async () => {
+  it('does not accept dashboard-compatible loopback callbacks without the beta auth state', async () => {
     const importCallback = vi.fn();
     const client = {
       importDesktopSessionFromCallbackUrl: importCallback,
@@ -115,14 +116,14 @@ describe('beginEvaosDesktopAuth', () => {
     });
 
     const betaCallback = new URL(handoff.callbackUrl);
-    const releasedWorkbenchCallback = new URL(betaCallback.toString());
-    releasedWorkbenchCallback.pathname = '/auth/callback';
-    releasedWorkbenchCallback.searchParams.set('desktop_session', 'eds_loopback_session_secret_for_test');
-    releasedWorkbenchCallback.searchParams.set('desktop_session_expires_at', '2026-06-03T16:00:00.000Z');
+    const unsafeCallback = new URL(betaCallback.toString());
+    unsafeCallback.searchParams.delete('desktop_auth_state');
+    unsafeCallback.searchParams.set('desktop_session', 'eds_loopback_session_secret_for_test');
+    unsafeCallback.searchParams.set('desktop_session_expires_at', '2026-06-03T16:00:00.000Z');
 
-    const response = await fetch(releasedWorkbenchCallback);
+    const response = await fetch(unsafeCallback);
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(400);
     expect(importCallback).not.toHaveBeenCalled();
   });
 });

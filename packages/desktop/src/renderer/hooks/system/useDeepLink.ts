@@ -23,6 +23,9 @@ export type DeepLinkAddProviderDetail = {
   platform?: string;
 };
 
+export const EVAOS_DESKTOP_SESSION_IMPORTED_ACTION = 'evaos-auth/session-imported';
+export const EVAOS_DESKTOP_SESSION_IMPORTED_EVENT = 'evaos:desktop-session-imported';
+
 /** Pending deep link data for the add-provider action. Read-once: consumed by ModelModalContent on mount. */
 let pendingDeepLinkData: DeepLinkAddProviderDetail | null = null;
 
@@ -54,6 +57,15 @@ export const useDeepLink = () => {
 
   const handler = useCallback(
     (payload: DeepLinkPayload) => {
+      if (payload.action === EVAOS_DESKTOP_SESSION_IMPORTED_ACTION) {
+        window.dispatchEvent(
+          new CustomEvent(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, {
+            detail: { source: payload.params.source || 'unknown' },
+          })
+        );
+        return;
+      }
+
       // Support both formats: "add-provider" and "provider/add" (one-api style)
       if (payload.action === 'add-provider' || payload.action === 'provider/add') {
         pendingDeepLinkData = {

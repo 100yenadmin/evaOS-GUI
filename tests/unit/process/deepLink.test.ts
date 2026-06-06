@@ -52,7 +52,7 @@ describe('evaOS beta deep links', () => {
     });
   });
 
-  it('imports desktop-session callbacks in main without queueing renderer payloads', () => {
+  it('imports desktop-session callbacks in main and queues only a safe renderer refresh event', () => {
     const importer = vi.fn(() => true);
     setDeepLinkDesktopSessionImporterForTest(importer);
     clearPendingDeepLinkPayload();
@@ -63,7 +63,11 @@ describe('evaOS beta deep links', () => {
 
     expect(importer).toHaveBeenCalledTimes(1);
     expect(importer.mock.calls[0][0]).toContain('desktop_session=eds_callback_session_secret_for_test');
-    expect(getPendingDeepLinkPayload()).toBeNull();
+    expect(getPendingDeepLinkPayload()).toEqual({
+      action: 'evaos-auth/session-imported',
+      params: { source: 'protocol' },
+    });
+    expect(JSON.stringify(getPendingDeepLinkPayload())).not.toMatch(/eds_|desktop_session|access_token|Bearer/i);
   });
 
   it('queues only sanitized payloads before the window is ready', () => {

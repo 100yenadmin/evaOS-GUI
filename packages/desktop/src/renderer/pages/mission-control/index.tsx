@@ -17,6 +17,7 @@ import {
   type IEvaosRuntimeKey,
   type IEvaosRuntimeStatusView,
 } from '@/common/adapter/ipcBridge';
+import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from '@renderer/hooks/system/useDeepLink';
 
 type RuntimeTarget = {
   key: IEvaosRuntimeKey;
@@ -214,6 +215,16 @@ const MissionControlPage: React.FC = () => {
   );
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
+  const pendingSessionImportRuntimeRefreshRef = useRef(false);
+  const pendingSessionImportCustomerResetRef = useRef(false);
+
+  const clearRuntimeEvidence = useCallback(() => {
+    requestEpochRef.current += 1;
+    selectedCustomerRef.current = undefined;
+    setRuntimeStates(emptyRuntimeStates());
+    setLastRefreshedAt(null);
+    setLoadingRuntime(false);
+  }, []);
 
   const loadSession = useCallback(async (): Promise<IEvaosBrokerSessionStatus | null> => {
     setLoadingSession(true);
@@ -368,6 +379,55 @@ const MissionControlPage: React.FC = () => {
     setLoadingRuntime(false);
   }, [customerContext.selectedCustomerId, isCurrentRequest, loadSession]);
 
+  useEffect(() => {
+    const handleDesktopSessionImported = () => {
+      pendingSessionImportRuntimeRefreshRef.current = true;
+      pendingSessionImportCustomerResetRef.current = false;
+      clearRuntimeEvidence();
+      void loadSession();
+    };
+    window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+    return () => window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+  }, [clearRuntimeEvidence, loadSession]);
+
+  useEffect(() => {
+    if (!pendingSessionImportRuntimeRefreshRef.current || loadingSession) {
+      return;
+    }
+
+    if (!session?.authenticated) {
+      pendingSessionImportRuntimeRefreshRef.current = false;
+      pendingSessionImportCustomerResetRef.current = false;
+      return;
+    }
+
+    if (
+      !pendingSessionImportCustomerResetRef.current &&
+      (customerContext.loading || !customerContext.loaded || !customerContext.selectedCustomerId)
+    ) {
+      pendingSessionImportCustomerResetRef.current = true;
+    }
+
+    if (!pendingSessionImportCustomerResetRef.current || customerContext.loading || !customerContext.loaded) {
+      return;
+    }
+
+    pendingSessionImportRuntimeRefreshRef.current = false;
+    pendingSessionImportCustomerResetRef.current = false;
+    if (!customerContext.selectedCustomerId) {
+      return;
+    }
+
+    void refreshMissionControl();
+  }, [
+    customerContext.loaded,
+    customerContext.loading,
+    customerContext.selectedCustomerId,
+    loadingSession,
+    refreshMissionControl,
+    session?.authenticated,
+  ]);
+
   const selectCustomer = useCallback(
     (customerId: string) => {
       selectedCustomerRef.current = customerId;
@@ -381,13 +441,9 @@ const MissionControlPage: React.FC = () => {
   );
 
   const refreshCustomerTargets = useCallback(async () => {
-    requestEpochRef.current += 1;
-    selectedCustomerRef.current = undefined;
-    setRuntimeStates(emptyRuntimeStates());
-    setLastRefreshedAt(null);
-    setLoadingRuntime(false);
+    clearRuntimeEvidence();
     await customerContext.refreshTargets();
-  }, [customerContext]);
+  }, [clearRuntimeEvidence, customerContext]);
 
   useEffect(() => {
     void loadSession();

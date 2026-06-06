@@ -9,6 +9,7 @@ import { createServer, type Server } from 'http';
 import { shell } from 'electron';
 import type { IEvaosBrokerBeginDesktopAuthResult } from '@/common/evaos/bridgeTypes';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
+import { notifyEvaosDesktopSessionImported } from '../utils/deepLink';
 import {
   EvaosBrokerSessionError,
   getDefaultEvaosBrokerSessionClient,
@@ -18,6 +19,7 @@ import {
 const DEFAULT_DASHBOARD_BASE_URL = 'https://www.electricsheephq.com';
 const AUTH_LOOPBACK_HOST = '127.0.0.1';
 const AUTH_LOOPBACK_PATH = EVAOS_BETA_IDENTITY.loopbackCallbackPath;
+const DASHBOARD_COMPAT_LOOPBACK_PATH = '/auth/callback';
 const AUTH_LOOPBACK_STATE_PARAM = 'desktop_auth_state';
 const AUTH_LOOPBACK_TIMEOUT_MS = 180_000;
 
@@ -127,7 +129,9 @@ async function startLoopbackReceiver(
       return;
     }
 
-    if (parsedCallback.pathname !== AUTH_LOOPBACK_PATH) {
+    const acceptedLoopbackPath =
+      parsedCallback.pathname === AUTH_LOOPBACK_PATH || parsedCallback.pathname === DASHBOARD_COMPAT_LOOPBACK_PATH;
+    if (!acceptedLoopbackPath) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('evaOS Workbench Beta callback route not found.');
       return;
@@ -140,7 +144,9 @@ async function startLoopbackReceiver(
     }
 
     try {
-      client.importDesktopSessionFromCallbackUrl(callbackUrl);
+      const normalizedImportUrl = normalizeLoopbackImportUrl(parsedCallback);
+      client.importDesktopSessionFromCallbackUrl(normalizedImportUrl);
+      notifyEvaosDesktopSessionImported('loopback');
       response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('evaOS Workbench Beta is connected. You can return to the app.');
       stopActiveLoopback(server);
@@ -169,10 +175,16 @@ async function startLoopbackReceiver(
 
   return {
     server,
-    callbackUrl: `http://${AUTH_LOOPBACK_HOST}:${address.port}${AUTH_LOOPBACK_PATH}?${AUTH_LOOPBACK_STATE_PARAM}=${encodeURIComponent(
+    callbackUrl: `http://${AUTH_LOOPBACK_HOST}:${address.port}${DASHBOARD_COMPAT_LOOPBACK_PATH}?${AUTH_LOOPBACK_STATE_PARAM}=${encodeURIComponent(
       desktopAuthState
     )}`,
   };
+}
+
+function normalizeLoopbackImportUrl(callbackUrl: URL): string {
+  const normalized = new URL(callbackUrl.toString());
+  normalized.pathname = AUTH_LOOPBACK_PATH;
+  return normalized.toString();
 }
 
 function stopActiveLoopback(server?: Server): void {

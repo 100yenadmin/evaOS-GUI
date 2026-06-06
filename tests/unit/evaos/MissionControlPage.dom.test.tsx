@@ -87,6 +87,29 @@ function emptyCustomerTargets() {
   };
 }
 
+function memberCustomerTargets() {
+  return {
+    success: true,
+    data: {
+      roles: ['member'],
+      isOperator: false,
+      defaultCustomerId: 'member-customer',
+      selectedCustomerId: 'member-customer',
+      customers: [
+        {
+          customerId: 'member-customer',
+          displayName: 'Member Customer',
+          email: 'member@example.test',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: true,
+        },
+      ],
+      summaryText: '1 customer target loaded',
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => {
@@ -603,6 +626,83 @@ describe('MissionControlPage', () => {
 
     expect(screen.queryByText('David Poku Co')).not.toBeInTheDocument();
     expect(screen.getByText('No customer targets loaded')).toBeInTheDocument();
+  });
+
+  it('waits for session-keyed customer targets before refreshing runtime after desktop session import', async () => {
+    const pendingMemberTargets = deferred<ReturnType<typeof memberCustomerTargets>>();
+    const memberSession = {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      source: 'loopback',
+      userEmail: 'member@example.test',
+      expiresAt: '2026-06-04T19:00:00.000Z',
+      message: 'evaOS desktop session is active.',
+    };
+
+    brokerMocks.getSessionStatus
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          state: 'authenticated',
+          authenticated: true,
+          expired: false,
+          source: 'memory',
+          userEmail: 'admin@100yen.org',
+          expiresAt: '2026-06-03T18:00:00.000Z',
+          message: 'evaOS desktop session is active.',
+        },
+      })
+      .mockResolvedValue({
+        success: true,
+        data: memberSession,
+      });
+    brokerMocks.getCustomerTargets
+      .mockResolvedValueOnce(customerTargets())
+      .mockReturnValueOnce(pendingMemberTargets.promise);
+    brokerMocks.runtimeStatus.mockImplementation(({ customerId, runtime }) =>
+      Promise.resolve({
+        success: true,
+        data: {
+          customerId,
+          runtimeKey: runtime,
+          displayLabel: runtime,
+          status: 'running',
+          healthSummary: `${customerId} ${runtime} ready`,
+        },
+      })
+    );
+
+    render(<MissionControlPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    brokerMocks.runtimeStatus.mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('evaos:desktop-session-imported', { detail: { source: 'loopback' } }));
+    });
+
+    await waitFor(() => {
+      expect(brokerMocks.getSessionStatus).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
+    });
+    expect(brokerMocks.runtimeStatus).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('No runtime evidence loaded yet.');
+
+    await act(async () => {
+      pendingMemberTargets.resolve(memberCustomerTargets());
+      await pendingMemberTargets.promise;
+    });
+
+    await waitFor(() => {
+      expect(brokerMocks.runtimeStatus).toHaveBeenCalledTimes(5);
+    });
+    expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'member-customer', runtime: 'browser' });
+    expect(brokerMocks.runtimeStatus).not.toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'browser' });
+    expect((await screen.findAllByText('Member Customer')).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('mission-runtime-card-browser')).toHaveTextContent('member-customer browser ready');
   });
 
   it('does not render stale runtime evidence when the selected customer changes before the broker responds', async () => {
