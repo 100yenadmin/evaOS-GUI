@@ -150,6 +150,25 @@ describe('evaOS beta release gate', () => {
   });
 
   it('passes the repository release config audit', () => {
+    const builder = fs.readFileSync(path.join(repoRoot, 'packages/desktop/electron-builder.yml'), 'utf8');
+    const section = (name: string) => {
+      const lines = builder.split(/\r?\n/);
+      const start = lines.findIndex((line) => line === `${name}:`);
+      if (start === -1) return '';
+      const result = [lines[start]];
+      for (let index = start + 1; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (line && !line.startsWith(' ') && !line.startsWith('-') && !line.startsWith('#')) break;
+        result.push(line);
+      }
+      return result.join('\n');
+    };
+
+    expect(builder).not.toMatch(/^executableName:/m);
+    expect(section('win')).toContain('executableName: EvaOSWorkbenchBeta');
+    expect(section('linux')).toContain('executableName: EvaOSWorkbenchBeta');
+    expect(section('mac')).not.toContain('executableName:');
+
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
   });

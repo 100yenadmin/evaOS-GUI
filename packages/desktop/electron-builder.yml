@@ -1,6 +1,5 @@
 appId: com.evaos.workbench.beta
 productName: evaOS Workbench Beta
-executableName: EvaOSWorkbenchBeta
 copyright: Copyright © 2026 evaOS
 
 protocols:
@@ -115,6 +114,7 @@ extraResources:
   - from: resources/hub
     to: hub
 win:
+  executableName: EvaOSWorkbenchBeta
   target:
     - nsis
     #    - msi
@@ -167,6 +167,7 @@ afterPack: scripts/afterPack.js
 afterSign: scripts/afterSign.js
 
 linux:
+  executableName: EvaOSWorkbenchBeta
   target:
     - deb
   icon: resources/evaos-beta/app.png

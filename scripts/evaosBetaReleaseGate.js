@@ -274,10 +274,31 @@ function requireText(text, needle, relativePath, issues, reason) {
   }
 }
 
+function getTopLevelYamlSection(text, sectionName) {
+  const lines = String(text || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `${sectionName}:`);
+  if (start === -1) {
+    return '';
+  }
+
+  const section = [lines[start]];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line && !line.startsWith(' ') && !line.startsWith('-') && !line.startsWith('#')) {
+      break;
+    }
+    section.push(line);
+  }
+  return section.join('\n');
+}
+
 function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const issues = [];
   const packageJson = readJson(rootDir, 'package.json');
   const builder = readText(rootDir, 'packages/desktop/electron-builder.yml');
+  const macBuilder = getTopLevelYamlSection(builder, 'mac');
+  const winBuilder = getTopLevelYamlSection(builder, 'win');
+  const linuxBuilder = getTopLevelYamlSection(builder, 'linux');
   const buildRelease = readText(rootDir, '.github/workflows/build-and-release.yml');
   const prChecks = readText(rootDir, '.github/workflows/pr-checks.yml');
   const distribute = readText(rootDir, '.github/workflows/release-distribute.yml');
@@ -320,7 +341,30 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
 
   requireText(builder, 'appId: com.evaos.workbench.beta', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'productName: evaOS Workbench Beta', 'packages/desktop/electron-builder.yml', issues);
-  requireText(builder, 'executableName: EvaOSWorkbenchBeta', 'packages/desktop/electron-builder.yml', issues);
+  if (/^executableName:/m.test(builder)) {
+    issues.push(
+      'packages/desktop/electron-builder.yml: top-level executableName must be omitted so macOS bundle filename stays evaOS Workbench Beta.app'
+    );
+  }
+  if (/^\s+executableName:/m.test(macBuilder)) {
+    issues.push(
+      'packages/desktop/electron-builder.yml: mac.executableName must be omitted so macOS bundle filename stays evaOS Workbench Beta.app'
+    );
+  }
+  requireText(
+    winBuilder,
+    'executableName: EvaOSWorkbenchBeta',
+    'packages/desktop/electron-builder.yml',
+    issues,
+    'win executableName EvaOSWorkbenchBeta'
+  );
+  requireText(
+    linuxBuilder,
+    'executableName: EvaOSWorkbenchBeta',
+    'packages/desktop/electron-builder.yml',
+    issues,
+    'linux executableName EvaOSWorkbenchBeta'
+  );
   requireText(builder, 'evaos-workbench-beta', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'owner: 100yenadmin', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'repo: AionUi', 'packages/desktop/electron-builder.yml', issues);

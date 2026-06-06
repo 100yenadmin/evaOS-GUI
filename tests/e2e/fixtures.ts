@@ -67,34 +67,55 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
   if (!fs.existsSync(outDir)) return null;
 
   const platform = process.platform;
+  const resolveExecutable = (dir: string, names: string[]): string | null => {
+    for (const name of names) {
+      const exe = path.join(dir, name);
+      if (fs.existsSync(exe)) return exe;
+    }
+    if (!fs.existsSync(dir)) return null;
+    const executable = fs.readdirSync(dir).find((name) => {
+      const file = path.join(dir, name);
+      try {
+        const stat = fs.statSync(file);
+        return stat.isFile() && (stat.mode & 0o111) !== 0;
+      } catch {
+        return false;
+      }
+    });
+    return executable ? path.join(dir, executable) : null;
+  };
 
   if (platform === 'win32') {
-    // out/win-unpacked/AionUi.exe  or  out/win-x64-unpacked/AionUi.exe
+    // out/win-unpacked/EvaOSWorkbenchBeta.exe, or upstream AionUi.exe.
     for (const dir of ['win-unpacked', 'win-x64-unpacked', 'win-arm64-unpacked']) {
-      const exe = path.join(outDir, dir, 'AionUi.exe');
-      if (fs.existsSync(exe)) return { executablePath: exe, cwd: path.join(outDir, dir) };
+      const dirPath = path.join(outDir, dir);
+      const exe = resolveExecutable(dirPath, ['EvaOSWorkbenchBeta.exe', 'AionUi.exe']);
+      if (exe) return { executablePath: exe, cwd: dirPath };
     }
   } else if (platform === 'darwin') {
-    // out/mac-arm64/AionUi.app/Contents/MacOS/AionUi  or  out/mac/AionUi.app/...
+    // Resolve the executable from the discovered .app bundle, regardless of beta/upstream naming.
     for (const dir of ['mac-arm64', 'mac-x64', 'mac', 'mac-universal']) {
       const macDir = path.join(outDir, dir);
       if (!fs.existsSync(macDir)) continue;
       const appBundle = fs.readdirSync(macDir).find((f) => f.endsWith('.app'));
       if (appBundle) {
-        const exe = path.join(macDir, appBundle, 'Contents', 'MacOS', 'AionUi');
-        if (fs.existsSync(exe)) return { executablePath: exe, cwd: macDir };
+        const executableDir = path.join(macDir, appBundle, 'Contents', 'MacOS');
+        const exe = resolveExecutable(executableDir, ['evaOS Workbench Beta', 'EvaOSWorkbenchBeta', 'AionUi']);
+        if (exe) return { executablePath: exe, cwd: macDir };
       }
     }
   } else {
-    // Linux: out/linux-unpacked/aionui  (lowercase executable name)
+    // Linux: beta keeps a compact executable name; upstream may still use aionui/AionUi.
     for (const dir of ['linux-unpacked', 'linux-x64-unpacked', 'linux-arm64-unpacked']) {
       const dirPath = path.join(outDir, dir);
-      if (!fs.existsSync(dirPath)) continue;
-      // Try common executable names
-      for (const name of ['aionui', 'AionUi']) {
-        const exe = path.join(dirPath, name);
-        if (fs.existsSync(exe)) return { executablePath: exe, cwd: dirPath };
-      }
+      const exe = resolveExecutable(dirPath, [
+        'EvaOSWorkbenchBeta',
+        'evaos-workbench-beta',
+        'evaosworkbenchbeta',
+        'aionui',
+        'AionUi',
+      ]);
+      if (exe) return { executablePath: exe, cwd: dirPath };
     }
   }
 

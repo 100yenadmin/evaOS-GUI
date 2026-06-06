@@ -6,6 +6,8 @@
 
 export const EVAOS_BETA_IDENTITY = {
   productName: 'evaOS Workbench Beta',
+  macAppBundleName: 'evaOS Workbench Beta.app',
+  macExecutableName: 'evaOS Workbench Beta',
   executableName: 'EvaOSWorkbenchBeta',
   appId: 'com.evaos.workbench.beta',
   protocolScheme: 'evaos-workbench-beta',
