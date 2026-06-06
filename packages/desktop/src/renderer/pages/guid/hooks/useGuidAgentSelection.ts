@@ -18,6 +18,10 @@ import {
   type AgentMetadata,
   type AgentSource,
 } from '@/renderer/utils/model/agentTypes';
+import {
+  getEvaosAgentDisplayName,
+  sortEvaosDetectedAgentsForPresentation,
+} from '@/renderer/evaos/evaosAgentPresentation';
 import { getAgentModes } from '@/renderer/utils/model/agentModes';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
@@ -274,15 +278,15 @@ export const useGuidAgentSelection = ({
     // tokens / preset resolver). Custom-row `icon` is a user-picked emoji,
     // exposed as `avatar` so AgentPillBar renders the glyph directly
     // instead of mistaking it for a logo URL.
-    const normalisedDetected: AvailableAgent[] = availableAgentsData.map((a) => {
+    const normalisedDetected: AvailableAgent[] = sortEvaosDetectedAgentsForPresentation(availableAgentsData).map((a) => {
       const asAgent = a as AgentMetadata;
       const isCustomRow = asAgent.agent_source === 'custom';
-      return {
-        ...a,
+      return Object.assign({}, a, {
+        name: getEvaosAgentDisplayName(asAgent),
         id: asAgent.id,
         custom_agent_id: isCustomRow ? asAgent.id : (a as AvailableAgent).custom_agent_id,
         avatar: isCustomRow ? asAgent.icon : (a as AvailableAgent).avatar,
-      };
+      });
     });
     const remoteAsAvailable: AvailableAgent[] = (remoteAgentsData || []).map((ra) => ({
       agent_type: 'remote',

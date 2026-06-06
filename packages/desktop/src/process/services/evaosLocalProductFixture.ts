@@ -346,9 +346,9 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
 
   const runtimeByKey: Record<string, EvaosRuntimeFixture> = {
     openclaw: {
-      displayLabel: 'OpenClaw',
+      displayLabel: 'evaOS',
       status: 'running',
-      healthSummary: `${FIXTURE_LABEL}: OpenClaw workspace is accepting customer-scoped agent work.`,
+      healthSummary: `${FIXTURE_LABEL}: evaOS workspace is accepting customer-scoped agent work.`,
       owner: 'operations',
       lastActivityAt: '2026-06-04T09:57:00.000Z',
       sourcePointer: 'local-fixture:runtime:openclaw',

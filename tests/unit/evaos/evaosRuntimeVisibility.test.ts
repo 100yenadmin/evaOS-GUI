@@ -15,7 +15,7 @@ import {
 } from '@/renderer/evaos/evaosRuntimeVisibility';
 
 describe('evaosRuntimeVisibility', () => {
-  it('mirrors the released Workbench runtime catalog', () => {
+  it('mirrors the released Workbench runtime catalog with evaOS presentation routes', () => {
     expect(EVAOS_RUNTIME_CATALOG.map((runtime) => runtime.key)).toEqual([
       'openclaw',
       'hermes',
@@ -27,7 +27,15 @@ describe('evaosRuntimeVisibility', () => {
       'team_chat',
     ]);
     expect(EVAOS_RUNTIME_CATALOG.find((runtime) => runtime.key === 'openclaw')).toMatchObject({
-      title: 'Eva Workspace',
+      title: 'evaOS',
+      routePath: '/evaos',
+      section: 'technical',
+      requiresAdmin: true,
+      brokered: true,
+    });
+    expect(EVAOS_RUNTIME_CATALOG.find((runtime) => runtime.key === 'hermes')).toMatchObject({
+      title: 'Hermes',
+      routePath: '/hermes',
       section: 'technical',
       requiresAdmin: true,
       brokered: true,
@@ -134,7 +142,11 @@ describe('evaosRuntimeVisibility', () => {
 
   it('defines explicit route policies for all evaOS product and setup routes', () => {
     expect(EVAOS_ROUTE_POLICIES.map((policy) => policy.routePath)).toEqual([
+      '/evaos',
+      '/openclaw',
+      '/hermes',
       '/mission-control',
+      '/beta-readiness',
       '/terminal',
       '/native-companion',
       '/people-access',
@@ -144,9 +156,23 @@ describe('evaosRuntimeVisibility', () => {
       '/company-brain',
     ]);
 
+    expect(evaosRouteAllowsMissingBroker('/evaos')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/hermes')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/mission-control')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/native-companion')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/people-access')).toBe(false);
+  });
+
+  it('lets signed-in admins reach evaOS and Hermes routes while preserving broker repair states', () => {
+    const context = {
+      authenticated: true,
+      roles: ['owner'],
+      scopes: [],
+      userEmail: 'admin@100yen.org',
+    };
+
+    expect(evaosRuntimeRouteDecision('/evaos', context).allowed).toBe(true);
+    expect(evaosRuntimeRouteDecision('/hermes', context).allowed).toBe(true);
   });
 
   it('derives product route decisions from account policy scopes', () => {

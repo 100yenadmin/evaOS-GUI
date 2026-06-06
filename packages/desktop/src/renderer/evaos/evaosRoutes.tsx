@@ -19,7 +19,10 @@ const ApprovalCenter = React.lazy(() => import('@renderer/pages/approval-center'
 const BusinessBrowser = React.lazy(() => import('@renderer/pages/business-browser'));
 const CompanyBrain = React.lazy(() => import('@renderer/pages/company-brain'));
 const ConnectedApps = React.lazy(() => import('@renderer/pages/connected-apps'));
-const MissionControl = React.lazy(() => import('@renderer/pages/mission-control'));
+const BetaReadiness = React.lazy(() => import('@renderer/pages/mission-control'));
+const EvaosDashboard = React.lazy(() => import('@renderer/pages/evaos-dashboard'));
+const HermesDashboard = React.lazy(() => import('@renderer/pages/hermes-dashboard'));
+const MissionControl = React.lazy(() => import('@renderer/pages/paperclip-mission-control'));
 const NativeCompanion = React.lazy(() => import('@renderer/pages/native-companion'));
 const PeopleAccess = React.lazy(() => import('@renderer/pages/people-access'));
 const Terminal = React.lazy(() => import('@renderer/pages/terminal'));
@@ -37,7 +40,11 @@ const withEvaosRuntimeRouteGuard = (routePath: string, Component: React.LazyExot
 export function renderEvaosRoutes(): React.ReactNode {
   return (
     <>
+      <Route path='/openclaw' element={<Navigate to='/evaos' replace />} />
+      <Route path='/evaos' element={withEvaosRuntimeRouteGuard('/evaos', EvaosDashboard)} />
+      <Route path='/hermes' element={withEvaosRuntimeRouteGuard('/hermes', HermesDashboard)} />
       <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />
+      <Route path='/beta-readiness' element={withEvaosRuntimeRouteGuard('/beta-readiness', BetaReadiness)} />
       <Route path='/terminal' element={withEvaosRuntimeRouteGuard('/terminal', Terminal)} />
       <Route path='/native-companion' element={withEvaosRuntimeRouteGuard('/native-companion', NativeCompanion)} />
       <Route

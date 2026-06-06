@@ -38,7 +38,7 @@ export const DEFAULT_THEME_ID = 'default-theme';
 export const PRESET_THEMES: ICssTheme[] = [
   {
     id: DEFAULT_THEME_ID,
-    name: 'Default',
+    name: 'evaOS Default',
     is_preset: true,
     cover: defaultThemeCover,
     css: defaultCss,

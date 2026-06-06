@@ -63,7 +63,7 @@ export async function beginEvaosDesktopAuth(
     stopActiveLoopback(server);
     throw new EvaosBrokerSessionError(
       'broker_network_error',
-      'AionUi could not open the ElectricSheep desktop sign-in page.'
+      'evaOS Workbench could not open the ElectricSheep desktop sign-in page.'
     );
   }
 
@@ -72,7 +72,7 @@ export async function beginEvaosDesktopAuth(
     callbackUrl,
     fallbackDeviceCode,
     message:
-      'ElectricSheep sign-in opened. Choose the intended Google account, finish sign-in, then return and refresh Mission Control.',
+      'ElectricSheep sign-in opened. Choose the intended Google account, finish sign-in, then return and refresh evaOS.',
   };
 }
 
@@ -161,7 +161,7 @@ async function startLoopbackReceiver(
   const address = server.address();
   if (!address || typeof address === 'string') {
     server.close();
-    throw new EvaosBrokerSessionError('broker_network_error', 'AionUi could not create a local sign-in callback.');
+    throw new EvaosBrokerSessionError('broker_network_error', 'evaOS Workbench could not create a local sign-in callback.');
   }
 
   return {

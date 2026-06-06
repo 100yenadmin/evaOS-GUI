@@ -11,6 +11,8 @@ import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/ho
 import { evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
 
 interface EvaosSidebarState {
+  canSeeEvaos: boolean;
+  canSeeHermes: boolean;
   canSeeMissionControl: boolean;
   canSeeTerminal: boolean;
   canSeePeopleAccess: boolean;
@@ -52,6 +54,14 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     ]
   );
 
+  const canSeeRepairableRoute = useMemo(() => {
+    return (routePath: string): boolean => {
+      if (status !== 'authenticated' || brokerSessionStatus.loading) return false;
+      if (!brokerAuthenticated) return true;
+      return customerContext.loaded && evaosRuntimeRouteDecision(routePath, routeContext).allowed;
+    };
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
+
   const canSeeMissionControl = useMemo(() => {
     if (status !== 'authenticated' || brokerSessionStatus.loading) return false;
     if (!brokerAuthenticated) return true;
@@ -79,6 +89,8 @@ export function useEvaosSidebarState(): EvaosSidebarState {
   }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
 
   return {
+    canSeeEvaos: canSeeRepairableRoute('/evaos'),
+    canSeeHermes: canSeeRepairableRoute('/hermes'),
     canSeeMissionControl,
     canSeeTerminal: canSeeBrokeredRoute('/terminal'),
     canSeePeopleAccess: canSeeBrokeredRoute('/people-access'),

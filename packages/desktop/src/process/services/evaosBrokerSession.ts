@@ -1488,7 +1488,7 @@ async function openProviderAuthUrlIfRequested(
   try {
     await openAuthUrl(authUrl);
   } catch {
-    throw new EvaosBrokerSessionError('broker_network_error', 'AionUi could not open the provider auth handoff page.');
+    throw new EvaosBrokerSessionError('broker_network_error', 'evaOS could not open the provider auth handoff page.');
   }
 }
 

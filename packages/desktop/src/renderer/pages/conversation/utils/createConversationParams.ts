@@ -121,7 +121,7 @@ export async function getDefaultAionrsModel(): Promise<TProviderWithModel> {
 
   const compatibleProviders = providers.filter(isAionrsCompatibleProvider);
   if (compatibleProviders.length === 0) {
-    throw new Error('No enabled model provider for Aion CLI');
+    throw new Error('No enabled model provider for Custom');
   }
 
   const savedDefault = configService.get('aionrs.defaultModel');
@@ -167,7 +167,7 @@ export async function buildCliAgentParams(agent: AgentMetadata, workspace: strin
 
   let model: TProviderWithModel;
   if (type === 'aionrs') {
-    // Aionrs needs a real model from configured providers (anthropic, openai, ali-intl, aws)
+    // Custom needs a real model from configured providers (anthropic, openai, ali-intl, aws).
     model = await getDefaultAionrsModel();
   } else {
     model = {} as TProviderWithModel;

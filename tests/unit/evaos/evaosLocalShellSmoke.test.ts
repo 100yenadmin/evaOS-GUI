@@ -90,7 +90,10 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
 describe('evaOS local shell smoke', () => {
   it('covers every beta shell route required before new feature slices', () => {
     expect(localShellSmoke.ROUTE_CHECKS.map((check) => check.name)).toEqual([
+      'evaos-dashboard',
+      'hermes-dashboard',
       'mission-control',
+      'beta-readiness',
       'agent-settings-remote-guardrail',
       'native-companion-boundary',
     ]);
@@ -468,14 +471,17 @@ describe('evaOS local shell smoke', () => {
         hash: '/mission-control',
         proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
         expected: ['evaOS Workbench Beta'],
-        forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'Eva Workspace', 'Agent Workspace']),
+        forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'evaOS', 'Hermes']),
       }),
     ]);
   });
 
   it('keeps future loaded-state proof markers distinct from title-only waits', () => {
     const loadedProofMarkers = new Map([
-      ['mission-control', ['desktop session card', 'broker source pointer', 'current audit id']],
+      ['evaos-dashboard', ['broker runtime status', 'customer scoped runtime proof']],
+      ['hermes-dashboard', ['broker runtime status', 'customer scoped runtime proof']],
+      ['mission-control', ['paperclip runtime status', 'customer scoped runtime proof']],
+      ['beta-readiness', ['desktop session card', 'broker source pointer', 'current audit id']],
       ['agent-settings-remote-guardrail', ['local agent inventory result', 'remote guardrail copy']],
       [
         'native-companion-boundary',
@@ -518,6 +524,7 @@ describe('evaOS local shell smoke', () => {
 
   it('keeps unsafe and overclaiming shell surfaces forbidden', () => {
     const missionControl = localShellSmoke.ROUTE_CHECKS.find((check) => check.name === 'mission-control');
+    const betaReadiness = localShellSmoke.ROUTE_CHECKS.find((check) => check.name === 'beta-readiness');
     const agentSettings = localShellSmoke.ROUTE_CHECKS.find(
       (check) => check.name === 'agent-settings-remote-guardrail'
     );
@@ -525,6 +532,7 @@ describe('evaOS local shell smoke', () => {
     expect(missionControl?.forbidden).toEqual(
       expect.arrayContaining(['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'])
     );
+    expect(betaReadiness?.expected).toEqual(expect.arrayContaining(['RC parity gated', 'RC parity proof']));
     expect(agentSettings?.forbidden).toEqual(
       expect.arrayContaining(['Remote Agents', 'Allow insecure', 'Handshake', 'Connect remote'])
     );

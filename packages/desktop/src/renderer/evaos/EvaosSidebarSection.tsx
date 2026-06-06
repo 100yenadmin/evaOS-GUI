@@ -11,6 +11,8 @@ import {
   SiderBusinessBrowserEntry,
   SiderCompanyBrainEntry,
   SiderConnectedAppsEntry,
+  SiderEvaosEntry,
+  SiderHermesEntry,
   SiderMissionControlEntry,
   SiderNativeCompanionEntry,
   SiderPeopleAccessEntry,
@@ -28,6 +30,8 @@ interface EvaosSidebarSectionProps {
   collapsed: boolean;
   pathname: string;
   siderTooltipProps: SiderTooltipProps;
+  canSeeEvaos: boolean;
+  canSeeHermes: boolean;
   canSeeMissionControl: boolean;
   canSeeTerminal: boolean;
   canSeePeopleAccess: boolean;
@@ -44,6 +48,8 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
   collapsed,
   pathname,
   siderTooltipProps,
+  canSeeEvaos,
+  canSeeHermes,
   canSeeMissionControl,
   canSeeTerminal,
   canSeePeopleAccess,
@@ -56,6 +62,24 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
 }) => {
   return (
     <>
+      {canSeeEvaos ? (
+        <SiderEvaosEntry
+          isMobile={isMobile}
+          isActive={pathname === '/evaos' || pathname === '/openclaw'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/evaos')}
+        />
+      ) : null}
+      {canSeeHermes ? (
+        <SiderHermesEntry
+          isMobile={isMobile}
+          isActive={pathname === '/hermes'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/hermes')}
+        />
+      ) : null}
       {canSeeMissionControl ? (
         <>
           <SiderMissionControlEntry

@@ -58,6 +58,13 @@ const ownershipColor = {
   unknown_upstream: 'gray',
 };
 
+const getUserFacingErrorCode = (code: string) => {
+  if (code.startsWith('AIONUI_')) {
+    return code.replace(/^AIONUI_/, 'EVAOS_');
+  }
+  return code;
+};
+
 const MessageTips: React.FC<{ message: IMessageTips }> = ({ message }) => {
   const { t } = useTranslation();
   const { content, type } = message.content;
@@ -103,7 +110,7 @@ const MessageTips: React.FC<{ message: IMessageTips }> = ({ message }) => {
         )}`
       : null;
     const detailParts = [
-      code ? `${t('conversation.agentError.errorCode')}: ${code}` : '',
+      code ? `${t('conversation.agentError.errorCode')}: ${getUserFacingErrorCode(code)}` : '',
       structuredError.detail || structuredError.message,
     ].filter(Boolean);
     const feedbackTags: Record<string, string> = {};
