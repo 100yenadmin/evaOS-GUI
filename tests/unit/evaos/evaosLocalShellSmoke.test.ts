@@ -100,6 +100,7 @@ describe('evaOS local shell smoke', () => {
       'connected-apps-broker-guard',
       'business-browser-broker-guard',
       'company-brain-broker-guard',
+      'webui-beta-guardrail',
     ]);
     expect(localShellSmoke.TEAM_ROUTE_CHECK.name).toBe('team-route-redirect');
   });

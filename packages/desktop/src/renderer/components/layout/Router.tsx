@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppLoader from '@renderer/components/layout/AppLoader';
+import { EVAOS_BETA_WEBUI_FALLBACK_ROUTE, evaosBetaWebUIRouteElement } from '@renderer/evaos/evaosBetaShellPolicy';
 import { renderEvaosRoutes } from '@renderer/evaos/evaosRoutes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
@@ -70,7 +71,13 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/settings/skills-hub' element={<Navigate to='/settings/capabilities?tab=skills' replace />} />
           <Route path='/settings/tools' element={<Navigate to='/settings/capabilities?tab=tools' replace />} />
           <Route path='/settings/display' element={withRouteFallback(DisplaySettings)} />
-          <Route path='/settings/webui' element={withRouteFallback(WebuiSettings)} />
+          <Route
+            path='/settings/webui'
+            element={evaosBetaWebUIRouteElement(
+              withRouteFallback(WebuiSettings),
+              <Navigate to={EVAOS_BETA_WEBUI_FALLBACK_ROUTE} replace />
+            )}
+          />
           <Route path='/settings/pet' element={withRouteFallback(PetSettings)} />
           <Route path='/settings/system' element={withRouteFallback(SystemSettings)} />
           <Route path='/settings/about' element={withRouteFallback(SystemSettings)} />

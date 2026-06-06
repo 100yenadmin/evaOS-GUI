@@ -118,6 +118,23 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Company Brain', 'Renewal fixture brief', 'desktop_session', 'Bearer', 'provider_grant'],
   },
+  {
+    name: 'webui-beta-guardrail',
+    hash: '/settings/webui',
+    screenshotName: 'webui-beta-guardrail',
+    expected: ['evaOS Workbench Beta'],
+    forbidden: [
+      'WebUI',
+      'Enable WebUI',
+      'Allow Remote Access',
+      '24/7 Remote Assistant',
+      'Initial Password',
+      'Username:',
+      'desktop_session',
+      'Bearer',
+      'provider_grant',
+    ],
+  },
 ];
 
 const LOCAL_PRODUCT_ROUTE_CHECKS = [

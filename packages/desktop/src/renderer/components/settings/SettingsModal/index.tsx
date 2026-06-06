@@ -25,6 +25,7 @@ import ToolsModalContent from './contents/ToolsModalContent';
 import WebuiModalContent from './contents/WebuiModalContent';
 import { SettingsViewModeProvider } from './settingsViewContext';
 import { LEGACY_ANCHOR_REMAP } from '@/renderer/pages/settings/components/SettingsSider';
+import { isEvaosBetaWebUISettingsEnabled } from '@renderer/evaos/evaosBetaShellPolicy';
 
 // ==================== 常量定义 / Constants ====================
 
@@ -202,7 +203,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
       },
     ];
 
-    if (isDesktop) {
+    if (isDesktop && isEvaosBetaWebUISettingsEnabled()) {
       builtinItems.push({
         key: 'webui',
         label: t('settings.webui'),
@@ -307,7 +308,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, defaul
       case 'tools':
         return <ToolsModalContent />;
       case 'webui':
-        return <WebuiModalContent />;
+        return isEvaosBetaWebUISettingsEnabled() ? <WebuiModalContent /> : null;
       case 'system':
         return <SystemModalContent />;
       case 'about':
