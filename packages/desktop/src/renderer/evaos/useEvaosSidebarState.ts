@@ -8,10 +8,17 @@ import { useMemo } from 'react';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
-import { canAccessEvaosAdminRuntimes } from '@renderer/evaos/evaosRuntimeVisibility';
+import { evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
 
 interface EvaosSidebarState {
   canSeeMissionControl: boolean;
+  canSeeTerminal: boolean;
+  canSeePeopleAccess: boolean;
+  canSeeConnectedApps: boolean;
+  canSeeBusinessBrowser: boolean;
+  canSeeCompanyBrain: boolean;
+  canSeeApprovalCenter: boolean;
+  canSeeNativeCompanion: boolean;
 }
 
 export function useEvaosSidebarState(): EvaosSidebarState {
@@ -26,28 +33,53 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     evaosBrokerSessionKey(brokerSessionStatus.session)
   );
 
+  const routeContext = useMemo(
+    () => ({
+      authenticated: status === 'authenticated',
+      roles: customerContext.roles,
+      scopes: customerContext.scopes,
+      isOperator: customerContext.isOperator,
+      userEmail: brokerSessionStatus.session?.userEmail ?? user?.username,
+    }),
+    [
+      brokerSessionStatus.session?.userEmail,
+      customerContext.isOperator,
+      customerContext.roles,
+      customerContext.scopes,
+      status,
+      user?.username,
+    ]
+  );
+
   const canSeeMissionControl = useMemo(() => {
     if (status !== 'authenticated' || brokerSessionStatus.loading) return false;
     if (!brokerAuthenticated) return true;
-    return (
-      customerContext.loaded &&
-      canAccessEvaosAdminRuntimes({
-        authenticated: status === 'authenticated',
-        roles: customerContext.roles,
-        isOperator: customerContext.isOperator,
-        userEmail: brokerSessionStatus.session?.userEmail ?? user?.username,
-      })
-    );
-  }, [
-    brokerAuthenticated,
-    brokerSessionStatus.loading,
-    brokerSessionStatus.session?.userEmail,
-    customerContext.isOperator,
-    customerContext.loaded,
-    customerContext.roles,
-    status,
-    user?.username,
-  ]);
+    return customerContext.loaded && evaosRuntimeRouteDecision('/mission-control', routeContext).allowed;
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
 
-  return { canSeeMissionControl };
+  const canSeeNativeCompanion = useMemo(() => {
+    if (status !== 'authenticated' || brokerSessionStatus.loading) return false;
+    if (!brokerAuthenticated) return true;
+    return customerContext.loaded && evaosRuntimeRouteDecision('/native-companion', routeContext).allowed;
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
+
+  const canSeeBrokeredRoute = useMemo(() => {
+    return (routePath: string): boolean => {
+      if (status !== 'authenticated' || brokerSessionStatus.loading || !brokerAuthenticated || !customerContext.loaded) {
+        return false;
+      }
+      return evaosRuntimeRouteDecision(routePath, routeContext).allowed;
+    };
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
+
+  return {
+    canSeeMissionControl,
+    canSeeTerminal: canSeeBrokeredRoute('/terminal'),
+    canSeePeopleAccess: canSeeBrokeredRoute('/people-access'),
+    canSeeConnectedApps: canSeeBrokeredRoute('/connected-apps'),
+    canSeeBusinessBrowser: canSeeBrokeredRoute('/business-browser'),
+    canSeeCompanyBrain: canSeeBrokeredRoute('/company-brain'),
+    canSeeApprovalCenter: canSeeBrokeredRoute('/approval-center'),
+    canSeeNativeCompanion,
+  };
 }

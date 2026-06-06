@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import classNames from 'classnames';
 import { Button, Input, Select, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Peoples, Plus, Refresh } from '@icon-park/react';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosPeopleAccess,
@@ -85,7 +85,7 @@ const PeopleAccessPage: React.FC = () => {
   const [inviteStatus, setInviteStatus] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
-  const customerContext = useEvaosCustomerContext(true);
+  const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
 

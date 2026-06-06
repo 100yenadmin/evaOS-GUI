@@ -10,7 +10,7 @@ import AppLoader from '@renderer/components/layout/AppLoader';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
-import { evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
+import { evaosRouteAllowsMissingBroker, evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
 
 interface EvaosRuntimeRouteGuardProps {
   routePath: string;
@@ -41,7 +41,7 @@ export const EvaosRuntimeRouteGuard: React.FC<EvaosRuntimeRouteGuardProps> = ({ 
   }
 
   if (!brokerAuthenticated) {
-    if (routePath === '/mission-control') {
+    if (evaosRouteAllowsMissingBroker(routePath)) {
       return <>{children}</>;
     }
 
@@ -51,7 +51,7 @@ export const EvaosRuntimeRouteGuard: React.FC<EvaosRuntimeRouteGuardProps> = ({ 
   }
 
   if (customerContext.loading || !customerContext.loaded) {
-    if (routePath === '/mission-control') {
+    if (evaosRouteAllowsMissingBroker(routePath)) {
       return <>{children}</>;
     }
     return <AppLoader />;

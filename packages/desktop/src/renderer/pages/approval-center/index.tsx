@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Button, Spin, Tag } from '@arco-design/web-react';
 import { Attention, CloseOne, Refresh, Shield } from '@icon-park/react';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosApprovalCenter,
@@ -42,7 +42,7 @@ const ApprovalCenterPage: React.FC = () => {
   const [decisionStatus, setDecisionStatus] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
-  const customerContext = useEvaosCustomerContext(true);
+  const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
 

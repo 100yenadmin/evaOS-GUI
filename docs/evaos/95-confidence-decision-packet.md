@@ -6,6 +6,14 @@ Milestone: https://github.com/100yenadmin/AionUi/milestone/1
 
 Decision date: 2026-06-05
 
+## 2026-06-06 RC Parity Addendum
+
+The original sprint decision packet is superseded for release-candidate testing by the RC parity audit packet at `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/rc-parity-audit-2026-06-06/`.
+
+Do not call the AionUi/evaOS fork RC-ready until the exact candidate proves 100% evaOS desktop parity, native Mac adapter canaries, upstream AionUi self-regression, visible beta branding, signing/notarization, rollback, updater/feed behavior, and secret-safety.
+
+Current RC recommendation: continue R&D with RC parity blockers.
+
 ## Final Recommendation
 
 Continue R&D with blockers.

@@ -84,6 +84,30 @@ function renderGuardedRoute(routePath = '/mission-control') {
             </EvaosRuntimeRouteGuard>
           }
         />
+        <Route
+          path='/native-companion'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/native-companion'>
+              <p>Native companion loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
+          path='/people-access'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/people-access'>
+              <p>People Access loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
+          path='/company-brain'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/company-brain'>
+              <p>Company Brain loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
         <Route path='/guid' element={<p>Guid fallback</p>} />
         <Route path='/login' element={<p>Login fallback</p>} />
       </Routes>
@@ -229,5 +253,59 @@ describe('EvaosRuntimeRouteGuard', () => {
 
     await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
     expect(screen.queryByText('Terminal loaded')).not.toBeInTheDocument();
+  });
+
+  it('allows native companion setup when the broker session is missing', () => {
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
+
+    renderGuardedRoute('/native-companion');
+
+    expect(screen.getByText('Native companion loaded')).toBeInTheDocument();
+  });
+
+  it('allows People Access only with the account policy scope or admin override', async () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = [];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'member@example.test',
+    };
+
+    renderGuardedRoute('/people-access');
+
+    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
+    expect(screen.queryByText('People Access loaded')).not.toBeInTheDocument();
+  });
+
+  it('renders scoped product routes for role-limited members', () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = ['manage_members'];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'member@example.test',
+    };
+
+    renderGuardedRoute('/people-access');
+
+    expect(screen.getByText('People Access loaded')).toBeInTheDocument();
+  });
+
+  it('allows Company Brain with either reader or manager scope', () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = ['view_company_brain'];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'analyst@example.test',
+    };
+
+    renderGuardedRoute('/company-brain');
+
+    expect(screen.getByText('Company Brain loaded')).toBeInTheDocument();
   });
 });

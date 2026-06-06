@@ -85,24 +85,24 @@ const RUNTIME_TARGETS: RuntimeTarget[] = [
 
 const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
   {
-    label: 'Local shell smoke',
-    detail: 'Start evaOS Workbench Beta locally and screenshot the beta routes before new feature slices.',
+    label: 'RC parity proof',
+    detail: 'Prove every evaOS Workbench feature against the exact AionUi candidate.',
   },
   {
-    label: 'Live staging canaries',
-    detail: 'evaos-staging still needs real session, customer, provider, Company Brain, and browser fixtures.',
+    label: 'Native adapter canaries',
+    detail: 'Mac connector, OpenClaw, Hermes, and kill-switch canaries must pass without skips.',
   },
   {
-    label: 'Signed macOS artifact',
-    detail: 'No signed and notarized beta artifact has install and launch evidence yet.',
+    label: 'Upstream regression',
+    detail: 'AionUi v2.1.12 runtime, preview, ACP, workspace, and realtime fixes must be reconciled.',
   },
   {
-    label: 'Role and org denial proof',
-    detail: 'People, approvals, providers, Company Brain, and browser controls still need live denial evidence.',
+    label: 'Visible branding',
+    detail: 'Login, PWA, About, package metadata, and support paths must be beta-owned or waived.',
   },
   {
-    label: 'Rollback and support path',
-    detail: 'Fallback app launch, rollback state, and support notes still need artifact-backed proof.',
+    label: 'Exact RC canary',
+    detail: 'Final tag must pass GitHub RC canary, signing, notarization, install, protocol, updater, and rollback.',
   },
 ];
 
@@ -456,15 +456,15 @@ const MissionControlPage: React.FC = () => {
             <div className='flex flex-wrap items-start justify-between gap-10px'>
               <div className='min-w-0'>
                 <div className='flex flex-wrap items-center gap-8px'>
-                  <span className='text-14px font-semibold leading-20px text-t-primary'>Public beta gated</span>
-                  <Tag color='orange'>Continue R&amp;D with blockers</Tag>
+                  <span className='text-14px font-semibold leading-20px text-t-primary'>RC parity gated</span>
+                  <Tag color='orange'>Parity audit active</Tag>
                 </div>
                 <p className='m-0 mt-4px max-w-760px text-13px leading-20px text-t-secondary'>
-                  evaOS Workbench Beta is the beta shell candidate. Public distribution stays blocked until the proof
-                  gates below pass.
+                  evaOS Workbench Beta is the shell candidate. User-testing RC distribution stays blocked until the
+                  parity, upstream-regression, native-adapter, branding, and exact-candidate proof gates below pass.
                 </p>
               </div>
-              <Tag color='gray'>Issue #73</Tag>
+              <Tag color='gray'>RC audit</Tag>
             </div>
             <div className='mt-12px grid grid-cols-1 gap-8px md:grid-cols-5'>
               {PUBLIC_BETA_GATE_ITEMS.map((item) => (

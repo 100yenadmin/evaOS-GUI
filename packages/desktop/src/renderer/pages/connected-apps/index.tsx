@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import classNames from 'classnames';
 import { Button, Select, Spin, Tag } from '@arco-design/web-react';
 import { Attention, CheckOne, CloseOne, Connection, Refresh, Shield } from '@icon-park/react';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosProviderHub,
@@ -63,7 +63,7 @@ const ConnectedAppsPage: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<string | null>(null);
   const [agentRuntime, setAgentRuntime] = useState<IEvaosProviderAgentRuntime>('openclaw');
-  const customerContext = useEvaosCustomerContext(true);
+  const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
 

@@ -1,12 +1,12 @@
 {
-  "name": "AionUi",
+  "name": "evaos-workbench-beta",
   "version": "2.1.10-evaos-beta.0",
-  "description": "Transform your command-line AI agent into a modern, efficient AI Chat interface.",
+  "description": "evaOS Workbench Beta shell for business agent operations.",
   "keywords": [],
   "license": "Apache-2.0",
   "author": {
-    "name": "AionUi",
-    "email": "service@aionui.com"
+    "name": "Electric Sheep",
+    "email": "admin@100yen.org"
   },
   "workspaces": [
     "packages/*"

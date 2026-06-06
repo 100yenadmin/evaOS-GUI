@@ -10,6 +10,14 @@ type EvaosRuntimeSection = 'workspace' | 'technical';
 type EvaosRuntimeFeatureFlag = 'team_chat';
 type EvaosRouteDenialReason = 'signed_out' | 'admin_runtime_required' | 'scope_required' | 'unknown_route';
 
+export type EvaosRoutePolicy = {
+  routePath: string;
+  requiresAdmin?: boolean;
+  requiredScopes?: IEvaosAccountPolicyScope[];
+  anyRequiredScopes?: IEvaosAccountPolicyScope[];
+  allowMissingBroker?: boolean;
+};
+
 export interface EvaosRuntimeDefinition {
   key: IEvaosRuntimeKey;
   title: string;
@@ -137,6 +145,46 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
 
 const RUNTIME_BY_ROUTE_PATH = new Map(EVAOS_RUNTIME_CATALOG.map((runtime) => [runtime.routePath, runtime]));
 
+export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
+  {
+    routePath: '/mission-control',
+    requiresAdmin: true,
+    allowMissingBroker: true,
+  },
+  {
+    routePath: '/terminal',
+    requiresAdmin: true,
+    requiredScopes: ['access_terminal'],
+  },
+  {
+    routePath: '/native-companion',
+    requiresAdmin: true,
+    allowMissingBroker: true,
+  },
+  {
+    routePath: '/people-access',
+    anyRequiredScopes: ['manage_members'],
+  },
+  {
+    routePath: '/connected-apps',
+    anyRequiredScopes: ['manage_integrations'],
+  },
+  {
+    routePath: '/approval-center',
+    anyRequiredScopes: ['approve_actions'],
+  },
+  {
+    routePath: '/business-browser',
+    anyRequiredScopes: ['open_business_browser'],
+  },
+  {
+    routePath: '/company-brain',
+    anyRequiredScopes: ['view_company_brain', 'manage_company_brain'],
+  },
+];
+
+const ROUTE_POLICY_BY_PATH = new Map(EVAOS_ROUTE_POLICIES.map((policy) => [policy.routePath, policy]));
+
 export function canAccessEvaosAdminRuntimes(context: EvaosRuntimeVisibilityContext): boolean {
   if (!context.authenticated) return false;
   if (normalizeEmail(context.userEmail) === 'admin@100yen.org') return true;
@@ -159,20 +207,30 @@ export function evaosRuntimeRouteDecision(
     return { allowed: false, fallbackPath: '/login', reason: 'signed_out' };
   }
 
-  const runtime = RUNTIME_BY_ROUTE_PATH.get(normalizeRoutePath(routePath));
-  if (!runtime) {
+  const normalizedRoutePath = normalizeRoutePath(routePath);
+  const runtime = RUNTIME_BY_ROUTE_PATH.get(normalizedRoutePath);
+  const routePolicy = ROUTE_POLICY_BY_PATH.get(normalizedRoutePath);
+  if (!runtime && !routePolicy) {
     return { allowed: false, fallbackPath: '/guid', reason: 'unknown_route' };
   }
 
-  if (canOpenRuntime(runtime, context)) {
+  if (routePolicy && canOpenRoutePolicy(routePolicy, context)) {
+    return { allowed: true, fallbackPath: '/guid' };
+  }
+
+  if (runtime && canOpenRuntime(runtime, context)) {
     return { allowed: true, fallbackPath: '/guid' };
   }
 
   return {
     allowed: false,
     fallbackPath: '/guid',
-    reason: runtime.requiresAdmin ? 'admin_runtime_required' : 'scope_required',
+    reason: routePolicy?.requiresAdmin || runtime?.requiresAdmin ? 'admin_runtime_required' : 'scope_required',
   };
+}
+
+export function evaosRouteAllowsMissingBroker(routePath: string): boolean {
+  return ROUTE_POLICY_BY_PATH.get(normalizeRoutePath(routePath))?.allowMissingBroker === true;
 }
 
 function canOpenRuntime(runtime: EvaosRuntimeDefinition, context: EvaosRuntimeVisibilityContext): boolean {
@@ -187,6 +245,34 @@ function hasRequiredScopes(runtime: EvaosRuntimeDefinition, scopes: IEvaosAccoun
   if (!runtime.requiredScopes?.length) return true;
   if (!scopes) return false;
   return runtime.requiredScopes.every((scope) => scopes.includes(scope));
+}
+
+function canOpenRoutePolicy(policy: EvaosRoutePolicy, context: EvaosRuntimeVisibilityContext): boolean {
+  if (!context.authenticated) return false;
+  const adminAccess = canAccessEvaosAdminRuntimes(context);
+  if (adminAccess) return true;
+  if (policy.requiresAdmin) return false;
+  if (!hasAllPolicyScopes(policy.requiredScopes, context.scopes)) return false;
+  if (!hasAnyPolicyScope(policy.anyRequiredScopes, context.scopes)) return false;
+  return true;
+}
+
+function hasAllPolicyScopes(
+  requiredScopes: IEvaosAccountPolicyScope[] | undefined,
+  scopes: IEvaosAccountPolicyScope[] | undefined
+): boolean {
+  if (!requiredScopes?.length) return true;
+  if (!scopes) return false;
+  return requiredScopes.every((scope) => scopes.includes(scope));
+}
+
+function hasAnyPolicyScope(
+  requiredScopes: IEvaosAccountPolicyScope[] | undefined,
+  scopes: IEvaosAccountPolicyScope[] | undefined
+): boolean {
+  if (!requiredScopes?.length) return true;
+  if (!scopes) return false;
+  return requiredScopes.some((scope) => scopes.includes(scope));
 }
 
 function normalizedRoles(roles: string[] | undefined): string[] {

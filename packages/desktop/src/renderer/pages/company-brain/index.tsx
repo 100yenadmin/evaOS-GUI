@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import classNames from 'classnames';
 import { Button, Input, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Brain, Refresh, Search } from '@icon-park/react';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosCompanyBrain,
@@ -54,7 +54,7 @@ const CompanyBrainPage: React.FC = () => {
   const [loadingDirectory, setLoadingDirectory] = useState(false);
   const [loadingAccountId, setLoadingAccountId] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);
-  const customerContext = useEvaosCustomerContext(true);
+  const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const selectedAccountRef = useRef<IEvaosCompanyBrainAccount360View | null>(selectedAccount);
   const requestEpochRef = useRef(0);

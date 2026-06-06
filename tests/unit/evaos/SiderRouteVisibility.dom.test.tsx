@@ -170,8 +170,46 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
+    expect(screen.queryByText('People Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
+    expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
+    expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
+    expect(screen.queryByText('Mac & iPhone')).not.toBeInTheDocument();
+  });
+
+  it('shows product routes only when the broker policy grants the matching scopes', () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = ['manage_members', 'manage_integrations', 'view_company_brain', 'open_business_browser'];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'member@example.test',
+    };
+
+    renderSider();
+
     expect(screen.getByText('People Access')).toBeInTheDocument();
+    expect(screen.getByText('Connected Apps')).toBeInTheDocument();
+    expect(screen.getByText('Company Brain')).toBeInTheDocument();
+    expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
+    expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
+  });
+
+  it('keeps setup routes visible when the web session exists but broker session is missing', () => {
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
+
+    renderSider();
+
+    expect(screen.getByText('Mission Control')).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.queryByText('People Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
   });
 
   it('keys route visibility to the current broker session identity', () => {

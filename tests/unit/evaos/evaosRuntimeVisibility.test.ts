@@ -7,7 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   EVAOS_RUNTIME_CATALOG,
+  EVAOS_ROUTE_POLICIES,
   canAccessEvaosAdminRuntimes,
+  evaosRouteAllowsMissingBroker,
   evaosRuntimeRouteDecision,
   visibleEvaosRuntimeCatalog,
 } from '@/renderer/evaos/evaosRuntimeVisibility';
@@ -128,5 +130,56 @@ describe('evaosRuntimeVisibility', () => {
         roles: ['admin'],
       })
     ).toEqual({ allowed: false, fallbackPath: '/login', reason: 'signed_out' });
+  });
+
+  it('defines explicit route policies for all evaOS product and setup routes', () => {
+    expect(EVAOS_ROUTE_POLICIES.map((policy) => policy.routePath)).toEqual([
+      '/mission-control',
+      '/terminal',
+      '/native-companion',
+      '/people-access',
+      '/connected-apps',
+      '/approval-center',
+      '/business-browser',
+      '/company-brain',
+    ]);
+
+    expect(evaosRouteAllowsMissingBroker('/mission-control')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/native-companion')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/people-access')).toBe(false);
+  });
+
+  it('derives product route decisions from account policy scopes', () => {
+    expect(
+      evaosRuntimeRouteDecision('/people-access', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['manage_members'],
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
+
+    expect(
+      evaosRuntimeRouteDecision('/people-access', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: [],
+      })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+
+    expect(
+      evaosRuntimeRouteDecision('/company-brain', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['view_company_brain'],
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
+
+    expect(
+      evaosRuntimeRouteDecision('/connected-apps', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['manage_integrations'],
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 });

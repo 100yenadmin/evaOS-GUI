@@ -49,7 +49,52 @@ export interface EvaosLocalActionBoundaryDecision {
   reason: string;
 }
 
-export const EVAOS_NATIVE_COMPANION_BOUNDARY_VERSION = '2026-06-04.issue-11';
+export interface EvaosNativeCompanionCanary {
+  id: string;
+  command: string;
+  requiredArtifact: string;
+  forbidsSkips: boolean;
+}
+
+export const EVAOS_NATIVE_COMPANION_BOUNDARY_VERSION = '2026-06-06.rc-parity';
+
+export const EVAOS_NATIVE_COMPANION_CANARIES = [
+  {
+    id: 'pre-canary-bridge-peekaboo',
+    command:
+      'PYTHONPATH=src python3 -m evaos_desktop_bridge.pre_canary --json --control-surface bridge-peekaboo',
+    requiredArtifact: 'qa-report.json',
+    forbidsSkips: true,
+  },
+  {
+    id: 'connector-all',
+    command:
+      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface connector --suite all --operator-ack-live-control',
+    requiredArtifact: 'qa-report.json',
+    forbidsSkips: true,
+  },
+  {
+    id: 'openclaw-all',
+    command:
+      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface openclaw --suite all --operator-ack-live-control',
+    requiredArtifact: 'qa-report.json',
+    forbidsSkips: true,
+  },
+  {
+    id: 'hermes-all',
+    command:
+      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface hermes --suite all --operator-ack-live-control',
+    requiredArtifact: 'qa-report.json',
+    forbidsSkips: true,
+  },
+  {
+    id: 'connector-kill-switch',
+    command:
+      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface connector --suite kill_switch --operator-ack-live-control',
+    requiredArtifact: 'qa-report.json',
+    forbidsSkips: true,
+  },
+] satisfies readonly EvaosNativeCompanionCanary[];
 
 export const EVAOS_FORBIDDEN_LOCAL_TRUST_ACTIONS = [
   'mac-pairing-authority',
@@ -230,9 +275,10 @@ export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
       proofRequired: ['broker_grant_id', 'provider_audit_id'],
     },
   ] satisfies readonly EvaosBoundaryCapability[],
+  rcCanaries: EVAOS_NATIVE_COMPANION_CANARIES,
   releasedWorkbenchFallback: {
     owner: 'released-workbench-fallback',
-    requiredUntil: 'signed beta passes issue #12 packaging, rollback, and support gates',
+    requiredUntil: 'exact RC candidate passes native adapter, release, rollback, and support gates',
   },
   callbackPolicy: {
     acceptedProtocolScheme: EVAOS_BETA_IDENTITY.protocolScheme,
@@ -241,7 +287,7 @@ export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
     sessionCacheOwner: 'evaos-broker',
   },
   betaReleaseNote:
-    'evaOS Workbench Beta is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback.',
+    'evaOS Workbench Beta is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback until exact-candidate native canaries pass.',
 } as const;
 
 export function canEvaosShellPerformLocalTrustAction(actionId: string): EvaosLocalActionBoundaryDecision {

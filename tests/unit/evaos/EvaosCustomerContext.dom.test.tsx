@@ -8,14 +8,22 @@ import React from 'react';
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearEvaosCustomerContext, useEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustomerContext';
+import {
+  clearEvaosCustomerContext,
+  useEvaosBrokeredCustomerContext,
+  useEvaosCustomerContext,
+} from '@/renderer/hooks/context/EvaosCustomerContext';
 
 const brokerMocks = vi.hoisted(() => ({
+  getSessionStatus: vi.fn(),
   getCustomerTargets: vi.fn(),
 }));
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
+    getSessionStatus: {
+      invoke: brokerMocks.getSessionStatus,
+    },
     getCustomerTargets: {
       invoke: brokerMocks.getCustomerTargets,
     },
@@ -85,6 +93,21 @@ function memberCustomerTargets() {
   };
 }
 
+function brokerSession(userEmail = 'admin@100yen.org') {
+  return {
+    success: true,
+    data: {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      userEmail,
+      expiresAt: userEmail === 'admin@100yen.org' ? '2026-06-06T12:00:00.000Z' : '2026-06-06T13:00:00.000Z',
+      source: 'callback',
+      message: 'Session active',
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => {
@@ -110,6 +133,7 @@ describe('EvaosCustomerContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearEvaosCustomerContext();
+    brokerMocks.getSessionStatus.mockResolvedValue(brokerSession());
   });
 
   it('fails closed for unauthenticated sessions without asking the broker for customer targets', () => {
@@ -212,6 +236,28 @@ describe('EvaosCustomerContext', () => {
     expect(result.current.isOperator).toBe(false);
     expect(result.current.selectedCustomerId).toBe('member-customer');
     expect(result.current.selectedTarget?.displayName).toBe('Member Customer');
+    expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
+  });
+
+  it('brokered customer context refreshes targets when the broker session identity changes', async () => {
+    brokerMocks.getSessionStatus.mockResolvedValueOnce(brokerSession()).mockResolvedValueOnce(brokerSession('member@example.test'));
+    brokerMocks.getCustomerTargets
+      .mockResolvedValueOnce(customerTargets())
+      .mockResolvedValueOnce(memberCustomerTargets());
+
+    const { result } = renderHook(() => useEvaosBrokeredCustomerContext());
+
+    await waitFor(() => expect(result.current.customerContext.roles).toEqual(['admin']));
+    expect(result.current.brokerAuthenticated).toBe(true);
+    expect(result.current.customerContext.selectedCustomerId).toBe('david-poku');
+
+    await act(async () => {
+      await result.current.refreshBrokerSession();
+    });
+
+    await waitFor(() => expect(result.current.customerContext.roles).toEqual(['member']));
+    expect(result.current.brokerSession?.userEmail).toBe('member@example.test');
+    expect(result.current.customerContext.selectedCustomerId).toBe('member-customer');
     expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
   });
 

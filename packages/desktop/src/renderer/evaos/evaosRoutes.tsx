@@ -39,24 +39,48 @@ export function renderEvaosRoutes(): React.ReactNode {
     <>
       <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />
       <Route path='/terminal' element={withEvaosRuntimeRouteGuard('/terminal', Terminal)} />
-      <Route path='/native-companion' element={withRouteFallback(NativeCompanion)} />
+      <Route path='/native-companion' element={withEvaosRuntimeRouteGuard('/native-companion', NativeCompanion)} />
       <Route
         path='/approval-center'
-        element={EVAOS_APPROVAL_CENTER_ENABLED ? withRouteFallback(ApprovalCenter) : <Navigate to='/guid' replace />}
+        element={
+          EVAOS_APPROVAL_CENTER_ENABLED ? (
+            withEvaosRuntimeRouteGuard('/approval-center', ApprovalCenter)
+          ) : (
+            <Navigate to='/guid' replace />
+          )
+        }
       />
       <Route
         path='/connected-apps'
-        element={EVAOS_PROVIDER_HUB_ENABLED ? withRouteFallback(ConnectedApps) : <Navigate to='/guid' replace />}
+        element={
+          EVAOS_PROVIDER_HUB_ENABLED ? (
+            withEvaosRuntimeRouteGuard('/connected-apps', ConnectedApps)
+          ) : (
+            <Navigate to='/guid' replace />
+          )
+        }
       />
       <Route
         path='/business-browser'
-        element={EVAOS_BUSINESS_BROWSER_ENABLED ? withRouteFallback(BusinessBrowser) : <Navigate to='/guid' replace />}
+        element={
+          EVAOS_BUSINESS_BROWSER_ENABLED ? (
+            withEvaosRuntimeRouteGuard('/business-browser', BusinessBrowser)
+          ) : (
+            <Navigate to='/guid' replace />
+          )
+        }
       />
       <Route
         path='/company-brain'
-        element={EVAOS_COMPANY_BRAIN_ENABLED ? withRouteFallback(CompanyBrain) : <Navigate to='/guid' replace />}
+        element={
+          EVAOS_COMPANY_BRAIN_ENABLED ? (
+            withEvaosRuntimeRouteGuard('/company-brain', CompanyBrain)
+          ) : (
+            <Navigate to='/guid' replace />
+          )
+        }
       />
-      <Route path='/people-access' element={withRouteFallback(PeopleAccess)} />
+      <Route path='/people-access' element={withEvaosRuntimeRouteGuard('/people-access', PeopleAccess)} />
     </>
   );
 }

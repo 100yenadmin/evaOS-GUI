@@ -12,6 +12,7 @@ import { clearEvaosCustomerContext } from '@/renderer/hooks/context/EvaosCustome
 import ApprovalCenterPage from '@/renderer/pages/approval-center';
 
 const brokerMocks = vi.hoisted(() => ({
+  getSessionStatus: vi.fn(),
   getCustomerTargets: vi.fn(),
 }));
 
@@ -26,6 +27,9 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
+    getSessionStatus: {
+      invoke: brokerMocks.getSessionStatus,
+    },
     getCustomerTargets: {
       invoke: brokerMocks.getCustomerTargets,
     },
@@ -134,6 +138,19 @@ function deferred<T>() {
 describe('ApprovalCenterPage', () => {
   beforeEach(() => {
     clearEvaosCustomerContext();
+    brokerMocks.getSessionStatus.mockReset();
+    brokerMocks.getSessionStatus.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        userEmail: 'admin@100yen.org',
+        expiresAt: '2026-06-06T12:00:00.000Z',
+        source: 'callback',
+        message: 'Session active',
+      },
+    });
     brokerMocks.getCustomerTargets.mockReset();
     brokerMocks.getCustomerTargets.mockResolvedValue(customerTargets());
     approvalCenterMocks.getApprovals.mockReset();

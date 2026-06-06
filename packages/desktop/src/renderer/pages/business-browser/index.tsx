@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Button, Input, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Browser, CloseOne, Open, Refresh, Shield } from '@icon-park/react';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import {
   evaosBusinessBrowser,
@@ -56,7 +56,7 @@ const BusinessBrowserPage: React.FC = () => {
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<'launch' | 'openUrl' | 'stop' | null>(null);
-  const customerContext = useEvaosCustomerContext(true);
+  const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const previousSelectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);

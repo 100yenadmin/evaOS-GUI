@@ -93,7 +93,7 @@ import { ConversationHistoryProvider } from './hooks/context/ConversationHistory
 import HOC from './utils/ui/HOC';
 import type { BackendStartupFailureInfo } from '@/common/types/platform/electron';
 
-const AIONUI_DOWNLOAD_URL = 'https://www.aionui.com/';
+const EVAOS_BETA_DOWNLOAD_URL = 'https://github.com/100yenadmin/AionUi/releases';
 
 // Patch Korean locale with missing properties from English locale
 const koKRComplete = {
@@ -218,7 +218,7 @@ const BackendIncompleteInstallationScreen: React.FC = () => {
   const { openFeedback } = useFeedback();
 
   const handleDownload = () => {
-    window.open(AIONUI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+    window.open(EVAOS_BETA_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
   };
 
   const handleFeedback = () => {

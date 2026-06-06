@@ -15,6 +15,7 @@ import {
   EVAOS_NATIVE_COMPANION_STATUS_MATRIX,
   getEvaosNativeCompanionBoundaryViolations,
   type EvaosBoundaryCapability,
+  type EvaosNativeCompanionCanary,
   type EvaosNativeCompanionStatusScenario,
   type EvaosNativeCompanionStatusSeverity,
 } from '@/common/evaos/nativeCompanionBoundary';
@@ -149,6 +150,23 @@ const NativeCompanionPage: React.FC = () => {
             <CapabilityCard key={capability.id} capability={capability} />
           ))}
         </section>
+
+        <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'>
+          <div className='flex flex-wrap items-start justify-between gap-12px'>
+            <div className='min-w-0'>
+              <h2 className='m-0 text-18px font-semibold leading-24px text-t-primary'>RC native canary contract</h2>
+              <p className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
+                Native Mac parity is blocked until these exact canaries pass for the candidate without skipped rows.
+              </p>
+            </div>
+            <Tag color='orange'>Required for RC</Tag>
+          </div>
+          <div className='mt-14px grid grid-cols-1 gap-10px lg:grid-cols-2'>
+            {EVAOS_NATIVE_COMPANION_BOUNDARY.rcCanaries.map((canary) => (
+              <CanaryCard key={canary.id} canary={canary} />
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -208,6 +226,19 @@ const CapabilityCard: React.FC<{ capability: EvaosBoundaryCapability }> = ({ cap
       <EvidenceRow label='Shell may' value={capability.shellMay.join('; ')} />
       <EvidenceRow label='Shell must not' value={capability.shellMustNot.join('; ')} />
       <EvidenceRow label='Proof required' value={capability.proofRequired.join(', ')} />
+    </div>
+  </article>
+);
+
+const CanaryCard: React.FC<{ canary: EvaosNativeCompanionCanary }> = ({ canary }) => (
+  <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-14px'>
+    <div className='flex flex-wrap items-start justify-between gap-8px'>
+      <h3 className='m-0 break-words text-15px font-semibold leading-22px text-t-primary'>{canary.id}</h3>
+      <Tag color={canary.forbidsSkips ? 'orange' : 'gray'}>{canary.forbidsSkips ? 'No skips' : 'Skips allowed'}</Tag>
+    </div>
+    <div className='mt-12px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary'>
+      <EvidenceRow label='Command' value={canary.command} />
+      <EvidenceRow label='Required artifact' value={canary.requiredArtifact} />
     </div>
   </article>
 );

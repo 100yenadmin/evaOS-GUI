@@ -6,8 +6,10 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
+import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import type {
   IEvaosAccountPolicyScope,
+  IEvaosBrokerSessionStatus,
   IEvaosCustomerTargetView,
   IEvaosCustomerTargetsView,
 } from '@/common/evaos/bridgeTypes';
@@ -248,6 +250,36 @@ export function useEvaosCustomerContext(
     selectedTarget: current.targets.find((target) => target.customerId === current.selectedCustomerId),
     refreshTargets,
     selectCustomer,
+  };
+}
+
+export function useEvaosBrokeredCustomerContext(): {
+  brokerSession: IEvaosBrokerSessionStatus | null;
+  brokerSessionLoading: boolean;
+  brokerSessionError: string | null;
+  brokerAuthenticated: boolean;
+  customerContext: EvaosCustomerContextState & {
+    selectedTarget?: IEvaosCustomerTargetView;
+    refreshTargets: () => Promise<void>;
+    selectCustomer: (customerId: string) => void;
+  };
+  refreshBrokerSession: () => Promise<void>;
+} {
+  const brokerSessionStatus = useEvaosBrokerSessionStatus(true);
+  const brokerAuthenticated =
+    brokerSessionStatus.session?.authenticated === true && brokerSessionStatus.session.expired !== true;
+  const customerContext = useEvaosCustomerContext(
+    brokerAuthenticated,
+    evaosBrokerSessionKey(brokerSessionStatus.session)
+  );
+
+  return {
+    brokerSession: brokerSessionStatus.session,
+    brokerSessionLoading: brokerSessionStatus.loading,
+    brokerSessionError: brokerSessionStatus.error,
+    brokerAuthenticated,
+    customerContext,
+    refreshBrokerSession: brokerSessionStatus.refresh,
   };
 }
 

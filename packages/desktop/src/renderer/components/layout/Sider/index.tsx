@@ -204,6 +204,13 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               pathname={pathname}
               siderTooltipProps={siderTooltipProps}
               canSeeMissionControl={evaosSidebarState.canSeeMissionControl}
+              canSeeTerminal={evaosSidebarState.canSeeTerminal}
+              canSeePeopleAccess={evaosSidebarState.canSeePeopleAccess}
+              canSeeConnectedApps={evaosSidebarState.canSeeConnectedApps}
+              canSeeBusinessBrowser={evaosSidebarState.canSeeBusinessBrowser}
+              canSeeCompanyBrain={evaosSidebarState.canSeeCompanyBrain}
+              canSeeApprovalCenter={evaosSidebarState.canSeeApprovalCenter}
+              canSeeNativeCompanion={evaosSidebarState.canSeeNativeCompanion}
               onNavigate={handleEvaosNavigate}
             />
             {/* Scheduled tasks nav entry - fixed above scroll */}

@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Button, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Refresh, Terminal } from '@icon-park/react';
-import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
 
@@ -36,7 +36,7 @@ const TerminalPage: React.FC = () => {
   const [statusView, setStatusView] = useState<IEvaosRuntimeStatusView | null>(null);
   const [terminalError, setTerminalError] = useState<string | null>(null);
   const [loadingTerminal, setLoadingTerminal] = useState(false);
-  const customerContext = useEvaosCustomerContext(true);
+  const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
 
