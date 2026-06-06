@@ -35,6 +35,9 @@ export const EVAOS_BETA_ABOUT_LINKS = {
   support: 'https://www.electricsheephq.com/contact',
 } as const;
 
+// Release-audit breadcrumb only. Keep this out of rendered About/support links.
+export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/AionUi';
+
 export const EVAOS_BETA_SUPPORT_NOTICE = {
   title: 'Beta support',
   body: 'The released macOS app remains the fallback until public beta gates pass.',
