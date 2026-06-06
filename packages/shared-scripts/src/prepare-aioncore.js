@@ -76,6 +76,29 @@ function prepareManagedResources(binaryPath, targetDir) {
   return bundleOut;
 }
 
+function getManagedResourcesRuntimePlan(platform, arch, hostPlatform = process.platform, hostArch = process.arch) {
+  if (platform !== hostPlatform) {
+    return null;
+  }
+
+  if (arch === hostArch) {
+    return {
+      kind: 'target',
+      platform,
+      arch,
+      runtimeKey: `${platform}-${arch}`,
+    };
+  }
+
+  return {
+    kind: 'host-compatible',
+    platform,
+    arch: hostArch,
+    runtimeKey: `${platform}-${hostArch}`,
+    targetRuntimeKey: `${platform}-${arch}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Source resolvers
 // ---------------------------------------------------------------------------
@@ -249,14 +272,14 @@ function prepareAioncore(options) {
   let sourcePath = null;
   let sourceType = 'none';
   let sourceDetail = {};
-  let tempDir = null;
+  const tempDirs = [];
 
   // 1. Download from GitHub releases
   if (!sourcePath) {
     try {
       const result = downloadAndExtract(platform, arch, tag);
       sourcePath = result.binaryPath;
-      tempDir = result.tempDir;
+      tempDirs.push(result.tempDir);
       sourceType = 'download';
       sourceDetail = { url: result.url };
       console.log(`  Downloaded from GitHub releases`);
@@ -269,7 +292,31 @@ function prepareAioncore(options) {
   if (sourcePath) {
     copyFileSafe(sourcePath, targetBinaryPath);
     ensureExecutableMode(targetBinaryPath);
-    const bundledManagedResourcesDir = prepareManagedResources(targetBinaryPath, targetDir);
+    const managedResourcesPlan = getManagedResourcesRuntimePlan(platform, arch);
+    if (!managedResourcesPlan) {
+      throw new Error(
+        `Cannot prepare managed resources for ${runtimeKey} on host ${process.platform}-${process.arch}; target platform binary is not executable on this host`
+      );
+    }
+
+    let managedResourcesBinaryPath = targetBinaryPath;
+    if (managedResourcesPlan.kind === 'host-compatible') {
+      console.log(
+        `  Target ${runtimeKey} binary is not executable on host ${process.platform}-${process.arch}; using ${managedResourcesPlan.runtimeKey} aioncore for managed resources`
+      );
+      const managedResourcesBinary = downloadAndExtract(managedResourcesPlan.platform, managedResourcesPlan.arch, tag);
+      tempDirs.push(managedResourcesBinary.tempDir);
+      managedResourcesBinaryPath = managedResourcesBinary.binaryPath;
+      sourceDetail = {
+        ...sourceDetail,
+        managedResources: {
+          runtimeKey: managedResourcesPlan.runtimeKey,
+          url: managedResourcesBinary.url,
+        },
+      };
+    }
+
+    const bundledManagedResourcesDir = prepareManagedResources(managedResourcesBinaryPath, targetDir);
 
     // The release tag is the authoritative version — the aioncore
     // binary does not expose a --version flag (it has --app-version which
@@ -290,11 +337,11 @@ function prepareAioncore(options) {
     );
     console.log(`  Bundled managed resources prepared: ${bundledManagedResourcesDir}`);
 
-    if (tempDir) removeDirectorySafe(tempDir);
+    for (const tempDir of tempDirs) removeDirectorySafe(tempDir);
     return { prepared: true, dir: targetDir, sourceType };
   }
 
   throw new Error(`aioncore binary not found for ${runtimeKey} (tag: ${tag})`);
 }
 
-module.exports = { prepareAioncore };
+module.exports = { prepareAioncore, getManagedResourcesRuntimePlan };
