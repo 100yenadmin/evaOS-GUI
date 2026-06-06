@@ -904,7 +904,19 @@
     "customAgents": "Özel Ajanlar",
     "custom": "Özel",
     "addCustomAgent": "Özel Ajan Ekle",
-    "customEmpty": "Yapılandırılmış özel ajan yok. Oluşturmak için \"Özel Ajan Ekle\"ye tıklayın."
+    "customEmpty": "Yapılandırılmış özel ajan yok. Oluşturmak için \"Özel Ajan Ekle\"ye tıklayın.",
+    "nativeNotRequiredSummary": "{{displayName}} can start without the native companion pairing gate.",
+    "nativeNotRequiredReason": "Agent does not depend on evaOS native companion pairing.",
+    "nativePaired": "Paired",
+    "nativePairedSummary": "{{displayName}} native pairing is ready.",
+    "nativeStatusReason": "Native companion status: {{status}}",
+    "nativeStatusNotUsableReason": "Native companion status is not usable: {{status}}",
+    "nativePairingProofMissing": "Native companion pairing proof is missing.",
+    "nativeRepairRequired": "Repair required",
+    "nativeRepairSummary": "{{displayName}} is installed, but Mac pairing must be repaired before chat can start.",
+    "nativeRepairAction": "Repair in Mac & iPhone",
+    "nativeRepairBadge": "Repair",
+    "nativeRepairTitle": "{{displayName}} needs Mac pairing"
   },
   "remoteAgent": {
     "title": "Uzak Ajanlar",

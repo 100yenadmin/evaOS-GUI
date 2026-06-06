@@ -18,6 +18,7 @@ import { AgentHubModal } from './AgentHubModal';
 import InlineAgentEditor, { type CustomAgentDraft } from './InlineAgentEditor';
 import { getAgentKey } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import { sortEvaosDetectedAgentsForPresentation } from '@/renderer/evaos/evaosAgentPresentation';
+import { getEvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
 
 const LocalAgents: React.FC = () => {
   const { t } = useTranslation();
@@ -94,9 +95,19 @@ const LocalAgents: React.FC = () => {
 
   const goToChatWithAgent = useCallback(
     (agent: AgentMetadata) => {
+      const nativeAvailability = getEvaosNativeAgentAvailability(agent);
+      if (nativeAvailability.status === 'repair_required') {
+        navigate(nativeAvailability.repairRoute, {
+          state: {
+            repairAgent: nativeAvailability.displayName,
+            repairReason: t(nativeAvailability.reasonKey, nativeAvailability.reasonParams ?? {}),
+          },
+        });
+        return;
+      }
       navigate('/guid', { state: { selectedAgentKey: getAgentKey(agent) } });
     },
-    [navigate]
+    [navigate, t]
   );
 
   return (
@@ -155,6 +166,7 @@ const LocalAgents: React.FC = () => {
             key={agent.backend || agent.agent_type}
             type='detected'
             agent={agent}
+            nativeAvailability={getEvaosNativeAgentAvailability(agent)}
             onGoToChat={() => goToChatWithAgent(agent)}
           />
         ))}

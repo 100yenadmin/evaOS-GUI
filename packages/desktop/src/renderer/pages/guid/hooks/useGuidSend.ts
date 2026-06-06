@@ -14,6 +14,7 @@ import { Message } from '@arco-design/web-react';
 import { useCallback, useRef } from 'react';
 import { type TFunction } from 'i18next';
 import type { NavigateFunction } from 'react-router-dom';
+import type { EvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
 import type { AcpModelInfo, AvailableAgent, EffectiveAgentInfo } from '../types';
 
@@ -57,7 +58,7 @@ export type GuidSendDeps = {
   availableMcpServers: IMcpServer[];
   selectedMcpServerIds: string[] | undefined;
   currentEffectiveAgentInfo: EffectiveAgentInfo;
-  isGoogleAuth: boolean;
+  nativeAgentAvailability?: EvaosNativeAgentAvailability;
 
   // Mention state reset
   setMentionOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -107,7 +108,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     availableMcpServers,
     selectedMcpServerIds,
     currentEffectiveAgentInfo: _currentEffectiveAgentInfo,
-    isGoogleAuth,
+    nativeAgentAvailability,
     setMentionOpen,
     setMentionQuery,
     setMentionSelectorOpen,
@@ -304,7 +305,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
 
         await navigate(`/conversation/${conversation.id}`);
       } catch (error: unknown) {
-        console.error('Failed to create Aion CLI conversation:', error);
+        console.error('Failed to create Custom conversation:', error);
         throw error;
       }
       return;
@@ -419,6 +420,21 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
 
   const sendMessageHandler = useCallback(() => {
     if (loading || sendingRef.current) return;
+    if (nativeAgentAvailability?.status === 'repair_required') {
+      Message.warning(
+        t(nativeAgentAvailability.summaryKey, {
+          displayName: nativeAgentAvailability.displayName,
+          ...nativeAgentAvailability.reasonParams,
+        })
+      );
+      navigate(nativeAgentAvailability.repairRoute, {
+        state: {
+          repairAgent: nativeAgentAvailability.displayName,
+          repairReason: t(nativeAgentAvailability.reasonKey, nativeAgentAvailability.reasonParams ?? {}),
+        },
+      });
+      return;
+    }
     sendingRef.current = true;
     setLoading(true);
     handleSend()
@@ -441,6 +457,9 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       });
   }, [
     loading,
+    nativeAgentAvailability,
+    navigate,
+    t,
     handleSend,
     setLoading,
     setInput,

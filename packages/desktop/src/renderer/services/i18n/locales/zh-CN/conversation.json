@@ -94,7 +94,8 @@
   "createError": {
     "pathVariants": {
       "WORKSPACE_PATH_UNAVAILABLE": "所选工作区路径不可用。请确保工作区路径“{{workspacePath}}”真实存在且可访问。"
-    }
+    },
+    "EVAOS_NATIVE_PAIRING_REQUIRED": "Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes."
   },
   "agentError": {
     "fallbackTitle": "Agent 未能回复",

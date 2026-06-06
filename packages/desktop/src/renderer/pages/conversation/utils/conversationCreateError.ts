@@ -12,6 +12,7 @@ export type WorkspacePathErrorCode = 'WORKSPACE_PATH_UNAVAILABLE' | 'WORKSPACE_P
 
 export type ConversationCreateErrorCode = 'WORKSPACE_PATH_UNAVAILABLE';
 export type ConversationRuntimeWorkspaceErrorCode = 'WORKSPACE_PATH_RUNTIME_UNAVAILABLE';
+export type EvaosNativePairingErrorCode = 'EVAOS_NATIVE_PAIRING_REQUIRED';
 
 const BACKEND_ERROR_CODE_MAP: Record<string, WorkspacePathErrorCode> = {
   WORKSPACE_PATH_UNAVAILABLE: 'WORKSPACE_PATH_UNAVAILABLE',
@@ -38,6 +39,8 @@ const LEGACY_BACKEND_MESSAGE_PATTERNS: Array<{
       /workspace (directory|path).*(contain|contains|containing).*(whitespace|space).*(not supported|unsupported)/i,
   },
 ];
+
+const EVAOS_NATIVE_PAIRING_PATTERNS = [/NOT_PAIRED/i, /native companion[^\n]*pairing required/i, /Mac pairing/i];
 
 type EmbeddedBackendErrorPayload = {
   code?: string;
@@ -131,6 +134,15 @@ export const normalizeConversationCreateErrorCode = (error: unknown): Conversati
   return code === 'WORKSPACE_PATH_UNAVAILABLE' ? code : undefined;
 };
 
+export const normalizeEvaosNativePairingErrorCode = (error: unknown): EvaosNativePairingErrorCode | undefined => {
+  const payload = getWorkspacePathErrorPayload(error) ?? getEmbeddedBackendErrorPayload(error);
+  const rawText = [payload?.code, payload?.error, parseError(error)].filter(Boolean).join('\n');
+  if (EVAOS_NATIVE_PAIRING_PATTERNS.some((pattern) => pattern.test(rawText))) {
+    return 'EVAOS_NATIVE_PAIRING_REQUIRED';
+  }
+  return undefined;
+};
+
 export const normalizeConversationRuntimeWorkspaceErrorCode = (
   error: unknown
 ): ConversationRuntimeWorkspaceErrorCode | undefined => {
@@ -139,6 +151,10 @@ export const normalizeConversationRuntimeWorkspaceErrorCode = (
 };
 
 export const getConversationCreateErrorMessage = (error: unknown, t: TFunction): string => {
+  if (normalizeEvaosNativePairingErrorCode(error)) {
+    return t('conversation.createError.EVAOS_NATIVE_PAIRING_REQUIRED');
+  }
+
   const normalizedCode = normalizeConversationCreateErrorCode(error);
   const payload = getWorkspacePathErrorPayload(error);
   const workspacePath = getWorkspacePathFromErrorDetails(error);

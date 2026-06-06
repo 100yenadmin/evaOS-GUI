@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { getEvaosAgentDisplayName } from '@/renderer/evaos/evaosAgentPresentation';
+import type { EvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
 
 type DetectedAgent = {
   agent_type: string;
@@ -39,6 +40,7 @@ type AgentCardProps =
   | {
       type: 'detected';
       agent: DetectedAgent;
+      nativeAvailability?: EvaosNativeAgentAvailability;
       onGoToChat: () => void;
     }
   | {
@@ -55,8 +57,21 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
   const goToChatButtonClassName = '!w-full !justify-center !rounded-10px !text-12px';
 
   if (props.type === 'detected') {
-    const { agent, onGoToChat } = props;
+    const { agent, nativeAvailability, onGoToChat } = props;
     const displayName = getEvaosAgentDisplayName(agent);
+    const statusLabel = nativeAvailability
+      ? t(nativeAvailability.statusLabelKey, {
+          displayName: nativeAvailability.displayName,
+          ...nativeAvailability.reasonParams,
+        })
+      : t('settings.agentManagement.detected');
+    const repairReason = nativeAvailability
+      ? t(nativeAvailability.reasonKey, nativeAvailability.reasonParams ?? {})
+      : undefined;
+    const actionLabel = nativeAvailability
+      ? t(nativeAvailability.repairActionLabelKey)
+      : t('settings.agentManagement.goToChat');
+    const isRepairRequired = nativeAvailability?.status === 'repair_required';
     const extensionAvatar = resolveExtensionAssetUrl(agent.isExtension ? agent.avatar : undefined);
     const logo =
       extensionAvatar ||
@@ -79,13 +94,20 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
           <Typography.Text className='block text-13px font-medium leading-18px line-clamp-2'>
             {displayName}
           </Typography.Text>
-          <Typography.Text className='mt-4px block text-11px text-t-secondary'>
-            {t('settings.agentManagement.detected')}
+          <Typography.Text
+            className={`mt-4px block text-11px ${isRepairRequired ? 'text-[rgb(var(--orange-6))]' : 'text-t-secondary'}`}
+          >
+            {statusLabel}
           </Typography.Text>
+          {isRepairRequired ? (
+            <Typography.Text className='mt-4px block text-10px leading-14px text-t-tertiary'>
+              {repairReason}
+            </Typography.Text>
+          ) : null}
         </div>
 
         <Button size='small' type='secondary' onClick={onGoToChat} className={goToChatButtonClassName}>
-          {t('settings.agentManagement.goToChat')}
+          {actionLabel}
         </Button>
       </div>
     );

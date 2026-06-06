@@ -94,7 +94,8 @@
   "createError": {
     "pathVariants": {
       "WORKSPACE_PATH_UNAVAILABLE": "Вибраний шлях робочого простору недоступний. Переконайтеся, що шлях робочого простору \"{{workspacePath}}\" справді існує та доступний."
-    }
+    },
+    "EVAOS_NATIVE_PAIRING_REQUIRED": "Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes."
   },
   "agentError": {
     "fallbackTitle": "Агент не зміг відповісти",

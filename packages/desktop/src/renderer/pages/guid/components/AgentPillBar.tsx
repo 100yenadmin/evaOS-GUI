@@ -6,6 +6,7 @@
 
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import { getEvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import type { AgentSource } from '@/renderer/utils/model/agentTypes';
 import type { AvailableAgent } from '../types';
@@ -66,6 +67,8 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
           .filter((agent) => !agent.is_preset)
           .map((agent, index) => {
             const isSelected = selectedAgentKey === getAgentKey(agent);
+            const nativeAvailability = getEvaosNativeAgentAvailability(agent);
+            const isRepairRequired = nativeAvailability.status === 'repair_required';
             const extensionAvatar = resolveExtensionAssetUrl(agent.isExtension ? agent.avatar : undefined);
             // Remote and user-defined custom agents store emoji strings in
             // `avatar` — treat those as glyphs, not URLs. Builtin rows
@@ -94,6 +97,7 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
                   data-agent-key={getAgentKey(agent)}
                   data-agent-type={agent.agent_type}
                   data-agent-selected={isSelected ? 'true' : 'false'}
+                  data-agent-native-status={nativeAvailability.status}
                   className={`group relative flex items-center cursor-pointer whitespace-nowrap overflow-hidden ${isSelected ? `opacity-100 px-12px py-8px rd-20px mx-2px ${styles.agentItemSelected}` : isMobile ? 'opacity-70 p-4px' : 'opacity-60 p-4px hover:opacity-100'}`}
                   style={
                     isSelected
@@ -131,6 +135,11 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
                   >
                     {agent.name}
                   </span>
+                  {isRepairRequired && isSelected ? (
+                    <span className='ml-6px rounded-6px bg-[rgb(var(--orange-1))] px-5px py-1px text-10px font-semibold leading-14px text-[rgb(var(--orange-6))]'>
+                      {t('settings.agentManagement.nativeRepairBadge')}
+                    </span>
+                  ) : null}
                 </div>
               </React.Fragment>
             );

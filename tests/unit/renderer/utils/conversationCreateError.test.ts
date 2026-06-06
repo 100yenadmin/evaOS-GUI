@@ -9,6 +9,7 @@ import { BackendHttpError } from '@/common/adapter/httpBridge';
 import {
   getConversationCreateErrorMessage,
   getConversationRuntimeWorkspaceErrorMessage,
+  normalizeEvaosNativePairingErrorCode,
   normalizeConversationCreateErrorCode,
   normalizeConversationRuntimeWorkspaceErrorCode,
 } from '@/renderer/pages/conversation/utils/conversationCreateError';
@@ -31,6 +32,8 @@ const t = (key: string, options?: { defaultValue?: string; workspacePath?: strin
       'Make sure the current workspace path exists.',
     'conversation.agentError.codes.WORKSPACE_PATH_RUNTIME_UNAVAILABLE.bodyWithPath':
       'The current Agent failed to run in the workspace path "{{workspacePath}}". Make sure the workspace path exists.',
+    'conversation.createError.EVAOS_NATIVE_PAIRING_REQUIRED':
+      'Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes.',
   };
 
   if (
@@ -109,5 +112,31 @@ describe('conversationCreateError', () => {
     expect(getConversationCreateErrorMessage(error, t)).toBe(
       'The selected workspace path is unavailable. Make sure the workspace path "/Users/zhoukai/Documents/Archive " exists and is accessible.'
     );
+  });
+
+  it('normalizes native NOT_PAIRED errors to evaOS repair copy', () => {
+    const error = httpError(
+      'AIONUI_INTERNAL_ERROR',
+      'NOT_PAIRED: pairing required: device identity changed and must be re-approved'
+    );
+
+    expect(normalizeEvaosNativePairingErrorCode(error)).toBe('EVAOS_NATIVE_PAIRING_REQUIRED');
+    expect(getConversationCreateErrorMessage(error, t)).toBe(
+      'Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes.'
+    );
+  });
+
+  it('normalizes native pairing errors from stringified backend payloads', () => {
+    const error =
+      'Backend POST /api/conversations failed (500): {"success":false,"code":"AIONUI_INTERNAL_ERROR","error":"NOT_PAIRED: pairing required: device identity changed and must be re-approved"}';
+
+    expect(normalizeEvaosNativePairingErrorCode(error)).toBe('EVAOS_NATIVE_PAIRING_REQUIRED');
+    expect(getConversationCreateErrorMessage(error, t)).not.toContain('AIONUI_INTERNAL_ERROR');
+  });
+
+  it('does not classify generic non-native pairing text as evaOS native repair', () => {
+    const error = httpError('PROVIDER_PAIRING_REQUIRED', 'pairing required: reconnect the provider account');
+
+    expect(normalizeEvaosNativePairingErrorCode(error)).toBeUndefined();
   });
 });

@@ -27,6 +27,10 @@ import { useGuidModelSelection } from './hooks/useGuidModelSelection';
 import { useGuidSend } from './hooks/useGuidSend';
 import { useTypewriterPlaceholder } from './hooks/useTypewriterPlaceholder';
 import { ensureBackendMcpCatalog } from '@/renderer/hooks/mcp/catalog';
+import {
+  getEvaosNativeAgentAvailability,
+  resolveEvaosNativeAvailabilitySource,
+} from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { Button, ConfigProvider, Dropdown, Menu, Message } from '@arco-design/web-react';
 import { Down, Left, Robot, Write } from '@icon-park/react';
@@ -148,6 +152,28 @@ const GuidPage: React.FC = () => {
     selectedAgentInfo: agentSelection.selectedAgentInfo,
   });
 
+  const selectedNativeAgentAvailability = useMemo(() => {
+    const fallbackAgentInfo =
+      agentSelection.selectedAgentInfo ??
+      ({
+        agent_type: agentSelection.currentEffectiveAgentInfo.agent_type,
+        backend: agentSelection.currentEffectiveAgentInfo.agent_type,
+        name: mention.selectedAgentLabel || agentSelection.currentEffectiveAgentInfo.agent_type,
+      } satisfies Parameters<typeof getEvaosNativeAgentAvailability>[0]);
+    const nativeAvailabilitySource =
+      resolveEvaosNativeAvailabilitySource(
+        fallbackAgentInfo,
+        agentSelection.currentEffectiveAgentInfo.agent_type,
+        agentSelection.availableAgents
+      ) ?? fallbackAgentInfo;
+    return getEvaosNativeAgentAvailability(nativeAvailabilitySource);
+  }, [
+    agentSelection.availableAgents,
+    agentSelection.currentEffectiveAgentInfo.agent_type,
+    agentSelection.selectedAgentInfo,
+    mention.selectedAgentLabel,
+  ]);
+
   const send = useGuidSend({
     // Input state
     input: guidInput.input,
@@ -180,7 +206,7 @@ const GuidPage: React.FC = () => {
     availableMcpServers,
     selectedMcpServerIds: guidSelectedMcpServerIds,
     currentEffectiveAgentInfo: agentSelection.currentEffectiveAgentInfo,
-    isGoogleAuth: modelSelection.isGoogleAuth,
+    nativeAgentAvailability: selectedNativeAgentAvailability,
 
     // Mention state reset
     setMentionOpen: mention.setMentionOpen,
@@ -754,6 +780,45 @@ const GuidPage: React.FC = () => {
               onSelectAgent={handleSelectAgentFromPillBar}
               suppressSelectionAnimation={resetAssistantRequested}
             />
+          ) : null}
+
+          {selectedNativeAgentAvailability.status === 'repair_required' ? (
+            <div
+              className='mb-16px flex w-full max-w-720px flex-col gap-10px rounded-12px border border-solid border-[rgb(var(--orange-3))] bg-[rgb(var(--orange-1))] px-16px py-14px text-left'
+              data-testid='evaos-native-agent-repair'
+            >
+              <div className='text-14px font-semibold leading-20px text-t-primary'>
+                {t('settings.agentManagement.nativeRepairTitle', {
+                  displayName: selectedNativeAgentAvailability.displayName,
+                })}
+              </div>
+              <div className='text-12px leading-18px text-t-secondary'>
+                {t(selectedNativeAgentAvailability.summaryKey, {
+                  displayName: selectedNativeAgentAvailability.displayName,
+                  ...selectedNativeAgentAvailability.reasonParams,
+                })}{' '}
+                {t(selectedNativeAgentAvailability.reasonKey, selectedNativeAgentAvailability.reasonParams ?? {})}.
+              </div>
+              <div>
+                <Button
+                  size='small'
+                  type='primary'
+                  onClick={() =>
+                    navigate(selectedNativeAgentAvailability.repairRoute, {
+                      state: {
+                        repairAgent: selectedNativeAgentAvailability.displayName,
+                        repairReason: t(
+                          selectedNativeAgentAvailability.reasonKey,
+                          selectedNativeAgentAvailability.reasonParams ?? {}
+                        ),
+                      },
+                    })
+                  }
+                >
+                  {t(selectedNativeAgentAvailability.repairActionLabelKey)}
+                </Button>
+              </div>
+            </div>
           ) : null}
 
           <GuidInputCard
