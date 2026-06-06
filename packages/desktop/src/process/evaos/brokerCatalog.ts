@@ -23,7 +23,7 @@ export const VALID_EVAOS_RUNTIME_KEYS: ReadonlySet<IEvaosRuntimeKey> = new Set([
 ]);
 
 export const EVAOS_RUNTIME_LABELS: Record<IEvaosRuntimeKey, string> = {
-  openclaw: 'OpenClaw',
+  openclaw: 'evaOS',
   hermes: 'Hermes',
   paperclip: 'Paperclip',
   browser: 'Business Browser',
@@ -55,7 +55,7 @@ export const EVAOS_PIPEDREAM_PROVIDER_KEYS: ReadonlySet<IEvaosProviderKey> = new
 
 export const EVAOS_PROVIDER_LABELS: Record<IEvaosProviderKey, string> = {
   openai_codex: 'Codex Desktop',
-  openclaw: 'OpenClaw',
+  openclaw: 'evaOS',
   hermes: 'Hermes',
   google_workspace: 'Google Workspace',
   pipedream: 'Pipedream Connection Service',

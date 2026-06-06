@@ -34,16 +34,15 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
 
   const navigate = useNavigate();
   const { closePreview } = usePreviewContext();
-  const { logout, status } = useAuth();
+  const { logout, status, user } = useAuth();
   const { theme, setTheme } = useThemeContext();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const { jobs: cronJobs } = useAllCronJobs();
   const evaosSidebarState = useEvaosSidebarState();
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
-  const lastNonSettingsPathRef = useRef('/mission-control');
-  const showLogout =
-    typeof window !== 'undefined' && !(window as { electronAPI?: unknown }).electronAPI && status === 'authenticated';
+  const lastNonSettingsPathRef = useRef('/evaos');
+  const showLogout = status === 'authenticated';
 
   useEffect(() => {
     if (!pathname.startsWith('/settings')) {
@@ -203,6 +202,8 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               collapsed={collapsed}
               pathname={pathname}
               siderTooltipProps={siderTooltipProps}
+              canSeeEvaos={evaosSidebarState.canSeeEvaos}
+              canSeeHermes={evaosSidebarState.canSeeHermes}
               canSeeMissionControl={evaosSidebarState.canSeeMissionControl}
               canSeeTerminal={evaosSidebarState.canSeeTerminal}
               canSeePeopleAccess={evaosSidebarState.canSeePeopleAccess}
@@ -263,6 +264,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         siderTooltipProps={siderTooltipProps}
         onSettingsClick={handleSettingsClick}
         onThemeToggle={handleQuickThemeToggle}
+        accountLabel={user?.username}
         showLogout={showLogout}
         onLogoutClick={handleLogout}
       />

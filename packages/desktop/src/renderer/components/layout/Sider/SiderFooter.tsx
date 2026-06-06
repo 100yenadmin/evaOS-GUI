@@ -20,6 +20,7 @@ interface SiderFooterProps {
   siderTooltipProps: SiderTooltipProps;
   onSettingsClick: () => void;
   onThemeToggle: () => void;
+  accountLabel?: string | null;
   showLogout?: boolean;
   onLogoutClick?: () => void;
 }
@@ -32,6 +33,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   siderTooltipProps,
   onSettingsClick,
   onThemeToggle,
+  accountLabel,
   showLogout = false,
   onLogoutClick,
 }) => {
@@ -59,6 +61,12 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
 
   return (
     <div className='shrink-0 sider-footer mt-auto pt-8px pb-8px border-t border-solid border-[var(--color-border-2)] border-l-0 border-r-0 border-b-0'>
+      {!collapsed && accountLabel ? (
+        <div className='mb-6px px-10px text-11px leading-16px text-t-secondary'>
+          <div className='font-medium text-t-tertiary'>Viewing</div>
+          <div className='truncate text-t-primary'>{accountLabel}</div>
+        </div>
+      ) : null}
       <div className={classNames('flex', collapsed ? 'flex-col gap-2px' : 'items-center gap-2px')}>
         <Tooltip {...siderTooltipProps} content={isSettings ? t('common.back') : t('common.settings')} position='right'>
           <div

@@ -14,8 +14,38 @@ const PROOF_STAGES = {
 
 const ROUTE_CHECKS = [
   {
+    name: 'evaos-dashboard',
+    hash: '/evaos',
+    title: 'evaOS',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Attach blocked'],
+    loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
+    expected: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Attach blocked'],
+    forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
+  },
+  {
+    name: 'hermes-dashboard',
+    hash: '/hermes',
+    title: 'Hermes',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Attach blocked'],
+    loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
+    expected: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Attach blocked'],
+    forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
+  },
+  {
     name: 'mission-control',
     hash: '/mission-control',
+    title: 'Mission Control',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Attach blocked'],
+    loadedStateRequiredMarkers: ['paperclip runtime status', 'customer scoped runtime proof'],
+    expected: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Attach blocked'],
+    forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'],
+  },
+  {
+    name: 'beta-readiness',
+    hash: '/beta-readiness',
     title: 'Mission Control',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
     settledMarkers: ['Mission Control', 'RC parity gated', 'RC parity proof', 'No runtime evidence loaded yet.'],
@@ -34,9 +64,9 @@ const ROUTE_CHECKS = [
     hash: '/settings/agent',
     title: 'Agent',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['Local Agents', 'Aion CLI is the built-in agent', 'Detect Custom Agent'],
+    settledMarkers: ['Local Agents', 'Custom uses your configured model providers', 'Detect Custom Agent'],
     loadedStateRequiredMarkers: ['local agent inventory result', 'remote guardrail copy'],
-    expected: ['Local Agents', 'Aion CLI is the built-in agent', 'Detect Custom Agent'],
+    expected: ['Local Agents', 'Custom uses your configured model providers', 'Detect Custom Agent'],
     forbidden: ['Root PR #15', 'Stack approval', 'Remote Agents', 'Allow insecure', 'Handshake', 'Connect remote'],
   },
   {
@@ -163,7 +193,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'LOADED RUNTIMES',
       '5 of 5',
       'Customer browser session',
-      'OpenClaw workspace is accepting customer-scoped agent work',
+      'evaOS workspace is accepting customer-scoped agent work',
       'Hermes dashboard sync completed',
       'Paperclip queue is waiting',
       'Customer VM shell is offline',
@@ -754,7 +784,7 @@ const LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS = [
     settledMarkers: ['evaOS Workbench Beta'],
     loadedStateRequiredMarkers: ['redirected #/guid route', 'admin runtime hidden from member persona'],
     expected: ['evaOS Workbench Beta'],
-    forbidden: ['Mission Control', 'Terminal', 'Eva Workspace', 'Agent Workspace'],
+    forbidden: ['Mission Control', 'Terminal', 'evaOS', 'Hermes'],
   },
 ];
 

@@ -54,10 +54,10 @@ const OPERATOR_ADMIN_ROLES = new Set(['customer_service', 'support']);
 export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
   {
     key: 'openclaw',
-    title: 'Eva Workspace',
-    subtitle: 'Main Eva dashboard and chat workspace.',
+    title: 'evaOS',
+    subtitle: 'Primary evaOS agent workspace.',
     section: 'technical',
-    routePath: '/openclaw',
+    routePath: '/evaos',
     brokered: true,
     requiresAdmin: true,
     technicalDashboard: true,
@@ -65,7 +65,7 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
   },
   {
     key: 'hermes',
-    title: 'Agent Workspace',
+    title: 'Hermes',
     subtitle: 'Hermes agent workspace.',
     section: 'technical',
     routePath: '/hermes',
@@ -147,7 +147,30 @@ const RUNTIME_BY_ROUTE_PATH = new Map(EVAOS_RUNTIME_CATALOG.map((runtime) => [ru
 
 export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   {
+    routePath: '/evaos',
+    requiresAdmin: true,
+    requiredScopes: ['access_openclaw_dashboard'],
+    allowMissingBroker: true,
+  },
+  {
+    routePath: '/openclaw',
+    requiresAdmin: true,
+    requiredScopes: ['access_openclaw_dashboard'],
+    allowMissingBroker: true,
+  },
+  {
+    routePath: '/hermes',
+    requiresAdmin: true,
+    requiredScopes: ['access_hermes_dashboard'],
+    allowMissingBroker: true,
+  },
+  {
     routePath: '/mission-control',
+    requiresAdmin: true,
+    allowMissingBroker: true,
+  },
+  {
+    routePath: '/beta-readiness',
     requiresAdmin: true,
     allowMissingBroker: true,
   },

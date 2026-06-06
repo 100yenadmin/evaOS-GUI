@@ -892,7 +892,7 @@
   "agentManagement": {
     "localAgents": "Local Agents",
     "remoteAgents": "Remote Agents",
-    "localAgentsDescription": "Aion CLI is the built-in agent and ships with the app — no install needed. Other agents are detected only after their CLI is installed locally.",
+    "localAgentsDescription": "evaOS and Hermes are detected local agents. Custom uses your configured model providers; other agents appear after their CLI is installed locally.",
     "localAgentsSetupLink": "Setup guide",
     "goToChat": "Start Chat",
     "remoteAgentsDescription": "Remote-agent pairing is deferred in evaOS beta. Existing connections are shown for migration only.",
