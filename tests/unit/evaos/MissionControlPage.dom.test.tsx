@@ -144,9 +144,7 @@ describe('MissionControlPage', () => {
     expect(screen.getByText('Visible branding')).toBeInTheDocument();
     expect(screen.getByText('Exact RC canary')).toBeInTheDocument();
     expect(container.textContent).toContain('user-testing distribution stays blocked');
-    expect(container.textContent).toContain(
-      'Start evaOS Workbench Beta locally for RC proof'
-    );
+    expect(container.textContent).toContain('Start evaOS Workbench Beta locally for RC proof');
     expect(container.textContent).not.toContain('Stack approval');
     expect(container.textContent).not.toContain('Root PR #15');
     expect(container.textContent).not.toMatch(/ship public beta|ready to ship|eds_|desktop_session|Bearer/i);
