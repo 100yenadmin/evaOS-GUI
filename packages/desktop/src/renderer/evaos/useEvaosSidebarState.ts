@@ -11,6 +11,7 @@ import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/ho
 import { evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
 
 interface EvaosSidebarState {
+  accountLabel?: string;
   canSeeEvaos: boolean;
   canSeeHermes: boolean;
   canSeeMissionControl: boolean;
@@ -89,6 +90,9 @@ export function useEvaosSidebarState(): EvaosSidebarState {
   }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
 
   return {
+    accountLabel: brokerSessionStatus.session?.authenticated
+      ? (brokerSessionStatus.session.userEmail ?? user?.username)
+      : user?.username,
     canSeeEvaos: canSeeRepairableRoute('/evaos'),
     canSeeHermes: canSeeRepairableRoute('/hermes'),
     canSeeMissionControl,
