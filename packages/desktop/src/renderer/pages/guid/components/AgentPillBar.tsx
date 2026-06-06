@@ -6,6 +6,11 @@
 
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import {
+  getEvaosAgentDisplayName,
+  isEvaosCustomAgentPresentation,
+  sortEvaosDetectedAgentsForPresentation,
+} from '@/renderer/evaos/evaosAgentPresentation';
 import { getEvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import type { AgentSource } from '@/renderer/utils/model/agentTypes';
@@ -42,6 +47,10 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
   const isMobile = layout?.isMobile ?? false;
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const visibleAgents = React.useMemo(
+    () => sortEvaosDetectedAgentsForPresentation(availableAgents.filter((agent) => !agent.is_preset)),
+    [availableAgents]
+  );
 
   return (
     <div className='w-full flex justify-center'>
@@ -63,22 +72,23 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
           color: 'var(--text-primary)',
         }}
       >
-        {availableAgents
-          .filter((agent) => !agent.is_preset)
-          .map((agent, index) => {
-            const isSelected = selectedAgentKey === getAgentKey(agent);
-            const nativeAvailability = getEvaosNativeAgentAvailability(agent);
-            const isRepairRequired = nativeAvailability.status === 'repair_required';
-            const extensionAvatar = resolveExtensionAssetUrl(agent.isExtension ? agent.avatar : undefined);
-            // Remote and user-defined custom agents store emoji strings in
-            // `avatar` — treat those as glyphs, not URLs. Builtin rows
-            // store a logo URL in `icon` and fall through to
-            // `resolveAgentLogo` below.
-            const usesEmojiAvatar =
-              (agent.agent_type === 'remote' || agent.agent_source === 'custom') && Boolean(agent.avatar);
-            const emojiAvatar = usesEmojiAvatar ? agent.avatar : undefined;
-            const logoSrc =
-              extensionAvatar ||
+        {visibleAgents.map((agent, index) => {
+          const isSelected = selectedAgentKey === getAgentKey(agent);
+          const nativeAvailability = getEvaosNativeAgentAvailability(agent);
+          const isRepairRequired = nativeAvailability.status === 'repair_required';
+          const displayName = getEvaosAgentDisplayName(agent);
+          const useNeutralCustomVisual = isEvaosCustomAgentPresentation(agent);
+          const extensionAvatar = resolveExtensionAssetUrl(agent.isExtension ? agent.avatar : undefined);
+          // Remote and user-defined custom agents store emoji strings in
+          // `avatar` — treat those as glyphs, not URLs. Builtin rows
+          // store a logo URL in `icon` and fall through to
+          // `resolveAgentLogo` below.
+          const usesEmojiAvatar =
+            (agent.agent_type === 'remote' || agent.agent_source === 'custom') && Boolean(agent.avatar);
+          const emojiAvatar = usesEmojiAvatar ? agent.avatar : undefined;
+          const logoSrc = useNeutralCustomVisual
+            ? undefined
+            : extensionAvatar ||
               (!emojiAvatar
                 ? resolveAgentLogo({
                     icon: agent.icon,
@@ -88,62 +98,62 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
                   })
                 : undefined);
 
-            return (
-              <React.Fragment key={getAgentKey(agent)}>
-                {!isMobile && index > 0 && <div className='text-16px lh-1 p-2px select-none opacity-30'>|</div>}
-                <div
-                  data-testid={`agent-pill-${agent.backend}`}
-                  data-agent-pill='true'
-                  data-agent-key={getAgentKey(agent)}
-                  data-agent-type={agent.agent_type}
-                  data-agent-selected={isSelected ? 'true' : 'false'}
-                  data-agent-native-status={nativeAvailability.status}
-                  className={`group relative flex items-center cursor-pointer whitespace-nowrap overflow-hidden ${isSelected ? `opacity-100 px-12px py-8px rd-20px mx-2px ${styles.agentItemSelected}` : isMobile ? 'opacity-70 p-4px' : 'opacity-60 p-4px hover:opacity-100'}`}
-                  style={
-                    isSelected
-                      ? {
-                          ...(isMobile ? { transition: 'opacity 0.2s ease, background-color 0.2s ease' } : undefined),
-                          ...(isMobile || suppressSelectionAnimation ? { animation: 'none' } : undefined),
-                        }
-                      : { transition: 'opacity 0.2s ease' }
-                  }
-                  onClick={() => onSelectAgent(getAgentKey(agent))}
+          return (
+            <React.Fragment key={getAgentKey(agent)}>
+              {!isMobile && index > 0 && <div className='text-16px lh-1 p-2px select-none opacity-30'>|</div>}
+              <div
+                data-testid={`agent-pill-${agent.backend}`}
+                data-agent-pill='true'
+                data-agent-key={getAgentKey(agent)}
+                data-agent-type={agent.agent_type}
+                data-agent-selected={isSelected ? 'true' : 'false'}
+                data-agent-native-status={nativeAvailability.status}
+                className={`group relative flex items-center cursor-pointer whitespace-nowrap overflow-hidden ${isSelected ? `opacity-100 px-12px py-8px rd-20px mx-2px ${styles.agentItemSelected}` : isMobile ? 'opacity-70 p-4px' : 'opacity-60 p-4px hover:opacity-100'}`}
+                style={
+                  isSelected
+                    ? {
+                        ...(isMobile ? { transition: 'opacity 0.2s ease, background-color 0.2s ease' } : undefined),
+                        ...(isMobile || suppressSelectionAnimation ? { animation: 'none' } : undefined),
+                      }
+                    : { transition: 'opacity 0.2s ease' }
+                }
+                onClick={() => onSelectAgent(getAgentKey(agent))}
+              >
+                {emojiAvatar ? (
+                  <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{emojiAvatar}</span>
+                ) : logoSrc ? (
+                  <img
+                    src={logoSrc}
+                    alt={`${agent.backend || agent.agent_type} logo`}
+                    width={20}
+                    height={20}
+                    style={{ objectFit: 'contain', flexShrink: 0 }}
+                  />
+                ) : (
+                  <Robot theme='outline' size={20} fill='currentColor' style={{ flexShrink: 0 }} />
+                )}
+                <span
+                  className={`font-medium text-14px ${isSelected ? 'font-semibold ml-4px' : isMobile ? 'max-w-0 opacity-0 overflow-hidden' : 'max-w-0 opacity-0 overflow-hidden group-hover:max-w-100px group-hover:opacity-100 group-hover:ml-8px'}`}
+                  style={{
+                    color: 'var(--text-primary)',
+                    transition: isSelected
+                      ? 'color 0.2s ease, font-weight 0.2s ease'
+                      : isMobile
+                        ? 'none'
+                        : 'max-width 0.6s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) 0.05s, margin 0.6s cubic-bezier(0.2, 0.8, 0.3, 1)',
+                  }}
                 >
-                  {emojiAvatar ? (
-                    <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{emojiAvatar}</span>
-                  ) : logoSrc ? (
-                    <img
-                      src={logoSrc}
-                      alt={`${agent.backend || agent.agent_type} logo`}
-                      width={20}
-                      height={20}
-                      style={{ objectFit: 'contain', flexShrink: 0 }}
-                    />
-                  ) : (
-                    <Robot theme='outline' size={20} fill='currentColor' style={{ flexShrink: 0 }} />
-                  )}
-                  <span
-                    className={`font-medium text-14px ${isSelected ? 'font-semibold ml-4px' : isMobile ? 'max-w-0 opacity-0 overflow-hidden' : 'max-w-0 opacity-0 overflow-hidden group-hover:max-w-100px group-hover:opacity-100 group-hover:ml-8px'}`}
-                    style={{
-                      color: 'var(--text-primary)',
-                      transition: isSelected
-                        ? 'color 0.2s ease, font-weight 0.2s ease'
-                        : isMobile
-                          ? 'none'
-                          : 'max-width 0.6s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) 0.05s, margin 0.6s cubic-bezier(0.2, 0.8, 0.3, 1)',
-                    }}
-                  >
-                    {agent.name}
+                  {displayName}
+                </span>
+                {isRepairRequired && isSelected ? (
+                  <span className='ml-6px rounded-6px bg-[rgb(var(--orange-1))] px-5px py-1px text-10px font-semibold leading-14px text-[rgb(var(--orange-6))]'>
+                    {t('settings.agentManagement.nativeRepairBadge')}
                   </span>
-                  {isRepairRequired && isSelected ? (
-                    <span className='ml-6px rounded-6px bg-[rgb(var(--orange-1))] px-5px py-1px text-10px font-semibold leading-14px text-[rgb(var(--orange-6))]'>
-                      {t('settings.agentManagement.nativeRepairBadge')}
-                    </span>
-                  ) : null}
-                </div>
-              </React.Fragment>
-            );
-          })}
+                ) : null}
+              </div>
+            </React.Fragment>
+          );
+        })}
         {!isMobile && <div className='text-16px lh-1 p-2px select-none opacity-30'>|</div>}
         <Tooltip content={t('settings.agentManagement.discoverMoreAgents', { defaultValue: '发现更多 Agent' })}>
           <div

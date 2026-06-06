@@ -22,6 +22,10 @@ function evaosAgentPresentationKey(agent: EvaosAgentIdentity): string {
   return (agent.backend || agent.agent_type || '').trim().toLowerCase();
 }
 
+export function isEvaosCustomAgentPresentation(agent: EvaosAgentIdentity): boolean {
+  return evaosAgentPresentationKey(agent) === 'aionrs' && agent.agent_source !== 'custom';
+}
+
 function evaosAgentPresentationRank(agent: EvaosAgentIdentity): number {
   const key = evaosAgentPresentationKey(agent);
   if (key === 'openclaw-gateway' || key === 'openclaw') return 0;

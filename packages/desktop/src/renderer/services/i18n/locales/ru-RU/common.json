@@ -58,10 +58,10 @@
   "forward": "Вперёд",
   "more": "Ещё",
   "refresh": "Обновить",
-  "tray.showWindow": "Показать AionUi",
+  "tray.showWindow": "Показать evaOS Workbench",
   "tray.newChat": "Новый чат",
   "tray.closeToTray": "Свернуть в трей",
-  "tray.about": "О программе AionUi",
+  "tray.about": "О программе evaOS Workbench",
   "tray.restart": "Перезапустить",
   "tray.quit": "Выход",
   "tray.runningTasks": "Запущенные задачи",
@@ -72,12 +72,12 @@
   "backendStartup": {
     "incompatibleRuntime": {
       "title": "Эта система не поддерживается встроенным backend",
-      "description": "AionUi открылся, но локальный backend AionCore не может работать в этой версии Linux. Обновитесь до поддерживаемого дистрибутива Linux и перезапустите AionUi.",
+      "description": "evaOS Workbench открылся, но локальный backend managed runtime не может работать в этой версии Linux. Обновитесь до поддерживаемого дистрибутива Linux и перезапустите evaOS Workbench.",
       "requiredVersions": "Требуемые символы среды выполнения: {{versions}}"
     },
     "incompleteInstallation": {
-      "title": "Установка AionUi неполная",
-      "description": "В этой установке отсутствуют обязательные локальные ресурсы, поэтому AionCore не может запуститься. Загрузите и переустановите последнюю версию AionUi. Если проблема повторится после переустановки, проверьте, не поместило ли защитное или антивирусное ПО AionCore в карантин.",
+      "title": "Установка evaOS Workbench неполная",
+      "description": "В этой установке отсутствуют обязательные локальные ресурсы, поэтому managed runtime не может запуститься. Загрузите и переустановите последнюю версию evaOS Workbench. Если проблема повторится после переустановки, проверьте, не поместило ли защитное или антивирусное ПО managed runtime в карантин.",
       "downloadLatest": "Скачать последнюю версию",
       "sendDiagnostics": "Отправить диагностику"
     }

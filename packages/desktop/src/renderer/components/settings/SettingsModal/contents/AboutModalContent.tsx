@@ -29,16 +29,16 @@ type LinkItem =
 
 export const EVAOS_BETA_ABOUT_LINKS = {
   appName: 'evaOS Workbench Beta',
-  repository: 'https://github.com/100yenadmin/AionUi',
-  documentation: 'https://github.com/100yenadmin/AionUi/blob/evaos/dev/docs/evaos/public-beta-packaging-rollback.md',
-  releases: 'https://github.com/100yenadmin/AionUi/releases',
-  support: 'https://github.com/100yenadmin/AionUi/issues/13',
+  repository: 'https://www.electricsheephq.com',
+  documentation: 'https://www.electricsheephq.com',
+  releases: 'https://www.electricsheephq.com/contact',
+  support: 'https://www.electricsheephq.com/contact',
 } as const;
 
 export const EVAOS_BETA_SUPPORT_NOTICE = {
   title: 'Beta support',
   body: 'The released macOS app remains the fallback until public beta gates pass.',
-  supportRoute: 'Support: GitHub issue #13',
+  supportRoute: 'Support: ElectricSheep contact',
 } as const;
 
 export const EVAOS_BETA_BUILD_METADATA = [
