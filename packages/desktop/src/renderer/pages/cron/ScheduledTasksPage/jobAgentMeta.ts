@@ -5,6 +5,7 @@
  */
 
 import type { ICronJob } from '@/common/adapter/ipcBridge';
+import { getEvaosAgentDisplayName } from '@renderer/evaos/evaosAgentPresentation';
 import { getAgentLogo } from '@renderer/utils/model/agentLogo';
 import type { AgentMetadata } from '@renderer/utils/model/agentTypes';
 
@@ -29,15 +30,28 @@ export function getJobAgentMeta(job: ICronJob, cliAgents: AgentMetadata[]): { na
   if (rawType === 'acp') {
     const backend = job.metadata.agent_config?.backend;
     const detected = backend ? cliAgents.find((a) => (a.backend || a.agent_type) === backend) : undefined;
+    const fallbackName = job.metadata.agent_config?.name || backend || rawType;
     return {
-      name: detected?.name || job.metadata.agent_config?.name || backend || rawType,
+      name: getEvaosAgentDisplayName(
+        detected || {
+          agent_type: backend || rawType,
+          backend: backend || rawType,
+          name: fallbackName,
+        }
+      ),
       logo: getAgentLogo(backend),
     };
   }
 
   const detected = cliAgents.find((a) => (a.backend || a.agent_type) === rawType);
   return {
-    name: detected?.name || rawType,
+    name: getEvaosAgentDisplayName(
+      detected || {
+        agent_type: rawType,
+        backend: rawType,
+        name: rawType,
+      }
+    ),
     logo: getAgentLogo(rawType),
   };
 }

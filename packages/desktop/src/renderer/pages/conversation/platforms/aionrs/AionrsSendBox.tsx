@@ -27,6 +27,7 @@ import { createSetUploadFile, useSendBoxFiles } from '@/renderer/hooks/chat/useS
 import { useSlashCommands } from '@/renderer/hooks/chat/useSlashCommands';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { useLatestRef } from '@/renderer/hooks/ui/useLatestRef';
+import { getEvaosAgentDisplayName } from '@/renderer/evaos/evaosAgentPresentation';
 import { savePreferredMode } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import {
   shouldEnqueueConversationCommand,
@@ -175,6 +176,13 @@ const AionrsSendBox: React.FC<{
 
   const { setSendBoxHandler } = usePreviewContext();
   const isBusy = running;
+  const placeholderAgentName =
+    agent_name ||
+    getEvaosAgentDisplayName({
+      agent_type: 'aionrs',
+      backend: 'aionrs',
+      name: 'AionCLI',
+    });
 
   const setContentRef = useLatestRef(setContent);
   const contentRef = useLatestRef(content);
@@ -572,7 +580,7 @@ const AionrsSendBox: React.FC<{
         placeholder={
           current_model?.use_model
             ? t('acp.sendbox.placeholder', {
-                backend: agent_name || 'AionCLI',
+                backend: placeholderAgentName,
                 defaultValue: `Send message to {{backend}}...`,
               })
             : t('conversation.chat.noModelSelected')

@@ -28,10 +28,22 @@ vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
   useFeedback: () => ({ openFeedback: openFeedbackMock }),
 }));
 
+vi.mock('@/renderer/pages/conversation/hooks/useConversationAgents', () => ({
+  useConversationAgents: () => ({
+    cliAgents: [],
+    presetAssistants: [],
+    isLoading: false,
+    refresh: async () => undefined,
+  }),
+}));
+
 import MessageAgentStatus from '@/renderer/pages/conversation/Messages/components/MessageAgentStatus';
 import type { IMessageAgentStatus } from '@/common/chat/chatLib';
 
-const buildMessage = (status: IMessageAgentStatus['content']['status']): IMessageAgentStatus =>
+const buildMessage = (
+  status: IMessageAgentStatus['content']['status'],
+  content?: Partial<IMessageAgentStatus['content']>
+): IMessageAgentStatus =>
   ({
     id: 'm1',
     type: 'agent_status',
@@ -39,6 +51,7 @@ const buildMessage = (status: IMessageAgentStatus['content']['status']): IMessag
       backend: 'claude',
       status,
       agent_name: 'Claude',
+      ...content,
     },
   }) as IMessageAgentStatus;
 
@@ -71,5 +84,13 @@ describe('MessageAgentStatus — FeedbackButton wiring', () => {
       module: 'conversation-session',
       autoScreenshot: true,
     });
+  });
+
+  it('renders raw aionrs fallback as Custom when agent_name is missing', () => {
+    render(<MessageAgentStatus message={buildMessage('connected', { backend: 'aionrs', agent_name: undefined })} />);
+
+    expect(screen.getByText('Custom')).toBeInTheDocument();
+    expect(screen.getByText('acp.status.connected:Custom')).toBeInTheDocument();
+    expect(screen.queryByText('Aionrs')).not.toBeInTheDocument();
   });
 });
