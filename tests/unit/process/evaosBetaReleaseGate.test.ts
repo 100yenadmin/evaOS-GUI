@@ -24,6 +24,10 @@ const afterSign = require('../../../scripts/afterSign.js') as {
     baseOptions: Record<string, string>
   ) => Record<string, string> | undefined;
 };
+const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
+  buildNotarytoolSubmitArgs: (dmgPath: string, env: Record<string, string | undefined>) => string[];
+  findDmgArtifacts: (outDir: string) => string[];
+};
 
 const repoRoot = path.resolve(__dirname, '../../..');
 
@@ -166,6 +170,75 @@ describe('evaOS beta release gate', () => {
       keychainProfile: 'evaos-workbench-notary',
       keychain: '/secure/evaos-release-signing.keychain-db',
     });
+  });
+
+  it('builds notarytool submit args for DMG finalization credential paths', () => {
+    expect(
+      macDmgFinalizer.buildNotarytoolSubmitArgs('/release/evaOS.dmg', {
+        NOTARY_PROFILE: 'evaos-workbench-notary',
+        NOTARY_KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
+      })
+    ).toEqual([
+      'notarytool',
+      'submit',
+      '/release/evaOS.dmg',
+      '--keychain-profile',
+      'evaos-workbench-notary',
+      '--keychain',
+      '/secure/evaos-release-signing.keychain-db',
+    ]);
+
+    expect(
+      macDmgFinalizer.buildNotarytoolSubmitArgs('/release/evaOS.dmg', {
+        APPLE_ID: 'release@example.com',
+        APPLE_ID_PASSWORD: 'app-password',
+        TEAM_ID: 'TEAMID',
+      })
+    ).toEqual([
+      'notarytool',
+      'submit',
+      '/release/evaOS.dmg',
+      '--apple-id',
+      'release@example.com',
+      '--password',
+      'app-password',
+      '--team-id',
+      'TEAMID',
+    ]);
+
+    expect(
+      macDmgFinalizer.buildNotarytoolSubmitArgs('/release/evaOS.dmg', {
+        APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+        APPLE_API_KEY_ID: 'ABC123',
+        APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+      })
+    ).toEqual([
+      'notarytool',
+      'submit',
+      '/release/evaOS.dmg',
+      '--key',
+      '/secure/AuthKey_ABC123.p8',
+      '--key-id',
+      'ABC123',
+      '--issuer',
+      'd5631714-a680-4b4b-8156-b4ed624c0845',
+    ]);
+  });
+
+  it('finds macOS DMG artifacts in stable sort order', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-dmg-finalizer-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'zeta.dmg'), 'dmg');
+      fs.writeFileSync(path.join(dir, 'alpha.dmg'), 'dmg');
+      fs.writeFileSync(path.join(dir, 'alpha.zip'), 'zip');
+
+      expect(macDmgFinalizer.findDmgArtifacts(dir).map((filePath) => path.basename(filePath))).toEqual([
+        'alpha.dmg',
+        'zeta.dmg',
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('passes the repository release config audit', () => {
