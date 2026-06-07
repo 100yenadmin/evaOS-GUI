@@ -2,6 +2,17 @@
 
 本项目使用 GPT 驱动的 GitHub Actions 工作流辅助 PR 审查。
 
+## evaOS macOS-first PR lane
+
+During the evaOS Workbench controlled 1.0 finish-line sprint, PR checks are macOS-first:
+
+- Blocking PR checks are code quality, coverage, release-script safety, macOS unit tests, and macOS build/install smoke.
+- Windows and Linux/Ubuntu compatibility builds are deferred to manual, release, or scheduled workflows until after the controlled macOS 1.0 release.
+- Windows checks only run from `PR Checks` when `workflow_dispatch.run_windows_checks` is explicitly set.
+- Linux and Windows release artifacts remain covered by release/manual workflows, not routine parity PRs.
+
+This keeps day-to-day parity work focused on the platform used by the beta audience while preserving a post-release path for cross-platform hardening.
+
 ## 架构概览
 
 ```

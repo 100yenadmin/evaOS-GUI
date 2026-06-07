@@ -86,7 +86,6 @@ describe('TerminalPage', () => {
   });
 
   it('loads terminal runtime evidence through the broker and renders no secrets', async () => {
-    const user = userEvent.setup();
     brokerMocks.runtimeStatus.mockResolvedValue({
       success: true,
       data: {
@@ -105,12 +104,11 @@ describe('TerminalPage', () => {
 
     const { container } = render(<TerminalPage />);
 
-    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
-
     expect(await screen.findByText('Customer VM shell is offline.')).toBeInTheDocument();
-    expect(screen.getByTestId('evaos-terminal-status')).toHaveTextContent('broker://runtime/terminal/audit_123');
-    expect(screen.getByTestId('evaos-terminal-status')).toHaveTextContent('audit_terminal_123');
+    expect(screen.getByTestId('evaos-runtime-dashboard-terminal')).toHaveTextContent(
+      'broker://runtime/terminal/audit_123'
+    );
+    expect(screen.getByTestId('evaos-runtime-dashboard-terminal')).toHaveTextContent('audit_terminal_123');
     await waitFor(() => {
       expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'terminal' });
     });
@@ -145,18 +143,29 @@ describe('TerminalPage', () => {
           sourcePointer: 'broker://runtime/terminal/second',
           auditId: 'audit_second',
         },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          schemaVersion: 'evaos.runtime_status.v1',
+          customerId: 'second-customer',
+          runtimeKey: 'terminal',
+          displayLabel: 'Terminal',
+          status: 'denied',
+          healthSummary: 'Second terminal denied',
+          sourcePointer: 'broker://runtime/terminal/second',
+          auditId: 'audit_second',
+        },
       });
 
     render(<TerminalPage />);
 
-    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
     expect(await screen.findByText('First terminal evidence')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Second Customer$/ }));
     expect(screen.queryByText('First terminal evidence')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^load status$/i }));
     expect(await screen.findByText('Second terminal denied')).toBeInTheDocument();
     expect(screen.queryByText('broker://runtime/terminal/first')).not.toBeInTheDocument();
   });
@@ -176,7 +185,7 @@ describe('TerminalPage', () => {
     render(<TerminalPage />);
 
     expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^load status$/i }));
 
     expect(
       await screen.findByText('Terminal broker returned evidence for a different runtime or customer.')

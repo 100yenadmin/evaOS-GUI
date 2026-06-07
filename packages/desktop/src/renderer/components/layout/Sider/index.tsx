@@ -45,7 +45,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/evaos');
-  const showLogout = status === 'authenticated';
+  const showLogout = status === 'authenticated' || evaosSidebarState.brokerAuthenticated;
 
   useEffect(() => {
     if (!pathname.startsWith('/settings')) {

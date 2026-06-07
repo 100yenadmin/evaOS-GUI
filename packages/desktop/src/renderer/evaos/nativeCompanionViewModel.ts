@@ -179,7 +179,7 @@ function readinessStripForState(
       label: 'Trust authority',
       value: 'Native companion',
       tone: 'neutral',
-      help: 'AionUi only presents status and opens the repair workflow.',
+      help: 'evaOS Workbench only presents status and opens the repair workflow.',
     },
   ];
 }

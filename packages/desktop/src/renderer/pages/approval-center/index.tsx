@@ -156,7 +156,7 @@ const ApprovalCenterPage: React.FC = () => {
         const response = await evaosApprovalCenter.denyApproval.invoke({
           customerId: selectedCustomerId,
           approvalId: approval.approvalId,
-          reason: 'Denied from AionUi public beta Approval Center.',
+          reason: 'Denied from evaOS controlled beta Approval Center.',
         });
         if (!isSelectedCustomer(selectedCustomerId)) {
           return;

@@ -137,6 +137,10 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.state).toBe('not_paired');
     expect(viewModel.primaryAction.kind).toBe('open_released_workbench');
     expect(viewModel.primaryAction.label).toBe('Pair this Mac');
+    expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).not.toMatch(/AionUi|Aion CLI/i);
+    expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).toContain(
+      'evaOS Workbench only presents status and opens the repair workflow.'
+    );
     expect(viewModel.repairSteps.join(' ')).not.toMatch(
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );

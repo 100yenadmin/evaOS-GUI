@@ -21,9 +21,9 @@ const ROUTE_CHECKS = [
     hash: '/evaos',
     title: 'evaOS',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Attach blocked'],
+    settledMarkers: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Runtime action blocked'],
     loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
-    expected: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Attach blocked'],
+    expected: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Runtime action blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
     requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
@@ -32,9 +32,9 @@ const ROUTE_CHECKS = [
     hash: '/hermes',
     title: 'Hermes',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Attach blocked'],
+    settledMarkers: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Runtime action blocked'],
     loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
-    expected: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Attach blocked'],
+    expected: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Runtime action blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
     requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
@@ -43,9 +43,9 @@ const ROUTE_CHECKS = [
     hash: '/mission-control',
     title: 'Mission Control',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Attach blocked'],
+    settledMarkers: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Runtime action blocked'],
     loadedStateRequiredMarkers: ['paperclip runtime status', 'customer scoped runtime proof'],
-    expected: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Attach blocked'],
+    expected: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Runtime action blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'],
     requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
@@ -118,14 +118,7 @@ const ROUTE_CHECKS = [
     hash: '/native-companion',
     title: 'Mac & iPhone',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: [
-      'Mac & iPhone',
-      'Native companion status matrix',
-      'Native companion boundary',
-      'RC native canary contract',
-      'evaos-workbench-beta',
-      'Boundary clean',
-    ],
+    settledMarkers: ['Mac & iPhone', 'MAC & IPHONE REPAIR', 'Boundary clean'],
     settledAnyMarkers: ['Native companion ready', 'Native companion repair required'],
     loadedStateRequiredMarkers: [
       'native companion status matrix',
@@ -135,25 +128,14 @@ const ROUTE_CHECKS = [
     ],
     expected: [
       'Mac & iPhone',
-      'Native companion status matrix',
-      'Native companion boundary',
-      'Not installed',
-      'Not paired',
-      'Permission needed',
-      'Ready',
-      'Unavailable',
-      'Open-native handoff',
-      'Open native companion',
-      'RC native canary contract',
-      'Status source: native-companion:ready',
-      'Shell is local trust authority: false',
-      'Renderer receives native secrets: false',
-      'Deep-link scheme: evaos-workbench-beta',
-      'evaos-workbench-beta',
-      'Renderer receives callback secrets: false',
+      'Repair Mac pairing, permissions, iPhone Mirroring, and local-control readiness before evaOS or Hermes starts chat.',
+      'Trust authority',
+      'Native companion',
+      'MAC & IPHONE REPAIR',
+      'Advanced diagnostics',
       'Boundary clean',
     ],
-    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'access_token', 'refresh_token'],
+    forbidden: ['AionUi', 'desktop_session', 'Bearer', 'provider_grant', 'access_token', 'refresh_token'],
     requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
 ];
@@ -255,7 +237,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Mission Control',
       'Denied Browser Fixture Co',
       'fixture-customer-browser-denied',
-      'fixture-audit-runtime-paperclip',
+      'fixture-audit-denied-runtime-paperclip',
     ],
     loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'paperclip customer switch proof'],
     action: 'click-mission-control-switch-clears',
@@ -265,12 +247,14 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Denied Browser Fixture Co',
       'fixture-customer-browser-denied',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Paperclip queue is waiting',
-      'local-fixture:runtime:paperclip',
-      'fixture-audit-runtime-paperclip',
+      'Paperclip denied for wrong customer fixture',
+      'local-fixture:denied-runtime:paperclip',
+      'fixture-audit-denied-runtime-paperclip',
     ],
     forbidden: [
       'fixture-customer-acme',
+      'local-fixture:runtime:paperclip',
+      'fixture-audit-runtime-paperclip',
       'desktop_session',
       'Bearer',
       'provider_grant',
@@ -732,12 +716,14 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     isolateRendererState: true,
     expected: [
       'Terminal',
-      'Customer VM shell runtime status from evaOS broker evidence',
+      'Customer VM shell runtime loaded from broker-owned runtime evidence',
       'Acme Fixture Co',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
       'Customer VM shell is offline in this local fixture',
-      'Source: local-fixture:runtime:terminal-offline',
-      'Audit: fixture-audit-runtime-terminal-offline',
+      'SOURCE',
+      'local-fixture:runtime:terminal-offline',
+      'AUDIT',
+      'fixture-audit-runtime-terminal-offline',
       'Fail-closed until evaOS broker returns customer-scoped Terminal evidence.',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
@@ -761,8 +747,10 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Denied Browser Fixture Co',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
       'Terminal denied for wrong customer fixture',
-      'Source: local-fixture:runtime:terminal-denied',
-      'Audit: fixture-audit-runtime-terminal-denied',
+      'SOURCE',
+      'local-fixture:runtime:terminal-denied',
+      'AUDIT',
+      'fixture-audit-runtime-terminal-denied',
     ],
     forbidden: [
       'fixture-audit-runtime-terminal-offline',
@@ -794,6 +782,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'deep-link policy',
       'RC native canary contract',
     ],
+    action: 'click-native-companion-advanced-diagnostics',
     isolateRendererState: true,
     expected: [
       'Mac & iPhone',
@@ -974,12 +963,12 @@ function loadPlaywrightElectron(repoRoot, requirePlaywright) {
 }
 
 async function clickLoad(page) {
-  const loadButton = page.getByRole('button', { name: /^Load$/ }).first();
+  const loadButton = page.getByRole('button', { name: /^(Load|Load status)$/ }).first();
   await loadButton.waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForFunction(
     () =>
       Array.from(document.querySelectorAll('button')).some(
-        (button) => button.textContent?.trim() === 'Load' && !button.disabled
+        (button) => /^(Load|Load status)$/.test(button.textContent?.trim() ?? '') && !button.disabled
       ),
     { timeout: 10000 }
   );
@@ -1091,10 +1080,7 @@ async function clickMissionControlSwitchClears(page) {
     'fixture-customer-acme',
     'fixture-audit-runtime-paperclip',
   ]);
-  await clickMissionControlCheck(page, 'fixture-customer-browser-denied');
-  await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-runtime-paperclip'), {
-    timeout: 10000,
-  });
+  await clickMissionControlCheck(page, 'fixture-audit-denied-runtime-paperclip');
 }
 
 async function clickCustomerTarget(page, name) {
@@ -1198,6 +1184,15 @@ async function clickTerminalSwitchClears(page) {
   ]);
   await clickLoad(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-runtime-terminal-denied'), {
+    timeout: 10000,
+  });
+}
+
+async function clickNativeCompanionAdvancedDiagnostics(page) {
+  const advancedButton = page.getByRole('button', { name: /Advanced diagnostics/i }).first();
+  await advancedButton.waitFor({ state: 'visible', timeout: 10000 });
+  await advancedButton.click();
+  await page.waitForFunction(() => document.body.innerText.includes('Native companion status matrix'), {
     timeout: 10000,
   });
 }
@@ -1434,6 +1429,8 @@ async function runLocalShellSmoke(options = {}) {
           await clickBusinessBrowserSwitchClears(page);
         } else if (check.action === 'click-terminal-switch-clears') {
           await clickTerminalSwitchClears(page);
+        } else if (check.action === 'click-native-companion-advanced-diagnostics') {
+          await clickNativeCompanionAdvancedDiagnostics(page);
         } else if (check.action === 'click-company-brain-switch-clears') {
           await clickCompanyBrainSwitchClears(page);
         } else if (check.action === 'click-refresh-targets') {

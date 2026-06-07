@@ -156,4 +156,20 @@ describe('evaOS agent presentation', () => {
       expect(source, relativePath).not.toMatch(/AionUi does not|AionUi owns|AionUi shell/i);
     }
   });
+
+  it('keeps controlled beta approval and native repair copy free of upstream shell branding', () => {
+    const visibleControlledBetaSources = [
+      'packages/desktop/src/renderer/pages/approval-center/index.tsx',
+      'packages/desktop/src/renderer/evaos/nativeCompanionViewModel.ts',
+      'packages/desktop/src/renderer/components/agent/ChannelConflictWarning.tsx',
+    ];
+
+    for (const relativePath of visibleControlledBetaSources) {
+      const source = readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+
+      expect(source, relativePath).not.toMatch(
+        /AionUi public beta|AionUi only presents|Aion CLI|AionUi Channels|agents in AionUi|restart OpenClaw and AionUi|credentials for AionUi|in AionUi Channels/i
+      );
+    }
+  });
 });

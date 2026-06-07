@@ -112,4 +112,145 @@ describe('RuntimeDashboardPage', () => {
     expect(await screen.findByText(/Opened evaOS through the evaOS broker/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
   });
+
+  it('loads brokered runtime status automatically for the selected customer', async () => {
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    await waitFor(() =>
+      expect(evaosBrokerMock.runtimeStatus).toHaveBeenCalledWith({
+        customerId: 'fixture-customer-acme',
+        runtime: 'openclaw',
+      })
+    );
+    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
+    expect(screen.getByText('live')).toBeInTheDocument();
+  });
+
+  it('does not advertise runtime actions when status omits advisory actions', async () => {
+    evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'fixture-customer-acme',
+        customerAccountId: 'fixture-account-acme',
+        runtimeKey: 'openclaw',
+        displayLabel: 'evaOS',
+        status: 'running',
+        healthSummary: 'Runtime live without advisory action list',
+        sourcePointer: 'broker:runtime_status:openclaw',
+        auditId: 'audit-runtime-status',
+      },
+    });
+
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    expect(await screen.findByText('Runtime action blocked')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+    expect(evaosBrokerMock.runtimeAction).not.toHaveBeenCalled();
+  });
+
+  it('settles denied broker evidence without exposing attach or open actions', async () => {
+    evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'fixture-customer-acme',
+        customerAccountId: 'fixture-account-acme',
+        runtimeKey: 'openclaw',
+        displayLabel: 'evaOS',
+        status: 'denied',
+        healthSummary: 'Runtime denied by broker policy',
+        actions: [],
+        sourcePointer: 'broker:runtime_status:openclaw',
+        auditId: 'audit-runtime-denied',
+      },
+    });
+
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    expect((await screen.findAllByText('denied')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Runtime action blocked')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+  });
+
+  it('maps open-dashboard evidence to a safe broker open action', async () => {
+    evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'fixture-customer-acme',
+        customerAccountId: 'fixture-account-acme',
+        runtimeKey: 'openclaw',
+        displayLabel: 'evaOS',
+        status: 'repair_required',
+        healthSummary: 'Runtime needs broker repair before attach.',
+        actions: ['open_dashboard'],
+        sourcePointer: 'broker:runtime_status:openclaw',
+        auditId: 'audit-runtime-repair',
+      },
+    });
+    evaosBrokerMock.runtimeAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        status: 'opened',
+        runtimeKey: 'openclaw',
+        customerId: 'fixture-customer-acme',
+        message: 'access_token hidden by renderer fallback',
+        urlSummary: {
+          scheme: 'https',
+          host: 'openclaw.fixture.example.test',
+          displayText: 'openclaw.fixture.example.test/workspace',
+          redacted: true,
+        },
+        sourcePointer: 'broker:runtime_launch:openclaw',
+        auditId: 'audit-runtime-open',
+        backendEnforced: true,
+      },
+    });
+
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    expect(await screen.findByText('repair')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    await waitFor(() =>
+      expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
+        customerId: 'fixture-customer-acme',
+        runtime: 'openclaw',
+        action: 'open',
+      })
+    );
+    expect(await screen.findByText(/Target openclaw.fixture.example.test\/workspace/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/access_token|desktop_session|Bearer|token=/i);
+  });
 });

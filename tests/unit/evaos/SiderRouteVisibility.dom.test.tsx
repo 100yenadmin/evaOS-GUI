@@ -34,6 +34,7 @@ const customerContextMock = vi.hoisted(() => ({
   loading: false,
   error: undefined as string | undefined,
   selectCustomer: vi.fn(),
+  clearEvaosCustomerContext: vi.fn(),
   useEvaosCustomerContext: vi.fn(),
 }));
 
@@ -81,7 +82,7 @@ vi.mock('@renderer/hooks/context/AuthContext', () => ({
 
 vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   useEvaosCustomerContext: customerContextMock.useEvaosCustomerContext,
-  clearEvaosCustomerContext: vi.fn(),
+  clearEvaosCustomerContext: customerContextMock.clearEvaosCustomerContext,
 }));
 
 vi.mock('@renderer/hooks/useEvaosBrokerSessionStatus', () => ({
@@ -153,6 +154,7 @@ describe('Sider runtime route visibility', () => {
     customerContextMock.loading = false;
     customerContextMock.error = undefined;
     customerContextMock.selectCustomer.mockReset();
+    customerContextMock.clearEvaosCustomerContext.mockReset();
     customerContextMock.useEvaosCustomerContext.mockClear();
     customerContextMock.useEvaosCustomerContext.mockImplementation(() => ({
       targets: customerContextMock.targets,
@@ -353,9 +355,56 @@ describe('Sider runtime route visibility', () => {
 
   it('signs out by revoking the broker session before clearing the shell auth state', async () => {
     const user = userEvent.setup();
+    const sessionClearedListener = vi.fn();
     customerContextMock.roles = ['owner'];
+    window.addEventListener('evaos:desktop-session-cleared', sessionClearedListener);
 
     renderSider();
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(brokerMocks.revokeSession).toHaveBeenCalledTimes(1);
+      expect(authMock.logout).toHaveBeenCalledTimes(1);
+    });
+    expect(customerContextMock.clearEvaosCustomerContext).toHaveBeenCalledTimes(1);
+    expect(sessionClearedListener).toHaveBeenCalledTimes(1);
+    expect(sessionClearedListener.mock.calls[0][0]).toMatchObject({ detail: { source: 'footer' } });
+    window.removeEventListener('evaos:desktop-session-cleared', sessionClearedListener);
+  });
+
+  it('keeps the beta shell account footer active when only the broker desktop session is authenticated', async () => {
+    const user = userEvent.setup();
+    authMock.status = 'unauthenticated';
+    authMock.user = null;
+    customerContextMock.roles = ['admin'];
+    customerContextMock.isOperator = true;
+    customerContextMock.selectedCustomerId = 'david-poku';
+    customerContextMock.targets = [
+      {
+        customerId: 'david-poku',
+        displayName: 'David Poku Co',
+        email: 'ops@example.test',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: true,
+      },
+      {
+        customerId: 'second-customer',
+        displayName: 'Second Customer',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: false,
+      },
+    ];
+
+    renderSider();
+
+    expect(screen.getByText('Viewing')).toBeInTheDocument();
+    expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+    expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
+    expect(screen.getByText(/v2\.1\.12-evaos-beta\.0/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Selected customer')).toHaveValue('david-poku');
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 

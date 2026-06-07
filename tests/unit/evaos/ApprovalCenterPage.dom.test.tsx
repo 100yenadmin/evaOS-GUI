@@ -204,7 +204,7 @@ describe('ApprovalCenterPage', () => {
       expect(approvalCenterMocks.denyApproval).toHaveBeenCalledWith({
         customerId: 'david-poku',
         approvalId: 'approval-email-1',
-        reason: 'Denied from AionUi public beta Approval Center.',
+        reason: 'Denied from evaOS controlled beta Approval Center.',
       });
     });
     expect(await screen.findByText('Approval denied. openclaw: denied Audit audit_result_123.')).toBeInTheDocument();
@@ -333,7 +333,7 @@ describe('ApprovalCenterPage', () => {
       expect(approvalCenterMocks.denyApproval).toHaveBeenCalledWith({
         customerId: 'second-customer',
         approvalId: 'approval-email-1',
-        reason: 'Denied from AionUi public beta Approval Center.',
+        reason: 'Denied from evaOS controlled beta Approval Center.',
       });
     });
   });

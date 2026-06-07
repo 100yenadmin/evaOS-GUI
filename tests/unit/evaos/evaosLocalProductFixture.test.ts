@@ -189,6 +189,10 @@ describe('evaOS local product fixture', () => {
       customerId: 'fixture-customer-acme',
       runtime: 'paperclip',
     });
+    const deniedPaperclip = evaosLocalProductFixtureRuntimeStatus({
+      customerId: 'fixture-customer-browser-denied',
+      runtime: 'paperclip',
+    });
     const terminal = evaosLocalProductFixtureRuntimeStatus({
       customerId: 'fixture-customer-acme',
       runtime: 'terminal',
@@ -216,6 +220,12 @@ describe('evaOS local product fixture', () => {
     });
     expect(hermes.status).toBe('done');
     expect(paperclip.status).toBe('waiting');
+    expect(deniedPaperclip).toMatchObject({
+      runtimeKey: 'paperclip',
+      status: 'denied',
+      sourcePointer: 'local-fixture:denied-runtime:paperclip',
+      auditId: 'fixture-audit-denied-runtime-paperclip',
+    });
     expect(terminal.status).toBe('offline');
     expect(deniedTerminal).toMatchObject({
       runtimeKey: 'terminal',
@@ -230,7 +240,16 @@ describe('evaOS local product fixture', () => {
       auditId: 'fixture-audit-browser-denied-policy',
     });
     expect(
-      stringValues({ browser, openclaw, hermes, paperclip, terminal, deniedTerminal, deniedBrowser }).join('\n')
+      stringValues({
+        browser,
+        openclaw,
+        hermes,
+        paperclip,
+        deniedPaperclip,
+        terminal,
+        deniedTerminal,
+        deniedBrowser,
+      }).join('\n')
     ).not.toMatch(SECRET_PATTERN);
   });
 

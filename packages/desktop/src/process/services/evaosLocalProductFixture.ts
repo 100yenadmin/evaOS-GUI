@@ -406,6 +406,23 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
     },
   };
 
+  if (request.runtime === 'paperclip' && request.customerId !== CUSTOMER_ID) {
+    return clone({
+      schemaVersion: 'evaos.runtime_status.v1',
+      customerId: request.customerId,
+      customerAccountId: CUSTOMER_ACCOUNT_ID,
+      runtimeKey: 'paperclip',
+      displayLabel: 'Paperclip',
+      status: 'denied',
+      healthSummary: `${FIXTURE_LABEL}: Paperclip denied for wrong customer fixture.`,
+      owner: 'operations',
+      lastCheckedAt: NOW,
+      actions: [],
+      sourcePointer: 'local-fixture:denied-runtime:paperclip',
+      auditId: 'fixture-audit-denied-runtime-paperclip',
+    });
+  }
+
   if (request.runtime === 'terminal' && request.customerId !== CUSTOMER_ID) {
     return clone({
       schemaVersion: 'evaos.runtime_status.v1',

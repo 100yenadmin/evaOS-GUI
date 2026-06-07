@@ -242,8 +242,12 @@ describe('evaOS local shell smoke', () => {
       expect.objectContaining({
         action: 'click-mission-control-switch-clears',
         loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'paperclip customer switch proof'],
-        expected: expect.arrayContaining(['fixture-customer-browser-denied', 'fixture-audit-runtime-paperclip']),
-        forbidden: expect.arrayContaining(['fixture-customer-acme']),
+        expected: expect.arrayContaining([
+          'fixture-customer-browser-denied',
+          'fixture-audit-denied-runtime-paperclip',
+          'local-fixture:denied-runtime:paperclip',
+        ]),
+        forbidden: expect.arrayContaining(['fixture-customer-acme', 'fixture-audit-runtime-paperclip']),
       })
     );
 
@@ -478,8 +482,8 @@ describe('evaOS local shell smoke', () => {
         loadedStateRequiredMarkers: ['terminal runtime status', 'terminal source pointer', 'terminal audit id'],
         expected: expect.arrayContaining([
           'Customer VM shell is offline in this local fixture',
-          'Source: local-fixture:runtime:terminal-offline',
-          'Audit: fixture-audit-runtime-terminal-offline',
+          'local-fixture:runtime:terminal-offline',
+          'fixture-audit-runtime-terminal-offline',
         ]),
       })
     );

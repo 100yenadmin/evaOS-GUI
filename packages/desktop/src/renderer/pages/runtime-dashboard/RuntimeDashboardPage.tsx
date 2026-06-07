@@ -181,6 +181,13 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     }
   }, [customerContext.selectedCustomerId, isCurrentRequest, runtimeKey, title]);
 
+  useEffect(() => {
+    if (customerContext.loading || !customerContext.selectedCustomerId) {
+      return;
+    }
+    void loadRuntimeStatus();
+  }, [customerContext.loading, customerContext.selectedCustomerId, loadRuntimeStatus]);
+
   const runRuntimeAction = useCallback(
     async (action: IEvaosRuntimeActionType) => {
       const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
@@ -230,15 +237,13 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
   const statusText = safeUiText(statusView?.status, runtimeError ? 'blocked' : 'waiting');
   const healthText = runtimeError ?? safeUiText(statusView?.healthSummary, subtitle);
-  const attachAvailable = hasSafeAttachAction(statusView);
   const settledState = runtimeSettledState(statusView, runtimeError);
-  const canAttachRuntime = hasRuntimeAction(statusView, [
-    'attach_dashboard',
-    'start_attach',
-    'launch',
-    'runtime_launch',
-  ]);
-  const canOpenRuntime = hasRuntimeAction(statusView, ['open_dashboard', 'open']);
+  const actionsAllowedByState = settledState !== 'denied' && settledState !== 'offline';
+  const canAttachRuntime =
+    actionsAllowedByState &&
+    hasRuntimeAction(statusView, ['attach_dashboard', 'start_attach', 'launch', 'runtime_launch']);
+  const canOpenRuntime = actionsAllowedByState && hasRuntimeAction(statusView, ['open_dashboard', 'open']);
+  const attachAvailable = actionsAllowedByState && hasSafeAttachAction(statusView);
 
   return (
     <div
