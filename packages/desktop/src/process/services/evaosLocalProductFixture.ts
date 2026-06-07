@@ -80,6 +80,8 @@ export function evaosLocalProductFixtureSessionStatus(env: NodeJS.ProcessEnv = p
     state: 'authenticated',
     authenticated: true,
     expired: false,
+    sessionKey: `evaos-local-fixture-${persona}`,
+    sessionEpoch: 1,
     userEmail: persona === 'member' ? 'member@example.test' : 'admin@100yen.org',
     expiresAt: '2026-06-11T10:00:00.000Z',
     source: 'memory',

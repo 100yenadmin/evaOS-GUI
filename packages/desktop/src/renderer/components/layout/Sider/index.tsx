@@ -4,14 +4,17 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePreviewContext } from '@renderer/pages/conversation/Preview/context/PreviewContext';
 import { cleanupSiderTooltips, getSiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import { clearEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
+import { EVAOS_DESKTOP_SESSION_CLEARED_EVENT } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
 import EvaosSidebarSection from '@renderer/evaos/EvaosSidebarSection';
 import { useEvaosSidebarState } from '@renderer/evaos/useEvaosSidebarState';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
+import { evaosBroker } from '@/common/adapter/ipcBridge';
 import { SiderScheduledEntry, SiderSearchEntry, SiderToolbar } from './SiderNav';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
@@ -125,6 +128,14 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     cleanupSiderTooltips();
     blurActiveElement();
     closePreview();
+    try {
+      await evaosBroker.revokeSession.invoke();
+    } catch (error) {
+      console.error('evaOS broker session revoke failed:', error);
+    } finally {
+      clearEvaosCustomerContext();
+      window.dispatchEvent(new CustomEvent(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, { detail: { source: 'footer' } }));
+    }
     try {
       await logout();
     } catch (error) {
@@ -265,6 +276,11 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         onSettingsClick={handleSettingsClick}
         onThemeToggle={handleQuickThemeToggle}
         accountLabel={user?.username ?? evaosSidebarState.accountLabel}
+        selectedCustomerId={evaosSidebarState.selectedCustomerId}
+        selectedCustomerLabel={evaosSidebarState.selectedCustomerLabel}
+        customerTargets={evaosSidebarState.customerTargets}
+        canSwitchCustomers={evaosSidebarState.canSwitchCustomers}
+        onCustomerChange={evaosSidebarState.selectCustomer}
         showLogout={showLogout}
         onLogoutClick={handleLogout}
       />

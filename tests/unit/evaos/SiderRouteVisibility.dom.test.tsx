@@ -5,7 +5,8 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Sider from '@/renderer/components/layout/Sider';
@@ -13,15 +14,26 @@ import Sider from '@/renderer/components/layout/Sider';
 const authMock = vi.hoisted(() => ({
   status: 'authenticated' as 'checking' | 'authenticated' | 'unauthenticated',
   user: null as { id: string; username: string } | null,
+  logout: vi.fn(),
 }));
 
 const customerContextMock = vi.hoisted(() => ({
+  targets: [] as Array<{
+    customerId: string;
+    displayName: string;
+    email?: string;
+    status?: string;
+    healthStatus?: string;
+    isDefault: boolean;
+  }>,
+  selectedCustomerId: undefined as string | undefined,
   roles: [] as string[],
   scopes: [] as string[],
   isOperator: false,
   loaded: true,
   loading: false,
   error: undefined as string | undefined,
+  selectCustomer: vi.fn(),
   useEvaosCustomerContext: vi.fn(),
 }));
 
@@ -37,6 +49,10 @@ const brokerSessionMock = vi.hoisted(() => ({
     source: 'callback' as const,
     message: 'Session active',
   },
+}));
+
+const brokerMocks = vi.hoisted(() => ({
+  revokeSession: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -57,7 +73,7 @@ vi.mock('@renderer/hooks/context/AuthContext', () => ({
     status: authMock.status,
     user: authMock.user,
     login: vi.fn(),
-    logout: vi.fn(),
+    logout: authMock.logout,
     refresh: vi.fn(),
     clearAuthCache: vi.fn(),
   }),
@@ -65,14 +81,17 @@ vi.mock('@renderer/hooks/context/AuthContext', () => ({
 
 vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   useEvaosCustomerContext: customerContextMock.useEvaosCustomerContext,
+  clearEvaosCustomerContext: vi.fn(),
 }));
 
 vi.mock('@renderer/hooks/useEvaosBrokerSessionStatus', () => ({
   useEvaosBrokerSessionStatus: () => brokerSessionMock,
+  EVAOS_DESKTOP_SESSION_CLEARED_EVENT: 'evaos:desktop-session-cleared',
   evaosBrokerSessionKey: (session: typeof brokerSessionMock.session | null) =>
-    session?.authenticated
+    session?.sessionKey ??
+    (session?.authenticated
       ? [session.state, session.source, session.userEmail, session.expiresAt].filter(Boolean).join('|')
-      : undefined,
+      : undefined),
 }));
 
 vi.mock('@renderer/hooks/context/LayoutContext', () => ({
@@ -89,6 +108,14 @@ vi.mock('@renderer/pages/cron/useCronJobs', () => ({
 
 vi.mock('@renderer/pages/team/hooks/useTeamCreatedRedirect', () => ({
   useTeamCreatedRedirect: () => {},
+}));
+
+vi.mock('@/common/adapter/ipcBridge', () => ({
+  evaosBroker: {
+    revokeSession: {
+      invoke: brokerMocks.revokeSession,
+    },
+  },
 }));
 
 vi.mock('@renderer/pages/conversation/GroupedHistory/ConversationSearchPopover', () => ({
@@ -115,20 +142,27 @@ describe('Sider runtime route visibility', () => {
   beforeEach(() => {
     authMock.status = 'authenticated';
     authMock.user = null;
+    authMock.logout.mockReset();
+    authMock.logout.mockResolvedValue(undefined);
+    customerContextMock.targets = [];
+    customerContextMock.selectedCustomerId = undefined;
     customerContextMock.roles = [];
     customerContextMock.scopes = [];
     customerContextMock.isOperator = false;
     customerContextMock.loaded = true;
     customerContextMock.loading = false;
     customerContextMock.error = undefined;
+    customerContextMock.selectCustomer.mockReset();
     customerContextMock.useEvaosCustomerContext.mockClear();
     customerContextMock.useEvaosCustomerContext.mockImplementation(() => ({
-      targets: [],
-      selectedCustomerId: undefined,
-      selectedTarget: undefined,
+      targets: customerContextMock.targets,
+      selectedCustomerId: customerContextMock.selectedCustomerId,
+      selectedTarget: customerContextMock.targets.find(
+        (target) => target.customerId === customerContextMock.selectedCustomerId
+      ),
       summaryText: 'test customer context',
       refreshTargets: vi.fn(),
-      selectCustomer: vi.fn(),
+      selectCustomer: customerContextMock.selectCustomer,
       roles: customerContextMock.roles,
       scopes: customerContextMock.scopes,
       isOperator: customerContextMock.isOperator,
@@ -136,6 +170,17 @@ describe('Sider runtime route visibility', () => {
       loading: customerContextMock.loading,
       error: customerContextMock.error,
     }));
+    brokerMocks.revokeSession.mockReset();
+    brokerMocks.revokeSession.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'missing',
+        authenticated: false,
+        expired: false,
+        source: 'none',
+        message: 'Sign in to evaOS to connect this desktop shell.',
+      },
+    });
     brokerSessionMock.loading = false;
     brokerSessionMock.error = null;
     brokerSessionMock.session = {
@@ -238,6 +283,82 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('Viewing')).toBeInTheDocument();
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+  });
+
+  it('renders beta account footer metadata and an admin customer switcher', async () => {
+    const user = userEvent.setup();
+    customerContextMock.roles = ['admin'];
+    customerContextMock.isOperator = true;
+    customerContextMock.selectedCustomerId = 'david-poku';
+    customerContextMock.targets = [
+      {
+        customerId: 'david-poku',
+        displayName: 'David Poku Co',
+        email: 'ops@example.test',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: true,
+      },
+      {
+        customerId: 'second-customer',
+        displayName: 'Second Customer',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: false,
+      },
+    ];
+
+    renderSider();
+
+    expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+    expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
+    expect(screen.getByText(/v2\.1\.12-evaos-beta\.0/i)).toBeInTheDocument();
+
+    const customerSelect = screen.getByLabelText('Selected customer');
+    expect(customerSelect).toHaveValue('david-poku');
+
+    await user.selectOptions(customerSelect, 'second-customer');
+
+    expect(customerContextMock.selectCustomer).toHaveBeenCalledWith('second-customer');
+  });
+
+  it('keeps non-admin users fixed to their selected customer in the footer', () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.isOperator = false;
+    customerContextMock.selectedCustomerId = 'member-customer';
+    customerContextMock.targets = [
+      {
+        customerId: 'member-customer',
+        displayName: 'Member Customer',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: true,
+      },
+    ];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'member@example.test',
+    };
+
+    renderSider();
+
+    expect(screen.getByText('member@example.test')).toBeInTheDocument();
+    expect(screen.getByText('Member Customer')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
+  });
+
+  it('signs out by revoking the broker session before clearing the shell auth state', async () => {
+    const user = userEvent.setup();
+    customerContextMock.roles = ['owner'];
+
+    renderSider();
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(brokerMocks.revokeSession).toHaveBeenCalledTimes(1);
+      expect(authMock.logout).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('keeps evaOS sidebar broker context warm while settings are open', async () => {

@@ -167,6 +167,7 @@ export class EvaosBrokerSessionClient {
   private readonly fetchImpl: EvaosBrokerFetch;
   private readonly now: () => Date;
   private session: EvaosDesktopSession | null;
+  private sessionEpoch: number;
 
   constructor(options: EvaosBrokerSessionClientOptions = {}) {
     this.endpoint = normalizeEndpoint(options.endpoint ?? process.env.AIONUI_EVAOS_BROKER_ENDPOINT);
@@ -180,10 +181,11 @@ export class EvaosBrokerSessionClient {
         loader: options.legacyWorkbenchSessionLoader,
         allowDefaultLoader: options.env === undefined,
       });
+    this.sessionEpoch = this.session ? 1 : 0;
   }
 
   getSessionStatus(): IEvaosBrokerSessionStatus {
-    return sessionStatus(this.session, this.now());
+    return sessionStatus(this.session, this.now(), this.sessionEpoch);
   }
 
   async claimDeviceCode(deviceCode: string): Promise<IEvaosBrokerSessionStatus> {
@@ -215,12 +217,14 @@ export class EvaosBrokerSessionClient {
       expiresAt,
       source: 'memory',
     };
+    this.sessionEpoch += 1;
 
     return this.getSessionStatus();
   }
 
   importDesktopSessionFromCallbackUrl(callbackUrl: string): IEvaosBrokerSessionStatus {
     this.session = parseDesktopSessionCallbackUrl(callbackUrl);
+    this.sessionEpoch += 1;
     return this.getSessionStatus();
   }
 
@@ -629,6 +633,9 @@ export class EvaosBrokerSessionClient {
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
     const session = this.session;
     this.session = null;
+    if (session) {
+      this.sessionEpoch += 1;
+    }
 
     if (session && !isSessionExpired(session, this.now())) {
       await this.postJson({ action: 'revoke_desktop_session' }, session).catch((): void => undefined);
@@ -904,7 +911,7 @@ function normalizeRequiredText(value: string, code: EvaosBrokerErrorCode, messag
   return safe;
 }
 
-function sessionStatus(session: EvaosDesktopSession | null, now: Date): IEvaosBrokerSessionStatus {
+function sessionStatus(session: EvaosDesktopSession | null, now: Date, sessionEpoch = 0): IEvaosBrokerSessionStatus {
   if (!session) {
     return {
       state: 'missing',
@@ -916,15 +923,23 @@ function sessionStatus(session: EvaosDesktopSession | null, now: Date): IEvaosBr
   }
 
   const expired = isSessionExpired(session, now);
-  return {
+  const activeSessionKey = expired ? undefined : rendererSafeSessionKey(sessionEpoch);
+  const status: IEvaosBrokerSessionStatus = {
     state: expired ? 'expired' : 'authenticated',
     authenticated: !expired,
     expired,
+    sessionKey: activeSessionKey,
+    sessionEpoch: activeSessionKey ? sessionEpoch : undefined,
     userEmail: safeText(session.userEmail),
     expiresAt: safeIsoDate(session.expiresAt),
     source: session.source ?? 'memory',
     message: expired ? 'Your evaOS desktop session has expired. Sign in again.' : 'evaOS desktop session is active.',
   };
+  return stripUndefined(status);
+}
+
+function rendererSafeSessionKey(sessionEpoch: number): string {
+  return `evaos-session-${sessionEpoch}`;
 }
 
 function loadSessionFromEnvironment(env: Record<string, string | undefined>): EvaosDesktopSession | null {
@@ -3258,10 +3273,11 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
-function stripUndefined<T extends Record<string, unknown>>(record: T): T {
+function stripUndefined<T extends object>(record: T): T {
+  const mutableRecord = record as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (record[key] === undefined) {
-      delete record[key];
+    if (mutableRecord[key] === undefined) {
+      delete mutableRecord[key];
     }
   }
   return record;

@@ -10,6 +10,7 @@ import { Button, Input, Spin, Tag } from '@arco-design/web-react';
 import { Attention, CheckOne, Computer, Login, Refresh, Robot } from '@icon-park/react';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { EVAOS_DESKTOP_SESSION_CLEARED_EVENT } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import {
   evaosBroker,
   type IEvaosBrokerBeginDesktopAuthResult,
@@ -189,7 +190,10 @@ function latestTimestamp(values: Array<string | undefined>): string | undefined 
 
 function customerContextSessionKey(session: IEvaosBrokerSessionStatus | null): string | undefined {
   if (!session?.authenticated) return undefined;
-  return [session.state, session.source, session.userEmail, session.expiresAt].filter(Boolean).join('|') || 'active';
+  return (
+    session.sessionKey ??
+    ([session.state, session.source, session.userEmail, session.expiresAt].filter(Boolean).join('|') || 'active')
+  );
 }
 
 const MissionControlPage: React.FC = () => {
@@ -386,8 +390,24 @@ const MissionControlPage: React.FC = () => {
       clearRuntimeEvidence();
       void loadSession();
     };
+    const handleDesktopSessionCleared = () => {
+      pendingSessionImportRuntimeRefreshRef.current = false;
+      pendingSessionImportCustomerResetRef.current = false;
+      setSession(null);
+      setSessionError(null);
+      setAuthHandoff(null);
+      setAuthError(null);
+      setDeviceCode('');
+      setDeviceCodeError(null);
+      setDeviceCodeStatus(null);
+      clearRuntimeEvidence();
+    };
     window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
-    return () => window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+    window.addEventListener(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, handleDesktopSessionCleared);
+    return () => {
+      window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+      window.removeEventListener(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, handleDesktopSessionCleared);
+    };
   }, [clearRuntimeEvidence, loadSession]);
 
   useEffect(() => {

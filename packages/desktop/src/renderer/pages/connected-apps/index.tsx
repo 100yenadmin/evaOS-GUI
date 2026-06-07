@@ -65,6 +65,7 @@ const ConnectedAppsPage: React.FC = () => {
   const [agentRuntime, setAgentRuntime] = useState<IEvaosProviderAgentRuntime>('openclaw');
   const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
+  const previousSelectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
 
   const canManageIntegrations = !hub?.routeDenied;
@@ -85,10 +86,26 @@ const ConnectedAppsPage: React.FC = () => {
     [hub?.profiles]
   );
 
+  const clearLoadedHub = useCallback(() => {
+    setHub(null);
+    setHubError(null);
+    setActionStatus(null);
+    setActionError(null);
+    setActionTarget(null);
+    setLoadingHub(false);
+  }, []);
+
   useEffect(() => {
-    selectedCustomerRef.current = customerContext.selectedCustomerId;
+    const nextSelectedCustomerId = customerContext.selectedCustomerId;
+    const previousSelectedCustomerId = previousSelectedCustomerRef.current;
+    selectedCustomerRef.current = nextSelectedCustomerId;
     requestEpochRef.current += 1;
-  }, [customerContext.selectedCustomerId]);
+    if (previousSelectedCustomerId === nextSelectedCustomerId) {
+      return;
+    }
+    previousSelectedCustomerRef.current = nextSelectedCustomerId;
+    clearLoadedHub();
+  }, [clearLoadedHub, customerContext.selectedCustomerId]);
 
   const isCurrentRequest = useCallback((epoch: number, customerId: string) => {
     return requestEpochRef.current === epoch && selectedCustomerRef.current === customerId;
@@ -103,27 +120,17 @@ const ConnectedAppsPage: React.FC = () => {
       selectedCustomerRef.current = customerId;
       requestEpochRef.current += 1;
       customerContext.selectCustomer(customerId);
-      setHub(null);
-      setHubError(null);
-      setActionStatus(null);
-      setActionError(null);
-      setActionTarget(null);
-      setLoadingHub(false);
+      clearLoadedHub();
     },
-    [customerContext]
+    [clearLoadedHub, customerContext]
   );
 
   const refreshCustomerTargets = useCallback(async () => {
     requestEpochRef.current += 1;
     selectedCustomerRef.current = undefined;
-    setHub(null);
-    setHubError(null);
-    setActionStatus(null);
-    setActionError(null);
-    setActionTarget(null);
-    setLoadingHub(false);
+    clearLoadedHub();
     await customerContext.refreshTargets();
-  }, [customerContext]);
+  }, [clearLoadedHub, customerContext]);
 
   const loadHub = useCallback(
     async (options: { resetActionStatus?: boolean } = {}) => {

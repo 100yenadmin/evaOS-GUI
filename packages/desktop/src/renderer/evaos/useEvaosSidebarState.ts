@@ -8,10 +8,16 @@ import { useMemo } from 'react';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
-import { evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
+import { canAccessEvaosAdminRuntimes, evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
+import type { IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
 
 interface EvaosSidebarState {
   accountLabel?: string;
+  selectedCustomerId?: string;
+  selectedCustomerLabel?: string;
+  customerTargets: IEvaosCustomerTargetView[];
+  canSwitchCustomers: boolean;
+  selectCustomer: (customerId: string) => void;
   canSeeEvaos: boolean;
   canSeeHermes: boolean;
   canSeeMissionControl: boolean;
@@ -89,10 +95,18 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     };
   }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, status]);
 
+  const canSwitchCustomers =
+    brokerAuthenticated && canAccessEvaosAdminRuntimes(routeContext) && customerContext.targets.length > 1;
+
   return {
     accountLabel: brokerSessionStatus.session?.authenticated
       ? (brokerSessionStatus.session.userEmail ?? user?.username)
       : user?.username,
+    selectedCustomerId: customerContext.selectedCustomerId,
+    selectedCustomerLabel: customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId,
+    customerTargets: customerContext.targets,
+    canSwitchCustomers,
+    selectCustomer: customerContext.selectCustomer,
     canSeeEvaos: canSeeRepairableRoute('/evaos'),
     canSeeHermes: canSeeRepairableRoute('/hermes'),
     canSeeMissionControl,

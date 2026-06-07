@@ -9,6 +9,8 @@ import { evaosBroker } from '@/common/adapter/ipcBridge';
 import type { IEvaosBrokerSessionStatus } from '@/common/evaos/bridgeTypes';
 import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from './system/useDeepLink';
 
+export const EVAOS_DESKTOP_SESSION_CLEARED_EVENT = 'evaos:desktop-session-cleared';
+
 interface EvaosBrokerSessionStatusState {
   session: IEvaosBrokerSessionStatus | null;
   loading: boolean;
@@ -18,7 +20,8 @@ interface EvaosBrokerSessionStatusState {
 
 export function evaosBrokerSessionKey(session: IEvaosBrokerSessionStatus | null): string | undefined {
   if (!session?.authenticated || session.expired) return undefined;
-  return [session.state, session.source, session.userEmail, session.expiresAt].filter(Boolean).join('|') || 'active';
+  const fallbackKey = [session.state, session.source, session.userEmail, session.expiresAt].filter(Boolean).join('|');
+  return session.sessionKey ?? (fallbackKey || 'active');
 }
 
 export function useEvaosBrokerSessionStatus(enabled = true): EvaosBrokerSessionStatusState {
@@ -58,11 +61,15 @@ export function useEvaosBrokerSessionStatus(enabled = true): EvaosBrokerSessionS
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const handleDesktopSessionImported = () => {
+    const handleDesktopSessionChanged = () => {
       void refresh();
     };
-    window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
-    return () => window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+    window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionChanged);
+    window.addEventListener(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, handleDesktopSessionChanged);
+    return () => {
+      window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionChanged);
+      window.removeEventListener(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, handleDesktopSessionChanged);
+    };
   }, [enabled, refresh]);
 
   return {
