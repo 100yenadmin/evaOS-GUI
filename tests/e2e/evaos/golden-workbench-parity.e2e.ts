@@ -10,16 +10,30 @@ import { GOLDEN_WORKBENCH_PARITY_MANIFEST } from '../../../packages/desktop/src/
 test.describe('golden Workbench parity smoke', () => {
   test.skip(
     process.env.EVAOS_GOLDEN_WORKBENCH_E2E !== '1',
-    'Live golden Workbench app harness is not ready; unit manifest gate enforces coverage and explicit waivers.'
+    'Golden Workbench exact-candidate e2e is opt-in; unit manifest gate enforces coverage and proof targets.'
   );
 
   for (const row of GOLDEN_WORKBENCH_PARITY_MANIFEST.filter(
-    (manifestRow) => manifestRow.expectedRoute && manifestRow.testId && !manifestRow.waiverIssue
+    (manifestRow) =>
+      manifestRow.expectedRoute && manifestRow.testId && !manifestRow.waiverIssue && manifestRow.proofTarget
   )) {
-    test(`smokes ${row.id} at ${row.expectedRoute}`, async ({ page }) => {
+    test(`captures settled proof for ${row.id} at ${row.expectedRoute}`, async ({ page }, testInfo) => {
       await page.evaluate((routePath) => window.location.assign(`#${routePath}`), row.expectedRoute);
       await page.waitForFunction((routePath) => window.location.hash === `#${routePath}`, row.expectedRoute);
-      await expect(page.locator('body')).toContainText(row.sidebarLabel ?? row.oldSurface ?? row.id);
+
+      await Promise.all(
+        row.proofTarget.settledMarkers.map((marker) =>
+          expect(page.locator('body'), `${row.id}: settled marker ${marker}`).toContainText(marker, {
+            timeout: 20_000,
+          })
+        )
+      );
+
+      const screenshot = await page.screenshot({ fullPage: true });
+      await testInfo.attach(row.proofTarget.screenshot, {
+        body: screenshot,
+        contentType: 'image/png',
+      });
     });
   }
 });

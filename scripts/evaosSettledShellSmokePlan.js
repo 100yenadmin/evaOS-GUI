@@ -11,9 +11,25 @@ const COMMON_WAIT_SELECTORS = ['[data-testid="evaos-support-bubble"]', 'body:tex
 
 const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
+    id: 'home',
+    route: '/home',
+    screenshot: '00-home.png',
+    target: 'Home route with signed-in Workbench shell entry point',
+    waitSelectors: [
+      'body:text("evaOS Workbench Beta")',
+      'body:text("Home")',
+      'body:text("Mission Control")',
+      'body:text("Mac & iPhone")',
+    ],
+    notes: [
+      'Capture after the Home route settles; this proves the old Workbench Home entry is route-owned, not just sidebar copy.',
+      'If signed out, the proof may show sign-in repair copy but must not redirect to an upstream AionUi placeholder.',
+    ],
+  },
+  {
     id: 'sidebar-footer',
     route: '/guid',
-    screenshot: '00-sidebar-footer.png',
+    screenshot: '01-sidebar-footer.png',
     target: 'Sidebar brand, route order, footer controls, account/version/support affordances',
     waitSelectors: [
       'body:text("evaOS Workbench Beta")',
@@ -29,7 +45,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'new-chat-agent-order',
     route: '/guid',
-    screenshot: '01-new-chat-agent-order.png',
+    screenshot: '02-new-chat-agent-order.png',
     target: 'New Chat agent pill order: evaOS/OpenClaw first, Hermes second, custom/preset rows after native agents',
     waitSelectors: [
       'body:text("New Chat")',
@@ -45,7 +61,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'settings-system',
     route: '/settings/system',
-    screenshot: '02-settings-system.png',
+    screenshot: '03-settings-system.png',
     target: 'Settings System page',
     waitSelectors: ['body:text("Settings")', 'body:text("System")'],
     notes: [
@@ -55,7 +71,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'settings-themes',
     route: '/settings/display',
-    screenshot: '03-settings-themes.png',
+    screenshot: '04-settings-themes.png',
     target: 'Settings theme/display page with evaOS Default and CSS theme cards',
     waitSelectors: ['body:text("CSS Settings")', 'body:text("Theme")', 'body:text("evaOS Default")'],
     notes: ['Wait for theme cards to render before screenshotting so the palette/preview state is visible.'],
@@ -63,7 +79,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'settings-about',
     route: '/settings/about',
-    screenshot: '04-settings-about.png',
+    screenshot: '05-settings-about.png',
     target: 'Settings About page with beta identity, channel, bundle ID, protocol, and support path',
     waitSelectors: [
       'body:text("evaOS Workbench Beta")',
@@ -76,7 +92,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'mac-iphone',
     route: '/native-companion',
-    screenshot: '05-mac-iphone.png',
+    screenshot: '06-mac-iphone.png',
     target: 'Mac & iPhone native companion status and repair handoff',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -91,7 +107,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'evaos',
     route: '/evaos',
-    screenshot: '06-evaos.png',
+    screenshot: '07-evaos.png',
     target: 'evaOS primary agent workspace dashboard',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -106,7 +122,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'hermes',
     route: '/hermes',
-    screenshot: '07-hermes.png',
+    screenshot: '08-hermes.png',
     target: 'Hermes agent dashboard',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -119,7 +135,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'mission-control',
     route: '/mission-control',
-    screenshot: '08-mission-control.png',
+    screenshot: '09-mission-control.png',
     target: 'Mission Control / Paperclip mission queue',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -132,7 +148,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'terminal',
     route: '/terminal',
-    screenshot: '09-terminal.png',
+    screenshot: '10-terminal.png',
     target: 'Terminal customer VM shell status',
     waitSelectors: [...COMMON_WAIT_SELECTORS, 'body:text("Terminal")', '[data-testid="evaos-terminal-status"]'],
     notes: [
@@ -142,7 +158,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'business-browser',
     route: '/business-browser',
-    screenshot: '10-business-browser.png',
+    screenshot: '11-business-browser.png',
     target: 'Business Browser brokered runtime state',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -156,7 +172,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'design-workspace',
     route: '/design-workspace',
-    screenshot: '11-design-workspace.png',
+    screenshot: '12-design-workspace.png',
     target: 'Design Workspace route and sidebar entry',
     waitSelectors: [...COMMON_WAIT_SELECTORS, 'body:text("Design Workspace")', 'body:text("OpenDesign workspace")'],
     notes: [
@@ -166,7 +182,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'creative-studio',
     route: '/creative-studio',
-    screenshot: '12-creative-studio.png',
+    screenshot: '13-creative-studio.png',
     target: 'Creative Studio route and external-runtime handoff state',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -180,7 +196,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'connected-apps',
     route: '/connected-apps',
-    screenshot: '13-connected-apps.png',
+    screenshot: '14-connected-apps.png',
     target: 'Connected Apps provider profiles and grant/revoke state',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -194,7 +210,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'people-access',
     route: '/people-access',
-    screenshot: '14-people-and-access.png',
+    screenshot: '15-people-and-access.png',
     target: 'People & Access member, role, invite, and seat-policy state',
     waitSelectors: [...COMMON_WAIT_SELECTORS, 'body:text("People Access")', 'body:text("Load a customer account")'],
     notes: [
@@ -205,7 +221,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'company-brain',
     route: '/company-brain',
-    screenshot: '15-company-brain.png',
+    screenshot: '16-company-brain.png',
     target: 'Company Brain directory, account brief, timeline, query, and exception evidence',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
@@ -217,7 +233,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
     id: 'approvals',
     route: '/approval-center',
-    screenshot: '16-approvals.png',
+    screenshot: '17-approvals.png',
     target: 'Approvals / Approval Center request list and decision controls',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,

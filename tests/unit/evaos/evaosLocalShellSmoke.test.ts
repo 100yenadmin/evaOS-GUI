@@ -132,6 +132,7 @@ describe('evaOS local shell smoke', () => {
       '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/shell-smoke-plan.md'
     );
     expect(settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => entry.id)).toEqual([
+      'home',
       'sidebar-footer',
       'new-chat-agent-order',
       'settings-system',
@@ -159,6 +160,7 @@ describe('evaOS local shell smoke', () => {
     }
 
     expect(settledShellSmokePlan.markdownForPlan()).toContain('## Screenshot Matrix');
+    expect(settledShellSmokePlan.markdownForPlan()).toContain('Home route with signed-in Workbench shell entry point');
     expect(settledShellSmokePlan.markdownForPlan()).toContain('Design Workspace');
     expect(settledShellSmokePlan.markdownForPlan()).toContain('Approvals / Approval Center');
   });

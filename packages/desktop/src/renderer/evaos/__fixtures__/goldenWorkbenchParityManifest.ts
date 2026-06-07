@@ -26,6 +26,16 @@ export type GoldenWorkbenchRequiredRole =
   | 'support-operator'
   | 'public-brand-surface';
 
+export type GoldenWorkbenchProofCloseoutState = 'loaded' | 'denied' | 'repair' | 'waived';
+
+export interface GoldenWorkbenchProofTarget {
+  closeoutState: GoldenWorkbenchProofCloseoutState;
+  planId: string;
+  screenshot: string;
+  artifactName: string;
+  settledMarkers: readonly string[];
+}
+
 export interface GoldenWorkbenchParityManifestRow {
   id: string;
   oldSourceRefs: readonly string[];
@@ -36,6 +46,7 @@ export interface GoldenWorkbenchParityManifestRow {
   runtimeKey?: IEvaosRuntimeKey;
   requiredRole: GoldenWorkbenchRequiredRole;
   statusRequirement: string;
+  proofTarget: GoldenWorkbenchProofTarget;
   testId?: string;
   waiverIssue?: string;
 }
@@ -68,6 +79,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Home',
     requiredRole: 'signed-in-user',
     statusRequirement: 'session-center-route-plus-sidebar-entry',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'home',
+      screenshot: '00-home.png',
+      artifactName: 'screenshots/00-home.png',
+      settledMarkers: ['Home', 'evaOS Workbench Beta'],
+    },
     testId: 'tests/unit/evaos/SiderRouteVisibility.dom.test.tsx',
   },
   {
@@ -82,6 +100,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Approvals',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:approve_actions',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'approvals',
+      screenshot: '17-approvals.png',
+      artifactName: 'screenshots/17-approvals.png',
+      settledMarkers: ['Approval Center', 'Human decisions for risky agent actions'],
+    },
     testId: 'tests/unit/evaos/ApprovalCenterPage.dom.test.tsx',
   },
   {
@@ -96,6 +121,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'opendesign',
     requiredRole: 'member-with-scope',
     statusRequirement: 'workspace-route-plus-sidebar-entry',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'design-workspace',
+      screenshot: '12-design-workspace.png',
+      artifactName: 'screenshots/12-design-workspace.png',
+      settledMarkers: ['Design Workspace', 'OpenDesign workspace'],
+    },
     testId: 'tests/unit/evaos/evaosRoutes.dom.test.tsx',
   },
   {
@@ -111,6 +143,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'browser',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:open_business_browser',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'business-browser',
+      screenshot: '11-business-browser.png',
+      artifactName: 'screenshots/11-business-browser.png',
+      settledMarkers: ['Business Browser', 'Brokered browser and VM runtime state'],
+    },
     testId: 'tests/unit/evaos/BusinessBrowserPage.dom.test.tsx',
   },
   {
@@ -126,6 +165,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'creative_studio',
     requiredRole: 'member-with-scope',
     statusRequirement: 'external-runtime-route-plus-sidebar-entry',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'creative-studio',
+      screenshot: '13-creative-studio.png',
+      artifactName: 'screenshots/13-creative-studio.png',
+      settledMarkers: ['Creative Studio', 'External creative generation workspace'],
+    },
     testId: 'tests/unit/evaos/evaosRoutes.dom.test.tsx',
   },
   {
@@ -140,6 +186,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Connected Apps',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:manage_integrations',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'connected-apps',
+      screenshot: '14-connected-apps.png',
+      artifactName: 'screenshots/14-connected-apps.png',
+      settledMarkers: ['Connected Apps', 'Brokered provider status, grants, and revocation'],
+    },
     testId: 'tests/unit/evaos/ConnectedAppsPage.dom.test.tsx',
   },
   {
@@ -153,6 +206,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'People & Access',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:manage_members',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'people-access',
+      screenshot: '15-people-and-access.png',
+      artifactName: 'screenshots/15-people-and-access.png',
+      settledMarkers: ['People Access', 'Load a customer account'],
+    },
     testId: 'tests/unit/evaos/PeopleAccessPage.dom.test.tsx',
   },
   {
@@ -166,6 +226,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Company Brain',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:view_company_brain-or-manage_company_brain',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'company-brain',
+      screenshot: '16-company-brain.png',
+      artifactName: 'screenshots/16-company-brain.png',
+      settledMarkers: ['Company Brain', 'Org-scoped account directory'],
+    },
     testId: 'tests/unit/evaos/CompanyBrainPage.dom.test.tsx',
   },
   {
@@ -181,6 +248,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'openclaw',
     requiredRole: 'owner-or-admin',
     statusRequirement: 'admin-runtime-plus-brokered-dashboard-evidence',
+    proofTarget: {
+      closeoutState: 'denied',
+      planId: 'evaos',
+      screenshot: '07-evaos.png',
+      artifactName: 'screenshots/07-evaos.png',
+      settledMarkers: ['evaOS', 'Primary evaOS agent workspace', 'Customer context'],
+    },
     testId: 'tests/unit/evaos/evaosRuntimeVisibility.test.ts',
   },
   {
@@ -196,6 +270,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'hermes',
     requiredRole: 'owner-or-admin',
     statusRequirement: 'admin-runtime-plus-brokered-dashboard-evidence',
+    proofTarget: {
+      closeoutState: 'denied',
+      planId: 'hermes',
+      screenshot: '08-hermes.png',
+      artifactName: 'screenshots/08-hermes.png',
+      settledMarkers: ['Hermes', 'Hermes agent dashboard', 'Customer context'],
+    },
     testId: 'tests/unit/evaos/evaosRuntimeVisibility.test.ts',
   },
   {
@@ -211,6 +292,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'paperclip',
     requiredRole: 'owner-or-admin',
     statusRequirement: 'admin-runtime-with-missing-broker-repair-visibility',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'mission-control',
+      screenshot: '09-mission-control.png',
+      artifactName: 'screenshots/09-mission-control.png',
+      settledMarkers: ['Mission Control', 'Paperclip mission queue', 'Customer context'],
+    },
     testId: 'tests/unit/evaos/MissionControlPage.dom.test.tsx',
   },
   {
@@ -222,6 +310,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     runtimeKey: 'terminal',
     requiredRole: 'owner-or-admin',
     statusRequirement: 'admin-runtime-scope:access_terminal',
+    proofTarget: {
+      closeoutState: 'denied',
+      planId: 'terminal',
+      screenshot: '10-terminal.png',
+      artifactName: 'screenshots/10-terminal.png',
+      settledMarkers: ['Terminal'],
+    },
     testId: 'tests/unit/evaos/TerminalPage.dom.test.tsx',
   },
   {
@@ -236,6 +331,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Mac & iPhone',
     requiredRole: 'support-operator',
     statusRequirement: 'read-only-native-status-plus-released-workbench-repair-handoff',
+    proofTarget: {
+      closeoutState: 'repair',
+      planId: 'mac-iphone',
+      screenshot: '06-mac-iphone.png',
+      artifactName: 'screenshots/06-mac-iphone.png',
+      settledMarkers: ['Mac & iPhone', 'MAC & IPHONE REPAIR', 'Boundary clean'],
+    },
     testId: 'tests/unit/evaos/NativeCompanionPage.dom.test.tsx',
   },
   {
@@ -244,6 +346,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     oldSurface: 'sidebar footer account, version, sign-in/sign-out, and customer target switcher',
     requiredRole: 'signed-in-user',
     statusRequirement: 'broker-session-footer-plus-customer-switcher-clearing',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'sidebar-footer',
+      screenshot: '01-sidebar-footer.png',
+      artifactName: 'screenshots/01-sidebar-footer.png',
+      settledMarkers: ['evaOS Workbench Beta', 'New Chat', 'Settings'],
+    },
     testId: 'tests/unit/evaos/SiderRouteVisibility.dom.test.tsx',
   },
   {
@@ -255,6 +364,13 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     oldSurface: 'evaOS Workbench brand, release identity, update feed, and sidebar wordmark',
     requiredRole: 'public-brand-surface',
     statusRequirement: 'beta-owned-branding-path-theme-support-cleanup',
+    proofTarget: {
+      closeoutState: 'loaded',
+      planId: 'settings-about',
+      screenshot: '05-settings-about.png',
+      artifactName: 'screenshots/05-settings-about.png',
+      settledMarkers: ['evaOS Workbench Beta', 'Build identity', 'controlled beta'],
+    },
     testId: 'tests/unit/process/evaosBetaReleaseGate.test.ts',
   },
 ] as const satisfies readonly GoldenWorkbenchParityManifestRow[];

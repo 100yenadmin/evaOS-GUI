@@ -5,6 +5,7 @@
  */
 
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -14,6 +15,15 @@ import {
 import { EVAOS_ROUTE_POLICIES, EVAOS_RUNTIME_CATALOG } from '@/renderer/evaos/evaosRuntimeVisibility';
 
 const repoRoot = path.resolve(__dirname, '../../..');
+const require = createRequire(import.meta.url);
+const settledShellSmokePlan = require('../../../scripts/evaosSettledShellSmokePlan.js') as {
+  SETTLED_SHELL_SCREENSHOT_PLAN: Array<{
+    id: string;
+    route: string;
+    screenshot: string;
+    waitSelectors: string[];
+  }>;
+};
 
 const OLD_SOURCE_FILES = [
   'RuntimeDefinition.swift',
@@ -44,6 +54,7 @@ const EXPECTED_MANIFEST_IDS = [
   'footer',
   'branding',
 ];
+const ACCEPTED_CLOSEOUT_STATES = ['loaded', 'denied', 'repair', 'waived'];
 
 function readSource(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -74,6 +85,39 @@ describe('goldenWorkbenchParityManifest', () => {
         expect(row.waiverIssue, `${row.id}: waiverIssue`).toMatch(
           /^https:\/\/github\.com\/100yenadmin\/evaOS-GUI\/issues\/\d+$/
         );
+      }
+    }
+  });
+
+  it('requires every manifest row to carry a settled exact-candidate proof target or explicit waiver', () => {
+    const screenshotPlanById = new Map(
+      settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => [entry.id, entry])
+    );
+
+    for (const row of GOLDEN_WORKBENCH_PARITY_MANIFEST) {
+      expect(row.proofTarget, `${row.id}: proofTarget`).toBeTruthy();
+      expect(ACCEPTED_CLOSEOUT_STATES, `${row.id}: accepted closeout state`).toContain(row.proofTarget?.closeoutState);
+
+      if (row.proofTarget?.closeoutState === 'waived') {
+        expect(row.waiverIssue, `${row.id}: waiver requires issue`).toMatch(
+          /^https:\/\/github\.com\/100yenadmin\/evaOS-GUI\/issues\/\d+$/
+        );
+        continue;
+      }
+
+      expect(row.waiverIssue, `${row.id}: non-waived row should not carry waiverIssue`).toBeUndefined();
+      expect(row.proofTarget?.planId, `${row.id}: proof plan id`).toBeTruthy();
+      expect(row.proofTarget?.screenshot, `${row.id}: proof screenshot`).toMatch(/\.png$/);
+      expect(row.proofTarget?.artifactName, `${row.id}: proof artifact`).toBe(
+        `screenshots/${row.proofTarget?.screenshot}`
+      );
+      expect(row.proofTarget?.settledMarkers.length, `${row.id}: settled markers`).toBeGreaterThan(0);
+
+      const planEntry = screenshotPlanById.get(row.proofTarget!.planId);
+      expect(planEntry, `${row.id}: screenshot plan entry`).toBeTruthy();
+      expect(planEntry?.screenshot, `${row.id}: screenshot name`).toBe(row.proofTarget?.screenshot);
+      if (row.expectedRoute) {
+        expect(planEntry?.route, `${row.id}: proof route`).toBe(row.expectedRoute);
       }
     }
   });
