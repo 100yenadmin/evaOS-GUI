@@ -20,8 +20,7 @@
 ## Testing
 
 - [ ] Tested on macOS
-- [ ] Tested on Windows
-- [ ] Tested on Linux
+- [ ] Windows/Linux compatibility intentionally deferred until post-1.0, or this PR explicitly opted into cross-platform checks
 - [ ] My code follows the project's code style guidelines
 - [ ] I have performed a self-review of my own code
 - [ ] My changes generate no new warnings or errors

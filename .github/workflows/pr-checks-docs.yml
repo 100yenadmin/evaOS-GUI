@@ -47,11 +47,11 @@ jobs:
       - name: Run prek checks
         run: prek run --from-ref origin/${{ github.base_ref }} --to-ref HEAD
 
-  unit-tests-ubuntu:
-    name: Unit Tests (ubuntu-latest)
+  unit-tests-docs-placeholder:
+    name: Unit Tests (docs-only placeholder)
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Docs-only PR, skipping unit tests."
+      - run: echo "Docs-only PR, skipping unit tests. This is not Ubuntu compatibility proof."
 
   coverage-test:
     name: Coverage Test
@@ -71,14 +71,14 @@ jobs:
     steps:
       - run: echo "Docs-only PR, skipping release script tests."
 
-  unit-tests-macos:
+  unit-tests-macos-placeholder:
     name: Unit Tests (macos-14)
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Docs-only PR, skipping unit tests."
+      - run: echo "Docs-only PR, satisfying the macOS-first unit-test gate without running runtime tests."
 
-  unit-tests-windows:
-    name: Unit Tests (windows-2022)
+  unit-tests-cross-platform-deferred:
+    name: Cross-platform checks deferred
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Docs-only PR, skipping unit tests."
+      - run: echo "Windows/Linux checks are deferred until post-1.0 unless explicitly requested."
