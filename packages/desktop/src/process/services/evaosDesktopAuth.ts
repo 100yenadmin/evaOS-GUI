@@ -22,12 +22,14 @@ const AUTH_LOOPBACK_PATH = EVAOS_BETA_IDENTITY.loopbackCallbackPath;
 const DASHBOARD_COMPAT_LOOPBACK_PATH = '/auth/callback';
 const AUTH_LOOPBACK_STATE_PARAM = 'desktop_auth_state';
 const AUTH_LOOPBACK_TIMEOUT_MS = 180_000;
+const AUTH_DEVICE_CODE_POLL_INTERVAL_MS = 2_500;
 
 type OpenExternal = (url: string) => Promise<void>;
 
 interface ActiveLoopback {
   server: Server;
   timeout: NodeJS.Timeout;
+  deviceCodePollTimeout?: NodeJS.Timeout;
 }
 
 let activeLoopback: ActiveLoopback | null = null;
@@ -36,6 +38,8 @@ export interface BeginEvaosDesktopAuthOptions {
   dashboardBaseUrl?: string;
   openExternal?: OpenExternal;
   timeoutMs?: number;
+  deviceCodePolling?: boolean;
+  deviceCodePollIntervalMs?: number;
 }
 
 export async function beginEvaosDesktopAuth(
@@ -50,6 +54,11 @@ export async function beginEvaosDesktopAuth(
   const { server, callbackUrl } = await startLoopbackReceiver(client, desktopAuthState);
   const timeout = setTimeout(() => stopActiveLoopback(server), timeoutMs);
   activeLoopback = { server, timeout };
+  if (options.deviceCodePolling !== false) {
+    startDeviceCodePolling(client, fallbackDeviceCode, server, {
+      intervalMs: options.deviceCodePollIntervalMs ?? AUTH_DEVICE_CODE_POLL_INTERVAL_MS,
+    });
+  }
 
   const authUrl = buildDesktopAuthUrl({
     dashboardBaseUrl: options.dashboardBaseUrl ?? process.env.AIONUI_EVAOS_DASHBOARD_BASE_URL,
@@ -76,6 +85,44 @@ export async function beginEvaosDesktopAuth(
     message:
       'ElectricSheep sign-in opened. Choose the intended Google account, finish sign-in, then return and refresh evaOS.',
   };
+}
+
+function startDeviceCodePolling(
+  client: EvaosBrokerSessionClient,
+  fallbackDeviceCode: string,
+  server: Server,
+  { intervalMs }: { intervalMs: number }
+): void {
+  const safeIntervalMs = Math.max(500, Math.min(intervalMs, 15_000));
+
+  const poll = async () => {
+    const active = activeLoopback;
+    if (!active || active.server !== server) {
+      return;
+    }
+
+    try {
+      const status = await client.claimDeviceCode(fallbackDeviceCode);
+      if (status.authenticated) {
+        notifyEvaosDesktopSessionImported('device-code');
+        stopActiveLoopback(server);
+        return;
+      }
+    } catch {
+      // The dashboard has not minted the fallback code yet, or the broker rejected this tick safely.
+    }
+
+    const nextActive = activeLoopback;
+    if (!nextActive || nextActive.server !== server) {
+      return;
+    }
+    nextActive.deviceCodePollTimeout = setTimeout(poll, safeIntervalMs);
+  };
+
+  const active = activeLoopback;
+  if (active?.server === server) {
+    active.deviceCodePollTimeout = setTimeout(poll, safeIntervalMs);
+  }
 }
 
 export function stopEvaosDesktopAuthLoopback(): void {
@@ -198,6 +245,9 @@ function stopActiveLoopback(server?: Server): void {
 
   if (!server || active.server === server) {
     clearTimeout(active.timeout);
+    if (active.deviceCodePollTimeout) {
+      clearTimeout(active.deviceCodePollTimeout);
+    }
     if (active.server.listening) {
       active.server.close();
     }

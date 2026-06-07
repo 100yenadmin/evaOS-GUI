@@ -148,7 +148,7 @@ function emitOrQueueDeepLinkPayload(payload: DeepLinkPayload): void {
   ipcBridge.deepLink.received.emit(payload);
 }
 
-export function notifyEvaosDesktopSessionImported(source: 'loopback' | 'protocol'): void {
+export function notifyEvaosDesktopSessionImported(source: 'loopback' | 'protocol' | 'device-code'): void {
   emitOrQueueDeepLinkPayload({
     action: EVAOS_DESKTOP_SESSION_IMPORTED_ACTION,
     params: { source },

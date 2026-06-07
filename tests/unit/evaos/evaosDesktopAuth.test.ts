@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EvaosBrokerSessionClient } from '@/process/services/evaosBrokerSession';
 import { beginEvaosDesktopAuth, stopEvaosDesktopAuthLoopback } from '@/process/services/evaosDesktopAuth';
+import * as deepLink from '@/process/utils/deepLink';
 
 vi.mock('electron', () => ({
   shell: {
@@ -19,6 +20,8 @@ vi.mock('electron', () => ({
 describe('beginEvaosDesktopAuth', () => {
   afterEach(() => {
     stopEvaosDesktopAuthLoopback();
+    deepLink.clearPendingDeepLinkPayload();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -125,5 +128,41 @@ describe('beginEvaosDesktopAuth', () => {
 
     expect(response.status).toBe(400);
     expect(importCallback).not.toHaveBeenCalled();
+  });
+
+  it('automatically claims the app-owned fallback code when loopback delivery is blocked', async () => {
+    vi.useFakeTimers();
+    const claimDeviceCode = vi.fn().mockRejectedValueOnce(new Error('not minted yet')).mockResolvedValueOnce({
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      source: 'memory',
+      message: 'evaOS desktop session is active.',
+    });
+    const client = {
+      importDesktopSessionFromCallbackUrl: vi.fn(),
+      claimDeviceCode,
+    } as unknown as EvaosBrokerSessionClient;
+
+    const handoff = await beginEvaosDesktopAuth(client, {
+      dashboardBaseUrl: 'https://www.electricsheephq.com',
+      openExternal: async () => undefined,
+      timeoutMs: 5000,
+      deviceCodePollIntervalMs: 500,
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(claimDeviceCode).toHaveBeenCalledTimes(1);
+    expect(claimDeviceCode).toHaveBeenLastCalledWith(handoff.fallbackDeviceCode);
+    expect(deepLink.getPendingDeepLinkPayload()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(claimDeviceCode).toHaveBeenCalledTimes(2);
+    expect(claimDeviceCode).toHaveBeenLastCalledWith(handoff.fallbackDeviceCode);
+    expect(deepLink.getPendingDeepLinkPayload()).toEqual({
+      action: deepLink.EVAOS_DESKTOP_SESSION_IMPORTED_ACTION,
+      params: { source: 'device-code' },
+    });
+    expect(client.importDesktopSessionFromCallbackUrl).not.toHaveBeenCalled();
   });
 });
