@@ -106,7 +106,7 @@ const makeBetaGitHubReleaseResponse = () => [
     tag_name: 'evaos-beta-v2.1.11-evaos-beta.0',
     name: 'evaOS Workbench Beta 2.1.11',
     body: 'beta release notes',
-    html_url: 'https://github.com/100yenadmin/AionUi/releases/tag/evaos-beta-v2.1.11-evaos-beta.0',
+    html_url: 'https://github.com/100yenadmin/evaOS-GUI/releases/tag/evaos-beta-v2.1.11-evaos-beta.0',
     published_at: '2026-06-04T00:00:00Z',
     prerelease: true,
     draft: false,
@@ -114,7 +114,7 @@ const makeBetaGitHubReleaseResponse = () => [
       {
         name: 'evaOS Workbench Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
         browser_download_url:
-          'https://github.com/100yenadmin/AionUi/releases/download/evaos-beta-v2.1.11-evaos-beta.0/evaOS%20Workbench%20Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
+          'https://github.com/100yenadmin/evaOS-GUI/releases/download/evaos-beta-v2.1.11-evaos-beta.0/evaOS%20Workbench%20Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
         size: 123,
         content_type: 'application/x-apple-diskimage',
       },
@@ -265,7 +265,7 @@ describe('updateBridge allowlist includes CDN host', () => {
     vi.clearAllMocks();
     process.env.AIONUI_EVAOS_BETA = '1';
     process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
-    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/AionUi';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';
 
     const handler = await getDownloadHandler();
 
@@ -283,7 +283,7 @@ describe('updateBridge allowlist includes CDN host', () => {
     vi.clearAllMocks();
     process.env.AIONUI_EVAOS_BETA = '1';
     process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
-    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/AionUi';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -300,9 +300,9 @@ describe('updateBridge allowlist includes CDN host', () => {
       const handler = await getDownloadHandler();
 
       const result = await handler({
-        url: 'https://github.com/100yenadmin/AionUi/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
+        url: 'https://github.com/100yenadmin/evaOS-GUI/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
         fallbackUrl:
-          'https://github.com/100yenadmin/AionUi/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
+          'https://github.com/100yenadmin/evaOS-GUI/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
         file_name: 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
       });
 
@@ -317,7 +317,7 @@ describe('updateBridge allowlist includes CDN host', () => {
     vi.clearAllMocks();
     process.env.AIONUI_EVAOS_BETA = '1';
     process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
-    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/AionUi';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -333,7 +333,7 @@ describe('updateBridge allowlist includes CDN host', () => {
       expect(result.data?.updateAvailable).toBe(true);
       expect(result.data?.latest?.tagName).toBe('evaos-beta-v2.1.11-evaos-beta.0');
       expect(result.data?.latest?.version).toBe('2.1.11-evaos-beta.0');
-      expect(result.data?.latest?.assets[0]?.url).toContain('github.com/100yenadmin/AionUi');
+      expect(result.data?.latest?.assets[0]?.url).toContain('github.com/100yenadmin/evaOS-GUI');
     } finally {
       vi.unstubAllGlobals();
     }
