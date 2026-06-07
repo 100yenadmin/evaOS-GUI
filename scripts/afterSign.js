@@ -46,6 +46,25 @@ function getApiKeyNotarizationOptions(env) {
   return options;
 }
 
+function getKeychainNotarizationOptions(env) {
+  const keychainProfile = getEnvValue(env, { aliases: ['keychainProfile', 'KEYCHAIN_PROFILE', 'NOTARY_PROFILE'] });
+  const keychain = getEnvValue(env, { aliases: ['keychain', 'KEYCHAIN', 'NOTARY_KEYCHAIN', 'RELEASE_KEYCHAIN'] });
+
+  if (!keychainProfile) {
+    return undefined;
+  }
+
+  const options = {
+    keychainProfile,
+  };
+
+  if (keychain) {
+    options.keychain = keychain;
+  }
+
+  return options;
+}
+
 function getNotarizationOptions(env, baseOptions) {
   const appleIdOptions = getAppleIdNotarizationOptions(env);
   if (appleIdOptions) {
@@ -55,6 +74,11 @@ function getNotarizationOptions(env, baseOptions) {
   const apiKeyOptions = getApiKeyNotarizationOptions(env);
   if (apiKeyOptions) {
     return { ...baseOptions, ...apiKeyOptions };
+  }
+
+  const keychainOptions = getKeychainNotarizationOptions(env);
+  if (keychainOptions) {
+    return { ...baseOptions, ...keychainOptions };
   }
 
   return undefined;

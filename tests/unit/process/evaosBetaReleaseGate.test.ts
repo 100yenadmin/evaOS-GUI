@@ -92,9 +92,14 @@ describe('evaOS beta release gate', () => {
         APPLE_API_INDIVIDUAL_KEY: 'true',
       })
     ).not.toThrow();
+    expect(() =>
+      releaseGate.assertPublicBetaNotarizationEnv({
+        NOTARY_PROFILE: 'evaos-workbench-notary',
+      })
+    ).not.toThrow();
   });
 
-  it('builds afterSign notarization options for Apple ID and API-key credential paths', () => {
+  it('builds afterSign notarization options for Apple ID, API-key, and keychain credential paths', () => {
     const baseOptions = {
       tool: 'notarytool',
       appBundleId: 'com.evaos.workbench.beta',
@@ -147,6 +152,20 @@ describe('evaOS beta release gate', () => {
         baseOptions
       )
     ).not.toHaveProperty('appleApiIssuer');
+
+    expect(
+      afterSign.getNotarizationOptions(
+        {
+          NOTARY_PROFILE: 'evaos-workbench-notary',
+          NOTARY_KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
+        },
+        baseOptions
+      )
+    ).toMatchObject({
+      ...baseOptions,
+      keychainProfile: 'evaos-workbench-notary',
+      keychain: '/secure/evaos-release-signing.keychain-db',
+    });
   });
 
   it('passes the repository release config audit', () => {
