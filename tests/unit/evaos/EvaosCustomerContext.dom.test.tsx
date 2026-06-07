@@ -284,6 +284,29 @@ describe('EvaosCustomerContext', () => {
     expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
   });
 
+  it('brokered customer context refreshes after a sanitized desktop session import event', async () => {
+    brokerMocks.getSessionStatus
+      .mockResolvedValueOnce(brokerSession())
+      .mockResolvedValueOnce(brokerSession('member@example.test'));
+    brokerMocks.getCustomerTargets
+      .mockResolvedValueOnce(customerTargets())
+      .mockResolvedValueOnce(memberCustomerTargets());
+
+    const { result } = renderHook(() => useEvaosBrokeredCustomerContext());
+
+    await waitFor(() => expect(result.current.customerContext.roles).toEqual(['admin']));
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('evaos:desktop-session-imported', { detail: { source: 'protocol' } }));
+    });
+
+    await waitFor(() => expect(result.current.brokerSession?.userEmail).toBe('member@example.test'));
+    await waitFor(() => expect(result.current.customerContext.roles).toEqual(['member']));
+    expect(result.current.customerContext.selectedCustomerId).toBe('member-customer');
+    expect(brokerMocks.getSessionStatus).toHaveBeenCalledTimes(2);
+    expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
+  });
+
   it('sanitizes broker denial text before it can enter renderer-visible context state', async () => {
     brokerMocks.getCustomerTargets.mockResolvedValue({
       success: false,

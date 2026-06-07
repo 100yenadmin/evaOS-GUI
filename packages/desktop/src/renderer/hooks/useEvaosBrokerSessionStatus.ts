@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 import type { IEvaosBrokerSessionStatus } from '@/common/evaos/bridgeTypes';
+import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from './system/useDeepLink';
 
 interface EvaosBrokerSessionStatusState {
   session: IEvaosBrokerSessionStatus | null;
@@ -54,6 +55,15 @@ export function useEvaosBrokerSessionStatus(enabled = true): EvaosBrokerSessionS
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const handleDesktopSessionImported = () => {
+      void refresh();
+    };
+    window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+    return () => window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+  }, [enabled, refresh]);
 
   return {
     session,
