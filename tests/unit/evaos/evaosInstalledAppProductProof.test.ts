@@ -41,6 +41,15 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     waitSelectors: string[];
     action?: string;
   }>;
+  buildInstalledProofPreflightPlan: (options?: { expectedHead?: string }) => Array<{
+    id: string;
+    route: string;
+    screenshot: string;
+    artifactName: string;
+    closeoutState: 'loaded';
+    settledMarkers: string[];
+    waitSelectors: string[];
+  }>;
   installedExecutablePath: (appPath?: string) => string;
   markdownForInstalledProof: (report: {
     repoHead: string;
@@ -79,6 +88,15 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
       bundleVersion: string;
       shortVersion: string;
       protocolSchemes: string[];
+    };
+    failure?: {
+      stage: string;
+      id: string;
+      route: string;
+      currentHash: string;
+      expectedSelectors: string[];
+      screenshot: string | null;
+      message: string;
     };
     plan: Array<{ id: string; route: string; screenshot: string; waitSelectors: string[] }>;
   }) => { reportPath: string; proofPath: string; takeoverPath: string };
@@ -182,6 +200,28 @@ describe('evaOS installed app product proof', () => {
       ])
     );
     expect(byId.get('settings-about')?.waitSelectors).toContain('body:has-text("2fb812c12ddf")');
+  });
+
+  it('runs exact-candidate About preflight before golden parity rows can blame product routes', () => {
+    const preflight = installedAppProof.buildInstalledProofPreflightPlan({
+      expectedHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
+    });
+
+    expect(preflight).toEqual([
+      expect.objectContaining({
+        id: 'settings-about-current-candidate',
+        route: '/settings/about',
+        screenshot: 'preflight-settings-about.png',
+        artifactName: 'screenshots/preflight-settings-about.png',
+        closeoutState: 'loaded',
+        settledMarkers: expect.arrayContaining(['About', 'Build identity', '2fb812c12ddf']),
+        waitSelectors: expect.arrayContaining([
+          'body:has-text("About")',
+          'body:has-text("Build identity")',
+          'body:has-text("2fb812c12ddf")',
+        ]),
+      }),
+    ]);
   });
 
   it('preserves route settle actions so hidden diagnostics can be opened before proof waits', () => {
@@ -323,9 +363,59 @@ describe('evaOS installed app product proof', () => {
         status: 'pending',
       }),
     ]);
+    expect(report.preflightAssertions).toEqual([
+      expect.objectContaining({
+        id: 'settings-about-current-candidate',
+        route: '/settings/about',
+        artifactName: 'screenshots/preflight-settings-about.png',
+        settledMarkers: ['About', 'Build identity', '2fb812c12ddf'],
+        status: 'pending',
+      }),
+    ]);
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('Expected commit: `2fb812c12ddf`');
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Exact Candidate Preflight');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Parity Assertions');
     expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Run from `/Volumes/LEXAR/repos');
+    installedAppProof.assertNoUnsafeProofText(fs.readFileSync(files.reportPath, 'utf8'));
+  });
+
+  it('writes an explicit failure packet when the installed app cannot launch', () => {
+    const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-installed-proof-launch-failure-'));
+    const bundleInfo = {
+      bundleId: 'com.evaos.workbench.beta',
+      bundleName: 'evaOS Workbench Beta',
+      bundleVersion: '2.1.12-evaos-beta.0',
+      shortVersion: '2.1.12-evaos-beta.0',
+      protocolSchemes: ['evaos-workbench-beta'],
+    };
+    const files = installedAppProof.writeDryRunProofFiles({
+      artifactRoot,
+      repoHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
+      expectedHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
+      appPath: '/Applications/evaOS Workbench Beta.app',
+      executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+      bundleInfo,
+      plan: [],
+      failure: {
+        stage: 'launch',
+        id: 'installed-app-launch',
+        route: 'app-launch',
+        currentHash: 'unavailable',
+        expectedSelectors: [],
+        screenshot: null,
+        message: 'Process failed to launch!',
+      },
+    });
+
+    const report = JSON.parse(fs.readFileSync(files.reportPath, 'utf8'));
+    expect(report.failure).toMatchObject({
+      stage: 'launch',
+      id: 'installed-app-launch',
+      route: 'app-launch',
+      message: 'Process failed to launch!',
+    });
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Failure');
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('`launch`');
     installedAppProof.assertNoUnsafeProofText(fs.readFileSync(files.reportPath, 'utf8'));
   });
 });

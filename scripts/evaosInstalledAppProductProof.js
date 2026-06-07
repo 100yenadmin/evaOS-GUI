@@ -160,6 +160,24 @@ function buildInstalledProofPlan(plan, options = {}) {
   return normalizeInstalledProofEntries(plan, options);
 }
 
+function buildInstalledProofPreflightPlan(options = {}) {
+  const expectedShortHead = shortHead(options.expectedHead);
+  const settledMarkers = uniqueStrings(['About', 'Build identity', expectedShortHead]);
+
+  return [
+    {
+      manifestRowId: 'exact-candidate-preflight',
+      id: 'settings-about-current-candidate',
+      route: '/settings/about',
+      screenshot: 'preflight-settings-about.png',
+      artifactName: 'screenshots/preflight-settings-about.png',
+      closeoutState: 'loaded',
+      settledMarkers,
+      waitSelectors: settledMarkers.map(markerSelector),
+    },
+  ];
+}
+
 function assertNoUnsafeProofText(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   for (const { name, pattern } of UNSAFE_PROOF_PATTERNS) {
@@ -175,6 +193,7 @@ function ensureProofDirs(artifactRoot) {
 
 function safeReportForPlan(options) {
   const plan = normalizeInstalledProofEntries(options.plan, { expectedHead: options.expectedHead });
+  const preflightPlan = buildInstalledProofPreflightPlan({ expectedHead: options.expectedHead });
   const appStat =
     fs.existsSync(options.appPath) && fs.statSync(options.appPath).isDirectory()
       ? {
@@ -203,6 +222,16 @@ function safeReportForPlan(options) {
       closeoutState: entry.closeoutState,
       status: options.screenshotStatus || 'pending',
     })),
+    preflightAssertions: preflightPlan.map((entry) => ({
+      id: entry.id,
+      manifestRowId: entry.manifestRowId,
+      route: entry.route,
+      artifactName: entry.artifactName,
+      closeoutState: entry.closeoutState,
+      settledMarkers: entry.settledMarkers,
+      waitSelectors: entry.waitSelectors,
+      status: options.screenshotStatus || 'pending',
+    })),
     parityAssertions: plan.map((entry) => ({
       id: entry.id,
       manifestRowId: entry.manifestRowId,
@@ -213,6 +242,7 @@ function safeReportForPlan(options) {
       waitSelectors: entry.waitSelectors,
       status: options.screenshotStatus || 'pending',
     })),
+    failure: options.failure || null,
   };
 }
 
@@ -235,6 +265,12 @@ function markdownForInstalledProof(report) {
     `- Short version: \`${report.bundleInfo.shortVersion}\``,
     `- Protocol schemes: \`${report.bundleInfo.protocolSchemes.join('`, `')}\``,
     '',
+    '## Exact Candidate Preflight',
+    '',
+    ...(report.preflightAssertions || []).map(
+      (entry) => `- \`${entry.id}\` -> \`${entry.artifactName}\` (${entry.closeoutState}, ${entry.status})`
+    ),
+    '',
     '## Parity Assertions',
     '',
     ...(report.parityAssertions || report.screenshots).map(
@@ -242,6 +278,19 @@ function markdownForInstalledProof(report) {
         `- \`${shot.id}\` -> \`${shot.artifactName || shot.screenshot}\` (${shot.closeoutState}, ${shot.status})`
     ),
     '',
+    ...(report.failure
+      ? [
+          '## Failure',
+          '',
+          `- Stage: \`${report.failure.stage}\``,
+          `- ID: \`${report.failure.id}\``,
+          `- Route: \`${report.failure.route}\``,
+          `- Current hash: \`${report.failure.currentHash}\``,
+          `- Screenshot: \`${report.failure.screenshot || 'none'}\``,
+          `- Message: ${report.failure.message}`,
+          '',
+        ]
+      : []),
     '## Safety',
     '',
     'Reports intentionally omit environment values, renderer state dumps, tokenized URLs, provider grants, and raw credentials.',
@@ -325,6 +374,55 @@ async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
   throw new Error(`Installed app proof action is not allowlisted: ${action}`);
 }
 
+async function captureProofEntry(page, entry, artifactRoot, timeout) {
+  await page.evaluate((route) => {
+    window.location.hash = route.startsWith('#') ? route : `#${route}`;
+  }, entry.route);
+  await page.waitForLoadState('domcontentloaded');
+  await runProofPlanAction(page, entry.action, timeout);
+
+  for (const selector of entry.waitSelectors) {
+    await page.locator(selector).first().waitFor({ state: 'visible', timeout });
+  }
+
+  const screenshotPath = path.join(artifactRoot, 'artifacts', 'screenshots', entry.screenshot);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+
+  return {
+    id: entry.id,
+    manifestRowId: entry.manifestRowId,
+    route: entry.route,
+    screenshot: entry.artifactName,
+    artifactName: entry.artifactName,
+    closeoutState: entry.closeoutState,
+    settledMarkers: entry.settledMarkers,
+    waitSelectors: entry.waitSelectors,
+    status: 'passed',
+  };
+}
+
+async function captureFailureProof(page, entry, artifactRoot, stage, error) {
+  const failureScreenshot = `screenshots/${entry.id}-failure.png`;
+  const screenshotPath = path.join(artifactRoot, 'artifacts', failureScreenshot);
+  let currentHash = 'unavailable';
+
+  if (page) {
+    currentHash = await page.evaluate(() => window.location.hash).catch(() => 'unavailable');
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
+  }
+
+  return {
+    stage,
+    id: entry.id,
+    manifestRowId: entry.manifestRowId,
+    route: entry.route,
+    currentHash,
+    expectedSelectors: entry.waitSelectors,
+    screenshot: failureScreenshot,
+    message: error?.message || String(error),
+  };
+}
+
 async function captureInstalledAppProof(options = {}) {
   const repoRoot = options.repoRoot || DEFAULT_REPO_ROOT;
   const repoHead = options.repoHead || gitHead(repoRoot);
@@ -344,55 +442,79 @@ async function captureInstalledAppProof(options = {}) {
   const bundleInfo = options.bundleInfo || readInfoPlist(appPath);
   assertExpectedBundle(bundleInfo);
 
+  const preflightPlan = buildInstalledProofPreflightPlan({ expectedHead });
   const proofPlan = buildInstalledProofPlan(undefined, { expectedHead });
   ensureProofDirs(artifactRoot);
 
   const { _electron: electron } = require('playwright');
-  const electronApp = await electron.launch({
-    executablePath,
-    cwd: path.dirname(executablePath),
-    env: {
-      ...process.env,
-      AIONUI_DISABLE_AUTO_UPDATE: '1',
-      AIONUI_DISABLE_DEVTOOLS: '1',
-      AIONUI_E2E_TEST: '1',
-      AIONUI_CDP_PORT: '0',
-      EVAOS_INSTALLED_APP_PROOF: '1',
-      NODE_ENV: 'production',
-    },
-    timeout: 60_000,
-  });
+  let electronApp;
+  try {
+    electronApp = await electron.launch({
+      executablePath,
+      cwd: path.dirname(executablePath),
+      env: {
+        ...process.env,
+        AIONUI_DISABLE_AUTO_UPDATE: '1',
+        AIONUI_DISABLE_DEVTOOLS: '1',
+        AIONUI_E2E_TEST: '1',
+        AIONUI_CDP_PORT: '0',
+        EVAOS_INSTALLED_APP_PROOF: '1',
+        NODE_ENV: 'production',
+      },
+      timeout: 60_000,
+    });
+  } catch (error) {
+    const failure = {
+      stage: 'launch',
+      id: 'installed-app-launch',
+      route: 'app-launch',
+      currentHash: 'unavailable',
+      expectedSelectors: [],
+      screenshot: null,
+      message: error?.message || String(error),
+    };
+    const report = safeReportForPlan({
+      mode: 'live',
+      repoHead,
+      expectedHead,
+      appPath,
+      executablePath,
+      packageVersion: packageVersion(repoRoot),
+      bundleInfo,
+      plan: proofPlan,
+      screenshotStatus: 'not-started',
+      failure,
+    });
+    const files = writeReportFiles(artifactRoot, report);
+    throw new Error(`Installed app proof failed during launch; wrote ${files.reportPath}: ${failure.message}`);
+  }
 
   const screenshots = [];
+  const preflightAssertions = [];
+  let failure = null;
 
   try {
     const page = await resolveMainWindow(electronApp);
     await page.setViewportSize({ width: 1440, height: 1000 });
 
-    for (const entry of proofPlan) {
-      await page.evaluate((route) => {
-        window.location.hash = route.startsWith('#') ? route : `#${route}`;
-      }, entry.route);
-      await page.waitForLoadState('domcontentloaded');
-      await runProofPlanAction(page, entry.action, timeout);
-
-      for (const selector of entry.waitSelectors) {
-        await page.locator(selector).first().waitFor({ state: 'visible', timeout });
+    for (const entry of preflightPlan) {
+      try {
+        preflightAssertions.push(await captureProofEntry(page, entry, artifactRoot, timeout));
+      } catch (error) {
+        failure = await captureFailureProof(page, entry, artifactRoot, 'preflight', error);
+        break;
       }
+    }
 
-      const screenshotPath = path.join(artifactRoot, 'artifacts', 'screenshots', entry.screenshot);
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      screenshots.push({
-        id: entry.id,
-        manifestRowId: entry.manifestRowId,
-        route: entry.route,
-        screenshot: entry.artifactName,
-        artifactName: entry.artifactName,
-        closeoutState: entry.closeoutState,
-        settledMarkers: entry.settledMarkers,
-        waitSelectors: entry.waitSelectors,
-        status: 'passed',
-      });
+    if (!failure) {
+      for (const entry of proofPlan) {
+        try {
+          screenshots.push(await captureProofEntry(page, entry, artifactRoot, timeout));
+        } catch (error) {
+          failure = await captureFailureProof(page, entry, artifactRoot, 'parity', error);
+          break;
+        }
+      }
     }
   } finally {
     await electronApp.close().catch(() => undefined);
@@ -414,6 +536,7 @@ async function captureInstalledAppProof(options = {}) {
     packageVersion: packageVersion(repoRoot),
     bundleInfo,
     screenshots,
+    preflightAssertions,
     parityAssertions: screenshots.map((entry) => ({
       id: entry.id,
       manifestRowId: entry.manifestRowId,
@@ -424,9 +547,15 @@ async function captureInstalledAppProof(options = {}) {
       waitSelectors: entry.waitSelectors,
       status: entry.status,
     })),
+    failure,
   };
 
   const files = writeReportFiles(artifactRoot, report);
+  if (failure) {
+    throw new Error(
+      `Installed app proof failed during ${failure.stage} for ${failure.id}; wrote ${files.reportPath}: ${failure.message}`
+    );
+  }
   return { artifactRoot, report, files };
 }
 
@@ -523,6 +652,7 @@ module.exports = {
   artifactRootForHead,
   assertNoUnsafeProofText,
   buildInstalledProofPlan,
+  buildInstalledProofPreflightPlan,
   captureInstalledAppProof,
   gitHead,
   installedExecutablePath,

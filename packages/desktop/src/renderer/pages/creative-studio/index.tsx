@@ -5,7 +5,7 @@ const CreativeStudioPage: React.FC = () => (
   <RuntimeDashboardPage
     runtimeKey='creative_studio'
     title='Creative Studio'
-    subtitle='Hosted creative generation workspace opened from evaOS Workbench.'
+    subtitle='External creative generation workspace.'
     issueRef='#181'
   />
 );
