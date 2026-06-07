@@ -52,6 +52,7 @@ export const EVAOS_BETA_BUILD_METADATA = [
   { label: 'Commit', value: APP_COMMIT },
   { label: 'Bundle ID', value: EVAOS_BETA_IDENTITY.appId },
   { label: 'Protocol', value: EVAOS_BETA_IDENTITY.protocolScheme },
+  { label: 'Release repo', value: EVAOS_BETA_RELEASE_CONTROL_REPO },
   { label: 'Fallback', value: 'released macOS app' },
 ] as const;
 

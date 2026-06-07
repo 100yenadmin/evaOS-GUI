@@ -22,6 +22,20 @@ import DevSettings from './DevSettings';
 import DirInputItem from './DirInputItem';
 import PreferenceRow from './PreferenceRow';
 
+function getEvaosBetaVisiblePath(value: string | undefined): string {
+  if (!value) return '';
+  return value
+    .replace(/(^|\/)\.aionui-config-dev-2(?=$|\/)/g, '$1.evaos-workbench-config-dev-2')
+    .replace(/(^|\/)\.aionui-config-dev(?=$|\/)/g, '$1.evaos-workbench-config-dev')
+    .replace(/(^|\/)\.aionui-config(?=$|\/)/g, '$1.evaos-workbench-config')
+    .replace(/(^|\/)\.aionui-dev-2(?=$|\/)/g, '$1.evaos-workbench-dev-2')
+    .replace(/(^|\/)\.aionui-dev(?=$|\/)/g, '$1.evaos-workbench-dev')
+    .replace(/(^|\/)\.aionui(?=$|\/)/g, '$1.evaos-workbench')
+    .replace(/(^|\/)AionUi-Dev-2(?=$|\/)/g, '$1evaOS Workbench Beta Dev 2')
+    .replace(/(^|\/)AionUi-Dev(?=$|\/)/g, '$1evaOS Workbench Beta Dev')
+    .replace(/(^|\/)AionUi(?=$|\/)/g, '$1evaOS Workbench Beta');
+}
+
 /**
  * System settings content component
  *
@@ -251,7 +265,7 @@ const SystemModalContent: React.FC = () => {
   useEffect(() => {
     if (systemInfo) {
       initializingRef.current = true;
-      form.setFieldsValue({ workDir: systemInfo.workDir });
+      form.setFieldsValue({ workDir: getEvaosBetaVisiblePath(systemInfo.workDir) });
       requestAnimationFrame(() => {
         initializingRef.current = false;
       });
@@ -351,7 +365,7 @@ const SystemModalContent: React.FC = () => {
     async (_changedValue: unknown, allValues: Record<string, string>) => {
       if (initializingRef.current || savingRef.current || !systemInfo) return;
       const { workDir } = allValues;
-      const needsRestart = workDir !== systemInfo.workDir;
+      const needsRestart = workDir !== getEvaosBetaVisiblePath(systemInfo.workDir);
       if (!needsRestart) return;
 
       savingRef.current = true;
@@ -364,7 +378,7 @@ const SystemModalContent: React.FC = () => {
         await ipcBridge.application.updateSystemInfo.invoke({ cacheDir: systemInfo.cacheDir, workDir });
         await ipcBridge.application.restart.invoke();
       } catch (caughtError: unknown) {
-        form.setFieldValue('workDir', systemInfo.workDir);
+        form.setFieldValue('workDir', getEvaosBetaVisiblePath(systemInfo.workDir));
         if (caughtError) {
           setError(caughtError instanceof Error ? caughtError.message : String(caughtError));
         }
@@ -434,8 +448,10 @@ const SystemModalContent: React.FC = () => {
               <div>
                 <Form.Item label={t('settings.logDir')}>
                   <div className='aion-dir-input h-[32px] flex items-center rounded-8px border border-solid border-transparent pl-14px bg-[var(--fill-0)] '>
-                    <Tooltip content={systemInfo?.logDir || ''} position='top'>
-                      <div className='flex-1 min-w-0 text-13px text-t-primary truncate'>{systemInfo?.logDir || ''}</div>
+                    <Tooltip content={getEvaosBetaVisiblePath(systemInfo?.logDir)} position='top'>
+                      <div className='flex-1 min-w-0 text-13px text-t-primary truncate'>
+                        {getEvaosBetaVisiblePath(systemInfo?.logDir)}
+                      </div>
                     </Tooltip>
                     <Button
                       type='text'

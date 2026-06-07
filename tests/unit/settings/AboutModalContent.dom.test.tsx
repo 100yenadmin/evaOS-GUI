@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AboutModalContent, {
   EVAOS_BETA_ABOUT_LINKS,
   EVAOS_BETA_BUILD_METADATA,
+  EVAOS_BETA_RELEASE_CONTROL_REPO,
   EVAOS_BETA_SUPPORT_NOTICE,
 } from '@/renderer/components/settings/SettingsModal/contents/AboutModalContent';
 
@@ -75,6 +76,13 @@ describe('AboutModalContent evaOS beta identity', () => {
       expect(screen.getByText(item.label)).toBeInTheDocument();
       expect(screen.getAllByText(item.value).length).toBeGreaterThan(0);
     });
+  });
+
+  it('shows the beta release repo in the About build identity', () => {
+    renderAbout();
+
+    expect(screen.getByText('Release repo')).toBeInTheDocument();
+    expect(screen.getByText(EVAOS_BETA_RELEASE_CONTROL_REPO)).toBeInTheDocument();
   });
 
   it('routes About support links to evaOS-owned surfaces', async () => {
