@@ -40,6 +40,11 @@ describe('evaOS beta WebUI guardrail', () => {
         source: 'builtin' as const,
       },
       {
+        name: 'Aionui Official',
+        description: 'Bundled from AionHub by iOfficeAI. Learn more at https://www.aionui.com.',
+        source: 'builtin' as const,
+      },
+      {
         name: 'aionui-webui-setup',
         description: 'AionUi WebUI configuration expert for remote access through the settings interface.',
         source: 'builtin' as const,
@@ -51,11 +56,16 @@ describe('evaOS beta WebUI guardrail', () => {
       },
     ]);
 
-    expect(cards.map((skill) => skill.name)).toEqual(['aionui-skills', 'cron']);
+    expect(cards.map((skill) => skill.name)).toEqual(['aionui-skills', 'Aionui Official', 'cron']);
     expect(cards[0].evaosDisplayName).toBe('upstream-skills-registry');
     expect(cards[0].evaosDisplayDescription).toBe(
       'Discover and manage reusable agent skills from the upstream shell registry.'
     );
-    expect(JSON.stringify(cards)).not.toMatch(/AionUI|AionUi WebUI|remote access/);
+    const visibleText = cards.flatMap((skill) => [
+      skill.description,
+      skill.evaosDisplayName,
+      skill.evaosDisplayDescription,
+    ]);
+    expect(JSON.stringify(visibleText)).not.toMatch(/AionUi|Aionui Official|AionHub|iOfficeAI|aionui\.com/i);
   });
 });
