@@ -13,6 +13,7 @@ function fixtureState() {
   return {
     brokerEndpoint: 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session',
     customerId: 'golden',
+    runtime: 'openclaw',
     customerAccountId: '823ee8be-d547-4df9-9ee5-20cc7bb1ddcb',
     wrongCustomerId: 'aionui-wrong-customer-proof',
     admin: {
@@ -72,6 +73,7 @@ describe('evaOS live canary fixture provisioner', () => {
 
     expect(env).toMatchObject({
       AIONUI_EVAOS_CUSTOMER_ID: 'golden',
+      AIONUI_EVAOS_RUNTIME: 'openclaw',
       AIONUI_EVAOS_APPROVAL_DENY_ACK: 'evaos-deny-test',
       AIONUI_EVAOS_APPROVAL_ID: 'approval-id',
       AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK: 'evaos-browser-test',
