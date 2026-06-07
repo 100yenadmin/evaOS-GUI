@@ -21,6 +21,11 @@ on:
         description: 'Non-secret issue or packet reference for this proof run.'
         required: true
         type: string
+      runtime:
+        description: 'Optional runtime id for broker-runtime proof, for example browser, openclaw, hermes, or terminal. Falls back to the evaos-staging AIONUI_EVAOS_RUNTIME variable.'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -44,7 +49,7 @@ jobs:
       AIONUI_EVAOS_BROKER_ENDPOINT: ${{ vars.AIONUI_EVAOS_BROKER_ENDPOINT || secrets.AIONUI_EVAOS_BROKER_ENDPOINT }}
       AIONUI_EVAOS_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_DESKTOP_SESSION }}
       AIONUI_EVAOS_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID }}
-      AIONUI_EVAOS_RUNTIME: ${{ vars.AIONUI_EVAOS_RUNTIME }}
+      AIONUI_EVAOS_RUNTIME: ${{ github.event.inputs.runtime || vars.AIONUI_EVAOS_RUNTIME }}
       AIONUI_EVAOS_APPROVAL_ID: ${{ vars.AIONUI_EVAOS_APPROVAL_ID || secrets.AIONUI_EVAOS_APPROVAL_ID }}
       AIONUI_EVAOS_REQUESTER_SESSION: ${{ secrets.AIONUI_EVAOS_REQUESTER_SESSION }}
       AIONUI_EVAOS_APPROVER_SESSION: ${{ secrets.AIONUI_EVAOS_APPROVER_SESSION }}
