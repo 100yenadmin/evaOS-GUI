@@ -23,6 +23,7 @@ describe('evaosRoutes', () => {
 
     expect(routes.map((route) => route.props.path)).toEqual([
       '/openclaw',
+      '/home',
       '/evaos',
       '/hermes',
       '/mission-control',

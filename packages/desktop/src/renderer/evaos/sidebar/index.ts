@@ -6,6 +6,7 @@ export { default as SiderCreativeStudioEntry } from './SiderCreativeStudioEntry'
 export { default as SiderDesignWorkspaceEntry } from './SiderDesignWorkspaceEntry';
 export { default as SiderEvaosEntry } from './SiderEvaosEntry';
 export { default as SiderHermesEntry } from './SiderHermesEntry';
+export { default as SiderHomeEntry } from './SiderHomeEntry';
 export { default as SiderMissionControlEntry } from './SiderMissionControlEntry';
 export { default as SiderNativeCompanionEntry } from './SiderNativeCompanionEntry';
 export { default as SiderPeopleAccessEntry } from './SiderPeopleAccessEntry';

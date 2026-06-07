@@ -25,7 +25,7 @@ const SiderApprovalCenterEntry: React.FC<SiderApprovalCenterEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'Approval Center';
+  const label = 'Approvals';
 
   if (collapsed) {
     return (

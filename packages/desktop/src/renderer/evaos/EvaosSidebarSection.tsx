@@ -15,6 +15,7 @@ import {
   SiderDesignWorkspaceEntry,
   SiderEvaosEntry,
   SiderHermesEntry,
+  SiderHomeEntry,
   SiderMissionControlEntry,
   SiderNativeCompanionEntry,
   SiderPeopleAccessEntry,
@@ -32,6 +33,7 @@ interface EvaosSidebarSectionProps {
   collapsed: boolean;
   pathname: string;
   siderTooltipProps: SiderTooltipProps;
+  canSeeHome: boolean;
   canSeeEvaos: boolean;
   canSeeHermes: boolean;
   canSeeMissionControl: boolean;
@@ -52,6 +54,7 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
   collapsed,
   pathname,
   siderTooltipProps,
+  canSeeHome,
   canSeeEvaos,
   canSeeHermes,
   canSeeMissionControl,
@@ -68,60 +71,22 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
 }) => {
   return (
     <>
-      {canSeeEvaos ? (
-        <SiderEvaosEntry
+      {canSeeHome ? (
+        <SiderHomeEntry
           isMobile={isMobile}
-          isActive={pathname === '/evaos' || pathname === '/openclaw'}
+          isActive={pathname === '/home'}
           collapsed={collapsed}
           siderTooltipProps={siderTooltipProps}
-          onClick={() => onNavigate('/evaos')}
+          onClick={() => onNavigate('/home')}
         />
       ) : null}
-      {canSeeHermes ? (
-        <SiderHermesEntry
+      {EVAOS_APPROVAL_CENTER_ENABLED && canSeeApprovalCenter ? (
+        <SiderApprovalCenterEntry
           isMobile={isMobile}
-          isActive={pathname === '/hermes'}
+          isActive={pathname === '/approval-center'}
           collapsed={collapsed}
           siderTooltipProps={siderTooltipProps}
-          onClick={() => onNavigate('/hermes')}
-        />
-      ) : null}
-      {canSeeMissionControl ? (
-        <>
-          <SiderMissionControlEntry
-            isMobile={isMobile}
-            isActive={pathname === '/mission-control'}
-            collapsed={collapsed}
-            siderTooltipProps={siderTooltipProps}
-            onClick={() => onNavigate('/mission-control')}
-          />
-          {canSeeTerminal ? (
-            <SiderTerminalEntry
-              isMobile={isMobile}
-              isActive={pathname === '/terminal'}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={() => onNavigate('/terminal')}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {canSeePeopleAccess ? (
-        <SiderPeopleAccessEntry
-          isMobile={isMobile}
-          isActive={pathname === '/people-access'}
-          collapsed={collapsed}
-          siderTooltipProps={siderTooltipProps}
-          onClick={() => onNavigate('/people-access')}
-        />
-      ) : null}
-      {EVAOS_PROVIDER_HUB_ENABLED && canSeeConnectedApps ? (
-        <SiderConnectedAppsEntry
-          isMobile={isMobile}
-          isActive={pathname === '/connected-apps'}
-          collapsed={collapsed}
-          siderTooltipProps={siderTooltipProps}
-          onClick={() => onNavigate('/connected-apps')}
+          onClick={() => onNavigate('/approval-center')}
         />
       ) : null}
       {canSeeDesignWorkspace ? (
@@ -151,6 +116,24 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
           onClick={() => onNavigate('/creative-studio')}
         />
       ) : null}
+      {EVAOS_PROVIDER_HUB_ENABLED && canSeeConnectedApps ? (
+        <SiderConnectedAppsEntry
+          isMobile={isMobile}
+          isActive={pathname === '/connected-apps'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/connected-apps')}
+        />
+      ) : null}
+      {canSeePeopleAccess ? (
+        <SiderPeopleAccessEntry
+          isMobile={isMobile}
+          isActive={pathname === '/people-access'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/people-access')}
+        />
+      ) : null}
       {EVAOS_COMPANY_BRAIN_ENABLED && canSeeCompanyBrain ? (
         <SiderCompanyBrainEntry
           isMobile={isMobile}
@@ -160,13 +143,40 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
           onClick={() => onNavigate('/company-brain')}
         />
       ) : null}
-      {EVAOS_APPROVAL_CENTER_ENABLED && canSeeApprovalCenter ? (
-        <SiderApprovalCenterEntry
+      {canSeeEvaos ? (
+        <SiderEvaosEntry
           isMobile={isMobile}
-          isActive={pathname === '/approval-center'}
+          isActive={pathname === '/evaos' || pathname === '/openclaw'}
           collapsed={collapsed}
           siderTooltipProps={siderTooltipProps}
-          onClick={() => onNavigate('/approval-center')}
+          onClick={() => onNavigate('/evaos')}
+        />
+      ) : null}
+      {canSeeHermes ? (
+        <SiderHermesEntry
+          isMobile={isMobile}
+          isActive={pathname === '/hermes'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/hermes')}
+        />
+      ) : null}
+      {canSeeMissionControl ? (
+        <SiderMissionControlEntry
+          isMobile={isMobile}
+          isActive={pathname === '/mission-control'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/mission-control')}
+        />
+      ) : null}
+      {canSeeTerminal ? (
+        <SiderTerminalEntry
+          isMobile={isMobile}
+          isActive={pathname === '/terminal'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/terminal')}
         />
       ) : null}
       {canSeeNativeCompanion ? (

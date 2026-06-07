@@ -53,6 +53,7 @@ const brokerSessionMock = vi.hoisted(() => ({
 }));
 
 const brokerMocks = vi.hoisted(() => ({
+  beginDesktopAuth: vi.fn(),
   revokeSession: vi.fn(),
 }));
 
@@ -113,6 +114,9 @@ vi.mock('@renderer/pages/team/hooks/useTeamCreatedRedirect', () => ({
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
+    beginDesktopAuth: {
+      invoke: brokerMocks.beginDesktopAuth,
+    },
     revokeSession: {
       invoke: brokerMocks.revokeSession,
     },
@@ -173,6 +177,18 @@ describe('Sider runtime route visibility', () => {
       error: customerContextMock.error,
     }));
     brokerMocks.revokeSession.mockReset();
+    brokerMocks.beginDesktopAuth.mockReset();
+    brokerMocks.beginDesktopAuth.mockResolvedValue({
+      success: true,
+      data: {
+        authUrl: 'https://www.electricsheephq.com/desktop-auth?fresh=abcd-efgh-1234-5678-9012-3456',
+        displayText: 'electricsheephq.com/desktop-auth',
+        deviceCode: {
+          code: 'ABCD-EFGH',
+          expiresAt: '2026-06-05T12:05:00.000Z',
+        },
+      },
+    });
     brokerMocks.revokeSession.mockResolvedValue({
       success: true,
       data: {
@@ -201,6 +217,8 @@ describe('Sider runtime route visibility', () => {
 
     renderSider();
 
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.getByText('Approvals')).toBeInTheDocument();
     expect(screen.getByText('Mission Control')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
@@ -217,7 +235,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
-    expect(screen.queryByText('People Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
     expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
@@ -241,7 +259,7 @@ describe('Sider runtime route visibility', () => {
 
     renderSider();
 
-    expect(screen.getByText('People Access')).toBeInTheDocument();
+    expect(screen.getByText('People & Access')).toBeInTheDocument();
     expect(screen.getByText('Connected Apps')).toBeInTheDocument();
     expect(screen.getByText('Company Brain')).toBeInTheDocument();
     expect(screen.getByText('Design Workspace')).toBeInTheDocument();
@@ -289,6 +307,39 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('Viewing')).toBeInTheDocument();
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+  });
+
+  it('renders old Workbench Home, Approvals, and People & Access labels for eligible sessions', () => {
+    customerContextMock.roles = ['owner'];
+    customerContextMock.scopes = ['manage_members', 'approve_actions'];
+
+    renderSider();
+
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.getByText('Approvals')).toBeInTheDocument();
+    expect(screen.getByText('People & Access')).toBeInTheDocument();
+    expect(screen.queryByText('Approval Center')).not.toBeInTheDocument();
+    expect(screen.queryByText('People Access')).not.toBeInTheDocument();
+  });
+
+  it('keeps old Workbench footer sign-in and sign-out affordance copy', async () => {
+    const user = userEvent.setup();
+    authMock.status = 'unauthenticated';
+    authMock.user = null;
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
+
+    renderSider();
+
+    expect(screen.getByText('Sign in to open Eva workspaces')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign In' }));
+
+    expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1);
   });
 
   it('renders beta account footer metadata and an admin customer switcher', async () => {
@@ -405,6 +456,13 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
     expect(screen.getByText(/v2\.1\.12-evaos-beta\.0/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Selected customer')).toHaveValue('david-poku');
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.getByText('evaOS')).toBeInTheDocument();
+    expect(screen.getByText('Hermes')).toBeInTheDocument();
+    expect(screen.getByText('Mission Control')).toBeInTheDocument();
+    expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('People & Access')).toBeInTheDocument();
+    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 

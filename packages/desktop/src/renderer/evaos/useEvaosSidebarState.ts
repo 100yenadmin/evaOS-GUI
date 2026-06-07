@@ -19,6 +19,7 @@ interface EvaosSidebarState {
   canSwitchCustomers: boolean;
   selectCustomer: (customerId: string) => void;
   brokerAuthenticated: boolean;
+  canSeeHome: boolean;
   canSeeEvaos: boolean;
   canSeeHermes: boolean;
   canSeeMissionControl: boolean;
@@ -39,6 +40,7 @@ export function useEvaosSidebarState(): EvaosSidebarState {
   const brokerSessionStatus = useEvaosBrokerSessionStatus(true);
   const brokerAuthenticated =
     brokerSessionStatus.session?.authenticated === true && !brokerSessionStatus.session.expired;
+  const shellAuthenticated = webAuthenticated || brokerAuthenticated;
   const customerContext = useEvaosCustomerContext(
     brokerAuthenticated,
     evaosBrokerSessionKey(brokerSessionStatus.session),
@@ -47,7 +49,7 @@ export function useEvaosSidebarState(): EvaosSidebarState {
 
   const routeContext = useMemo(
     () => ({
-      authenticated: webAuthenticated,
+      authenticated: shellAuthenticated,
       roles: customerContext.roles,
       scopes: customerContext.scopes,
       isOperator: customerContext.isOperator,
@@ -58,7 +60,7 @@ export function useEvaosSidebarState(): EvaosSidebarState {
       customerContext.isOperator,
       customerContext.roles,
       customerContext.scopes,
-      webAuthenticated,
+      shellAuthenticated,
       user?.username,
     ]
   );
@@ -66,39 +68,39 @@ export function useEvaosSidebarState(): EvaosSidebarState {
   const brokerPolicyContext = useMemo(
     () => ({
       ...routeContext,
-      authenticated: webAuthenticated || brokerAuthenticated,
+      authenticated: shellAuthenticated,
     }),
-    [brokerAuthenticated, routeContext, webAuthenticated]
+    [routeContext, shellAuthenticated]
   );
 
   const canSeeRepairableRoute = useMemo(() => {
     return (routePath: string): boolean => {
-      if (!webAuthenticated || brokerSessionStatus.loading) return false;
+      if (!shellAuthenticated || brokerSessionStatus.loading) return false;
       if (!brokerAuthenticated) return true;
       return customerContext.loaded && evaosRuntimeRouteDecision(routePath, routeContext).allowed;
     };
-  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, webAuthenticated]);
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);
 
   const canSeeMissionControl = useMemo(() => {
-    if (!webAuthenticated || brokerSessionStatus.loading) return false;
+    if (!shellAuthenticated || brokerSessionStatus.loading) return false;
     if (!brokerAuthenticated) return true;
     return customerContext.loaded && evaosRuntimeRouteDecision('/mission-control', routeContext).allowed;
-  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, webAuthenticated]);
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);
 
   const canSeeNativeCompanion = useMemo(() => {
-    if (!webAuthenticated || brokerSessionStatus.loading) return false;
+    if (!shellAuthenticated || brokerSessionStatus.loading) return false;
     if (!brokerAuthenticated) return true;
     return customerContext.loaded && evaosRuntimeRouteDecision('/native-companion', routeContext).allowed;
-  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, webAuthenticated]);
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);
 
   const canSeeBrokeredRoute = useMemo(() => {
     return (routePath: string): boolean => {
-      if (!webAuthenticated || brokerSessionStatus.loading || !brokerAuthenticated || !customerContext.loaded) {
+      if (!shellAuthenticated || brokerSessionStatus.loading || !brokerAuthenticated || !customerContext.loaded) {
         return false;
       }
       return evaosRuntimeRouteDecision(routePath, routeContext).allowed;
     };
-  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, webAuthenticated]);
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);
 
   const canSwitchCustomers =
     brokerAuthenticated && canAccessEvaosAdminRuntimes(brokerPolicyContext) && customerContext.targets.length > 1;
@@ -113,6 +115,7 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     canSwitchCustomers,
     selectCustomer: customerContext.selectCustomer,
     brokerAuthenticated,
+    canSeeHome: shellAuthenticated,
     canSeeEvaos: canSeeRepairableRoute('/evaos'),
     canSeeHermes: canSeeRepairableRoute('/hermes'),
     canSeeMissionControl,

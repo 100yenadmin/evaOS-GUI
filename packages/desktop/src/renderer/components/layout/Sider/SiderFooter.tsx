@@ -34,6 +34,8 @@ interface SiderFooterProps {
   onCustomerChange?: (customerId: string) => void;
   showLogout?: boolean;
   onLogoutClick?: () => void;
+  showSignIn?: boolean;
+  onSignInClick?: () => void;
 }
 
 const SiderFooter: React.FC<SiderFooterProps> = ({
@@ -52,6 +54,8 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   onCustomerChange,
   showLogout = false,
   onLogoutClick,
+  showSignIn = false,
+  onSignInClick,
 }) => {
   const { t } = useTranslation();
 
@@ -152,6 +156,27 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
               </span>
             </button>
           </Tooltip>
+        )}
+        {showSignIn && onSignInClick && !collapsed && (
+          <div className='flex flex-1 min-w-0 flex-col gap-4px'>
+            <div className='px-4px text-10px leading-14px text-t-tertiary'>Sign in to open Eva workspaces</div>
+            <Tooltip {...siderTooltipProps} content='Sign In' position='right'>
+              <button
+                type='button'
+                aria-label='Sign In'
+                onClick={onSignInClick}
+                className={classNames(
+                  'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
+                  'w-full min-w-0 justify-start gap-10px px-14px',
+                  isMobile && 'sider-footer-btn-mobile'
+                )}
+              >
+                <span className='collapsed-hidden text-t-primary text-14px font-[500] leading-24px truncate'>
+                  Sign In
+                </span>
+              </button>
+            </Tooltip>
+          </div>
         )}
         {/* Theme toggle — lightweight icon button, only while inside Settings page (not in collapsed mode) */}
         {showThemeToggle && (

@@ -147,6 +147,10 @@ const RUNTIME_BY_ROUTE_PATH = new Map(EVAOS_RUNTIME_CATALOG.map((runtime) => [ru
 
 export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   {
+    routePath: '/home',
+    allowMissingBroker: true,
+  },
+  {
     routePath: '/evaos',
     requiresAdmin: true,
     requiredScopes: ['access_openclaw_dashboard'],

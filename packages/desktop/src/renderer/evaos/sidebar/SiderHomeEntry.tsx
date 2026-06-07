@@ -6,11 +6,11 @@
 
 import React from 'react';
 import { Tooltip } from '@arco-design/web-react';
-import { Peoples } from '@icon-park/react';
+import { Home } from '@icon-park/react';
 import classNames from 'classnames';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 
-interface SiderPeopleAccessEntryProps {
+interface SiderHomeEntryProps {
   isMobile: boolean;
   isActive: boolean;
   collapsed: boolean;
@@ -18,14 +18,14 @@ interface SiderPeopleAccessEntryProps {
   onClick: () => void;
 }
 
-const SiderPeopleAccessEntry: React.FC<SiderPeopleAccessEntryProps> = ({
+const SiderHomeEntry: React.FC<SiderHomeEntryProps> = ({
   isMobile,
   isActive,
   collapsed,
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'People & Access';
+  const label = 'Home';
 
   if (collapsed) {
     return (
@@ -37,7 +37,7 @@ const SiderPeopleAccessEntry: React.FC<SiderPeopleAccessEntryProps> = ({
           )}
           onClick={onClick}
         >
-          <Peoples
+          <Home
             theme='outline'
             size='20'
             fill='currentColor'
@@ -60,7 +60,7 @@ const SiderPeopleAccessEntry: React.FC<SiderPeopleAccessEntryProps> = ({
         onClick={onClick}
       >
         <span className='size-22px flex items-center justify-center shrink-0 text-t-primary'>
-          <Peoples
+          <Home
             theme='outline'
             size='16'
             fill='currentColor'
@@ -74,4 +74,4 @@ const SiderPeopleAccessEntry: React.FC<SiderPeopleAccessEntryProps> = ({
   );
 };
 
-export default SiderPeopleAccessEntry;
+export default SiderHomeEntry;

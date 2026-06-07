@@ -142,6 +142,7 @@ describe('evaosRuntimeVisibility', () => {
 
   it('defines explicit route policies for all evaOS product and setup routes', () => {
     expect(EVAOS_ROUTE_POLICIES.map((policy) => policy.routePath)).toEqual([
+      '/home',
       '/evaos',
       '/openclaw',
       '/hermes',
@@ -158,6 +159,7 @@ describe('evaosRuntimeVisibility', () => {
       '/company-brain',
     ]);
 
+    expect(evaosRouteAllowsMissingBroker('/home')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/evaos')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/openclaw')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/hermes')).toBe(true);

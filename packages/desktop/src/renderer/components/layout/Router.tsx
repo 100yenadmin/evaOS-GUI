@@ -50,10 +50,10 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
       <Routes>
         <Route
           path='/login'
-          element={status === 'authenticated' ? <Navigate to='/evaos' replace /> : withRouteFallback(LoginPage)}
+          element={status === 'authenticated' ? <Navigate to='/home' replace /> : withRouteFallback(LoginPage)}
         />
         <Route element={<ProtectedLayout layout={layout} />}>
-          <Route index element={<Navigate to='/evaos' replace />} />
+          <Route index element={<Navigate to='/home' replace />} />
           <Route path='/guid' element={withRouteFallback(Guid)} />
           {renderEvaosRoutes()}
           <Route path='/conversation/:id' element={withRouteFallback(Conversation)} />
@@ -85,7 +85,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/scheduled' element={withRouteFallback(ScheduledTasksPage)} />
           <Route path='/scheduled/:job_id' element={withRouteFallback(TaskDetailPage)} />
         </Route>
-        <Route path='*' element={<Navigate to={status === 'authenticated' ? '/evaos' : '/login'} replace />} />
+        <Route path='*' element={<Navigate to={status === 'authenticated' ? '/home' : '/login'} replace />} />
       </Routes>
     </HashRouter>
   );

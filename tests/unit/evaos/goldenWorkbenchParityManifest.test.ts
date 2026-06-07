@@ -78,6 +78,27 @@ describe('goldenWorkbenchParityManifest', () => {
     }
   });
 
+  it('keeps old Workbench visible navigation labels and Home as an owned route', () => {
+    const homeRow = GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'home');
+
+    expect(homeRow).toMatchObject({
+      expectedRoute: '/home',
+      sidebarSection: 'Home',
+      sidebarLabel: 'Home',
+    });
+    expect(homeRow?.waiverIssue).toBeUndefined();
+    expect(GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'approvals')).toMatchObject({
+      expectedRoute: '/approval-center',
+      sidebarSection: 'Home',
+      sidebarLabel: 'Approvals',
+    });
+    expect(GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'people-access')).toMatchObject({
+      expectedRoute: '/people-access',
+      sidebarSection: 'Business Admin',
+      sidebarLabel: 'People & Access',
+    });
+  });
+
   it('maps every requested old Workbench baseline file at least once', () => {
     const allSourceRefs = GOLDEN_WORKBENCH_PARITY_MANIFEST.flatMap((row) => row.oldSourceRefs).join('\n');
 

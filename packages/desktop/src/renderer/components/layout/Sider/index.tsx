@@ -124,6 +124,16 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
+  const handleBeginDesktopAuth = useCallback(async () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    try {
+      await evaosBroker.beginDesktopAuth.invoke();
+    } catch (error) {
+      console.error('evaOS broker sign-in failed:', error);
+    }
+  }, []);
+
   const handleLogout = useCallback(async () => {
     cleanupSiderTooltips();
     blurActiveElement();
@@ -213,6 +223,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               collapsed={collapsed}
               pathname={pathname}
               siderTooltipProps={siderTooltipProps}
+              canSeeHome={evaosSidebarState.canSeeHome}
               canSeeEvaos={evaosSidebarState.canSeeEvaos}
               canSeeHermes={evaosSidebarState.canSeeHermes}
               canSeeMissionControl={evaosSidebarState.canSeeMissionControl}
@@ -285,6 +296,8 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         onCustomerChange={evaosSidebarState.selectCustomer}
         showLogout={showLogout}
         onLogoutClick={handleLogout}
+        showSignIn={!showLogout}
+        onSignInClick={handleBeginDesktopAuth}
       />
     </div>
   );

@@ -40,10 +40,6 @@ export interface GoldenWorkbenchParityManifestRow {
   waiverIssue?: string;
 }
 
-const ISSUE_180_AUTH_FOOTER = 'https://github.com/100yenadmin/evaOS-GUI/issues/180';
-const ISSUE_181_RUNTIME_ROUTES = 'https://github.com/100yenadmin/evaOS-GUI/issues/181';
-const ISSUE_182_BRANDING = 'https://github.com/100yenadmin/evaOS-GUI/issues/182';
-
 export const GOLDEN_WORKBENCH_PARITY_REQUIRED_IDS = [
   'home',
   'approvals',
@@ -67,11 +63,12 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     id: 'home',
     oldSourceRefs: ['SidebarView.swift: homeSidebarRows', 'ContentView.swift: SidebarSelection.sessionCenter'],
     oldSurface: 'SessionCenterView home dashboard',
+    expectedRoute: '/home',
     sidebarSection: 'Home',
     sidebarLabel: 'Home',
     requiredRole: 'signed-in-user',
-    statusRequirement: 'waived-until-session-center-or-equivalent-home-route-exists',
-    waiverIssue: ISSUE_181_RUNTIME_ROUTES,
+    statusRequirement: 'session-center-route-plus-sidebar-entry',
+    testId: 'tests/unit/evaos/SiderRouteVisibility.dom.test.tsx',
   },
   {
     id: 'approvals',
@@ -82,7 +79,7 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     ],
     expectedRoute: '/approval-center',
     sidebarSection: 'Home',
-    sidebarLabel: 'Approval Center',
+    sidebarLabel: 'Approvals',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:approve_actions',
     testId: 'tests/unit/evaos/ApprovalCenterPage.dom.test.tsx',
@@ -153,7 +150,7 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     ],
     expectedRoute: '/people-access',
     sidebarSection: 'Business Admin',
-    sidebarLabel: 'People Access',
+    sidebarLabel: 'People & Access',
     requiredRole: 'member-with-scope',
     statusRequirement: 'broker-policy-scope:manage_members',
     testId: 'tests/unit/evaos/PeopleAccessPage.dom.test.tsx',
