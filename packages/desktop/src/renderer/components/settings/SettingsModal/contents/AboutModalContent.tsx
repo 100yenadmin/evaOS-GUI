@@ -36,7 +36,7 @@ export const EVAOS_BETA_ABOUT_LINKS = {
 } as const;
 
 // Release-audit breadcrumb only. Keep this out of rendered About/support links.
-export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/AionUi';
+export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/evaOS-GUI';
 
 export const EVAOS_BETA_SUPPORT_NOTICE = {
   title: 'Beta support',
@@ -52,7 +52,6 @@ export const EVAOS_BETA_BUILD_METADATA = [
   { label: 'Commit', value: APP_COMMIT },
   { label: 'Bundle ID', value: EVAOS_BETA_IDENTITY.appId },
   { label: 'Protocol', value: EVAOS_BETA_IDENTITY.protocolScheme },
-  { label: 'Release repo', value: EVAOS_BETA_RELEASE_CONTROL_REPO },
   { label: 'Fallback', value: 'released macOS app' },
 ] as const;
 
