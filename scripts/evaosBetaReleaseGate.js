@@ -68,6 +68,12 @@ const API_KEY_INDIVIDUAL_ACK_ENV = {
   description: 'explicit acknowledgement that the API key is an individual App Store Connect key',
 };
 
+const KEYCHAIN_PROFILE_NOTARIZATION_ENV = {
+  name: 'NOTARY_PROFILE',
+  aliases: ['NOTARY_PROFILE', 'KEYCHAIN_PROFILE', 'keychainProfile'],
+  description: 'notarytool keychain profile for notarization',
+};
+
 const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
   ...REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV,
   ...REQUIRED_APPLE_ID_NOTARIZATION_ENV,
@@ -164,6 +170,10 @@ function formatMissingApiKeyIssuer(env) {
 }
 
 function formatMissingNotarizationEnv(env) {
+  if (getEnvValue(env, KEYCHAIN_PROFILE_NOTARIZATION_ENV)) {
+    return [];
+  }
+
   const appleIdMissing = formatMissing(REQUIRED_APPLE_ID_NOTARIZATION_ENV, env);
   if (appleIdMissing.length === 0) {
     return [];

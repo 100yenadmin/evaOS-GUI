@@ -554,6 +554,9 @@ try {
   const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
   try {
     buildWithDmgRetry(builderCommand, targetArch);
+    if (process.platform === 'darwin' && (builderArgs.includes('--mac') || builderArgs.includes('--all'))) {
+      require('./evaosFinalizeMacDmg').finalizeMacDmgs({ outDir, env: process.env });
+    }
   } catch (error) {
     const winExePath = path.join(outDir, 'win-unpacked', 'AionUi.exe');
     const firstError = formatExecError(error);
