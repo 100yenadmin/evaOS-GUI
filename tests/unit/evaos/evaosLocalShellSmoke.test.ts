@@ -91,6 +91,18 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     minLength?: number
   ) => Array<{ route: string; message: string }>;
 };
+const settledShellSmokePlan = require('../../../scripts/evaosSettledShellSmokePlan.js') as {
+  DEFAULT_PLAN_PATH: string;
+  SETTLED_SHELL_SCREENSHOT_PLAN: Array<{
+    id: string;
+    route: string;
+    screenshot: string;
+    target: string;
+    waitSelectors: string[];
+    notes: string[];
+  }>;
+  markdownForPlan: () => string;
+};
 
 describe('evaOS local shell smoke', () => {
   it('covers every beta shell route required before new feature slices', () => {
@@ -113,6 +125,42 @@ describe('evaOS local shell smoke', () => {
       'webui-beta-guardrail',
     ]);
     expect(localShellSmoke.TEAM_ROUTE_CHECK.name).toBe('team-route-redirect');
+  });
+
+  it('prepares the settled screenshot matrix for the finish-line shell smoke pass', () => {
+    expect(settledShellSmokePlan.DEFAULT_PLAN_PATH).toBe(
+      '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/shell-smoke-plan.md'
+    );
+    expect(settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => entry.id)).toEqual([
+      'sidebar-footer',
+      'new-chat-agent-order',
+      'settings-system',
+      'settings-themes',
+      'settings-about',
+      'mac-iphone',
+      'evaos',
+      'hermes',
+      'mission-control',
+      'terminal',
+      'business-browser',
+      'design-workspace',
+      'creative-studio',
+      'connected-apps',
+      'people-access',
+      'company-brain',
+      'approvals',
+    ]);
+
+    for (const entry of settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN) {
+      expect(entry.route).toMatch(/^\//);
+      expect(entry.screenshot).toMatch(/\.png$/);
+      expect(entry.waitSelectors.length).toBeGreaterThan(0);
+      expect(entry.notes.length).toBeGreaterThan(0);
+    }
+
+    expect(settledShellSmokePlan.markdownForPlan()).toContain('## Screenshot Matrix');
+    expect(settledShellSmokePlan.markdownForPlan()).toContain('Design Workspace');
+    expect(settledShellSmokePlan.markdownForPlan()).toContain('Approvals / Approval Center');
   });
 
   it('marks current route screenshots as shell smoke instead of loaded-state proof', () => {
