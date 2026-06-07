@@ -203,6 +203,8 @@ describe('evaOS local shell smoke', () => {
     expect(localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.map((check) => check.name)).toEqual([
       'mission-control-loaded-fixture',
       'mission-control-switch-clears-fixture',
+      'design-workspace-loaded-fixture',
+      'creative-studio-loaded-fixture',
       'people-access-loaded-fixture',
       'people-access-switch-clears-fixture',
       'connected-apps-loaded-fixture',
@@ -250,6 +252,46 @@ describe('evaOS local shell smoke', () => {
           'local-fixture:denied-runtime:paperclip',
         ]),
         forbidden: expect.arrayContaining(['fixture-customer-acme', 'fixture-audit-runtime-paperclip']),
+      })
+    );
+
+    const designWorkspaceLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'design-workspace-loaded-fixture'
+    );
+    expect(designWorkspaceLoaded).toEqual(
+      expect.objectContaining({
+        hash: '/design-workspace',
+        proofStage: localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE,
+        action: 'click-load-default-customer',
+        loadedStateRequiredMarkers: ['opendesign runtime status', 'opendesign source pointer', 'opendesign audit id'],
+        expected: expect.arrayContaining([
+          'OpenDesign workspace is ready for the selected customer',
+          'local-fixture:runtime:opendesign',
+          'fixture-audit-runtime-opendesign',
+        ]),
+        forbidden: expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle']),
+      })
+    );
+
+    const creativeStudioLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'creative-studio-loaded-fixture'
+    );
+    expect(creativeStudioLoaded).toEqual(
+      expect.objectContaining({
+        hash: '/creative-studio',
+        proofStage: localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE,
+        action: 'click-load-default-customer',
+        loadedStateRequiredMarkers: [
+          'creative studio runtime status',
+          'creative studio source pointer',
+          'creative studio audit id',
+        ],
+        expected: expect.arrayContaining([
+          'Creative Studio external workspace is ready to open',
+          'local-fixture:runtime:creative_studio',
+          'fixture-audit-runtime-creative-studio',
+        ]),
+        forbidden: expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle']),
       })
     );
 
