@@ -222,12 +222,34 @@ describe('EvaosRuntimeRouteGuard', () => {
 
   it('fails closed to login before the desktop/web session is authenticated', async () => {
     authMock.status = 'unauthenticated';
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
     customerContextMock.roles = ['owner'];
 
     renderGuardedRoute();
 
     await waitFor(() => expect(screen.getByText('Login fallback')).toBeInTheDocument());
     expect(screen.queryByText('Mission Control loaded')).not.toBeInTheDocument();
+  });
+
+  it('allows a valid broker desktop session to carry shell auth when web auth is not hydrated', () => {
+    authMock.status = 'unauthenticated';
+    customerContextMock.roles = ['owner'];
+
+    renderGuardedRoute();
+
+    expect(screen.getByText('Mission Control loaded')).toBeInTheDocument();
+    expect(screen.queryByText('Login fallback')).not.toBeInTheDocument();
+    expect(customerContextMock.useEvaosCustomerContext).toHaveBeenCalledWith(
+      true,
+      expect.stringContaining('admin@100yen.org'),
+      undefined
+    );
   });
 
   it('renders Terminal for admin sessions with terminal scope', () => {

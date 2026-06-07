@@ -19,21 +19,22 @@ interface EvaosRuntimeRouteGuardProps {
 
 export const EvaosRuntimeRouteGuard: React.FC<EvaosRuntimeRouteGuardProps> = ({ routePath, children }) => {
   const { status, user } = useAuth();
-  const authenticated = status === 'authenticated';
-  const brokerSessionStatus = useEvaosBrokerSessionStatus(authenticated);
+  const webAuthenticated = status === 'authenticated';
+  const brokerSessionStatus = useEvaosBrokerSessionStatus(true);
   const brokerAuthenticated =
-    authenticated && brokerSessionStatus.session?.authenticated === true && !brokerSessionStatus.session.expired;
+    brokerSessionStatus.session?.authenticated === true && !brokerSessionStatus.session.expired;
+  const shellAuthenticated = webAuthenticated || brokerAuthenticated;
   const customerContext = useEvaosCustomerContext(
     brokerAuthenticated,
     evaosBrokerSessionKey(brokerSessionStatus.session),
     brokerSessionStatus.loading ? { clearOnUnauthenticated: false } : undefined
   );
 
-  if (status === 'checking') {
+  if (status === 'checking' && !brokerAuthenticated) {
     return <AppLoader />;
   }
 
-  if (!authenticated) {
+  if (!shellAuthenticated) {
     return <Navigate to='/login' replace />;
   }
 
@@ -59,7 +60,7 @@ export const EvaosRuntimeRouteGuard: React.FC<EvaosRuntimeRouteGuardProps> = ({ 
   }
 
   const decision = evaosRuntimeRouteDecision(routePath, {
-    authenticated,
+    authenticated: shellAuthenticated,
     roles: customerContext.roles,
     scopes: customerContext.scopes,
     isOperator: customerContext.isOperator,
