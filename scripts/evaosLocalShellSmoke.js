@@ -237,7 +237,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Mission Control',
       'Denied Browser Fixture Co',
       'fixture-customer-browser-denied',
-      'fixture-audit-runtime-paperclip',
+      'fixture-audit-denied-runtime-paperclip',
     ],
     loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'paperclip customer switch proof'],
     action: 'click-mission-control-switch-clears',
@@ -247,12 +247,14 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Denied Browser Fixture Co',
       'fixture-customer-browser-denied',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Paperclip queue is waiting',
-      'local-fixture:runtime:paperclip',
-      'fixture-audit-runtime-paperclip',
+      'Paperclip denied for wrong customer fixture',
+      'local-fixture:denied-runtime:paperclip',
+      'fixture-audit-denied-runtime-paperclip',
     ],
     forbidden: [
       'fixture-customer-acme',
+      'local-fixture:runtime:paperclip',
+      'fixture-audit-runtime-paperclip',
       'desktop_session',
       'Bearer',
       'provider_grant',
@@ -714,12 +716,14 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     isolateRendererState: true,
     expected: [
       'Terminal',
-      'Customer VM shell runtime status from evaOS broker evidence',
+      'Customer VM shell runtime loaded from broker-owned runtime evidence',
       'Acme Fixture Co',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
       'Customer VM shell is offline in this local fixture',
-      'Source: local-fixture:runtime:terminal-offline',
-      'Audit: fixture-audit-runtime-terminal-offline',
+      'SOURCE',
+      'local-fixture:runtime:terminal-offline',
+      'AUDIT',
+      'fixture-audit-runtime-terminal-offline',
       'Fail-closed until evaOS broker returns customer-scoped Terminal evidence.',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
@@ -743,8 +747,10 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Denied Browser Fixture Co',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
       'Terminal denied for wrong customer fixture',
-      'Source: local-fixture:runtime:terminal-denied',
-      'Audit: fixture-audit-runtime-terminal-denied',
+      'SOURCE',
+      'local-fixture:runtime:terminal-denied',
+      'AUDIT',
+      'fixture-audit-runtime-terminal-denied',
     ],
     forbidden: [
       'fixture-audit-runtime-terminal-offline',
@@ -1074,10 +1080,7 @@ async function clickMissionControlSwitchClears(page) {
     'fixture-customer-acme',
     'fixture-audit-runtime-paperclip',
   ]);
-  await clickMissionControlCheck(page, 'fixture-customer-browser-denied');
-  await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-runtime-paperclip'), {
-    timeout: 10000,
-  });
+  await clickMissionControlCheck(page, 'fixture-audit-denied-runtime-paperclip');
 }
 
 async function clickCustomerTarget(page, name) {
