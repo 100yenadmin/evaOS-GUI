@@ -133,7 +133,7 @@ describe('RuntimeDashboardPage', () => {
     expect(screen.getByText('live')).toBeInTheDocument();
   });
 
-  it('uses the main-process runtime launch contract when status omits advisory actions', async () => {
+  it('does not advertise runtime actions when status omits advisory actions', async () => {
     evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
       success: true,
       data: {
@@ -158,16 +158,10 @@ describe('RuntimeDashboardPage', () => {
       />
     );
 
-    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Start / Attach' }));
-
-    await waitFor(() =>
-      expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
-        customerId: 'fixture-customer-acme',
-        runtime: 'openclaw',
-        action: 'attach',
-      })
-    );
+    expect(await screen.findByText('Runtime action blocked')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+    expect(evaosBrokerMock.runtimeAction).not.toHaveBeenCalled();
   });
 
   it('settles denied broker evidence without exposing attach or open actions', async () => {

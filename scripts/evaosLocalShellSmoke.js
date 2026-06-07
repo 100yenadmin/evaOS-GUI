@@ -776,6 +776,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'deep-link policy',
       'RC native canary contract',
     ],
+    action: 'click-native-companion-advanced-diagnostics',
     isolateRendererState: true,
     expected: [
       'Mac & iPhone',
@@ -956,12 +957,12 @@ function loadPlaywrightElectron(repoRoot, requirePlaywright) {
 }
 
 async function clickLoad(page) {
-  const loadButton = page.getByRole('button', { name: /^Load$/ }).first();
+  const loadButton = page.getByRole('button', { name: /^(Load|Load status)$/ }).first();
   await loadButton.waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForFunction(
     () =>
       Array.from(document.querySelectorAll('button')).some(
-        (button) => button.textContent?.trim() === 'Load' && !button.disabled
+        (button) => /^(Load|Load status)$/.test(button.textContent?.trim() ?? '') && !button.disabled
       ),
     { timeout: 10000 }
   );
@@ -1180,6 +1181,15 @@ async function clickTerminalSwitchClears(page) {
   ]);
   await clickLoad(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-runtime-terminal-denied'), {
+    timeout: 10000,
+  });
+}
+
+async function clickNativeCompanionAdvancedDiagnostics(page) {
+  const advancedButton = page.getByRole('button', { name: /Advanced diagnostics/i }).first();
+  await advancedButton.waitFor({ state: 'visible', timeout: 10000 });
+  await advancedButton.click();
+  await page.waitForFunction(() => document.body.innerText.includes('Native companion status matrix'), {
     timeout: 10000,
   });
 }
@@ -1416,6 +1426,8 @@ async function runLocalShellSmoke(options = {}) {
           await clickBusinessBrowserSwitchClears(page);
         } else if (check.action === 'click-terminal-switch-clears') {
           await clickTerminalSwitchClears(page);
+        } else if (check.action === 'click-native-companion-advanced-diagnostics') {
+          await clickNativeCompanionAdvancedDiagnostics(page);
         } else if (check.action === 'click-company-brain-switch-clears') {
           await clickCompanyBrainSwitchClears(page);
         } else if (check.action === 'click-refresh-targets') {
