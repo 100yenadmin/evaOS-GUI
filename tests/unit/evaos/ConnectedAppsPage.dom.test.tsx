@@ -353,6 +353,33 @@ describe('ConnectedAppsPage', () => {
     expect(providerHubMocks.getProfiles).toHaveBeenCalledTimes(1);
   });
 
+  it('clears provider evidence when the shared customer context is cleared externally', async () => {
+    const user = userEvent.setup();
+    providerHubMocks.getProfiles.mockResolvedValue({
+      success: true,
+      data: providerHub(false),
+    });
+
+    render(<ConnectedAppsPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(await screen.findByText('Google Workspace')).toBeInTheDocument();
+    expect(screen.getByText('sales@example.test')).toBeInTheDocument();
+
+    await act(async () => {
+      clearEvaosCustomerContext();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Google Workspace')).not.toBeInTheDocument();
+      expect(screen.queryByText('sales@example.test')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Load a customer account to view connected app evidence.')).toBeInTheDocument();
+    expect(providerHubMocks.getProfiles).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the selected non-default customer for provider loads and actions', async () => {
     const user = userEvent.setup();
     providerHubMocks.getProfiles.mockResolvedValue({

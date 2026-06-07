@@ -129,7 +129,7 @@ describe('EvaosBrokerSessionClient', () => {
       device_code: 'AB123',
     });
     expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBeUndefined();
-    expect(status).toEqual({
+    expect(status).toMatchObject({
       state: 'authenticated',
       authenticated: true,
       expired: false,
@@ -138,8 +138,42 @@ describe('EvaosBrokerSessionClient', () => {
       source: 'memory',
       message: 'evaOS desktop session is active.',
     });
+    expect(status.sessionKey).toMatch(/^evaos-session-\d+$/);
+    expect(status.sessionEpoch).toBeGreaterThan(0);
     expect(JSON.stringify(status)).not.toContain('eds_created_session_secret_for_test');
     expect(JSON.stringify(status)).not.toContain('access_token');
+  });
+
+  it('rotates a renderer-safe session key for same-account desktop session handoffs', async () => {
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    const firstStatus = client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_first_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}&email=admin%40100yen.org`
+    );
+    const secondStatus = client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_second_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}&email=admin%40100yen.org`
+    );
+
+    expect(firstStatus.userEmail).toBe('admin@100yen.org');
+    expect(secondStatus.userEmail).toBe('admin@100yen.org');
+    expect(firstStatus.expiresAt).toBe(FUTURE);
+    expect(secondStatus.expiresAt).toBe(FUTURE);
+    expect(firstStatus.sessionKey).toMatch(/^evaos-session-\d+$/);
+    expect(secondStatus.sessionKey).toMatch(/^evaos-session-\d+$/);
+    expect(secondStatus.sessionKey).not.toBe(firstStatus.sessionKey);
+    expect(secondStatus.sessionEpoch).toBeGreaterThan(firstStatus.sessionEpoch ?? 0);
+    expect(JSON.stringify({ firstStatus, secondStatus })).not.toMatch(
+      /eds_first_session_secret_for_test|eds_second_session_secret_for_test|desktop_session|access_token|Bearer/i
+    );
   });
 
   it('imports a Workbench loopback callback into main-process state before loading customer targets', async () => {
@@ -171,7 +205,7 @@ describe('EvaosBrokerSessionClient', () => {
     );
     const targets = await client.customerTargets();
 
-    expect(status).toEqual({
+    expect(status).toMatchObject({
       state: 'authenticated',
       authenticated: true,
       expired: false,
@@ -180,6 +214,7 @@ describe('EvaosBrokerSessionClient', () => {
       source: 'callback',
       message: 'evaOS desktop session is active.',
     });
+    expect(status.sessionKey).toMatch(/^evaos-session-\d+$/);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBe('Bearer eds_callback_session_secret_for_test');
     expect(requestBody(fetchImpl.mock.calls[0])).toEqual({ action: 'list_customer_targets' });
@@ -345,7 +380,7 @@ describe('EvaosBrokerSessionClient', () => {
 
     const status = client.getSessionStatus();
 
-    expect(status).toEqual({
+    expect(status).toMatchObject({
       state: 'authenticated',
       authenticated: true,
       expired: false,
@@ -354,6 +389,7 @@ describe('EvaosBrokerSessionClient', () => {
       source: 'workbench-keychain',
       message: 'evaOS desktop session is active.',
     });
+    expect(status.sessionKey).toMatch(/^evaos-session-\d+$/);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(JSON.stringify(status)).not.toContain('eds_workbench_keychain_session_secret_for_test');
   });

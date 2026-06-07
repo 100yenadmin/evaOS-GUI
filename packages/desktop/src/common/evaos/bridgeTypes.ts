@@ -20,6 +20,8 @@ export interface IEvaosBrokerSessionStatus {
   state: IEvaosBrokerSessionState;
   authenticated: boolean;
   expired: boolean;
+  sessionKey?: string;
+  sessionEpoch?: number;
   userEmail?: string;
   expiresAt?: string;
   source: 'none' | 'environment' | 'memory' | 'callback' | 'workbench-keychain';

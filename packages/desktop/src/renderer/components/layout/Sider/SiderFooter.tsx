@@ -11,6 +11,12 @@ import { ArrowCircleLeft, CloseOne, Moon, SettingTwo, SunOne } from '@icon-park/
 import classNames from 'classnames';
 import { iconColors } from '@renderer/styles/colors';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
+import type { IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
+import packageJson from '../../../../../../../package.json';
+
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
+const EVAOS_CHANNEL_LABEL = 'controlled beta';
 
 interface SiderFooterProps {
   isMobile: boolean;
@@ -21,6 +27,11 @@ interface SiderFooterProps {
   onSettingsClick: () => void;
   onThemeToggle: () => void;
   accountLabel?: string | null;
+  selectedCustomerId?: string;
+  selectedCustomerLabel?: string;
+  customerTargets?: IEvaosCustomerTargetView[];
+  canSwitchCustomers?: boolean;
+  onCustomerChange?: (customerId: string) => void;
   showLogout?: boolean;
   onLogoutClick?: () => void;
 }
@@ -34,6 +45,11 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   onSettingsClick,
   onThemeToggle,
   accountLabel,
+  selectedCustomerId,
+  selectedCustomerLabel,
+  customerTargets = [],
+  canSwitchCustomers = false,
+  onCustomerChange,
   showLogout = false,
   onLogoutClick,
 }) => {
@@ -58,13 +74,36 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   );
   const showThemeToggle = isSettings && !collapsed;
   const themeTooltip = theme === 'dark' ? t('settings.lightMode') : t('settings.darkMode');
+  const showAccountBlock = !collapsed && (accountLabel || selectedCustomerLabel || selectedCustomerId);
+  const canRenderCustomerSelect =
+    canSwitchCustomers && selectedCustomerId && customerTargets.length > 1 && Boolean(onCustomerChange);
 
   return (
     <div className='shrink-0 sider-footer mt-auto pt-8px pb-8px border-t border-solid border-[var(--color-border-2)] border-l-0 border-r-0 border-b-0'>
-      {!collapsed && accountLabel ? (
-        <div className='mb-6px px-10px text-11px leading-16px text-t-secondary'>
-          <div className='font-medium text-t-tertiary'>Viewing</div>
-          <div className='truncate text-t-primary'>{accountLabel}</div>
+      {showAccountBlock ? (
+        <div className='mb-8px px-10px text-11px leading-16px text-t-secondary'>
+          <div className='flex items-center justify-between gap-6px'>
+            <div className='font-medium text-t-tertiary'>Viewing</div>
+            <div className='text-10px leading-14px text-t-tertiary'>{EVAOS_CHANNEL_LABEL}</div>
+          </div>
+          {accountLabel ? <div className='truncate text-t-primary'>{accountLabel}</div> : null}
+          {canRenderCustomerSelect ? (
+            <select
+              aria-label='Selected customer'
+              value={selectedCustomerId}
+              onChange={(event) => onCustomerChange?.(event.currentTarget.value)}
+              className='mt-4px h-26px w-full min-w-0 rd-6px border border-solid border-[var(--color-border-2)] bg-fill-1 px-6px text-11px text-t-primary outline-none'
+            >
+              {customerTargets.map((target) => (
+                <option key={target.customerId} value={target.customerId}>
+                  {target.displayName}
+                </option>
+              ))}
+            </select>
+          ) : selectedCustomerLabel ? (
+            <div className='mt-2px truncate text-t-secondary'>{selectedCustomerLabel}</div>
+          ) : null}
+          <div className='mt-3px truncate text-10px leading-14px text-t-tertiary'>v{APP_VERSION}</div>
         </div>
       ) : null}
       <div className={classNames('flex', collapsed ? 'flex-col gap-2px' : 'items-center gap-2px')}>
@@ -88,11 +127,13 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
           </div>
         </Tooltip>
         {showLogout && onLogoutClick && (
-          <Tooltip {...siderTooltipProps} content={t('settings.googleLogout')} position='right'>
-            <div
+          <Tooltip {...siderTooltipProps} content='Sign out' position='right'>
+            <button
+              type='button'
+              aria-label='Sign out'
               onClick={onLogoutClick}
               className={classNames(
-                'h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
+                'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                 collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-10px px-14px',
                 isMobile && 'sider-footer-btn-mobile'
               )}
@@ -107,9 +148,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
                 />
               </span>
               <span className='collapsed-hidden text-t-primary text-14px font-[500] leading-24px truncate'>
-                {t('settings.googleLogout')}
+                Sign out
               </span>
-            </div>
+            </button>
           </Tooltip>
         )}
         {/* Theme toggle — lightweight icon button, only while inside Settings page (not in collapsed mode) */}
