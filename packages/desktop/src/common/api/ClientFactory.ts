@@ -22,6 +22,11 @@ export interface ClientOptions {
 
 export type RotatingClient = OpenAIRotatingClient | GeminiRotatingClient | AnthropicRotatingClient;
 
+const EVAOS_PROVIDER_REQUEST_HEADERS = {
+  'HTTP-Referer': 'https://www.electricsheephq.com',
+  'X-Title': 'evaOS Workbench',
+} as const;
+
 /**
  * 为 new-api 网关规范化 base URL
  * Normalize base URL for new-api gateway based on target protocol
@@ -75,10 +80,7 @@ export class ClientFactory {
         const clientConfig: OpenAIClientConfig = {
           baseURL: base_url,
           timeout: options.timeout,
-          defaultHeaders: {
-            'HTTP-Referer': 'https://aionui.com',
-            'X-Title': 'AionUi',
-          },
+          defaultHeaders: { ...EVAOS_PROVIDER_REQUEST_HEADERS },
           ...(options.baseConfig as OpenAIClientConfig),
         };
 
@@ -126,10 +128,7 @@ export class ClientFactory {
         const clientConfig: OpenAIClientConfig = {
           baseURL: base_url,
           timeout: options.timeout,
-          defaultHeaders: {
-            'HTTP-Referer': 'https://aionui.com',
-            'X-Title': 'AionUi',
-          },
+          defaultHeaders: { ...EVAOS_PROVIDER_REQUEST_HEADERS },
           ...(options.baseConfig as OpenAIClientConfig),
         };
 
