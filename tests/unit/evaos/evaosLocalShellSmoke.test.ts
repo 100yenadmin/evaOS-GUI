@@ -17,6 +17,7 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     hash: string;
     expected: string[];
     forbidden: string[];
+    requiredSelectors?: string[];
   }>;
   PROOF_STAGES: {
     SHELL_SMOKE: string;
@@ -33,6 +34,7 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     loadedStateRequiredMarkers: string[];
     action?: string;
     isolateRendererState?: boolean;
+    requiredSelectors?: string[];
   }>;
   LOCAL_PRODUCT_ROUTE_CHECKS: Array<{
     name: string;
@@ -45,6 +47,7 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     loadedStateRequiredMarkers: string[];
     action?: string;
     isolateRendererState?: boolean;
+    requiredSelectors?: string[];
   }>;
   LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS: Array<{
     name: string;
@@ -75,6 +78,7 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     loadedStateRequiredMarkers: string[];
     action?: string;
     isolateRendererState?: boolean;
+    requiredSelectors?: string[];
   }>;
   shellSmokeEnv: (artifactsDir: string, env?: NodeJS.ProcessEnv, repoRoot?: string) => NodeJS.ProcessEnv;
   isLocalProductMemberPersona: (env?: NodeJS.ProcessEnv) => boolean;
@@ -123,6 +127,24 @@ describe('evaOS local shell smoke', () => {
       );
       expect(route.settledMarkers.some((marker) => marker !== route.title)).toBe(true);
     }
+  });
+
+  it('requires the evaOS support affordance on shell-smoke routes', () => {
+    for (const route of localShellSmoke.ROUTE_CHECKS) {
+      expect(route.requiredSelectors).toContain('[data-testid="evaos-support-bubble"]');
+    }
+
+    for (const route of localShellSmoke.BROKER_GUARDED_ROUTE_CHECKS) {
+      expect(route.requiredSelectors).toContain('[data-testid="evaos-support-bubble"]');
+    }
+
+    const about = localShellSmoke.ROUTE_CHECKS.find((check) => check.name === 'about-support-metadata');
+    expect(about?.expected).toEqual(
+      expect.arrayContaining([
+        'Open ElectricSheep support',
+        'Support reports include route, app version, commit, channel, redacted logs, and screenshots only when requested.',
+      ])
+    );
   });
 
   it('keeps local loaded product proof separate from default shell smoke', () => {

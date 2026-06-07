@@ -11,12 +11,46 @@ import * as zlib from 'node:zlib';
 const LOG_SUFFIXES = ['.log', '.aioncore.log', '.aionrs.log'];
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}/;
 const DEFAULT_LOG_DAYS = 3;
+const REDACTION = '[REDACTED]';
+const SENSITIVE_KEY_PATTERN =
+  /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret)/i;
+const KEY_VALUE_SECRET_PATTERN =
+  /\b([A-Za-z0-9_.-]*(?:authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret)[A-Za-z0-9_.-]*)\b(\s*[:=]\s*)(["']?)([^"'\s,&}]{4,})(\3)/gi;
+const JSON_SECRET_PATTERN =
+  /(["'])([^"']*(?:authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret)[^"']*)(\1\s*:\s*)(["'])([^"']{4,})(\4)/gi;
+const BEARER_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}\b/gi;
+const EVAOS_DESKTOP_SESSION_PATTERN = /\beds_[A-Za-z0-9._-]{8,}\b/g;
+const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
 
 export type FeedbackLogAttachment = {
   filename: string;
   data: Buffer;
   contentType: 'application/gzip';
 };
+
+export function sanitizeFeedbackLogText(input: string): string {
+  return input
+    .split('\n')
+    .map((line) => {
+      if (SENSITIVE_KEY_PATTERN.test(line) && line.length > 600) {
+        return `${line.slice(0, 160)} ${REDACTION}`;
+      }
+
+      const tokenScrubbed = line
+        .replace(BEARER_PATTERN, `Bearer ${REDACTION}`)
+        .replace(EVAOS_DESKTOP_SESSION_PATTERN, REDACTION)
+        .replace(JWT_PATTERN, REDACTION);
+
+      return tokenScrubbed
+        .replace(JSON_SECRET_PATTERN, (_match, quote, key, separator, valueQuote) => {
+          return `${quote}${key}${separator}${valueQuote}${REDACTION}${valueQuote}`;
+        })
+        .replace(KEY_VALUE_SECRET_PATTERN, (_match, key, separator, quote) => {
+          return `${key}${separator}${quote}${REDACTION}${quote}`;
+        });
+    })
+    .join('\n');
+}
 
 export function getRecentFeedbackLogPaths(logsDir: string, days = DEFAULT_LOG_DAYS): string[] {
   let files: string[];
@@ -58,7 +92,7 @@ export function collectFeedbackLogAttachment(logsDir: string): FeedbackLogAttach
   for (const logPath of logPaths) {
     const basename = path.basename(logPath);
     const content = fs.readFileSync(logPath, 'utf8');
-    parts.push(`=== ${basename} ===\n${content}\n`);
+    parts.push(`=== ${basename} ===\n${sanitizeFeedbackLogText(content)}\n`);
   }
 
   return {

@@ -64,6 +64,7 @@ describe('AboutModalContent evaOS beta identity', () => {
 
     expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.title)).toBeInTheDocument();
     expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.body)).toBeInTheDocument();
+    expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.diagnostics)).toBeInTheDocument();
     expect(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.supportRoute)).toBeInTheDocument();
   });
 

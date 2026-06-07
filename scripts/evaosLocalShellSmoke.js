@@ -12,6 +12,9 @@ const PROOF_STAGES = {
   PRODUCT_LOADED_STATE: 'product-loaded-state',
 };
 
+const SUPPORT_BUBBLE_SELECTOR = '[data-testid="evaos-support-bubble"]';
+const SUPPORT_BUBBLE_ROUTE_GUARD = [SUPPORT_BUBBLE_SELECTOR];
+
 const ROUTE_CHECKS = [
   {
     name: 'evaos-dashboard',
@@ -22,6 +25,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
     expected: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Attach blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'hermes-dashboard',
@@ -32,6 +36,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
     expected: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Attach blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'mission-control',
@@ -42,6 +47,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['paperclip runtime status', 'customer scoped runtime proof'],
     expected: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Attach blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'beta-readiness',
@@ -58,6 +64,7 @@ const ROUTE_CHECKS = [
       'No runtime evidence loaded yet.',
     ],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'agent-settings-remote-guardrail',
@@ -68,6 +75,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['local agent inventory result', 'remote guardrail copy'],
     expected: ['Local Agents', 'Custom uses your configured model providers', 'Detect Custom Agent'],
     forbidden: ['Root PR #15', 'Stack approval', 'Remote Agents', 'Allow insecure', 'Handshake', 'Connect remote'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'about-support-metadata',
@@ -86,8 +94,11 @@ const ROUTE_CHECKS = [
       'com.evaos.workbench.beta',
       'Protocol',
       'evaos-workbench-beta',
+      'Open ElectricSheep support',
+      'Support reports include route, app version, commit, channel, redacted logs, and screenshots only when requested.',
     ],
     forbidden: ['iOfficeAI/AionUi', 'aionui.com', 'Default AionUi', 'Aion CLI'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'native-companion-boundary',
@@ -129,6 +140,7 @@ const ROUTE_CHECKS = [
       'Boundary clean',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'access_token', 'refresh_token'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
 ];
 
@@ -139,6 +151,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'people-access-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['People Access', 'Fixture Owner', 'member rows', 'desktop_session', 'Bearer', 'provider_grant'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'approval-center-broker-guard',
@@ -146,6 +159,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'approval-center-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Approval Center', 'approval request rows', 'desktop_session', 'Bearer', 'provider_grant'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'connected-apps-broker-guard',
@@ -153,6 +167,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'connected-apps-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Connected Apps', 'Google Workspace', 'desktop_session', 'Bearer', 'provider_grant', 'grant_handle'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'business-browser-broker-guard',
@@ -160,6 +175,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'business-browser-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Business Browser', 'fixture.example.test', 'desktop_session', 'Bearer', 'provider_grant'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'company-brain-broker-guard',
@@ -167,6 +183,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'company-brain-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Company Brain', 'Renewal fixture brief', 'desktop_session', 'Bearer', 'provider_grant'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
     name: 'webui-beta-guardrail',
@@ -184,6 +201,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
       'Bearer',
       'provider_grant',
     ],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
 ];
 
@@ -895,6 +913,19 @@ function textFindings(route, text, expected, forbidden, minLength = 80) {
   return findings;
 }
 
+async function selectorFindings(page, route, selectors = []) {
+  const findings = [];
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    try {
+      await locator.waitFor({ state: 'visible', timeout: 5000 });
+    } catch {
+      findings.push({ route, message: `Missing visible selector: ${selector}` });
+    }
+  }
+  return findings;
+}
+
 function relevantConsoleErrors(consoleMessages) {
   return consoleMessages.filter(
     (message) => message.type === 'error' && !IGNORED_CONSOLE_ERROR_PATTERN.test(message.text)
@@ -1405,6 +1436,7 @@ async function runLocalShellSmoke(options = {}) {
       await waitForSettledMarkers(page, check.settledMarkers);
       const text = await page.locator('body').innerText({ timeout: 10000 });
       findings.push(...textFindings(check.name, text, check.expected, check.forbidden));
+      findings.push(...(await selectorFindings(page, check.name, check.requiredSelectors)));
       const screenshotPath = await routeScreenshot(page, screenshotsDir, check.name);
       results.push({
         route: check.name,
@@ -1414,6 +1446,7 @@ async function runLocalShellSmoke(options = {}) {
         proofStage: check.proofStage,
         settledMarkers: check.settledMarkers,
         loadedStateRequiredMarkers: check.loadedStateRequiredMarkers,
+        requiredSelectors: check.requiredSelectors ?? [],
       });
     }
 
@@ -1425,6 +1458,7 @@ async function runLocalShellSmoke(options = {}) {
         await page.waitForTimeout(450);
         const text = await page.locator('body').innerText({ timeout: 10000 });
         findings.push(...textFindings(check.name, text, check.expected, check.forbidden));
+        findings.push(...(await selectorFindings(page, check.name, check.requiredSelectors)));
         const screenshotPath = await routeScreenshot(page, screenshotsDir, check.screenshotName);
         results.push({
           route: check.name,
@@ -1434,6 +1468,7 @@ async function runLocalShellSmoke(options = {}) {
           proofStage: PROOF_STAGES.SHELL_SMOKE,
           settledMarkers: check.expected,
           loadedStateRequiredMarkers: ['redirected #/guid route', 'broker session required'],
+          requiredSelectors: check.requiredSelectors ?? [],
         });
       }
     }

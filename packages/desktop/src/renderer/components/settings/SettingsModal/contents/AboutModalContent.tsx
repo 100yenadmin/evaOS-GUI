@@ -5,7 +5,7 @@
  */
 
 import { Divider, Typography, Button, Switch } from '@arco-design/web-react';
-import { Github, Right } from '@icon-park/react';
+import { Earth, Right } from '@icon-park/react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
@@ -41,7 +41,9 @@ export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/A
 export const EVAOS_BETA_SUPPORT_NOTICE = {
   title: 'Beta support',
   body: 'The released macOS app remains the fallback until public beta gates pass.',
-  supportRoute: 'Support: ElectricSheep contact',
+  supportRoute: 'Open ElectricSheep support',
+  diagnostics:
+    'Support reports include route, app version, commit, channel, redacted logs, and screenshots only when requested.',
 } as const;
 
 export const EVAOS_BETA_BUILD_METADATA = [
@@ -136,13 +138,15 @@ const AboutModalContent: React.FC = () => {
               <span className='px-10px py-4px rd-6px text-13px bg-fill-2 text-t-primary font-500'>v{APP_VERSION}</span>
               <div
                 className='text-t-primary cursor-pointer hover:text-t-secondary transition-colors p-4px'
+                title='Open ElectricSheep'
+                aria-label='Open ElectricSheep'
                 onClick={() =>
                   openLink(EVAOS_BETA_ABOUT_LINKS.repository).catch((error) =>
                     console.error('Failed to open link:', error)
                   )
                 }
               >
-                <Github theme='outline' size='20' />
+                <Earth theme='outline' size='20' />
               </div>
             </div>
 
@@ -167,6 +171,9 @@ const AboutModalContent: React.FC = () => {
               </Typography.Text>
               <Typography.Text className='text-12px text-t-secondary leading-18px'>
                 {EVAOS_BETA_SUPPORT_NOTICE.body}
+              </Typography.Text>
+              <Typography.Text className='text-12px text-t-secondary leading-18px'>
+                {EVAOS_BETA_SUPPORT_NOTICE.diagnostics}
               </Typography.Text>
               <Typography.Text
                 className='text-12px text-brand cursor-pointer hover:opacity-80'

@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { collectFeedbackLogAttachment } from '@/process/feedback/logs';
+import { collectFeedbackLogAttachment, sanitizeFeedbackLogText } from '@/process/feedback/logs';
 
 // Table of handlers registered via ipcMain.handle during module import.
 const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
@@ -152,6 +152,46 @@ describe('feedback logs', () => {
       expect(content).toContain('third day frontend');
       expect(content).not.toContain('too old frontend');
       expect(content).not.toContain('not a log');
+    } finally {
+      rmSync(logsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts secret-shaped values before attaching feedback logs', () => {
+    const raw = [
+      'Authorization: Bearer abcdefghijklmnop',
+      'desktop_session=eds_desktop_session_secret_for_test',
+      'access_token: sk-live-secret-value',
+      '{"refresh_token":"refresh-token-secret","safe":"visible"}',
+      'ordinary status line',
+    ].join('\n');
+
+    const redacted = sanitizeFeedbackLogText(raw);
+
+    expect(redacted).toContain('ordinary status line');
+    expect(redacted).toContain('"safe":"visible"');
+    expect(redacted).toContain('[REDACTED]');
+    expect(redacted).not.toContain('abcdefghijklmnop');
+    expect(redacted).not.toContain('eds_desktop_session_secret_for_test');
+    expect(redacted).not.toContain('sk-live-secret-value');
+    expect(redacted).not.toContain('refresh-token-secret');
+  });
+
+  it('stores redacted log content in the gzip attachment', () => {
+    const logsDir = mkdtempSync(path.join(tmpdir(), 'aionui-feedback-logs-secret-'));
+    try {
+      writeFileSync(
+        path.join(logsDir, '2026-05-25.log'),
+        'Authorization: Bearer token-secret-123456\nprovider_grant=grant-secret-123456\nsafe status\n'
+      );
+
+      const attachment = collectFeedbackLogAttachment(logsDir);
+      const content = gunzipSync(attachment!.data).toString('utf8');
+
+      expect(content).toContain('safe status');
+      expect(content).toContain('[REDACTED]');
+      expect(content).not.toContain('token-secret-123456');
+      expect(content).not.toContain('grant-secret-123456');
     } finally {
       rmSync(logsDir, { recursive: true, force: true });
     }

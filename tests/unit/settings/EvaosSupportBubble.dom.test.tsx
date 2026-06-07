@@ -24,7 +24,11 @@ describe('EvaosSupportBubble', () => {
     const user = userEvent.setup();
     render(<EvaosSupportBubble />);
 
-    await user.click(screen.getByRole('button', { name: 'Open evaOS support' }));
+    const button = screen.getByRole('button', { name: 'Open evaOS support' });
+    expect(button).toHaveAttribute('data-testid', 'evaos-support-bubble');
+    expect(button).toBeVisible();
+
+    await user.click(button);
 
     expect(feedbackMocks.openFeedback).toHaveBeenCalledWith({
       module: 'other',
