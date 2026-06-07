@@ -148,4 +148,33 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     });
     expect(client.runtimeStatus).not.toHaveBeenCalled();
   });
+
+  it('routes runtime actions through the local product fixture only when explicitly enabled', async () => {
+    process.env.AIONUI_E2E_TEST = '1';
+    process.env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE = '1';
+    const { initEvaosBrokerBridge, ipcBridge } = await loadBrokerBridge();
+    const client = {
+      runtimeAction: vi.fn(async () => {
+        throw new Error('live runtime action should not be called in local fixture mode');
+      }),
+    } as unknown as EvaosBrokerSessionClient;
+
+    initEvaosBrokerBridge(client);
+
+    const handler = lastProviderHandler(vi.mocked(ipcBridge.evaosBroker.runtimeAction.provider));
+    const response = await handler({ customerId: 'fixture-customer-acme', runtime: 'openclaw', action: 'launch' });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        runtimeKey: 'openclaw',
+        status: 'opened',
+        sourcePointer: 'local-fixture:runtime-action:openclaw:launch',
+        auditId: 'fixture-audit-runtime-action-openclaw-launch',
+        backendEnforced: true,
+      },
+    });
+    expect(JSON.stringify(response)).not.toMatch(/eds_|epg_|desktop_session|provider_grant|Bearer|launch_url/i);
+    expect(client.runtimeAction).not.toHaveBeenCalled();
+  });
 });

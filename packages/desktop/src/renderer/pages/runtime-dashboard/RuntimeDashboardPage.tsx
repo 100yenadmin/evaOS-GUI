@@ -11,7 +11,7 @@ import { Attention, Open, Refresh, Robot, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
-import type { IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
+import type { IEvaosRuntimeActionResult, IEvaosRuntimeActionType, IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
 
 const SECRET_TEXT_PATTERN =
   /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|authorization|bearer|secret|password/i;
@@ -33,7 +33,53 @@ function statusColor(status?: string): 'green' | 'orange' | 'red' | 'gray' | 'ar
 }
 
 function hasSafeAttachAction(view: IEvaosRuntimeStatusView | null): boolean {
-  return Boolean(view?.actions?.some((action) => action === 'open_dashboard' || action === 'attach_dashboard'));
+  return hasRuntimeAction(view, [
+    'attach_dashboard',
+    'start_attach',
+    'launch',
+    'runtime_launch',
+    'open_dashboard',
+    'open',
+  ]);
+}
+
+function hasRuntimeAction(view: IEvaosRuntimeStatusView | null, actions: string[]): boolean {
+  if (!view?.actions?.length) return false;
+  const available = new Set(view.actions);
+  return actions.some((action) => available.has(action));
+}
+
+function runtimeSettledState(
+  view: IEvaosRuntimeStatusView | null,
+  error: string | null
+): 'live' | 'denied' | 'repair' | 'offline' {
+  if (error) return 'repair';
+  const status = view?.status.toLowerCase() ?? '';
+  if (/(denied|blocked|forbidden|unauthorized|expired|revoked)/.test(status)) return 'denied';
+  if (/(offline|unavailable|stopped|missing)/.test(status)) return 'offline';
+  if (/(repair|failed|error|degraded|auth|captcha|not_paired)/.test(status)) return 'repair';
+  if (/(running|active|ready|online|healthy|done|complete|completed|idle|ok|available|waiting)/.test(status)) {
+    return 'live';
+  }
+  return view ? 'repair' : 'offline';
+}
+
+function settledStateColor(state: 'live' | 'denied' | 'repair' | 'offline'): 'green' | 'orange' | 'red' | 'gray' {
+  if (state === 'live') return 'green';
+  if (state === 'repair') return 'orange';
+  if (state === 'denied') return 'red';
+  return 'gray';
+}
+
+function runtimeActionSummary(result: IEvaosRuntimeActionResult): string {
+  const parts = [safeUiText(result.message, `${result.runtimeKey} ${result.status}.`)];
+  if (result.urlSummary?.displayText) {
+    parts.push(`Target ${result.urlSummary.displayText}.`);
+  }
+  if (result.auditId) {
+    parts.push(`Audit ${result.auditId}.`);
+  }
+  return parts.join(' ');
 }
 
 type RuntimeDashboardPageProps = {
@@ -49,6 +95,9 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const [statusView, setStatusView] = useState<IEvaosRuntimeStatusView | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionTarget, setActionTarget] = useState<IEvaosRuntimeActionType | null>(null);
   const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
@@ -56,6 +105,9 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const clearRuntimeEvidence = useCallback(() => {
     setStatusView(null);
     setRuntimeError(null);
+    setActionStatus(null);
+    setActionError(null);
+    setActionTarget(null);
     setLoadingStatus(false);
   }, []);
 
@@ -88,6 +140,8 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
 
   const loadRuntimeStatus = useCallback(async () => {
     const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
+    setActionStatus(null);
+    setActionError(null);
     if (!selectedCustomerId) {
       setStatusView(null);
       setRuntimeError(`Choose a customer before loading ${title} runtime evidence.`);
@@ -127,11 +181,64 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     }
   }, [customerContext.selectedCustomerId, isCurrentRequest, runtimeKey, title]);
 
+  const runRuntimeAction = useCallback(
+    async (action: IEvaosRuntimeActionType) => {
+      const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
+      setActionStatus(null);
+      setActionError(null);
+      if (!selectedCustomerId) {
+        setActionError(`Choose a customer before opening ${title}.`);
+        return;
+      }
+
+      const requestEpoch = requestEpochRef.current + 1;
+      requestEpochRef.current = requestEpoch;
+      selectedCustomerRef.current = selectedCustomerId;
+      setActionTarget(action);
+      try {
+        const response = await evaosBroker.runtimeAction.invoke({
+          customerId: selectedCustomerId,
+          runtime: runtimeKey,
+          action,
+        });
+        if (!isCurrentRequest(requestEpoch, selectedCustomerId)) return;
+        if (!response.success || !response.data) {
+          setActionError(safeUiText(response.msg, `${title} runtime action failed closed.`));
+          return;
+        }
+        if (response.data.runtimeKey !== runtimeKey || response.data.customerId !== selectedCustomerId) {
+          setActionError(`${title} broker returned action evidence for a different runtime or customer.`);
+          return;
+        }
+        if (response.data.runtimeStatus) {
+          setStatusView(response.data.runtimeStatus);
+        }
+        setActionStatus(runtimeActionSummary(response.data));
+      } catch {
+        if (!isCurrentRequest(requestEpoch, selectedCustomerId)) return;
+        setActionError(`${title} runtime action failed closed.`);
+      } finally {
+        if (isCurrentRequest(requestEpoch, selectedCustomerId)) {
+          setActionTarget(null);
+        }
+      }
+    },
+    [customerContext.selectedCustomerId, isCurrentRequest, runtimeKey, title]
+  );
+
   const selectedCustomerLabel =
     customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
   const statusText = safeUiText(statusView?.status, runtimeError ? 'blocked' : 'waiting');
   const healthText = runtimeError ?? safeUiText(statusView?.healthSummary, subtitle);
   const attachAvailable = hasSafeAttachAction(statusView);
+  const settledState = runtimeSettledState(statusView, runtimeError);
+  const canAttachRuntime = hasRuntimeAction(statusView, [
+    'attach_dashboard',
+    'start_attach',
+    'launch',
+    'runtime_launch',
+  ]);
+  const canOpenRuntime = hasRuntimeAction(statusView, ['open_dashboard', 'open']);
 
   return (
     <div
@@ -215,10 +322,11 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                   <h2 className='m-0 text-18px font-semibold leading-24px text-t-primary'>
                     {safeUiText(statusView?.displayLabel, title)}
                   </h2>
+                  <Tag color={settledStateColor(settledState)}>{settledState}</Tag>
                   <Tag color={statusColor(statusText)}>{statusText}</Tag>
                   {issueRef ? <Tag color='gray'>{issueRef}</Tag> : null}
                 </div>
-                <p className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
+                <div className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
                   {loadingStatus ? (
                     <span className='inline-flex items-center gap-8px'>
                       <Spin size={14} />
@@ -227,11 +335,11 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                   ) : (
                     healthText
                   )}
-                </p>
+                </div>
               </div>
             </div>
             <Tag color={attachAvailable ? 'green' : 'orange'}>
-              {attachAvailable ? 'Broker attach available' : 'Attach blocked'}
+              {attachAvailable ? 'Broker action available' : 'Runtime action blocked'}
             </Tag>
           </div>
 
@@ -252,10 +360,41 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
             )}
             <span>
               {attachAvailable
-                ? 'Broker evidence says this runtime has a safe dashboard attach action.'
-                : 'Dashboard attachment remains blocked until evaOS broker returns a safe runtime action. No raw dashboard URL is exposed in renderer state.'}
+                ? 'Broker evidence says this runtime has a safe open or attach action.'
+                : 'Runtime launch remains blocked until evaOS broker returns a safe runtime action. No raw dashboard URL is exposed in renderer state.'}
             </span>
           </div>
+
+          <div className='mt-12px flex flex-wrap items-center gap-8px'>
+            {canAttachRuntime ? (
+              <Button
+                type='primary'
+                icon={<Open theme='outline' size='15' />}
+                loading={actionTarget === 'attach'}
+                disabled={!customerContext.selectedCustomerId || actionTarget !== null}
+                onClick={() => void runRuntimeAction('attach')}
+              >
+                Start / Attach
+              </Button>
+            ) : null}
+            {canOpenRuntime ? (
+              <Button
+                type={canAttachRuntime ? 'secondary' : 'primary'}
+                icon={<Open theme='outline' size='15' />}
+                loading={actionTarget === 'open'}
+                disabled={!customerContext.selectedCustomerId || actionTarget !== null}
+                onClick={() => void runRuntimeAction('open')}
+              >
+                Open
+              </Button>
+            ) : null}
+          </div>
+
+          {actionStatus ? <div className='mt-10px text-12px leading-18px text-t-secondary'>{actionStatus}</div> : null}
+
+          {actionError ? (
+            <div className='mt-10px text-12px leading-18px text-[rgb(var(--danger-6))]'>{actionError}</div>
+          ) : null}
 
           {runtimeError || statusColor(statusText) === 'red' ? (
             <div className='mt-12px flex items-start gap-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>

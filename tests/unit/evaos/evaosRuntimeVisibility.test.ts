@@ -146,6 +146,7 @@ describe('evaosRuntimeVisibility', () => {
       '/openclaw',
       '/hermes',
       '/mission-control',
+      '/design-workspace',
       '/beta-readiness',
       '/terminal',
       '/native-companion',
@@ -153,13 +154,17 @@ describe('evaosRuntimeVisibility', () => {
       '/connected-apps',
       '/approval-center',
       '/business-browser',
+      '/creative-studio',
       '/company-brain',
     ]);
 
     expect(evaosRouteAllowsMissingBroker('/evaos')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/openclaw')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/hermes')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/mission-control')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/native-companion')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/design-workspace')).toBe(false);
+    expect(evaosRouteAllowsMissingBroker('/creative-studio')).toBe(false);
     expect(evaosRouteAllowsMissingBroker('/people-access')).toBe(false);
   });
 
@@ -207,5 +212,29 @@ describe('evaosRuntimeVisibility', () => {
         scopes: ['manage_integrations'],
       })
     ).toEqual({ allowed: true, fallbackPath: '/guid' });
+
+    expect(
+      evaosRuntimeRouteDecision('/design-workspace', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['use_design_workspace'],
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
+
+    expect(
+      evaosRuntimeRouteDecision('/creative-studio', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['use_creative_studio'],
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
+
+    expect(
+      evaosRuntimeRouteDecision('/creative-studio', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: [],
+      })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
   });
 });

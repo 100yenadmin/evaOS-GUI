@@ -24,7 +24,9 @@ interface EvaosSidebarState {
   canSeeTerminal: boolean;
   canSeePeopleAccess: boolean;
   canSeeConnectedApps: boolean;
+  canSeeDesignWorkspace: boolean;
   canSeeBusinessBrowser: boolean;
+  canSeeCreativeStudio: boolean;
   canSeeCompanyBrain: boolean;
   canSeeApprovalCenter: boolean;
   canSeeNativeCompanion: boolean;
@@ -113,7 +115,9 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     canSeeTerminal: canSeeBrokeredRoute('/terminal'),
     canSeePeopleAccess: canSeeBrokeredRoute('/people-access'),
     canSeeConnectedApps: canSeeBrokeredRoute('/connected-apps'),
+    canSeeDesignWorkspace: canSeeBrokeredRoute('/design-workspace'),
     canSeeBusinessBrowser: canSeeBrokeredRoute('/business-browser'),
+    canSeeCreativeStudio: canSeeBrokeredRoute('/creative-studio'),
     canSeeCompanyBrain: canSeeBrokeredRoute('/company-brain'),
     canSeeApprovalCenter: canSeeBrokeredRoute('/approval-center'),
     canSeeNativeCompanion,

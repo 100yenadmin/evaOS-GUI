@@ -17,6 +17,8 @@ import type {
   IEvaosApprovalDenyRequest,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
+  IEvaosRuntimeActionRequest,
+  IEvaosRuntimeActionResult,
   IEvaosSafeUrlSummary,
   IEvaosCompanyBrainAccount360View,
   IEvaosCompanyBrainAccountRequest,
@@ -355,6 +357,7 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
       lastActivityAt: '2026-06-04T09:57:00.000Z',
       sourcePointer: 'local-fixture:runtime:openclaw',
       auditId: 'fixture-audit-runtime-openclaw',
+      actions: ['attach_dashboard'],
     },
     hermes: {
       displayLabel: 'Hermes',
@@ -364,6 +367,7 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
       lastActivityAt: '2026-06-04T09:54:00.000Z',
       sourcePointer: 'local-fixture:runtime:hermes',
       auditId: 'fixture-audit-runtime-hermes',
+      actions: ['attach_dashboard'],
     },
     paperclip: {
       displayLabel: 'Paperclip',
@@ -372,6 +376,7 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
       owner: 'operations',
       sourcePointer: 'local-fixture:runtime:paperclip',
       auditId: 'fixture-audit-runtime-paperclip',
+      actions: ['attach_dashboard'],
     },
     terminal: {
       displayLabel: 'Terminal',
@@ -380,6 +385,24 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
       owner: 'support',
       sourcePointer: 'local-fixture:runtime:terminal-offline',
       auditId: 'fixture-audit-runtime-terminal-offline',
+    },
+    opendesign: {
+      displayLabel: 'Design Workspace',
+      status: 'running',
+      healthSummary: `${FIXTURE_LABEL}: OpenDesign workspace is ready for the selected customer.`,
+      owner: 'product',
+      sourcePointer: 'local-fixture:runtime:opendesign',
+      auditId: 'fixture-audit-runtime-opendesign',
+      actions: ['attach_dashboard'],
+    },
+    creative_studio: {
+      displayLabel: 'Creative Studio',
+      status: 'running',
+      healthSummary: `${FIXTURE_LABEL}: Creative Studio external workspace is ready to open.`,
+      owner: 'product',
+      sourcePointer: 'local-fixture:runtime:creative_studio',
+      auditId: 'fixture-audit-runtime-creative-studio',
+      actions: ['open_dashboard'],
     },
   };
 
@@ -416,6 +439,57 @@ export function evaosLocalProductFixtureRuntimeStatus(request: IEvaosRuntimeStat
     lastCheckedAt: NOW,
     actions: [],
     ...selected,
+  });
+}
+
+export function evaosLocalProductFixtureRuntimeAction(request: IEvaosRuntimeActionRequest): IEvaosRuntimeActionResult {
+  const runtimeStatus = evaosLocalProductFixtureRuntimeStatus({
+    customerId: request.customerId,
+    runtime: request.runtime,
+  });
+  const sourcePointer = `local-fixture:runtime-action:${request.runtime}:${request.action}`;
+  const auditId = `fixture-audit-runtime-action-${request.runtime}-${request.action}`;
+  const normalizedStatus = runtimeStatus.status.toLowerCase();
+
+  if (normalizedStatus === 'denied') {
+    return clone({
+      status: 'denied',
+      runtimeKey: request.runtime,
+      customerId: request.customerId,
+      message: `${FIXTURE_LABEL}: runtime action denied by local fixture policy.`,
+      runtimeStatus,
+      sourcePointer,
+      auditId,
+      backendEnforced: true,
+    });
+  }
+
+  if (/(offline|failed|error)/.test(normalizedStatus)) {
+    return clone({
+      status: 'offline',
+      runtimeKey: request.runtime,
+      customerId: request.customerId,
+      message: `${FIXTURE_LABEL}: runtime action blocked until repair restores the workspace.`,
+      runtimeStatus,
+      sourcePointer,
+      auditId,
+      backendEnforced: true,
+    });
+  }
+
+  return clone({
+    status: 'opened',
+    runtimeKey: request.runtime,
+    customerId: request.customerId,
+    message: `${FIXTURE_LABEL}: opened ${runtimeStatus.displayLabel} through brokered runtime action proof.`,
+    urlSummary:
+      request.runtime === 'creative_studio'
+        ? safeUrlSummary('https://www.comfy.org/cloud')
+        : safeUrlSummary(`https://${request.runtime}.fixture.example.test/workspace`),
+    runtimeStatus,
+    sourcePointer,
+    auditId,
+    backendEnforced: true,
   });
 }
 

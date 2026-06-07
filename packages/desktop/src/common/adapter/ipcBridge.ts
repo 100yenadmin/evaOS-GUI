@@ -189,6 +189,8 @@ import type {
   IEvaosCustomerTargetView,
   IEvaosCustomerTargetsView,
   IEvaosRuntimeStatusRequest,
+  IEvaosRuntimeActionRequest,
+  IEvaosRuntimeActionResult,
   IEvaosSafeUrlSummary,
   IEvaosRuntimeStatusView,
   IEvaosBusinessBrowserRequest,
@@ -251,6 +253,8 @@ export type {
   IEvaosCustomerTargetView,
   IEvaosCustomerTargetsView,
   IEvaosRuntimeStatusRequest,
+  IEvaosRuntimeActionRequest,
+  IEvaosRuntimeActionResult,
   IEvaosSafeUrlSummary,
   IEvaosRuntimeStatusView,
   IEvaosBusinessBrowserRequest,
@@ -1382,6 +1386,9 @@ export const evaosBroker = {
   ),
   runtimeStatus: buildEvaosProvider<IBridgeResponse<IEvaosRuntimeStatusView>, IEvaosRuntimeStatusRequest>(
     'evaos.broker.runtime-status'
+  ),
+  runtimeAction: buildEvaosProvider<IBridgeResponse<IEvaosRuntimeActionResult>, IEvaosRuntimeActionRequest>(
+    'evaos.broker.runtime-action'
   ),
   revokeSession: buildEvaosProvider<IBridgeResponse<IEvaosBrokerSessionStatus>, void>('evaos.broker.revoke-session'),
 };

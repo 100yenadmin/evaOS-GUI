@@ -219,7 +219,9 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               canSeeTerminal={evaosSidebarState.canSeeTerminal}
               canSeePeopleAccess={evaosSidebarState.canSeePeopleAccess}
               canSeeConnectedApps={evaosSidebarState.canSeeConnectedApps}
+              canSeeDesignWorkspace={evaosSidebarState.canSeeDesignWorkspace}
               canSeeBusinessBrowser={evaosSidebarState.canSeeBusinessBrowser}
+              canSeeCreativeStudio={evaosSidebarState.canSeeCreativeStudio}
               canSeeCompanyBrain={evaosSidebarState.canSeeCompanyBrain}
               canSeeApprovalCenter={evaosSidebarState.canSeeApprovalCenter}
               canSeeNativeCompanion={evaosSidebarState.canSeeNativeCompanion}

@@ -11,6 +11,8 @@ import {
   SiderBusinessBrowserEntry,
   SiderCompanyBrainEntry,
   SiderConnectedAppsEntry,
+  SiderCreativeStudioEntry,
+  SiderDesignWorkspaceEntry,
   SiderEvaosEntry,
   SiderHermesEntry,
   SiderMissionControlEntry,
@@ -36,7 +38,9 @@ interface EvaosSidebarSectionProps {
   canSeeTerminal: boolean;
   canSeePeopleAccess: boolean;
   canSeeConnectedApps: boolean;
+  canSeeDesignWorkspace: boolean;
   canSeeBusinessBrowser: boolean;
+  canSeeCreativeStudio: boolean;
   canSeeCompanyBrain: boolean;
   canSeeApprovalCenter: boolean;
   canSeeNativeCompanion: boolean;
@@ -54,7 +58,9 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
   canSeeTerminal,
   canSeePeopleAccess,
   canSeeConnectedApps,
+  canSeeDesignWorkspace,
   canSeeBusinessBrowser,
+  canSeeCreativeStudio,
   canSeeCompanyBrain,
   canSeeApprovalCenter,
   canSeeNativeCompanion,
@@ -118,6 +124,15 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
           onClick={() => onNavigate('/connected-apps')}
         />
       ) : null}
+      {canSeeDesignWorkspace ? (
+        <SiderDesignWorkspaceEntry
+          isMobile={isMobile}
+          isActive={pathname === '/design-workspace'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/design-workspace')}
+        />
+      ) : null}
       {EVAOS_BUSINESS_BROWSER_ENABLED && canSeeBusinessBrowser ? (
         <SiderBusinessBrowserEntry
           isMobile={isMobile}
@@ -125,6 +140,15 @@ const EvaosSidebarSection: React.FC<EvaosSidebarSectionProps> = ({
           collapsed={collapsed}
           siderTooltipProps={siderTooltipProps}
           onClick={() => onNavigate('/business-browser')}
+        />
+      ) : null}
+      {canSeeCreativeStudio ? (
+        <SiderCreativeStudioEntry
+          isMobile={isMobile}
+          isActive={pathname === '/creative-studio'}
+          collapsed={collapsed}
+          siderTooltipProps={siderTooltipProps}
+          onClick={() => onNavigate('/creative-studio')}
         />
       ) : null}
       {EVAOS_COMPANY_BRAIN_ENABLED && canSeeCompanyBrain ? (

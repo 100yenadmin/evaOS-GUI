@@ -338,6 +338,66 @@ describe('EvaosBrokerSessionClient', () => {
     );
   });
 
+  it('launches brokered runtimes from main process without returning raw dashboard URLs to renderer', async () => {
+    const fetchImpl = fetchMock();
+    const openRuntimeUrl = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          launch_url: 'https://runtime.example.test/openclaw?desktop_session=eds_runtime_launch_secret#token=bad',
+          expires_at: '2026-06-03T12:15:00.000Z',
+          source_pointer: 'broker:runtime_launch:openclaw',
+          audit_id: 'audit_runtime_launch',
+          desktop_session: 'eds_should_not_render',
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const result = await client.runtimeAction(
+      { customerId: 'cus_123', runtime: 'openclaw', action: 'launch' },
+      { openRuntimeUrl }
+    );
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(requestBody(fetchImpl.mock.calls[1])).toEqual({
+      action: 'runtime_launch',
+      customer_id: 'cus_123',
+      runtime: 'openclaw',
+    });
+    expect(openRuntimeUrl).toHaveBeenCalledWith(
+      'https://runtime.example.test/openclaw?desktop_session=eds_runtime_launch_secret#token=bad'
+    );
+    expect(result).toEqual({
+      status: 'opened',
+      runtimeKey: 'openclaw',
+      customerId: 'cus_123',
+      message: 'Opened evaOS through the evaOS broker.',
+      urlSummary: {
+        scheme: 'https',
+        host: 'runtime.example.test',
+        path: '/openclaw',
+        displayText: 'runtime.example.test/openclaw',
+        redacted: true,
+      },
+      expiresAt: '2026-06-03T12:15:00.000Z',
+      sourcePointer: 'broker:runtime_launch:openclaw',
+      auditId: 'audit_runtime_launch',
+      backendEnforced: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/eds_|desktop_session|token=bad|Bearer|launch_url/);
+  });
+
   it('does not adopt the released Workbench keychain desktop session by default', () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({

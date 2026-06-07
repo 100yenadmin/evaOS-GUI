@@ -170,6 +170,10 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
     allowMissingBroker: true,
   },
   {
+    routePath: '/design-workspace',
+    anyRequiredScopes: ['use_design_workspace'],
+  },
+  {
     routePath: '/beta-readiness',
     requiresAdmin: true,
     allowMissingBroker: true,
@@ -199,6 +203,10 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   {
     routePath: '/business-browser',
     anyRequiredScopes: ['open_business_browser'],
+  },
+  {
+    routePath: '/creative-studio',
+    anyRequiredScopes: ['use_creative_studio'],
   },
   {
     routePath: '/company-brain',
