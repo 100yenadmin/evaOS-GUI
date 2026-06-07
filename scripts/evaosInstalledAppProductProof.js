@@ -111,6 +111,7 @@ function buildInstalledProofPlan(plan = SETTLED_SHELL_SCREENSHOT_PLAN, options =
       id: entry.id,
       route: entry.route,
       screenshot: entry.screenshot,
+      action: entry.action,
       waitSelectors,
     };
   });
@@ -247,6 +248,24 @@ async function resolveMainWindow(electronApp) {
   throw new Error('Failed to resolve installed app renderer window.');
 }
 
+async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
+  if (!action) return;
+
+  if (action === 'click-native-companion-advanced-diagnostics') {
+    const advancedButton = page.getByRole('button', { name: /Advanced diagnostics/i }).first();
+    await advancedButton.waitFor({ state: 'visible', timeout });
+    await advancedButton.click();
+    await page.waitForFunction(
+      () => Boolean(globalThis.document?.body?.innerText?.includes('Native companion status matrix')),
+      undefined,
+      { timeout }
+    );
+    return;
+  }
+
+  throw new Error(`Installed app proof action is not allowlisted: ${action}`);
+}
+
 async function captureInstalledAppProof(options = {}) {
   const repoRoot = options.repoRoot || DEFAULT_REPO_ROOT;
   const repoHead = options.repoHead || gitHead(repoRoot);
@@ -296,6 +315,7 @@ async function captureInstalledAppProof(options = {}) {
         window.location.hash = route.startsWith('#') ? route : `#${route}`;
       }, entry.route);
       await page.waitForLoadState('domcontentloaded');
+      await runProofPlanAction(page, entry.action, timeout);
 
       for (const selector of entry.waitSelectors) {
         await page.locator(selector).first().waitFor({ state: 'visible', timeout });
@@ -436,6 +456,7 @@ module.exports = {
   packageVersion,
   parsePlistArrayOutput,
   readInfoPlist,
+  runProofPlanAction,
   shortHead,
   writeDryRunProofFiles,
 };

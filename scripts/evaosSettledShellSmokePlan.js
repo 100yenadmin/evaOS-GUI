@@ -94,6 +94,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     route: '/native-companion',
     screenshot: '06-mac-iphone.png',
     target: 'Mac & iPhone native companion status and repair handoff',
+    action: 'click-native-companion-advanced-diagnostics',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
       'body:text("Mac & iPhone")',

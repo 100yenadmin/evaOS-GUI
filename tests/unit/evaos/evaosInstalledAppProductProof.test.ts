@@ -27,6 +27,7 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
       route: string;
       screenshot: string;
       waitSelectors: string[];
+      action?: string;
     }>,
     options?: { expectedHead?: string }
   ) => Array<{
@@ -34,6 +35,7 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     route: string;
     screenshot: string;
     waitSelectors: string[];
+    action?: string;
   }>;
   installedExecutablePath: (appPath?: string) => string;
   markdownForInstalledProof: (report: {
@@ -60,6 +62,7 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     shortVersion: string;
     protocolSchemes: string[];
   };
+  runProofPlanAction: (page: unknown, action?: string) => Promise<void>;
   writeDryRunProofFiles: (options: {
     artifactRoot: string;
     repoHead: string;
@@ -130,6 +133,66 @@ describe('evaOS installed app product proof', () => {
     expect(proofPlan.find((entry) => entry.id === 'mission-control')?.waitSelectors).not.toContain(
       'body:text("2fb812c12ddf")'
     );
+  });
+
+  it('preserves route settle actions so hidden diagnostics can be opened before proof waits', () => {
+    const proofPlan = installedAppProof.buildInstalledProofPlan([
+      {
+        id: 'mac-iphone',
+        route: '/native-companion',
+        screenshot: '06-mac-iphone.png',
+        action: 'click-native-companion-advanced-diagnostics',
+        waitSelectors: ['body:text("Mac & iPhone")', 'body:text("Native companion status matrix")'],
+      },
+      {
+        id: 'mission-control',
+        route: '/mission-control',
+        screenshot: '09-mission-control.png',
+        waitSelectors: ['body:text("Mission Control")'],
+      },
+    ]);
+
+    expect(proofPlan.find((entry) => entry.id === 'mac-iphone')?.action).toBe(
+      'click-native-companion-advanced-diagnostics'
+    );
+    expect(proofPlan.find((entry) => entry.id === 'mission-control')?.action).toBeUndefined();
+  });
+
+  it('opens native companion advanced diagnostics before waiting for hidden proof markers', async () => {
+    const events: string[] = [];
+    const fakePage = {
+      getByRole(role: string, roleOptions: { name: RegExp }) {
+        events.push(`${role}:${roleOptions.name.source}`);
+        return {
+          first() {
+            events.push('first');
+            return {
+              async waitFor(waitOptions: { state: string; timeout: number }) {
+                events.push(`button-wait:${waitOptions.state}:${waitOptions.timeout}`);
+              },
+              async click() {
+                events.push('click');
+              },
+            };
+          },
+        };
+      },
+      async waitForFunction(predicate: () => boolean, _args: unknown, options: { timeout: number }) {
+        expect(predicate()).toBe(false);
+        events.push(`wait:${options.timeout}`);
+      },
+    };
+
+    await installedAppProof.runProofPlanAction(fakePage, 'click-native-companion-advanced-diagnostics');
+
+    expect(events).toEqual([
+      'button:Advanced diagnostics',
+      'first',
+      'button-wait:visible:25000',
+      'click',
+      'wait:25000',
+    ]);
+    await expect(installedAppProof.runProofPlanAction(fakePage, 'unknown-action')).rejects.toThrow(/unknown-action/);
   });
 
   it('reads the installed app plist identity without shelling through raw strings', () => {
