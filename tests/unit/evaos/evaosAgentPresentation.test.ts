@@ -91,4 +91,17 @@ describe('evaOS agent presentation', () => {
 
     expect(source).not.toContain('github.com/iOfficeAI/AionUi');
   });
+
+  it('keeps evaOS runtime pages free of visible upstream shell branding', () => {
+    const visibleRuntimeSources = [
+      'packages/desktop/src/renderer/pages/terminal/index.tsx',
+      'packages/desktop/src/renderer/pages/runtime-dashboard/RuntimeDashboardPage.tsx',
+    ];
+
+    for (const relativePath of visibleRuntimeSources) {
+      const source = readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+
+      expect(source, relativePath).not.toMatch(/AionUi does not|AionUi owns|AionUi shell/i);
+    }
+  });
 });

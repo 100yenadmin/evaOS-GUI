@@ -133,8 +133,8 @@ const TerminalPage: React.FC = () => {
           <div className='min-w-0'>
             <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Terminal</h1>
             <p className='m-0 mt-4px max-w-720px text-14px leading-22px text-t-secondary'>
-              Customer VM shell runtime status from evaOS broker evidence. AionUi does not execute VM commands or hold
-              local trust authority.
+              Customer VM shell runtime status from evaOS broker evidence. This shell does not execute VM commands or
+              hold local trust authority.
             </p>
           </div>
           <Button
