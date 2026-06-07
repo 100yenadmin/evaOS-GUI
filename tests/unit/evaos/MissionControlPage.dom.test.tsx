@@ -159,7 +159,11 @@ describe('MissionControlPage', () => {
 
     const { container } = render(<MissionControlPage />);
 
+    expect(await screen.findByRole('heading', { name: 'Beta Readiness' })).toBeInTheDocument();
     expect(await screen.findByText('RC parity gated')).toBeInTheDocument();
+    expect(
+      screen.getByText('Internal release-gate status for the controlled evaOS Workbench Beta candidate.')
+    ).toBeInTheDocument();
     expect(screen.getByText('Parity audit active')).toBeInTheDocument();
     expect(screen.getByText('RC parity proof')).toBeInTheDocument();
     expect(screen.getByText('Native adapter canaries')).toBeInTheDocument();
@@ -174,7 +178,7 @@ describe('MissionControlPage', () => {
     expect(container.textContent).not.toMatch(/ship public beta|ready to ship|eds_|desktop_session|Bearer/i);
   });
 
-  it('claims a browser backup code from Mission Control without rendering desktop-session material', async () => {
+  it('claims a browser backup code from Beta Readiness without rendering desktop-session material', async () => {
     const user = userEvent.setup();
     brokerMocks.getSessionStatus.mockResolvedValue({
       success: true,
