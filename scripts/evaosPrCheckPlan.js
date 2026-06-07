@@ -1,28 +1,9 @@
 #!/usr/bin/env node
 
-const WINDOWS_REQUIRED_PATTERNS = [
-  /^\.github\/workflows\/pr-checks\.ya?ml$/,
-  /^\.github\/actions\/checkout-pr\//,
-  /^bun\.lockb?$/,
-  /^package-lock\.json$/,
-  /^packages\/desktop\/electron-builder\.ya?ml$/,
-  /^packages\/desktop\/electron\.vite\.config\.ts$/,
-  /^packages\/desktop\/src\/process\//,
-  /^packages\/desktop\/src\/preload\//,
-  /^packages\/desktop\/src\/common\/adapter\/(?:browser|constant|httpBridge|ipcBridge|main|registry)\.ts$/,
-  /^packages\/desktop\/src\/common\/api\//,
-  /^packages\/desktop\/src\/common\/chat\/(?:approval|imageGenCore|navigation)\//,
-  /^packages\/desktop\/src\/common\/chat\/(?:atCommandParser|chatLib|normalizeToolCall|sideQuestion)\.ts$/,
-  /^packages\/desktop\/src\/common\/config\//,
-  /^packages\/desktop\/src\/common\/electronSafe\.ts$/,
-  /^packages\/desktop\/src\/common\/index\.ts$/,
-  /^packages\/desktop\/src\/common\/platform\//,
-  /^packages\/desktop\/src\/common\/update\//,
-  /^packages\/desktop\/src\/common\/utils\/(?:appConfig|buildAgentConversationParams|imageModelAllowlist|modelCapabilities|platformAuthType|platformConstants|protocolDetector|urlValidation|utils)\.ts$/,
-  /^packages\/desktop\/src\/index\.ts$/,
-  /^packages\/desktop\/src\/sentry\.ts$/,
-  /^scripts\/build-with-builder\.js$/,
-];
+// evaOS finish-line PRs are macOS-first until the controlled 1.0 release.
+// Windows/Linux compatibility hardening stays on manual, release, or scheduled
+// workflows so routine parity work does not wait on non-target platforms.
+const WINDOWS_REQUIRED_PATTERNS = [];
 
 function normalizeFilePath(value) {
   return String(value ?? '')
@@ -45,20 +26,9 @@ function requiresWindowsChecks(filePath) {
 
 function planPrChecks(changedFiles, options = {}) {
   const reasons = [];
-  const seen = new Set();
 
   if (normalizeBoolean(options.runWindowsChecks)) {
     reasons.push('manual override');
-  }
-
-  for (const rawFile of changedFiles) {
-    const file = normalizeFilePath(rawFile);
-    if (!file || seen.has(file)) continue;
-    seen.add(file);
-
-    if (requiresWindowsChecks(file)) {
-      reasons.push(file);
-    }
   }
 
   return {

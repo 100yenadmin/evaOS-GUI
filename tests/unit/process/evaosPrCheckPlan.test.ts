@@ -26,12 +26,11 @@ describe('evaOS PR check plan', () => {
     expect(plan.reasons).toEqual([]);
   });
 
-  it('runs Windows checks for Windows packaging and installer surfaces', () => {
+  it('does not auto-run Windows checks for packaging surfaces before controlled macOS 1.0', () => {
     const plan = prCheckPlan.planPrChecks(['packages/desktop/electron-builder.yml', '.github/workflows/pr-checks.yml']);
 
-    expect(plan.runWindowsChecks).toBe(true);
-    expect(plan.reasons).toContain('packages/desktop/electron-builder.yml');
-    expect(plan.reasons).toContain('.github/workflows/pr-checks.yml');
+    expect(plan.runWindowsChecks).toBe(false);
+    expect(plan.reasons).toEqual([]);
   });
 
   it('keeps macOS beta packaging release-safety scripts out of the Windows build gate', () => {
@@ -59,17 +58,15 @@ describe('evaOS PR check plan', () => {
     expect(plan.reasons).toEqual([]);
   });
 
-  it('runs Windows checks for cross-platform runtime process and dependency surfaces', () => {
+  it('does not auto-run Windows checks for shared runtime process and dependency surfaces before 1.0', () => {
     const plan = prCheckPlan.planPrChecks([
       'bun.lock',
       'packages/desktop/src/process/services/evaosBrokerSession.ts',
       'packages/desktop/src/preload/main.ts',
     ]);
 
-    expect(plan.runWindowsChecks).toBe(true);
-    expect(plan.reasons).toContain('bun.lock');
-    expect(plan.reasons).toContain('packages/desktop/src/process/services/evaosBrokerSession.ts');
-    expect(plan.reasons).toContain('packages/desktop/src/preload/main.ts');
+    expect(plan.runWindowsChecks).toBe(false);
+    expect(plan.reasons).toEqual([]);
   });
 
   it('skips Windows checks for common mappers and shared type declarations', () => {
@@ -84,7 +81,7 @@ describe('evaOS PR check plan', () => {
     expect(plan.reasons).toEqual([]);
   });
 
-  it('runs Windows checks for common platform, config, update, and bridge runtime surfaces', () => {
+  it('does not auto-run Windows checks for common platform, config, update, and bridge runtime surfaces before 1.0', () => {
     const plan = prCheckPlan.planPrChecks([
       'packages/desktop/src/common/adapter/httpBridge.ts',
       'packages/desktop/src/common/adapter/ipcBridge.ts',
@@ -93,14 +90,8 @@ describe('evaOS PR check plan', () => {
       'packages/desktop/src/common/update/updateTypes.ts',
     ]);
 
-    expect(plan.runWindowsChecks).toBe(true);
-    expect(plan.reasons).toEqual([
-      'packages/desktop/src/common/adapter/httpBridge.ts',
-      'packages/desktop/src/common/adapter/ipcBridge.ts',
-      'packages/desktop/src/common/config/storage.ts',
-      'packages/desktop/src/common/platform/ElectronPlatformServices.ts',
-      'packages/desktop/src/common/update/updateTypes.ts',
-    ]);
+    expect(plan.runWindowsChecks).toBe(false);
+    expect(plan.reasons).toEqual([]);
   });
 
   it('allows manual workflow dispatch to force Windows checks', () => {
