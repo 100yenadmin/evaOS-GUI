@@ -128,7 +128,7 @@ describe('goldenWorkbenchParityManifest', () => {
     expect(GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'creative-studio')).toMatchObject({
       runtimeKey: 'creative_studio',
       oldSurface: 'https://www.comfy.org/cloud',
-      statusRequirement: 'external-runtime-catalog',
+      statusRequirement: 'external-runtime-route-plus-sidebar-entry',
     });
     expect(EVAOS_RUNTIME_CATALOG.find((runtime) => runtime.key === 'creative_studio')).toMatchObject({
       externalUrl: 'https://www.comfy.org/cloud',
