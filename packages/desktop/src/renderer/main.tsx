@@ -96,7 +96,7 @@ import HOC from './utils/ui/HOC';
 import type { BackendStartupFailureInfo } from '@/common/types/platform/electron';
 import type { IRuntimeStatusEvent } from '@/common/adapter/ipcBridge';
 
-const EVAOS_BETA_DOWNLOAD_URL = 'https://github.com/100yenadmin/AionUi/releases';
+const EVAOS_BETA_DOWNLOAD_URL = 'https://github.com/100yenadmin/evaOS-GUI/releases';
 
 // Patch Korean locale with missing properties from English locale
 const koKRComplete = {

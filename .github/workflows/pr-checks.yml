@@ -731,7 +731,7 @@ jobs:
       - name: Write and verify evaOS beta release manifest
         shell: bash
         env:
-          GITHUB_REPOSITORY: 100yenadmin/AionUi
+          GITHUB_REPOSITORY: 100yenadmin/evaOS-GUI
           GITHUB_WORKFLOW: Build and Release
           EVAOS_BETA_RELEASE_WORKFLOW: Build and Release
           GITHUB_RUN_ID: '12345'

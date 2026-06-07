@@ -105,7 +105,7 @@ const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'updater-feed-audit',
     evidence: 'updater-feed-audit.md',
-    requiredText: ['PASS', '100yenadmin/AionUi', 'iOfficeAI/AionUi blocked'],
+    requiredText: ['PASS', '100yenadmin/evaOS-GUI', 'iOfficeAI/AionUi blocked'],
   },
   {
     id: 'rollback-smoke',
@@ -122,7 +122,7 @@ const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'support-notes',
     evidence: 'support-notes.md',
-    requiredText: ['100yenadmin/AionUi', 'released macOS app remains the fallback'],
+    requiredText: ['100yenadmin/evaOS-GUI', 'released macOS app remains the fallback'],
   },
 ];
 
@@ -377,7 +377,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(builder, 'evaos-workbench-beta', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'owner: 100yenadmin', 'packages/desktop/electron-builder.yml', issues);
-  requireText(builder, 'repo: AionUi', 'packages/desktop/electron-builder.yml', issues);
+  requireText(builder, 'repo: evaOS-GUI', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'publishAutoUpdate: false', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'releaseType: draft', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'resources/evaos-beta/app.png', 'packages/desktop/electron-builder.yml', issues);
@@ -552,12 +552,12 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(settingsEn, 'Beta Repository', 'en-US/settings.json', issues);
 
   requireText(about, 'evaOS Workbench Beta', 'AboutModalContent.tsx', issues);
-  requireText(about, 'https://github.com/100yenadmin/AionUi', 'AboutModalContent.tsx', issues);
+  requireText(about, 'https://github.com/100yenadmin/evaOS-GUI', 'AboutModalContent.tsx', issues);
   if (about.includes('https://github.com/iOfficeAI/AionUi') || about.includes('https://www.aionui.com')) {
     issues.push('AboutModalContent.tsx: upstream AionUi support or website link is not allowed in beta About screen');
   }
 
-  requireText(betaSafety, "EVAOS_BETA_DEFAULT_GITHUB_REPO = '100yenadmin/AionUi'", 'evaosBetaSafety.ts', issues);
+  requireText(betaSafety, "EVAOS_BETA_DEFAULT_GITHUB_REPO = '100yenadmin/evaOS-GUI'", 'evaosBetaSafety.ts', issues);
   requireText(betaSafety, 'getEvaosBetaBackendGithubRepo', 'evaosBetaSafety.ts', issues);
   requireText(desktopIndex, 'getEvaosBetaBackendGithubRepo', 'packages/desktop/src/index.ts', issues);
   requireText(
@@ -800,7 +800,7 @@ function writeRcProofTemplate(proofDir, tag) {
   const manifest = {
     schema: 'evaos-beta-rc-proof/v1',
     tag,
-    repository: '100yenadmin/AionUi',
+    repository: '100yenadmin/evaOS-GUI',
     releaseAssetsDir: 'release-assets',
     trustedManifestPath: 'trusted-manifest/evaos-beta-release-manifest.json',
     macosX64: {
@@ -849,8 +849,8 @@ function verifyRcProof(proofDir, tag, env = process.env) {
   if (manifest.tag !== tag) {
     throw new Error(`RC proof tag ${manifest.tag} does not match requested tag ${tag}.`);
   }
-  if (manifest.repository !== '100yenadmin/AionUi') {
-    throw new Error(`RC proof repository must be 100yenadmin/AionUi, got ${manifest.repository}.`);
+  if (manifest.repository !== '100yenadmin/evaOS-GUI') {
+    throw new Error(`RC proof repository must be 100yenadmin/evaOS-GUI, got ${manifest.repository}.`);
   }
 
   const releaseAssetsDir = manifest.releaseAssetsDir || 'release-assets';

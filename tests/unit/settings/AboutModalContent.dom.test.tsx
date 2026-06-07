@@ -12,7 +12,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AboutModalContent, {
   EVAOS_BETA_ABOUT_LINKS,
   EVAOS_BETA_BUILD_METADATA,
-  EVAOS_BETA_RELEASE_CONTROL_REPO,
   EVAOS_BETA_SUPPORT_NOTICE,
 } from '@/renderer/components/settings/SettingsModal/contents/AboutModalContent';
 
@@ -54,10 +53,11 @@ describe('AboutModalContent evaOS beta identity', () => {
   });
 
   it('renders beta app identity instead of upstream AionUi', () => {
-    renderAbout();
+    const { container } = renderAbout();
 
     expect(screen.getByText(EVAOS_BETA_ABOUT_LINKS.appName)).toBeInTheDocument();
     expect(screen.queryByText('AionUi')).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/AionUi|\.aionui/i);
   });
 
   it('shows the beta support and released macOS fallback notice', () => {
@@ -78,11 +78,11 @@ describe('AboutModalContent evaOS beta identity', () => {
     });
   });
 
-  it('shows the beta release repo in the About build identity', () => {
+  it('keeps release-control breadcrumbs out of the About build identity', () => {
     renderAbout();
 
-    expect(screen.getByText('Release repo')).toBeInTheDocument();
-    expect(screen.getByText(EVAOS_BETA_RELEASE_CONTROL_REPO)).toBeInTheDocument();
+    expect(screen.queryByText('Release repo')).not.toBeInTheDocument();
+    expect(screen.queryByText(/github\.com\/100yenadmin\//i)).not.toBeInTheDocument();
   });
 
   it('routes About support links to evaOS-owned surfaces', async () => {

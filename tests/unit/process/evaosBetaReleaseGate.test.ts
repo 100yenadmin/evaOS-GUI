@@ -288,7 +288,7 @@ describe('evaOS beta release gate', () => {
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
-        GITHUB_REPOSITORY: '100yenadmin/AionUi',
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
         GITHUB_WORKFLOW: 'PR Checks',
         EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
@@ -300,7 +300,7 @@ describe('evaOS beta release gate', () => {
 
       expect(
         releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
         })
@@ -309,7 +309,7 @@ describe('evaOS beta release gate', () => {
       fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'tampered');
       expect(() =>
         releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
         })
@@ -330,7 +330,7 @@ describe('evaOS beta release gate', () => {
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
-        GITHUB_REPOSITORY: '100yenadmin/AionUi',
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
         GITHUB_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
         GITHUB_RUN_ATTEMPT: '1',
@@ -345,7 +345,7 @@ describe('evaOS beta release gate', () => {
 
       expect(
         releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trustedManifestPath,
@@ -358,7 +358,7 @@ describe('evaOS beta release gate', () => {
 
       expect(() =>
         releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trustedManifestPath,
@@ -384,7 +384,7 @@ describe('evaOS beta release gate', () => {
       );
 
       releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/AionUi',
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
         GITHUB_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
         GITHUB_RUN_ATTEMPT: '1',
@@ -423,7 +423,7 @@ describe('evaOS beta release gate', () => {
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),
-        'PASS: update repo is 100yenadmin/AionUi and iOfficeAI/AionUi blocked for beta assets.\n'
+        'PASS: update repo is 100yenadmin/evaOS-GUI and iOfficeAI/AionUi blocked for beta assets.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'rollback-smoke.md'),
@@ -431,12 +431,12 @@ describe('evaOS beta release gate', () => {
       );
       fs.writeFileSync(
         path.join(proofDir, 'support-notes.md'),
-        'Support route: 100yenadmin/AionUi. The released macOS app remains the fallback while beta is gated.\n'
+        'Support route: 100yenadmin/evaOS-GUI. The released macOS app remains the fallback while beta is gated.\n'
       );
 
       expect(
         releaseGate.verifyRcProof(proofDir, tag, {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
         })
@@ -461,7 +461,7 @@ describe('evaOS beta release gate', () => {
       );
 
       releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/AionUi',
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
         GITHUB_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
         GITHUB_RUN_ATTEMPT: '1',
@@ -473,7 +473,7 @@ describe('evaOS beta release gate', () => {
 
       expect(() =>
         releaseGate.verifyRcProof(proofDir, tag, {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
         })
@@ -498,7 +498,7 @@ describe('evaOS beta release gate', () => {
       );
 
       releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/AionUi',
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
         GITHUB_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
         GITHUB_RUN_ATTEMPT: '1',
@@ -522,7 +522,7 @@ describe('evaOS beta release gate', () => {
 
       expect(() =>
         releaseGate.verifyRcProof(proofDir, tag, {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
         })
@@ -547,7 +547,7 @@ describe('evaOS beta release gate', () => {
       );
 
       releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/AionUi',
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
         GITHUB_WORKFLOW: 'Build and Release',
         GITHUB_RUN_ID: '12345',
         GITHUB_RUN_ATTEMPT: '1',
@@ -586,17 +586,17 @@ describe('evaOS beta release gate', () => {
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),
-        'PASS: update repo is 100yenadmin/AionUi and iOfficeAI/AionUi blocked for beta assets.\n'
+        'PASS: update repo is 100yenadmin/evaOS-GUI and iOfficeAI/AionUi blocked for beta assets.\n'
       );
       fs.writeFileSync(path.join(proofDir, 'rollback-smoke.md'), 'PASS: beta removed.\n');
       fs.writeFileSync(
         path.join(proofDir, 'support-notes.md'),
-        'Support route: 100yenadmin/AionUi. The released macOS app remains the fallback while beta is gated.\n'
+        'Support route: 100yenadmin/evaOS-GUI. The released macOS app remains the fallback while beta is gated.\n'
       );
 
       expect(() =>
         releaseGate.verifyRcProof(proofDir, tag, {
-          GITHUB_REPOSITORY: '100yenadmin/AionUi',
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
         })

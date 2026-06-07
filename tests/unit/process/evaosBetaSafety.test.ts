@@ -44,19 +44,19 @@ describe('evaosBetaSafety', () => {
   });
 
   it('forces bundled backend GitHub access to the evaOS-owned repo in beta mode', () => {
-    expect(getEvaosBetaBackendGithubRepo({ AIONUI_EVAOS_BETA: '1' })).toBe('100yenadmin/AionUi');
+    expect(getEvaosBetaBackendGithubRepo({ AIONUI_EVAOS_BETA: '1' })).toBe('100yenadmin/evaOS-GUI');
     expect(
       getEvaosBetaBackendGithubRepo({
         AIONUI_EVAOS_BETA: '1',
         AIONUI_EVAOS_BETA_UPDATE_REPO: 'iOfficeAI/AionUi',
       })
-    ).toBe('100yenadmin/AionUi');
+    ).toBe('100yenadmin/evaOS-GUI');
     expect(
       getEvaosBetaBackendGithubRepo({
         AIONUI_EVAOS_BETA: '1',
-        AIONUI_EVAOS_BETA_UPDATE_REPO: '100yenadmin/AionUi',
+        AIONUI_EVAOS_BETA_UPDATE_REPO: '100yenadmin/evaOS-GUI',
       })
-    ).toBe('100yenadmin/AionUi');
+    ).toBe('100yenadmin/evaOS-GUI');
     expect(getEvaosBetaBackendGithubRepo({ AIONUI_EVAOS_BETA: '0' })).toBeUndefined();
   });
 
@@ -91,13 +91,13 @@ describe('evaosBetaSafety', () => {
     ).toBe(true);
 
     expect(isAllowedEvaosBetaUpdateRepo('iOfficeAI/AionUi')).toBe(false);
-    expect(isAllowedEvaosBetaUpdateRepo('100yenadmin/AionUi')).toBe(true);
+    expect(isAllowedEvaosBetaUpdateRepo('100yenadmin/evaOS-GUI')).toBe(true);
 
     expect(
       shouldDisableAutoUpdate({
         AIONUI_EVAOS_BETA: '1',
         AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
-        AIONUI_EVAOS_BETA_UPDATE_REPO: '100yenadmin/AionUi',
+        AIONUI_EVAOS_BETA_UPDATE_REPO: '100yenadmin/evaOS-GUI',
       })
     ).toBe(false);
   });

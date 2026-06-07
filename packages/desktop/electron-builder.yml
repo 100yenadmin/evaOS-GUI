@@ -223,6 +223,6 @@ electronDownload:
 publish:
   provider: github
   owner: 100yenadmin
-  repo: AionUi
+  repo: evaOS-GUI
   publishAutoUpdate: false
   releaseType: draft
