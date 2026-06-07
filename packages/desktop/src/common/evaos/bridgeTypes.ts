@@ -63,6 +63,14 @@ export interface IEvaosRuntimeStatusRequest {
   runtime: IEvaosRuntimeKey;
 }
 
+export type IEvaosRuntimeActionType = 'launch' | 'attach' | 'open';
+
+export interface IEvaosRuntimeActionRequest {
+  customerId: string;
+  runtime: IEvaosRuntimeKey;
+  action: IEvaosRuntimeActionType;
+}
+
 export interface IEvaosSafeUrlSummary {
   scheme?: string;
   host?: string;
@@ -92,6 +100,19 @@ export interface IEvaosRuntimeStatusView {
   actions?: string[];
   sourcePointer?: string;
   auditId?: string;
+}
+
+export interface IEvaosRuntimeActionResult {
+  status: string;
+  runtimeKey: IEvaosRuntimeKey;
+  customerId: string;
+  message?: string;
+  urlSummary?: IEvaosSafeUrlSummary;
+  runtimeStatus?: IEvaosRuntimeStatusView;
+  expiresAt?: string;
+  sourcePointer?: string;
+  auditId?: string;
+  backendEnforced: boolean;
 }
 
 export type IEvaosNativeCompanionReadiness = 'ready' | 'repair_required' | 'unavailable';

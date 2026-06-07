@@ -19,7 +19,9 @@ const ApprovalCenter = React.lazy(() => import('@renderer/pages/approval-center'
 const BusinessBrowser = React.lazy(() => import('@renderer/pages/business-browser'));
 const CompanyBrain = React.lazy(() => import('@renderer/pages/company-brain'));
 const ConnectedApps = React.lazy(() => import('@renderer/pages/connected-apps'));
+const CreativeStudio = React.lazy(() => import('@renderer/pages/creative-studio'));
 const BetaReadiness = React.lazy(() => import('@renderer/pages/mission-control'));
+const DesignWorkspace = React.lazy(() => import('@renderer/pages/design-workspace'));
 const EvaosDashboard = React.lazy(() => import('@renderer/pages/evaos-dashboard'));
 const HermesDashboard = React.lazy(() => import('@renderer/pages/hermes-dashboard'));
 const MissionControl = React.lazy(() => import('@renderer/pages/paperclip-mission-control'));
@@ -44,6 +46,7 @@ export function renderEvaosRoutes(): React.ReactNode {
       <Route path='/evaos' element={withEvaosRuntimeRouteGuard('/evaos', EvaosDashboard)} />
       <Route path='/hermes' element={withEvaosRuntimeRouteGuard('/hermes', HermesDashboard)} />
       <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />
+      <Route path='/design-workspace' element={withEvaosRuntimeRouteGuard('/design-workspace', DesignWorkspace)} />
       <Route path='/beta-readiness' element={withEvaosRuntimeRouteGuard('/beta-readiness', BetaReadiness)} />
       <Route path='/terminal' element={withEvaosRuntimeRouteGuard('/terminal', Terminal)} />
       <Route path='/native-companion' element={withEvaosRuntimeRouteGuard('/native-companion', NativeCompanion)} />
@@ -77,6 +80,7 @@ export function renderEvaosRoutes(): React.ReactNode {
           )
         }
       />
+      <Route path='/creative-studio' element={withEvaosRuntimeRouteGuard('/creative-studio', CreativeStudio)} />
       <Route
         path='/company-brain'
         element={

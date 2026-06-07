@@ -229,6 +229,8 @@ describe('Sider runtime route visibility', () => {
       'manage_integrations',
       'view_company_brain',
       'open_business_browser',
+      'use_design_workspace',
+      'use_creative_studio',
     ];
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
@@ -240,7 +242,9 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('People Access')).toBeInTheDocument();
     expect(screen.getByText('Connected Apps')).toBeInTheDocument();
     expect(screen.getByText('Company Brain')).toBeInTheDocument();
+    expect(screen.getByText('Design Workspace')).toBeInTheDocument();
     expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });

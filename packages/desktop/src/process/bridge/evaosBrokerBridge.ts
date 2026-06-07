@@ -5,11 +5,14 @@
  */
 
 import { ipcBridge } from '@/common';
+import { shell } from 'electron';
 import type {
   IEvaosBrokerBeginDesktopAuthResult,
   IEvaosBrokerClaimDeviceCodeRequest,
   IEvaosBrokerSessionStatus,
   IEvaosCustomerTargetsView,
+  IEvaosRuntimeActionRequest,
+  IEvaosRuntimeActionResult,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
 } from '@/common/evaos/bridgeTypes';
@@ -21,6 +24,7 @@ import {
 import { beginEvaosDesktopAuth } from '@process/services/evaosDesktopAuth';
 import {
   evaosLocalProductFixtureCustomerTargets,
+  evaosLocalProductFixtureRuntimeAction,
   evaosLocalProductFixtureRuntimeStatus,
   evaosLocalProductFixtureSessionStatus,
   isEvaosLocalProductFixtureEnabled,
@@ -69,9 +73,22 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
       )
   );
 
+  ipcBridge.evaosBroker.runtimeAction.provider(
+    async (request: IEvaosRuntimeActionRequest): Promise<BridgeResponse<IEvaosRuntimeActionResult>> =>
+      toBridgeResponse(() =>
+        isEvaosLocalProductFixtureEnabled()
+          ? evaosLocalProductFixtureRuntimeAction(request)
+          : client.runtimeAction(request, { openRuntimeUrl: openEvaosRuntimeUrl })
+      )
+  );
+
   ipcBridge.evaosBroker.revokeSession.provider(
     async (): Promise<BridgeResponse<IEvaosBrokerSessionStatus>> => toBridgeResponse(() => client.revokeSession())
   );
+}
+
+function openEvaosRuntimeUrl(url: string): Promise<void> {
+  return shell.openExternal(url);
 }
 
 async function toBridgeResponse<D>(operation: () => D | Promise<D>): Promise<BridgeResponse<D>> {
