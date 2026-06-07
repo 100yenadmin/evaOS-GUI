@@ -176,6 +176,7 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   {
     routePath: '/design-workspace',
     anyRequiredScopes: ['use_design_workspace'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/beta-readiness',
@@ -186,6 +187,7 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
     routePath: '/terminal',
     requiresAdmin: true,
     requiredScopes: ['access_terminal'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/native-companion',
@@ -195,26 +197,32 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   {
     routePath: '/people-access',
     anyRequiredScopes: ['manage_members'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/connected-apps',
     anyRequiredScopes: ['manage_integrations'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/approval-center',
     anyRequiredScopes: ['approve_actions'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/business-browser',
     anyRequiredScopes: ['open_business_browser'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/creative-studio',
     anyRequiredScopes: ['use_creative_studio'],
+    allowMissingBroker: true,
   },
   {
     routePath: '/company-brain',
     anyRequiredScopes: ['view_company_brain', 'manage_company_brain'],
+    allowMissingBroker: true,
   },
 ];
 

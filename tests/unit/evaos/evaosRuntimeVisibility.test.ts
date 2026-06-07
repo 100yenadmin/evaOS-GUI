@@ -165,9 +165,14 @@ describe('evaosRuntimeVisibility', () => {
     expect(evaosRouteAllowsMissingBroker('/hermes')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/mission-control')).toBe(true);
     expect(evaosRouteAllowsMissingBroker('/native-companion')).toBe(true);
-    expect(evaosRouteAllowsMissingBroker('/design-workspace')).toBe(false);
-    expect(evaosRouteAllowsMissingBroker('/creative-studio')).toBe(false);
-    expect(evaosRouteAllowsMissingBroker('/people-access')).toBe(false);
+    expect(evaosRouteAllowsMissingBroker('/design-workspace')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/terminal')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/people-access')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/connected-apps')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/approval-center')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/business-browser')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/creative-studio')).toBe(true);
+    expect(evaosRouteAllowsMissingBroker('/company-brain')).toBe(true);
   });
 
   it('lets signed-in admins reach evaOS and Hermes routes while preserving broker repair states', () => {

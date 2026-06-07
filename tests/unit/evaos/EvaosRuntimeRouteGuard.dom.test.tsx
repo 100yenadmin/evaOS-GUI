@@ -77,6 +77,14 @@ function renderGuardedRoute(routePath = '/mission-control') {
           }
         />
         <Route
+          path='/approval-center'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/approval-center'>
+              <p>Approval Center loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
           path='/terminal'
           element={
             <EvaosRuntimeRouteGuard routePath='/terminal'>
@@ -274,7 +282,7 @@ describe('EvaosRuntimeRouteGuard', () => {
     expect(screen.getByText('Terminal loaded')).toBeInTheDocument();
   });
 
-  it('fails closed for Terminal when the broker session is missing', async () => {
+  it('renders Terminal as a settled product route when the broker session is missing', () => {
     brokerSessionMock.session = {
       state: 'missing',
       authenticated: false,
@@ -285,8 +293,23 @@ describe('EvaosRuntimeRouteGuard', () => {
 
     renderGuardedRoute('/terminal');
 
-    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
-    expect(screen.queryByText('Terminal loaded')).not.toBeInTheDocument();
+    expect(screen.getByText('Terminal loaded')).toBeInTheDocument();
+    expect(screen.queryByText('Guid fallback')).not.toBeInTheDocument();
+  });
+
+  it('renders broker-backed product pages as settled empty states when the broker session is missing', () => {
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
+
+    renderGuardedRoute('/approval-center');
+
+    expect(screen.getByText('Approval Center loaded')).toBeInTheDocument();
+    expect(screen.queryByText('Guid fallback')).not.toBeInTheDocument();
   });
 
   it('allows native companion setup when the broker session is missing', () => {
