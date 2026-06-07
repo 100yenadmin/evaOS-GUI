@@ -98,8 +98,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Design Workspace',
     runtimeKey: 'opendesign',
     requiredRole: 'member-with-scope',
-    statusRequirement: 'waived-until-renderer-route-and-sidebar-entry-exist',
-    waiverIssue: ISSUE_181_RUNTIME_ROUTES,
+    statusRequirement: 'workspace-route-plus-sidebar-entry',
+    testId: 'tests/unit/evaos/evaosRoutes.dom.test.tsx',
   },
   {
     id: 'business-browser',
@@ -128,8 +128,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarLabel: 'Creative Studio',
     runtimeKey: 'creative_studio',
     requiredRole: 'member-with-scope',
-    statusRequirement: 'external-runtime-catalog',
-    waiverIssue: ISSUE_181_RUNTIME_ROUTES,
+    statusRequirement: 'external-runtime-route-plus-sidebar-entry',
+    testId: 'tests/unit/evaos/evaosRoutes.dom.test.tsx',
   },
   {
     id: 'connected-apps',
@@ -246,9 +246,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     oldSourceRefs: ['SidebarView.swift: safeAreaInset(edge: .bottom)', 'DesktopSession.swift: DesktopSession'],
     oldSurface: 'sidebar footer account, version, sign-in/sign-out, and customer target switcher',
     requiredRole: 'signed-in-user',
-    statusRequirement: 'waived-for-full-auth-footer-customer-switcher-parity',
+    statusRequirement: 'broker-session-footer-plus-customer-switcher-clearing',
     testId: 'tests/unit/evaos/SiderRouteVisibility.dom.test.tsx',
-    waiverIssue: ISSUE_180_AUTH_FOOTER,
   },
   {
     id: 'branding',
@@ -258,8 +257,7 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     ],
     oldSurface: 'evaOS Workbench brand, release identity, update feed, and sidebar wordmark',
     requiredRole: 'public-brand-surface',
-    statusRequirement: 'waived-for-full-branding-path-theme-support-cleanup',
+    statusRequirement: 'beta-owned-branding-path-theme-support-cleanup',
     testId: 'tests/unit/process/evaosBetaReleaseGate.test.ts',
-    waiverIssue: ISSUE_182_BRANDING,
   },
 ] as const satisfies readonly GoldenWorkbenchParityManifestRow[];
