@@ -375,9 +375,11 @@ async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
 }
 
 async function captureProofEntry(page, entry, artifactRoot, timeout) {
+  const expectedHash = entry.route.startsWith('#') ? entry.route : `#${entry.route}`;
   await page.evaluate((route) => {
     window.location.hash = route.startsWith('#') ? route : `#${route}`;
   }, entry.route);
+  await page.waitForFunction((hash) => window.location.hash === hash, expectedHash, { timeout });
   await page.waitForLoadState('domcontentloaded');
   await runProofPlanAction(page, entry.action, timeout);
 

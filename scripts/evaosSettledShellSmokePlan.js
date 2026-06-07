@@ -151,7 +151,11 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     route: '/terminal',
     screenshot: '10-terminal.png',
     target: 'Terminal customer VM shell status',
-    waitSelectors: [...COMMON_WAIT_SELECTORS, 'body:text("Terminal")', '[data-testid="evaos-terminal-status"]'],
+    waitSelectors: [
+      ...COMMON_WAIT_SELECTORS,
+      'body:text("Terminal")',
+      '[data-testid="evaos-runtime-dashboard-terminal"]',
+    ],
     notes: [
       'If signed out or missing scope, capture the guarded fallback separately and do not overclaim VM readiness.',
     ],
