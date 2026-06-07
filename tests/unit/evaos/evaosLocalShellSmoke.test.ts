@@ -179,11 +179,11 @@ describe('evaOS local shell smoke', () => {
     expect(missionControlLoaded?.action).toBe('click-mission-control-check');
     expect(missionControlLoaded?.expected).toEqual(
       expect.arrayContaining([
-        'LOADED RUNTIMES',
-        '5 of 5',
-        'Customer browser session',
-        'fixture-audit-browser-running',
-        'local-fixture:runtime:openclaw',
+        'Paperclip mission queue and customer runtime status from evaOS broker evidence.',
+        'fixture-customer-acme',
+        'Paperclip queue is waiting',
+        'fixture-audit-runtime-paperclip',
+        'local-fixture:runtime:paperclip',
       ])
     );
 
@@ -193,8 +193,9 @@ describe('evaOS local shell smoke', () => {
     expect(missionControlSwitch).toEqual(
       expect.objectContaining({
         action: 'click-mission-control-switch-clears',
-        loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'runtime denied source pointer'],
-        forbidden: expect.arrayContaining(['fixture-audit-browser-running', 'fixture.example.test/dashboard']),
+        loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'paperclip customer switch proof'],
+        expected: expect.arrayContaining(['fixture-customer-browser-denied', 'fixture-audit-runtime-paperclip']),
+        forbidden: expect.arrayContaining(['fixture-customer-acme']),
       })
     );
 
@@ -559,7 +560,9 @@ describe('evaOS local shell smoke', () => {
     expect(missionControl?.forbidden).toEqual(
       expect.arrayContaining(['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'])
     );
-    expect(betaReadiness?.expected).toEqual(expect.arrayContaining(['RC parity gated', 'RC parity proof']));
+    expect(betaReadiness?.expected).toEqual(
+      expect.arrayContaining(['Beta Readiness', 'RC parity gated', 'RC parity proof'])
+    );
     expect(agentSettings?.forbidden).toEqual(
       expect.arrayContaining(['Remote Agents', 'Allow insecure', 'Handshake', 'Connect remote'])
     );

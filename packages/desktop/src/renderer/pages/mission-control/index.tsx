@@ -494,9 +494,9 @@ const MissionControlPage: React.FC = () => {
         <header className='flex flex-col gap-10px'>
           <div className='flex flex-wrap items-start justify-between gap-12px'>
             <div className='min-w-0'>
-              <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Mission Control</h1>
+              <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Beta Readiness</h1>
               <p className='m-0 mt-4px max-w-720px text-14px leading-22px text-t-secondary'>
-                Runtime, customer session, and agent status from evaOS broker evidence.
+                Internal release-gate status for the controlled evaOS Workbench Beta candidate.
               </p>
             </div>
             <Button

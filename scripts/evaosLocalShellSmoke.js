@@ -52,11 +52,12 @@ const ROUTE_CHECKS = [
   {
     name: 'beta-readiness',
     hash: '/beta-readiness',
-    title: 'Mission Control',
+    title: 'Beta Readiness',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['Mission Control', 'RC parity gated', 'RC parity proof', 'No runtime evidence loaded yet.'],
+    settledMarkers: ['Beta Readiness', 'RC parity gated', 'RC parity proof', 'No runtime evidence loaded yet.'],
     loadedStateRequiredMarkers: ['desktop session card', 'broker source pointer', 'current audit id'],
     expected: [
+      'Beta Readiness',
       'RC parity gated',
       'RC parity proof',
       'Sign in required',
@@ -226,31 +227,22 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
     settledMarkers: [
       'Mission Control',
-      'Session active',
-      'LOADED RUNTIMES',
-      '5 of 5',
-      'fixture-audit-browser-running',
-      'local-fixture:runtime:openclaw',
+      'Paperclip mission queue',
+      'fixture-audit-runtime-paperclip',
+      'local-fixture:runtime:paperclip',
     ],
-    loadedStateRequiredMarkers: ['desktop session card', 'broker source pointer', 'current audit id'],
+    loadedStateRequiredMarkers: ['paperclip runtime status', 'customer scoped runtime proof'],
     action: 'click-mission-control-check',
     isolateRendererState: true,
     expected: [
       'Mission Control',
-      'Runtime, customer session, and agent status from evaOS broker evidence.',
+      'Paperclip mission queue and customer runtime status from evaOS broker evidence.',
       'Acme Fixture Co',
+      'fixture-customer-acme',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'admin@100yen.org',
-      'LOADED RUNTIMES',
-      '5 of 5',
-      'Customer browser session',
-      'evaOS workspace is accepting customer-scoped agent work',
-      'Hermes dashboard sync completed',
       'Paperclip queue is waiting',
-      'Customer VM shell is offline',
-      'fixture.example.test/dashboard',
-      'fixture-audit-browser-running',
-      'local-fixture:runtime:openclaw',
+      'fixture-audit-runtime-paperclip',
+      'local-fixture:runtime:paperclip',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
   },
@@ -262,23 +254,23 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     settledMarkers: [
       'Mission Control',
       'Denied Browser Fixture Co',
-      'account policy lacks open_business_browser',
-      'fixture-audit-browser-denied-policy',
+      'fixture-customer-browser-denied',
+      'fixture-audit-runtime-paperclip',
     ],
-    loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'runtime denied source pointer'],
+    loadedStateRequiredMarkers: ['mission-control stale-state clearing', 'paperclip customer switch proof'],
     action: 'click-mission-control-switch-clears',
     isolateRendererState: true,
     expected: [
       'Mission Control',
       'Denied Browser Fixture Co',
+      'fixture-customer-browser-denied',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'account policy lacks open_business_browser',
-      'Source: local-fixture:business-browser:denied',
-      'fixture-audit-browser-denied-policy',
+      'Paperclip queue is waiting',
+      'local-fixture:runtime:paperclip',
+      'fixture-audit-runtime-paperclip',
     ],
     forbidden: [
-      'fixture-audit-browser-running',
-      'fixture.example.test/dashboard',
+      'fixture-customer-acme',
       'desktop_session',
       'Bearer',
       'provider_grant',
@@ -1079,7 +1071,7 @@ async function clickBusinessBrowserFailedCustomer(page) {
   });
 }
 
-async function clickMissionControlCheck(page, expectedMarker = 'fixture-audit-browser-running') {
+async function clickMissionControlCheck(page, expectedMarker = 'fixture-audit-runtime-paperclip') {
   await page.waitForFunction(() => document.body.innerText.includes('Customer context'), {
     timeout: 20000,
   });
@@ -1096,11 +1088,11 @@ async function clickMissionControlSwitchClears(page) {
   await clickMissionControlCheck(page);
   await clickCustomerTarget(page, 'Denied Browser Fixture Co');
   await waitForStaleMarkersCleared(page, 'mission-control-switch-clears-fixture', [
-    'fixture-audit-browser-running',
-    'fixture.example.test/dashboard',
+    'fixture-customer-acme',
+    'fixture-audit-runtime-paperclip',
   ]);
-  await clickMissionControlCheck(page, 'fixture-audit-browser-denied-policy');
-  await page.waitForFunction(() => document.body.innerText.includes('account policy lacks open_business_browser'), {
+  await clickMissionControlCheck(page, 'fixture-customer-browser-denied');
+  await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-runtime-paperclip'), {
     timeout: 10000,
   });
 }
