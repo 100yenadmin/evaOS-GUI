@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const { GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST } = require('./evaosInstalledProofManifest.js');
 const { SETTLED_SHELL_SCREENSHOT_PLAN } = require('./evaosSettledShellSmokePlan.js');
 
 const DEFAULT_APP_PATH = '/Applications/evaOS Workbench Beta.app';
@@ -99,26 +100,64 @@ function normalizeWaitSelector(selector) {
   return String(selector).replace(/^body:text\((.*)\)$/, 'body:has-text($1)');
 }
 
-function buildInstalledProofPlan(plan = SETTLED_SHELL_SCREENSHOT_PLAN, options = {}) {
-  const expectedShortHead = shortHead(options.expectedHead);
+function markerSelector(marker) {
+  return `body:has-text(${JSON.stringify(marker)})`;
+}
 
-  return plan.map((entry) => {
-    const waitSelectors = entry.waitSelectors.map(normalizeWaitSelector);
+function markerFromWaitSelector(selector) {
+  const match = String(selector).match(/^body:has-text\("(.+)"\)$/);
+  return match ? match[1] : null;
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function screenshotPlanById() {
+  return new Map(SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => [entry.id, entry]));
+}
+
+function normalizeInstalledProofEntries(plan, options = {}) {
+  const expectedShortHead = shortHead(options.expectedHead);
+  const screenshotEntriesById = screenshotPlanById();
+  const isCustomPlan = Array.isArray(plan);
+  const sourcePlan = isCustomPlan ? plan : GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST;
+
+  return sourcePlan.map((entry) => {
+    const screenshotEntry = screenshotEntriesById.get(entry.id);
+    const baseWaitSelectors = isCustomPlan ? entry.waitSelectors || [] : screenshotEntry?.waitSelectors || [];
+    const settledMarkers = Array.isArray(entry.settledMarkers)
+      ? [...entry.settledMarkers]
+      : baseWaitSelectors.map(normalizeWaitSelector).map(markerFromWaitSelector).filter(Boolean);
+    const markerSelectors = settledMarkers.map(markerSelector);
+    const waitSelectors = uniqueStrings([...baseWaitSelectors.map(normalizeWaitSelector), ...markerSelectors]);
+
     if (entry.id === 'settings-about' && expectedShortHead) {
       const commitSelector = normalizeWaitSelector(`body:text("${expectedShortHead}")`);
       if (!waitSelectors.includes(commitSelector)) {
         waitSelectors.push(commitSelector);
       }
+      if (!settledMarkers.includes(expectedShortHead)) {
+        settledMarkers.push(expectedShortHead);
+      }
     }
 
     return {
+      manifestRowId: entry.manifestRowId || entry.id,
       id: entry.id,
       route: entry.route,
       screenshot: entry.screenshot,
-      action: entry.action,
+      artifactName: entry.artifactName || `screenshots/${entry.screenshot}`,
+      action: entry.action || (isCustomPlan ? undefined : screenshotEntry?.action),
+      closeoutState: entry.closeoutState || 'loaded',
+      settledMarkers,
       waitSelectors,
     };
   });
+}
+
+function buildInstalledProofPlan(plan, options = {}) {
+  return normalizeInstalledProofEntries(plan, options);
 }
 
 function assertNoUnsafeProofText(value) {
@@ -135,6 +174,7 @@ function ensureProofDirs(artifactRoot) {
 }
 
 function safeReportForPlan(options) {
+  const plan = normalizeInstalledProofEntries(options.plan, { expectedHead: options.expectedHead });
   const appStat =
     fs.existsSync(options.appPath) && fs.statSync(options.appPath).isDirectory()
       ? {
@@ -155,10 +195,22 @@ function safeReportForPlan(options) {
     appStat,
     packageVersion: options.packageVersion || 'unknown',
     bundleInfo: options.bundleInfo,
-    screenshots: options.plan.map((entry) => ({
+    screenshots: plan.map((entry) => ({
       id: entry.id,
       route: entry.route,
-      screenshot: `screenshots/${entry.screenshot}`,
+      screenshot: entry.artifactName,
+      artifactName: entry.artifactName,
+      closeoutState: entry.closeoutState,
+      status: options.screenshotStatus || 'pending',
+    })),
+    parityAssertions: plan.map((entry) => ({
+      id: entry.id,
+      manifestRowId: entry.manifestRowId,
+      route: entry.route,
+      artifactName: entry.artifactName,
+      closeoutState: entry.closeoutState,
+      settledMarkers: entry.settledMarkers,
+      waitSelectors: entry.waitSelectors,
       status: options.screenshotStatus || 'pending',
     })),
   };
@@ -183,9 +235,12 @@ function markdownForInstalledProof(report) {
     `- Short version: \`${report.bundleInfo.shortVersion}\``,
     `- Protocol schemes: \`${report.bundleInfo.protocolSchemes.join('`, `')}\``,
     '',
-    '## Screenshot Targets',
+    '## Parity Assertions',
     '',
-    ...report.screenshots.map((shot) => `- \`${shot.id}\` -> \`${shot.screenshot}\` (${shot.status})`),
+    ...(report.parityAssertions || report.screenshots).map(
+      (shot) =>
+        `- \`${shot.id}\` -> \`${shot.artifactName || shot.screenshot}\` (${shot.closeoutState}, ${shot.status})`
+    ),
     '',
     '## Safety',
     '',
@@ -204,7 +259,7 @@ function takeoverMarkdown(report) {
     `EVAOS_INSTALLED_APP_PROOF_EXPECTED_HEAD=${report.expectedHead} npm run evaos:installed-app-proof`,
     '```',
     '',
-    'A pass means the installed app bundle identity matched, the About page exposed the expected commit, and every golden screenshot target settled before capture.',
+    'A pass means the installed app bundle identity matched, the About page exposed the expected commit, and every golden Workbench parity row reached its required loaded, denied, or repair state before screenshot capture.',
     '',
   ].join('\n');
 }
@@ -289,7 +344,7 @@ async function captureInstalledAppProof(options = {}) {
   const bundleInfo = options.bundleInfo || readInfoPlist(appPath);
   assertExpectedBundle(bundleInfo);
 
-  const proofPlan = buildInstalledProofPlan(SETTLED_SHELL_SCREENSHOT_PLAN, { expectedHead });
+  const proofPlan = buildInstalledProofPlan(undefined, { expectedHead });
   ensureProofDirs(artifactRoot);
 
   const { _electron: electron } = require('playwright');
@@ -329,8 +384,13 @@ async function captureInstalledAppProof(options = {}) {
       await page.screenshot({ path: screenshotPath, fullPage: true });
       screenshots.push({
         id: entry.id,
+        manifestRowId: entry.manifestRowId,
         route: entry.route,
-        screenshot: `screenshots/${entry.screenshot}`,
+        screenshot: entry.artifactName,
+        artifactName: entry.artifactName,
+        closeoutState: entry.closeoutState,
+        settledMarkers: entry.settledMarkers,
+        waitSelectors: entry.waitSelectors,
         status: 'passed',
       });
     }
@@ -354,6 +414,16 @@ async function captureInstalledAppProof(options = {}) {
     packageVersion: packageVersion(repoRoot),
     bundleInfo,
     screenshots,
+    parityAssertions: screenshots.map((entry) => ({
+      id: entry.id,
+      manifestRowId: entry.manifestRowId,
+      route: entry.route,
+      artifactName: entry.artifactName,
+      closeoutState: entry.closeoutState,
+      settledMarkers: entry.settledMarkers,
+      waitSelectors: entry.waitSelectors,
+      status: entry.status,
+    })),
   };
 
   const files = writeReportFiles(artifactRoot, report);
@@ -410,7 +480,7 @@ async function main() {
           protocolSchemes: [DEFAULT_PROTOCOL_SCHEME],
         };
     assertExpectedBundle(bundleInfo);
-    const plan = buildInstalledProofPlan(SETTLED_SHELL_SCREENSHOT_PLAN, { expectedHead });
+    const plan = buildInstalledProofPlan(undefined, { expectedHead });
     const files = writeDryRunProofFiles({
       artifactRoot,
       repoHead,

@@ -11,6 +11,7 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { GOLDEN_WORKBENCH_PARITY_MANIFEST } from '../../../packages/desktop/src/renderer/evaos/__fixtures__/goldenWorkbenchParityManifest';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -34,6 +35,9 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     id: string;
     route: string;
     screenshot: string;
+    artifactName: string;
+    closeoutState: 'loaded' | 'denied' | 'repair' | 'waived';
+    settledMarkers: string[];
     waitSelectors: string[];
     action?: string;
   }>;
@@ -150,6 +154,34 @@ describe('evaOS installed app product proof', () => {
       'body:has-text("Home")',
       '[data-testid="ready"]',
     ]);
+  });
+
+  it('builds installed proof from golden parity manifest rows instead of screenshot-only targets', () => {
+    const proofPlan = installedAppProof.buildInstalledProofPlan(undefined, {
+      expectedHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
+    });
+
+    expect(proofPlan.map((entry) => entry.id)).toEqual(
+      GOLDEN_WORKBENCH_PARITY_MANIFEST.map((row) => row.proofTarget.planId)
+    );
+
+    const byId = new Map(proofPlan.map((entry) => [entry.id, entry]));
+    expect(byId.get('mac-iphone')).toMatchObject({
+      id: 'mac-iphone',
+      route: '/native-companion',
+      screenshot: '06-mac-iphone.png',
+      artifactName: 'screenshots/06-mac-iphone.png',
+      closeoutState: 'repair',
+      settledMarkers: ['Mac & iPhone', 'MAC & IPHONE REPAIR', 'Boundary clean'],
+    });
+    expect(byId.get('mac-iphone')?.waitSelectors).toEqual(
+      expect.arrayContaining([
+        'body:has-text("Mac & iPhone")',
+        'body:has-text("MAC & IPHONE REPAIR")',
+        'body:has-text("Boundary clean")',
+      ])
+    );
+    expect(byId.get('settings-about')?.waitSelectors).toContain('body:has-text("2fb812c12ddf")');
   });
 
   it('preserves route settle actions so hidden diagnostics can be opened before proof waits', () => {
@@ -273,7 +305,26 @@ describe('evaOS installed app product proof', () => {
     });
 
     expect(files.reportPath).toBe(path.join(artifactRoot, 'artifacts/installed-app-product-proof-report.json'));
+    const report = JSON.parse(fs.readFileSync(files.reportPath, 'utf8'));
+    expect(report.screenshots).toEqual([
+      expect.objectContaining({
+        id: 'settings-about',
+        artifactName: 'screenshots/05-settings-about.png',
+        closeoutState: 'loaded',
+      }),
+    ]);
+    expect(report.parityAssertions).toEqual([
+      expect.objectContaining({
+        id: 'settings-about',
+        route: '/settings/about',
+        artifactName: 'screenshots/05-settings-about.png',
+        closeoutState: 'loaded',
+        settledMarkers: ['Build identity', '2fb812c12ddf'],
+        status: 'pending',
+      }),
+    ]);
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('Expected commit: `2fb812c12ddf`');
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Parity Assertions');
     expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Run from `/Volumes/LEXAR/repos');
     installedAppProof.assertNoUnsafeProofText(fs.readFileSync(files.reportPath, 'utf8'));
   });
