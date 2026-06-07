@@ -35,6 +35,13 @@ function collectJsonFiles(dir: string): string[] {
   });
 }
 
+function getNestedValue(value: unknown, pathSegments: string[]): unknown {
+  return pathSegments.reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== 'object') return undefined;
+    return (current as Record<string, unknown>)[segment];
+  }, value);
+}
+
 describe('evaOS agent presentation', () => {
   it('keeps internal backend keys stable while presenting evaOS names', () => {
     expect(getEvaosAgentDisplayName(agent('openclaw-gateway', 'OpenClaw', 'openclaw-gateway'))).toBe('evaOS');
@@ -64,6 +71,7 @@ describe('evaOS agent presentation', () => {
     const defaultTheme = PRESET_THEMES.find((theme) => theme.id === 'default-theme');
 
     expect(defaultTheme?.name).toBe('evaOS Default');
+    expect(defaultTheme?.cover).toBeUndefined();
     expect(defaultTheme?.name).not.toMatch(/AionUi|Aion CLI/i);
   });
 
@@ -90,6 +98,50 @@ describe('evaOS agent presentation', () => {
     );
 
     expect(source).not.toContain('github.com/iOfficeAI/AionUi');
+  });
+
+  it('does not send beta-visible help and settings links to upstream AionUi URLs', () => {
+    const visibleHelpSources = [
+      'packages/desktop/src/renderer/pages/guid/components/QuickActionButtons.tsx',
+      'packages/desktop/src/renderer/pages/guid/components/SkillsMarketBanner.tsx',
+      'packages/desktop/src/renderer/pages/settings/AgentSettings/RemoteAgentManagement.tsx',
+      'packages/desktop/src/renderer/components/settings/SettingsModal/contents/WebuiModalContent.tsx',
+      'packages/desktop/src/renderer/components/settings/SettingsModal/contents/ToolsModalContent.tsx',
+      'packages/desktop/src/renderer/components/settings/SettingsModal/contents/ModelModalContent.tsx',
+    ];
+
+    for (const relativePath of visibleHelpSources) {
+      const source = readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+
+      expect(source, relativePath).not.toContain('github.com/iOfficeAI/AionUi');
+      expect(source, relativePath).not.toMatch(/https?:\/\/[^'"\s]*aionui\.com/i);
+    }
+  });
+
+  it('keeps beta contact and homepage CTAs honest', () => {
+    const localeDir = path.join(process.cwd(), 'packages/desktop/src/renderer/services/i18n/locales');
+    const localeFiles = collectJsonFiles(localeDir);
+    const starPitch = /star|звез|yıldız|estrela|별|スター|星/i;
+    const guidePitch = /guide|руковод|посіб|kılavuz|guia|가이드|ガイド|指南|方式/i;
+
+    for (const localeFile of localeFiles) {
+      const locale = JSON.parse(readFileSync(localeFile, 'utf8'));
+
+      if (localeFile.endsWith('/conversation.json')) {
+        expect(getNestedValue(locale, ['welcome', 'quickActionStar']), localeFile).not.toMatch(starPitch);
+      }
+
+      if (localeFile.endsWith('/settings.json')) {
+        for (const key of ['webui.viewGuide', 'configGuide']) {
+          expect(locale[key], `${localeFile}:${key}`).not.toMatch(guidePitch);
+        }
+
+        expect(
+          getNestedValue(locale, ['remoteAgent', 'guideAction']),
+          `${localeFile}:remoteAgent.guideAction`
+        ).not.toMatch(guidePitch);
+      }
+    }
   });
 
   it('keeps evaOS runtime pages free of visible upstream shell branding', () => {

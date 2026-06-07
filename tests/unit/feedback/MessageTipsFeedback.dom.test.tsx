@@ -211,6 +211,24 @@ describe('MessageTips — FeedbackButton wiring', () => {
     expect(screen.getByText('settings.oneClickFeedback')).toBeInTheDocument();
   });
 
+  it('wraps internal app error codes with evaOS beta naming in technical details', () => {
+    render(
+      <MessageTips
+        message={buildTips('error', 'request failed internally', {
+          message: 'request failed internally',
+          code: 'AIONUI_INTERNAL_ERROR',
+          ownership: 'aionui',
+          detail: 'NOT_PAIRED: pairing required',
+          retryable: true,
+          feedback_recommended: true,
+        })}
+      />
+    );
+
+    expect(screen.getByText(/EVAOS_APP_INTERNAL_ERROR/)).toBeInTheDocument();
+    expect(screen.queryByText(/AIONUI_INTERNAL_ERROR/)).not.toBeInTheDocument();
+  });
+
   it('renders structured error resolution guidance', () => {
     render(
       <MessageTips

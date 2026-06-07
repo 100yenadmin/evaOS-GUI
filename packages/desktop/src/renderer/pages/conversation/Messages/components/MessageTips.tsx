@@ -59,6 +59,9 @@ const ownershipColor = {
 };
 
 const getUserFacingErrorCode = (code: string) => {
+  if (code === 'AIONUI_INTERNAL_ERROR') {
+    return 'EVAOS_APP_INTERNAL_ERROR';
+  }
   if (code.startsWith('AIONUI_')) {
     return code.replace(/^AIONUI_/, 'EVAOS_');
   }

@@ -14,10 +14,10 @@
     "none": "없음",
     "quickActionsTitle": "evaOS Workbench로 무엇을 할 수 있나요?",
     "quickActionFeedback": "문제 보고",
-    "quickActionStar": "마음에 드시나요? 별을 주세요!",
+    "quickActionStar": "ElectricSheep 방문",
     "skillsMarket": "evaOS Workbench Skills Market",
     "skillsMarketDesc": "커뮤니티 Skills를 필요에 따라 검색하고 활성화. 한 번 설정하면 모든 Agent에서 사용 가능.",
-    "skillsMarketDetails": "자세히 >>"
+    "skillsMarketDetails": "지원팀에 문의"
   },
   "history": {
     "recents": "최근",

@@ -79,6 +79,17 @@ const ROUTE_CHECKS = [
     requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
   },
   {
+    name: 'display-settings-branding',
+    hash: '/settings/display',
+    title: 'CSS Settings',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Theme', 'Scale', 'CSS Settings', 'evaOS Default'],
+    loadedStateRequiredMarkers: ['visible theme presets', 'neutral default theme card'],
+    expected: ['Theme', 'Scale', 'CSS Settings', 'evaOS Default'],
+    forbidden: ['iOfficeAI/AionUi', 'aionui.com', 'Default AionUi', 'Aion CLI'],
+    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+  },
+  {
     name: 'about-support-metadata',
     hash: '/settings/about',
     title: 'About',
@@ -1233,7 +1244,7 @@ async function resolveMainWindow(app) {
   while (Date.now() < deadline) {
     for (const page of app.windows()) {
       const text = await bodyText(page);
-      if (text.includes('Mission Control') || text.includes('AionUi')) {
+      if (text.includes('evaOS Workbench Beta') || text.includes('Mission Control')) {
         return page;
       }
       if (text.trim().length > 0) {
@@ -1298,7 +1309,7 @@ function writeProof({ artifactRoot, artifactsDir, report }) {
   fs.writeFileSync(
     path.join(artifactRoot, 'proof.md'),
     [
-      '# Local AionUi Shell Smoke Proof',
+      '# Local evaOS Workbench Shell Smoke Proof',
       '',
       `Generated: ${report.generatedAt}`,
       '',
@@ -1308,7 +1319,7 @@ function writeProof({ artifactRoot, artifactsDir, report }) {
       '',
       '## Validation',
       '',
-      'Scenario canary: interactive local AionUi shell smoke.',
+      'Scenario canary: interactive local evaOS Workbench shell smoke.',
       '',
       hasProductLoadedState
         ? 'Proof stage: mixed shell-smoke and fixture-backed product-loaded-state.'

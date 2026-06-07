@@ -7,7 +7,6 @@
 import type { ICssTheme } from '@/common/config/storage.ts';
 
 import {
-  defaultThemeCover,
   misakaMikotoCover,
   helloKittyCover,
   retroWindowsCover,
@@ -40,7 +39,6 @@ export const PRESET_THEMES: ICssTheme[] = [
     id: DEFAULT_THEME_ID,
     name: 'evaOS Default',
     is_preset: true,
-    cover: defaultThemeCover,
     css: defaultCss,
     created_at: Date.now(),
     updated_at: Date.now(),
