@@ -454,7 +454,7 @@ function fixtureEnvFromProvision(state) {
     AIONUI_EVAOS_BROKER_ENDPOINT: state.brokerEndpoint,
     AIONUI_EVAOS_DESKTOP_SESSION: state.sessions.admin.raw,
     AIONUI_EVAOS_CUSTOMER_ID: state.customerId,
-    AIONUI_EVAOS_RUNTIME: 'browser',
+    AIONUI_EVAOS_RUNTIME: safeText(state.runtime, 80) || 'browser',
     AIONUI_EVAOS_PROVIDER_REQUIRED_STATES: 'connected,needs_login,expired,revoked',
     AIONUI_EVAOS_APPROVAL_DENY_ACK: 'evaos-deny-test',
     AIONUI_EVAOS_APPROVAL_ID: state.approval.approvalId,
@@ -562,6 +562,7 @@ function loadOptions(env = process.env) {
       DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS
     ),
     approvalProviderKey: optionalEnv(env, 'AIONUI_EVAOS_APPROVAL_PROVIDER_KEY', 'google_workspace'),
+    runtime: optionalEnv(env, 'AIONUI_EVAOS_RUNTIME', 'browser'),
     ttlMinutes: Number(optionalEnv(env, 'AIONUI_EVAOS_FIXTURE_TTL_MINUTES', '180')),
     statePath: optionalEnv(
       env,
@@ -623,6 +624,7 @@ async function provisionFixtures(options = loadOptions()) {
     supabaseUrl: options.supabaseUrl,
     brokerEndpoint: options.brokerEndpoint,
     customerId: options.customerId,
+    runtime: options.runtime,
     customerAccountId: customerAccount.id,
     wrongCustomerId: options.wrongCustomerId,
     admin: {
