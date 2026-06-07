@@ -7,11 +7,15 @@
 During the evaOS Workbench controlled 1.0 finish-line sprint, PR checks are macOS-first:
 
 - Blocking PR checks are code quality, coverage, release-script safety, macOS unit tests, and macOS build/install smoke.
-- Windows and Linux/Ubuntu compatibility builds are deferred to manual, release, or scheduled workflows until after the controlled macOS 1.0 release.
-- Windows checks only run from `PR Checks` when `workflow_dispatch.run_windows_checks` is explicitly set.
-- Linux and Windows release artifacts remain covered by release/manual workflows, not routine parity PRs.
+- Windows and Linux/Ubuntu compatibility builds are explicitly deferred until after the controlled macOS 1.0 release.
+- Windows checks only run from `PR Checks` when `workflow_dispatch.run_windows_checks` is explicitly set for post-release hardening or a Windows-touching change.
+- Linux and Windows release artifacts remain covered by release/manual workflows, not routine parity PRs, and skipped cross-platform jobs are not blockers for the macOS RC.
 
 This keeps day-to-day parity work focused on the platform used by the beta audience while preserving a post-release path for cross-platform hardening.
+
+### Agent operating rule
+
+Agents working on the finish-line sprint must treat macOS as the only active release platform. Do not open, block, or delay parity PRs for Windows or Ubuntu/Linux failures unless the PR explicitly changes Windows packaging, Linux packaging, Electron builder platform metadata, or shared runtime code that cannot be proven safely on macOS. If a cross-platform concern is found, file it as post-1.0 follow-up work and keep the macOS RC lane moving.
 
 ## 架构概览
 

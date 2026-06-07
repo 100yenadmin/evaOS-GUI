@@ -1,8 +1,13 @@
 name: 🐛 Bug Report
-description: Report a bug or unexpected behavior in AionUi
+description: Report a bug or unexpected behavior in evaOS Workbench Beta
 title: '[Bug]: '
 labels: ['bug']
 body:
+  - type: markdown
+    attributes:
+      value: |
+        The controlled evaOS Workbench 1.0 sprint is macOS-first. Windows and Linux/Ubuntu reports are accepted for tracking, but they are post-1.0 follow-up work unless an issue is explicitly marked as cross-platform release work.
+
   - type: dropdown
     id: platform
     attributes:
@@ -11,16 +16,16 @@ body:
       options:
         - macOS (Apple Silicon)
         - macOS (Intel)
-        - Windows
-        - Linux
+        - Windows (post-1.0 tracking)
+        - Linux/Ubuntu (post-1.0 tracking)
     validations:
       required: true
 
   - type: input
     id: version
     attributes:
-      label: AionUi Version
-      description: What version of AionUi are you using?
+      label: evaOS Workbench Version
+      description: What version of evaOS Workbench Beta are you using?
       placeholder: e.g., 1.2.2
     validations:
       required: true

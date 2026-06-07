@@ -1,8 +1,13 @@
 name: ❓ Question
-description: Ask a question about AionUi
+description: Ask a question about evaOS Workbench Beta
 title: '[Question]: '
 labels: ['question']
 body:
+  - type: markdown
+    attributes:
+      value: |
+        The controlled evaOS Workbench 1.0 sprint is macOS-first. Windows and Linux/Ubuntu compatibility work is deferred until after the controlled macOS release unless a maintainer explicitly scopes the issue as post-1.0 cross-platform hardening.
+
   - type: textarea
     id: question
     attributes:
@@ -42,6 +47,6 @@ body:
       options:
         - macOS (Apple Silicon)
         - macOS (Intel)
-        - Windows
-        - Linux
+        - Windows (post-1.0 tracking)
+        - Linux/Ubuntu (post-1.0 tracking)
         - Not applicable

@@ -82,9 +82,9 @@ The fork path should continue because the sprint now has concrete evidence rathe
 
 ## macOS-First CI Policy
 
-The beta target is macOS-first. Windows checks are release/nightly or Windows-touching gates, not blockers for docs, canary scripts, renderer-only routes, or macOS beta packaging work.
+The controlled 1.0 target is macOS-first. Windows and Linux/Ubuntu compatibility checks are deferred until after the controlled macOS 1.0 release. They are not blockers for docs, canary scripts, renderer-only routes, macOS beta packaging work, or evaOS Workbench parity recovery.
 
-Required PR gates remain code quality, unit tests, coverage, release-script safety, and macOS build where relevant. Intentionally skipped Windows jobs are not public-beta blockers unless the change touches Windows packaging, Electron builder Windows config, installer metadata, or cross-platform runtime behavior.
+Required PR gates remain code quality, unit tests, coverage, release-script safety, and macOS build where relevant. Intentionally skipped Windows/Linux jobs are not public-beta blockers unless the change explicitly opts into post-1.0 cross-platform hardening or touches Windows/Linux packaging, Electron builder platform config, installer metadata, or shared runtime behavior that cannot be safely validated in the macOS lane.
 
 ## Post-Merge Sprint State
 
