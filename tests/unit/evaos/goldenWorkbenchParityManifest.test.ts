@@ -24,6 +24,17 @@ const settledShellSmokePlan = require('../../../scripts/evaosSettledShellSmokePl
     waitSelectors: string[];
   }>;
 };
+const installedProofManifest = require('../../../scripts/evaosInstalledProofManifest.js') as {
+  GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST: Array<{
+    manifestRowId: string;
+    id: string;
+    route: string | undefined;
+    screenshot: string;
+    artifactName: string;
+    closeoutState: string;
+    settledMarkers: string[];
+  }>;
+};
 
 const OLD_SOURCE_FILES = [
   'RuntimeDefinition.swift',
@@ -120,6 +131,24 @@ describe('goldenWorkbenchParityManifest', () => {
         expect(planEntry?.route, `${row.id}: proof route`).toBe(row.expectedRoute);
       }
     }
+  });
+
+  it('keeps the Node installed-app proof manifest aligned to golden parity rows', () => {
+    const screenshotPlanById = new Map(
+      settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => [entry.id, entry])
+    );
+
+    expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST).toEqual(
+      GOLDEN_WORKBENCH_PARITY_MANIFEST.map((row) => ({
+        manifestRowId: row.id,
+        id: row.proofTarget.planId,
+        route: row.expectedRoute || screenshotPlanById.get(row.proofTarget.planId)?.route,
+        screenshot: row.proofTarget.screenshot,
+        artifactName: row.proofTarget.artifactName,
+        closeoutState: row.proofTarget.closeoutState,
+        settledMarkers: [...row.proofTarget.settledMarkers],
+      }))
+    );
   });
 
   it('keeps old Workbench visible navigation labels and Home as an owned route', () => {
