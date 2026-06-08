@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import type { TChatConversation } from '@/common/config/storage';
 import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
+import { getEvaosAssistantDisplayName } from '@/renderer/evaos/evaosAssistantPresentation';
 import CoworkLogo from '@/renderer/assets/icons/cowork.svg';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents, type AgentMetadata } from '@/renderer/utils/model/agentTypes';
@@ -164,7 +165,7 @@ function hasMatchingEnabledSkills(candidateSkills: string[] | undefined, enabled
  */
 function buildPresetInfoFromAssistant(assistant: Assistant, locale: string): PresetAssistantInfo {
   const localeKey = locale.startsWith('zh') ? 'zh-CN' : 'en-US';
-  const name = assistant.name_i18n?.[localeKey] || assistant.name_i18n?.[locale] || assistant.name || assistant.id;
+  const name = getEvaosAssistantDisplayName(assistant, localeKey || locale);
   const avatar = typeof assistant.avatar === 'string' ? assistant.avatar : '';
   const normalized = normalizeAvatar(avatar);
   return { name, logo: normalized.logo, isEmoji: normalized.isEmoji };

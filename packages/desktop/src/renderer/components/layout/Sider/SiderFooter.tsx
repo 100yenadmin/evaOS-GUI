@@ -159,9 +159,6 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
         )}
         {showSignIn && onSignInClick && (
           <div className={classNames('flex min-w-0 flex-col gap-4px', collapsed ? 'w-full' : 'flex-1')}>
-            {!collapsed ? (
-              <div className='px-4px text-10px leading-14px text-t-tertiary'>Sign in to open Eva workspaces</div>
-            ) : null}
             <Tooltip {...siderTooltipProps} content='Sign In' position='right'>
               <button
                 type='button'
