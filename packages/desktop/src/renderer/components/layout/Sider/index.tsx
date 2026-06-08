@@ -46,6 +46,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/evaos');
   const showLogout = status === 'authenticated' || evaosSidebarState.brokerAuthenticated;
+  const showBrokerSignIn = !evaosSidebarState.brokerAuthenticated;
 
   useEffect(() => {
     if (!pathname.startsWith('/settings')) {
@@ -296,7 +297,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         onCustomerChange={evaosSidebarState.selectCustomer}
         showLogout={showLogout}
         onLogoutClick={handleLogout}
-        showSignIn={!showLogout}
+        showSignIn={showBrokerSignIn}
         onSignInClick={handleBeginDesktopAuth}
       />
     </div>

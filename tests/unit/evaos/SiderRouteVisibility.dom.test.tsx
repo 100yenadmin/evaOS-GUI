@@ -135,16 +135,29 @@ vi.mock('@renderer/pages/settings/components/SettingsSider', () => ({
   default: () => <div data-testid='mock-settings-sider' />,
 }));
 
-function renderSider(path = '/guid') {
+function renderSider(path = '/guid', options: { collapsed?: boolean } = {}) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Sider />
+      <Sider collapsed={options.collapsed} />
     </MemoryRouter>
   );
 }
 
 describe('Sider runtime route visibility', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
     authMock.status = 'authenticated';
     authMock.user = null;
     authMock.logout.mockReset();
@@ -337,6 +350,56 @@ describe('Sider runtime route visibility', () => {
     renderSider();
 
     expect(screen.getByText('Sign in to open Eva workspaces')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign In' }));
+
+    expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps evaOS broker sign-in visible when the upstream shell account is signed in but broker session is missing', async () => {
+    const user = userEvent.setup();
+    authMock.status = 'authenticated';
+    authMock.user = {
+      id: 'shell-user-1',
+      username: 'admin@100yen.org',
+    };
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
+
+    renderSider();
+
+    expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getByText('Sign in to open Eva workspaces')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Sign In' }));
+
+    expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps evaOS broker sign-in reachable in the collapsed sidebar when broker session is missing', async () => {
+    const user = userEvent.setup();
+    authMock.status = 'authenticated';
+    authMock.user = {
+      id: 'shell-user-1',
+      username: 'admin@100yen.org',
+    };
+    brokerSessionMock.session = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in required',
+    };
+
+    renderSider('/guid', { collapsed: true });
+
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: 'Sign In' }));
 
     expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1);

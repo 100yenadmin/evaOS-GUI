@@ -7,7 +7,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '@arco-design/web-react';
-import { ArrowCircleLeft, CloseOne, Moon, SettingTwo, SunOne } from '@icon-park/react';
+import { ArrowCircleLeft, CloseOne, Login, Moon, SettingTwo, SunOne } from '@icon-park/react';
 import classNames from 'classnames';
 import { iconColors } from '@renderer/styles/colors';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -157,9 +157,11 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             </button>
           </Tooltip>
         )}
-        {showSignIn && onSignInClick && !collapsed && (
-          <div className='flex flex-1 min-w-0 flex-col gap-4px'>
-            <div className='px-4px text-10px leading-14px text-t-tertiary'>Sign in to open Eva workspaces</div>
+        {showSignIn && onSignInClick && (
+          <div className={classNames('flex min-w-0 flex-col gap-4px', collapsed ? 'w-full' : 'flex-1')}>
+            {!collapsed ? (
+              <div className='px-4px text-10px leading-14px text-t-tertiary'>Sign in to open Eva workspaces</div>
+            ) : null}
             <Tooltip {...siderTooltipProps} content='Sign In' position='right'>
               <button
                 type='button'
@@ -167,10 +169,21 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
                 onClick={onSignInClick}
                 className={classNames(
                   'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
-                  'w-full min-w-0 justify-start gap-10px px-14px',
+                  collapsed ? 'w-full justify-center' : 'w-full min-w-0 justify-start gap-10px px-14px',
                   isMobile && 'sider-footer-btn-mobile'
                 )}
               >
+                {collapsed ? (
+                  <span className='size-20px flex items-center justify-center shrink-0'>
+                    <Login
+                      theme='outline'
+                      size='16'
+                      fill={iconColors.primary}
+                      className='block leading-none'
+                      style={{ lineHeight: 0 }}
+                    />
+                  </span>
+                ) : null}
                 <span className='collapsed-hidden text-t-primary text-14px font-[500] leading-24px truncate'>
                   Sign In
                 </span>
