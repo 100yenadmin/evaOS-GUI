@@ -487,7 +487,10 @@ jobs:
 
           case "${{ matrix.platform }}" in
             macos-*)
-              ls out/*.dmg out/*.zip >/dev/null
+              ls out/*.dmg >/dev/null
+              if ! ls out/*.zip >/dev/null 2>&1; then
+                echo "::notice::macOS PR build smoke did not produce a ZIP; release asset verification enforces ZIP output for release profiles."
+              fi
               ;;
           esac
 
@@ -523,7 +526,8 @@ jobs:
         shell: bash
         run: |
           echo "Skipping runtime launch smoke for macos-x64 cross build on arm64 runner."
-          ls -lah out/*.dmg out/*.zip
+          ls -lah out/*.dmg
+          ls -lah out/*.zip 2>/dev/null || echo "::notice::No macOS ZIP in PR smoke output; release profile verification covers release ZIP assets."
 
   windows-build-test:
     name: Build Test (${{ matrix.platform }})
@@ -750,3 +754,37 @@ jobs:
         env:
           INCLUDE_WEB_CLI_ASSETS: '0'
         run: bash scripts/verify-release-assets.sh release-assets
+
+      - name: Validate macOS-only release profile
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: 100yenadmin/evaOS-GUI
+          GITHUB_WORKFLOW: Build and Release
+          EVAOS_BETA_RELEASE_WORKFLOW: Build and Release
+          GITHUB_RUN_ID: '12345'
+          GITHUB_RUN_ATTEMPT: '1'
+          EVAOS_BETA_RELEASE_COMMIT: mock-sha
+          EVAOS_BETA_RELEASE_BRANCH: evaos/release-public-beta
+          EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true'
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1'
+          EXPECTED_RELEASE_COMMIT: mock-sha
+          INCLUDE_WEB_CLI_ASSETS: '0'
+          EVAOS_RELEASE_TARGET_PLATFORMS: macos
+        run: |
+          bash scripts/create-mock-release-artifacts.sh build-artifacts-macos
+          bash scripts/prepare-release-assets.sh build-artifacts-macos release-assets-macos
+          node scripts/evaosBetaReleaseGate.js write-manifest release-assets-macos evaos-beta-v1.0.0-evaos-beta.0
+          node scripts/evaosBetaReleaseGate.js verify-manifest release-assets-macos evaos-beta-v1.0.0-evaos-beta.0
+          bash scripts/verify-release-assets.sh release-assets-macos
+          if find release-assets-macos -type f \( \
+            -name "*.exe" -o \
+            -name "*.msi" -o \
+            -name "*.deb" -o \
+            -name "latest.yml" -o \
+            -name "latest-win-arm64.yml" -o \
+            -name "latest-linux*.yml" \
+          \) | grep -q .; then
+            echo "::error::macOS release profile emitted Windows/Linux assets or metadata."
+            find release-assets-macos -type f | sort
+            exit 1
+          fi

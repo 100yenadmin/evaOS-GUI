@@ -16,24 +16,46 @@ set -euo pipefail
 ARTIFACTS_DIR="${1:-build-artifacts}"
 OUTPUT_DIR="${2:-release-assets}"
 INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
+RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
+
+case "$RELEASE_TARGET_PLATFORMS" in
+  all|macos)
+    ;;
+  *)
+    echo "::error::Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
+    echo "::error::Supported values: all, macos"
+    exit 1
+    ;;
+esac
 
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
+
+echo "==> Release target platforms: $RELEASE_TARGET_PLATFORMS"
 
 # ---------------------------------------------------------------------------
 # 1) Copy all distributables (unique file names)
 # ---------------------------------------------------------------------------
 echo "==> Copying distributables from $ARTIFACTS_DIR ..."
 DISTRIBUTABLES=()
-while IFS= read -r file; do
-  DISTRIBUTABLES+=("$file")
-done < <(find "$ARTIFACTS_DIR" -type f \( \
-  -name "*.exe" -o \
-  -name "*.msi" -o \
-  -name "*.dmg" -o \
-  -name "*.deb" -o \
-  -name "*.zip" \
-\) | sort)
+if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+  while IFS= read -r file; do
+    DISTRIBUTABLES+=("$file")
+  done < <(find "$ARTIFACTS_DIR" -type f \( \
+    \( -path "*/macos-build-x64/*" -o -path "*/macos-build-arm64/*" \) -a \
+    \( -name "*.dmg" -o -name "*.zip" \) \
+  \) | sort)
+else
+  while IFS= read -r file; do
+    DISTRIBUTABLES+=("$file")
+  done < <(find "$ARTIFACTS_DIR" -type f \( \
+    -name "*.exe" -o \
+    -name "*.msi" -o \
+    -name "*.dmg" -o \
+    -name "*.deb" -o \
+    -name "*.zip" \
+  \) | sort)
+fi
 
 DUPLICATE_BASENAMES=$(for file in "${DISTRIBUTABLES[@]}"; do basename "$file"; done | sort | uniq -d || true)
 if [ -n "$DUPLICATE_BASENAMES" ]; then
@@ -52,12 +74,21 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   # ---------------------------------------------------------------------------
   echo "==> Copying web-cli tarballs from $ARTIFACTS_DIR ..."
   WEB_CLI_FILES=()
-  while IFS= read -r file; do
-    WEB_CLI_FILES+=("$file")
-  done < <(find "$ARTIFACTS_DIR" -type f \( \
-    -name "aionui-web-*.tar.gz" -o \
-    -name "aionui-web-*.tar.gz.sha256" \
-  \) | sort)
+  if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+    while IFS= read -r file; do
+      WEB_CLI_FILES+=("$file")
+    done < <(find "$ARTIFACTS_DIR" -type f \( \
+      \( -path "*/web-cli-darwin-arm64/*" -o -path "*/web-cli-darwin-x86_64/*" \) -a \
+      \( -name "aionui-web-*.tar.gz" -o -name "aionui-web-*.tar.gz.sha256" \) \
+    \) | sort)
+  else
+    while IFS= read -r file; do
+      WEB_CLI_FILES+=("$file")
+    done < <(find "$ARTIFACTS_DIR" -type f \( \
+      -name "aionui-web-*.tar.gz" -o \
+      -name "aionui-web-*.tar.gz.sha256" \
+    \) | sort)
+  fi
 
   WEB_CLI_DUPS=$(for file in "${WEB_CLI_FILES[@]}"; do basename "$file"; done | sort | uniq -d || true)
   if [ -n "$WEB_CLI_DUPS" ]; then
@@ -101,17 +132,21 @@ LINUX_ARM64_LATEST=$(find "$ARTIFACTS_DIR" -type f -path "*/linux-build-arm64/*"
 # ---------------------------------------------------------------------------
 echo "==> Writing canonical updater metadata ..."
 
-[ -n "$WIN_X64_LATEST" ]    && cp -f "$WIN_X64_LATEST"    "$OUTPUT_DIR/latest.yml"
 [ -n "$MAC_X64_LATEST" ]    && cp -f "$MAC_X64_LATEST"    "$OUTPUT_DIR/latest-mac.yml"
-[ -n "$LINUX_X64_LATEST" ]  && cp -f "$LINUX_X64_LATEST"  "$OUTPUT_DIR/latest-linux.yml"
-[ -n "$LINUX_ARM64_LATEST" ] && cp -f "$LINUX_ARM64_LATEST" "$OUTPUT_DIR/latest-linux-arm64.yml"
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+  [ -n "$WIN_X64_LATEST" ]    && cp -f "$WIN_X64_LATEST"    "$OUTPUT_DIR/latest.yml"
+  [ -n "$LINUX_X64_LATEST" ]  && cp -f "$LINUX_X64_LATEST"  "$OUTPUT_DIR/latest-linux.yml"
+  [ -n "$LINUX_ARM64_LATEST" ] && cp -f "$LINUX_ARM64_LATEST" "$OUTPUT_DIR/latest-linux-arm64.yml"
+fi
 
 # ---------------------------------------------------------------------------
 # 4) Architecture-specific metadata required by electron-updater
 # ---------------------------------------------------------------------------
 echo "==> Writing architecture-specific updater metadata ..."
 
-[ -n "$WIN_ARM64_LATEST" ]  && cp -f "$WIN_ARM64_LATEST"  "$OUTPUT_DIR/latest-win-arm64.yml"
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+  [ -n "$WIN_ARM64_LATEST" ]  && cp -f "$WIN_ARM64_LATEST"  "$OUTPUT_DIR/latest-win-arm64.yml"
+fi
 
 # electron-updater on macOS constructs the yml filename as "${channel}-mac.yml".
 # For arm64, channel is "latest-arm64", so it looks for "latest-arm64-mac.yml".
@@ -144,7 +179,12 @@ assert_evaos_beta_asset_identity() {
   esac
 }
 
-for required in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
+REQUIRED_METADATA=(latest-mac.yml)
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+  REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
+fi
+
+for required in "${REQUIRED_METADATA[@]}"; do
   if [ ! -f "$OUTPUT_DIR/$required" ]; then
     echo "::error::Missing required updater metadata: $required"
     MISSING=1
@@ -163,13 +203,20 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   echo "==> Validating web-cli assets ..."
 
   VERSION="${MOCK_VERSION:-$(node -p "require('./package.json').version")}"
-  WEB_PLATFORMS=(
-    "darwin-arm64"
-    "darwin-x86_64"
-    "linux-arm64"
-    "linux-x86_64"
-    "win-x86_64"
-  )
+  if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+    WEB_PLATFORMS=(
+      "darwin-arm64"
+      "darwin-x86_64"
+    )
+  else
+    WEB_PLATFORMS=(
+      "darwin-arm64"
+      "darwin-x86_64"
+      "linux-arm64"
+      "linux-x86_64"
+      "win-x86_64"
+    )
+  fi
 
   for plat in "${WEB_PLATFORMS[@]}"; do
     tarball="aionui-web-${VERSION}-${plat}.tar.gz"

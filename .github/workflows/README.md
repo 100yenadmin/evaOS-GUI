@@ -13,6 +13,14 @@ During the evaOS Workbench controlled 1.0 finish-line sprint, PR checks are macO
 
 This keeps day-to-day parity work focused on the platform used by the beta audience while preserving a post-release path for cross-platform hardening.
 
+## evaOS release target profile
+
+Manual release workflows accept `release_target_platforms` and the scripts honor `EVAOS_RELEASE_TARGET_PLATFORMS`.
+
+- `all` is the default and preserves the existing Windows, macOS, and Linux release contract.
+- `macos` is the controlled 1.0 RC profile. It builds, prepares, verifies, canaries, and distributes only macOS x64/arm64 desktop assets plus macOS updater metadata.
+- Windows and Linux assets are deferred in the `macos` profile; do not treat their absence as a release failure for the controlled 1.0 RC.
+
 ### Agent operating rule
 
 Agents working on the finish-line sprint must treat macOS as the only active release platform. Do not open, block, or delay parity PRs for Windows or Ubuntu/Linux failures unless the PR explicitly changes Windows packaging, Linux packaging, Electron builder platform metadata, or shared runtime code that cannot be proven safely on macOS. If a cross-platform concern is found, file it as post-1.0 follow-up work and keep the macOS RC lane moving.

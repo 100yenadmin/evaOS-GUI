@@ -27,10 +27,18 @@ The beta release path is manual-only:
 7. Do not distribute `-dev-` beta tags. Public distribution requires a non-dev `evaos-beta-` tag that is reachable from `EVAOS_BETA_RELEASE_BRANCH`.
 8. Distribution must validate `evaos-beta-release-manifest.json`, matching asset checksums, the tag commit, the successful `Build and Release` workflow run, and the successful `evaOS Beta RC Canary` proof run before S3 upload.
 
+Release target profile:
+
+- Default `EVAOS_RELEASE_TARGET_PLATFORMS=all` keeps the existing Windows, macOS, and Linux artifact contract for future all-platform releases.
+- Controlled 1.0 RC runs set `EVAOS_RELEASE_TARGET_PLATFORMS=macos` or select `release_target_platforms=macos` in the manual workflow. This profile requires only macOS x64/arm64 DMG/ZIP assets plus `latest-mac.yml` and `latest-arm64-mac.yml`.
+- Windows and Linux installers, packages, and updater metadata are explicitly deferred while the macOS profile is active. Their absence is not a controlled 1.0 RC blocker.
+
 The release config audit runs in PR checks and in the manual release workflow:
 
 ```bash
 node scripts/evaosBetaReleaseGate.js audit-config
+EVAOS_RELEASE_TARGET_PLATFORMS=macos bash scripts/prepare-release-assets.sh build-artifacts release-assets
+EVAOS_RELEASE_TARGET_PLATFORMS=macos bash scripts/verify-release-assets.sh release-assets
 node scripts/evaosBetaReleaseGate.js write-manifest release-assets evaos-beta-v<version>
 node scripts/evaosBetaReleaseGate.js verify-manifest release-assets evaos-beta-v<version>
 ```

@@ -191,7 +191,7 @@ rebuildSingleModule({
 
 When modifying build scripts:
 
-1. **Test on all platforms** before committing
+1. **Test on the active release profile** before committing. `EVAOS_RELEASE_TARGET_PLATFORMS=all` is the full Windows/macOS/Linux contract; `EVAOS_RELEASE_TARGET_PLATFORMS=macos` is the controlled 1.0 RC profile that intentionally omits Windows/Linux assets.
 2. **Update this documentation** if behavior changes
 3. **Maintain the unified rebuild utility** - avoid duplicating logic
 4. **Keep error messages clear** - they help users troubleshoot

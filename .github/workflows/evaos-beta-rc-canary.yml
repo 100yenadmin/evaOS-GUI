@@ -32,10 +32,21 @@ on:
         description: 'Non-secret issue/packet reference proving broker login/session fallback state.'
         required: true
         type: string
+      release_target_platforms:
+        description: 'Release target platforms for asset verification: all keeps Windows/macOS/Linux; macos verifies only macOS assets.'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
 
 permissions:
   contents: read
   actions: read
+
+env:
+  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
 
 jobs:
   rc-canary:
@@ -119,16 +130,36 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
+          case "${EVAOS_RELEASE_TARGET_PLATFORMS}" in
+            all)
+              patterns=(
+                --pattern "*.dmg"
+                --pattern "*.exe"
+                --pattern "*.msi"
+                --pattern "*.deb"
+                --pattern "*.zip"
+                --pattern "*.yml"
+                --pattern "evaos-beta-release-manifest.json"
+              )
+              ;;
+            macos)
+              patterns=(
+                --pattern "*.dmg"
+                --pattern "*.zip"
+                --pattern "latest-mac.yml"
+                --pattern "latest-arm64-mac.yml"
+                --pattern "evaos-beta-release-manifest.json"
+              )
+              ;;
+            *)
+              echo "::error::Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: ${EVAOS_RELEASE_TARGET_PLATFORMS}"
+              exit 1
+              ;;
+          esac
           gh release download "$TAG" \
             --repo "${{ github.repository }}" \
             --dir release-assets \
-            --pattern "*.dmg" \
-            --pattern "*.exe" \
-            --pattern "*.msi" \
-            --pattern "*.deb" \
-            --pattern "*.zip" \
-            --pattern "*.yml" \
-            --pattern "evaos-beta-release-manifest.json"
+            "${patterns[@]}"
           ls -la release-assets
 
       - name: Download trusted release manifest artifact
@@ -167,6 +198,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
+          EVAOS_RELEASE_TARGET_PLATFORMS: ${{ env.EVAOS_RELEASE_TARGET_PLATFORMS }}
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.tag }}"

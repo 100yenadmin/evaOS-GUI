@@ -6,8 +6,21 @@ OUTPUT_DIR="${1:-release-assets}"
 INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
 MOCK_VERSION="${MOCK_VERSION:-1.0.0}"
 MOCK_PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench Beta}"
+RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 ERRORS=0
 shopt -s nullglob
+
+case "$RELEASE_TARGET_PLATFORMS" in
+  all|macos)
+    ;;
+  *)
+    echo "FAIL: unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
+    echo "FAIL: supported values: all, macos"
+    exit 1
+    ;;
+esac
+
+echo "Release target platforms: $RELEASE_TARGET_PLATFORMS"
 
 assert_evaos_beta_asset_identity() {
   local base="$1"
@@ -30,7 +43,12 @@ assert_evaos_beta_asset_identity() {
   esac
 }
 
-for f in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
+REQUIRED_METADATA=(latest-mac.yml)
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+  REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
+fi
+
+for f in "${REQUIRED_METADATA[@]}"; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
     echo "FAIL: missing canonical metadata: $f"
     ERRORS=$((ERRORS + 1))
@@ -76,12 +94,19 @@ assert_metadata_points_to_existing_file() {
   echo "PASS: $metadata_name -> $ref_file"
 }
 
-assert_metadata_points_to_existing_file "latest.yml" "(win-x64|win32-x64|x64)"
 assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
-assert_metadata_points_to_existing_file "latest-linux.yml" "(linux|AppImage|deb)"
-assert_metadata_points_to_existing_file "latest-linux-arm64.yml" "(arm64|aarch64)"
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+  assert_metadata_points_to_existing_file "latest.yml" "(win-x64|win32-x64|x64)"
+  assert_metadata_points_to_existing_file "latest-linux.yml" "(linux|AppImage|deb)"
+  assert_metadata_points_to_existing_file "latest-linux-arm64.yml" "(arm64|aarch64)"
+fi
 
-for f in latest-win-arm64.yml latest-arm64-mac.yml; do
+ARCH_METADATA=(latest-arm64-mac.yml)
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+  ARCH_METADATA=(latest-win-arm64.yml latest-arm64-mac.yml)
+fi
+
+for f in "${ARCH_METADATA[@]}"; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
     echo "FAIL: missing arch-specific updater metadata: $f"
     ERRORS=$((ERRORS + 1))
@@ -90,13 +115,25 @@ for f in latest-win-arm64.yml latest-arm64-mac.yml; do
   fi
 done
 
-for f in \
-  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-x64.exe" \
-  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-arm64.exe" \
-  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.dmg" \
-  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.dmg" \
-  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-x64.deb" \
-  "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-arm64.deb"; do
+if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+  REQUIRED_DISTRIBUTABLES=(
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.dmg"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.zip"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.dmg"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.zip"
+  )
+else
+  REQUIRED_DISTRIBUTABLES=(
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-x64.exe"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-arm64.exe"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.dmg"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.dmg"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-x64.deb"
+    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-arm64.deb"
+  )
+fi
+
+for f in "${REQUIRED_DISTRIBUTABLES[@]}"; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
     echo "FAIL: missing distributable: $f"
     ERRORS=$((ERRORS + 1))
@@ -105,6 +142,22 @@ for f in \
   fi
 done
 
+if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+  DEFERRED_PLATFORM_FILES=(
+    "$OUTPUT_DIR"/*.exe
+    "$OUTPUT_DIR"/*.msi
+    "$OUTPUT_DIR"/*.deb
+    "$OUTPUT_DIR"/latest.yml
+    "$OUTPUT_DIR"/latest-win-arm64.yml
+    "$OUTPUT_DIR"/latest-linux*.yml
+  )
+  for f in "${DEFERRED_PLATFORM_FILES[@]}"; do
+    [ -e "$f" ] || continue
+    echo "FAIL: macOS release profile contains deferred Windows/Linux asset or metadata: $(basename "$f")"
+    ERRORS=$((ERRORS + 1))
+  done
+fi
+
 for f in "$OUTPUT_DIR"/*.{exe,msi,dmg,deb,zip}; do
   [ -e "$f" ] || continue
   assert_evaos_beta_asset_identity "$(basename "$f")"
@@ -112,7 +165,13 @@ done
 
 if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   # Web-CLI tarballs + checksums
-  for plat in darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64; do
+  if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+    WEB_PLATFORMS=(darwin-arm64 darwin-x86_64)
+  else
+    WEB_PLATFORMS=(darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64)
+  fi
+
+  for plat in "${WEB_PLATFORMS[@]}"; do
     tarball="aionui-web-${MOCK_VERSION}-${plat}.tar.gz"
     for f in "$tarball" "${tarball}.sha256"; do
       if [ ! -f "$OUTPUT_DIR/$f" ]; then
