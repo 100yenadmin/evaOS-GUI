@@ -73,7 +73,8 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
         }}
       >
         {visibleAgents.map((agent, index) => {
-          const isSelected = selectedAgentKey === getAgentKey(agent);
+          const agentKey = getAgentKey(agent);
+          const isSelected = selectedAgentKey === agentKey;
           const nativeAvailability = getEvaosNativeAgentAvailability(agent);
           const isRepairRequired = nativeAvailability.status === 'repair_required';
           const displayName = getEvaosAgentDisplayName(agent);
@@ -99,12 +100,12 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
                 : undefined);
 
           return (
-            <React.Fragment key={getAgentKey(agent)}>
+            <React.Fragment key={agentKey}>
               {!isMobile && index > 0 && <div className='text-16px lh-1 p-2px select-none opacity-30'>|</div>}
               <div
-                data-testid={`agent-pill-${agent.backend}`}
+                data-testid={`agent-pill-${agentKey}`}
                 data-agent-pill='true'
-                data-agent-key={getAgentKey(agent)}
+                data-agent-key={agentKey}
                 data-agent-type={agent.agent_type}
                 data-agent-selected={isSelected ? 'true' : 'false'}
                 data-agent-native-status={nativeAvailability.status}
@@ -117,7 +118,7 @@ const AgentPillBar: React.FC<AgentPillBarProps> = ({
                       }
                     : { transition: 'opacity 0.2s ease' }
                 }
-                onClick={() => onSelectAgent(getAgentKey(agent))}
+                onClick={() => onSelectAgent(agentKey)}
               >
                 {emojiAvatar ? (
                   <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{emojiAvatar}</span>

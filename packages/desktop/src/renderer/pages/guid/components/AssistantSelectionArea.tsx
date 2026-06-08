@@ -6,6 +6,10 @@
 
 import coworkSvg from '@/renderer/assets/icons/cowork.svg';
 import { useDetectedAgents, useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
+import {
+  getEvaosAssistantDisplayDescription,
+  getEvaosAssistantDisplayName,
+} from '@/renderer/evaos/evaosAssistantPresentation';
 import AssistantEditDrawer from '@/renderer/pages/settings/AssistantSettings/AssistantEditDrawer';
 import DeleteAssistantModal from '@/renderer/pages/settings/AssistantSettings/DeleteAssistantModal';
 import SkillConfirmModals from '@/renderer/pages/settings/AssistantSettings/SkillConfirmModals';
@@ -292,11 +296,8 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
                 avatarImage &&
                 (/\.(svg|png|jpe?g|webp|gif)$/i.test(avatarImage) || /^(https?:|file:\/\/|data:|\/)/i.test(avatarImage))
               );
-              const description =
-                assistant.description_i18n?.[localeKey] ||
-                assistant.description_i18n?.['en-US'] ||
-                assistant.description ||
-                '';
+              const name = getEvaosAssistantDisplayName(assistant, localeKey);
+              const description = getEvaosAssistantDisplayDescription(assistant, localeKey);
               return (
                 <div
                   key={assistant.id}
@@ -314,7 +315,7 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
                     )}
                   </div>
                   <div className={styles.assistantCardMeta}>
-                    <div className={styles.assistantCardName}>{assistant.name_i18n?.[localeKey] || assistant.name}</div>
+                    <div className={styles.assistantCardName}>{name}</div>
                     {description && <div className={styles.assistantCardDesc}>{description}</div>}
                   </div>
                 </div>

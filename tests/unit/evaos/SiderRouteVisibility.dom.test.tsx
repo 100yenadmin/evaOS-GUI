@@ -335,7 +335,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('People Access')).not.toBeInTheDocument();
   });
 
-  it('keeps old Workbench footer sign-in and sign-out affordance copy', async () => {
+  it('keeps old Workbench footer sign-in and sign-out affordances reachable', async () => {
     const user = userEvent.setup();
     authMock.status = 'unauthenticated';
     authMock.user = null;
@@ -349,8 +349,10 @@ describe('Sider runtime route visibility', () => {
 
     renderSider();
 
-    expect(screen.getByText('Sign in to open Eva workspaces')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Sign In' }));
+    const signIn = screen.getByRole('button', { name: 'Sign In' });
+    expect(signIn).toBeInTheDocument();
+    expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
+    await user.click(signIn);
 
     expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1);
   });
@@ -374,7 +376,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    expect(screen.getByText('Sign in to open Eva workspaces')).toBeInTheDocument();
+    expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign In' }));
 
