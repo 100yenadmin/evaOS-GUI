@@ -73,6 +73,10 @@ function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
   return `evaos-runtime-${safeSurface}`;
 }
 
+function hasBrowserAutoAttachAction(view: IEvaosBusinessBrowserView): boolean {
+  return view.actions.includes('start_attach');
+}
+
 const BusinessBrowserPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
@@ -90,6 +94,8 @@ const BusinessBrowserPage: React.FC = () => {
   const requestEpochRef = useRef(0);
   const actionEpochRef = useRef(0);
   const activeActionRef = useRef(false);
+  const autoLoadKeyRef = useRef<string | null>(null);
+  const autoLaunchKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const nextSelectedCustomerId = customerContext.selectedCustomerId;
@@ -102,6 +108,8 @@ const BusinessBrowserPage: React.FC = () => {
     requestEpochRef.current += 1;
     actionEpochRef.current += 1;
     activeActionRef.current = false;
+    autoLoadKeyRef.current = null;
+    autoLaunchKeyRef.current = null;
     setBrowserView(null);
     setRuntimeSurface(null);
     setBrowserError(null);
@@ -125,6 +133,8 @@ const BusinessBrowserPage: React.FC = () => {
       requestEpochRef.current += 1;
       actionEpochRef.current += 1;
       activeActionRef.current = false;
+      autoLoadKeyRef.current = null;
+      autoLaunchKeyRef.current = null;
       customerContext.selectCustomer(customerId);
       setBrowserView(null);
       setRuntimeSurface(null);
@@ -141,6 +151,8 @@ const BusinessBrowserPage: React.FC = () => {
     requestEpochRef.current += 1;
     actionEpochRef.current += 1;
     activeActionRef.current = false;
+    autoLoadKeyRef.current = null;
+    autoLaunchKeyRef.current = null;
     selectedCustomerRef.current = undefined;
     setBrowserView(null);
     setRuntimeSurface(null);
@@ -267,6 +279,9 @@ const BusinessBrowserPage: React.FC = () => {
           setRuntimeSurface(null);
           setActionError('Business Browser broker returned an invalid runtime surface handle.');
           return;
+        } else if (action === 'launch' || (action === 'openUrl' && !runtimeSurface)) {
+          setActionError('Business Browser broker action did not return a runtime surface handle.');
+          return;
         }
         setActionStatus(actionSummary(response.data));
       } catch {
@@ -281,8 +296,68 @@ const BusinessBrowserPage: React.FC = () => {
         }
       }
     },
-    [browserView, customerContext.selectedCustomerId, isSelectedCustomer, loadStatus, openUrl]
+    [browserView, customerContext.selectedCustomerId, isSelectedCustomer, loadStatus, openUrl, runtimeSurface]
   );
+
+  useEffect(() => {
+    const selectedCustomerId = customerContext.selectedCustomerId;
+    if (
+      customerContext.loading ||
+      !customerContext.loaded ||
+      !selectedCustomerId ||
+      browserView ||
+      browserError ||
+      loadingStatus
+    ) {
+      return;
+    }
+    if (autoLoadKeyRef.current === selectedCustomerId) {
+      return;
+    }
+    autoLoadKeyRef.current = selectedCustomerId;
+    void loadStatus({ resetActionStatus: false });
+  }, [
+    browserError,
+    browserView,
+    customerContext.loaded,
+    customerContext.loading,
+    customerContext.selectedCustomerId,
+    loadStatus,
+    loadingStatus,
+  ]);
+
+  useEffect(() => {
+    const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
+    if (
+      !selectedCustomerId ||
+      !browserView ||
+      runtimeSurface ||
+      browserView.routeDenied ||
+      !browserView.canLaunch ||
+      !hasBrowserAutoAttachAction(browserView) ||
+      actionTarget ||
+      actionError ||
+      activeActionRef.current
+    ) {
+      return;
+    }
+    const autoLaunchKey = [
+      selectedCustomerId,
+      browserView.auditId ?? browserView.lastCheckedAt ?? browserView.status ?? 'unknown',
+    ].join(':');
+    if (autoLaunchKeyRef.current === autoLaunchKey) {
+      return;
+    }
+    autoLaunchKeyRef.current = autoLaunchKey;
+    void runBrowserAction('launch');
+  }, [
+    actionError,
+    actionTarget,
+    browserView,
+    customerContext.selectedCustomerId,
+    runBrowserAction,
+    runtimeSurface,
+  ]);
 
   return (
     <div

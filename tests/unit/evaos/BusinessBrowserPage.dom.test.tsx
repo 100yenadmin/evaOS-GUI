@@ -177,6 +177,17 @@ describe('BusinessBrowserPage', () => {
         status: 'opened',
         message: 'Browser launched.',
         browser: browserView({ currentUrlDisplay: 'chatgpt.com/codex' }),
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-browser-launch',
+          surfaceUri: 'evaos-runtime-surface://surface-browser-launch/',
+          customerId: 'david-poku',
+          runtimeKey: 'browser',
+          displayLabel: 'Business Browser',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:browser',
+          auditId: 'audit_launch_123',
+        },
         urlSummary: {
           host: 'chatgpt.com',
           path: '/codex',
@@ -216,7 +227,6 @@ describe('BusinessBrowserPage', () => {
     const { container } = render(<BusinessBrowserPage />);
 
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
 
     expect(await screen.findByText('app.example.test/dashboard')).toBeInTheDocument();
     expect(screen.getByText('Browser is ready')).toBeInTheDocument();
@@ -307,15 +317,12 @@ describe('BusinessBrowserPage', () => {
     render(<BusinessBrowserPage />);
 
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
     expect(await screen.findByText('app.one.test/dashboard')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Second Customer' }));
 
     expect(screen.queryByText('app.one.test/dashboard')).not.toBeInTheDocument();
-    expect(screen.getByText('Load a customer account to view browser runtime evidence.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
     expect(await screen.findByText('app.two.test/home')).toBeInTheDocument();
   });
 
@@ -399,7 +406,6 @@ describe('BusinessBrowserPage', () => {
     render(<BusinessBrowserPage />);
 
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
     await user.click(screen.getByRole('button', { name: 'Second Customer' }));
 
     await act(async () => {
@@ -411,7 +417,6 @@ describe('BusinessBrowserPage', () => {
 
     expect(screen.queryByText('app.one.test/dashboard')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
     expect(await screen.findByText('app.two.test/home')).toBeInTheDocument();
   });
 
@@ -458,7 +463,6 @@ describe('BusinessBrowserPage', () => {
     render(<BusinessBrowserPage />);
 
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
     expect(await screen.findByText('app.one.test/dashboard')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^load$/i }));
