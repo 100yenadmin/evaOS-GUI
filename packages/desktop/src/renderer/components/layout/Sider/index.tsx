@@ -24,6 +24,13 @@ import siderStyles from './Sider.module.css';
 const WorkspaceGroupedHistory = React.lazy(() => import('@renderer/pages/conversation/GroupedHistory'));
 const SettingsSider = React.lazy(() => import('@renderer/pages/settings/components/SettingsSider'));
 
+function getEvaosBrokerSignInError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return 'evaOS sign-in could not start. Check the desktop broker connection.';
+}
+
 interface SiderProps {
   onSessionClick?: () => void;
   collapsed?: boolean;
@@ -42,6 +49,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const [isBatchMode, setIsBatchMode] = useState(false);
   const { jobs: cronJobs } = useAllCronJobs();
   const evaosSidebarState = useEvaosSidebarState();
+  const [brokerSignInError, setBrokerSignInError] = useState<string | null>(null);
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/evaos');
@@ -128,9 +136,14 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const handleBeginDesktopAuth = useCallback(async () => {
     cleanupSiderTooltips();
     blurActiveElement();
+    setBrokerSignInError(null);
     try {
-      await evaosBroker.beginDesktopAuth.invoke();
+      const response = await evaosBroker.beginDesktopAuth.invoke();
+      if (!response.success) {
+        setBrokerSignInError(response.msg || 'evaOS sign-in could not start. Check the desktop broker connection.');
+      }
     } catch (error) {
+      setBrokerSignInError(getEvaosBrokerSignInError(error));
       console.error('evaOS broker sign-in failed:', error);
     }
   }, []);
@@ -139,6 +152,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     cleanupSiderTooltips();
     blurActiveElement();
     closePreview();
+    setBrokerSignInError(null);
     try {
       await evaosBroker.revokeSession.invoke();
     } catch (error) {
@@ -299,6 +313,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         onLogoutClick={handleLogout}
         showSignIn={showBrokerSignIn}
         onSignInClick={handleBeginDesktopAuth}
+        signInError={brokerSignInError}
       />
     </div>
   );

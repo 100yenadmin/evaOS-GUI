@@ -36,6 +36,7 @@ interface SiderFooterProps {
   onLogoutClick?: () => void;
   showSignIn?: boolean;
   onSignInClick?: () => void;
+  signInError?: string | null;
 }
 
 const SiderFooter: React.FC<SiderFooterProps> = ({
@@ -56,6 +57,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   onLogoutClick,
   showSignIn = false,
   onSignInClick,
+  signInError,
 }) => {
   const { t } = useTranslation();
 
@@ -186,6 +188,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
                 </span>
               </button>
             </Tooltip>
+            {!collapsed && signInError ? (
+              <div className='collapsed-hidden px-8px text-10px leading-14px text-warning-6'>{signInError}</div>
+            ) : null}
           </div>
         )}
         {/* Theme toggle — lightweight icon button, only while inside Settings page (not in collapsed mode) */}

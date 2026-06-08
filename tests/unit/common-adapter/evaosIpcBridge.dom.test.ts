@@ -100,14 +100,13 @@ describe('evaOS IPC bridge provider wrapper', () => {
     expect(platformMock.providers.get('evaos.broker.session-status')?.invoke).not.toHaveBeenCalled();
   });
 
-  it('falls back to the platform provider when Electron IPC is unavailable', async () => {
+  it('fails closed when Electron IPC is unavailable', async () => {
     const { evaosBroker } = await import('@/common/adapter/ipcBridge');
 
-    await expect(evaosBroker.getSessionStatus.invoke()).resolves.toEqual({
-      source: 'platform',
-      name: 'evaos.broker.session-status',
-    });
+    await expect(evaosBroker.getSessionStatus.invoke()).rejects.toThrow(
+      'evaOS Electron IPC bridge unavailable for evaos.broker.session-status'
+    );
 
-    expect(platformMock.providers.get('evaos.broker.session-status')?.invoke).toHaveBeenCalledWith(undefined);
+    expect(platformMock.providers.get('evaos.broker.session-status')?.invoke).not.toHaveBeenCalled();
   });
 });

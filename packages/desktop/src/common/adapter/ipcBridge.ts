@@ -103,7 +103,11 @@ function buildEvaosProvider<Response, Request>(name: string) {
   return {
     provider: platformProvider.provider,
     invoke(request: Request): Promise<Response> {
-      return invokeEvaosElectronProvider<Response, Request>(name, request) ?? platformProvider.invoke(request);
+      const electronRequest = invokeEvaosElectronProvider<Response, Request>(name, request);
+      if (electronRequest) {
+        return electronRequest;
+      }
+      return Promise.reject(new Error(`evaOS Electron IPC bridge unavailable for ${name}`));
     },
   };
 }
