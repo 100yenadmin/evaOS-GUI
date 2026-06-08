@@ -154,17 +154,29 @@ describe('evaOS local product fixture', () => {
       auditId: 'fixture-audit-browser-failed',
     });
     expect(launch).toMatchObject({
-      status: 'launching',
+      status: 'attached',
       backendEnforced: true,
       sourcePointer: 'local-fixture:business-browser:launch',
       auditId: 'fixture-audit-browser-launch',
+      runtimeSurface: {
+        schemaVersion: 'evaos.runtime_surface.v1',
+        surfaceUri: 'evaos-runtime-surface://fixture-fixture-customer-acme-browser/',
+        customerId: 'fixture-customer-acme',
+        runtimeKey: 'browser',
+      },
     });
-    expect(launch.browser?.status).toBe('launching');
+    expect(launch.browser?.status).toBe('running');
     expect(openUrl).toMatchObject({
       status: 'opened',
       backendEnforced: true,
       sourcePointer: 'local-fixture:business-browser:open-url',
       auditId: 'fixture-audit-browser-open-url',
+      runtimeSurface: {
+        schemaVersion: 'evaos.runtime_surface.v1',
+        surfaceUri: 'evaos-runtime-surface://fixture-fixture-customer-acme-browser/',
+        customerId: 'fixture-customer-acme',
+        runtimeKey: 'browser',
+      },
     });
     expect(openUrl.urlSummary?.displayText).toBe('runtime.example.test/work');
     expect(openUrl.browser?.currentUrlSummary?.displayText).toBe('runtime.example.test/work');

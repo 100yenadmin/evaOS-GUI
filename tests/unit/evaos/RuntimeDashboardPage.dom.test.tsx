@@ -113,6 +113,71 @@ describe('RuntimeDashboardPage', () => {
     expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
   });
 
+  it.each([
+    ['openclaw', 'evaOS', '#181'],
+    ['hermes', 'Hermes', '#181'],
+    ['paperclip', 'Mission Control', '#181'],
+  ] as const)(
+    'mounts an embedded %s runtime surface when the broker returns an opaque surface handle',
+    async (runtimeKey, title, issueRef) => {
+      evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+        success: true,
+        data: {
+          schemaVersion: 'evaos.runtime_status.v1',
+          customerId: 'fixture-customer-acme',
+          customerAccountId: 'fixture-account-acme',
+          runtimeKey,
+          displayLabel: title,
+          status: 'running',
+          healthSummary: `${title} runtime live`,
+          actions: ['attach_dashboard'],
+          sourcePointer: `broker:runtime_status:${runtimeKey}`,
+          auditId: `audit-runtime-status-${runtimeKey}`,
+        },
+      });
+      evaosBrokerMock.runtimeAction.mockResolvedValueOnce({
+        success: true,
+        data: {
+          status: 'attached',
+          runtimeKey,
+          customerId: 'fixture-customer-acme',
+          message: `Attached ${title} runtime surface.`,
+          runtimeSurface: {
+            schemaVersion: 'evaos.runtime_surface.v1',
+            surfaceId: `surface-${runtimeKey}-fixture`,
+            surfaceUri: `evaos-runtime-surface://surface-${runtimeKey}-fixture/`,
+            customerId: 'fixture-customer-acme',
+            runtimeKey,
+            displayLabel: title,
+            status: 'attached',
+            sourcePointer: `broker:runtime_launch:${runtimeKey}`,
+            auditId: `audit-runtime-launch-${runtimeKey}`,
+          },
+          backendEnforced: true,
+        },
+      });
+
+      render(
+        <RuntimeDashboardPage
+          runtimeKey={runtimeKey}
+          title={title}
+          subtitle='Primary evaOS agent workspace.'
+          issueRef={issueRef}
+        />
+      );
+
+      expect(await screen.findByText('Broker action available')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Start / Attach' }));
+
+      const surface = await screen.findByTestId(`evaos-runtime-surface-${runtimeKey}`);
+      expect(surface).toHaveAttribute('src', `evaos-runtime-surface://surface-${runtimeKey}-fixture/`);
+      expect(surface).toHaveAttribute('partition', `evaos-runtime-surface-${runtimeKey}-fixture`);
+      expect(surface).not.toHaveAttribute('allowpopups', 'true');
+      expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=|launch_url/i);
+      expect(document.body.textContent).not.toContain('runtime.example.test');
+    }
+  );
+
   it('loads brokered runtime status automatically for the selected customer', async () => {
     render(
       <RuntimeDashboardPage

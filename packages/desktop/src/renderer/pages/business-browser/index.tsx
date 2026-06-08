@@ -15,6 +15,7 @@ import {
   type IEvaosBusinessBrowserActionResult,
   type IEvaosBusinessBrowserView,
 } from '@/common/adapter/ipcBridge';
+import type { IEvaosRuntimeSurfaceView } from '@/common/evaos/bridgeTypes';
 
 const SECRET_TEXT_PATTERN =
   /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|authorization|bearer|secret|password/i;
@@ -46,10 +47,37 @@ function actionSummary(result: IEvaosBusinessBrowserActionResult): string {
   return parts.join(' ');
 }
 
+function isSafeRuntimeSurfaceUri(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'evaos-runtime-surface:' && Boolean(parsed.hostname || parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function runtimeSurfaceMatches(
+  surface: IEvaosRuntimeSurfaceView | undefined,
+  customerId: string
+): surface is IEvaosRuntimeSurfaceView {
+  return (
+    surface?.schemaVersion === 'evaos.runtime_surface.v1' &&
+    surface.customerId === customerId &&
+    surface.runtimeKey === 'browser' &&
+    isSafeRuntimeSurfaceUri(surface.surfaceUri)
+  );
+}
+
+function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
+  const safeSurface = surface.surfaceId.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80);
+  return `evaos-runtime-${safeSurface}`;
+}
+
 const BusinessBrowserPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const [browserView, setBrowserView] = useState<IEvaosBusinessBrowserView | null>(null);
+  const [runtimeSurface, setRuntimeSurface] = useState<IEvaosRuntimeSurfaceView | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [openUrl, setOpenUrl] = useState('');
@@ -75,6 +103,7 @@ const BusinessBrowserPage: React.FC = () => {
     actionEpochRef.current += 1;
     activeActionRef.current = false;
     setBrowserView(null);
+    setRuntimeSurface(null);
     setBrowserError(null);
     setActionStatus(null);
     setActionError(null);
@@ -98,6 +127,7 @@ const BusinessBrowserPage: React.FC = () => {
       activeActionRef.current = false;
       customerContext.selectCustomer(customerId);
       setBrowserView(null);
+      setRuntimeSurface(null);
       setBrowserError(null);
       setActionStatus(null);
       setActionError(null);
@@ -113,6 +143,7 @@ const BusinessBrowserPage: React.FC = () => {
     activeActionRef.current = false;
     selectedCustomerRef.current = undefined;
     setBrowserView(null);
+    setRuntimeSurface(null);
     setBrowserError(null);
     setActionStatus(null);
     setActionError(null);
@@ -130,6 +161,7 @@ const BusinessBrowserPage: React.FC = () => {
       }
       if (!selectedCustomerId) {
         setBrowserView(null);
+        setRuntimeSurface(null);
         setBrowserError('Choose a customer before loading Business Browser.');
         return;
       }
@@ -146,8 +178,12 @@ const BusinessBrowserPage: React.FC = () => {
         }
         if (!response.success || !response.data) {
           setBrowserView(null);
+          setRuntimeSurface(null);
           setBrowserError(safeUiText(response.msg, 'Business Browser failed closed.'));
           return;
+        }
+        if (response.data.routeDenied) {
+          setRuntimeSurface(null);
         }
         setBrowserView(response.data);
       } catch {
@@ -155,6 +191,7 @@ const BusinessBrowserPage: React.FC = () => {
           return;
         }
         setBrowserView(null);
+        setRuntimeSurface(null);
         setBrowserError('Business Browser broker request failed closed.');
       } finally {
         if (isCurrentRequest(requestEpoch, selectedCustomerId)) {
@@ -214,10 +251,22 @@ const BusinessBrowserPage: React.FC = () => {
         if (response.data.browser) {
           setBrowserView(response.data.browser);
         } else {
+          if (action === 'stop') {
+            setRuntimeSurface(null);
+          }
           await loadStatus({ resetActionStatus: false });
           if (!isCurrentAction()) {
             return;
           }
+        }
+        if (action === 'stop') {
+          setRuntimeSurface(null);
+        } else if (runtimeSurfaceMatches(response.data.runtimeSurface, selectedCustomerId)) {
+          setRuntimeSurface(response.data.runtimeSurface);
+        } else if (response.data.runtimeSurface) {
+          setRuntimeSurface(null);
+          setActionError('Business Browser broker returned an invalid runtime surface handle.');
+          return;
         }
         setActionStatus(actionSummary(response.data));
       } catch {
@@ -350,6 +399,32 @@ const BusinessBrowserPage: React.FC = () => {
               <p className='m-0 rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px text-13px leading-20px text-[rgb(var(--warning-6))]'>
                 {actionError}
               </p>
+            ) : null}
+
+            {runtimeSurface ? (
+              <section
+                className='min-h-640px overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
+                data-testid='evaos-business-browser-surface-container'
+              >
+                <div className='flex items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
+                  <div className='min-w-0'>
+                    <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
+                      {safeUiText(runtimeSurface.displayLabel, 'Business Browser')}
+                    </div>
+                    <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>
+                      Brokered Business Browser surface
+                    </div>
+                  </div>
+                  <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
+                </div>
+                <webview
+                  data-testid='evaos-business-browser-surface'
+                  src={runtimeSurface.surfaceUri}
+                  partition={runtimeSurfacePartition(runtimeSurface)}
+                  className='block h-600px w-full border-0'
+                  allowpopups={false}
+                />
+              </section>
             ) : null}
 
             <section className='grid grid-cols-1 gap-12px lg:grid-cols-[minmax(0,1fr)_340px]'>

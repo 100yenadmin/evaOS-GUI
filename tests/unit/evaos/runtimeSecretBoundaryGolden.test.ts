@@ -14,7 +14,10 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const RUNTIME_RENDERER_VIEW_INTERFACES = [
   'IEvaosSafeUrlSummary',
   'IEvaosRuntimeStatusView',
+  'IEvaosRuntimeSurfaceView',
+  'IEvaosRuntimeActionResult',
   'IEvaosBusinessBrowserView',
+  'IEvaosBusinessBrowserActionResult',
 ];
 
 const FORBIDDEN_RENDERER_FIELD_NAMES = [
@@ -96,6 +99,8 @@ describe('runtimeSecretBoundaryGolden', () => {
 
     expect(forbiddenFieldViolations(fieldNames)).toEqual([]);
     expect(fieldNames).toContain('IEvaosRuntimeStatusView.currentUrlSummary');
+    expect(fieldNames).toContain('IEvaosRuntimeSurfaceView.surfaceUri');
+    expect(fieldNames).toContain('IEvaosRuntimeActionResult.runtimeSurface');
     expect(fieldNames).toContain('IEvaosBusinessBrowserView.currentUrlSummary');
   });
 

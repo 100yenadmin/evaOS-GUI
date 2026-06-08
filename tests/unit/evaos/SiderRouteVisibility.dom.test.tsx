@@ -375,7 +375,7 @@ describe('Sider runtime route visibility', () => {
     renderSider();
 
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign In' }));
@@ -400,7 +400,7 @@ describe('Sider runtime route visibility', () => {
 
     renderSider('/guid', { collapsed: true });
 
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign In' }));
 

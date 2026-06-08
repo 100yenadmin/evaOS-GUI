@@ -121,6 +121,27 @@ The fallback remains the current released macOS app until #13 ships the public b
 
 Rollback must not require deleting the old released app, changing its bundle id, or moving users to an upstream AionUi update channel.
 
+## Protocol Handler Repair
+
+If a browser `Open Workbench` action opens the raw Electron default screen that says `path-to-app`, the macOS beta protocol handler is stale or incorrectly registered. The handler must resolve `evaos-workbench-beta` to `com.evaos.workbench.beta`, never to `com.github.Electron` or a repo-local `node_modules/.bun/electron.../Electron.app`.
+
+Operator repair proof commands:
+
+```bash
+# Re-register the installed beta app with LaunchServices.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "/Applications/evaOS Workbench Beta.app"
+
+# Launch the beta app by bundle id so the packaged app can reclaim the beta scheme.
+open -b com.evaos.workbench.beta "evaos-workbench-beta://diagnostics/protocol-check"
+
+# Verify the beta protocol is no longer owned by raw Electron.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
+  | grep -A4 -B2 "handlerpref id:             evaos-workbench-beta"
+```
+
+The installed-app proof gate also checks this state and fails before screenshots when LaunchServices maps the beta scheme to raw Electron.
+
 Operator rollback proof commands:
 
 ```bash

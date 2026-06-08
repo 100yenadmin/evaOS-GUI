@@ -102,12 +102,26 @@ export interface IEvaosRuntimeStatusView {
   auditId?: string;
 }
 
+export interface IEvaosRuntimeSurfaceView {
+  schemaVersion: 'evaos.runtime_surface.v1';
+  surfaceId: string;
+  surfaceUri: string;
+  customerId: string;
+  runtimeKey: IEvaosRuntimeKey;
+  displayLabel: string;
+  status: string;
+  sourcePointer?: string;
+  auditId?: string;
+  expiresAt?: string;
+}
+
 export interface IEvaosRuntimeActionResult {
   status: string;
   runtimeKey: IEvaosRuntimeKey;
   customerId: string;
   message?: string;
   urlSummary?: IEvaosSafeUrlSummary;
+  runtimeSurface?: IEvaosRuntimeSurfaceView;
   runtimeStatus?: IEvaosRuntimeStatusView;
   expiresAt?: string;
   sourcePointer?: string;
@@ -223,6 +237,7 @@ export interface IEvaosBusinessBrowserActionResult {
   message?: string;
   browser?: IEvaosBusinessBrowserView;
   urlSummary?: IEvaosSafeUrlSummary;
+  runtimeSurface?: IEvaosRuntimeSurfaceView;
   sourcePointer?: string;
   auditId?: string;
   backendEnforced: boolean;

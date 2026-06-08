@@ -13,7 +13,7 @@ import { captureBackendStartupFailure, initSentry, scheduleStartupLogReport, set
 initSentry();
 
 import './process/utils/configureConsoleLog';
-import { app, BrowserWindow, ipcMain, nativeImage, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, powerMonitor, protocol } from 'electron';
 import fixPath from 'fix-path';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -75,8 +75,24 @@ import {
   shouldDisableAutoUpdate,
   shouldRegisterDefaultProtocolClient,
 } from './process/evaosBetaSafety';
+import {
+  EVAOS_RUNTIME_SURFACE_SCHEME,
+  registerEvaosRuntimeSurfaceProtocol,
+} from './process/services/evaosRuntimeSurfaceRegistry';
 // @ts-expect-error - electron-squirrel-startup doesn't have types
 import electronSquirrelStartup from 'electron-squirrel-startup';
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: EVAOS_RUNTIME_SURFACE_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: false,
+      corsEnabled: false,
+    },
+  },
+]);
 
 // ============ Single Instance Lock ============
 // Acquire lock early so the second instance quits before doing unnecessary work.
@@ -498,6 +514,7 @@ const handleAppReady = async (): Promise<void> => {
   const t0 = performance.now();
   const mark = (label: string) => console.log(`[AionUi:ready] ${label} +${Math.round(performance.now() - t0)}ms`);
   mark('start');
+  registerEvaosRuntimeSurfaceProtocol();
 
   if (!app.isPackaged) {
     try {

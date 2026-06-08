@@ -35,6 +35,7 @@ import {
   getDefaultEvaosBrokerSessionClient,
   type EvaosBrokerSessionClient,
 } from '@process/services/evaosBrokerSession';
+import { createEvaosRuntimeSurface } from '@process/services/evaosRuntimeSurfaceRegistry';
 import { openEvaosProviderAuthWindow } from '@process/services/evaosProviderAuthWindow';
 import {
   evaosLocalProductFixtureBusinessBrowserAction,
@@ -170,7 +171,7 @@ export function initEvaosBusinessBrowserBridge(
       toBridgeResponse(() =>
         isEvaosLocalProductFixtureEnabled()
           ? evaosLocalProductFixtureBusinessBrowserAction(request, 'browser_launch')
-          : client.launchBusinessBrowser(request)
+          : client.launchBusinessBrowser(request, { createRuntimeSurface: createEvaosRuntimeSurface })
       )
   );
 
@@ -179,7 +180,7 @@ export function initEvaosBusinessBrowserBridge(
       toBridgeResponse(() =>
         isEvaosLocalProductFixtureEnabled()
           ? evaosLocalProductFixtureBusinessBrowserAction(request, 'browser_open_url')
-          : client.openBusinessBrowserUrl(request)
+          : client.openBusinessBrowserUrl(request, { createRuntimeSurface: createEvaosRuntimeSurface })
       )
   );
 

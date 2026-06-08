@@ -203,6 +203,66 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
 
 const LOCAL_PRODUCT_ROUTE_CHECKS = [
   {
+    name: 'evaos-dashboard-loaded-fixture',
+    hash: '/evaos',
+    title: 'evaOS',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'evaOS',
+      'Primary evaOS agent workspace',
+      'fixture-audit-runtime-openclaw',
+      'local-fixture:runtime:openclaw',
+    ],
+    loadedStateRequiredMarkers: ['openclaw runtime surface attached', 'customer scoped runtime proof'],
+    action: 'click-runtime-dashboard-attach',
+    isolateRendererState: true,
+    expected: [
+      'evaOS',
+      'Primary evaOS agent workspace',
+      'Acme Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'evaOS workspace is accepting customer-scoped agent work',
+      'SOURCE',
+      'local-fixture:runtime:openclaw',
+      'AUDIT',
+      'fixture-audit-runtime-openclaw',
+      'Broker action available',
+      'Brokered runtime surface',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+    requiredSelectors: ['[data-testid="evaos-runtime-surface-openclaw"]'],
+  },
+  {
+    name: 'hermes-dashboard-loaded-fixture',
+    hash: '/hermes',
+    title: 'Hermes',
+    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
+    settledMarkers: [
+      'Hermes',
+      'Hermes agent dashboard',
+      'fixture-audit-runtime-hermes',
+      'local-fixture:runtime:hermes',
+    ],
+    loadedStateRequiredMarkers: ['hermes runtime surface attached', 'customer scoped runtime proof'],
+    action: 'click-runtime-dashboard-attach',
+    isolateRendererState: true,
+    expected: [
+      'Hermes',
+      'Hermes agent dashboard',
+      'Acme Fixture Co',
+      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
+      'Hermes dashboard sync completed for the selected customer',
+      'SOURCE',
+      'local-fixture:runtime:hermes',
+      'AUDIT',
+      'fixture-audit-runtime-hermes',
+      'Broker action available',
+      'Brokered runtime surface',
+    ],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+    requiredSelectors: ['[data-testid="evaos-runtime-surface-hermes"]'],
+  },
+  {
     name: 'mission-control-loaded-fixture',
     hash: '/mission-control',
     title: 'Mission Control',
@@ -214,7 +274,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'local-fixture:runtime:paperclip',
     ],
     loadedStateRequiredMarkers: ['paperclip runtime status', 'customer scoped runtime proof'],
-    action: 'click-mission-control-check',
+    action: 'click-runtime-dashboard-attach',
     isolateRendererState: true,
     expected: [
       'Mission Control',
@@ -225,8 +285,10 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Paperclip queue is waiting',
       'fixture-audit-runtime-paperclip',
       'local-fixture:runtime:paperclip',
+      'Brokered runtime surface',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+    requiredSelectors: ['[data-testid="evaos-runtime-surface-paperclip"]'],
   },
   {
     name: 'mission-control-switch-clears-fixture',
@@ -462,7 +524,12 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'fixture.example.test/dashboard',
       'fixture-audit-browser-running',
     ],
-    loadedStateRequiredMarkers: ['browser runtime status', 'current URL summary', 'browser audit id'],
+    loadedStateRequiredMarkers: [
+      'browser runtime status',
+      'current URL summary',
+      'browser audit id',
+      'browser runtime surface attached',
+    ],
     action: 'click-load-default-customer',
     isolateRendererState: true,
     expected: [
@@ -477,6 +544,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'fixture-audit-browser-running',
     ],
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+    requiredSelectors: ['[data-testid="evaos-business-browser-surface"]'],
   },
   {
     name: 'business-browser-launch-fixture',
@@ -1041,6 +1109,15 @@ async function clickLoadDefaultCustomer(page) {
   await clickLoad(page);
 }
 
+async function clickRuntimeDashboardAttach(page, surfaceTestId) {
+  await clickLoadDefaultCustomer(page);
+  const attachButton = page.getByRole('button', { name: /^Start \/ Attach$/ }).first();
+  await attachButton.waitFor({ state: 'visible', timeout: 10000 });
+  await attachButton.click();
+  await page.getByTestId(surfaceTestId).waitFor({ state: 'attached', timeout: 20000 });
+  await page.waitForTimeout(250);
+}
+
 async function clickRefreshTargets(page) {
   const refreshTargetsButton = page.getByRole('button', { name: /^Refresh targets$/ }).first();
   await refreshTargetsButton.click();
@@ -1461,6 +1538,15 @@ async function runLocalShellSmoke(options = {}) {
           await clickLoad(page);
         } else if (check.action === 'click-load-default-customer') {
           await clickLoadDefaultCustomer(page);
+        } else if (check.action === 'click-runtime-dashboard-attach') {
+          const surfaceSelector = check.requiredSelectors?.find((selector) =>
+            selector.startsWith('[data-testid="evaos-runtime-surface-')
+          );
+          const surfaceTestId = surfaceSelector?.match(/\[data-testid="([^"]+)"\]/)?.[1];
+          if (!surfaceTestId) {
+            throw new Error(`${check.name} is missing a runtime surface selector.`);
+          }
+          await clickRuntimeDashboardAttach(page, surfaceTestId);
         } else if (check.action === 'click-load-company-brain') {
           await clickLoadDefaultCustomer(page);
           await clickFirstCompanyBrainAccount(page);

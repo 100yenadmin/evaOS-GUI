@@ -251,6 +251,47 @@ describe('BusinessBrowserPage', () => {
     );
   });
 
+  it('mounts an embedded Business Browser surface from an opaque broker handle', async () => {
+    const user = userEvent.setup();
+    browserMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: browserView(),
+    });
+    browserMocks.launch.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'attached',
+        message: 'Attached Business Browser.',
+        browser: browserView({ currentUrlDisplay: 'workspace.example.test/app' }),
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-browser-fixture',
+          surfaceUri: 'evaos-runtime-surface://surface-browser-fixture/',
+          customerId: 'david-poku',
+          runtimeKey: 'browser',
+          displayLabel: 'Business Browser',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:browser',
+          auditId: 'audit-browser-launch',
+        },
+        backendEnforced: true,
+      },
+    });
+
+    const { container } = render(<BusinessBrowserPage />);
+
+    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^launch$/i }));
+
+    const surface = await screen.findByTestId('evaos-business-browser-surface');
+    expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-fixture/');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-surface-browser-fixture');
+    expect(surface).not.toHaveAttribute('allowpopups', 'true');
+    expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
+    expect(container.textContent).not.toContain('runtime.example.test');
+  });
+
   it('clears browser status when customer context changes before loading the next customer', async () => {
     const user = userEvent.setup();
     browserMocks.getStatus

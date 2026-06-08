@@ -60,6 +60,7 @@ import type {
   IEvaosRuntimeActionType,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
+  IEvaosRuntimeSurfaceView,
   IEvaosSafeUrlSummary,
 } from '@/common/evaos/bridgeTypes';
 import { execFileSync } from 'child_process';
@@ -144,6 +145,17 @@ export interface EvaosDesktopSession {
 export type EvaosBrokerFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export type EvaosProviderAuthUrlOpener = (url: string) => Promise<void> | void;
 export type EvaosRuntimeUrlOpener = (url: string) => Promise<void> | void;
+export type EvaosRuntimeSurfaceCreator = (
+  url: string,
+  input: {
+    customerId: string;
+    runtimeKey: IEvaosRuntimeKey;
+    displayLabel: string;
+    sourcePointer?: string;
+    auditId?: string;
+    expiresAt?: string;
+  }
+) => IEvaosRuntimeSurfaceView;
 
 export interface EvaosProviderAuthOptions {
   openAuthUrl?: EvaosProviderAuthUrlOpener;
@@ -151,6 +163,11 @@ export interface EvaosProviderAuthOptions {
 
 export interface EvaosRuntimeActionOptions {
   openRuntimeUrl?: EvaosRuntimeUrlOpener;
+  createRuntimeSurface?: EvaosRuntimeSurfaceCreator;
+}
+
+export interface EvaosBusinessBrowserActionOptions {
+  createRuntimeSurface?: EvaosRuntimeSurfaceCreator;
 }
 
 export interface EvaosBrokerSessionClientOptions {
@@ -521,14 +538,18 @@ export class EvaosBrokerSessionClient {
     return businessBrowserViewFromRuntime(runtime, policy, customerId);
   }
 
-  async launchBusinessBrowser(request: IEvaosBusinessBrowserRequest): Promise<IEvaosBusinessBrowserActionResult> {
-    return this.businessBrowserAction(request, 'browser_open_url', BUSINESS_BROWSER_DEFAULT_URL);
+  async launchBusinessBrowser(
+    request: IEvaosBusinessBrowserRequest,
+    options: EvaosBusinessBrowserActionOptions = {}
+  ): Promise<IEvaosBusinessBrowserActionResult> {
+    return this.businessBrowserAction(request, 'browser_open_url', BUSINESS_BROWSER_DEFAULT_URL, options);
   }
 
   async openBusinessBrowserUrl(
-    request: IEvaosBusinessBrowserOpenUrlRequest
+    request: IEvaosBusinessBrowserOpenUrlRequest,
+    options: EvaosBusinessBrowserActionOptions = {}
   ): Promise<IEvaosBusinessBrowserActionResult> {
-    return this.businessBrowserAction(request, 'browser_open_url', normalizeBusinessBrowserUrl(request.url));
+    return this.businessBrowserAction(request, 'browser_open_url', normalizeBusinessBrowserUrl(request.url), options);
   }
 
   async stopBusinessBrowser(request: IEvaosBusinessBrowserRequest): Promise<IEvaosBusinessBrowserActionResult> {
@@ -801,7 +822,8 @@ export class EvaosBrokerSessionClient {
   private async businessBrowserAction(
     request: IEvaosBusinessBrowserRequest,
     action: 'browser_open_url' | 'browser_stop',
-    url?: string
+    url?: string,
+    options: EvaosBusinessBrowserActionOptions = {}
   ): Promise<IEvaosBusinessBrowserActionResult> {
     const customerId = normalizeRequiredText(
       request.customerId,
@@ -826,7 +848,7 @@ export class EvaosBrokerSessionClient {
       session
     );
 
-    return sanitizeBusinessBrowserActionResult(raw, { action, customerId, policy, url });
+    return sanitizeBusinessBrowserActionResult(raw, { action, customerId, policy, url }, options);
   }
 }
 
@@ -1147,9 +1169,6 @@ async function sanitizeRuntimeActionResult(
     throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
   }
 
-  const launchUrl = safeRuntimeLaunchUrl(record.launch_url ?? record.url);
-  await openRuntimeUrl(launchUrl, options);
-
   const runtime = normalizeRuntimeValue(record.runtime_key ?? record.runtime) ?? fallback.runtime;
   const customerId = safeText(record.customer_id) ?? fallback.customerId;
   const runtimeStatus = record.runtime_status
@@ -1157,6 +1176,16 @@ async function sanitizeRuntimeActionResult(
     : undefined;
   const sourcePointer = safeText(record.source_pointer) ?? `broker:runtime_launch:${runtime}`;
   const auditId = safeText(record.audit_id);
+  const expiresAt = safeIsoDate(record.expires_at);
+  const launchUrl = safeRuntimeLaunchUrl(record.launch_url ?? record.url);
+  const runtimeSurface = await createOrOpenRuntimeSurface(launchUrl, options, {
+    customerId,
+    runtimeKey: runtime,
+    displayLabel: EVAOS_RUNTIME_LABELS[runtime],
+    sourcePointer,
+    auditId,
+    expiresAt,
+  });
 
   return stripUndefined({
     status: safeText(record.status, 80) ?? 'opened',
@@ -1164,8 +1193,9 @@ async function sanitizeRuntimeActionResult(
     customerId,
     message: safeText(record.message, 220) ?? `Opened ${EVAOS_RUNTIME_LABELS[runtime]} through the evaOS broker.`,
     urlSummary: summarizeUrlString(launchUrl),
+    runtimeSurface,
     runtimeStatus,
-    expiresAt: safeIsoDate(record.expires_at),
+    expiresAt,
     sourcePointer,
     auditId,
     backendEnforced: safeBoolean(record.backend_enforced) ?? true,
@@ -1177,16 +1207,34 @@ async function openExternalRuntimeAction(
   options: EvaosRuntimeActionOptions
 ): Promise<IEvaosRuntimeActionResult> {
   const launchUrl = safeRuntimeLaunchUrl('https://www.comfy.org/cloud');
-  await openRuntimeUrl(launchUrl, options);
+  const runtimeSurface = await createOrOpenRuntimeSurface(launchUrl, options, {
+    customerId: fallback.customerId,
+    runtimeKey: fallback.runtime,
+    displayLabel: EVAOS_RUNTIME_LABELS[fallback.runtime],
+    sourcePointer: 'workbench:external:creative_studio',
+  });
   return {
     status: 'opened',
     runtimeKey: fallback.runtime,
     customerId: fallback.customerId,
     message: 'Opened Creative Studio from evaOS Workbench.',
     urlSummary: summarizeUrlString(launchUrl),
+    runtimeSurface,
     sourcePointer: 'workbench:external:creative_studio',
     backendEnforced: true,
   };
+}
+
+async function createOrOpenRuntimeSurface(
+  launchUrl: string,
+  options: EvaosRuntimeActionOptions,
+  input: Parameters<EvaosRuntimeSurfaceCreator>[1]
+): Promise<IEvaosRuntimeSurfaceView | undefined> {
+  if (options.createRuntimeSurface) {
+    return options.createRuntimeSurface(launchUrl, input);
+  }
+  await openRuntimeUrl(launchUrl, options);
+  return undefined;
 }
 
 async function openRuntimeUrl(launchUrl: string, options: EvaosRuntimeActionOptions): Promise<void> {
@@ -1770,7 +1818,8 @@ function sanitizeBusinessBrowserActionResult(
     customerId: string;
     policy: IEvaosPeopleAccessPolicyView;
     url?: string;
-  }
+  },
+  options: EvaosBusinessBrowserActionOptions = {}
 ): IEvaosBusinessBrowserActionResult {
   const record = asRecord(raw);
   if (!record) {
@@ -1803,15 +1852,45 @@ function sanitizeBusinessBrowserActionResult(
         fallback.customerId
       )
     : undefined;
+  const runtimeSurface = createBusinessBrowserRuntimeSurface(record, fallback, options, browser);
 
   return stripUndefined({
     status,
     message: safeText(record.message),
     browser,
     urlSummary: summarizeUrl(record.current_url ?? record.url ?? record.target_url ?? fallback.url),
+    runtimeSurface,
     sourcePointer,
     auditId,
     backendEnforced,
+  });
+}
+
+function createBusinessBrowserRuntimeSurface(
+  record: Record<string, unknown>,
+  fallback: {
+    action: 'browser_open_url' | 'browser_stop';
+    customerId: string;
+    policy: IEvaosPeopleAccessPolicyView;
+  },
+  options: EvaosBusinessBrowserActionOptions,
+  browser?: IEvaosBusinessBrowserView
+): IEvaosRuntimeSurfaceView | undefined {
+  if (fallback.action === 'browser_stop' || !options.createRuntimeSurface) {
+    return undefined;
+  }
+  const launchUrlRaw = record.launch_url ?? record.runtime_launch_url;
+  if (launchUrlRaw === undefined || launchUrlRaw === null) {
+    return undefined;
+  }
+  const launchUrl = safeRuntimeLaunchUrl(launchUrlRaw);
+  return options.createRuntimeSurface(launchUrl, {
+    customerId: fallback.customerId,
+    runtimeKey: 'browser',
+    displayLabel: browser?.displayLabel ?? 'Business Browser',
+    sourcePointer: safeText(record.source_pointer) ?? `broker:browser_open_url:${fallback.customerId}`,
+    auditId: safeText(record.audit_id),
+    expiresAt: safeIsoDate(record.expires_at),
   });
 }
 
@@ -3079,7 +3158,7 @@ function safeRuntimeLaunchUrl(value: unknown): string {
 
   try {
     const url = new URL(raw);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackRuntimeHost(url.hostname))) {
       throw new Error('unsupported protocol');
     }
     if (url.username || url.password) {
@@ -3092,6 +3171,11 @@ function safeRuntimeLaunchUrl(value: unknown): string {
       'The evaOS broker did not return a safe runtime launch target.'
     );
   }
+}
+
+function isLoopbackRuntimeHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1' || normalized === '[::1]';
 }
 
 function normalizeCompanyBrainAccountId(value: string): string {

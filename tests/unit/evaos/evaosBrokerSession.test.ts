@@ -398,6 +398,41 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/eds_|desktop_session|token=bad|Bearer|launch_url/);
   });
 
+  it('rejects plaintext remote runtime launch URLs before creating a renderer surface', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          launch_url: 'http://runtime.example.test/openclaw?desktop_session=eds_runtime_launch_secret',
+          expires_at: '2026-06-03T12:15:00.000Z',
+          source_pointer: 'broker:runtime_launch:openclaw',
+          audit_id: 'audit_runtime_launch',
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+
+    await expect(
+      client.runtimeAction({ customerId: 'cus_123', runtime: 'openclaw', action: 'launch' }, { createRuntimeSurface })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return a safe runtime launch target.',
+    });
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+  });
+
   it('does not adopt the released Workbench keychain desktop session by default', () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({

@@ -17,6 +17,7 @@ import type {
   IEvaosApprovalDenyRequest,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
+  IEvaosRuntimeSurfaceView,
   IEvaosRuntimeActionRequest,
   IEvaosRuntimeActionResult,
   IEvaosSafeUrlSummary,
@@ -45,6 +46,7 @@ const CUSTOMER_ACCOUNT_ID = 'fixture-account-acme';
 const MEMBERSHIP_ID = 'fixture-member-owner';
 const NOW = '2026-06-04T10:00:00.000Z';
 const FIXTURE_LABEL = 'LOCAL FIXTURE - NOT LIVE BETA PROOF';
+const BUSINESS_BROWSER_FIXTURE_URL = 'https://browser.fixture.example.test/workspace';
 type EvaosLocalProductFixturePersona = 'owner' | 'member';
 type EvaosRuntimeFixture = Pick<IEvaosRuntimeStatusView, 'displayLabel' | 'status'> & Partial<IEvaosRuntimeStatusView>;
 const OWNER_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [
@@ -503,6 +505,17 @@ export function evaosLocalProductFixtureRuntimeAction(request: IEvaosRuntimeActi
       request.runtime === 'creative_studio'
         ? safeUrlSummary('https://www.comfy.org/cloud')
         : safeUrlSummary(`https://${request.runtime}.fixture.example.test/workspace`),
+    runtimeSurface: {
+      schemaVersion: 'evaos.runtime_surface.v1',
+      surfaceId: `fixture-${request.customerId}-${request.runtime}`,
+      surfaceUri: `evaos-runtime-surface://fixture-${request.customerId}-${request.runtime}/`,
+      customerId: request.customerId,
+      runtimeKey: request.runtime,
+      displayLabel: runtimeStatus.displayLabel,
+      status: 'attached',
+      sourcePointer,
+      auditId,
+    },
     runtimeStatus,
     sourcePointer,
     auditId,
@@ -528,21 +541,27 @@ export function evaosLocalProductFixtureBusinessBrowserAction(
   }
 
   if (action === 'browser_launch') {
+    const sourcePointer = 'local-fixture:business-browser:launch';
+    const auditId = 'fixture-audit-browser-launch';
     return clone({
-      status: 'launching',
-      message: `${FIXTURE_LABEL}: Synthetic browser launch requested.`,
-      browser: browserView('launching', {
-        healthSummary: `${FIXTURE_LABEL}: Synthetic browser launch requested.`,
-        controlSessionActive: false,
-        canLaunch: false,
-        canOpenUrl: false,
-        canStop: false,
-        actions: ['browser_launch'],
-        sourcePointer: 'local-fixture:business-browser:launching',
-        auditId: 'fixture-audit-browser-launch',
+      status: 'attached',
+      message: `${FIXTURE_LABEL}: Synthetic browser surface attached.`,
+      browser: browserView('running', {
+        customerId: request.customerId,
+        healthSummary: `${FIXTURE_LABEL}: Synthetic browser runtime surface attached.`,
+        controlSessionActive: true,
+        canLaunch: true,
+        canOpenUrl: true,
+        canStop: true,
+        currentUrlSummary: safeUrlSummary(BUSINESS_BROWSER_FIXTURE_URL),
+        actions: ['browser_open_url', 'browser_stop'],
+        sourcePointer,
+        auditId,
       }),
-      sourcePointer: 'local-fixture:business-browser:launch',
-      auditId: 'fixture-audit-browser-launch',
+      runtimeSurface: browserRuntimeSurface(request.customerId, sourcePointer, auditId),
+      urlSummary: safeUrlSummary(BUSINESS_BROWSER_FIXTURE_URL),
+      sourcePointer,
+      auditId,
       backendEnforced: true,
     });
   }
@@ -559,21 +578,39 @@ export function evaosLocalProductFixtureBusinessBrowserAction(
   }
 
   const urlSummary = safeUrlSummary('url' in request ? request.url : undefined);
+  const sourcePointer = 'local-fixture:business-browser:open-url';
+  const auditId = 'fixture-audit-browser-open-url';
   return clone({
     status: 'opened',
     message: `${FIXTURE_LABEL}: Synthetic browser URL opened.`,
     browser: browserView('running', {
+      customerId: request.customerId,
       healthSummary: `${FIXTURE_LABEL}: Synthetic browser runtime state with brokered URL action proof.`,
       currentUrlSummary: urlSummary,
       lastActivityAt: NOW,
-      sourcePointer: 'local-fixture:business-browser:open-url',
-      auditId: 'fixture-audit-browser-open-url',
+      sourcePointer,
+      auditId,
     }),
     urlSummary,
-    sourcePointer: 'local-fixture:business-browser:open-url',
-    auditId: 'fixture-audit-browser-open-url',
+    runtimeSurface: browserRuntimeSurface(request.customerId, sourcePointer, auditId),
+    sourcePointer,
+    auditId,
     backendEnforced: true,
   });
+}
+
+function browserRuntimeSurface(customerId: string, sourcePointer: string, auditId: string): IEvaosRuntimeSurfaceView {
+  return {
+    schemaVersion: 'evaos.runtime_surface.v1',
+    surfaceId: `fixture-${customerId}-browser`,
+    surfaceUri: `evaos-runtime-surface://fixture-${customerId}-browser/`,
+    customerId,
+    runtimeKey: 'browser',
+    displayLabel: 'Business Browser',
+    status: 'attached',
+    sourcePointer,
+    auditId,
+  };
 }
 
 export function evaosLocalProductFixtureCompanyBrainDirectory(

@@ -310,6 +310,99 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     expect(JSON.stringify(result)).not.toMatch(/eds_|access_token|raw-token|desktop_session|Bearer/i);
   });
 
+  it('creates an opaque runtime surface for brokered Business Browser launch URLs', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn(() => ({
+      schemaVersion: 'evaos.runtime_surface.v1' as const,
+      surfaceId: 'surface-browser-live',
+      surfaceUri: 'evaos-runtime-surface://surface-browser-live/',
+      customerId: 'david-poku',
+      runtimeKey: 'browser' as const,
+      displayLabel: 'Business Browser',
+      status: 'attached',
+      sourcePointer: 'broker:browser_open_url:david-poku',
+      auditId: 'audit_launch_surface',
+    }));
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'attached',
+          customer_id: 'david-poku',
+          message: 'Browser attached.',
+          launch_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+          current_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+          source_pointer: 'broker:browser_open_url:david-poku',
+          audit_id: 'audit_launch_surface',
+          backend_enforced: true,
+          browser: browserRuntimeResponse({
+            current_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+            source_pointer: 'broker:runtime_status:browser',
+            audit_id: 'audit_browser_after_launch',
+          }),
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    const result = await client.launchBusinessBrowser({ customerId: 'david-poku' }, { createRuntimeSurface });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+      action: 'browser_open_url',
+      customer_id: 'david-poku',
+      url: 'https://chatgpt.com/codex',
+    });
+    expect(createRuntimeSurface).toHaveBeenCalledWith(
+      'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+      expect.objectContaining({
+        customerId: 'david-poku',
+        runtimeKey: 'browser',
+        displayLabel: 'Business Browser',
+        sourcePointer: 'broker:browser_open_url:david-poku',
+        auditId: 'audit_launch_surface',
+      })
+    );
+    expect(result.runtimeSurface).toMatchObject({
+      surfaceUri: 'evaos-runtime-surface://surface-browser-live/',
+      customerId: 'david-poku',
+      runtimeKey: 'browser',
+    });
+    expect(JSON.stringify(result)).not.toMatch(/launch_url|eds_runtime_secret|desktop_session|token=raw|Bearer/i);
+  });
+
+  it('fails closed when a Business Browser action returns a remote plaintext surface URL', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'attached',
+          customer_id: 'david-poku',
+          message: 'Browser attached.',
+          launch_url: 'http://runtime.example.test/browser',
+          source_pointer: 'broker:browser_open_url:david-poku',
+          audit_id: 'audit_plaintext_surface',
+          backend_enforced: true,
+          browser: browserRuntimeResponse({
+            source_pointer: 'broker:runtime_status:browser',
+            audit_id: 'audit_browser_after_launch',
+          }),
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.launchBusinessBrowser({ customerId: 'david-poku' }, { createRuntimeSurface })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return a safe runtime launch target.',
+    });
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+  });
+
   it('fails closed when browser action proof reuses runtime_status evidence', async () => {
     const fetchImpl = fetchMock();
     fetchImpl

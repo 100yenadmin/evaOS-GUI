@@ -15,6 +15,8 @@ const DEFAULT_REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ARTIFACT_BASE = '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/67-real-admin-product-reality-pass';
 const REPORT_SCHEMA = 'evaos-installed-app-product-proof/v1';
 const DEFAULT_TIMEOUT_MS = 25_000;
+const LSREGISTER_PATH =
+  '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
 
 const UNSAFE_PROOF_PATTERNS = [
   { name: 'desktop_session', pattern: /desktop_session/i },
@@ -85,6 +87,73 @@ function readInfoPlist(appPath, execFileSyncImpl = execFileSync) {
     shortVersion: plistPrint(appPath, 'Print:CFBundleShortVersionString', execFileSyncImpl),
     protocolSchemes: schemes,
   };
+}
+
+function compactLaunchServicesLine(line) {
+  return String(line || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+\(0x[0-9a-f]+\)/i, '')
+    .trim();
+}
+
+function parseLaunchServicesProtocolHandler(dump, scheme = DEFAULT_PROTOCOL_SCHEME) {
+  const lines = String(dump || '').split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const handlerMatch = line.match(/handlerpref id:\s+([^\s]+)/);
+    if (!handlerMatch || handlerMatch[1] !== scheme) continue;
+
+    const evidenceLines = [compactLaunchServicesLine(line)];
+    let bundleId = null;
+    for (let offset = index + 1; offset < lines.length; offset += 1) {
+      const next = lines[offset];
+      if (/^-{8,}/.test(next)) break;
+      const compacted = compactLaunchServicesLine(next);
+      if (!compacted) continue;
+      const rolesMatch = next.match(/all roles:\s+([^\s]+)/);
+      if (rolesMatch) {
+        bundleId = rolesMatch[1];
+        evidenceLines.push(`all roles: ${bundleId}`);
+      } else if (/Electron\.app|node_modules\/\.bun\/electron|com\.github\.Electron/i.test(next)) {
+        evidenceLines.push(compacted);
+      }
+    }
+
+    return {
+      scheme,
+      bundleId,
+      evidence: evidenceLines.join('; '),
+    };
+  }
+
+  return {
+    scheme,
+    bundleId: null,
+    evidence: `handlerpref id: ${scheme}; not found`,
+  };
+}
+
+function readLaunchServicesProtocolHandler(scheme = DEFAULT_PROTOCOL_SCHEME, execFileSyncImpl = execFileSync) {
+  const dump = execFileSyncImpl(LSREGISTER_PATH, ['-dump'], { encoding: 'utf8' });
+  return parseLaunchServicesProtocolHandler(dump, scheme);
+}
+
+function assertExpectedProtocolHandler(handler) {
+  const evidence = handler?.evidence || '';
+  const bundleId = handler?.bundleId || '';
+  if (
+    bundleId === 'com.github.Electron' ||
+    /Electron\.app|node_modules\/\.bun\/electron|\/node_modules\/electron/i.test(evidence)
+  ) {
+    throw new Error(
+      `evaOS beta protocol ${DEFAULT_PROTOCOL_SCHEME} resolves to raw Electron instead of ${DEFAULT_BUNDLE_ID}. Evidence: ${evidence}`
+    );
+  }
+  if (bundleId !== DEFAULT_BUNDLE_ID) {
+    throw new Error(
+      `evaOS beta protocol ${DEFAULT_PROTOCOL_SCHEME} resolves to ${bundleId || 'no handler'} instead of ${DEFAULT_BUNDLE_ID}. Evidence: ${evidence}`
+    );
+  }
 }
 
 function assertExpectedBundle(bundleInfo) {
@@ -211,6 +280,12 @@ function safeReportForPlan(options) {
     expectedShortHead: shortHead(options.expectedHead),
     appPath: options.appPath,
     executablePath: options.executablePath,
+    protocolHandler: options.protocolHandler || {
+      scheme: DEFAULT_PROTOCOL_SCHEME,
+      bundleId: null,
+      evidence: 'not checked',
+      status: 'not-checked',
+    },
     appStat,
     packageVersion: options.packageVersion || 'unknown',
     bundleInfo: options.bundleInfo,
@@ -264,6 +339,13 @@ function markdownForInstalledProof(report) {
     `- Bundle version: \`${report.bundleInfo.bundleVersion}\``,
     `- Short version: \`${report.bundleInfo.shortVersion}\``,
     `- Protocol schemes: \`${report.bundleInfo.protocolSchemes.join('`, `')}\``,
+    '',
+    '## Protocol Handler',
+    '',
+    `- Scheme: \`${report.protocolHandler?.scheme || DEFAULT_PROTOCOL_SCHEME}\``,
+    `- Handler bundle: \`${report.protocolHandler?.bundleId || 'none'}\``,
+    `- Status: \`${report.protocolHandler?.status || 'unknown'}\``,
+    `- Evidence: ${report.protocolHandler?.evidence || 'not checked'}`,
     '',
     '## Exact Candidate Preflight',
     '',
@@ -443,6 +525,39 @@ async function captureInstalledAppProof(options = {}) {
 
   const bundleInfo = options.bundleInfo || readInfoPlist(appPath);
   assertExpectedBundle(bundleInfo);
+  let protocolHandler = options.protocolHandler || readLaunchServicesProtocolHandler(DEFAULT_PROTOCOL_SCHEME);
+  try {
+    assertExpectedProtocolHandler(protocolHandler);
+    protocolHandler = { ...protocolHandler, status: 'passed' };
+  } catch (error) {
+    protocolHandler = { ...protocolHandler, status: 'failed' };
+    const failure = {
+      stage: 'protocol-handler',
+      id: 'evaos-beta-protocol-handler',
+      route: `${DEFAULT_PROTOCOL_SCHEME}://`,
+      currentHash: 'unavailable',
+      expectedSelectors: [],
+      screenshot: null,
+      message: error?.message || String(error),
+    };
+    const report = safeReportForPlan({
+      mode: 'live',
+      repoHead,
+      expectedHead,
+      appPath,
+      executablePath,
+      packageVersion: packageVersion(repoRoot),
+      bundleInfo,
+      protocolHandler,
+      plan: buildInstalledProofPlan(undefined, { expectedHead }),
+      screenshotStatus: 'not-started',
+      failure,
+    });
+    const files = writeReportFiles(artifactRoot, report);
+    throw new Error(
+      `Installed app proof failed during protocol handler check; wrote ${files.reportPath}: ${failure.message}`
+    );
+  }
 
   const preflightPlan = buildInstalledProofPreflightPlan({ expectedHead });
   const proofPlan = buildInstalledProofPlan(undefined, { expectedHead });
@@ -483,6 +598,7 @@ async function captureInstalledAppProof(options = {}) {
       executablePath,
       packageVersion: packageVersion(repoRoot),
       bundleInfo,
+      protocolHandler,
       plan: proofPlan,
       screenshotStatus: 'not-started',
       failure,
@@ -537,6 +653,7 @@ async function captureInstalledAppProof(options = {}) {
     },
     packageVersion: packageVersion(repoRoot),
     bundleInfo,
+    protocolHandler,
     screenshots,
     preflightAssertions,
     parityAssertions: screenshots.map((entry) => ({
@@ -619,6 +736,12 @@ async function main() {
       appPath,
       executablePath,
       bundleInfo,
+      protocolHandler: {
+        scheme: DEFAULT_PROTOCOL_SCHEME,
+        bundleId: DEFAULT_BUNDLE_ID,
+        evidence: `handlerpref id: ${DEFAULT_PROTOCOL_SCHEME}; all roles: ${DEFAULT_BUNDLE_ID}`,
+        status: 'passed',
+      },
       plan,
       packageVersion: packageVersion(repoRoot),
     });
@@ -653,6 +776,7 @@ module.exports = {
   UNSAFE_PROOF_PATTERNS,
   artifactRootForHead,
   assertNoUnsafeProofText,
+  assertExpectedProtocolHandler,
   buildInstalledProofPlan,
   buildInstalledProofPreflightPlan,
   captureInstalledAppProof,
@@ -661,6 +785,8 @@ module.exports = {
   markdownForInstalledProof,
   packageVersion,
   parsePlistArrayOutput,
+  parseLaunchServicesProtocolHandler,
+  readLaunchServicesProtocolHandler,
   readInfoPlist,
   runProofPlanAction,
   shortHead,

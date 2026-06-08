@@ -11,7 +11,12 @@ import { Attention, Open, Refresh, Robot, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
-import type { IEvaosRuntimeActionResult, IEvaosRuntimeActionType, IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
+import type {
+  IEvaosRuntimeActionResult,
+  IEvaosRuntimeActionType,
+  IEvaosRuntimeKey,
+  IEvaosRuntimeSurfaceView,
+} from '@/common/evaos/bridgeTypes';
 
 const SECRET_TEXT_PATTERN =
   /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|authorization|bearer|secret|password/i;
@@ -82,6 +87,33 @@ function runtimeActionSummary(result: IEvaosRuntimeActionResult): string {
   return parts.join(' ');
 }
 
+function isSafeRuntimeSurfaceUri(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'evaos-runtime-surface:' && Boolean(parsed.hostname || parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function runtimeSurfaceMatches(
+  surface: IEvaosRuntimeSurfaceView | undefined,
+  customerId: string,
+  runtimeKey: IEvaosRuntimeKey
+): surface is IEvaosRuntimeSurfaceView {
+  return (
+    surface?.schemaVersion === 'evaos.runtime_surface.v1' &&
+    surface.customerId === customerId &&
+    surface.runtimeKey === runtimeKey &&
+    isSafeRuntimeSurfaceUri(surface.surfaceUri)
+  );
+}
+
+function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
+  const safeSurface = surface.surfaceId.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80);
+  return `evaos-runtime-${safeSurface}`;
+}
+
 type RuntimeDashboardPageProps = {
   runtimeKey: IEvaosRuntimeKey;
   title: string;
@@ -98,6 +130,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<IEvaosRuntimeActionType | null>(null);
+  const [runtimeSurface, setRuntimeSurface] = useState<IEvaosRuntimeSurfaceView | null>(null);
   const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
@@ -108,6 +141,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     setActionStatus(null);
     setActionError(null);
     setActionTarget(null);
+    setRuntimeSurface(null);
     setLoadingStatus(false);
   }, []);
 
@@ -166,10 +200,14 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
       }
       if (response.data.customerId !== selectedCustomerId || response.data.runtimeKey !== runtimeKey) {
         setStatusView(null);
+        setRuntimeSurface(null);
         setRuntimeError(`${title} broker returned evidence for a different runtime or customer.`);
         return;
       }
       setStatusView(response.data);
+      if (runtimeSettledState(response.data, null) !== 'live') {
+        setRuntimeSurface(null);
+      }
     } catch {
       if (!isCurrentRequest(requestEpoch, selectedCustomerId)) return;
       setStatusView(null);
@@ -219,6 +257,13 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
         }
         if (response.data.runtimeStatus) {
           setStatusView(response.data.runtimeStatus);
+        }
+        if (runtimeSurfaceMatches(response.data.runtimeSurface, selectedCustomerId, runtimeKey)) {
+          setRuntimeSurface(response.data.runtimeSurface);
+        } else if (response.data.runtimeSurface) {
+          setRuntimeSurface(null);
+          setActionError(`${title} broker returned an invalid runtime surface handle.`);
+          return;
         }
         setActionStatus(runtimeActionSummary(response.data));
       } catch {
@@ -408,6 +453,30 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
             </div>
           ) : null}
         </section>
+
+        {runtimeSurface ? (
+          <section
+            className='min-h-640px overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
+            data-testid={`evaos-runtime-surface-container-${runtimeKey}`}
+          >
+            <div className='flex items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
+              <div className='min-w-0'>
+                <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
+                  {safeUiText(runtimeSurface.displayLabel, title)}
+                </div>
+                <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>Brokered runtime surface</div>
+              </div>
+              <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
+            </div>
+            <webview
+              data-testid={`evaos-runtime-surface-${runtimeKey}`}
+              src={runtimeSurface.surfaceUri}
+              partition={runtimeSurfacePartition(runtimeSurface)}
+              className='block h-600px w-full border-0'
+              allowpopups={false}
+            />
+          </section>
+        ) : null}
       </div>
     </div>
   );

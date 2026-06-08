@@ -21,6 +21,7 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
   DEFAULT_BUNDLE_ID: string;
   DEFAULT_PROTOCOL_SCHEME: string;
   artifactRootForHead: (head: string, env?: Record<string, string | undefined>) => string;
+  assertExpectedProtocolHandler: (handler: { scheme: string; bundleId: string | null; evidence: string }) => void;
   assertNoUnsafeProofText: (value: unknown) => void;
   buildInstalledProofPlan: (
     plan?: Array<{
@@ -56,6 +57,12 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     expectedHead: string;
     appPath: string;
     executablePath: string;
+    protocolHandler?: {
+      scheme: string;
+      bundleId: string | null;
+      evidence: string;
+      status: string;
+    };
     bundleInfo: {
       bundleId: string;
       bundleName: string;
@@ -89,6 +96,12 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
       shortVersion: string;
       protocolSchemes: string[];
     };
+    protocolHandler?: {
+      scheme: string;
+      bundleId: string | null;
+      evidence: string;
+      status: string;
+    };
     failure?: {
       stage: string;
       id: string;
@@ -100,6 +113,14 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     };
     plan: Array<{ id: string; route: string; screenshot: string; waitSelectors: string[] }>;
   }) => { reportPath: string; proofPath: string; takeoverPath: string };
+  parseLaunchServicesProtocolHandler: (
+    dump: string,
+    scheme?: string
+  ) => {
+    scheme: string;
+    bundleId: string | null;
+    evidence: string;
+  };
 };
 
 describe('evaOS installed app product proof', () => {
@@ -309,6 +330,44 @@ describe('evaOS installed app product proof', () => {
     );
   });
 
+  it('parses LaunchServices protocol handler ownership for the beta scheme', () => {
+    const dump = [
+      '---------------------------------------------------------------------------------',
+      'handlerpref id:             tg (0x1c)',
+      'all roles:                  ru.keepcoder.telegram',
+      '---------------------------------------------------------------------------------',
+      'handlerpref id:             evaos-workbench-beta (0x20)',
+      'unknown:                    evaos-workbench-beta',
+      'all roles:                  com.evaos.workbench.beta',
+      '---------------------------------------------------------------------------------',
+    ].join('\n');
+
+    expect(installedAppProof.parseLaunchServicesProtocolHandler(dump)).toEqual({
+      scheme: 'evaos-workbench-beta',
+      bundleId: 'com.evaos.workbench.beta',
+      evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+    });
+  });
+
+  it('fails installed proof when LaunchServices maps the beta scheme to raw Electron', () => {
+    expect(() =>
+      installedAppProof.assertExpectedProtocolHandler({
+        scheme: 'evaos-workbench-beta',
+        bundleId: 'com.github.Electron',
+        evidence:
+          'handlerpref id: evaos-workbench-beta; all roles: com.github.Electron; path: /Volumes/LEXAR/repos/AionUi/node_modules/.bun/electron@37.10.3/node_modules/electron/dist/Electron.app',
+      })
+    ).toThrow(/raw Electron/);
+
+    expect(() =>
+      installedAppProof.assertExpectedProtocolHandler({
+        scheme: 'evaos-workbench-beta',
+        bundleId: 'com.evaos.workbench.beta',
+        evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+      })
+    ).not.toThrow();
+  });
+
   it('blocks proof reports that contain session, provider, or token material', () => {
     expect(() => installedAppProof.assertNoUnsafeProofText({ ok: 'Commit 2fb812c12ddf' })).not.toThrow();
     expect(() => installedAppProof.assertNoUnsafeProofText({ bad: 'Bearer abc123' })).toThrow(/Bearer/);
@@ -334,6 +393,12 @@ describe('evaOS installed app product proof', () => {
       appPath: '/Applications/evaOS Workbench Beta.app',
       executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
       bundleInfo,
+      protocolHandler: {
+        scheme: 'evaos-workbench-beta',
+        bundleId: 'com.evaos.workbench.beta',
+        evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+        status: 'passed',
+      },
       plan: [
         {
           id: 'settings-about',
@@ -372,7 +437,15 @@ describe('evaOS installed app product proof', () => {
         status: 'pending',
       }),
     ]);
+    expect(report.protocolHandler).toEqual({
+      scheme: 'evaos-workbench-beta',
+      bundleId: 'com.evaos.workbench.beta',
+      evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+      status: 'passed',
+    });
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('Expected commit: `2fb812c12ddf`');
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Protocol Handler');
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('- Handler bundle: `com.evaos.workbench.beta`');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Exact Candidate Preflight');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Parity Assertions');
     expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Run from `/Volumes/LEXAR/repos');
@@ -395,6 +468,13 @@ describe('evaOS installed app product proof', () => {
       appPath: '/Applications/evaOS Workbench Beta.app',
       executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
       bundleInfo,
+      protocolHandler: {
+        scheme: 'evaos-workbench-beta',
+        bundleId: 'com.github.Electron',
+        evidence:
+          'handlerpref id: evaos-workbench-beta; all roles: com.github.Electron; path: /Volumes/LEXAR/repos/AionUi/node_modules/.bun/electron@37.10.3/node_modules/electron/dist/Electron.app',
+        status: 'failed',
+      },
       plan: [],
       failure: {
         stage: 'launch',

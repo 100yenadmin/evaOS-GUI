@@ -201,6 +201,8 @@ describe('evaOS local shell smoke', () => {
 
   it('keeps local loaded product proof separate from default shell smoke', () => {
     expect(localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.map((check) => check.name)).toEqual([
+      'evaos-dashboard-loaded-fixture',
+      'hermes-dashboard-loaded-fixture',
       'mission-control-loaded-fixture',
       'mission-control-switch-clears-fixture',
       'design-workspace-loaded-fixture',
@@ -224,11 +226,52 @@ describe('evaOS local shell smoke', () => {
       'native-companion-boundary-fixture',
     ]);
 
+    const evaosDashboardLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'evaos-dashboard-loaded-fixture'
+    );
+    expect(evaosDashboardLoaded).toEqual(
+      expect.objectContaining({
+        hash: '/evaos',
+        proofStage: localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE,
+        action: 'click-runtime-dashboard-attach',
+        requiredSelectors: expect.arrayContaining(['[data-testid="evaos-runtime-surface-openclaw"]']),
+        loadedStateRequiredMarkers: ['openclaw runtime surface attached', 'customer scoped runtime proof'],
+        expected: expect.arrayContaining([
+          'Primary evaOS agent workspace',
+          'fixture-audit-runtime-openclaw',
+          'local-fixture:runtime:openclaw',
+          'Brokered runtime surface',
+        ]),
+      })
+    );
+
+    const hermesDashboardLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
+      (check) => check.name === 'hermes-dashboard-loaded-fixture'
+    );
+    expect(hermesDashboardLoaded).toEqual(
+      expect.objectContaining({
+        hash: '/hermes',
+        proofStage: localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE,
+        action: 'click-runtime-dashboard-attach',
+        requiredSelectors: expect.arrayContaining(['[data-testid="evaos-runtime-surface-hermes"]']),
+        loadedStateRequiredMarkers: ['hermes runtime surface attached', 'customer scoped runtime proof'],
+        expected: expect.arrayContaining([
+          'Hermes agent dashboard',
+          'fixture-audit-runtime-hermes',
+          'local-fixture:runtime:hermes',
+          'Brokered runtime surface',
+        ]),
+      })
+    );
+
     const missionControlLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
       (check) => check.name === 'mission-control-loaded-fixture'
     );
     expect(missionControlLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(missionControlLoaded?.action).toBe('click-mission-control-check');
+    expect(missionControlLoaded?.action).toBe('click-runtime-dashboard-attach');
+    expect(missionControlLoaded?.requiredSelectors).toEqual(
+      expect.arrayContaining(['[data-testid="evaos-runtime-surface-paperclip"]'])
+    );
     expect(missionControlLoaded?.expected).toEqual(
       expect.arrayContaining([
         'Paperclip mission queue and customer runtime status from evaOS broker evidence.',
@@ -385,7 +428,11 @@ describe('evaOS local shell smoke', () => {
       'browser runtime status',
       'current URL summary',
       'browser audit id',
+      'browser runtime surface attached',
     ]);
+    expect(businessBrowserLoaded?.requiredSelectors).toEqual(
+      expect.arrayContaining(['[data-testid="evaos-business-browser-surface"]'])
+    );
 
     const businessBrowserLaunch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
       (check) => check.name === 'business-browser-launch-fixture'
