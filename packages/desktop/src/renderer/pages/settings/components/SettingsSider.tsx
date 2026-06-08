@@ -22,19 +22,15 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Tooltip } from '@arco-design/web-react';
 import { getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
+import {
+  BUILTIN_SETTINGS_TAB_IDS,
+  canAccessBuiltinSettingsTab,
+  canAccessExtensionSettings,
+  useWorkbenchPolicy,
+} from '@/renderer/hooks/context/WorkbenchPolicyContext';
 
 /** Builtin settings tab IDs in display order (must match router paths). */
-export const BUILTIN_TAB_IDS = [
-  'agent',
-  'model',
-  'assistants',
-  'capabilities',
-  'display',
-  'webui',
-  'pet',
-  'system',
-  'about',
-] as const;
+export const BUILTIN_TAB_IDS = BUILTIN_SETTINGS_TAB_IDS;
 
 /**
  * Legacy anchor IDs that have been merged into other tabs.
@@ -74,6 +70,7 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const isDesktop = isElectronDesktop();
+  const { policy } = useWorkbenchPolicy();
 
   const extensionTabs = useExtensionSettingsTabs();
   const { resolveExtTabName } = useExtI18n();
@@ -113,14 +110,17 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
     };
 
     // Start with ordered builtin IDs, hiding desktop-only tabs in browser mode
-    const result: SiderItem[] = BUILTIN_TAB_IDS.filter((id) => isDesktop || id !== 'pet').map((id) => builtinMap[id]);
+    const result: SiderItem[] = BUILTIN_TAB_IDS.filter((id) =>
+      canAccessBuiltinSettingsTab(id, policy, { isDesktop })
+    ).map((id) => builtinMap[id]);
 
     // Extension tabs with position anchoring
+    const visibleExtensionTabs = canAccessExtensionSettings(policy) ? extensionTabs : [];
     const beforeMap = new Map<string, IExtensionSettingsTab[]>();
     const afterMap = new Map<string, IExtensionSettingsTab[]>();
     const unanchored: IExtensionSettingsTab[] = [];
 
-    for (const tab of extensionTabs) {
+    for (const tab of visibleExtensionTabs) {
       if (!tab.position) {
         unanchored.push(tab);
         continue;
@@ -187,7 +187,7 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
     }
 
     return { menus: result, groupHeaderAt: headerAt };
-  }, [t, isDesktop, extensionTabs, resolveExtTabName]);
+  }, [t, isDesktop, policy, extensionTabs, resolveExtTabName]);
 
   const siderTooltipProps = getSiderTooltipProps(tooltipEnabled);
   return (
