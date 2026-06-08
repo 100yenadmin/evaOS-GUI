@@ -74,7 +74,7 @@ function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
 }
 
 function hasBrowserAutoAttachAction(view: IEvaosBusinessBrowserView): boolean {
-  return view.actions.includes('start_attach');
+  return view.actions.some((action) => action === 'start_attach' || action === 'browser_launch');
 }
 
 const BusinessBrowserPage: React.FC = () => {
