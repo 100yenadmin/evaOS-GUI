@@ -24,7 +24,7 @@ export interface IEvaosBrokerSessionStatus {
   sessionEpoch?: number;
   userEmail?: string;
   expiresAt?: string;
-  source: 'none' | 'environment' | 'memory' | 'callback' | 'workbench-keychain';
+  source: 'none' | 'environment' | 'memory' | 'callback' | 'beta-storage' | 'workbench-keychain';
   message: string;
 }
 

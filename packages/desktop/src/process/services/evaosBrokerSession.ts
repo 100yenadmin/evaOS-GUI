@@ -65,6 +65,8 @@ import type {
 } from '@/common/evaos/bridgeTypes';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
 import {
   EVAOS_PIPEDREAM_PROVIDER_KEYS,
@@ -139,7 +141,13 @@ export interface EvaosDesktopSession {
   accessToken: string;
   userEmail?: string;
   expiresAt?: string;
-  source?: 'environment' | 'memory' | 'callback' | 'workbench-keychain';
+  source?: 'environment' | 'memory' | 'callback' | 'beta-storage' | 'workbench-keychain';
+}
+
+export interface EvaosDesktopSessionStore {
+  load: () => unknown;
+  save: (session: EvaosDesktopSession) => void;
+  clear: () => void;
 }
 
 export type EvaosBrokerFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -175,6 +183,7 @@ export interface EvaosBrokerSessionClientOptions {
   fetchImpl?: EvaosBrokerFetch;
   env?: Record<string, string | undefined>;
   legacyWorkbenchSessionLoader?: () => EvaosDesktopSession | null;
+  sessionStore?: EvaosDesktopSessionStore | null;
   now?: () => Date;
 }
 
@@ -191,25 +200,37 @@ export class EvaosBrokerSessionClient {
   private readonly endpoint: string;
   private readonly fetchImpl: EvaosBrokerFetch;
   private readonly now: () => Date;
+  private readonly sessionStore: EvaosDesktopSessionStore | null;
   private session: EvaosDesktopSession | null;
   private sessionEpoch: number;
+  private pendingSessionPersistence: EvaosDesktopSession | null;
+  private revokedPersistedSessionFingerprint: string | null;
 
   constructor(options: EvaosBrokerSessionClientOptions = {}) {
     this.endpoint = normalizeEndpoint(options.endpoint ?? process.env.AIONUI_EVAOS_BROKER_ENDPOINT);
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
     const env = options.env ?? process.env;
+    this.sessionStore =
+      options.sessionStore === undefined
+        ? createDefaultBetaSessionStore(options.env === undefined)
+        : options.sessionStore;
     this.session =
       loadSessionFromEnvironment(env) ??
+      loadPersistedBetaSession(this.sessionStore, this.now()) ??
       loadLegacyWorkbenchSession({
         env,
         loader: options.legacyWorkbenchSessionLoader,
         allowDefaultLoader: options.env === undefined,
       });
     this.sessionEpoch = this.session ? 1 : 0;
+    this.pendingSessionPersistence = null;
+    this.revokedPersistedSessionFingerprint = null;
   }
 
   getSessionStatus(): IEvaosBrokerSessionStatus {
+    this.retryPendingSessionPersistence();
+    this.loadPersistedSessionIfAvailable();
     return sessionStatus(this.session, this.now(), this.sessionEpoch);
   }
 
@@ -236,20 +257,21 @@ export class EvaosBrokerSessionClient {
       );
     }
 
-    this.session = {
-      accessToken,
-      userEmail: safeText(raw.email),
-      expiresAt,
-      source: 'memory',
-    };
-    this.sessionEpoch += 1;
+    this.adoptSession(
+      {
+        accessToken,
+        userEmail: safeText(raw.email),
+        expiresAt,
+        source: 'memory',
+      },
+      { persist: true }
+    );
 
     return this.getSessionStatus();
   }
 
   importDesktopSessionFromCallbackUrl(callbackUrl: string): IEvaosBrokerSessionStatus {
-    this.session = parseDesktopSessionCallbackUrl(callbackUrl);
-    this.sessionEpoch += 1;
+    this.adoptSession(parseDesktopSessionCallbackUrl(callbackUrl), { persist: true });
     return this.getSessionStatus();
   }
 
@@ -691,9 +713,12 @@ export class EvaosBrokerSessionClient {
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
     const session = this.session;
     this.session = null;
+    this.pendingSessionPersistence = null;
+    this.revokedPersistedSessionFingerprint = session ? desktopSessionFingerprint(session) : null;
     if (session) {
       this.sessionEpoch += 1;
     }
+    this.clearPersistedSession();
 
     if (session && !isSessionExpired(session, this.now())) {
       await this.postJson({ action: 'revoke_desktop_session' }, session).catch((): void => undefined);
@@ -702,9 +727,77 @@ export class EvaosBrokerSessionClient {
     return this.getSessionStatus();
   }
 
+  private adoptSession(session: EvaosDesktopSession, { persist }: { persist: boolean }): void {
+    this.session = session;
+    this.revokedPersistedSessionFingerprint = null;
+    this.sessionEpoch += 1;
+    if (persist) {
+      this.persistSession(session);
+    }
+  }
+
+  private persistSession(session: EvaosDesktopSession): void {
+    if (!this.sessionStore || isSessionExpired(session, this.now())) {
+      return;
+    }
+    this.pendingSessionPersistence = session;
+    try {
+      this.sessionStore.save(session);
+      this.pendingSessionPersistence = null;
+    } catch {
+      // Session persistence is a recovery aid. The in-memory session stays authoritative for this run.
+    }
+  }
+
+  private retryPendingSessionPersistence(): void {
+    const pending = this.pendingSessionPersistence;
+    if (!pending) {
+      return;
+    }
+    if (
+      !this.session ||
+      desktopSessionFingerprint(this.session) !== desktopSessionFingerprint(pending) ||
+      isSessionExpired(pending, this.now())
+    ) {
+      this.pendingSessionPersistence = null;
+      return;
+    }
+    this.persistSession(pending);
+  }
+
+  private clearPersistedSession(): void {
+    try {
+      this.sessionStore?.clear();
+    } catch {
+      // A failed local clear must not keep logout from revoking the broker session.
+    }
+  }
+
+  private loadPersistedSessionIfAvailable(): void {
+    if (this.session && !isSessionExpired(this.session, this.now())) {
+      return;
+    }
+    if (this.session?.source === 'environment') {
+      return;
+    }
+
+    const persisted = loadPersistedBetaSession(this.sessionStore, this.now());
+    if (!persisted) {
+      return;
+    }
+    if (this.revokedPersistedSessionFingerprint === desktopSessionFingerprint(persisted)) {
+      return;
+    }
+
+    this.session = persisted;
+    this.sessionEpoch += 1;
+  }
+
   private requireActiveSession(
     missingSessionMessage = 'Sign in to evaOS before checking runtime status.'
   ): EvaosDesktopSession {
+    this.retryPendingSessionPersistence();
+    this.loadPersistedSessionIfAvailable();
     if (!this.session) {
       throw new EvaosBrokerSessionError('missing_session', missingSessionMessage);
     }
@@ -1008,6 +1101,10 @@ function rendererSafeSessionKey(sessionEpoch: number): string {
   return `evaos-session-${sessionEpoch}`;
 }
 
+function desktopSessionFingerprint(session: EvaosDesktopSession): string {
+  return createHash('sha256').update(session.accessToken).digest('hex');
+}
+
 function loadSessionFromEnvironment(env: Record<string, string | undefined>): EvaosDesktopSession | null {
   const accessToken = safeRawSecret(env.AIONUI_EVAOS_DESKTOP_SESSION);
   if (!accessToken) {
@@ -1019,6 +1116,45 @@ function loadSessionFromEnvironment(env: Record<string, string | undefined>): Ev
     userEmail: safeText(env.AIONUI_EVAOS_DESKTOP_SESSION_EMAIL),
     expiresAt: safeIsoDate(env.AIONUI_EVAOS_DESKTOP_SESSION_EXPIRES_AT),
     source: 'environment',
+  };
+}
+
+function loadPersistedBetaSession(store: EvaosDesktopSessionStore | null, now: Date): EvaosDesktopSession | null {
+  if (!store) {
+    return null;
+  }
+
+  let session: EvaosDesktopSession | null;
+  try {
+    session = normalizePersistedBetaSession(store.load());
+  } catch {
+    return null;
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  if (isSessionExpired(session, now)) {
+    try {
+      store.clear();
+    } catch {
+      // Ignore local cleanup failures; the expired token is never adopted.
+    }
+    return null;
+  }
+
+  return session;
+}
+
+function normalizePersistedBetaSession(value: unknown): EvaosDesktopSession | null {
+  const normalized = normalizeLegacyWorkbenchSession(value);
+  if (!normalized) {
+    return null;
+  }
+  return {
+    ...normalized,
+    source: 'beta-storage',
   };
 }
 
@@ -1091,6 +1227,103 @@ function loadReleasedWorkbenchKeychainSession(): EvaosDesktopSession | null {
   } catch {
     return null;
   }
+}
+
+type ElectronSafeStorageApi = {
+  isEncryptionAvailable: () => boolean;
+  encryptString: (plainText: string) => Buffer;
+  decryptString: (encrypted: Buffer) => string;
+};
+
+type ElectronAppApi = {
+  isReady: () => boolean;
+  getPath: (name: 'userData') => string;
+};
+
+function createDefaultBetaSessionStore(enabled: boolean): EvaosDesktopSessionStore | null {
+  if (!enabled) {
+    return null;
+  }
+  return createLazyElectronEncryptedSessionStore();
+}
+
+function createLazyElectronEncryptedSessionStore(): EvaosDesktopSessionStore {
+  return {
+    load: () => withDefaultBetaSessionStore((store) => store.load()) ?? null,
+    save: (session: EvaosDesktopSession) => {
+      const saved = withDefaultBetaSessionStore((store) => {
+        store.save(session);
+        return true;
+      });
+      if (!saved) {
+        throw new Error('evaos_beta_session_store_unavailable');
+      }
+    },
+    clear: () => {
+      const cleared = withDefaultBetaSessionStore((store) => {
+        store.clear();
+        return true;
+      });
+      if (!cleared) {
+        throw new Error('evaos_beta_session_store_unavailable');
+      }
+    },
+  };
+}
+
+function withDefaultBetaSessionStore<T>(operation: (store: EvaosDesktopSessionStore) => T): T | null {
+  const electron = loadElectronSessionStorageApis();
+  if (!electron?.app.isReady() || !electron.safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+
+  const sessionPath = join(electron.app.getPath('userData'), 'evaos-desktop-session.v1.enc');
+  return operation(createEncryptedFileSessionStore(sessionPath, electron.safeStorage));
+}
+
+function loadElectronSessionStorageApis(): { app: ElectronAppApi; safeStorage: ElectronSafeStorageApi } | null {
+  try {
+    // Keep this lazy so unit tests can instantiate the broker client outside Electron.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require('electron') as { app?: ElectronAppApi; safeStorage?: ElectronSafeStorageApi };
+    if (!electron.app || !electron.safeStorage) {
+      return null;
+    }
+    return { app: electron.app, safeStorage: electron.safeStorage };
+  } catch {
+    return null;
+  }
+}
+
+function createEncryptedFileSessionStore(
+  filePath: string,
+  safeStorage: ElectronSafeStorageApi
+): EvaosDesktopSessionStore {
+  return {
+    load: () => {
+      if (!existsSync(filePath)) {
+        return null;
+      }
+      const encrypted = readFileSync(filePath);
+      const decrypted = safeStorage.decryptString(encrypted);
+      return JSON.parse(decrypted) as unknown;
+    },
+    save: (session: EvaosDesktopSession) => {
+      mkdirSync(dirname(filePath), { recursive: true });
+      const payload = JSON.stringify({
+        accessToken: session.accessToken,
+        userEmail: session.userEmail,
+        expiresAt: session.expiresAt,
+      });
+      const encrypted = safeStorage.encryptString(payload);
+      writeFileSync(filePath, encrypted, { mode: 0o600 });
+    },
+    clear: () => {
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
+      }
+    },
+  };
 }
 
 function normalizeLegacyWorkbenchSession(value: unknown): EvaosDesktopSession | null {

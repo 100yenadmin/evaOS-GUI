@@ -10,6 +10,7 @@ import {
   EvaosBrokerSessionClient,
   EvaosBrokerSessionError,
   type EvaosBrokerFetch,
+  type EvaosDesktopSessionStore,
 } from '@/process/services/evaosBrokerSession';
 
 const NOW = new Date('2026-06-03T12:00:00.000Z');
@@ -26,6 +27,30 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 
 function fetchMock(): ReturnType<typeof vi.fn<EvaosBrokerFetch>> {
   return vi.fn<EvaosBrokerFetch>();
+}
+
+function memorySessionStore(initialValue: unknown = null): EvaosDesktopSessionStore & {
+  saved: unknown[];
+  cleared: number;
+} {
+  let value = initialValue;
+  return {
+    saved: [],
+    cleared: 0,
+    load: () => value,
+    save(session) {
+      value = {
+        accessToken: session.accessToken,
+        userEmail: session.userEmail,
+        expiresAt: session.expiresAt,
+      };
+      this.saved.push(value);
+    },
+    clear() {
+      value = null;
+      this.cleared += 1;
+    },
+  };
 }
 
 function requestBody(call: Parameters<EvaosBrokerFetch>): Record<string, unknown> {
@@ -143,6 +168,181 @@ describe('EvaosBrokerSessionClient', () => {
     expect(status.sessionEpoch).toBeGreaterThan(0);
     expect(JSON.stringify(status)).not.toContain('eds_created_session_secret_for_test');
     expect(JSON.stringify(status)).not.toContain('access_token');
+  });
+
+  it('persists claimed desktop sessions so the installed app can reload customer context after restart', async () => {
+    const fetchImpl = fetchMock();
+    const store = memorySessionStore();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        desktop_session: 'eds_created_session_secret_for_test',
+        desktop_session_expires_at: FUTURE,
+        email: 'admin@100yen.org',
+      })
+    );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    const status = await client.claimDeviceCode('ab-123');
+    const restarted = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    expect(status).toMatchObject({
+      state: 'authenticated',
+      source: 'memory',
+      userEmail: 'admin@100yen.org',
+    });
+    expect(store.saved).toHaveLength(1);
+    expect(JSON.stringify(store.saved)).toContain('eds_created_session_secret_for_test');
+    expect(restarted.getSessionStatus()).toMatchObject({
+      state: 'authenticated',
+      source: 'beta-storage',
+      userEmail: 'admin@100yen.org',
+      message: 'evaOS desktop session is active.',
+    });
+    expect(JSON.stringify(restarted.getSessionStatus())).not.toContain('eds_created_session_secret_for_test');
+  });
+
+  it('persists loopback desktop-auth callbacks and clears beta storage on logout', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const store = memorySessionStore();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_loopback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}&email=admin%40100yen.org`
+    );
+    const status = await client.revokeSession();
+    const restarted = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    expect(store.saved).toHaveLength(1);
+    expect(store.cleared).toBe(1);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({ action: 'revoke_desktop_session' });
+    expect(status).toMatchObject({ state: 'missing', authenticated: false });
+    expect(restarted.getSessionStatus()).toMatchObject({ state: 'missing', source: 'none' });
+  });
+
+  it('does not rehydrate a locally persisted token after logout when storage clear fails', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const persisted = {
+      accessToken: 'eds_unclearable_session_secret_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+    };
+    const store: EvaosDesktopSessionStore = {
+      load: () => persisted,
+      save: vi.fn(),
+      clear: () => {
+        throw new Error('encrypted store locked');
+      },
+    };
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    expect(client.getSessionStatus()).toMatchObject({ state: 'authenticated', source: 'beta-storage' });
+
+    const status = await client.revokeSession();
+
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({ action: 'revoke_desktop_session' });
+    expect(status).toMatchObject({ state: 'missing', source: 'none' });
+    expect(client.getSessionStatus()).toMatchObject({ state: 'missing', source: 'none' });
+  });
+
+  it('retries beta session persistence after an initial local storage failure', async () => {
+    const fetchImpl = fetchMock();
+    let rejectSave = true;
+    let stored: unknown = null;
+    const store: EvaosDesktopSessionStore = {
+      load: () => stored,
+      save: (session) => {
+        if (rejectSave) {
+          throw new Error('electron storage not ready');
+        }
+        stored = {
+          accessToken: session.accessToken,
+          userEmail: session.userEmail,
+          expiresAt: session.expiresAt,
+        };
+      },
+      clear: () => {
+        stored = null;
+      },
+    };
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        desktop_session: 'eds_retry_persist_session_secret_for_test',
+        desktop_session_expires_at: FUTURE,
+        email: 'admin@100yen.org',
+      })
+    );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    expect(stored).toBeNull();
+
+    rejectSave = false;
+    expect(client.getSessionStatus()).toMatchObject({ state: 'authenticated', source: 'memory' });
+
+    const restarted = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+    expect(restarted.getSessionStatus()).toMatchObject({
+      state: 'authenticated',
+      source: 'beta-storage',
+      userEmail: 'admin@100yen.org',
+    });
+    expect(JSON.stringify(restarted.getSessionStatus())).not.toContain('eds_retry_persist_session_secret_for_test');
+  });
+
+  it('drops expired persisted beta sessions instead of keeping the app in a stale signed-in state', () => {
+    const store = memorySessionStore({
+      accessToken: 'eds_expired_persisted_session_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: PAST,
+    });
+
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl: fetchMock(),
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    expect(client.getSessionStatus()).toMatchObject({ state: 'missing', source: 'none' });
+    expect(store.cleared).toBe(1);
   });
 
   it('rotates a renderer-safe session key for same-account desktop session handoffs', async () => {
