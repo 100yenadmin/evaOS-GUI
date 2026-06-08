@@ -41,6 +41,7 @@ function requestHeaders(call: Parameters<EvaosBrokerFetch>): Record<string, stri
 describe('EvaosBrokerSessionClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN;
   });
 
   it('fails closed without calling the broker when no desktop session exists', async () => {
@@ -433,7 +434,7 @@ describe('EvaosBrokerSessionClient', () => {
     expect(createRuntimeSurface).not.toHaveBeenCalled();
   });
 
-  it('does not adopt the released Workbench keychain desktop session by default', () => {
+  it('does not adopt the released Workbench keychain desktop session when the environment is explicitly overridden', () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
       fetchImpl,
@@ -454,6 +455,34 @@ describe('EvaosBrokerSessionClient', () => {
       source: 'none',
       message: 'Sign in to evaOS to connect this desktop shell.',
     });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('adopts the released Workbench keychain desktop session by default for the installed macOS app path', () => {
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      now: () => NOW,
+      legacyWorkbenchSessionLoader: () => ({
+        accessToken: 'eds_workbench_keychain_session_secret_for_test',
+        userEmail: 'admin@100yen.org',
+        expiresAt: FUTURE,
+        source: 'workbench-keychain',
+      }),
+    });
+
+    const status = client.getSessionStatus();
+
+    expect(status).toMatchObject({
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+      source: 'workbench-keychain',
+      message: 'evaOS desktop session is active.',
+    });
+    expect(JSON.stringify(status)).not.toContain('eds_workbench_keychain_session_secret_for_test');
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

@@ -1031,7 +1031,7 @@ function loadLegacyWorkbenchSession({
   loader?: () => EvaosDesktopSession | null;
   allowDefaultLoader: boolean;
 }): EvaosDesktopSession | null {
-  if (!shouldTryReleasedWorkbenchKeychain(env)) {
+  if (!shouldTryReleasedWorkbenchKeychain(env, allowDefaultLoader)) {
     return null;
   }
 
@@ -1048,7 +1048,10 @@ function loadLegacyWorkbenchSession({
   }
 }
 
-function shouldTryReleasedWorkbenchKeychain(env: Record<string, string | undefined>): boolean {
+function shouldTryReleasedWorkbenchKeychain(
+  env: Record<string, string | undefined>,
+  allowDefaultLoader: boolean
+): boolean {
   const preference = env.AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN?.trim().toLowerCase();
   if (preference === '1' || preference === 'true') {
     return true;
@@ -1056,7 +1059,7 @@ function shouldTryReleasedWorkbenchKeychain(env: Record<string, string | undefin
   if (preference === '0' || preference === 'false') {
     return false;
   }
-  return false;
+  return allowDefaultLoader;
 }
 
 function loadReleasedWorkbenchKeychainSession(): EvaosDesktopSession | null {
