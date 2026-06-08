@@ -134,8 +134,10 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const { customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
+  const autoAttachKeyRef = useRef<string | null>(null);
 
   const clearRuntimeEvidence = useCallback(() => {
+    autoAttachKeyRef.current = null;
     setStatusView(null);
     setRuntimeError(null);
     setActionStatus(null);
@@ -264,6 +266,10 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           setRuntimeSurface(null);
           setActionError(`${title} broker returned an invalid runtime surface handle.`);
           return;
+        } else if (action === 'attach') {
+          setRuntimeSurface(null);
+          setActionError(`${title} broker attach did not return a runtime surface handle.`);
+          return;
         }
         setActionStatus(runtimeActionSummary(response.data));
       } catch {
@@ -298,6 +304,34 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const canOpenRuntime =
     canRequestBrokerRuntimeAction && hasRuntimeAction(statusView, ['open_dashboard', 'open']) && !canAttachRuntime;
   const attachAvailable = canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(statusView));
+
+  useEffect(() => {
+    const selectedCustomerId = customerContext.selectedCustomerId;
+    if (!selectedCustomerId || !canAttachRuntime || runtimeSurface || actionTarget || actionError) {
+      return;
+    }
+    const autoAttachKey = [
+      selectedCustomerId,
+      runtimeKey,
+      statusView?.auditId ?? statusView?.lastCheckedAt ?? statusView?.status ?? 'unknown',
+    ].join(':');
+    if (autoAttachKeyRef.current === autoAttachKey) {
+      return;
+    }
+    autoAttachKeyRef.current = autoAttachKey;
+    void runRuntimeAction('attach');
+  }, [
+    actionError,
+    actionTarget,
+    canAttachRuntime,
+    customerContext.selectedCustomerId,
+    runRuntimeAction,
+    runtimeKey,
+    runtimeSurface,
+    statusView?.auditId,
+    statusView?.lastCheckedAt,
+    statusView?.status,
+  ]);
 
   return (
     <div

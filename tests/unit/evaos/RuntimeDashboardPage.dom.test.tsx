@@ -88,7 +88,7 @@ describe('RuntimeDashboardPage', () => {
     });
   });
 
-  it('invokes brokered runtime attach from the renderer without raw dashboard URLs', async () => {
+  it('fails closed when brokered runtime attach omits an opaque surface handle', async () => {
     render(
       <RuntimeDashboardPage
         runtimeKey='openclaw'
@@ -98,10 +98,7 @@ describe('RuntimeDashboardPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load status' }));
-
     expect(await screen.findByText('Broker action available')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Start / Attach' }));
 
     await waitFor(() =>
       expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
@@ -110,7 +107,8 @@ describe('RuntimeDashboardPage', () => {
         action: 'attach',
       })
     );
-    expect(await screen.findByText(/Opened evaOS through the evaOS broker/)).toBeInTheDocument();
+    expect(await screen.findByText(/evaOS broker attach did not return a runtime surface handle/)).toBeInTheDocument();
+    expect(screen.queryByTestId('evaos-runtime-surface-openclaw')).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
   });
 
@@ -168,7 +166,6 @@ describe('RuntimeDashboardPage', () => {
       );
 
       expect(await screen.findByText('Broker action available')).toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Start / Attach' }));
 
       const surface = await screen.findByTestId(`evaos-runtime-surface-${runtimeKey}`);
       expect(surface).toHaveAttribute('src', `evaos-runtime-surface://surface-${runtimeKey}-fixture/`);
