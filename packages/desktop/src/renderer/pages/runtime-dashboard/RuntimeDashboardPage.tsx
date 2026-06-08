@@ -284,11 +284,20 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const healthText = runtimeError ?? safeUiText(statusView?.healthSummary, subtitle);
   const settledState = runtimeSettledState(statusView, runtimeError);
   const actionsAllowedByState = settledState !== 'denied' && settledState !== 'offline';
-  const canAttachRuntime =
+  const canRequestBrokerRuntimeAction =
+    Boolean(customerContext.selectedCustomerId) &&
+    customerContext.loaded &&
+    !loadingStatus &&
+    !runtimeError &&
     actionsAllowedByState &&
-    hasRuntimeAction(statusView, ['attach_dashboard', 'start_attach', 'launch', 'runtime_launch']);
-  const canOpenRuntime = actionsAllowedByState && hasRuntimeAction(statusView, ['open_dashboard', 'open']);
-  const attachAvailable = actionsAllowedByState && hasSafeAttachAction(statusView);
+    Boolean(statusView);
+  const canAttachRuntime =
+    canRequestBrokerRuntimeAction &&
+    (!statusView?.actions?.length ||
+      hasRuntimeAction(statusView, ['attach_dashboard', 'start_attach', 'launch', 'runtime_launch']));
+  const canOpenRuntime =
+    canRequestBrokerRuntimeAction && hasRuntimeAction(statusView, ['open_dashboard', 'open']) && !canAttachRuntime;
+  const attachAvailable = canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(statusView));
 
   return (
     <div
@@ -410,7 +419,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
             )}
             <span>
               {attachAvailable
-                ? 'Broker evidence says this runtime has a safe open or attach action.'
+                ? 'This route can request a broker-enforced runtime action for the selected customer.'
                 : 'Runtime launch remains blocked until evaOS broker returns a safe runtime action. No raw dashboard URL is exposed in renderer state.'}
             </span>
           </div>

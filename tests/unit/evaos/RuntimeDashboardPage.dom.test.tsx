@@ -29,6 +29,7 @@ const customerContextMock = vi.hoisted(() => ({
     },
   ],
   loading: false,
+  loaded: true,
   summaryText: '1 customer target loaded',
   refreshTargets: vi.fn(),
   selectCustomer: vi.fn(),
@@ -198,7 +199,7 @@ describe('RuntimeDashboardPage', () => {
     expect(screen.getByText('live')).toBeInTheDocument();
   });
 
-  it('does not advertise runtime actions when status omits advisory actions', async () => {
+  it('keeps the brokered attach button visible when status omits advisory actions', async () => {
     evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
       success: true,
       data: {
@@ -223,10 +224,16 @@ describe('RuntimeDashboardPage', () => {
       />
     );
 
-    expect(await screen.findByText('Runtime action blocked')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
+    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start / Attach' }));
+    await waitFor(() =>
+      expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
+        customerId: 'fixture-customer-acme',
+        runtime: 'openclaw',
+        action: 'attach',
+      })
+    );
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
-    expect(evaosBrokerMock.runtimeAction).not.toHaveBeenCalled();
   });
 
   it('settles denied broker evidence without exposing attach or open actions', async () => {
