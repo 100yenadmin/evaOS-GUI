@@ -175,6 +175,42 @@ describe('TerminalPage', () => {
     expect(container.textContent).not.toMatch(/eds_|epg_|access_token|desktop_session|provider_grant|Bearer|launch_url/i);
   });
 
+  it('shows the precise broker blocker when Terminal attach omits the VM shell surface', async () => {
+    brokerMocks.runtimeStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'david-poku',
+        customerAccountId: 'acct_terminal',
+        runtimeKey: 'terminal',
+        displayLabel: 'Terminal',
+        status: 'running',
+        healthSummary: 'Terminal VM shell is ready.',
+        actions: ['attach_dashboard'],
+        sourcePointer: 'broker://runtime/terminal/audit_status',
+        auditId: 'audit_terminal_status',
+      },
+    });
+    brokerMocks.runtimeAction.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'attached',
+        runtimeKey: 'terminal',
+        customerId: 'david-poku',
+        message: 'Attached Terminal VM shell.',
+        backendEnforced: true,
+      },
+    });
+
+    render(<TerminalPage />);
+
+    expect(
+      await screen.findByText(
+        'Terminal broker did not return a VM shell runtime surface. Backend runtime_launch must return a customer-scoped launch_url or opaque runtimeSurface handle.'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('clears stale terminal evidence when customer context changes', async () => {
     const user = userEvent.setup();
     brokerMocks.runtimeStatus

@@ -114,6 +114,13 @@ function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
   return `evaos-runtime-${safeSurface}`;
 }
 
+function missingRuntimeSurfaceMessage(runtimeKey: IEvaosRuntimeKey, title: string): string {
+  if (runtimeKey === 'terminal') {
+    return 'Terminal broker did not return a VM shell runtime surface. Backend runtime_launch must return a customer-scoped launch_url or opaque runtimeSurface handle.';
+  }
+  return `${title} broker attach did not return a runtime surface handle.`;
+}
+
 type RuntimeDashboardPageProps = {
   runtimeKey: IEvaosRuntimeKey;
   title: string;
@@ -268,7 +275,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           return;
         } else if (action === 'attach') {
           setRuntimeSurface(null);
-          setActionError(`${title} broker attach did not return a runtime surface handle.`);
+          setActionError(missingRuntimeSurfaceMessage(runtimeKey, title));
           return;
         }
         setActionStatus(runtimeActionSummary(response.data));
