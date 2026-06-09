@@ -82,7 +82,7 @@ export const EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT =
   'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session';
 
 const PROVIDER_CONNECTION_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const BUSINESS_BROWSER_DEFAULT_URL = 'https://chatgpt.com/codex';
+type EvaosBusinessBrowserActionKind = 'runtime_launch' | 'browser_open_url' | 'browser_stop';
 const RELEASED_WORKBENCH_KEYCHAIN_SERVICE = 'com.electricsheephq.EvaDesktop.session';
 const RELEASED_WORKBENCH_KEYCHAIN_ACCOUNT = 'desktop-session';
 
@@ -564,7 +564,7 @@ export class EvaosBrokerSessionClient {
     request: IEvaosBusinessBrowserRequest,
     options: EvaosBusinessBrowserActionOptions = {}
   ): Promise<IEvaosBusinessBrowserActionResult> {
-    return this.businessBrowserAction(request, 'browser_open_url', BUSINESS_BROWSER_DEFAULT_URL, options);
+    return this.businessBrowserAction(request, 'runtime_launch', undefined, options);
   }
 
   async openBusinessBrowserUrl(
@@ -914,7 +914,7 @@ export class EvaosBrokerSessionClient {
 
   private async businessBrowserAction(
     request: IEvaosBusinessBrowserRequest,
-    action: 'browser_open_url' | 'browser_stop',
+    action: EvaosBusinessBrowserActionKind,
     url?: string,
     options: EvaosBusinessBrowserActionOptions = {}
   ): Promise<IEvaosBusinessBrowserActionResult> {
@@ -936,6 +936,7 @@ export class EvaosBrokerSessionClient {
       stripUndefined({
         action,
         customer_id: customerId,
+        runtime: action === 'runtime_launch' ? 'browser' : undefined,
         url,
       }),
       session
@@ -2088,7 +2089,7 @@ function businessBrowserViewFromRuntime(
 function sanitizeBusinessBrowserActionResult(
   raw: unknown,
   fallback: {
-    action: 'browser_open_url' | 'browser_stop';
+    action: EvaosBusinessBrowserActionKind;
     customerId: string;
     policy: IEvaosPeopleAccessPolicyView;
     url?: string;
@@ -2143,7 +2144,7 @@ function sanitizeBusinessBrowserActionResult(
 function createBusinessBrowserRuntimeSurface(
   record: Record<string, unknown>,
   fallback: {
-    action: 'browser_open_url' | 'browser_stop';
+    action: EvaosBusinessBrowserActionKind;
     customerId: string;
     policy: IEvaosPeopleAccessPolicyView;
   },
@@ -2165,7 +2166,11 @@ function createBusinessBrowserRuntimeSurface(
     customerId: fallback.customerId,
     runtimeKey: 'browser',
     displayLabel: browser?.displayLabel ?? 'Business Browser',
-    sourcePointer: safeText(record.source_pointer) ?? `broker:browser_open_url:${fallback.customerId}`,
+    sourcePointer:
+      safeText(record.source_pointer) ??
+      (fallback.action === 'runtime_launch'
+        ? 'broker:runtime_launch:browser'
+        : `broker:browser_open_url:${fallback.customerId}`),
     auditId: safeText(record.audit_id),
     expiresAt: safeIsoDate(record.expires_at),
   });
@@ -3656,12 +3661,16 @@ function safeProviderApprovalRequestSourcePointer(
 
 function safeBusinessBrowserActionSourcePointer(
   value: unknown,
-  action: 'browser_open_url' | 'browser_stop',
+  action: EvaosBusinessBrowserActionKind,
   customerId: string
 ): string | undefined {
   const text = safeText(value, 220);
   if (!text) {
     return undefined;
+  }
+
+  if (action === 'runtime_launch') {
+    return text === 'broker:runtime_launch:browser' ? text : undefined;
   }
 
   const expectedActionPointer = `broker:${action}:${customerId}`;

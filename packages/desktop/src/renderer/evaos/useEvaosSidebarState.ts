@@ -8,7 +8,11 @@ import { useMemo } from 'react';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
-import { canAccessEvaosAdminRuntimes, evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
+import {
+  canAccessEvaosAdminRuntimes,
+  evaosRouteAllowsMissingBroker,
+  evaosRuntimeRouteDecision,
+} from '@renderer/evaos/evaosRuntimeVisibility';
 import type { IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
 
 interface EvaosSidebarState {
@@ -95,9 +99,11 @@ export function useEvaosSidebarState(): EvaosSidebarState {
 
   const canSeeBrokeredRoute = useMemo(() => {
     return (routePath: string): boolean => {
-      if (!shellAuthenticated || brokerSessionStatus.loading || !brokerAuthenticated || !customerContext.loaded) {
+      if (!shellAuthenticated || brokerSessionStatus.loading) {
         return false;
       }
+      if (!brokerAuthenticated) return evaosRouteAllowsMissingBroker(routePath);
+      if (!customerContext.loaded) return false;
       return evaosRuntimeRouteDecision(routePath, routeContext).allowed;
     };
   }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);

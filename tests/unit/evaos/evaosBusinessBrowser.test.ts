@@ -334,7 +334,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
           message: 'Browser attached.',
           launch_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
           current_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
-          source_pointer: 'broker:browser_open_url:david-poku',
+          source_pointer: 'broker:runtime_launch:browser',
           audit_id: 'audit_launch_surface',
           backend_enforced: true,
           browser: browserRuntimeResponse({
@@ -350,9 +350,9 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
-      action: 'browser_open_url',
+      action: 'runtime_launch',
       customer_id: 'david-poku',
-      url: 'https://chatgpt.com/codex',
+      runtime: 'browser',
     });
     expect(createRuntimeSurface).toHaveBeenCalledWith(
       'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
@@ -360,7 +360,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
         customerId: 'david-poku',
         runtimeKey: 'browser',
         displayLabel: 'Business Browser',
-        sourcePointer: 'broker:browser_open_url:david-poku',
+        sourcePointer: 'broker:runtime_launch:browser',
         auditId: 'audit_launch_surface',
       })
     );
@@ -384,7 +384,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
           status: 'attached',
           customer_id: 'david-poku',
           message: 'Browser attached, but no surface target was issued.',
-          source_pointer: 'broker:browser_open_url:david-poku',
+          source_pointer: 'broker:runtime_launch:browser',
           audit_id: 'audit_missing_surface',
           backend_enforced: true,
           browser: browserRuntimeResponse({
@@ -416,7 +416,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
           customer_id: 'david-poku',
           message: 'Browser attached.',
           launch_url: 'http://runtime.example.test/browser',
-          source_pointer: 'broker:browser_open_url:david-poku',
+          source_pointer: 'broker:runtime_launch:browser',
           audit_id: 'audit_plaintext_surface',
           backend_enforced: true,
           browser: browserRuntimeResponse({

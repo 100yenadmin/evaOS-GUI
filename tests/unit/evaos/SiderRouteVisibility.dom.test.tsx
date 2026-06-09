@@ -282,7 +282,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });
 
-  it('keeps setup routes visible when the web session exists but broker session is missing', () => {
+  it('keeps Workbench parity routes visible as repair surfaces when the web session exists but broker session is missing', () => {
     brokerSessionMock.session = {
       state: 'missing',
       authenticated: false,
@@ -295,8 +295,13 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('Mission Control')).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
-    expect(screen.queryByText('People Access')).not.toBeInTheDocument();
-    expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
+    expect(screen.getByText('Design Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
+    expect(screen.getByText('Connected Apps')).toBeInTheDocument();
+    expect(screen.getByText('People & Access')).toBeInTheDocument();
+    expect(screen.getByText('Company Brain')).toBeInTheDocument();
+    expect(screen.getByText('Terminal')).toBeInTheDocument();
   });
 
   it('keys route visibility to the current broker session identity', () => {
@@ -377,6 +382,13 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
+    expect(screen.getByText('Design Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
+    expect(screen.getByText('Connected Apps')).toBeInTheDocument();
+    expect(screen.getByText('People & Access')).toBeInTheDocument();
+    expect(screen.getByText('Company Brain')).toBeInTheDocument();
+    expect(screen.getByText('Terminal')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign In' }));
 
@@ -526,6 +538,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('Hermes')).toBeInTheDocument();
     expect(screen.getByText('Mission Control')).toBeInTheDocument();
     expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('Terminal')).toBeInTheDocument();
     expect(screen.getByText('People & Access')).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
 
