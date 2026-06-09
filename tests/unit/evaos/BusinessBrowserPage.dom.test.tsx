@@ -233,18 +233,20 @@ describe('BusinessBrowserPage', () => {
     const { container } = render(<BusinessBrowserPage />);
 
     expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
-    await openDiagnostics(user);
-    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    expect(await screen.findByText('app.example.test/dashboard')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /^launch$/i }));
     await waitFor(() => {
       expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
     });
     expect(
       await screen.findByText('Browser launched. URL chatgpt.com/codex. Audit audit_launch_123.')
     ).toBeInTheDocument();
+    const surface = await screen.findByTestId('evaos-business-browser-surface');
+    expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-launch/');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-launch');
+
+    expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
+    await openDiagnostics(user);
+    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
+    expect(await screen.findByText('chatgpt.com/codex')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Open URL'), 'https://workspace.example.test/app?view=alpha#section');
     await user.click(screen.getByRole('button', { name: /^open$/i }));
@@ -400,6 +402,52 @@ describe('BusinessBrowserPage', () => {
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
   });
 
+  it('auto-mounts a running browser surface even when broker status omits advisory attach actions', async () => {
+    browserMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        ...browserView({ currentUrlDisplay: 'running-no-actions.example.test/dashboard' }),
+        actions: [],
+        status: 'running',
+        controlSessionActive: true,
+        canLaunch: true,
+        canOpenUrl: true,
+      },
+    });
+    browserMocks.launch.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'attached',
+        message: 'Business Browser attached.',
+        browser: browserView({ currentUrlDisplay: 'running-no-actions.example.test/dashboard' }),
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-browser-running-no-actions',
+          surfaceUri: 'evaos-runtime-surface://surface-browser-running-no-actions/',
+          partition: 'evaos-runtime-browser-running-no-actions',
+          customerId: 'david-poku',
+          runtimeKey: 'browser',
+          displayLabel: 'Business Browser',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:browser',
+          auditId: 'audit_browser_running_no_actions',
+        },
+        auditId: 'audit_browser_running_no_actions',
+        backendEnforced: true,
+      },
+    });
+
+    const { container } = render(<BusinessBrowserPage />);
+
+    await waitFor(() => {
+      expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
+    });
+    const surface = await screen.findByTestId('evaos-business-browser-surface');
+    expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-running-no-actions/');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-running-no-actions');
+    expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
+  });
+
   it('clears browser status when customer context changes before loading the next customer', async () => {
     const user = userEvent.setup();
     browserMocks.getStatus
@@ -435,16 +483,28 @@ describe('BusinessBrowserPage', () => {
         actions: [],
       }),
     }));
-    browserMocks.launch.mockResolvedValue({
+    browserMocks.launch.mockImplementation(async ({ customerId }: { customerId: string }) => ({
       success: true,
       data: {
         status: 'opened',
         message: 'Browser launched.',
-        browser: browserView({ customerId: 'second-customer', currentUrlDisplay: 'chatgpt.com/codex' }),
-        auditId: 'audit_launch_second',
+        browser: browserView({ customerId, currentUrlDisplay: 'chatgpt.com/codex' }),
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: `surface-browser-${customerId}`,
+          surfaceUri: `evaos-runtime-surface://surface-browser-${customerId}/`,
+          partition: `evaos-runtime-browser-${customerId}`,
+          customerId,
+          runtimeKey: 'browser',
+          displayLabel: 'Business Browser',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:browser',
+          auditId: `audit_launch_${customerId}`,
+        },
+        auditId: `audit_launch_${customerId}`,
         backendEnforced: true,
       },
-    });
+    }));
     browserMocks.openUrl.mockResolvedValue({
       success: true,
       data: {
@@ -476,13 +536,10 @@ describe('BusinessBrowserPage', () => {
     await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Second Customer' }));
-    await user.click(screen.getByRole('button', { name: /^check status$/i }));
-    expect(await screen.findByText('app.two.test/home')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /^launch$/i }));
     await waitFor(() => {
       expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'second-customer' });
     });
+    expect(await screen.findByText('Browser launched. Audit audit_launch_second-customer.')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Open URL'), 'https://workspace.example.test/app');
     await user.click(screen.getByRole('button', { name: /^open$/i }));

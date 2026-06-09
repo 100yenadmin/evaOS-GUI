@@ -79,6 +79,15 @@ function hasBrowserAutoAttachAction(view: IEvaosBusinessBrowserView): boolean {
   );
 }
 
+function canAutoAttachBrowserSurface(view: IEvaosBusinessBrowserView): boolean {
+  if (hasBrowserAutoAttachAction(view)) {
+    return true;
+  }
+  const status = view.status.toLowerCase();
+  const activeBrowser = /(running|active|ready|online|healthy)/.test(status) || view.controlSessionActive;
+  return view.canLaunch && activeBrowser;
+}
+
 const BusinessBrowserPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
@@ -350,7 +359,7 @@ const BusinessBrowserPage: React.FC = () => {
       runtimeSurface ||
       browserView.routeDenied ||
       !browserView.canLaunch ||
-      !hasBrowserAutoAttachAction(browserView) ||
+      !canAutoAttachBrowserSurface(browserView) ||
       actionTarget ||
       actionError ||
       activeActionRef.current

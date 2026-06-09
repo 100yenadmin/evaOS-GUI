@@ -373,6 +373,37 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     expect(JSON.stringify(result)).not.toMatch(/launch_url|eds_runtime_secret|desktop_session|token=raw|Bearer/i);
   });
 
+  it('fails closed when a brokered Business Browser action omits the runtime surface target', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'attached',
+          customer_id: 'david-poku',
+          message: 'Browser attached, but no surface target was issued.',
+          source_pointer: 'broker:browser_open_url:david-poku',
+          audit_id: 'audit_missing_surface',
+          backend_enforced: true,
+          browser: browserRuntimeResponse({
+            source_pointer: 'broker:runtime_status:browser',
+            audit_id: 'audit_browser_after_launch',
+          }),
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.launchBusinessBrowser({ customerId: 'david-poku' }, { createRuntimeSurface })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return a Business Browser runtime surface handle.',
+    });
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+  });
+
   it('fails closed when a Business Browser action returns a remote plaintext surface URL', async () => {
     const fetchImpl = fetchMock();
     const createRuntimeSurface = vi.fn();
