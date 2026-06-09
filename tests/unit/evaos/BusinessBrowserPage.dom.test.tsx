@@ -401,11 +401,11 @@ describe('BusinessBrowserPage', () => {
     browserMocks.getStatus
       .mockResolvedValueOnce({
         success: true,
-          data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard', actions: [] }),
+        data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard', actions: [] }),
       })
       .mockResolvedValueOnce({
         success: true,
-          data: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home', actions: [] }),
+        data: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home', actions: [] }),
       });
 
     render(<BusinessBrowserPage />);
@@ -507,7 +507,9 @@ describe('BusinessBrowserPage', () => {
 
     render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Business Browser broker returned evidence for a different customer.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Business Browser broker returned evidence for a different customer.')
+    ).toBeInTheDocument();
     expect(screen.queryByText('app.two.test/home')).not.toBeInTheDocument();
     expect(browserMocks.launch).not.toHaveBeenCalled();
   });
@@ -534,7 +536,9 @@ describe('BusinessBrowserPage', () => {
       expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
     });
 
-    expect(await screen.findByText('Business Browser broker returned evidence for a different customer.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Business Browser broker returned evidence for a different customer.')
+    ).toBeInTheDocument();
     expect(screen.queryByText('app.two.test/home')).not.toBeInTheDocument();
   });
 

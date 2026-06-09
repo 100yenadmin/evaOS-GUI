@@ -379,9 +379,7 @@ const BusinessBrowserPage: React.FC = () => {
         <header className='flex flex-wrap items-center justify-between gap-12px'>
           <div className='min-w-0'>
             <div className='flex flex-wrap items-center gap-8px'>
-              <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>
-                Business Browser
-              </h1>
+              <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>Business Browser</h1>
               {browserView ? <Tag color={statusColor(browserView)}>{browserView.status}</Tag> : null}
               {runtimeSurface ? <Tag color='green'>attached</Tag> : null}
             </div>
@@ -504,7 +502,9 @@ const BusinessBrowserPage: React.FC = () => {
                 onClick={() => setAdvancedOpen((open) => !open)}
               >
                 <span>
-                  <span className='block text-13px font-semibold leading-20px text-t-primary'>Advanced diagnostics</span>
+                  <span className='block text-13px font-semibold leading-20px text-t-primary'>
+                    Advanced diagnostics
+                  </span>
                   <span className='block text-11px leading-16px text-t-secondary'>
                     Customer targets, broker actions, URL open controls, and policy evidence.
                   </span>
@@ -568,82 +568,84 @@ const BusinessBrowserPage: React.FC = () => {
 
                   <section className='grid grid-cols-1 gap-12px lg:grid-cols-[minmax(0,1fr)_340px]'>
                     <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-                <div className='flex flex-wrap items-start justify-between gap-12px'>
-                  <div className='min-w-0'>
-                    <div className='flex flex-wrap items-center gap-6px'>
-                      <Tag color={statusColor(browserView)}>{browserView.status}</Tag>
-                      {browserView.authNeeded ? <Tag color='orange'>auth needed</Tag> : null}
-                      {browserView.captchaNeeded ? <Tag color='orange'>captcha</Tag> : null}
-                      {browserView.waitingOnUser ? <Tag color='orange'>waiting</Tag> : null}
-                    </div>
-                    <h2 className='m-0 mt-10px text-17px font-semibold leading-24px text-t-primary'>
-                      {browserView.displayLabel}
-                    </h2>
-                    <p className='m-0 mt-4px text-13px leading-20px text-t-secondary'>
-                      {browserView.healthSummary ?? 'No runtime health summary returned.'}
-                    </p>
-                  </div>
-                  <div className='flex max-w-full flex-wrap justify-end gap-8px'>
-                    <Button
-                      icon={<Browser theme='outline' size='15' />}
-                      disabled={actionInFlight || browserView.routeDenied || !browserView.canLaunch}
-                      loading={actionTarget === 'launch'}
-                      onClick={() => void runBrowserAction('launch')}
-                    >
-                      Launch
-                    </Button>
-                    <Button
-                      status='danger'
-                      icon={<CloseOne theme='outline' size='15' />}
-                      disabled={actionInFlight || browserView.routeDenied || !browserView.canStop}
-                      loading={actionTarget === 'stop'}
-                      onClick={() => void runBrowserAction('stop')}
-                    >
-                      Stop
-                    </Button>
-                  </div>
-                </div>
+                      <div className='flex flex-wrap items-start justify-between gap-12px'>
+                        <div className='min-w-0'>
+                          <div className='flex flex-wrap items-center gap-6px'>
+                            <Tag color={statusColor(browserView)}>{browserView.status}</Tag>
+                            {browserView.authNeeded ? <Tag color='orange'>auth needed</Tag> : null}
+                            {browserView.captchaNeeded ? <Tag color='orange'>captcha</Tag> : null}
+                            {browserView.waitingOnUser ? <Tag color='orange'>waiting</Tag> : null}
+                          </div>
+                          <h2 className='m-0 mt-10px text-17px font-semibold leading-24px text-t-primary'>
+                            {browserView.displayLabel}
+                          </h2>
+                          <p className='m-0 mt-4px text-13px leading-20px text-t-secondary'>
+                            {browserView.healthSummary ?? 'No runtime health summary returned.'}
+                          </p>
+                        </div>
+                        <div className='flex max-w-full flex-wrap justify-end gap-8px'>
+                          <Button
+                            icon={<Browser theme='outline' size='15' />}
+                            disabled={actionInFlight || browserView.routeDenied || !browserView.canLaunch}
+                            loading={actionTarget === 'launch'}
+                            onClick={() => void runBrowserAction('launch')}
+                          >
+                            Launch
+                          </Button>
+                          <Button
+                            status='danger'
+                            icon={<CloseOne theme='outline' size='15' />}
+                            disabled={actionInFlight || browserView.routeDenied || !browserView.canStop}
+                            loading={actionTarget === 'stop'}
+                            onClick={() => void runBrowserAction('stop')}
+                          >
+                            Stop
+                          </Button>
+                        </div>
+                      </div>
                     </article>
 
                     <aside className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-                <div className='flex items-center gap-8px'>
-                  <span className='flex size-30px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
-                    <Open theme='outline' size='17' />
-                  </span>
-                  <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Open URL</h2>
-                </div>
-                <div className='mt-12px flex flex-col gap-8px'>
-                  <Input
-                    aria-label='Open URL'
-                    value={openUrl}
-                    placeholder='https://example.com/work'
-                    disabled={actionInFlight || browserView.routeDenied || !browserView.canOpenUrl}
-                    onChange={setOpenUrl}
-                    onPressEnter={() => void runBrowserAction('openUrl')}
-                  />
-                  <Button
-                    type='primary'
-                    icon={<Open theme='outline' size='15' />}
-                    disabled={actionInFlight || browserView.routeDenied || !browserView.canOpenUrl || !openUrl.trim()}
-                    loading={actionTarget === 'openUrl'}
-                    onClick={() => void runBrowserAction('openUrl')}
-                  >
-                    Open
-                  </Button>
-                </div>
+                      <div className='flex items-center gap-8px'>
+                        <span className='flex size-30px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
+                          <Open theme='outline' size='17' />
+                        </span>
+                        <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Open URL</h2>
+                      </div>
+                      <div className='mt-12px flex flex-col gap-8px'>
+                        <Input
+                          aria-label='Open URL'
+                          value={openUrl}
+                          placeholder='https://example.com/work'
+                          disabled={actionInFlight || browserView.routeDenied || !browserView.canOpenUrl}
+                          onChange={setOpenUrl}
+                          onPressEnter={() => void runBrowserAction('openUrl')}
+                        />
+                        <Button
+                          type='primary'
+                          icon={<Open theme='outline' size='15' />}
+                          disabled={
+                            actionInFlight || browserView.routeDenied || !browserView.canOpenUrl || !openUrl.trim()
+                          }
+                          loading={actionTarget === 'openUrl'}
+                          onClick={() => void runBrowserAction('openUrl')}
+                        >
+                          Open
+                        </Button>
+                      </div>
                     </aside>
                   </section>
 
                   <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-              <div className='flex items-center gap-8px'>
-                <Shield theme='outline' size='17' />
-                <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Policy evidence</h2>
-              </div>
-              <div className='mt-10px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary md:grid-cols-3'>
-                <span>Account: {browserView.customerAccountId ?? '-'}</span>
-                <span>Customer: {browserView.customerId}</span>
-                <span>Source: {browserView.sourcePointer ?? '-'}</span>
-              </div>
+                    <div className='flex items-center gap-8px'>
+                      <Shield theme='outline' size='17' />
+                      <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Policy evidence</h2>
+                    </div>
+                    <div className='mt-10px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary md:grid-cols-3'>
+                      <span>Account: {browserView.customerAccountId ?? '-'}</span>
+                      <span>Customer: {browserView.customerId}</span>
+                      <span>Source: {browserView.sourcePointer ?? '-'}</span>
+                    </div>
                   </section>
                 </div>
               ) : null}

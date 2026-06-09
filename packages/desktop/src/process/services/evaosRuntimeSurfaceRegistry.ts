@@ -83,17 +83,17 @@ function registerEvaosRuntimeSurfaceProtocolForPartition(partition: string): voi
 }
 
 function handleEvaosRuntimeSurfaceRequest(request: Request): Response | Promise<Response> {
-    const surfaceId = surfaceIdFromRequestUrl(request.url);
-    const surface = surfaceId ? surfaces.get(surfaceId) : undefined;
-    if (!surface || isRuntimeSurfaceExpired(surface)) {
-      if (surfaceId) surfaces.delete(surfaceId);
-      return new Response(runtimeSurfaceMissingHtml(), {
-        status: 404,
-        headers: { 'content-type': 'text/html; charset=utf-8' },
-      });
-    }
+  const surfaceId = surfaceIdFromRequestUrl(request.url);
+  const surface = surfaceId ? surfaces.get(surfaceId) : undefined;
+  if (!surface || isRuntimeSurfaceExpired(surface)) {
+    if (surfaceId) surfaces.delete(surfaceId);
+    return new Response(runtimeSurfaceMissingHtml(), {
+      status: 404,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    });
+  }
 
-    return Response.redirect(surface.launchUrl, 302);
+  return Response.redirect(surface.launchUrl, 302);
 }
 
 function runtimeSurfacePartition(surfaceId: string): string {

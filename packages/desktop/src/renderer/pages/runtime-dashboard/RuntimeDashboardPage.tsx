@@ -378,7 +378,10 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           </div>
         </header>
 
-        <main className='flex min-h-0 flex-1 flex-col overflow-hidden' data-testid={`evaos-runtime-dashboard-${runtimeKey}`}>
+        <main
+          className='flex min-h-0 flex-1 flex-col overflow-hidden'
+          data-testid={`evaos-runtime-dashboard-${runtimeKey}`}
+        >
           {runtimeSurface ? (
             <section
               className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
@@ -389,9 +392,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                   <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
                     {safeUiText(runtimeSurface.displayLabel, title)}
                   </div>
-                  <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>
-                    {selectedCustomerLabel}
-                  </div>
+                  <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>{selectedCustomerLabel}</div>
                 </div>
                 <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
               </div>
@@ -513,9 +514,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                     : 'Runtime action blocked. No raw dashboard URL is exposed in renderer state.'}
                 </span>
               </div>
-              {actionStatus ? (
-                <div className='text-12px leading-18px text-t-secondary'>{actionStatus}</div>
-              ) : null}
+              {actionStatus ? <div className='text-12px leading-18px text-t-secondary'>{actionStatus}</div> : null}
               {actionError ? (
                 <div className='text-12px leading-18px text-[rgb(var(--danger-6))]'>{actionError}</div>
               ) : null}
