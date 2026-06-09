@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Button, Spin, Tag } from '@arco-design/web-react';
-import { Attention, Open, Refresh, Robot, Shield } from '@icon-park/react';
+import { Attention, Comment, Open, Refresh, Robot, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
+import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
 import type {
   IEvaosRuntimeActionResult,
@@ -153,6 +155,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const requestEpochRef = useRef(0);
   const autoAttachKeyRef = useRef<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const { openFeedback } = useFeedback();
 
   const clearRuntimeEvidence = useCallback(() => {
     autoAttachKeyRef.current = null;
@@ -327,6 +330,51 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const canOpenRuntime =
     canRequestBrokerRuntimeAction && hasRuntimeAction(statusView, ['open_dashboard', 'open']) && !canAttachRuntime;
   const attachAvailable = canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(statusView));
+  const supportReportContext = useMemo(
+    () =>
+      buildEvaosSupportReportContext({
+        surface: `runtime:${runtimeKey}`,
+        runtimeKey,
+        issueRef,
+        settledState: runtimeSurface ? 'loaded' : settledState,
+        status: runtimeSurface?.status ?? statusText,
+        healthSummary: runtimeSurface ? selectedCustomerLabel : healthText,
+        blocker: actionError ?? runtimeError,
+        sourcePointer: runtimeSurface?.sourcePointer ?? statusView?.sourcePointer,
+        auditIds: [runtimeSurface?.auditId, statusView?.auditId],
+        customer: {
+          selectedCustomerId: customerContext.selectedCustomerId,
+          selectedCustomerLabel,
+          summaryText: customerContext.summaryText,
+          roles: customerContext.roles,
+          scopes: customerContext.scopes,
+        },
+      }),
+    [
+      actionError,
+      customerContext.roles,
+      customerContext.scopes,
+      customerContext.selectedCustomerId,
+      customerContext.summaryText,
+      healthText,
+      issueRef,
+      runtimeError,
+      runtimeKey,
+      runtimeSurface,
+      selectedCustomerLabel,
+      settledState,
+      statusText,
+      statusView?.auditId,
+      statusView?.sourcePointer,
+    ]
+  );
+  const openSupportReport = useCallback(async () => {
+    try {
+      await openFeedback(supportReportContext);
+    } catch (error) {
+      console.error('[RuntimeDashboardPage] Failed to open evaOS support report:', error);
+    }
+  }, [openFeedback, supportReportContext]);
 
   useEffect(() => {
     const selectedCustomerId = customerContext.selectedCustomerId;
@@ -376,6 +424,13 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
             </p>
           </div>
           <div className='flex shrink-0 flex-wrap items-center gap-8px'>
+            <Button
+              type='secondary'
+              icon={<Comment theme='outline' size='16' />}
+              onClick={() => void openSupportReport()}
+            >
+              Report to support
+            </Button>
             {actionError || runtimeError ? (
               <Button
                 type='primary'

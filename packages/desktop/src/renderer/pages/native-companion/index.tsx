@@ -7,7 +7,7 @@
 import React from 'react';
 import classNames from 'classnames';
 import { Button, Tag } from '@arco-design/web-react';
-import { Computer, Link, Shield } from '@icon-park/react';
+import { Comment, Computer, Link, Shield } from '@icon-park/react';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import {
   EVAOS_NATIVE_COMPANION_BOUNDARY,
@@ -27,6 +27,8 @@ import {
   type NativeCompanionTone,
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
+import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 
 const NativeCompanionPage: React.FC = () => {
   const layout = useLayoutContext();
@@ -35,7 +37,44 @@ const NativeCompanionPage: React.FC = () => {
   const { status, loading, error, refresh, openReleasedWorkbench } = useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);
+  const { openFeedback } = useFeedback();
   const viewModel = getNativeCompanionRepairViewModel({ status, loading, error });
+  const supportReportContext = React.useMemo(
+    () =>
+      buildEvaosSupportReportContext({
+        surface: 'native-companion',
+        issueRef: '#179',
+        settledState: status?.readiness ?? viewModel.statusLabel,
+        status: status?.readiness ?? (loading ? 'checking' : undefined),
+        healthSummary: status?.summaryText ?? viewModel.summary,
+        blocker: error ?? (viewModel.statusTone === 'ready' ? undefined : viewModel.supportText),
+        sourcePointer: status?.sourcePointer,
+        auditIds: [
+          ...(status?.audit.auditIds ?? []),
+          status?.bridgeCli.auditId,
+          status?.customerMac.auditId,
+          status?.iPhone.auditId,
+        ],
+        customer: {
+          summaryText: 'Native companion route; customer runtime context is broker-owned.',
+        },
+      }),
+    [
+      error,
+      loading,
+      status?.audit.auditIds,
+      status?.bridgeCli.auditId,
+      status?.customerMac.auditId,
+      status?.iPhone.auditId,
+      status?.readiness,
+      status?.sourcePointer,
+      status?.summaryText,
+      viewModel.statusLabel,
+      viewModel.statusTone,
+      viewModel.summary,
+      viewModel.supportText,
+    ]
+  );
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
@@ -51,6 +90,14 @@ const NativeCompanionPage: React.FC = () => {
       await refresh();
     }
   }, [handleOpenReleasedWorkbench, refresh, viewModel.primaryAction.kind]);
+
+  const handleOpenSupportReport = React.useCallback(async () => {
+    try {
+      await openFeedback(supportReportContext);
+    } catch (supportError) {
+      console.error('[NativeCompanionPage] Failed to open evaOS support report:', supportError);
+    }
+  }, [openFeedback, supportReportContext]);
 
   return (
     <div
@@ -69,6 +116,13 @@ const NativeCompanionPage: React.FC = () => {
             </p>
           </div>
           <div className='flex flex-wrap items-center gap-8px'>
+            <Button
+              type='secondary'
+              icon={<Comment theme='outline' size='16' />}
+              onClick={() => void handleOpenSupportReport()}
+            >
+              Report to support
+            </Button>
             <Tag color={tagColorForTone(viewModel.statusTone)}>{viewModel.statusLabel}</Tag>
             <Tag color={violations.length === 0 ? 'green' : 'orange'}>
               {violations.length === 0 ? 'Boundary clean' : 'Boundary blocked'}

@@ -14,6 +14,10 @@ const evaosBrokerMock = vi.hoisted(() => ({
   runtimeAction: vi.fn(),
 }));
 
+const feedbackMock = vi.hoisted(() => ({
+  openFeedback: vi.fn(),
+}));
+
 const customerContextMock = vi.hoisted(() => ({
   selectedCustomerId: 'fixture-customer-acme',
   selectedTarget: {
@@ -45,6 +49,10 @@ vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   }),
 }));
 
+vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
+  useFeedback: () => feedbackMock,
+}));
+
 vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
     runtimeStatus: {
@@ -59,6 +67,7 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
 describe('RuntimeDashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.location.hash = '#/evaos';
     evaosBrokerMock.runtimeStatus.mockResolvedValue({
       success: true,
       data: {
@@ -270,6 +279,62 @@ describe('RuntimeDashboardPage', () => {
     });
     expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+  });
+
+  it('opens an evaOS support report with route, customer, audit ids, and screenshot request', async () => {
+    window.location.hash = '#/terminal';
+    evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'fixture-customer-acme',
+        customerAccountId: 'fixture-account-acme',
+        runtimeKey: 'terminal',
+        displayLabel: 'Terminal',
+        status: 'denied',
+        healthSummary: 'Terminal access denied by broker policy.',
+        actions: [],
+        sourcePointer: 'broker:runtime_status:terminal',
+        auditId: 'audit-terminal-denied',
+      },
+    });
+
+    render(
+      <RuntimeDashboardPage runtimeKey='terminal' title='Terminal' subtitle='Authorized VM shell.' issueRef='#228' />
+    );
+
+    expect(await screen.findByText(/Terminal access denied by broker policy/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Report to support' }));
+
+    await waitFor(() => expect(feedbackMock.openFeedback).toHaveBeenCalledTimes(1));
+    const payload = feedbackMock.openFeedback.mock.calls[0][0];
+    expect(payload.autoScreenshot).toBe(true);
+    expect(payload.tags).toMatchObject({
+      support_surface: 'runtime:terminal',
+      evaos_route: '/terminal',
+      evaos_state: 'denied',
+      evaos_runtime: 'terminal',
+      evaos_issue: '#228',
+    });
+    expect(payload.extra).toMatchObject({
+      support_packet_version: 'evaos.support_report.v1',
+      product: 'evaOS Workbench Beta',
+      bundle_id: 'com.evaos.workbench.beta',
+      protocol_scheme: 'evaos-workbench-beta',
+      route: '/terminal',
+      runtime_key: 'terminal',
+      source_pointer: 'broker:runtime_status:terminal',
+      audit_ids: ['audit-terminal-denied'],
+      customer: {
+        selected_customer_id: 'fixture-customer-acme',
+        selected_customer_label: 'Acme Fixture Co',
+        summary: '1 customer target loaded',
+      },
+      screenshot: {
+        auto_capture_requested: true,
+      },
+    });
+    expect(JSON.stringify(payload)).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
   });
 
   it('maps open-dashboard evidence to a safe broker open action', async () => {

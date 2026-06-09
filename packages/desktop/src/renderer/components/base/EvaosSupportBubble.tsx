@@ -7,22 +7,21 @@
 import React, { useCallback } from 'react';
 import { Comment } from '@icon-park/react';
 import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
+import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 
 const EvaosSupportBubble: React.FC = () => {
   const { openFeedback } = useFeedback();
 
   const handleClick = useCallback(() => {
-    openFeedback({
-      module: 'other',
-      autoScreenshot: true,
-      tags: {
-        support_surface: 'evaos_beta_bubble',
-      },
-      extra: {
-        route: window.location.hash || window.location.pathname,
-        product: 'evaOS Workbench Beta',
-      },
-    }).catch((error) => {
+    openFeedback(
+      buildEvaosSupportReportContext({
+        surface: 'evaos_beta_bubble',
+        settledState: 'support_requested',
+        customer: {
+          summaryText: 'Use the route-level report action when customer or broker audit context is visible.',
+        },
+      })
+    ).catch((error) => {
       console.error('[EvaosSupportBubble] Failed to open feedback:', error);
     });
   }, [openFeedback]);
