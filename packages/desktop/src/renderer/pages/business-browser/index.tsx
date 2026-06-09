@@ -78,7 +78,7 @@ function hasBrowserAutoAttachAction(view: IEvaosBusinessBrowserView): boolean {
 }
 
 function canAutoAttachBrowserSurface(view: IEvaosBusinessBrowserView): boolean {
-  if (hasBrowserAutoAttachAction(view)) {
+  if (view.canLaunch && hasBrowserAutoAttachAction(view)) {
     return true;
   }
   const status = view.status.toLowerCase();
