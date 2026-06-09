@@ -161,6 +161,7 @@ describe('evaOS local product fixture', () => {
       runtimeSurface: {
         schemaVersion: 'evaos.runtime_surface.v1',
         surfaceUri: 'evaos-runtime-surface://fixture-fixture-customer-acme-browser/',
+        partition: 'evaos-runtime-fixture-fixture-customer-acme-browser',
         customerId: 'fixture-customer-acme',
         runtimeKey: 'browser',
       },
@@ -174,6 +175,7 @@ describe('evaOS local product fixture', () => {
       runtimeSurface: {
         schemaVersion: 'evaos.runtime_surface.v1',
         surfaceUri: 'evaos-runtime-surface://fixture-fixture-customer-acme-browser/',
+        partition: 'evaos-runtime-fixture-fixture-customer-acme-browser',
         customerId: 'fixture-customer-acme',
         runtimeKey: 'browser',
       },

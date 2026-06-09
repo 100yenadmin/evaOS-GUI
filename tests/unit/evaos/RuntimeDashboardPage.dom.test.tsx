@@ -98,8 +98,6 @@ describe('RuntimeDashboardPage', () => {
       />
     );
 
-    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
-
     await waitFor(() =>
       expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
         customerId: 'fixture-customer-acme',
@@ -145,6 +143,7 @@ describe('RuntimeDashboardPage', () => {
             schemaVersion: 'evaos.runtime_surface.v1',
             surfaceId: `surface-${runtimeKey}-fixture`,
             surfaceUri: `evaos-runtime-surface://surface-${runtimeKey}-fixture/`,
+            partition: `evaos-runtime-${runtimeKey}-fixture`,
             customerId: 'fixture-customer-acme',
             runtimeKey,
             displayLabel: title,
@@ -165,11 +164,16 @@ describe('RuntimeDashboardPage', () => {
         />
       );
 
-      expect(await screen.findByText('Broker action available')).toBeInTheDocument();
-
+      await waitFor(() =>
+        expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
+          customerId: 'fixture-customer-acme',
+          runtime: runtimeKey,
+          action: 'attach',
+        })
+      );
       const surface = await screen.findByTestId(`evaos-runtime-surface-${runtimeKey}`);
       expect(surface).toHaveAttribute('src', `evaos-runtime-surface://surface-${runtimeKey}-fixture/`);
-      expect(surface).toHaveAttribute('partition', `evaos-runtime-surface-${runtimeKey}-fixture`);
+      expect(surface).toHaveAttribute('partition', `evaos-runtime-${runtimeKey}-fixture`);
       expect(surface).not.toHaveAttribute('allowpopups', 'true');
       expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=|launch_url/i);
       expect(document.body.textContent).not.toContain('runtime.example.test');
@@ -192,11 +196,10 @@ describe('RuntimeDashboardPage', () => {
         runtime: 'openclaw',
       })
     );
-    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
     expect(screen.getByText('live')).toBeInTheDocument();
   });
 
-  it('keeps the brokered attach button visible when status omits advisory actions', async () => {
+  it('auto-attaches through the broker when status omits advisory actions', async () => {
     evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
       success: true,
       data: {
@@ -221,8 +224,6 @@ describe('RuntimeDashboardPage', () => {
       />
     );
 
-    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Start / Attach' }));
     await waitFor(() =>
       expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
         customerId: 'fixture-customer-acme',
@@ -231,6 +232,7 @@ describe('RuntimeDashboardPage', () => {
       })
     );
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
   });
 
   it('settles denied broker evidence without exposing attach or open actions', async () => {
@@ -260,7 +262,10 @@ describe('RuntimeDashboardPage', () => {
     );
 
     expect((await screen.findAllByText('denied')).length).toBeGreaterThan(0);
-    expect(screen.getByText('Runtime action blocked')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
+    await waitFor(() => {
+      expect(screen.getByText(/Runtime action blocked/)).toBeInTheDocument();
+    });
     expect(screen.queryByRole('button', { name: 'Start / Attach' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
   });
@@ -310,7 +315,7 @@ describe('RuntimeDashboardPage', () => {
     );
 
     expect(await screen.findByText('repair')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     await waitFor(() =>
       expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
@@ -319,6 +324,7 @@ describe('RuntimeDashboardPage', () => {
         action: 'open',
       })
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
     expect(await screen.findByText(/Target openclaw.fixture.example.test\/workspace/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/access_token|desktop_session|Bearer|token=/i);
   });

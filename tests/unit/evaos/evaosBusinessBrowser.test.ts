@@ -316,6 +316,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
       schemaVersion: 'evaos.runtime_surface.v1' as const,
       surfaceId: 'surface-browser-live',
       surfaceUri: 'evaos-runtime-surface://surface-browser-live/',
+      partition: 'evaos-runtime-browser-live',
       customerId: 'david-poku',
       runtimeKey: 'browser' as const,
       displayLabel: 'Business Browser',
@@ -365,6 +366,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     );
     expect(result.runtimeSurface).toMatchObject({
       surfaceUri: 'evaos-runtime-surface://surface-browser-live/',
+      partition: 'evaos-runtime-browser-live',
       customerId: 'david-poku',
       runtimeKey: 'browser',
     });

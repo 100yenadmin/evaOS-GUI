@@ -106,6 +106,7 @@ export interface IEvaosRuntimeSurfaceView {
   schemaVersion: 'evaos.runtime_surface.v1';
   surfaceId: string;
   surfaceUri: string;
+  partition: string;
   customerId: string;
   runtimeKey: IEvaosRuntimeKey;
   displayLabel: string;

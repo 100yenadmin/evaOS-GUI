@@ -91,6 +91,7 @@ function browserView(
     canLaunch: boolean;
     canOpenUrl: boolean;
     canStop: boolean;
+    actions: string[];
   }> = {}
 ) {
   const routeDenied = overrides.routeDenied ?? false;
@@ -126,7 +127,7 @@ function browserView(
     canLaunch: overrides.canLaunch ?? !routeDenied,
     canOpenUrl: overrides.canOpenUrl ?? !routeDenied,
     canStop: overrides.canStop ?? !routeDenied,
-    actions: routeDenied ? [] : ['browser_open_url', 'browser_stop'],
+    actions: overrides.actions ?? (routeDenied ? [] : ['browser_open_url', 'browser_stop']),
     sourcePointer: routeDenied ? undefined : 'broker:runtime_status:browser',
     auditId: routeDenied ? undefined : 'audit_browser_123',
     policyAuditId: 'audit_policy_123',
@@ -139,6 +140,10 @@ function deferred<T>() {
     resolve = nextResolve;
   });
   return { promise, resolve };
+}
+
+async function openDiagnostics(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Diagnostics' }));
 }
 
 describe('BusinessBrowserPage', () => {
@@ -169,7 +174,7 @@ describe('BusinessBrowserPage', () => {
     const user = userEvent.setup();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
-      data: browserView(),
+      data: browserView({ actions: [] }),
     });
     browserMocks.launch.mockResolvedValue({
       success: true,
@@ -181,6 +186,7 @@ describe('BusinessBrowserPage', () => {
           schemaVersion: 'evaos.runtime_surface.v1',
           surfaceId: 'surface-browser-launch',
           surfaceUri: 'evaos-runtime-surface://surface-browser-launch/',
+          partition: 'evaos-runtime-browser-launch',
           customerId: 'david-poku',
           runtimeKey: 'browser',
           displayLabel: 'Business Browser',
@@ -226,10 +232,11 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
+    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
+    await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-
     expect(await screen.findByText('app.example.test/dashboard')).toBeInTheDocument();
-    expect(screen.getByText('Browser is ready')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^launch$/i }));
     await waitFor(() => {
@@ -265,7 +272,7 @@ describe('BusinessBrowserPage', () => {
     const user = userEvent.setup();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
-      data: browserView(),
+      data: browserView({ actions: [] }),
     });
     browserMocks.launch.mockResolvedValue({
       success: true,
@@ -277,6 +284,7 @@ describe('BusinessBrowserPage', () => {
           schemaVersion: 'evaos.runtime_surface.v1',
           surfaceId: 'surface-browser-fixture',
           surfaceUri: 'evaos-runtime-surface://surface-browser-fixture/',
+          partition: 'evaos-runtime-browser-fixture',
           customerId: 'david-poku',
           runtimeKey: 'browser',
           displayLabel: 'Business Browser',
@@ -290,12 +298,13 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
+    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
+    await openDiagnostics(user);
     await user.click(screen.getByRole('button', { name: /^launch$/i }));
 
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-fixture/');
-    expect(surface).toHaveAttribute('partition', 'evaos-runtime-surface-browser-fixture');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-fixture');
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
     expect(container.textContent).not.toContain('runtime.example.test');
@@ -319,6 +328,7 @@ describe('BusinessBrowserPage', () => {
           schemaVersion: 'evaos.runtime_surface.v1',
           surfaceId: 'surface-browser-auto-attach',
           surfaceUri: 'evaos-runtime-surface://surface-browser-auto-attach/',
+          partition: 'evaos-runtime-browser-auto-attach',
           customerId: 'david-poku',
           runtimeKey: 'browser',
           displayLabel: 'Business Browser',
@@ -333,13 +343,12 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('customer.example.test/dashboard')).toBeInTheDocument();
     await waitFor(() => {
       expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
     });
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-auto-attach/');
-    expect(surface).toHaveAttribute('partition', 'evaos-runtime-surface-browser-auto-attach');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-auto-attach');
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
   });
@@ -362,6 +371,7 @@ describe('BusinessBrowserPage', () => {
           schemaVersion: 'evaos.runtime_surface.v1',
           surfaceId: 'surface-browser-open-url',
           surfaceUri: 'evaos-runtime-surface://surface-browser-open-url/',
+          partition: 'evaos-runtime-browser-open-url',
           customerId: 'david-poku',
           runtimeKey: 'browser',
           displayLabel: 'Business Browser',
@@ -376,13 +386,12 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('running.example.test/dashboard')).toBeInTheDocument();
     await waitFor(() => {
       expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
     });
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-open-url/');
-    expect(surface).toHaveAttribute('partition', 'evaos-runtime-surface-browser-open-url');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-open-url');
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
   });
@@ -392,15 +401,16 @@ describe('BusinessBrowserPage', () => {
     browserMocks.getStatus
       .mockResolvedValueOnce({
         success: true,
-        data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard' }),
+          data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard', actions: [] }),
       })
       .mockResolvedValueOnce({
         success: true,
-        data: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home' }),
+          data: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home', actions: [] }),
       });
 
     render(<BusinessBrowserPage />);
 
+    await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
     expect(await screen.findByText('app.one.test/dashboard')).toBeInTheDocument();
 
@@ -413,10 +423,14 @@ describe('BusinessBrowserPage', () => {
 
   it('uses the selected non-default customer for brokered browser controls', async () => {
     const user = userEvent.setup();
-    browserMocks.getStatus.mockResolvedValue({
+    browserMocks.getStatus.mockImplementation(async ({ customerId }: { customerId: string }) => ({
       success: true,
-      data: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home' }),
-    });
+      data: browserView({
+        customerId,
+        currentUrlDisplay: customerId === 'second-customer' ? 'app.two.test/home' : 'app.one.test/dashboard',
+        actions: [],
+      }),
+    }));
     browserMocks.launch.mockResolvedValue({
       success: true,
       data: {
@@ -455,9 +469,10 @@ describe('BusinessBrowserPage', () => {
 
     render(<BusinessBrowserPage />);
 
+    await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Second Customer' }));
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^check status$/i }));
     expect(await screen.findByText('app.two.test/home')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^launch$/i }));
@@ -480,43 +495,61 @@ describe('BusinessBrowserPage', () => {
     });
   });
 
-  it('ignores stale browser status when the customer context changes before the request settles', async () => {
-    const user = userEvent.setup();
-    const firstStatus = deferred<{ success: true; data: ReturnType<typeof browserView> }>();
-    browserMocks.getStatus.mockReturnValueOnce(firstStatus.promise).mockResolvedValueOnce({
+  it('fails closed when broker browser evidence is scoped to a different customer', async () => {
+    browserMocks.getStatus.mockResolvedValueOnce({
       success: true,
-      data: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home' }),
+      data: browserView({
+        customerId: 'second-customer',
+        currentUrlDisplay: 'app.two.test/home',
+        actions: ['browser_launch'],
+      }),
     });
 
     render(<BusinessBrowserPage />);
 
-    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Second Customer' }));
-
-    await act(async () => {
-      firstStatus.resolve({
-        success: true,
-        data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard' }),
-      });
-    });
-
-    expect(screen.queryByText('app.one.test/dashboard')).not.toBeInTheDocument();
-
-    expect(await screen.findByText('app.two.test/home')).toBeInTheDocument();
+    expect(await screen.findByText('Business Browser broker returned evidence for a different customer.')).toBeInTheDocument();
+    expect(screen.queryByText('app.two.test/home')).not.toBeInTheDocument();
+    expect(browserMocks.launch).not.toHaveBeenCalled();
   });
 
-  it('accepts broker-canonical browser evidence for the selected customer target', async () => {
-    const user = userEvent.setup();
+  it('fails closed when a broker action returns browser evidence for a different customer', async () => {
     browserMocks.getStatus.mockResolvedValue({
       success: true,
-      data: browserView({ customerId: 'canonical-david', currentUrlDisplay: 'canonical.example.test/home' }),
+      data: browserView({ customerId: 'david-poku', actions: ['browser_launch'] }),
     });
     browserMocks.launch.mockResolvedValue({
       success: true,
       data: {
         status: 'opened',
         message: 'Browser launched.',
-        browser: browserView({ customerId: 'canonical-david', currentUrlDisplay: 'canonical.example.test/launched' }),
+        browser: browserView({ customerId: 'second-customer', currentUrlDisplay: 'app.two.test/home' }),
+        auditId: 'audit_launch_wrong_customer',
+        backendEnforced: true,
+      },
+    });
+
+    render(<BusinessBrowserPage />);
+
+    await waitFor(() => {
+      expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
+    });
+
+    expect(await screen.findByText('Business Browser broker returned evidence for a different customer.')).toBeInTheDocument();
+    expect(screen.queryByText('app.two.test/home')).not.toBeInTheDocument();
+  });
+
+  it('accepts broker browser evidence scoped to the selected customer target', async () => {
+    const user = userEvent.setup();
+    browserMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'canonical.example.test/home', actions: [] }),
+    });
+    browserMocks.launch.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'opened',
+        message: 'Browser launched.',
+        browser: browserView({ customerId: 'david-poku', currentUrlDisplay: 'canonical.example.test/launched' }),
         auditId: 'audit_canonical_customer',
         backendEnforced: true,
       },
@@ -524,10 +557,11 @@ describe('BusinessBrowserPage', () => {
 
     render(<BusinessBrowserPage />);
 
+    await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^check status$/i }));
     expect(await screen.findByText('canonical.example.test/home')).toBeInTheDocument();
-    expect(screen.getByText('Customer: canonical-david')).toBeInTheDocument();
+    expect(screen.getByText('Customer: david-poku')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^launch$/i }));
     await waitFor(() => {
@@ -541,16 +575,17 @@ describe('BusinessBrowserPage', () => {
     const staleStatus = deferred<{ success: true; data: ReturnType<typeof browserView> }>();
     browserMocks.getStatus.mockResolvedValueOnce({
       success: true,
-      data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard' }),
+      data: browserView({ customerId: 'david-poku', currentUrlDisplay: 'app.one.test/dashboard', actions: [] }),
     });
     browserMocks.getStatus.mockReturnValueOnce(staleStatus.promise);
 
     render(<BusinessBrowserPage />);
 
+    await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
     expect(await screen.findByText('app.one.test/dashboard')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^check status$/i }));
     await act(async () => {
       selectEvaosCustomer('second-customer');
     });
@@ -583,14 +618,15 @@ describe('BusinessBrowserPage', () => {
     }>();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
-      data: browserView(),
+      data: browserView({ actions: [] }),
     });
     browserMocks.launch.mockReturnValueOnce(launchResult.promise);
 
     render(<BusinessBrowserPage />);
 
+    await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    await user.click(screen.getByRole('button', { name: /^check status$/i }));
     await screen.findByText('app.example.test/dashboard');
     await user.type(screen.getByLabelText('Open URL'), 'https://workspace.example.test/app');
 
@@ -625,13 +661,11 @@ describe('BusinessBrowserPage', () => {
 
     render(<BusinessBrowserPage />);
 
-    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
-
     expect(await screen.findByText('Route denied')).toBeInTheDocument();
     expect(
       screen.getByText('Business Browser requires the open_business_browser scope for this customer account.')
     ).toBeInTheDocument();
+    await openDiagnostics(user);
     expect(screen.getByRole('button', { name: /^launch$/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^open$/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^stop$/i })).toBeDisabled();
@@ -644,7 +678,7 @@ describe('BusinessBrowserPage', () => {
     const user = userEvent.setup();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
-      data: browserView(),
+      data: browserView({ actions: [] }),
     });
     browserMocks.launch.mockResolvedValue({
       success: false,
@@ -653,13 +687,13 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^load$/i }));
+    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
+    await openDiagnostics(user);
     await screen.findByText('app.example.test/dashboard');
 
     await user.click(screen.getByRole('button', { name: /^launch$/i }));
 
-    expect(await screen.findByText('Backend denied the browser action.')).toBeInTheDocument();
+    expect((await screen.findAllByText('Backend denied the browser action.')).length).toBeGreaterThan(0);
     expect(container.textContent).not.toContain('eds_raw_backend_secret');
   });
 });

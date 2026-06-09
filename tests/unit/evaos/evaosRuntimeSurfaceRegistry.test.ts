@@ -9,16 +9,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const protocolHandle = vi.hoisted(() => vi.fn());
+const partitionProtocolHandle = vi.hoisted(() => vi.fn());
+const fromPartition = vi.hoisted(() => vi.fn(() => ({ protocol: { handle: partitionProtocolHandle } })));
 
 vi.mock('electron', () => ({
   protocol: {
     handle: protocolHandle,
+  },
+  session: {
+    fromPartition,
   },
 }));
 
 async function loadRegistry() {
   vi.resetModules();
   protocolHandle.mockClear();
+  partitionProtocolHandle.mockClear();
+  fromPartition.mockClear();
   return import('@process/services/evaosRuntimeSurfaceRegistry');
 }
 
@@ -56,6 +63,20 @@ describe('evaOS runtime surface registry', () => {
       'https://runtime.example.test/openclaw?desktop_session=eds_runtime_launch_secret#token=bad'
     );
     expect(JSON.stringify(surface)).not.toMatch(/runtime\\.example\\.test|desktop_session|token=bad|launch_url/i);
+  });
+
+  it('returns a main-process-owned webview partition and registers the runtime protocol on that partition', async () => {
+    const registry = await loadRegistry();
+    const surface = registry.createEvaosRuntimeSurface('https://runtime.example.test/openclaw', {
+      customerId: 'fixture-customer-acme',
+      runtimeKey: 'openclaw',
+      displayLabel: 'evaOS',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    expect(surface.partition).toBe(`evaos-runtime-${surface.surfaceId}`);
+    expect(fromPartition).toHaveBeenCalledWith(surface.partition);
+    expect(partitionProtocolHandle).toHaveBeenCalledWith('evaos-runtime-surface', expect.any(Function));
   });
 
   it('expires and clears runtime surface handles in main-process custody', async () => {

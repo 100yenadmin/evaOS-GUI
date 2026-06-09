@@ -105,13 +105,13 @@ function runtimeSurfaceMatches(
     surface?.schemaVersion === 'evaos.runtime_surface.v1' &&
     surface.customerId === customerId &&
     surface.runtimeKey === runtimeKey &&
-    isSafeRuntimeSurfaceUri(surface.surfaceUri)
+    isSafeRuntimeSurfaceUri(surface.surfaceUri) &&
+    isSafeRuntimeSurfacePartition(surface.partition)
   );
 }
 
-function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
-  const safeSurface = surface.surfaceId.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80);
-  return `evaos-runtime-${safeSurface}`;
+function isSafeRuntimeSurfacePartition(value: unknown): value is string {
+  return typeof value === 'string' && /^evaos-runtime-[a-z0-9_-]{1,120}$/i.test(value);
 }
 
 function missingRuntimeSurfaceMessage(runtimeKey: IEvaosRuntimeKey, title: string): string {
@@ -142,6 +142,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
   const autoAttachKeyRef = useRef<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const clearRuntimeEvidence = useCallback(() => {
     autoAttachKeyRef.current = null;
@@ -343,190 +344,190 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   return (
     <div
       className={classNames(
-        'w-full min-h-full box-border overflow-y-auto',
-        isMobile ? 'px-16px py-14px' : 'px-12px py-24px md:px-40px md:py-32px'
+        'w-full h-full min-h-0 box-border overflow-hidden',
+        isMobile ? 'px-12px py-12px' : 'px-16px py-16px'
       )}
     >
-      <div className='mx-auto flex w-full max-w-980px box-border flex-col gap-16px'>
-        <header className='flex flex-wrap items-start justify-between gap-12px'>
+      <div className='mx-auto flex h-full min-h-0 w-full max-w-none box-border flex-col gap-12px'>
+        <header className='flex flex-wrap items-center justify-between gap-12px'>
           <div className='min-w-0'>
-            <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>{title}</h1>
-            <p className='m-0 mt-4px max-w-720px text-14px leading-22px text-t-secondary'>{subtitle}</p>
-          </div>
-          <Button
-            type='primary'
-            icon={<Refresh theme='outline' size='16' />}
-            loading={loadingStatus}
-            disabled={!customerContext.selectedCustomerId}
-            onClick={() => void loadRuntimeStatus()}
-          >
-            Check
-          </Button>
-        </header>
-
-        <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-          <div className='flex flex-wrap items-center justify-between gap-10px'>
-            <div className='min-w-0'>
-              <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
-              <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
-                {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
-              </div>
+            <div className='flex flex-wrap items-center gap-8px'>
+              <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>{title}</h1>
+              <Tag color={settledStateColor(settledState)}>{runtimeSurface ? 'attached' : settledState}</Tag>
+              <Tag color={statusColor(statusText)}>{statusText}</Tag>
             </div>
-            <div className='flex shrink-0 flex-wrap gap-8px'>
-              <Button loading={customerContext.loading} onClick={() => void refreshCustomerTargets()}>
-                Refresh targets
-              </Button>
-              <Button
-                loading={loadingStatus}
-                disabled={!customerContext.selectedCustomerId}
-                onClick={() => void loadRuntimeStatus()}
-              >
-                Load status
-              </Button>
-            </div>
+            <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
+              {loadingStatus ? `Loading ${title}...` : runtimeSurface ? selectedCustomerLabel : healthText}
+            </p>
           </div>
-          <div className='mt-10px flex flex-wrap gap-8px'>
-            {customerContext.targets.length === 0 ? (
-              <Tag color={customerContext.error ? 'orange' : 'gray'}>
-                {customerContext.error ?? customerContext.summaryText}
-              </Tag>
-            ) : (
-              customerContext.targets.map((target) => (
-                <Button
-                  key={target.customerId}
-                  size='small'
-                  type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
-                  onClick={() => selectCustomer(target.customerId)}
-                >
-                  {target.displayName}
-                </Button>
-              ))
-            )}
-          </div>
-          <p className='m-0 mt-8px text-12px leading-18px text-t-secondary'>
-            {customerContext.summaryText}. Runtime evidence clears on customer switch before a new broker check.
-          </p>
-        </section>
-
-        <section
-          className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'
-          data-testid={`evaos-runtime-dashboard-${runtimeKey}`}
-        >
-          <div className='flex flex-wrap items-start justify-between gap-12px'>
-            <div className='flex min-w-0 items-start gap-10px'>
-              <span className='mt-1px flex size-38px shrink-0 items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
-                <Robot theme='outline' size='20' />
-              </span>
-              <div className='min-w-0'>
-                <div className='flex flex-wrap items-center gap-8px'>
-                  <h2 className='m-0 text-18px font-semibold leading-24px text-t-primary'>
-                    {safeUiText(statusView?.displayLabel, title)}
-                  </h2>
-                  <Tag color={settledStateColor(settledState)}>{settledState}</Tag>
-                  <Tag color={statusColor(statusText)}>{statusText}</Tag>
-                  {issueRef ? <Tag color='gray'>{issueRef}</Tag> : null}
-                </div>
-                <div className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
-                  {loadingStatus ? (
-                    <span className='inline-flex items-center gap-8px'>
-                      <Spin size={14} />
-                      Loading {title} runtime evidence
-                    </span>
-                  ) : (
-                    healthText
-                  )}
-                </div>
-              </div>
-            </div>
-            <Tag color={attachAvailable ? 'green' : 'orange'}>
-              {attachAvailable ? 'Broker action available' : 'Runtime action blocked'}
-            </Tag>
-          </div>
-
-          <div className='mt-14px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary sm:grid-cols-2'>
-            <EvidenceRow label='Customer' value={statusView?.customerId} />
-            <EvidenceRow label='Account' value={statusView?.customerAccountId} />
-            <EvidenceRow label='Owner' value={statusView?.owner} />
-            <EvidenceRow label='Runtime' value={statusView?.runtimeKey} />
-            <EvidenceRow label='Source' value={statusView?.sourcePointer} />
-            <EvidenceRow label='Audit' value={statusView?.auditId} />
-          </div>
-
-          <div className='mt-12px flex items-start gap-8px text-12px leading-18px text-t-secondary'>
-            {attachAvailable ? (
-              <Open theme='outline' size='15' className='mt-1px shrink-0' />
-            ) : (
-              <Shield theme='outline' size='15' className='mt-1px shrink-0' />
-            )}
-            <span>
-              {attachAvailable
-                ? 'This route can request a broker-enforced runtime action for the selected customer.'
-                : 'Runtime launch remains blocked until evaOS broker returns a safe runtime action. No raw dashboard URL is exposed in renderer state.'}
-            </span>
-          </div>
-
-          <div className='mt-12px flex flex-wrap items-center gap-8px'>
-            {canAttachRuntime ? (
+          <div className='flex shrink-0 flex-wrap items-center gap-8px'>
+            {actionError || runtimeError ? (
               <Button
                 type='primary'
-                icon={<Open theme='outline' size='15' />}
-                loading={actionTarget === 'attach'}
-                disabled={!customerContext.selectedCustomerId || actionTarget !== null}
-                onClick={() => void runRuntimeAction('attach')}
+                icon={<Refresh theme='outline' size='16' />}
+                loading={loadingStatus || actionTarget !== null}
+                disabled={!customerContext.selectedCustomerId}
+                onClick={() => (runtimeSurface ? void runRuntimeAction('attach') : void loadRuntimeStatus())}
               >
-                Start / Attach
+                Retry
               </Button>
             ) : null}
-            {canOpenRuntime ? (
-              <Button
-                type={canAttachRuntime ? 'secondary' : 'primary'}
-                icon={<Open theme='outline' size='15' />}
-                loading={actionTarget === 'open'}
-                disabled={!customerContext.selectedCustomerId || actionTarget !== null}
-                onClick={() => void runRuntimeAction('open')}
-              >
-                Open
-              </Button>
-            ) : null}
+            <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
+              Diagnostics
+            </Button>
           </div>
+        </header>
 
-          {actionStatus ? <div className='mt-10px text-12px leading-18px text-t-secondary'>{actionStatus}</div> : null}
+        <main className='flex min-h-0 flex-1 flex-col overflow-hidden' data-testid={`evaos-runtime-dashboard-${runtimeKey}`}>
+          {runtimeSurface ? (
+            <section
+              className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
+              data-testid={`evaos-runtime-surface-container-${runtimeKey}`}
+            >
+              <div className='flex shrink-0 items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
+                <div className='min-w-0'>
+                  <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
+                    {safeUiText(runtimeSurface.displayLabel, title)}
+                  </div>
+                  <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>
+                    {selectedCustomerLabel}
+                  </div>
+                </div>
+                <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
+              </div>
+              <webview
+                data-testid={`evaos-runtime-surface-${runtimeKey}`}
+                src={runtimeSurface.surfaceUri}
+                partition={runtimeSurface.partition}
+                className='block min-h-0 w-full flex-1 border-0'
+              />
+            </section>
+          ) : (
+            <section className='flex min-h-0 flex-1 items-center justify-center rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-24px text-center'>
+              <div className='max-w-620px'>
+                <span className='mx-auto flex size-42px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
+                  {loadingStatus || actionTarget ? <Spin size={18} /> : <Robot theme='outline' size='22' />}
+                </span>
+                <h2 className='m-0 mt-14px text-20px font-semibold leading-26px text-t-primary'>
+                  {loadingStatus || actionTarget ? `Opening ${title}` : `${title} not attached`}
+                </h2>
+                <p className='m-0 mt-8px text-13px leading-20px text-t-secondary'>
+                  {actionError ??
+                    runtimeError ??
+                    (customerContext.selectedCustomerId
+                      ? 'Waiting for a brokered runtime surface. The app will attach automatically when the runtime is available.'
+                      : `Choose a customer before opening ${title}.`)}
+                </p>
+                {canAttachRuntime || canOpenRuntime || actionError || runtimeError ? (
+                  <div className='mt-14px flex justify-center gap-8px'>
+                    <Button
+                      type='primary'
+                      icon={<Open theme='outline' size='15' />}
+                      loading={actionTarget !== null}
+                      disabled={!customerContext.selectedCustomerId || actionTarget !== null}
+                      onClick={() => void runRuntimeAction(canOpenRuntime && !canAttachRuntime ? 'open' : 'attach')}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          )}
+        </main>
 
-          {actionError ? (
-            <div className='mt-10px text-12px leading-18px text-[rgb(var(--danger-6))]'>{actionError}</div>
-          ) : null}
+        <section className='shrink-0 rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
+          <button
+            type='button'
+            aria-expanded={advancedOpen}
+            className='flex w-full cursor-pointer items-center justify-between border-0 bg-transparent p-0 text-left'
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            <span>
+              <span className='block text-13px font-semibold leading-20px text-t-primary'>Advanced diagnostics</span>
+              <span className='block text-11px leading-16px text-t-secondary'>
+                Customer targets, broker actions, source, and audit evidence.
+              </span>
+            </span>
+            <Tag color={advancedOpen ? 'arcoblue' : 'gray'}>{advancedOpen ? 'Open' : 'Collapsed'}</Tag>
+          </button>
 
-          {runtimeError || statusColor(statusText) === 'red' ? (
-            <div className='mt-12px flex items-start gap-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>
-              <Attention theme='outline' size='15' className='mt-1px shrink-0' />
-              <span>Fail-closed until evaOS broker returns customer-scoped {title} evidence.</span>
+          {advancedOpen ? (
+            <div className='mt-12px flex flex-col gap-12px'>
+              <div className='flex flex-wrap items-center justify-between gap-10px'>
+                <div className='min-w-0'>
+                  <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
+                  <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
+                    {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
+                  </div>
+                </div>
+                <div className='flex shrink-0 flex-wrap gap-8px'>
+                  <Button size='small' loading={customerContext.loading} onClick={() => void refreshCustomerTargets()}>
+                    Refresh targets
+                  </Button>
+                  <Button
+                    size='small'
+                    loading={loadingStatus}
+                    disabled={!customerContext.selectedCustomerId}
+                    onClick={() => void loadRuntimeStatus()}
+                  >
+                    Check status
+                  </Button>
+                </div>
+              </div>
+              <div className='flex flex-wrap gap-8px'>
+                {customerContext.targets.length === 0 ? (
+                  <Tag color={customerContext.error ? 'orange' : 'gray'}>
+                    {customerContext.error ?? customerContext.summaryText}
+                  </Tag>
+                ) : (
+                  customerContext.targets.map((target) => (
+                    <Button
+                      key={target.customerId}
+                      size='small'
+                      type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                      onClick={() => selectCustomer(target.customerId)}
+                    >
+                      {target.displayName}
+                    </Button>
+                  ))
+                )}
+              </div>
+              <div className='grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary sm:grid-cols-2 lg:grid-cols-3'>
+                <EvidenceRow label='Customer' value={statusView?.customerId} />
+                <EvidenceRow label='Account' value={statusView?.customerAccountId} />
+                <EvidenceRow label='Owner' value={statusView?.owner} />
+                <EvidenceRow label='Runtime' value={statusView?.runtimeKey} />
+                <EvidenceRow label='Source' value={statusView?.sourcePointer} />
+                <EvidenceRow label='Audit' value={statusView?.auditId} />
+              </div>
+              <div className='flex items-start gap-8px text-12px leading-18px text-t-secondary'>
+                {attachAvailable ? (
+                  <Open theme='outline' size='15' className='mt-1px shrink-0' />
+                ) : (
+                  <Shield theme='outline' size='15' className='mt-1px shrink-0' />
+                )}
+                <span>
+                  {attachAvailable
+                    ? 'Broker action available. This route can request a broker-enforced runtime action for the selected customer.'
+                    : 'Runtime action blocked. No raw dashboard URL is exposed in renderer state.'}
+                </span>
+              </div>
+              {actionStatus ? (
+                <div className='text-12px leading-18px text-t-secondary'>{actionStatus}</div>
+              ) : null}
+              {actionError ? (
+                <div className='text-12px leading-18px text-[rgb(var(--danger-6))]'>{actionError}</div>
+              ) : null}
+              {runtimeError || statusColor(statusText) === 'red' ? (
+                <div className='flex items-start gap-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>
+                  <Attention theme='outline' size='15' className='mt-1px shrink-0' />
+                  <span>Fail-closed until evaOS broker returns customer-scoped {title} evidence.</span>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
-
-        {runtimeSurface ? (
-          <section
-            className='min-h-640px overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
-            data-testid={`evaos-runtime-surface-container-${runtimeKey}`}
-          >
-            <div className='flex items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
-              <div className='min-w-0'>
-                <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
-                  {safeUiText(runtimeSurface.displayLabel, title)}
-                </div>
-                <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>Brokered runtime surface</div>
-              </div>
-              <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
-            </div>
-            <webview
-              data-testid={`evaos-runtime-surface-${runtimeKey}`}
-              src={runtimeSurface.surfaceUri}
-              partition={runtimeSurfacePartition(runtimeSurface)}
-              className='block h-600px w-full border-0'
-              allowpopups={false}
-            />
-          </section>
-        ) : null}
       </div>
     </div>
   );

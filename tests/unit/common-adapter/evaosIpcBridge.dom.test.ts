@@ -41,6 +41,7 @@ describe('evaOS IPC bridge provider wrapper', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     delete (window as typeof window & { electronAPI?: unknown }).electronAPI;
     delete (
       window as typeof window & {
@@ -108,5 +109,17 @@ describe('evaOS IPC bridge provider wrapper', () => {
     );
 
     expect(platformMock.providers.get('evaos.broker.session-status')?.invoke).not.toHaveBeenCalled();
+  });
+
+  it('blocks evaOS runtime surface URLs from external-open bridge calls', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { shell } = await import('@/common/adapter/ipcBridge');
+
+    await expect(shell.openExternal.invoke('evaos-runtime-surface://surface-browser-live/')).rejects.toThrow(
+      'evaOS runtime surfaces must be loaded inside the brokered webview session.'
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

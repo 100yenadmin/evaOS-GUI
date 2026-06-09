@@ -110,10 +110,9 @@ describe('TerminalPage', () => {
     const { container } = render(<TerminalPage />);
 
     expect(await screen.findByText('Customer VM shell is offline.')).toBeInTheDocument();
-    expect(screen.getByTestId('evaos-runtime-dashboard-terminal')).toHaveTextContent(
-      'broker://runtime/terminal/audit_123'
-    );
-    expect(screen.getByTestId('evaos-runtime-dashboard-terminal')).toHaveTextContent('audit_terminal_123');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Diagnostics' }));
+    expect(screen.getByText('broker://runtime/terminal/audit_123')).toBeInTheDocument();
+    expect(screen.getByText('audit_terminal_123')).toBeInTheDocument();
     await waitFor(() => {
       expect(brokerMocks.runtimeStatus).toHaveBeenCalledWith({ customerId: 'david-poku', runtime: 'terminal' });
     });
@@ -147,6 +146,7 @@ describe('TerminalPage', () => {
           schemaVersion: 'evaos.runtime_surface.v1',
           surfaceId: 'surface-terminal-shell',
           surfaceUri: 'evaos-runtime-surface://surface-terminal-shell/',
+          partition: 'evaos-runtime-terminal-shell',
           customerId: 'david-poku',
           runtimeKey: 'terminal',
           displayLabel: 'Terminal',
@@ -160,7 +160,6 @@ describe('TerminalPage', () => {
 
     const { container } = render(<TerminalPage />);
 
-    expect(await screen.findByText('Broker action available')).toBeInTheDocument();
     await waitFor(() => {
       expect(brokerMocks.runtimeAction).toHaveBeenCalledWith({
         customerId: 'david-poku',
@@ -170,7 +169,7 @@ describe('TerminalPage', () => {
     });
     const surface = await screen.findByTestId('evaos-runtime-surface-terminal');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-terminal-shell/');
-    expect(surface).toHaveAttribute('partition', 'evaos-runtime-surface-terminal-shell');
+    expect(surface).toHaveAttribute('partition', 'evaos-runtime-terminal-shell');
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
     expect(container.textContent).not.toMatch(
       /eds_|epg_|access_token|desktop_session|provider_grant|Bearer|launch_url/i
@@ -260,16 +259,16 @@ describe('TerminalPage', () => {
 
     expect(await screen.findByText('First terminal evidence')).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Diagnostics' }));
     await user.click(screen.getByRole('button', { name: /^Second Customer$/ }));
     expect(screen.queryByText('First terminal evidence')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^load status$/i }));
+    await user.click(screen.getByRole('button', { name: /^check status$/i }));
     expect(await screen.findByText('Second terminal denied')).toBeInTheDocument();
     expect(screen.queryByText('broker://runtime/terminal/first')).not.toBeInTheDocument();
   });
 
   it('fails closed when the broker returns mismatched runtime evidence', async () => {
-    const user = userEvent.setup();
     brokerMocks.runtimeStatus.mockResolvedValue({
       success: true,
       data: {
@@ -282,12 +281,10 @@ describe('TerminalPage', () => {
 
     render(<TerminalPage />);
 
-    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: /^load status$/i }));
-
     expect(
-      await screen.findByText('Terminal broker returned evidence for a different runtime or customer.')
-    ).toBeInTheDocument();
+      (await screen.findAllByText('Terminal broker returned evidence for a different runtime or customer.')).length
+    ).toBeGreaterThan(0);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Diagnostics' }));
     expect(
       screen.getByText('Fail-closed until evaOS broker returns customer-scoped Terminal evidence.')
     ).toBeInTheDocument();

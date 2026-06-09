@@ -86,6 +86,7 @@ import {
 } from './teamMapper';
 
 const EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS = 15000;
+const EVAOS_RUNTIME_SURFACE_PROTOCOL = 'evaos-runtime-surface:';
 
 type EvaosElectronBridgeAPI = {
   emit: (name: string, data: unknown) => Promise<unknown> | void;
@@ -317,10 +318,25 @@ export type {
 // Shell — routed to POST /api/shell/*
 // ---------------------------------------------------------------------------
 
+function isEvaosRuntimeSurfaceUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === EVAOS_RUNTIME_SURFACE_PROTOCOL;
+  } catch {
+    return url.trim().toLowerCase().startsWith(EVAOS_RUNTIME_SURFACE_PROTOCOL);
+  }
+}
+
+function toOpenExternalBody(url: string): { url: string } {
+  if (isEvaosRuntimeSurfaceUrl(url)) {
+    throw new Error('evaOS runtime surfaces must be loaded inside the brokered webview session.');
+  }
+  return { url };
+}
+
 export const shell = {
   openFile: httpPost<void, string>('/api/shell/open-file', (file_path) => ({ file_path })),
   showItemInFolder: httpPost<void, string>('/api/shell/show-item-in-folder', (file_path) => ({ file_path })),
-  openExternal: httpPost<void, string>('/api/shell/open-external', (url) => ({ url })),
+  openExternal: httpPost<void, string>('/api/shell/open-external', toOpenExternalBody),
   checkToolInstalled: httpPost<boolean, { tool: string }>('/api/shell/check-tool-installed'),
   openFolderWith: httpPost<void, { folder_path: string; tool: 'vscode' | 'terminal' | 'explorer' }>(
     '/api/shell/open-folder-with'

@@ -5,7 +5,7 @@
  */
 
 import crypto from 'node:crypto';
-import { protocol } from 'electron';
+import { protocol, session } from 'electron';
 import type { IEvaosRuntimeKey, IEvaosRuntimeSurfaceView } from '@/common/evaos/bridgeTypes';
 
 export const EVAOS_RUNTIME_SURFACE_SCHEME = 'evaos-runtime-surface';
@@ -33,12 +33,14 @@ export interface EvaosRuntimeSurfaceCreateInput {
 
 const surfaces = new Map<string, EvaosRuntimeSurfaceRecord>();
 let protocolInstalled = false;
+const installedPartitions = new Set<string>();
 
 export function createEvaosRuntimeSurface(
   launchUrl: string,
   input: EvaosRuntimeSurfaceCreateInput
 ): IEvaosRuntimeSurfaceView {
   const surfaceId = crypto.randomUUID();
+  const partition = runtimeSurfacePartition(surfaceId);
   surfaces.set(surfaceId, {
     launchUrl,
     customerId: input.customerId,
@@ -51,10 +53,12 @@ export function createEvaosRuntimeSurface(
   });
 
   const surface = surfaces.get(surfaceId);
+  registerEvaosRuntimeSurfaceProtocolForPartition(partition);
   return {
     schemaVersion: 'evaos.runtime_surface.v1',
     surfaceId,
     surfaceUri: `${EVAOS_RUNTIME_SURFACE_SCHEME}://${surfaceId}/`,
+    partition,
     customerId: input.customerId,
     runtimeKey: input.runtimeKey,
     displayLabel: input.displayLabel,
@@ -69,7 +73,16 @@ export function registerEvaosRuntimeSurfaceProtocol(): void {
   if (protocolInstalled) return;
   protocolInstalled = true;
 
-  protocol.handle(EVAOS_RUNTIME_SURFACE_SCHEME, (request) => {
+  protocol.handle(EVAOS_RUNTIME_SURFACE_SCHEME, handleEvaosRuntimeSurfaceRequest);
+}
+
+function registerEvaosRuntimeSurfaceProtocolForPartition(partition: string): void {
+  if (installedPartitions.has(partition)) return;
+  installedPartitions.add(partition);
+  session.fromPartition(partition).protocol.handle(EVAOS_RUNTIME_SURFACE_SCHEME, handleEvaosRuntimeSurfaceRequest);
+}
+
+function handleEvaosRuntimeSurfaceRequest(request: Request): Response | Promise<Response> {
     const surfaceId = surfaceIdFromRequestUrl(request.url);
     const surface = surfaceId ? surfaces.get(surfaceId) : undefined;
     if (!surface || isRuntimeSurfaceExpired(surface)) {
@@ -81,7 +94,11 @@ export function registerEvaosRuntimeSurfaceProtocol(): void {
     }
 
     return Response.redirect(surface.launchUrl, 302);
-  });
+}
+
+function runtimeSurfacePartition(surfaceId: string): string {
+  const safeSurface = surfaceId.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80);
+  return `evaos-runtime-${safeSurface}`;
 }
 
 export function clearEvaosRuntimeSurfacesForCustomer(customerId: string): void {

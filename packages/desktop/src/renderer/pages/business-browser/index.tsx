@@ -64,13 +64,13 @@ function runtimeSurfaceMatches(
     surface?.schemaVersion === 'evaos.runtime_surface.v1' &&
     surface.customerId === customerId &&
     surface.runtimeKey === 'browser' &&
-    isSafeRuntimeSurfaceUri(surface.surfaceUri)
+    isSafeRuntimeSurfaceUri(surface.surfaceUri) &&
+    isSafeRuntimeSurfacePartition(surface.partition)
   );
 }
 
-function runtimeSurfacePartition(surface: IEvaosRuntimeSurfaceView): string {
-  const safeSurface = surface.surfaceId.replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80);
-  return `evaos-runtime-${safeSurface}`;
+function isSafeRuntimeSurfacePartition(value: unknown): value is string {
+  return typeof value === 'string' && /^evaos-runtime-[a-z0-9_-]{1,120}$/i.test(value);
 }
 
 function hasBrowserAutoAttachAction(view: IEvaosBusinessBrowserView): boolean {
@@ -98,6 +98,7 @@ const BusinessBrowserPage: React.FC = () => {
   const activeActionRef = useRef(false);
   const autoLoadKeyRef = useRef<string | null>(null);
   const autoLaunchKeyRef = useRef<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     const nextSelectedCustomerId = customerContext.selectedCustomerId;
@@ -196,6 +197,12 @@ const BusinessBrowserPage: React.FC = () => {
           setBrowserError(safeUiText(response.msg, 'Business Browser failed closed.'));
           return;
         }
+        if (response.data.customerId !== selectedCustomerId) {
+          setBrowserView(null);
+          setRuntimeSurface(null);
+          setBrowserError('Business Browser broker returned evidence for a different customer.');
+          return;
+        }
         if (response.data.routeDenied) {
           setRuntimeSurface(null);
         }
@@ -263,6 +270,12 @@ const BusinessBrowserPage: React.FC = () => {
           return;
         }
         if (response.data.browser) {
+          if (response.data.browser.customerId !== selectedCustomerId) {
+            setBrowserView(null);
+            setRuntimeSurface(null);
+            setActionError('Business Browser broker returned evidence for a different customer.');
+            return;
+          }
           setBrowserView(response.data.browser);
         } else {
           if (action === 'stop') {
@@ -333,6 +346,7 @@ const BusinessBrowserPage: React.FC = () => {
     if (
       !selectedCustomerId ||
       !browserView ||
+      browserView.customerId !== selectedCustomerId ||
       runtimeSurface ||
       browserView.routeDenied ||
       !browserView.canLaunch ||
@@ -357,95 +371,52 @@ const BusinessBrowserPage: React.FC = () => {
   return (
     <div
       className={classNames(
-        'w-full min-h-full box-border overflow-y-auto',
-        isMobile ? 'px-16px py-14px' : 'px-12px py-24px md:px-40px md:py-32px'
+        'w-full h-full min-h-0 box-border overflow-hidden',
+        isMobile ? 'px-12px py-12px' : 'px-16px py-16px'
       )}
     >
-      <div className='mx-auto flex w-full max-w-1040px box-border flex-col gap-16px'>
-        <header className='flex flex-wrap items-start justify-between gap-12px'>
+      <div className='mx-auto flex h-full min-h-0 w-full max-w-none box-border flex-col gap-12px'>
+        <header className='flex flex-wrap items-center justify-between gap-12px'>
           <div className='min-w-0'>
-            <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Business Browser</h1>
-            <p className='m-0 mt-4px max-w-720px text-14px leading-22px text-t-secondary'>
-              Brokered browser and VM runtime state for this customer account.
+            <div className='flex flex-wrap items-center gap-8px'>
+              <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>
+                Business Browser
+              </h1>
+              {browserView ? <Tag color={statusColor(browserView)}>{browserView.status}</Tag> : null}
+              {runtimeSurface ? <Tag color='green'>attached</Tag> : null}
+            </div>
+            <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
+              {customerContext.loading
+                ? 'Loading customer targets...'
+                : runtimeSurface
+                  ? selectedCustomerLabel
+                  : browserError || actionError || browserView?.healthSummary || selectedCustomerLabel}
             </p>
           </div>
-          <Button
-            type='primary'
-            icon={<Refresh theme='outline' size='16' />}
-            loading={loadingStatus}
-            disabled={actionInFlight || !customerContext.selectedCustomerId}
-            onClick={() => void loadStatus()}
-          >
-            Refresh
-          </Button>
-        </header>
-
-        <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-          <div className='flex flex-wrap items-center justify-between gap-10px'>
-            <div className='min-w-0'>
-              <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
-              <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
-                {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
-              </div>
-            </div>
-            <div className='flex shrink-0 flex-wrap gap-8px'>
+          <div className='flex shrink-0 flex-wrap items-center gap-8px'>
+            {browserError || actionError || !runtimeSurface ? (
               <Button
-                loading={customerContext.loading}
-                disabled={actionInFlight}
-                onClick={() => void refreshCustomerTargets()}
-              >
-                Refresh targets
-              </Button>
-              <Button
-                className='shrink-0'
-                loading={loadingStatus || customerContext.loading}
+                type='primary'
+                icon={<Refresh theme='outline' size='16' />}
+                loading={loadingStatus || actionInFlight}
                 disabled={actionInFlight || !customerContext.selectedCustomerId}
                 onClick={() => void loadStatus()}
               >
-                Load
+                Retry
               </Button>
-            </div>
+            ) : null}
+            <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
+              Diagnostics
+            </Button>
           </div>
-          <div className='mt-10px flex flex-wrap gap-8px'>
-            {customerContext.targets.length === 0 ? (
-              <Tag color={customerContext.error ? 'orange' : 'gray'}>
-                {customerContext.error ?? customerContext.summaryText}
-              </Tag>
-            ) : (
-              customerContext.targets.map((target) => (
-                <Button
-                  key={target.customerId}
-                  size='small'
-                  type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
-                  disabled={actionInFlight}
-                  onClick={() => clearLoadedStatusForTargetChange(target.customerId)}
-                >
-                  {target.displayName}
-                </Button>
-              ))
-            )}
-          </div>
-          <p className='m-0 mt-8px text-12px leading-18px text-t-secondary'>
-            {customerContext.summaryText}. Business Browser stays scoped to the selected customer.
-          </p>
-          {browserError ? (
-            <p className='m-0 mt-8px text-12px leading-18px text-[rgb(var(--warning-6))]'>{browserError}</p>
-          ) : null}
-        </section>
+        </header>
 
         {loadingStatus ? (
-          <div className='flex min-h-220px items-center justify-center rounded-8px border border-dashed border-[var(--color-border-2)] bg-fill-1'>
+          <div className='flex min-h-0 flex-1 items-center justify-center rounded-8px border border-dashed border-[var(--color-border-2)] bg-fill-1'>
             <Spin />
           </div>
         ) : browserView ? (
           <>
-            <section className='grid grid-cols-1 gap-10px md:grid-cols-4'>
-              <SummaryTile label='Status' value={browserView.status} />
-              <SummaryTile label='Control' value={browserView.controlSessionActive ? 'active' : 'inactive'} />
-              <SummaryTile label='Current URL' value={browserView.currentUrlSummary?.displayText ?? '-'} />
-              <SummaryTile label='Audit' value={browserView.auditId ?? browserView.policyAuditId ?? '-'} />
-            </section>
-
             {browserView.routeDenied ? (
               <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
                 <div className='flex items-start gap-10px text-[rgb(var(--warning-6))]'>
@@ -473,16 +444,16 @@ const BusinessBrowserPage: React.FC = () => {
 
             {runtimeSurface ? (
               <section
-                className='min-h-640px overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
+                className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
                 data-testid='evaos-business-browser-surface-container'
               >
-                <div className='flex items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
+                <div className='flex shrink-0 items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
                   <div className='min-w-0'>
                     <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
                       {safeUiText(runtimeSurface.displayLabel, 'Business Browser')}
                     </div>
                     <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>
-                      Brokered Business Browser surface
+                      {selectedCustomerLabel}
                     </div>
                   </div>
                   <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
@@ -490,15 +461,113 @@ const BusinessBrowserPage: React.FC = () => {
                 <webview
                   data-testid='evaos-business-browser-surface'
                   src={runtimeSurface.surfaceUri}
-                  partition={runtimeSurfacePartition(runtimeSurface)}
-                  className='block h-600px w-full border-0'
-                  allowpopups={false}
+                  partition={runtimeSurface.partition}
+                  className='block min-h-0 w-full flex-1 border-0'
                 />
               </section>
-            ) : null}
+            ) : (
+              <section className='flex min-h-0 flex-1 items-center justify-center rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-24px text-center'>
+                <div className='max-w-620px'>
+                  <span className='mx-auto flex size-42px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
+                    <Browser theme='outline' size='22' />
+                  </span>
+                  <h2 className='m-0 mt-14px text-20px font-semibold leading-26px text-t-primary'>
+                    Business Browser not attached
+                  </h2>
+                  <p className='m-0 mt-8px text-13px leading-20px text-t-secondary'>
+                    {actionError ??
+                      browserError ??
+                      'Waiting for a brokered browser surface. The app will attach automatically when the browser runtime is available.'}
+                  </p>
+                  {!browserView.routeDenied ? (
+                    <div className='mt-14px flex justify-center gap-8px'>
+                      <Button
+                        type='primary'
+                        icon={<Refresh theme='outline' size='15' />}
+                        loading={actionInFlight}
+                        disabled={actionInFlight || !browserView.canLaunch}
+                        onClick={() => void runBrowserAction('launch')}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            )}
 
-            <section className='grid grid-cols-1 gap-12px lg:grid-cols-[minmax(0,1fr)_340px]'>
-              <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+            <section className='shrink-0 rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
+              <button
+                type='button'
+                aria-expanded={advancedOpen}
+                className='flex w-full cursor-pointer items-center justify-between border-0 bg-transparent p-0 text-left'
+                onClick={() => setAdvancedOpen((open) => !open)}
+              >
+                <span>
+                  <span className='block text-13px font-semibold leading-20px text-t-primary'>Advanced diagnostics</span>
+                  <span className='block text-11px leading-16px text-t-secondary'>
+                    Customer targets, broker actions, URL open controls, and policy evidence.
+                  </span>
+                </span>
+                <Tag color={advancedOpen ? 'arcoblue' : 'gray'}>{advancedOpen ? 'Open' : 'Collapsed'}</Tag>
+              </button>
+
+              {advancedOpen ? (
+                <div className='mt-12px flex flex-col gap-12px'>
+                  <div className='flex flex-wrap items-center justify-between gap-10px'>
+                    <div className='min-w-0'>
+                      <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
+                      <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
+                        {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
+                      </div>
+                    </div>
+                    <div className='flex shrink-0 flex-wrap gap-8px'>
+                      <Button
+                        size='small'
+                        loading={customerContext.loading}
+                        disabled={actionInFlight}
+                        onClick={() => void refreshCustomerTargets()}
+                      >
+                        Refresh targets
+                      </Button>
+                      <Button
+                        size='small'
+                        loading={loadingStatus || customerContext.loading}
+                        disabled={actionInFlight || !customerContext.selectedCustomerId}
+                        onClick={() => void loadStatus()}
+                      >
+                        Check status
+                      </Button>
+                    </div>
+                  </div>
+                  <div className='flex flex-wrap gap-8px'>
+                    {customerContext.targets.length === 0 ? (
+                      <Tag color={customerContext.error ? 'orange' : 'gray'}>
+                        {customerContext.error ?? customerContext.summaryText}
+                      </Tag>
+                    ) : (
+                      customerContext.targets.map((target) => (
+                        <Button
+                          key={target.customerId}
+                          size='small'
+                          type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                          disabled={actionInFlight}
+                          onClick={() => clearLoadedStatusForTargetChange(target.customerId)}
+                        >
+                          {target.displayName}
+                        </Button>
+                      ))
+                    )}
+                  </div>
+                  <section className='grid grid-cols-1 gap-10px md:grid-cols-4'>
+                    <SummaryTile label='Status' value={browserView.status} />
+                    <SummaryTile label='Control' value={browserView.controlSessionActive ? 'active' : 'inactive'} />
+                    <SummaryTile label='Current URL' value={browserView.currentUrlSummary?.displayText ?? '-'} />
+                    <SummaryTile label='Audit' value={browserView.auditId ?? browserView.policyAuditId ?? '-'} />
+                  </section>
+
+                  <section className='grid grid-cols-1 gap-12px lg:grid-cols-[minmax(0,1fr)_340px]'>
+                    <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
                 <div className='flex flex-wrap items-start justify-between gap-12px'>
                   <div className='min-w-0'>
                     <div className='flex flex-wrap items-center gap-6px'>
@@ -534,9 +603,9 @@ const BusinessBrowserPage: React.FC = () => {
                     </Button>
                   </div>
                 </div>
-              </article>
+                    </article>
 
-              <aside className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+                    <aside className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
                 <div className='flex items-center gap-8px'>
                   <span className='flex size-30px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
                     <Open theme='outline' size='17' />
@@ -562,10 +631,10 @@ const BusinessBrowserPage: React.FC = () => {
                     Open
                   </Button>
                 </div>
-              </aside>
-            </section>
+                    </aside>
+                  </section>
 
-            <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+                  <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
               <div className='flex items-center gap-8px'>
                 <Shield theme='outline' size='17' />
                 <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Policy evidence</h2>
@@ -575,6 +644,9 @@ const BusinessBrowserPage: React.FC = () => {
                 <span>Customer: {browserView.customerId}</span>
                 <span>Source: {browserView.sourcePointer ?? '-'}</span>
               </div>
+                  </section>
+                </div>
+              ) : null}
             </section>
           </>
         ) : (
