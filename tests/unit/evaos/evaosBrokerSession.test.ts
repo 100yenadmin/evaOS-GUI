@@ -727,6 +727,136 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/ecs\\.electricsheephq\\.com|launch_url|desktop_session|eds_|Bearer/i);
   });
 
+  it('fails Terminal runtime launch closed when VM shell proof is missing', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'attached',
+          runtime: 'terminal',
+          customer_id: 'cus_123',
+          message: 'Attached Terminal VM shell.',
+          launch_url: 'https://ecs.electricsheephq.com/vm/benjamin-kennedy/workspace/terminal/',
+          source_pointer: 'broker:runtime_launch:terminal',
+          audit_id: 'audit_terminal_missing_shell_proof',
+          backend_enforced: true,
+          runtime_status: {
+            runtime: 'terminal',
+            customer_id: 'cus_123',
+            status: 'running',
+            health_summary: 'Terminal VM shell is ready.',
+            source_pointer: 'broker:runtime_status:terminal',
+            audit_id: 'audit_terminal_status_running',
+          },
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const result = await client.runtimeAction(
+      { customerId: 'cus_123', runtime: 'terminal', action: 'launch' },
+      { createRuntimeSurface }
+    );
+
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'denied',
+      runtimeKey: 'terminal',
+      customerId: 'cus_123',
+      message: 'Terminal broker did not return VM shell proof for this customer.',
+      runtimeStatus: {
+        runtimeKey: 'terminal',
+        customerId: 'cus_123',
+        status: 'running',
+      },
+      sourcePointer: 'broker:runtime_launch:terminal',
+      auditId: 'audit_terminal_missing_shell_proof',
+      backendEnforced: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/ecs\\.electricsheephq\\.com|launch_url|desktop_session|eds_|Bearer/i);
+  });
+
+  it('creates a Terminal VM shell surface when the broker returns VM shell proof', async () => {
+    const fetchImpl = fetchMock();
+    const runtimeSurface = {
+      schemaVersion: 'evaos.runtime_surface.v1' as const,
+      surfaceId: 'surface-terminal-shell',
+      surfaceUri: 'evaos-runtime-surface://surface-terminal-shell/',
+      partition: 'evaos-runtime-terminal-shell',
+      customerId: 'cus_123',
+      runtimeKey: 'terminal' as const,
+      displayLabel: 'Terminal',
+      status: 'attached',
+      sourcePointer: 'broker:runtime_launch:terminal',
+      auditId: 'audit_terminal_attach',
+    };
+    const createRuntimeSurface = vi.fn().mockResolvedValue(runtimeSurface);
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'attached',
+          runtime: 'terminal',
+          customer_id: 'cus_123',
+          message: 'Attached Terminal VM shell.',
+          launch_url: 'https://ecs.electricsheephq.com/vm/benjamin-kennedy/workspace/terminal/',
+          vm_shell_proof: 'terminal-shell-policy-ok',
+          source_pointer: 'broker:runtime_launch:terminal',
+          audit_id: 'audit_terminal_attach',
+          backend_enforced: true,
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const result = await client.runtimeAction(
+      { customerId: 'cus_123', runtime: 'terminal', action: 'launch' },
+      { createRuntimeSurface }
+    );
+
+    expect(createRuntimeSurface).toHaveBeenCalledWith(
+      'https://ecs.electricsheephq.com/vm/benjamin-kennedy/workspace/terminal/',
+      expect.objectContaining({
+        customerId: 'cus_123',
+        runtimeKey: 'terminal',
+        displayLabel: 'Terminal',
+        sourcePointer: 'broker:runtime_launch:terminal',
+        auditId: 'audit_terminal_attach',
+      })
+    );
+    expect(result).toMatchObject({
+      status: 'attached',
+      runtimeKey: 'terminal',
+      customerId: 'cus_123',
+      message: 'Attached Terminal VM shell.',
+      runtimeSurface,
+      sourcePointer: 'broker:runtime_launch:terminal',
+      auditId: 'audit_terminal_attach',
+      backendEnforced: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
+  });
+
   it('does not adopt the released Workbench keychain desktop session when the environment is explicitly overridden', () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
