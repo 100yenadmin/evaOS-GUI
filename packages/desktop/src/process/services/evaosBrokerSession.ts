@@ -1541,6 +1541,20 @@ async function sanitizeRuntimeActionResult(
       backendEnforced: safeBoolean(record.backend_enforced) ?? true,
     });
   }
+  const missingTerminalProofMessage = terminalRuntimeMissingProofMessage(record, runtime);
+  if (missingTerminalProofMessage) {
+    return stripUndefined({
+      status: 'denied',
+      runtimeKey: runtime,
+      customerId,
+      message: missingTerminalProofMessage,
+      runtimeStatus,
+      expiresAt,
+      sourcePointer,
+      auditId,
+      backendEnforced: safeBoolean(record.backend_enforced) ?? true,
+    });
+  }
   const launchUrl = safeRuntimeLaunchUrl(record.launch_url ?? record.url);
   const runtimeSurface = await createOrOpenRuntimeSurface(launchUrl, options, {
     customerId,
@@ -1588,6 +1602,41 @@ function terminalRuntimeDeniedMessage(
     return undefined;
   }
   return safeText(record.message, 220) ?? 'Terminal access denied by VM shell policy.';
+}
+
+function terminalRuntimeMissingProofMessage(
+  record: Record<string, unknown>,
+  runtime: IEvaosRuntimeKey
+): string | undefined {
+  if (runtime !== 'terminal' || hasTerminalVmShellProof(record)) {
+    return undefined;
+  }
+  return 'Terminal broker did not return VM shell proof for this customer.';
+}
+
+function hasTerminalVmShellProof(record: Record<string, unknown>): boolean {
+  const booleanProofFields = [
+    record.vm_shell_authorized,
+    record.terminal_shell_authorized,
+    record.shell_authorized,
+    record.terminal_authorized,
+    record.vm_shell_access_granted,
+    record.shell_access_granted,
+  ];
+  if (booleanProofFields.some((value) => safeBoolean(value) === true)) {
+    return true;
+  }
+
+  const textProofFields = [
+    record.vm_shell_proof,
+    record.terminal_shell_proof,
+    record.shell_proof,
+    record.runtime_surface_proof,
+    record.vm_shell_audit_id,
+    record.terminal_shell_audit_id,
+    record.shell_audit_id,
+  ];
+  return textProofFields.some((value) => Boolean(safeText(value)));
 }
 
 async function openExternalRuntimeAction(
