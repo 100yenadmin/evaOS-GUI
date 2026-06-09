@@ -5,6 +5,26 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const electronMock = vi.hoisted(() => ({
+  app: {
+    isReady: vi.fn(() => false),
+    getPath: vi.fn((name: string) =>
+      name === 'exe'
+        ? '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta'
+        : '/tmp/evaos-workbench-beta-test'
+    ),
+    isPackaged: true,
+  },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn(() => false),
+    encryptString: vi.fn((plainText: string) => Buffer.from(plainText)),
+    decryptString: vi.fn((encrypted: Buffer) => encrypted.toString('utf8')),
+  },
+}));
+
+vi.mock('electron', () => electronMock);
+
 import {
   EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT,
   EvaosBrokerSessionClient,
@@ -68,6 +88,18 @@ describe('EvaosBrokerSessionClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.AIONUI_EVAOS_IMPORT_WORKBENCH_KEYCHAIN;
+    delete process.env.AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE;
+    delete process.env.AIONUI_EVAOS_DISABLE_BETA_SAFE_STORAGE;
+    electronMock.app.isReady.mockReturnValue(false);
+    electronMock.app.getPath.mockImplementation((name: string) =>
+      name === 'exe'
+        ? '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta'
+        : '/tmp/evaos-workbench-beta-test'
+    );
+    electronMock.app.isPackaged = true;
+    electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(false);
+    electronMock.safeStorage.encryptString.mockImplementation((plainText: string) => Buffer.from(plainText));
+    electronMock.safeStorage.decryptString.mockImplementation((encrypted: Buffer) => encrypted.toString('utf8'));
   });
 
   it('fails closed without calling the broker when no desktop session exists', async () => {
@@ -743,6 +775,28 @@ describe('EvaosBrokerSessionClient', () => {
       message: 'Sign in to evaOS to connect this desktop shell.',
     });
     expect(legacyWorkbenchSessionLoader).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not touch Electron Safe Storage when the beta session store is disabled', () => {
+    process.env.AIONUI_EVAOS_DISABLE_BETA_SAFE_STORAGE = '1';
+    electronMock.app.isReady.mockReturnValue(true);
+    electronMock.safeStorage.isEncryptionAvailable.mockImplementation(() => {
+      throw new Error('keychain prompt boundary touched');
+    });
+    const fetchImpl = fetchMock();
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      now: () => NOW,
+    });
+
+    expect(client.getSessionStatus()).toMatchObject({
+      state: 'missing',
+      authenticated: false,
+      source: 'none',
+    });
+    expect(electronMock.safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+    expect(electronMock.safeStorage.decryptString).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
