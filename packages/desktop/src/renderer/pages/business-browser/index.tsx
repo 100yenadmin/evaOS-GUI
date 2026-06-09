@@ -88,6 +88,33 @@ function canAutoAttachBrowserSurface(view: IEvaosBusinessBrowserView): boolean {
   return view.canLaunch && activeBrowser;
 }
 
+function businessBrowserSupportBlockerMessage(
+  view: IEvaosBusinessBrowserView,
+  selectedCustomerLabel: string
+): string | null {
+  if (view.routeDenied || canAutoAttachBrowserSurface(view)) {
+    return null;
+  }
+  const route = 'Route /business-browser';
+  const customer = safeUiText(selectedCustomerLabel, view.customerId || 'selected customer');
+  const parts = [`${route} for ${customer} is blocked: broker did not provide a browser runtime surface handle.`];
+  const status = safeUiText(view.status, 'unknown');
+  parts.push(`Status ${status}.`);
+  const healthSummary = safeUiText(view.healthSummary, '');
+  if (healthSummary) {
+    parts.push(healthSummary);
+  }
+  const sourcePointer = safeUiText(view.sourcePointer, '');
+  if (sourcePointer) {
+    parts.push(`Source ${sourcePointer}.`);
+  }
+  const auditId = safeUiText(view.auditId ?? view.policyAuditId, '');
+  if (auditId) {
+    parts.push(`Audit ${auditId}.`);
+  }
+  return parts.join(' ');
+}
+
 const BusinessBrowserPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
@@ -242,6 +269,8 @@ const BusinessBrowserPage: React.FC = () => {
   const selectedCustomerLabel =
     customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
   const actionInFlight = actionTarget !== null;
+  const supportBlockerMessage =
+    browserView && !runtimeSurface ? businessBrowserSupportBlockerMessage(browserView, selectedCustomerLabel) : null;
 
   const runBrowserAction = useCallback(
     async (action: 'launch' | 'openUrl' | 'stop') => {
@@ -480,24 +509,37 @@ const BusinessBrowserPage: React.FC = () => {
                     <Browser theme='outline' size='22' />
                   </span>
                   <h2 className='m-0 mt-14px text-20px font-semibold leading-26px text-t-primary'>
-                    Business Browser not attached
+                    {supportBlockerMessage ? 'Business Browser support blocker' : 'Business Browser not attached'}
                   </h2>
                   <p className='m-0 mt-8px text-13px leading-20px text-t-secondary'>
-                    {actionError ??
+                    {supportBlockerMessage ??
+                      actionError ??
                       browserError ??
                       'Waiting for a brokered browser surface. The app will attach automatically when the browser runtime is available.'}
                   </p>
                   {!browserView.routeDenied ? (
                     <div className='mt-14px flex justify-center gap-8px'>
-                      <Button
-                        type='primary'
-                        icon={<Refresh theme='outline' size='15' />}
-                        loading={actionInFlight}
-                        disabled={actionInFlight || !browserView.canLaunch}
-                        onClick={() => void runBrowserAction('launch')}
-                      >
-                        Retry
-                      </Button>
+                      {supportBlockerMessage ? (
+                        <Button
+                          type='primary'
+                          icon={<Refresh theme='outline' size='15' />}
+                          loading={loadingStatus}
+                          disabled={actionInFlight || loadingStatus}
+                          onClick={() => void loadStatus()}
+                        >
+                          Retry status
+                        </Button>
+                      ) : (
+                        <Button
+                          type='primary'
+                          icon={<Refresh theme='outline' size='15' />}
+                          loading={actionInFlight}
+                          disabled={actionInFlight || !browserView.canLaunch}
+                          onClick={() => void runBrowserAction('launch')}
+                        >
+                          Retry
+                        </Button>
+                      )}
                     </div>
                   ) : null}
                 </div>
