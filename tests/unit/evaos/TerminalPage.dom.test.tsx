@@ -253,7 +253,9 @@ describe('TerminalPage', () => {
 
     const { container } = render(<TerminalPage />);
 
-    expect(await screen.findByText('Terminal access denied by VM shell policy. Audit audit_terminal_denied.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Terminal access denied by VM shell policy. Audit audit_terminal_denied.')
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('evaos-runtime-surface-terminal')).not.toBeInTheDocument();
     expect(container.textContent).not.toContain('{"error":"unauthorized"}');
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
