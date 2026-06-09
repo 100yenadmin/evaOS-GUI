@@ -74,9 +74,7 @@ function isSafeRuntimeSurfacePartition(value: unknown): value is string {
 }
 
 function hasBrowserAutoAttachAction(view: IEvaosBusinessBrowserView): boolean {
-  return view.actions.some(
-    (action) => action === 'start_attach' || action === 'browser_launch' || action === 'browser_open_url'
-  );
+  return view.actions.some((action) => action === 'start_attach' || action === 'browser_launch');
 }
 
 function canAutoAttachBrowserSurface(view: IEvaosBusinessBrowserView): boolean {
