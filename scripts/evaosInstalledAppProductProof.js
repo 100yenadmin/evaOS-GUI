@@ -560,7 +560,7 @@ async function captureInstalledAppProof(options = {}) {
   }
 
   const preflightPlan = buildInstalledProofPreflightPlan({ expectedHead });
-  const proofPlan = buildInstalledProofPlan(undefined, { expectedHead });
+  const proofPlan = buildInstalledProofPlan(options.plan, { expectedHead });
   ensureProofDirs(artifactRoot);
 
   const { _electron: electron } = require('playwright');

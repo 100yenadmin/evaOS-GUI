@@ -924,7 +924,7 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
       'Open-native handoff',
       'Open native companion',
       'Handoff target: evaos-workbench-beta://native-companion/status',
-      'Status source: native-companion:ready',
+      'Status source: local-fixture:native-companion:ready',
       'Shell is local trust authority: false',
       'Renderer receives native secrets: false',
       'Deep-link scheme: evaos-workbench-beta',

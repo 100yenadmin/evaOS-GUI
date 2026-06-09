@@ -18,14 +18,24 @@ const execFileAsync = promisify(execFileCallback);
 const DEFAULT_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
 const DEFAULT_RELEASED_WORKBENCH_PATH = '/Applications/evaOS.app';
 const COMMAND_TIMEOUT_MS = 8000;
+const NATIVE_COMPANION_FIXTURE_STATES = [
+  'ready',
+  'repair_required',
+  'not_paired',
+  'permission_needed',
+  'offline',
+] as const;
 
 type ExecFileResult = {
   stdout: string;
   stderr: string;
 };
 
+type NativeCompanionFixtureState = (typeof NATIVE_COMPANION_FIXTURE_STATES)[number];
+
 export type EvaosNativeCompanionStatusDeps = {
   now?: () => Date;
+  env?: NodeJS.ProcessEnv;
   bridgePaths?: string[];
   releasedWorkbenchPath?: string;
   existsSync?: (path: string) => boolean;
@@ -44,11 +54,16 @@ export async function getEvaosNativeCompanionStatus(
   deps: EvaosNativeCompanionStatusDeps = {}
 ): Promise<IEvaosNativeCompanionStatusView> {
   const now = deps.now ?? (() => new Date());
+  const fixtureState = nativeCompanionFixtureState(deps.env);
+  const generatedAt = now().toISOString();
+  if (fixtureState) {
+    return nativeCompanionFixtureStatus(fixtureState, generatedAt);
+  }
+
   const existsSync = deps.existsSync ?? fs.existsSync;
   const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? DEFAULT_BRIDGE_PATHS, existsSync);
   const releasedWorkbenchPath = deps.releasedWorkbenchPath ?? DEFAULT_RELEASED_WORKBENCH_PATH;
   const releasedWorkbenchInstalled = existsSync(releasedWorkbenchPath);
-  const generatedAt = now().toISOString();
 
   if (!bridgePath) {
     return {
@@ -130,6 +145,136 @@ export async function getEvaosNativeCompanionStatus(
       auditIds,
       latestAuditId: auditIds[0],
     },
+  };
+}
+
+function nativeCompanionFixtureState(env: NodeJS.ProcessEnv = process.env): NativeCompanionFixtureState | undefined {
+  if (env.AIONUI_E2E_TEST !== '1' || env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE !== '1') return undefined;
+  const requested = env.AIONUI_EVAOS_NATIVE_COMPANION_STATUS_FIXTURE || 'ready';
+  return NATIVE_COMPANION_FIXTURE_STATES.includes(requested as NativeCompanionFixtureState)
+    ? (requested as NativeCompanionFixtureState)
+    : 'ready';
+}
+
+function nativeCompanionFixtureStatus(
+  fixtureState: NativeCompanionFixtureState,
+  generatedAt: string
+): IEvaosNativeCompanionStatusView {
+  const auditIds = [
+    `fixture-audit-native-${fixtureState}`,
+    `fixture-audit-native-bridge-${fixtureState}`,
+    `fixture-audit-native-mac-${fixtureState}`,
+  ];
+  const base: IEvaosNativeCompanionStatusView = {
+    schemaVersion: 'evaos.native_companion_status.v1',
+    generatedAt,
+    readiness: 'repair_required',
+    summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair state fixture.',
+    sourcePointer: `local-fixture:native-companion:${fixtureState}`,
+    canOpenReleasedWorkbench: true,
+    releasedWorkbench: {
+      installed: true,
+      running: false,
+      path: DEFAULT_RELEASED_WORKBENCH_PATH,
+      version: '0.6.27',
+      displayName: 'evaOS.app',
+    },
+    bridgeCli: {
+      installed: true,
+      status: 'repair_required',
+      path: DEFAULT_BRIDGE_PATHS[0],
+      auditId: auditIds[1],
+      permissions: {
+        accessibility: 'granted',
+        screenRecording: 'granted',
+      },
+      readOnly: true,
+    },
+    customerMac: {
+      status: 'repair_required',
+      auditId: auditIds[2],
+      deviceLabel: 'fixture-mac.local',
+      permissions: {
+        accessibility: 'granted',
+        screenRecording: 'granted',
+      },
+      screenSharing: 'enabled=true; vnc_5900_listening=false',
+      killSwitchAvailable: true,
+      appendOnlyAuditLog: true,
+    },
+    iPhone: {
+      status: 'available',
+      auditId: `fixture-audit-native-iphone-${fixtureState}`,
+      installed: true,
+      running: false,
+      killSwitchAvailable: true,
+    },
+    audit: {
+      status: 'ready',
+      auditIds,
+      latestAuditId: auditIds[0],
+    },
+  };
+
+  if (fixtureState === 'ready') {
+    return {
+      ...base,
+      readiness: 'ready',
+      summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
+      bridgeCli: { ...base.bridgeCli, status: 'ready' },
+      customerMac: { ...base.customerMac, status: 'ready' },
+    };
+  }
+
+  if (fixtureState === 'not_paired') {
+    return {
+      ...base,
+      summaryText:
+        'LOCAL FIXTURE - NOT LIVE BETA PROOF: NOT_PAIRED: pairing required before evaOS or Hermes can use Mac control.',
+    };
+  }
+
+  if (fixtureState === 'permission_needed') {
+    return {
+      ...base,
+      summaryText:
+        'LOCAL FIXTURE - NOT LIVE BETA PROOF: Screen Recording permission is required before repair can continue.',
+      bridgeCli: {
+        ...base.bridgeCli,
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'missing',
+        },
+      },
+      customerMac: {
+        ...base.customerMac,
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'missing',
+        },
+      },
+    };
+  }
+
+  if (fixtureState === 'offline') {
+    return {
+      ...base,
+      readiness: 'unavailable',
+      summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native status source is offline or stale.',
+      bridgeCli: { ...base.bridgeCli, status: 'unavailable' },
+      customerMac: { ...base.customerMac, status: 'unavailable' },
+      iPhone: { ...base.iPhone, status: 'unavailable', running: false },
+      audit: {
+        status: 'unavailable',
+        auditIds,
+        latestAuditId: auditIds[0],
+      },
+    };
+  }
+
+  return {
+    ...base,
+    summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair is required before chat can start.',
   };
 }
 

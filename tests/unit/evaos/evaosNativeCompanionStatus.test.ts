@@ -38,6 +38,57 @@ function depsWithResponses(
 }
 
 describe('evaosNativeCompanionStatus', () => {
+  it('exposes native companion state fixtures only under the local product proof gate', async () => {
+    const execFile = vi.fn(async () => {
+      throw new Error('fixture should not call bridge CLI');
+    });
+    const status = await getEvaosNativeCompanionStatus({
+      now: () => new Date('2026-06-07T03:45:00.000Z'),
+      env: {
+        AIONUI_E2E_TEST: '1',
+        AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE: '1',
+        AIONUI_EVAOS_NATIVE_COMPANION_STATUS_FIXTURE: 'not_paired',
+      } as NodeJS.ProcessEnv,
+      execFile,
+    });
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      sourcePointer: 'local-fixture:native-companion:not_paired',
+      canOpenReleasedWorkbench: true,
+      bridgeCli: {
+        installed: true,
+        readOnly: true,
+      },
+      customerMac: {
+        deviceLabel: 'fixture-mac.local',
+      },
+    });
+    expect(status.summaryText).toContain('NOT_PAIRED');
+    expect(status.summaryText).toContain('LOCAL FIXTURE - NOT LIVE BETA PROOF');
+    expect(status.audit.auditIds).toContain('fixture-audit-native-not_paired');
+    expect(execFile).not.toHaveBeenCalled();
+    expect(JSON.stringify(status)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+  });
+
+  it('does not enable native state fixtures without the E2E local product gate', async () => {
+    const deps = depsWithResponses(
+      {},
+      {
+        env: {
+          AIONUI_E2E_TEST: '1',
+          AIONUI_EVAOS_NATIVE_COMPANION_STATUS_FIXTURE: 'ready',
+        } as NodeJS.ProcessEnv,
+        existsSync: vi.fn((path: string) => path === '/Applications/evaOS.app'),
+      }
+    );
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status.sourcePointer).toBe('native-companion:bridge-cli-missing');
+    expect(status.bridgeCli.installed).toBe(false);
+  });
+
   it('summarizes read-only bridge status without renderer-visible secrets', async () => {
     const deps = depsWithResponses({
       'status --json': {
