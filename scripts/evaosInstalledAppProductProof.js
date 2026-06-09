@@ -17,6 +17,7 @@ const REPORT_SCHEMA = 'evaos-installed-app-product-proof/v1';
 const DEFAULT_TIMEOUT_MS = 25_000;
 const LSREGISTER_PATH =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+const LSREGISTER_DUMP_MAX_BUFFER = 64 * 1024 * 1024;
 
 const UNSAFE_PROOF_PATTERNS = [
   { name: 'desktop_session', pattern: /desktop_session/i },
@@ -134,7 +135,10 @@ function parseLaunchServicesProtocolHandler(dump, scheme = DEFAULT_PROTOCOL_SCHE
 }
 
 function readLaunchServicesProtocolHandler(scheme = DEFAULT_PROTOCOL_SCHEME, execFileSyncImpl = execFileSync) {
-  const dump = execFileSyncImpl(LSREGISTER_PATH, ['-dump'], { encoding: 'utf8' });
+  const dump = execFileSyncImpl(LSREGISTER_PATH, ['-dump'], {
+    encoding: 'utf8',
+    maxBuffer: LSREGISTER_DUMP_MAX_BUFFER,
+  });
   return parseLaunchServicesProtocolHandler(dump, scheme);
 }
 

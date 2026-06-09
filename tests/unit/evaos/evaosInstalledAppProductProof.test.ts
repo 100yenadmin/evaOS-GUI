@@ -121,6 +121,14 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     bundleId: string | null;
     evidence: string;
   };
+  readLaunchServicesProtocolHandler: (
+    scheme?: string,
+    execFileSyncImpl?: (command: string, args: string[], options: { encoding: 'utf8'; maxBuffer?: number }) => string
+  ) => {
+    scheme: string;
+    bundleId: string | null;
+    evidence: string;
+  };
 };
 
 describe('evaOS installed app product proof', () => {
@@ -347,6 +355,30 @@ describe('evaOS installed app product proof', () => {
       bundleId: 'com.evaos.workbench.beta',
       evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
     });
+  });
+
+  it('uses a larger LaunchServices dump buffer for installed-app proof on busy Macs', () => {
+    const calls: Array<{ args: string[]; maxBuffer?: number }> = [];
+    const fakeExec = (_command: string, args: string[], options: { encoding: 'utf8'; maxBuffer?: number }) => {
+      calls.push({ args, maxBuffer: options.maxBuffer });
+      return [
+        '---------------------------------------------------------------------------------',
+        'handlerpref id:             evaos-workbench-beta (0x20)',
+        'all roles:                  com.evaos.workbench.beta',
+        '---------------------------------------------------------------------------------',
+      ].join('\n');
+    };
+
+    expect(installedAppProof.readLaunchServicesProtocolHandler('evaos-workbench-beta', fakeExec)).toMatchObject({
+      bundleId: 'com.evaos.workbench.beta',
+    });
+    expect(calls).toEqual([
+      {
+        args: ['-dump'],
+        maxBuffer: expect.any(Number),
+      },
+    ]);
+    expect(calls[0].maxBuffer).toBeGreaterThan(1024 * 1024);
   });
 
   it('fails installed proof when LaunchServices maps the beta scheme to raw Electron', () => {
