@@ -476,6 +476,34 @@ describe('BusinessBrowserPage', () => {
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
   });
 
+  it('treats browser_open_url alone as a support blocker when no launch surface can attach', async () => {
+    browserMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        ...browserView({
+          status: 'stopped',
+          actions: ['browser_open_url'],
+          canLaunch: false,
+          canOpenUrl: true,
+          canStop: false,
+        }),
+        controlSessionActive: false,
+        healthSummary: 'Shared Browser is installed and reachable; no browser artifact history has been mirrored yet.',
+        sourcePointer: 'broker:runtime_status:browser',
+        auditId: 'audit_browser_open_url_only',
+      },
+    });
+
+    const { container } = render(<BusinessBrowserPage />);
+
+    expect(await screen.findByText('Business Browser support blocker')).toBeInTheDocument();
+    expect(screen.getByText(/Route \/business-browser for David Poku Co/)).toBeInTheDocument();
+    expect(screen.getByText(/broker did not provide a browser runtime surface handle/)).toBeInTheDocument();
+    expect(screen.getByText(/Audit audit_browser_open_url_only/)).toBeInTheDocument();
+    expect(browserMocks.launch).not.toHaveBeenCalled();
+    expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
+  });
+
   it('clears browser status when customer context changes before loading the next customer', async () => {
     const user = userEvent.setup();
     browserMocks.getStatus
