@@ -305,6 +305,8 @@ describe('BusinessBrowserPage', () => {
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-fixture/');
     expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-fixture');
+    expect(surface).toHaveClass('h-full');
+    expect(surface).toHaveStyle({ display: 'flex', height: '100%', width: '100%' });
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
     expect(container.textContent).not.toContain('runtime.example.test');
@@ -349,6 +351,8 @@ describe('BusinessBrowserPage', () => {
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-auto-attach/');
     expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-auto-attach');
+    expect(surface).toHaveClass('h-full');
+    expect(surface).toHaveStyle({ display: 'flex', height: '100%', width: '100%' });
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
   });

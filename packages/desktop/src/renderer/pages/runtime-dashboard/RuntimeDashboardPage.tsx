@@ -400,7 +400,8 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                 data-testid={`evaos-runtime-surface-${runtimeKey}`}
                 src={runtimeSurface.surfaceUri}
                 partition={runtimeSurface.partition}
-                className='block min-h-0 w-full flex-1 border-0'
+                className='block h-full min-h-0 w-full flex-1 border-0'
+                style={{ display: 'flex', height: '100%', width: '100%' }}
               />
             </section>
           ) : (
