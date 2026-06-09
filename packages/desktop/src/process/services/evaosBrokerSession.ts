@@ -1287,10 +1287,13 @@ function withDefaultBetaSessionStore<T>(
   env: Record<string, string | undefined>
 ): T | null {
   const electron = loadElectronSessionStorageApis();
-  if (!electron?.app.isReady() || !electron.safeStorage.isEncryptionAvailable()) {
+  if (!electron?.app.isReady()) {
     return null;
   }
   if (shouldSkipDefaultBetaSafeStorageForElectronApp(electron.app, env)) {
+    return null;
+  }
+  if (!electron.safeStorage.isEncryptionAvailable()) {
     return null;
   }
 
@@ -1302,6 +1305,13 @@ function shouldSkipDefaultBetaSafeStorageForElectronApp(
   app: ElectronAppApi,
   env: Record<string, string | undefined>
 ): boolean {
+  if (isEnabledEnvFlag(env.AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE)) {
+    return false;
+  }
+  if (isEnabledEnvFlag(env.AIONUI_EVAOS_DISABLE_BETA_SAFE_STORAGE)) {
+    return true;
+  }
+
   let executablePath: string;
   try {
     executablePath = app.getPath('exe');
