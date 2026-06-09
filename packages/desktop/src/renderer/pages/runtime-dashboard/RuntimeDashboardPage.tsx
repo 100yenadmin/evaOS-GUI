@@ -87,6 +87,16 @@ function runtimeActionSummary(result: IEvaosRuntimeActionResult): string {
   return parts.join(' ');
 }
 
+function runtimeActionNeedsBlockerUi(result: IEvaosRuntimeActionResult): boolean {
+  const text = [result.status, result.message, result.runtimeStatus?.status, result.runtimeStatus?.healthSummary]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /(denied|blocked|forbidden|unauthorized|expired|revoked|offline|unavailable|repair|not_paired|permission)/.test(
+    text
+  );
+}
+
 function isSafeRuntimeSurfaceUri(value: string): boolean {
   try {
     const parsed = new URL(value);
@@ -275,6 +285,11 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           setActionError(`${title} broker returned an invalid runtime surface handle.`);
           return;
         } else if (action === 'attach') {
+          if (runtimeActionNeedsBlockerUi(response.data)) {
+            setRuntimeSurface(null);
+            setActionError(runtimeActionSummary(response.data));
+            return;
+          }
           setRuntimeSurface(null);
           setActionError(missingRuntimeSurfaceMessage(runtimeKey, title));
           return;

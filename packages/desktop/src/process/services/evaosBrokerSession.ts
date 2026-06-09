@@ -1413,6 +1413,20 @@ async function sanitizeRuntimeActionResult(
   const sourcePointer = safeText(record.source_pointer) ?? `broker:runtime_launch:${runtime}`;
   const auditId = safeText(record.audit_id);
   const expiresAt = safeIsoDate(record.expires_at);
+  const deniedRuntimeMessage = terminalRuntimeDeniedMessage(record, runtimeStatus, runtime);
+  if (deniedRuntimeMessage) {
+    return stripUndefined({
+      status: 'denied',
+      runtimeKey: runtime,
+      customerId,
+      message: deniedRuntimeMessage,
+      runtimeStatus,
+      expiresAt,
+      sourcePointer,
+      auditId,
+      backendEnforced: safeBoolean(record.backend_enforced) ?? true,
+    });
+  }
   const launchUrl = safeRuntimeLaunchUrl(record.launch_url ?? record.url);
   const runtimeSurface = await createOrOpenRuntimeSurface(launchUrl, options, {
     customerId,
@@ -1436,6 +1450,30 @@ async function sanitizeRuntimeActionResult(
     auditId,
     backendEnforced: safeBoolean(record.backend_enforced) ?? true,
   });
+}
+
+function terminalRuntimeDeniedMessage(
+  record: Record<string, unknown>,
+  runtimeStatus: IEvaosRuntimeStatusView | undefined,
+  runtime: IEvaosRuntimeKey
+): string | undefined {
+  if (runtime !== 'terminal') {
+    return undefined;
+  }
+  const statusText = [
+    safeText(record.status, 80),
+    safeText(record.message, 220),
+    safeText(record.error, 220),
+    runtimeStatus?.status,
+    runtimeStatus?.healthSummary,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (!/(denied|blocked|forbidden|unauthorized|not_authorized|permission)/.test(statusText)) {
+    return undefined;
+  }
+  return safeText(record.message, 220) ?? 'Terminal access denied by VM shell policy.';
 }
 
 async function openExternalRuntimeAction(
@@ -2117,7 +2155,10 @@ function createBusinessBrowserRuntimeSurface(
   }
   const launchUrlRaw = record.launch_url ?? record.runtime_launch_url;
   if (launchUrlRaw === undefined || launchUrlRaw === null) {
-    return undefined;
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return a Business Browser runtime surface handle.'
+    );
   }
   const launchUrl = safeRuntimeLaunchUrl(launchUrlRaw);
   return options.createRuntimeSurface(launchUrl, {

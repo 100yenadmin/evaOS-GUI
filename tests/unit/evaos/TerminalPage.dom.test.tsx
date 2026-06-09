@@ -212,6 +212,55 @@ describe('TerminalPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows broker-owned Terminal denial instead of mounting a raw unauthorized VM shell surface', async () => {
+    brokerMocks.runtimeStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'david-poku',
+        customerAccountId: 'acct_terminal',
+        runtimeKey: 'terminal',
+        displayLabel: 'Terminal',
+        status: 'running',
+        healthSummary: 'Terminal VM shell is ready.',
+        actions: ['attach_dashboard'],
+        sourcePointer: 'broker://runtime/terminal/audit_status',
+        auditId: 'audit_terminal_status',
+      },
+    });
+    brokerMocks.runtimeAction.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'denied',
+        runtimeKey: 'terminal',
+        customerId: 'david-poku',
+        message: 'Terminal access denied by VM shell policy.',
+        runtimeStatus: {
+          schemaVersion: 'evaos.runtime_status.v1',
+          customerId: 'david-poku',
+          customerAccountId: 'acct_terminal',
+          runtimeKey: 'terminal',
+          displayLabel: 'Terminal',
+          status: 'denied',
+          healthSummary: 'Terminal VM shell policy denied.',
+          sourcePointer: 'broker://runtime/terminal/denied',
+          auditId: 'audit_terminal_denied',
+        },
+        auditId: 'audit_terminal_denied',
+        backendEnforced: true,
+      },
+    });
+
+    const { container } = render(<TerminalPage />);
+
+    expect(
+      await screen.findByText('Terminal access denied by VM shell policy. Audit audit_terminal_denied.')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('evaos-runtime-surface-terminal')).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain('{"error":"unauthorized"}');
+    expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
+  });
+
   it('clears stale terminal evidence when customer context changes', async () => {
     const user = userEvent.setup();
     brokerMocks.runtimeStatus

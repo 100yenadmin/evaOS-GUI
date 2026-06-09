@@ -634,6 +634,66 @@ describe('EvaosBrokerSessionClient', () => {
     expect(createRuntimeSurface).not.toHaveBeenCalled();
   });
 
+  it('maps denied Terminal runtime launch responses before creating a VM shell surface', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'denied',
+          runtime: 'terminal',
+          customer_id: 'cus_123',
+          message: 'Terminal access denied by VM shell authorization.',
+          launch_url: 'https://ecs.electricsheephq.com/vm/benjamin-kennedy/workspace/terminal/',
+          source_pointer: 'broker:runtime_launch:terminal',
+          audit_id: 'audit_terminal_denied',
+          backend_enforced: true,
+          runtime_status: {
+            runtime: 'terminal',
+            customer_id: 'cus_123',
+            status: 'denied',
+            health_summary: 'Terminal VM shell authorization denied.',
+            source_pointer: 'broker:runtime_status:terminal',
+            audit_id: 'audit_terminal_status_denied',
+          },
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const result = await client.runtimeAction(
+      { customerId: 'cus_123', runtime: 'terminal', action: 'launch' },
+      { createRuntimeSurface }
+    );
+
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'denied',
+      runtimeKey: 'terminal',
+      customerId: 'cus_123',
+      message: 'Terminal access denied by VM shell policy.',
+      runtimeStatus: {
+        runtimeKey: 'terminal',
+        customerId: 'cus_123',
+        status: 'denied',
+      },
+      sourcePointer: 'broker:runtime_launch:terminal',
+      auditId: 'audit_terminal_denied',
+      backendEnforced: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/ecs\\.electricsheephq\\.com|launch_url|desktop_session|eds_|Bearer/i);
+  });
+
   it('does not adopt the released Workbench keychain desktop session when the environment is explicitly overridden', () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
