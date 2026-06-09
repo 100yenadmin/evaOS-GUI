@@ -718,31 +718,30 @@ describe('EvaosBrokerSessionClient', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('adopts the released Workbench keychain desktop session by default for the installed macOS app path', () => {
+  it('does not touch the released Workbench keychain by default for the installed beta app path', () => {
     const fetchImpl = fetchMock();
+    const legacyWorkbenchSessionLoader = vi.fn(() => ({
+      accessToken: 'eds_workbench_keychain_session_secret_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+      source: 'workbench-keychain' as const,
+    }));
     const client = new EvaosBrokerSessionClient({
       fetchImpl,
       now: () => NOW,
-      legacyWorkbenchSessionLoader: () => ({
-        accessToken: 'eds_workbench_keychain_session_secret_for_test',
-        userEmail: 'admin@100yen.org',
-        expiresAt: FUTURE,
-        source: 'workbench-keychain',
-      }),
+      legacyWorkbenchSessionLoader,
     });
 
     const status = client.getSessionStatus();
 
-    expect(status).toMatchObject({
-      state: 'authenticated',
-      authenticated: true,
+    expect(status).toEqual({
+      state: 'missing',
+      authenticated: false,
       expired: false,
-      userEmail: 'admin@100yen.org',
-      expiresAt: FUTURE,
-      source: 'workbench-keychain',
-      message: 'evaOS desktop session is active.',
+      source: 'none',
+      message: 'Sign in to evaOS to connect this desktop shell.',
     });
-    expect(JSON.stringify(status)).not.toContain('eds_workbench_keychain_session_secret_for_test');
+    expect(legacyWorkbenchSessionLoader).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
