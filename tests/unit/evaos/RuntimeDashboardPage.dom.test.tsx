@@ -174,6 +174,8 @@ describe('RuntimeDashboardPage', () => {
       const surface = await screen.findByTestId(`evaos-runtime-surface-${runtimeKey}`);
       expect(surface).toHaveAttribute('src', `evaos-runtime-surface://surface-${runtimeKey}-fixture/`);
       expect(surface).toHaveAttribute('partition', `evaos-runtime-${runtimeKey}-fixture`);
+      expect(surface).toHaveClass('h-full');
+      expect(surface).toHaveStyle({ display: 'flex', height: '100%', width: '100%' });
       expect(surface).not.toHaveAttribute('allowpopups', 'true');
       expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=|launch_url/i);
       expect(document.body.textContent).not.toContain('runtime.example.test');
