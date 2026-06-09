@@ -63,7 +63,7 @@ import type {
   IEvaosRuntimeSurfaceView,
   IEvaosSafeUrlSummary,
 } from '@/common/evaos/bridgeTypes';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
@@ -213,7 +213,7 @@ export class EvaosBrokerSessionClient {
     const env = options.env ?? process.env;
     this.sessionStore =
       options.sessionStore === undefined
-        ? createDefaultBetaSessionStore(options.env === undefined)
+        ? createDefaultBetaSessionStore(options.env === undefined, env)
         : options.sessionStore;
     this.session =
       loadSessionFromEnvironment(env) ??
@@ -1235,24 +1235,37 @@ type ElectronSafeStorageApi = {
 
 type ElectronAppApi = {
   isReady: () => boolean;
-  getPath: (name: 'userData') => string;
+  getPath: (name: 'userData' | 'exe') => string;
+  isPackaged?: boolean;
 };
 
-function createDefaultBetaSessionStore(enabled: boolean): EvaosDesktopSessionStore | null {
+type MacCodeSignatureInfo = {
+  adhoc: boolean;
+  teamIdentifier: string | null;
+};
+
+type MacCodeSignatureInspector = (executablePath: string) => MacCodeSignatureInfo | null;
+
+let defaultBetaSafeStorageSkipCache: { executablePath: string; skip: boolean } | null = null;
+
+function createDefaultBetaSessionStore(
+  enabled: boolean,
+  env: Record<string, string | undefined> = process.env
+): EvaosDesktopSessionStore | null {
   if (!enabled) {
     return null;
   }
-  return createLazyElectronEncryptedSessionStore();
+  return createLazyElectronEncryptedSessionStore(env);
 }
 
-function createLazyElectronEncryptedSessionStore(): EvaosDesktopSessionStore {
+function createLazyElectronEncryptedSessionStore(env: Record<string, string | undefined>): EvaosDesktopSessionStore {
   return {
-    load: () => withDefaultBetaSessionStore((store) => store.load()) ?? null,
+    load: () => withDefaultBetaSessionStore((store) => store.load(), env) ?? null,
     save: (session: EvaosDesktopSession) => {
       const saved = withDefaultBetaSessionStore((store) => {
         store.save(session);
         return true;
-      });
+      }, env);
       if (!saved) {
         throw new Error('evaos_beta_session_store_unavailable');
       }
@@ -1261,7 +1274,7 @@ function createLazyElectronEncryptedSessionStore(): EvaosDesktopSessionStore {
       const cleared = withDefaultBetaSessionStore((store) => {
         store.clear();
         return true;
-      });
+      }, env);
       if (!cleared) {
         throw new Error('evaos_beta_session_store_unavailable');
       }
@@ -1269,14 +1282,107 @@ function createLazyElectronEncryptedSessionStore(): EvaosDesktopSessionStore {
   };
 }
 
-function withDefaultBetaSessionStore<T>(operation: (store: EvaosDesktopSessionStore) => T): T | null {
+function withDefaultBetaSessionStore<T>(
+  operation: (store: EvaosDesktopSessionStore) => T,
+  env: Record<string, string | undefined>
+): T | null {
   const electron = loadElectronSessionStorageApis();
   if (!electron?.app.isReady() || !electron.safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+  if (shouldSkipDefaultBetaSafeStorageForElectronApp(electron.app, env)) {
     return null;
   }
 
   const sessionPath = join(electron.app.getPath('userData'), 'evaos-desktop-session.v1.enc');
   return operation(createEncryptedFileSessionStore(sessionPath, electron.safeStorage));
+}
+
+function shouldSkipDefaultBetaSafeStorageForElectronApp(
+  app: ElectronAppApi,
+  env: Record<string, string | undefined>
+): boolean {
+  let executablePath: string;
+  try {
+    executablePath = app.getPath('exe');
+  } catch {
+    executablePath = '';
+  }
+  if (!executablePath) {
+    return process.platform === 'darwin' && app.isPackaged === true;
+  }
+  if (defaultBetaSafeStorageSkipCache?.executablePath === executablePath) {
+    return defaultBetaSafeStorageSkipCache.skip;
+  }
+
+  const skip = shouldSkipDefaultBetaSafeStorageForMacApp({
+    env,
+    executablePath,
+    isPackaged: app.isPackaged === true,
+    platform: process.platform,
+    inspectSignature: inspectMacCodeSignature,
+  });
+  defaultBetaSafeStorageSkipCache = { executablePath, skip };
+  return skip;
+}
+
+export function shouldSkipDefaultBetaSafeStorageForMacApp({
+  env,
+  executablePath,
+  isPackaged,
+  platform,
+  inspectSignature,
+}: {
+  env: Record<string, string | undefined>;
+  executablePath: string;
+  isPackaged: boolean;
+  platform: NodeJS.Platform;
+  inspectSignature: MacCodeSignatureInspector;
+}): boolean {
+  if (isEnabledEnvFlag(env.AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE)) {
+    return false;
+  }
+  if (isEnabledEnvFlag(env.AIONUI_EVAOS_DISABLE_BETA_SAFE_STORAGE)) {
+    return true;
+  }
+  if (platform !== 'darwin' || !isPackaged) {
+    return false;
+  }
+  if (!executablePath) {
+    return true;
+  }
+
+  // Ad-hoc proof builds change code identity every artifact, which can make Electron Safe Storage block on Keychain.
+  const signature = inspectSignature(executablePath);
+  if (!signature) {
+    return true;
+  }
+
+  return signature.adhoc || !signature.teamIdentifier;
+}
+
+function isEnabledEnvFlag(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true';
+}
+
+function inspectMacCodeSignature(executablePath: string): MacCodeSignatureInfo | null {
+  const result = spawnSync('/usr/bin/codesign', ['-dv', '--verbose=4', executablePath], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 1500,
+  });
+  if (result.error || result.status !== 0) {
+    return null;
+  }
+
+  const raw = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  const teamMatch = raw.match(/^TeamIdentifier=(.+)$/m);
+  const teamIdentifier = teamMatch && teamMatch[1] !== 'not set' ? teamMatch[1] : null;
+  return {
+    adhoc: /^Signature=adhoc$/m.test(raw),
+    teamIdentifier,
+  };
 }
 
 function loadElectronSessionStorageApis(): { app: ElectronAppApi; safeStorage: ElectronSafeStorageApi } | null {

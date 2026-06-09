@@ -9,6 +9,7 @@ import {
   EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT,
   EvaosBrokerSessionClient,
   EvaosBrokerSessionError,
+  shouldSkipDefaultBetaSafeStorageForMacApp,
   type EvaosBrokerFetch,
   type EvaosDesktopSessionStore,
 } from '@/process/services/evaosBrokerSession';
@@ -1121,5 +1122,43 @@ describe('EvaosBrokerSessionClient', () => {
       client.runtimeStatus({ customerId: 'cus_123', runtime: 'remote_webui' as 'browser' })
     ).rejects.toBeInstanceOf(EvaosBrokerSessionError);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('shouldSkipDefaultBetaSafeStorageForMacApp', () => {
+  it('skips Electron Safe Storage for packaged macOS ad-hoc proof builds', () => {
+    expect(
+      shouldSkipDefaultBetaSafeStorageForMacApp({
+        env: {},
+        executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        isPackaged: true,
+        platform: 'darwin',
+        inspectSignature: () => ({ adhoc: true, teamIdentifier: null }),
+      })
+    ).toBe(true);
+  });
+
+  it('keeps Electron Safe Storage enabled for packaged macOS Developer ID builds', () => {
+    expect(
+      shouldSkipDefaultBetaSafeStorageForMacApp({
+        env: {},
+        executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        isPackaged: true,
+        platform: 'darwin',
+        inspectSignature: () => ({ adhoc: false, teamIdentifier: 'TEAM123456' }),
+      })
+    ).toBe(false);
+  });
+
+  it('allows an explicit ad-hoc Safe Storage opt-in for local diagnostics', () => {
+    expect(
+      shouldSkipDefaultBetaSafeStorageForMacApp({
+        env: { AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE: '1' },
+        executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        isPackaged: true,
+        platform: 'darwin',
+        inspectSignature: () => ({ adhoc: true, teamIdentifier: null }),
+      })
+    ).toBe(false);
   });
 });
