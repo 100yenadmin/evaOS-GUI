@@ -51,6 +51,11 @@ function actionFromPoint(event: MouseEvent, footer: HTMLDivElement): FooterActio
   return hit?.getAttribute(FOOTER_ACTION_ATTRIBUTE) as FooterAction | null;
 }
 
+function isFooterActionEventTarget(event: MouseEvent, footer: HTMLDivElement): boolean {
+  const target = event.target instanceof Element ? event.target : null;
+  return Boolean(actionFromElement(target, footer));
+}
+
 function useFooterActionCapture(ref: React.RefObject<HTMLDivElement | null>, handlers: FooterActionHandlers): void {
   const handlersRef = useRef(handlers);
   const lastActivationRef = useRef<{ action: FooterAction; at: number } | null>(null);
@@ -64,8 +69,9 @@ function useFooterActionCapture(ref: React.RefObject<HTMLDivElement | null>, han
     if (!footer) return;
 
     const handleFooterAction = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const action = actionFromElement(target, footer) ?? actionFromPoint(event, footer);
+      if (isFooterActionEventTarget(event, footer)) return;
+
+      const action = actionFromPoint(event, footer);
       if (!action) return;
 
       const handler = handlersRef.current[action];
@@ -75,11 +81,13 @@ function useFooterActionCapture(ref: React.RefObject<HTMLDivElement | null>, han
       const lastActivation = lastActivationRef.current;
       if (lastActivation?.action === action && now - lastActivation.at < 350) {
         event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
       lastActivationRef.current = { action, at: now };
       event.preventDefault();
+      event.stopPropagation();
       handler();
     };
 
@@ -213,6 +221,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             tabIndex={0}
             aria-label={isSettings ? t('common.back') : t('common.settings')}
             data-evaos-footer-action='settings'
+            onClick={onSettingsClick}
             onKeyDown={(event) => activateFromKeyboard(event, onSettingsClick)}
             className={classNames(
               'group h-34px flex items-center rd-0.5rem cursor-pointer transition-colors',
@@ -236,6 +245,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
               type='button'
               aria-label='Sign out'
               data-evaos-footer-action='sign-out'
+              onClick={onLogoutClick}
               className={classNames(
                 'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                 collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-10px px-14px',
@@ -264,6 +274,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
                 type='button'
                 aria-label='Sign In'
                 data-evaos-footer-action='sign-in'
+                onClick={onSignInClick}
                 className={classNames(
                   'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                   collapsed ? 'w-full justify-center' : 'w-full min-w-0 justify-start gap-10px px-14px',
@@ -298,6 +309,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
               role='button'
               tabIndex={0}
               data-evaos-footer-action='theme'
+              onClick={onThemeToggle}
               onKeyDown={(event) => activateFromKeyboard(event, onThemeToggle)}
               className={classNames(
                 'h-32px w-40px shrink-0 flex items-center justify-center cursor-pointer rd-0.5rem transition-colors text-t-secondary hover:bg-fill-2 hover:text-t-primary active:bg-fill-3',
