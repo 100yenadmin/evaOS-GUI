@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@arco-design/web-react';
+import { evaosRouteAllowsMissingBroker, evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
@@ -50,11 +51,37 @@ const HomePage: React.FC = () => {
   const brokerSessionStatus = useEvaosBrokerSessionStatus(webAuthenticated);
   const brokerAuthenticated =
     brokerSessionStatus.session?.authenticated === true && !brokerSessionStatus.session.expired;
+  const shellAuthenticated = webAuthenticated || brokerAuthenticated;
   const customerContext = useEvaosCustomerContext(
     brokerAuthenticated,
     evaosBrokerSessionKey(brokerSessionStatus.session),
     brokerSessionStatus.loading ? { clearOnUnauthenticated: false } : undefined
   );
+  const routeContext = useMemo(
+    () => ({
+      authenticated: shellAuthenticated,
+      roles: customerContext.roles,
+      scopes: customerContext.scopes,
+      isOperator: customerContext.isOperator,
+      userEmail: brokerSessionStatus.session?.userEmail ?? user?.username,
+    }),
+    [
+      brokerSessionStatus.session?.userEmail,
+      customerContext.isOperator,
+      customerContext.roles,
+      customerContext.scopes,
+      shellAuthenticated,
+      user?.username,
+    ]
+  );
+  const visibleQuickActions = useMemo(() => {
+    if (!shellAuthenticated || brokerSessionStatus.loading) return [];
+    if (!brokerAuthenticated) {
+      return QUICK_ACTIONS.filter((action) => evaosRouteAllowsMissingBroker(action.route));
+    }
+    if (!customerContext.loaded) return [];
+    return QUICK_ACTIONS.filter((action) => evaosRuntimeRouteDecision(action.route, routeContext).allowed);
+  }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);
 
   const sessionText = brokerAuthenticated
     ? 'Session active'
@@ -67,6 +94,11 @@ const HomePage: React.FC = () => {
 
   const handleNavigate = (route: string) => {
     void navigate(route);
+  };
+  const canRefreshCustomerContext = brokerAuthenticated && !brokerSessionStatus.loading && !customerContext.loading;
+  const handleRefreshHome = () => {
+    if (!canRefreshCustomerContext) return;
+    void customerContext.refreshTargets();
   };
 
   return (
@@ -93,20 +125,28 @@ const HomePage: React.FC = () => {
                 Old Workbench parity surface for the fastest customer workflow entry points.
               </div>
             </div>
-            <Button onClick={() => handleNavigate('/mission-control')}>Refresh Home</Button>
+            <Button disabled={!canRefreshCustomerContext} onClick={handleRefreshHome}>
+              Refresh Home
+            </Button>
           </div>
           <div className='grid grid-cols-1 gap-12px lg:grid-cols-2'>
-            {QUICK_ACTIONS.map((action) => (
-              <button
-                key={action.route}
-                type='button'
-                onClick={() => handleNavigate(action.route)}
-                className='rounded-8px border border-solid border-[var(--color-border-2)] bg-bg-1 p-16px text-left text-t-primary transition-colors hover:bg-fill-2'
-              >
-                <div className='text-15px font-semibold leading-22px'>{action.title}</div>
-                <div className='mt-4px text-13px leading-20px text-t-secondary'>{action.detail}</div>
-              </button>
-            ))}
+            {visibleQuickActions.length > 0 ? (
+              visibleQuickActions.map((action) => (
+                <button
+                  key={action.route}
+                  type='button'
+                  onClick={() => handleNavigate(action.route)}
+                  className='rounded-8px border border-solid border-[var(--color-border-2)] bg-bg-1 p-16px text-left text-t-primary transition-colors hover:bg-fill-2'
+                >
+                  <div className='text-15px font-semibold leading-22px'>{action.title}</div>
+                  <div className='mt-4px text-13px leading-20px text-t-secondary'>{action.detail}</div>
+                </button>
+              ))
+            ) : (
+              <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-bg-1 p-16px text-13px leading-20px text-t-secondary lg:col-span-2'>
+                Sign in to evaOS and select a customer to open broker-owned workspaces.
+              </div>
+            )}
           </div>
         </section>
       </div>
