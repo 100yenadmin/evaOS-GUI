@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '@arco-design/web-react';
 import { ArrowCircleLeft, CloseOne, Login, Moon, SettingTwo, SunOne } from '@icon-park/react';
@@ -17,6 +17,25 @@ import packageJson from '../../../../../../../package.json';
 declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
 const EVAOS_CHANNEL_LABEL = 'controlled beta';
+
+function useNativeButtonClick(
+  ref: React.RefObject<HTMLButtonElement | null>,
+  handler: (() => void) | undefined,
+  enabled: boolean
+): void {
+  useEffect(() => {
+    const button = ref.current;
+    if (!enabled || !button || !handler) return;
+
+    const handleClick = (event: MouseEvent) => {
+      event.preventDefault();
+      handler();
+    };
+
+    button.addEventListener('click', handleClick);
+    return () => button.removeEventListener('click', handleClick);
+  }, [enabled, handler, ref]);
+}
 
 interface SiderFooterProps {
   isMobile: boolean;
@@ -60,6 +79,8 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   signInError,
 }) => {
   const { t } = useTranslation();
+  const signOutButtonRef = useRef<HTMLButtonElement | null>(null);
+  const signInButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const settingsIcon = isSettings ? (
     <ArrowCircleLeft
@@ -83,6 +104,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   const showAccountBlock = !collapsed && (accountLabel || selectedCustomerLabel || selectedCustomerId);
   const canRenderCustomerSelect =
     canSwitchCustomers && selectedCustomerId && customerTargets.length > 1 && Boolean(onCustomerChange);
+
+  useNativeButtonClick(signOutButtonRef, onLogoutClick, showLogout && Boolean(onLogoutClick));
+  useNativeButtonClick(signInButtonRef, onSignInClick, showSignIn && Boolean(onSignInClick));
 
   return (
     <div className='shrink-0 sider-footer mt-auto pt-8px pb-8px border-t border-solid border-[var(--color-border-2)] border-l-0 border-r-0 border-b-0'>
@@ -135,9 +159,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
         {showLogout && onLogoutClick && (
           <Tooltip {...siderTooltipProps} content='Sign out' position='right'>
             <button
+              ref={signOutButtonRef}
               type='button'
               aria-label='Sign out'
-              onClick={onLogoutClick}
               className={classNames(
                 'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                 collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-10px px-14px',
@@ -163,9 +187,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
           <div className={classNames('flex min-w-0 flex-col gap-4px', collapsed ? 'w-full' : 'flex-1')}>
             <Tooltip {...siderTooltipProps} content='Sign In' position='right'>
               <button
+                ref={signInButtonRef}
                 type='button'
                 aria-label='Sign In'
-                onClick={onSignInClick}
                 className={classNames(
                   'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                   collapsed ? 'w-full justify-center' : 'w-full min-w-0 justify-start gap-10px px-14px',
