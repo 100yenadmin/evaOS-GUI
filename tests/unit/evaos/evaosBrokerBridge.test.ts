@@ -9,6 +9,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EvaosBrokerSessionClient } from '@/process/services/evaosBrokerSession';
 
+const runtimeSurfaceRegistryMock = vi.hoisted(() => ({
+  clearEvaosRuntimeSurfaces: vi.fn(),
+  clearEvaosRuntimeSurfacesForCustomer: vi.fn(),
+  createEvaosRuntimeSurface: vi.fn(),
+}));
+
 vi.mock('@office-ai/platform', () => ({
   bridge: {
     buildProvider: vi.fn(() => ({
@@ -30,6 +36,8 @@ vi.mock('@office-ai/platform', () => ({
   },
 }));
 
+vi.mock('@process/services/evaosRuntimeSurfaceRegistry', () => runtimeSurfaceRegistryMock);
+
 async function loadBrokerBridge() {
   vi.resetModules();
   const brokerBridge = await import('@process/bridge/evaosBrokerBridge');
@@ -48,6 +56,9 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     vi.clearAllMocks();
     delete process.env.AIONUI_E2E_TEST;
     delete process.env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE;
+    runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfaces.mockReset();
+    runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfacesForCustomer.mockReset();
+    runtimeSurfaceRegistryMock.createEvaosRuntimeSurface.mockReset();
   });
 
   it('accepts sanitized broker status payloads', async () => {
@@ -176,5 +187,27 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     });
     expect(JSON.stringify(response)).not.toMatch(/eds_|epg_|desktop_session|provider_grant|Bearer|launch_url/i);
     expect(client.runtimeAction).not.toHaveBeenCalled();
+  });
+
+  it('clears only the requested customer runtime surfaces through broker IPC', async () => {
+    const { initEvaosBrokerBridge, ipcBridge } = await loadBrokerBridge();
+
+    initEvaosBrokerBridge({} as unknown as EvaosBrokerSessionClient);
+
+    const clearProvider = (
+      ipcBridge.evaosBroker as unknown as { clearCustomerRuntimeState: { provider: typeof vi.fn } }
+    ).clearCustomerRuntimeState.provider;
+    const handler = lastProviderHandler(vi.mocked(clearProvider));
+    const response = await handler({ customerId: 'david-poku' });
+
+    expect(runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfacesForCustomer).toHaveBeenCalledWith('david-poku');
+    expect(runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfaces).not.toHaveBeenCalled();
+    expect(response).toEqual({
+      success: true,
+      data: {
+        cleared: true,
+        customerId: 'david-poku',
+      },
+    });
   });
 });

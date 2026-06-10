@@ -9,6 +9,8 @@ import type {
   IEvaosBrokerBeginDesktopAuthResult,
   IEvaosBrokerClaimDeviceCodeRequest,
   IEvaosBrokerSessionStatus,
+  IEvaosCustomerRuntimeStateClearRequest,
+  IEvaosCustomerRuntimeStateClearResult,
   IEvaosCustomerTargetsView,
   IEvaosRuntimeActionRequest,
   IEvaosRuntimeActionResult,
@@ -29,7 +31,11 @@ import {
   isEvaosLocalProductFixtureEnabled,
 } from '@process/services/evaosLocalProductFixture';
 import { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
-import { clearEvaosRuntimeSurfaces, createEvaosRuntimeSurface } from '@process/services/evaosRuntimeSurfaceRegistry';
+import {
+  clearEvaosRuntimeSurfaces,
+  clearEvaosRuntimeSurfacesForCustomer,
+  createEvaosRuntimeSurface,
+} from '@process/services/evaosRuntimeSurfaceRegistry';
 
 export { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
 
@@ -62,6 +68,19 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
       toBridgeResponse(() =>
         isEvaosLocalProductFixtureEnabled() ? evaosLocalProductFixtureCustomerTargets() : client.customerTargets()
       )
+  );
+
+  ipcBridge.evaosBroker.clearCustomerRuntimeState.provider(
+    async ({
+      customerId,
+    }: IEvaosCustomerRuntimeStateClearRequest): Promise<BridgeResponse<IEvaosCustomerRuntimeStateClearResult>> =>
+      toBridgeResponse(() => {
+        clearEvaosRuntimeSurfacesForCustomer(customerId);
+        return {
+          cleared: true,
+          customerId,
+        };
+      })
   );
 
   ipcBridge.evaosBroker.runtimeStatus.provider(

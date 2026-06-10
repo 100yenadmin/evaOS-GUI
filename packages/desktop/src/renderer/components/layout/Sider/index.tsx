@@ -8,7 +8,10 @@ import { clearEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomer
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
-import { EVAOS_DESKTOP_SESSION_CLEARED_EVENT } from '@renderer/hooks/useEvaosBrokerSessionStatus';
+import {
+  EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT,
+  EVAOS_DESKTOP_SESSION_CLEARED_EVENT,
+} from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
 import EvaosSidebarSection from '@renderer/evaos/EvaosSidebarSection';
@@ -172,6 +175,49 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   }, [closePreview, logout, onSessionClick]);
 
+  const handleCustomerChange = useCallback(
+    async (customerId: string) => {
+      const previousCustomerId = evaosSidebarState.selectedCustomerId;
+      if (!customerId || customerId === previousCustomerId) {
+        evaosSidebarState.selectCustomer(customerId);
+        return;
+      }
+
+      cleanupSiderTooltips();
+      blurActiveElement();
+      closePreview();
+      setBrokerSignInError(null);
+
+      if (previousCustomerId) {
+        try {
+          const response = await evaosBroker.clearCustomerRuntimeState.invoke({ customerId: previousCustomerId });
+          if (!response.success) {
+            console.error('evaOS customer runtime state clear failed:', response.msg);
+            return;
+          }
+        } catch (error) {
+          console.error('evaOS customer runtime state clear failed:', error);
+          return;
+        }
+      }
+
+      evaosSidebarState.selectCustomer(customerId);
+      window.dispatchEvent(
+        new CustomEvent(EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT, {
+          detail: {
+            source: 'footer',
+            previousCustomerId,
+            selectedCustomerId: customerId,
+          },
+        })
+      );
+      if (onSessionClick) {
+        onSessionClick();
+      }
+    },
+    [closePreview, evaosSidebarState, onSessionClick]
+  );
+
   useEffect(() => {
     if (!showLogout) return;
 
@@ -308,7 +354,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         selectedCustomerLabel={evaosSidebarState.selectedCustomerLabel}
         customerTargets={evaosSidebarState.customerTargets}
         canSwitchCustomers={evaosSidebarState.canSwitchCustomers}
-        onCustomerChange={evaosSidebarState.selectCustomer}
+        onCustomerChange={handleCustomerChange}
         showLogout={showLogout}
         onLogoutClick={handleLogout}
         showSignIn={showBrokerSignIn}
