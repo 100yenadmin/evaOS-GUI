@@ -18,23 +18,42 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
 const EVAOS_CHANNEL_LABEL = 'controlled beta';
 
-function useNativeButtonClick(
-  ref: React.RefObject<HTMLButtonElement | null>,
-  handler: (() => void) | undefined,
-  enabled: boolean
+function useFooterAuthButtonClicks(
+  ref: React.RefObject<HTMLDivElement | null>,
+  {
+    onLogoutClick,
+    onSignInClick,
+    showLogout,
+    showSignIn,
+  }: {
+    onLogoutClick?: () => void;
+    onSignInClick?: () => void;
+    showLogout: boolean;
+    showSignIn: boolean;
+  }
 ): void {
   useEffect(() => {
-    const button = ref.current;
-    if (!enabled || !button || !handler) return;
+    const footer = ref.current;
+    if (!footer) return;
 
     const handleClick = (event: MouseEvent) => {
-      event.preventDefault();
-      handler();
+      const target = event.target instanceof Element ? event.target.closest('button[aria-label]') : null;
+      if (!target || !footer.contains(target)) return;
+
+      const label = target.getAttribute('aria-label');
+      if (label === 'Sign In' && showSignIn && onSignInClick) {
+        event.preventDefault();
+        onSignInClick();
+      }
+      if (label === 'Sign out' && showLogout && onLogoutClick) {
+        event.preventDefault();
+        onLogoutClick();
+      }
     };
 
-    button.addEventListener('click', handleClick);
-    return () => button.removeEventListener('click', handleClick);
-  }, [enabled, handler, ref]);
+    footer.addEventListener('click', handleClick, true);
+    return () => footer.removeEventListener('click', handleClick, true);
+  }, [onLogoutClick, onSignInClick, ref, showLogout, showSignIn]);
 }
 
 interface SiderFooterProps {
@@ -79,8 +98,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   signInError,
 }) => {
   const { t } = useTranslation();
-  const signOutButtonRef = useRef<HTMLButtonElement | null>(null);
-  const signInButtonRef = useRef<HTMLButtonElement | null>(null);
+  const footerRef = useRef<HTMLDivElement | null>(null);
 
   const settingsIcon = isSettings ? (
     <ArrowCircleLeft
@@ -105,11 +123,13 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   const canRenderCustomerSelect =
     canSwitchCustomers && selectedCustomerId && customerTargets.length > 1 && Boolean(onCustomerChange);
 
-  useNativeButtonClick(signOutButtonRef, onLogoutClick, showLogout && Boolean(onLogoutClick));
-  useNativeButtonClick(signInButtonRef, onSignInClick, showSignIn && Boolean(onSignInClick));
+  useFooterAuthButtonClicks(footerRef, { onLogoutClick, onSignInClick, showLogout, showSignIn });
 
   return (
-    <div className='shrink-0 sider-footer mt-auto pt-8px pb-8px border-t border-solid border-[var(--color-border-2)] border-l-0 border-r-0 border-b-0'>
+    <div
+      ref={footerRef}
+      className='shrink-0 sider-footer mt-auto pt-8px pb-8px border-t border-solid border-[var(--color-border-2)] border-l-0 border-r-0 border-b-0'
+    >
       {showAccountBlock ? (
         <div className='mb-8px px-10px text-11px leading-16px text-t-secondary'>
           <div className='flex items-center justify-between gap-6px'>
@@ -159,7 +179,6 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
         {showLogout && onLogoutClick && (
           <Tooltip {...siderTooltipProps} content='Sign out' position='right'>
             <button
-              ref={signOutButtonRef}
               type='button'
               aria-label='Sign out'
               className={classNames(
@@ -187,7 +206,6 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
           <div className={classNames('flex min-w-0 flex-col gap-4px', collapsed ? 'w-full' : 'flex-1')}>
             <Tooltip {...siderTooltipProps} content='Sign In' position='right'>
               <button
-                ref={signInButtonRef}
                 type='button'
                 aria-label='Sign In'
                 className={classNames(
