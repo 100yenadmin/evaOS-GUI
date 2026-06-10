@@ -1,9 +1,14 @@
-import React, { Suspense } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import React, { Suspense, useEffect } from 'react';
+import { HashRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { deepLink, evaosBroker } from '@/common/adapter/ipcBridge';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { EVAOS_BETA_WEBUI_FALLBACK_ROUTE, evaosBetaWebUIRouteElement } from '@renderer/evaos/evaosBetaShellPolicy';
 import { renderEvaosRoutes } from '@renderer/evaos/evaosRoutes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import {
+  EVAOS_DESKTOP_SESSION_IMPORTED_ACTION,
+  EVAOS_DESKTOP_SESSION_IMPORTED_EVENT,
+} from '@renderer/hooks/system/useDeepLink';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 const Conversation = React.lazy(() => import('@renderer/pages/conversation'));
 const Guid = React.lazy(() => import('@renderer/pages/guid'));
@@ -42,11 +47,50 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
   return React.cloneElement(layout);
 };
 
+const DesktopSessionImportListener: React.FC = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let disposed = false;
+
+    const dispatchDesktopSessionImported = (source: string, confirmed = false) => {
+      window.dispatchEvent(
+        new CustomEvent(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, {
+          detail: { source, confirmed },
+        })
+      );
+    };
+
+    const confirmDesktopSessionImport = async (source: string) => {
+      dispatchDesktopSessionImported(source);
+      try {
+        const response = await evaosBroker.getSessionStatus.invoke();
+        if (!disposed && response.success && response.data?.authenticated === true && !response.data.expired) {
+          dispatchDesktopSessionImported(source, true);
+          void navigate('/home', { replace: true });
+        }
+      } catch {
+        // Existing broker-session hooks will surface a safe signed-out/support state.
+      }
+    };
+
+    return deepLink.received.on((payload) => {
+      if (payload.action !== EVAOS_DESKTOP_SESSION_IMPORTED_ACTION) {
+        return;
+      }
+      void confirmDesktopSessionImport(payload.params.source || 'unknown');
+    });
+  }, [navigate]);
+
+  return null;
+};
+
 const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
   const { status } = useAuth();
 
   return (
     <HashRouter>
+      <DesktopSessionImportListener />
       <Routes>
         <Route
           path='/login'
