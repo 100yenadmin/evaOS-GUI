@@ -58,6 +58,15 @@ export interface IEvaosCustomerTargetsView {
   summaryText: string;
 }
 
+export interface IEvaosCustomerRuntimeStateClearRequest {
+  customerId: string;
+}
+
+export interface IEvaosCustomerRuntimeStateClearResult {
+  cleared: boolean;
+  customerId: string;
+}
+
 export interface IEvaosRuntimeStatusRequest {
   customerId: string;
   runtime: IEvaosRuntimeKey;

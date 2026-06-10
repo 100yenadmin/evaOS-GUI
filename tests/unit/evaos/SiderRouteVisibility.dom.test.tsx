@@ -54,6 +54,7 @@ const brokerSessionMock = vi.hoisted(() => ({
 
 const brokerMocks = vi.hoisted(() => ({
   beginDesktopAuth: vi.fn(),
+  clearCustomerRuntimeState: vi.fn(),
   revokeSession: vi.fn(),
 }));
 
@@ -88,6 +89,7 @@ vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
 
 vi.mock('@renderer/hooks/useEvaosBrokerSessionStatus', () => ({
   useEvaosBrokerSessionStatus: () => brokerSessionMock,
+  EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT: 'evaos:customer-context-changed',
   EVAOS_DESKTOP_SESSION_CLEARED_EVENT: 'evaos:desktop-session-cleared',
   evaosBrokerSessionKey: (session: typeof brokerSessionMock.session | null) =>
     session?.sessionKey ??
@@ -116,6 +118,9 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
     beginDesktopAuth: {
       invoke: brokerMocks.beginDesktopAuth,
+    },
+    clearCustomerRuntimeState: {
+      invoke: brokerMocks.clearCustomerRuntimeState,
     },
     revokeSession: {
       invoke: brokerMocks.revokeSession,
@@ -190,6 +195,7 @@ describe('Sider runtime route visibility', () => {
       error: customerContextMock.error,
     }));
     brokerMocks.revokeSession.mockReset();
+    brokerMocks.clearCustomerRuntimeState.mockReset();
     brokerMocks.beginDesktopAuth.mockReset();
     brokerMocks.beginDesktopAuth.mockResolvedValue({
       success: true,
@@ -210,6 +216,13 @@ describe('Sider runtime route visibility', () => {
         expired: false,
         source: 'none',
         message: 'Sign in to evaOS to connect this desktop shell.',
+      },
+    });
+    brokerMocks.clearCustomerRuntimeState.mockResolvedValue({
+      success: true,
+      data: {
+        cleared: true,
+        customerId: 'david-poku',
       },
     });
     brokerSessionMock.loading = false;
@@ -454,6 +467,53 @@ describe('Sider runtime route visibility', () => {
     await user.selectOptions(customerSelect, 'second-customer');
 
     expect(customerContextMock.selectCustomer).toHaveBeenCalledWith('second-customer');
+  });
+
+  it('clears broker-owned customer runtime state before switching footer customers', async () => {
+    const user = userEvent.setup();
+    const customerChangedListener = vi.fn();
+    customerContextMock.roles = ['admin'];
+    customerContextMock.isOperator = true;
+    customerContextMock.selectedCustomerId = 'david-poku';
+    customerContextMock.targets = [
+      {
+        customerId: 'david-poku',
+        displayName: 'David Poku Co',
+        email: 'ops@example.test',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: true,
+      },
+      {
+        customerId: 'second-customer',
+        displayName: 'Second Customer',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: false,
+      },
+    ];
+    window.addEventListener('evaos:customer-context-changed', customerChangedListener);
+
+    renderSider();
+
+    await user.selectOptions(screen.getByLabelText('Selected customer'), 'second-customer');
+
+    await waitFor(() => {
+      expect(brokerMocks.clearCustomerRuntimeState).toHaveBeenCalledWith({ customerId: 'david-poku' });
+      expect(customerContextMock.selectCustomer).toHaveBeenCalledWith('second-customer');
+    });
+    expect(brokerMocks.clearCustomerRuntimeState.mock.invocationCallOrder[0]).toBeLessThan(
+      customerContextMock.selectCustomer.mock.invocationCallOrder[0]
+    );
+    expect(customerChangedListener).toHaveBeenCalledTimes(1);
+    expect(customerChangedListener.mock.calls[0][0]).toMatchObject({
+      detail: {
+        source: 'footer',
+        previousCustomerId: 'david-poku',
+        selectedCustomerId: 'second-customer',
+      },
+    });
+    window.removeEventListener('evaos:customer-context-changed', customerChangedListener);
   });
 
   it('keeps non-admin users fixed to their selected customer in the footer', () => {

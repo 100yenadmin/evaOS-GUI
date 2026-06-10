@@ -10,6 +10,7 @@ import type { IEvaosBrokerSessionStatus } from '@/common/evaos/bridgeTypes';
 import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from './system/useDeepLink';
 
 export const EVAOS_DESKTOP_SESSION_CLEARED_EVENT = 'evaos:desktop-session-cleared';
+export const EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT = 'evaos:customer-context-changed';
 
 interface EvaosBrokerSessionStatusState {
   session: IEvaosBrokerSessionStatus | null;

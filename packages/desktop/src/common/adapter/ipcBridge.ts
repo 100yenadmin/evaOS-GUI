@@ -192,6 +192,8 @@ import type {
   IEvaosBrokerClaimDeviceCodeRequest,
   IEvaosBrokerBeginDesktopAuthResult,
   IEvaosCustomerTargetView,
+  IEvaosCustomerRuntimeStateClearRequest,
+  IEvaosCustomerRuntimeStateClearResult,
   IEvaosCustomerTargetsView,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeActionRequest,
@@ -256,6 +258,8 @@ export type {
   IEvaosBrokerClaimDeviceCodeRequest,
   IEvaosBrokerBeginDesktopAuthResult,
   IEvaosCustomerTargetView,
+  IEvaosCustomerRuntimeStateClearRequest,
+  IEvaosCustomerRuntimeStateClearResult,
   IEvaosCustomerTargetsView,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeActionRequest,
@@ -1404,6 +1408,10 @@ export const evaosBroker = {
   getCustomerTargets: buildEvaosProvider<IBridgeResponse<IEvaosCustomerTargetsView>, void>(
     'evaos.broker.customer-targets'
   ),
+  clearCustomerRuntimeState: buildEvaosProvider<
+    IBridgeResponse<IEvaosCustomerRuntimeStateClearResult>,
+    IEvaosCustomerRuntimeStateClearRequest
+  >('evaos.broker.clear-customer-runtime-state'),
   runtimeStatus: buildEvaosProvider<IBridgeResponse<IEvaosRuntimeStatusView>, IEvaosRuntimeStatusRequest>(
     'evaos.broker.runtime-status'
   ),
