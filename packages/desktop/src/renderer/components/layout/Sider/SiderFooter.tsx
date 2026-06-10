@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '@arco-design/web-react';
 import { ArrowCircleLeft, CloseOne, Login, Moon, SettingTwo, SunOne } from '@icon-park/react';
@@ -18,42 +18,80 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
 const EVAOS_CHANNEL_LABEL = 'controlled beta';
 
-function useFooterAuthButtonClicks(
-  ref: React.RefObject<HTMLDivElement | null>,
-  {
-    onLogoutClick,
-    onSignInClick,
-    showLogout,
-    showSignIn,
-  }: {
-    onLogoutClick?: () => void;
-    onSignInClick?: () => void;
-    showLogout: boolean;
-    showSignIn: boolean;
-  }
-): void {
+type FooterAction = 'settings' | 'sign-in' | 'sign-out' | 'theme';
+type FooterActionHandlers = Partial<Record<FooterAction, () => void>>;
+
+const FOOTER_ACTION_ATTRIBUTE = 'data-evaos-footer-action';
+
+function isPointInsideRect(event: MouseEvent, rect: DOMRect): boolean {
+  return (
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  );
+}
+
+function actionFromElement(element: Element | null, footer: HTMLDivElement): FooterAction | null {
+  const actionElement = element?.closest?.(`[${FOOTER_ACTION_ATTRIBUTE}]`);
+  if (!actionElement || !footer.contains(actionElement)) return null;
+  return actionElement.getAttribute(FOOTER_ACTION_ATTRIBUTE) as FooterAction | null;
+}
+
+function actionFromPoint(event: MouseEvent, footer: HTMLDivElement): FooterAction | null {
+  if (!isPointInsideRect(event, footer.getBoundingClientRect())) return null;
+
+  const elementAtPoint =
+    typeof document.elementFromPoint === 'function' ? document.elementFromPoint(event.clientX, event.clientY) : null;
+  const pointedAction = actionFromElement(elementAtPoint, footer);
+  if (pointedAction) return pointedAction;
+
+  const actions = Array.from(footer.querySelectorAll<HTMLElement>(`[${FOOTER_ACTION_ATTRIBUTE}]`));
+  const hit = actions.find((element) => isPointInsideRect(event, element.getBoundingClientRect()));
+  return hit?.getAttribute(FOOTER_ACTION_ATTRIBUTE) as FooterAction | null;
+}
+
+function useFooterActionCapture(ref: React.RefObject<HTMLDivElement | null>, handlers: FooterActionHandlers): void {
+  const handlersRef = useRef(handlers);
+  const lastActivationRef = useRef<{ action: FooterAction; at: number } | null>(null);
+
+  useEffect(() => {
+    handlersRef.current = handlers;
+  }, [handlers]);
+
   useEffect(() => {
     const footer = ref.current;
     if (!footer) return;
 
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest('button[aria-label]') : null;
-      if (!target || !footer.contains(target)) return;
+    const handleFooterAction = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const action = actionFromElement(target, footer) ?? actionFromPoint(event, footer);
+      if (!action) return;
 
-      const label = target.getAttribute('aria-label');
-      if (label === 'Sign In' && showSignIn && onSignInClick) {
+      const handler = handlersRef.current[action];
+      if (!handler) return;
+
+      const now = Date.now();
+      const lastActivation = lastActivationRef.current;
+      if (lastActivation?.action === action && now - lastActivation.at < 350) {
         event.preventDefault();
-        onSignInClick();
+        return;
       }
-      if (label === 'Sign out' && showLogout && onLogoutClick) {
-        event.preventDefault();
-        onLogoutClick();
-      }
+
+      lastActivationRef.current = { action, at: now };
+      event.preventDefault();
+      handler();
     };
 
-    footer.addEventListener('click', handleClick, true);
-    return () => footer.removeEventListener('click', handleClick, true);
-  }, [onLogoutClick, onSignInClick, ref, showLogout, showSignIn]);
+    document.addEventListener('pointerup', handleFooterAction, true);
+    document.addEventListener('mouseup', handleFooterAction, true);
+    document.addEventListener('click', handleFooterAction, true);
+    return () => {
+      document.removeEventListener('pointerup', handleFooterAction, true);
+      document.removeEventListener('mouseup', handleFooterAction, true);
+      document.removeEventListener('click', handleFooterAction, true);
+    };
+  }, [ref]);
 }
 
 interface SiderFooterProps {
@@ -123,7 +161,19 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   const canRenderCustomerSelect =
     canSwitchCustomers && selectedCustomerId && customerTargets.length > 1 && Boolean(onCustomerChange);
 
-  useFooterAuthButtonClicks(footerRef, { onLogoutClick, onSignInClick, showLogout, showSignIn });
+  const footerActionHandlers = {
+    settings: onSettingsClick,
+    ...(showSignIn && onSignInClick ? { 'sign-in': onSignInClick } : {}),
+    ...(showLogout && onLogoutClick ? { 'sign-out': onLogoutClick } : {}),
+    ...(showThemeToggle ? { theme: onThemeToggle } : {}),
+  };
+  useFooterActionCapture(footerRef, footerActionHandlers);
+
+  const activateFromKeyboard = useCallback((event: React.KeyboardEvent<HTMLElement>, handler: () => void) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    handler();
+  }, []);
 
   return (
     <div
@@ -159,7 +209,11 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
       <div className={classNames('flex', collapsed ? 'flex-col gap-2px' : 'items-center gap-2px')}>
         <Tooltip {...siderTooltipProps} content={isSettings ? t('common.back') : t('common.settings')} position='right'>
           <div
-            onClick={onSettingsClick}
+            role='button'
+            tabIndex={0}
+            aria-label={isSettings ? t('common.back') : t('common.settings')}
+            data-evaos-footer-action='settings'
+            onKeyDown={(event) => activateFromKeyboard(event, onSettingsClick)}
             className={classNames(
               'group h-34px flex items-center rd-0.5rem cursor-pointer transition-colors',
               collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-8px pl-10px pr-8px',
@@ -181,6 +235,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             <button
               type='button'
               aria-label='Sign out'
+              data-evaos-footer-action='sign-out'
               className={classNames(
                 'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                 collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-10px px-14px',
@@ -208,6 +263,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
               <button
                 type='button'
                 aria-label='Sign In'
+                data-evaos-footer-action='sign-in'
                 className={classNames(
                   'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
                   collapsed ? 'w-full justify-center' : 'w-full min-w-0 justify-start gap-10px px-14px',
@@ -239,7 +295,10 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
         {showThemeToggle && (
           <Tooltip {...siderTooltipProps} content={themeTooltip} position='right'>
             <div
-              onClick={onThemeToggle}
+              role='button'
+              tabIndex={0}
+              data-evaos-footer-action='theme'
+              onKeyDown={(event) => activateFromKeyboard(event, onThemeToggle)}
               className={classNames(
                 'h-32px w-40px shrink-0 flex items-center justify-center cursor-pointer rd-0.5rem transition-colors text-t-secondary hover:bg-fill-2 hover:text-t-primary active:bg-fill-3',
                 isMobile && 'sider-footer-btn-mobile'
