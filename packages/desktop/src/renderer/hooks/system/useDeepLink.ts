@@ -58,11 +58,6 @@ export const useDeepLink = () => {
   const handler = useCallback(
     (payload: DeepLinkPayload) => {
       if (payload.action === EVAOS_DESKTOP_SESSION_IMPORTED_ACTION) {
-        window.dispatchEvent(
-          new CustomEvent(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, {
-            detail: { source: payload.params.source || 'unknown' },
-          })
-        );
         return;
       }
 
