@@ -66,6 +66,11 @@ function getKeychainNotarizationOptions(env) {
 }
 
 function getNotarizationOptions(env, baseOptions) {
+  const keychainOptions = getKeychainNotarizationOptions(env);
+  if (keychainOptions) {
+    return { ...baseOptions, ...keychainOptions };
+  }
+
   const appleIdOptions = getAppleIdNotarizationOptions(env);
   if (appleIdOptions) {
     return { ...baseOptions, ...appleIdOptions };
@@ -74,11 +79,6 @@ function getNotarizationOptions(env, baseOptions) {
   const apiKeyOptions = getApiKeyNotarizationOptions(env);
   if (apiKeyOptions) {
     return { ...baseOptions, ...apiKeyOptions };
-  }
-
-  const keychainOptions = getKeychainNotarizationOptions(env);
-  if (keychainOptions) {
-    return { ...baseOptions, ...keychainOptions };
   }
 
   return undefined;

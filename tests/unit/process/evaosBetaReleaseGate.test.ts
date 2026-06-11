@@ -162,6 +162,8 @@ describe('evaOS beta release gate', () => {
         {
           NOTARY_PROFILE: 'evaos-workbench-notary',
           NOTARY_KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
+          APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+          APPLE_API_KEY_ID: 'ABC123',
         },
         baseOptions
       )
