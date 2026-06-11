@@ -193,6 +193,34 @@ jobs:
           echo "Commit: ${{ steps.commit.outputs.short }}"
           echo "=========================================="
 
+      - name: Materialize App Store Connect API key (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLE_API_KEY_BASE64:-}" ]; then
+            if [ -z "${APPLE_API_KEY_ID:-}" ]; then
+              echo "::error::APPLE_API_KEY_BASE64 requires APPLE_API_KEY_ID."
+              exit 1
+            fi
+            KEY_PATH="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+            chmod 600 "$KEY_PATH"
+            echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+            echo "appleApiKey=$KEY_PATH" >> "$GITHUB_ENV"
+            echo "App Store Connect API key materialized for notarization."
+          elif [ -n "${APPLE_API_KEY_SECRET:-}" ]; then
+            echo "APPLE_API_KEY=$APPLE_API_KEY_SECRET" >> "$GITHUB_ENV"
+            echo "appleApiKey=$APPLE_API_KEY_SECRET" >> "$GITHUB_ENV"
+            echo "Using preconfigured App Store Connect API key path."
+          else
+            echo "No App Store Connect API key secret provided."
+          fi
+
       - name: Audit evaOS public beta signing inputs (macOS only)
         if: startsWith(matrix.platform, 'macos')
         env:
@@ -204,7 +232,6 @@ jobs:
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
-          appleApiKey: ${{ secrets.APPLE_API_KEY }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
@@ -381,7 +408,6 @@ jobs:
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
-          appleApiKey: ${{ secrets.APPLE_API_KEY }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
@@ -479,7 +505,6 @@ jobs:
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
-          appleApiKey: ${{ secrets.APPLE_API_KEY }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
