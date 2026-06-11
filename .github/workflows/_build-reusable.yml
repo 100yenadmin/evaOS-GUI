@@ -221,6 +221,38 @@ jobs:
             echo "No App Store Connect API key secret provided."
           fi
 
+      - name: Restore evaOS notary keychain profile (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          EVAOS_RELEASE_KEYCHAIN_BASE64: ${{ secrets.EVAOS_RELEASE_KEYCHAIN_BASE64 }}
+          EVAOS_RELEASE_KEYCHAIN_PASSWORD: ${{ secrets.EVAOS_RELEASE_KEYCHAIN_PASSWORD }}
+          EVAOS_NOTARY_PROFILE: ${{ secrets.NOTARY_PROFILE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${EVAOS_RELEASE_KEYCHAIN_BASE64:-}" ]; then
+            echo "No evaOS notary keychain profile secret provided."
+            exit 0
+          fi
+          if [ -z "${EVAOS_RELEASE_KEYCHAIN_PASSWORD:-}" ]; then
+            echo "::error::EVAOS_RELEASE_KEYCHAIN_BASE64 requires EVAOS_RELEASE_KEYCHAIN_PASSWORD."
+            exit 1
+          fi
+
+          NOTARY_KEYCHAIN_PATH="${RUNNER_TEMP}/evaos-release-signing.keychain-db"
+          printf '%s' "$EVAOS_RELEASE_KEYCHAIN_BASE64" | base64 --decode > "$NOTARY_KEYCHAIN_PATH"
+          chmod 600 "$NOTARY_KEYCHAIN_PATH"
+          security unlock-keychain -p "$EVAOS_RELEASE_KEYCHAIN_PASSWORD" "$NOTARY_KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$NOTARY_KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$EVAOS_RELEASE_KEYCHAIN_PASSWORD" "$NOTARY_KEYCHAIN_PATH" >/dev/null
+
+          PROFILE="${EVAOS_NOTARY_PROFILE:-evaos-workbench-notary}"
+          echo "NOTARY_PROFILE=$PROFILE" >> "$GITHUB_ENV"
+          echo "keychainProfile=$PROFILE" >> "$GITHUB_ENV"
+          echo "NOTARY_KEYCHAIN=$NOTARY_KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "keychain=$NOTARY_KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "evaOS notary keychain profile restored for notarization."
+
       - name: Audit evaOS public beta signing inputs (macOS only)
         if: startsWith(matrix.platform, 'macos')
         env:
