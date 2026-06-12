@@ -509,6 +509,9 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
 
   requireText(afterSign, 'assertPublicBetaNotarizationEnv', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'getNotarizationOptions', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'stapleAndValidateApp', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'stapler', 'scripts/afterSign.js', issues, 'app-level stapler command');
+  requireText(afterSign, '--type', 'scripts/afterSign.js', issues, 'app-level Gatekeeper execute assessment');
   requireText(afterSign, 'appleApiKey', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_BETA_REQUIRE_SIGNING', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'Ad-hoc signing is not allowed', 'scripts/afterSign.js', issues);

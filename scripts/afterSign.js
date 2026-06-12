@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 const {
   assertPublicBetaNotarizationEnv,
   getEnvValue,
@@ -113,6 +113,26 @@ async function withKeychainCredentialIsolation(notarizationOptions, operation) {
   }
 }
 
+function runTrustCommand(label, command, args, runCommand = execFileSync) {
+  try {
+    runCommand(command, args, { stdio: 'inherit' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} failed: ${message}`);
+  }
+}
+
+function stapleAndValidateApp(appPath, runCommand = execFileSync) {
+  runTrustCommand('App stapling', 'xcrun', ['stapler', 'staple', appPath], runCommand);
+  runTrustCommand('App stapler validation', 'xcrun', ['stapler', 'validate', appPath], runCommand);
+  runTrustCommand(
+    'App Gatekeeper execute assessment',
+    'spctl',
+    ['--assess', '--type', 'execute', '--verbose', appPath],
+    runCommand
+  );
+}
+
 exports.default = async function afterSign(context) {
   const { electronPlatformName, appOutDir } = context;
 
@@ -170,7 +190,8 @@ exports.default = async function afterSign(context) {
 
   try {
     await withKeychainCredentialIsolation(notarizationOptions, () => notarize(notarizationOptions));
-    console.log('Notarization completed successfully');
+    stapleAndValidateApp(appPath);
+    console.log('Notarization, app stapling, and Gatekeeper validation completed successfully');
   } catch (error) {
     console.error('Notarization failed:', error);
     throw error;
@@ -178,4 +199,5 @@ exports.default = async function afterSign(context) {
 };
 
 exports.getNotarizationOptions = getNotarizationOptions;
+exports.stapleAndValidateApp = stapleAndValidateApp;
 exports.withKeychainCredentialIsolation = withKeychainCredentialIsolation;

@@ -23,6 +23,10 @@ const afterSign = require('../../../scripts/afterSign.js') as {
     env: Record<string, string | undefined>,
     baseOptions: Record<string, string>
   ) => Record<string, string> | undefined;
+  stapleAndValidateApp: (
+    appPath: string,
+    runCommand?: (command: string, args: string[], options: Record<string, unknown>) => void
+  ) => void;
   withKeychainCredentialIsolation: <T>(
     notarizationOptions: Record<string, string> | undefined,
     operation: () => Promise<T> | T
@@ -241,6 +245,32 @@ describe('evaOS beta release gate', () => {
         }
       }
     }
+  });
+
+  it('staples, validates, and Gatekeeper-assesses the notarized app bundle', () => {
+    const calls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
+
+    afterSign.stapleAndValidateApp('/release/evaOS Workbench Beta.app', (command, args, options) => {
+      calls.push({ command, args, options });
+    });
+
+    expect(calls).toEqual([
+      {
+        command: 'xcrun',
+        args: ['stapler', 'staple', '/release/evaOS Workbench Beta.app'],
+        options: { stdio: 'inherit' },
+      },
+      {
+        command: 'xcrun',
+        args: ['stapler', 'validate', '/release/evaOS Workbench Beta.app'],
+        options: { stdio: 'inherit' },
+      },
+      {
+        command: 'spctl',
+        args: ['--assess', '--type', 'execute', '--verbose', '/release/evaOS Workbench Beta.app'],
+        options: { stdio: 'inherit' },
+      },
+    ]);
   });
 
   it('builds notarytool submit args for DMG finalization credential paths', () => {
