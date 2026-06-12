@@ -17,6 +17,11 @@ type EvaosDashboardHandoffPageProps = {
   description: string;
   dashboardUrl: string;
   issueRef: string;
+  targetLabel?: string;
+  targetDescription?: string;
+  buttonLabel?: string;
+  openedMessage?: string;
+  failedMessage?: string;
 };
 
 const EvaosDashboardHandoffPage: React.FC<EvaosDashboardHandoffPageProps> = ({
@@ -25,6 +30,11 @@ const EvaosDashboardHandoffPage: React.FC<EvaosDashboardHandoffPageProps> = ({
   description,
   dashboardUrl,
   issueRef,
+  targetLabel = 'Open in dashboard',
+  targetDescription,
+  buttonLabel = 'Open dashboard',
+  openedMessage = 'Opened the Electric Sheep dashboard in your browser.',
+  failedMessage = 'Could not open the dashboard. Use the button again or email support@electricsheephq.com.',
 }) => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
@@ -36,14 +46,18 @@ const EvaosDashboardHandoffPage: React.FC<EvaosDashboardHandoffPageProps> = ({
     setMessage(null);
     try {
       await openEvaosExternalUrl(dashboardUrl);
-      setMessage('Opened the Electric Sheep dashboard in your browser.');
+      setMessage(openedMessage);
     } catch (error) {
       console.error(`[EvaosDashboardHandoffPage] Failed to open ${title}:`, error);
-      setMessage('Could not open the dashboard. Use the button again or email support@electricsheephq.com.');
+      setMessage(failedMessage);
     } finally {
       setOpening(false);
     }
-  }, [dashboardUrl, title]);
+  }, [dashboardUrl, failedMessage, openedMessage, title]);
+
+  const handoffDescription =
+    targetDescription ??
+    `For this controlled RC, this surface stays on the production Electric Sheep dashboard while native Workbench parity is tracked in ${issueRef}.`;
 
   return (
     <div
@@ -69,16 +83,13 @@ const EvaosDashboardHandoffPage: React.FC<EvaosDashboardHandoffPageProps> = ({
                 <Link theme='outline' size='22' />
               </span>
               <div className='min-w-0'>
-                <h2 className='m-0 text-18px font-semibold leading-24px text-t-primary'>Open in dashboard</h2>
-                <p className='m-0 mt-6px text-13px leading-20px text-t-secondary'>
-                  For this controlled RC, this surface stays on the production Electric Sheep dashboard while native
-                  Workbench parity is tracked in {issueRef}.
-                </p>
+                <h2 className='m-0 text-18px font-semibold leading-24px text-t-primary'>{targetLabel}</h2>
+                <p className='m-0 mt-6px text-13px leading-20px text-t-secondary'>{handoffDescription}</p>
                 <p className='m-0 mt-6px break-all text-12px leading-18px text-t-tertiary'>{dashboardUrl}</p>
               </div>
             </div>
             <Button type='primary' icon={<Open theme='outline' size='16' />} loading={opening} onClick={openDashboard}>
-              Open dashboard
+              {buttonLabel}
             </Button>
           </div>
           {message ? (
