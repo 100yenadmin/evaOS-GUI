@@ -20,6 +20,7 @@ const SHARED_OPTIONS = {
   bundle: true,
   platform: 'node',
   format: 'cjs',
+  legalComments: 'none',
   external: ['electron'],
   tsconfig: path.join(ROOT, 'tsconfig.json'),
   loader: { '.wasm': 'empty' },
