@@ -119,7 +119,9 @@ function runNotarytoolSubmit(submitArgs, env = process.env) {
       error &&
       (error.code === 'ETIMEDOUT' ||
         error.signal === 'SIGTERM' ||
-        String(error.message || '').toLowerCase().includes('timed out'));
+        String(error.message || '')
+          .toLowerCase()
+          .includes('timed out'));
     if (timedOut) {
       throw new Error(
         `notarytool submit timed out after ${timeoutMs}ms; check for hidden keychain prompts, credential-mode drift, or Apple notarization stalls.`

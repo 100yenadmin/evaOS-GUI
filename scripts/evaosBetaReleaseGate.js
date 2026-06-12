@@ -164,9 +164,7 @@ function formatMissingApiKeyIssuer(env) {
   if (getEnvValue(env, API_KEY_ISSUER_ENV)) {
     return [];
   }
-  return [
-    `${API_KEY_ISSUER_ENV.name} (${API_KEY_ISSUER_ENV.description})`,
-  ];
+  return [`${API_KEY_ISSUER_ENV.name} (${API_KEY_ISSUER_ENV.description})`];
 }
 
 function formatMissingNotarizationEnv(env) {

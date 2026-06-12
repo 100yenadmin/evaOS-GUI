@@ -308,9 +308,9 @@ describe('evaOS beta release gate', () => {
   it('uses a bounded external process timeout for DMG notarytool submit', () => {
     expect(macDmgFinalizer.getNotaryProcessTimeoutMs({})).toBe(20 * 60 * 1000);
     expect(macDmgFinalizer.getNotaryProcessTimeoutMs({ EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS: '90000' })).toBe(90000);
-    expect(() =>
-      macDmgFinalizer.getNotaryProcessTimeoutMs({ EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS: 'invalid' })
-    ).toThrow(/positive integer/);
+    expect(() => macDmgFinalizer.getNotaryProcessTimeoutMs({ EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS: 'invalid' })).toThrow(
+      /positive integer/
+    );
   });
 
   it('finds macOS DMG artifacts in stable sort order', () => {
