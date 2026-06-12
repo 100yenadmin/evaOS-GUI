@@ -40,6 +40,8 @@ const API_ISSUER_ENV = {
   aliases: ['appleApiIssuer', 'APPLE_API_ISSUER'],
 };
 const DEFAULT_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
+const DEFAULT_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -53,7 +55,7 @@ function findDmgArtifacts(outDir) {
     .map((entry) => path.join(outDir, entry));
 }
 
-function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
+function buildNotarytoolCredentialArgs(env = process.env) {
   const apiKey = getEnvValue(env, API_KEY_ENV);
   const apiKeyId = getEnvValue(env, API_KEY_ID_ENV);
   const apiIssuer = getEnvValue(env, API_ISSUER_ENV);
@@ -63,12 +65,12 @@ function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
         'App Store Connect API-key DMG notarization requires APPLE_API_KEY, APPLE_API_KEY_ID, and APPLE_API_ISSUER.'
       );
     }
-    return ['notarytool', 'submit', dmgPath, '--key', apiKey, '--key-id', apiKeyId, '--issuer', apiIssuer];
+    return ['--key', apiKey, '--key-id', apiKeyId, '--issuer', apiIssuer];
   }
 
   const keychainProfile = getEnvValue(env, KEYCHAIN_PROFILE_ENV);
   if (keychainProfile) {
-    const args = ['notarytool', 'submit', dmgPath, '--keychain-profile', keychainProfile];
+    const args = ['--keychain-profile', keychainProfile];
     const keychain = getEnvValue(env, NOTARY_KEYCHAIN_ENV);
     if (keychain) {
       args.push('--keychain', keychain);
@@ -80,7 +82,7 @@ function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
   const applePassword = getEnvValue(env, APPLE_PASSWORD_ENV);
   const teamId = getEnvValue(env, TEAM_ID_ENV);
   if (appleId && applePassword) {
-    const args = ['notarytool', 'submit', dmgPath, '--apple-id', appleId, '--password', applePassword];
+    const args = ['--apple-id', appleId, '--password', applePassword];
     if (teamId) {
       args.push('--team-id', teamId);
     }
@@ -88,6 +90,16 @@ function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
   }
 
   return [];
+}
+
+function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
+  const credentialArgs = buildNotarytoolCredentialArgs(env);
+  return credentialArgs.length === 0 ? [] : ['notarytool', 'submit', dmgPath, ...credentialArgs];
+}
+
+function buildNotarytoolInfoArgs(submissionId, env = process.env) {
+  const credentialArgs = buildNotarytoolCredentialArgs(env);
+  return credentialArgs.length === 0 ? [] : ['notarytool', 'info', submissionId, ...credentialArgs];
 }
 
 function getNotaryProcessTimeoutMs(env = process.env) {
@@ -103,6 +115,32 @@ function getNotaryProcessTimeoutMs(env = process.env) {
   return timeoutMs;
 }
 
+function getNotaryCommandProcessTimeoutMs(env = process.env) {
+  const rawTimeout = env.EVAOS_DMG_NOTARY_COMMAND_PROCESS_TIMEOUT_MS;
+  if (!rawTimeout) {
+    return DEFAULT_NOTARY_COMMAND_PROCESS_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number.parseInt(rawTimeout, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`EVAOS_DMG_NOTARY_COMMAND_PROCESS_TIMEOUT_MS must be a positive integer, got: ${rawTimeout}`);
+  }
+  return timeoutMs;
+}
+
+function getNotaryPollIntervalMs(env = process.env) {
+  const rawTimeout = env.EVAOS_DMG_NOTARY_POLL_INTERVAL_MS;
+  if (!rawTimeout) {
+    return DEFAULT_NOTARY_POLL_INTERVAL_MS;
+  }
+
+  const timeoutMs = Number.parseInt(rawTimeout, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`EVAOS_DMG_NOTARY_POLL_INTERVAL_MS must be a positive integer, got: ${rawTimeout}`);
+  }
+  return timeoutMs;
+}
+
 function run(command, args, options = {}) {
   execFileSync(command, args, {
     stdio: 'inherit',
@@ -110,25 +148,98 @@ function run(command, args, options = {}) {
   });
 }
 
-function runNotarytoolSubmit(submitArgs, env = process.env) {
-  const timeoutMs = getNotaryProcessTimeoutMs(env);
+function parseNotarytoolJson(label, output) {
+  const text = Buffer.isBuffer(output) ? output.toString('utf8') : String(output || '');
   try {
-    run('xcrun', submitArgs, { timeout: timeoutMs });
+    return JSON.parse(text);
   } catch (error) {
-    const timedOut =
-      error &&
-      (error.code === 'ETIMEDOUT' ||
-        error.signal === 'SIGTERM' ||
-        String(error.message || '')
-          .toLowerCase()
-          .includes('timed out'));
-    if (timedOut) {
+    const summary = text.replace(/\s+/g, ' ').trim().slice(0, 500);
+    throw new Error(`${label} did not return valid JSON${summary ? `: ${summary}` : ''}`);
+  }
+}
+
+function isProcessTimeoutError(error) {
+  return (
+    error &&
+    (error.code === 'ETIMEDOUT' ||
+      error.signal === 'SIGTERM' ||
+      String(error.message || '')
+        .toLowerCase()
+        .includes('timed out'))
+  );
+}
+
+function runNotarytoolJson(label, args, env = process.env) {
+  const timeoutMs = getNotaryCommandProcessTimeoutMs(env);
+  try {
+    const output = execFileSync('xcrun', args, {
+      stdio: ['ignore', 'pipe', 'inherit'],
+      encoding: 'utf8',
+      timeout: timeoutMs,
+    });
+    return parseNotarytoolJson(label, output);
+  } catch (error) {
+    if (isProcessTimeoutError(error)) {
       throw new Error(
-        `notarytool submit timed out after ${timeoutMs}ms; check for hidden keychain prompts, credential-mode drift, or Apple notarization stalls.`
+        `${label} timed out after ${timeoutMs}ms; check for hidden prompts or Apple notarization stalls.`
       );
     }
     throw error;
   }
+}
+
+function sleepSync(ms) {
+  if (ms <= 0) {
+    return;
+  }
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function runNotarytoolSubmit(submitArgs, env = process.env) {
+  const response = runNotarytoolJson(
+    'DMG notarytool submit',
+    [...submitArgs, '--no-progress', '--output-format', 'json'],
+    env
+  );
+  const submissionId = response.id || response.submissionId;
+  if (!submissionId) {
+    throw new Error(`DMG notarytool submit did not return a submission id: ${JSON.stringify(response)}`);
+  }
+  return submissionId;
+}
+
+function waitForNotarySubmission(submissionId, env = process.env, sleep = sleepSync) {
+  const timeoutMs = getNotaryProcessTimeoutMs(env);
+  const pollIntervalMs = getNotaryPollIntervalMs(env);
+  const startedAt = Date.now();
+  let lastStatus = 'unknown';
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const infoArgs = [...buildNotarytoolInfoArgs(submissionId, env), '--output-format', 'json'];
+    if (infoArgs.length === 2) {
+      throw new Error('evaOS DMG finalization could not build notarytool info arguments.');
+    }
+    const info = runNotarytoolJson(`DMG notarytool info ${submissionId}`, infoArgs, env);
+    lastStatus = String(info.status || info.Status || 'unknown').toLowerCase();
+
+    if (lastStatus === 'accepted') {
+      return info;
+    }
+
+    if (lastStatus === 'invalid' || lastStatus === 'rejected') {
+      throw new Error(`DMG notarization ${submissionId} failed with status ${info.status}: ${JSON.stringify(info)}`);
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= timeoutMs) {
+      break;
+    }
+    sleep(Math.min(pollIntervalMs, timeoutMs - elapsedMs));
+  }
+
+  throw new Error(
+    `DMG notarization polling timed out after ${timeoutMs}ms for ${submissionId}; last status: ${lastStatus}`
+  );
 }
 
 function finalizeDmg(dmgPath, env = process.env) {
@@ -154,15 +265,9 @@ function finalizeDmg(dmgPath, env = process.env) {
   if (submitArgs.length === 0) {
     throw new Error('evaOS DMG finalization could not build notarytool submit arguments.');
   }
-  submitArgs.push(
-    '--wait',
-    '--timeout',
-    env.EVAOS_DMG_NOTARY_TIMEOUT || '15m',
-    '--no-progress',
-    '--output-format',
-    'json'
-  );
-  runNotarytoolSubmit(submitArgs, env);
+  const submissionId = runNotarytoolSubmit(submitArgs, env);
+  console.log(`Submitted DMG notarization ${submissionId}; polling notarytool info until terminal status.`);
+  waitForNotarySubmission(submissionId, env);
   run('xcrun', ['stapler', 'staple', dmgPath]);
   run('xcrun', ['stapler', 'validate', dmgPath]);
   run('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose', dmgPath]);
@@ -211,8 +316,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildNotarytoolInfoArgs,
   buildNotarytoolSubmitArgs,
   finalizeMacDmgs,
   findDmgArtifacts,
+  getNotaryCommandProcessTimeoutMs,
+  getNotaryPollIntervalMs,
   getNotaryProcessTimeoutMs,
+  runNotarytoolSubmit,
+  waitForNotarySubmission,
 };

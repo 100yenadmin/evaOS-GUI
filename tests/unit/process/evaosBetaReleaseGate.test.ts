@@ -21,7 +21,10 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
   default: (context: unknown) => Promise<void>;
+  buildAppNotarytoolInfoArgs: (submissionId: string, notarizationOptions: Record<string, string>) => string[];
   buildAppNotarytoolSubmitArgs: (archivePath: string, notarizationOptions: Record<string, string>) => string[];
+  getAppNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
+  getAppNotaryPollIntervalMs: (env: Record<string, string | undefined>) => number;
   getAppNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getAppTrustProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotarizationOptions: (
@@ -32,14 +35,29 @@ const afterSign = require('../../../scripts/afterSign.js') as {
     appPath: string,
     runCommand?: (command: string, args: string[], options: Record<string, unknown>) => void
   ) => void;
+  runAppNotarytoolSubmit: (
+    submitArgs: string[],
+    env?: Record<string, string | undefined>,
+    runCommand?: (command: string, args: string[], options: Record<string, unknown>) => string
+  ) => string;
+  waitForAppNotarySubmission: (
+    submissionId: string,
+    notarizationOptions: Record<string, string>,
+    env?: Record<string, string | undefined>,
+    runCommand?: (command: string, args: string[], options: Record<string, unknown>) => string,
+    sleep?: (ms: number) => void
+  ) => unknown;
   withKeychainCredentialIsolation: <T>(
     notarizationOptions: Record<string, string> | undefined,
     operation: () => Promise<T> | T
   ) => Promise<T>;
 };
 const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
+  buildNotarytoolInfoArgs: (submissionId: string, env: Record<string, string | undefined>) => string[];
   buildNotarytoolSubmitArgs: (dmgPath: string, env: Record<string, string | undefined>) => string[];
   findDmgArtifacts: (outDir: string) => string[];
+  getNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
+  getNotaryPollIntervalMs: (env: Record<string, string | undefined>) => number;
   getNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
 };
 
@@ -209,16 +227,26 @@ describe('evaOS beta release gate', () => {
   });
 
   it('builds bounded afterSign app notarytool submit args', () => {
-    expect(
-      afterSign.buildAppNotarytoolSubmitArgs('/tmp/evaOS.zip', {
-        appleApiKey: '/secure/AuthKey_ABC123.p8',
-        appleApiKeyId: 'ABC123',
-        appleApiIssuer: 'd5631714-a680-4b4b-8156-b4ed624c0845',
-      })
-    ).toEqual([
+    const apiKeyOptions = {
+      appleApiKey: '/secure/AuthKey_ABC123.p8',
+      appleApiKeyId: 'ABC123',
+      appleApiIssuer: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+    };
+    expect(afterSign.buildAppNotarytoolSubmitArgs('/tmp/evaOS.zip', apiKeyOptions)).toEqual([
       'notarytool',
       'submit',
       '/tmp/evaOS.zip',
+      '--key',
+      '/secure/AuthKey_ABC123.p8',
+      '--key-id',
+      'ABC123',
+      '--issuer',
+      'd5631714-a680-4b4b-8156-b4ed624c0845',
+    ]);
+    expect(afterSign.buildAppNotarytoolInfoArgs('SUBMISSION-ID', apiKeyOptions)).toEqual([
+      'notarytool',
+      'info',
+      'SUBMISSION-ID',
       '--key',
       '/secure/AuthKey_ABC123.p8',
       '--key-id',
@@ -247,11 +275,89 @@ describe('evaOS beta release gate', () => {
     expect(() => afterSign.getAppNotaryProcessTimeoutMs({ EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS: '-1' })).toThrow(
       /positive integer/
     );
+    expect(afterSign.getAppNotaryCommandProcessTimeoutMs({})).toBe(90 * 1000);
+    expect(
+      afterSign.getAppNotaryCommandProcessTimeoutMs({ EVAOS_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS: '45000' })
+    ).toBe(45000);
+    expect(afterSign.getAppNotaryPollIntervalMs({})).toBe(15 * 1000);
+    expect(afterSign.getAppNotaryPollIntervalMs({ EVAOS_APP_NOTARY_POLL_INTERVAL_MS: '1000' })).toBe(1000);
     expect(afterSign.getAppTrustProcessTimeoutMs({})).toBe(5 * 60 * 1000);
     expect(afterSign.getAppTrustProcessTimeoutMs({ EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS: '45000' })).toBe(45000);
     expect(() => afterSign.getAppTrustProcessTimeoutMs({ EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS: '0' })).toThrow(
       /positive integer/
     );
+  });
+
+  it('submits app notarization without --wait and polls notarytool info', () => {
+    const submitCalls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
+    const submissionId = afterSign.runAppNotarytoolSubmit(
+      ['notarytool', 'submit', '/tmp/evaOS.zip', '--keychain-profile', 'evaos-workbench-notary'],
+      { EVAOS_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS: '30000' },
+      (command, args, options) => {
+        submitCalls.push({ command, args, options });
+        return JSON.stringify({ id: 'SUBMISSION-ID', status: 'In Progress' });
+      }
+    );
+
+    expect(submissionId).toBe('SUBMISSION-ID');
+    expect(submitCalls).toEqual([
+      {
+        command: 'xcrun',
+        args: [
+          'notarytool',
+          'submit',
+          '/tmp/evaOS.zip',
+          '--keychain-profile',
+          'evaos-workbench-notary',
+          '--no-progress',
+          '--output-format',
+          'json',
+        ],
+        options: {
+          stdio: ['ignore', 'pipe', 'inherit'],
+          encoding: 'utf8',
+          timeout: 30000,
+        },
+      },
+    ]);
+    expect(submitCalls[0].args).not.toContain('--wait');
+
+    const pollCalls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
+    const result = afterSign.waitForAppNotarySubmission(
+      'SUBMISSION-ID',
+      { keychainProfile: 'evaos-workbench-notary' },
+      {
+        EVAOS_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS: '30000',
+        EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS: '60000',
+        EVAOS_APP_NOTARY_POLL_INTERVAL_MS: '1',
+      },
+      (command, args, options) => {
+        pollCalls.push({ command, args, options });
+        return JSON.stringify({ id: 'SUBMISSION-ID', status: 'Accepted' });
+      },
+      () => {}
+    ) as { status: string };
+
+    expect(result.status).toBe('Accepted');
+    expect(pollCalls).toEqual([
+      {
+        command: 'xcrun',
+        args: [
+          'notarytool',
+          'info',
+          'SUBMISSION-ID',
+          '--keychain-profile',
+          'evaos-workbench-notary',
+          '--output-format',
+          'json',
+        ],
+        options: {
+          stdio: ['ignore', 'pipe', 'inherit'],
+          encoding: 'utf8',
+          timeout: 30000,
+        },
+      },
+    ]);
   });
 
   it('isolates keychain notarization from ambient App Store Connect API env', async () => {
@@ -344,6 +450,20 @@ describe('evaOS beta release gate', () => {
       '--keychain',
       '/secure/evaos-release-signing.keychain-db',
     ]);
+    expect(
+      macDmgFinalizer.buildNotarytoolInfoArgs('SUBMISSION-ID', {
+        NOTARY_PROFILE: 'evaos-workbench-notary',
+        NOTARY_KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
+      })
+    ).toEqual([
+      'notarytool',
+      'info',
+      'SUBMISSION-ID',
+      '--keychain-profile',
+      'evaos-workbench-notary',
+      '--keychain',
+      '/secure/evaos-release-signing.keychain-db',
+    ]);
 
     expect(
       macDmgFinalizer.buildNotarytoolSubmitArgs('/release/evaOS.dmg', {
@@ -397,6 +517,12 @@ describe('evaOS beta release gate', () => {
     expect(() => macDmgFinalizer.getNotaryProcessTimeoutMs({ EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS: 'invalid' })).toThrow(
       /positive integer/
     );
+    expect(macDmgFinalizer.getNotaryCommandProcessTimeoutMs({})).toBe(90 * 1000);
+    expect(
+      macDmgFinalizer.getNotaryCommandProcessTimeoutMs({ EVAOS_DMG_NOTARY_COMMAND_PROCESS_TIMEOUT_MS: '45000' })
+    ).toBe(45000);
+    expect(macDmgFinalizer.getNotaryPollIntervalMs({})).toBe(15 * 1000);
+    expect(macDmgFinalizer.getNotaryPollIntervalMs({ EVAOS_DMG_NOTARY_POLL_INTERVAL_MS: '1000' })).toBe(1000);
   });
 
   it('finds macOS DMG artifacts in stable sort order', () => {

@@ -593,6 +593,7 @@ jobs:
       - name: Build with electron-builder (macOS)
         if: startsWith(matrix.platform, 'macos')
         id: macos-build
+        timeout-minutes: 45
         shell: bash
         run: |
           set +e  # Handle errors manually
