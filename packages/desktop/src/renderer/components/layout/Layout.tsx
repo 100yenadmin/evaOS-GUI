@@ -10,7 +10,6 @@ import { configService } from '@/common/config/configService';
 import type { ICssTheme } from '@/common/config/storage';
 import PwaPullToRefresh from '@/renderer/components/layout/PwaPullToRefresh';
 import Titlebar from '@/renderer/components/layout/Titlebar';
-import EvaosSupportBubble from '@/renderer/components/base/EvaosSupportBubble';
 import { Layout as ArcoLayout } from '@arco-design/web-react';
 import classNames from 'classnames';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -23,9 +22,11 @@ import { useDirectorySelection } from '@renderer/hooks/file/useDirectorySelectio
 import { processCustomCss } from '@renderer/utils/theme/customCssProcessor';
 import { cleanupSiderTooltips } from '@renderer/utils/ui/siderTooltip';
 import { useConversationShortcuts } from '@renderer/hooks/ui/useConversationShortcuts';
+import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { isElectronDesktop } from '@renderer/utils/platform';
 import { computeCssSyncDecision, resolveCssByActiveTheme } from '@renderer/utils/theme/themeCssSync';
-import evaosAppIcon from '@renderer/assets/logos/brand/app.png';
+import evaosAppIconDark from '@renderer/assets/logos/brand/app-dark.png';
+import evaosAppIconLight from '@renderer/assets/logos/brand/app-light.png';
 import '@renderer/styles/layout.css';
 
 const SidebarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 18, strokeWidth = 4 }) => (
@@ -119,6 +120,8 @@ const Layout: React.FC<{
   useNotificationClick();
   const navigate = useNavigate();
   useConversationShortcuts({ navigate });
+  const { theme } = useThemeContext();
+  const evaosAppIcon = theme === 'dark' ? evaosAppIconDark : evaosAppIconLight;
   const location = useLocation();
   const workspaceAvailable =
     location.pathname.startsWith('/conversation/') || (TEAM_MODE_ENABLED && location.pathname.startsWith('/team/'));
@@ -530,7 +533,6 @@ const Layout: React.FC<{
               <Suspense fallback={null}>
                 <UpdateModal />
               </Suspense>
-              <EvaosSupportBubble />
             </ArcoLayout.Content>
           </ArcoLayout>
         </div>

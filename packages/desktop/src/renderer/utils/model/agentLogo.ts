@@ -10,6 +10,8 @@
  * All places that need to display agent icons should use this utility instead of maintaining separate lists
  */
 
+import evaosLogoDark from '@renderer/assets/logos/brand/app-dark.png';
+import evaosLogoLight from '@renderer/assets/logos/brand/app-light.png';
 import { resolveBackendAssetUrl } from '@/renderer/utils/platform';
 
 /**
@@ -35,15 +37,13 @@ const AGENT_LOGO_PATH_MAP = {
   opencode: 'tools/coding/opencode-light.svg',
   'opencode-dark': 'tools/coding/opencode-dark.svg',
   copilot: 'tools/github.svg',
-  openclaw: 'tools/openclaw.svg',
-  'openclaw-gateway': 'tools/openclaw.svg',
   vibe: 'ai-major/mistral.svg',
   nanobot: 'tools/nanobot.svg',
-  remote: 'tools/openclaw.svg',
   qoder: 'tools/coding/qoder.png',
   cursor: 'tools/coding/cursor.png',
 } as const satisfies Record<string, string>;
 
+const EVAOS_AGENT_LOGO_KEYS = new Set(['openclaw', 'openclaw-gateway', 'remote']);
 const OPEN_CODE_LIGHT_FILE_NAME = 'opencode-light.svg';
 const OPEN_CODE_DARK_FILE_NAME = 'opencode-dark.svg';
 
@@ -81,8 +81,12 @@ function isDarkTheme(): boolean {
  */
 export function getAgentLogo(agent: string | undefined | null): string | null {
   if (!agent || typeof agent !== 'string') return null;
-  const key = agent.toLowerCase() as keyof typeof AGENT_LOGO_PATH_MAP;
-  const path = AGENT_LOGO_PATH_MAP[key];
+  const key = agent.toLowerCase();
+  if (EVAOS_AGENT_LOGO_KEYS.has(key)) {
+    return isDarkTheme() ? evaosLogoDark : evaosLogoLight;
+  }
+  const mapKey = key as keyof typeof AGENT_LOGO_PATH_MAP;
+  const path = AGENT_LOGO_PATH_MAP[mapKey];
   return path ? normalizeLogoUrl(buildAssetUrl(path)) : null;
 }
 

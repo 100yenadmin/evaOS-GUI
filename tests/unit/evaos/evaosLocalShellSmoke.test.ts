@@ -132,7 +132,7 @@ describe('evaOS local shell smoke', () => {
       '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/shell-smoke-plan.md'
     );
     expect(settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => entry.id)).toEqual([
-      'home',
+      'new-chat-landing',
       'sidebar-footer',
       'new-chat-agent-order',
       'settings-system',
@@ -149,7 +149,6 @@ describe('evaOS local shell smoke', () => {
       'connected-apps',
       'people-access',
       'company-brain',
-      'approvals',
     ]);
 
     for (const entry of settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN) {
@@ -160,9 +159,9 @@ describe('evaOS local shell smoke', () => {
     }
 
     expect(settledShellSmokePlan.markdownForPlan()).toContain('## Screenshot Matrix');
-    expect(settledShellSmokePlan.markdownForPlan()).toContain('Home route with signed-in Workbench shell entry point');
+    expect(settledShellSmokePlan.markdownForPlan()).toContain('New Chat landing with streamlined RC navigation');
     expect(settledShellSmokePlan.markdownForPlan()).toContain('Design Workspace');
-    expect(settledShellSmokePlan.markdownForPlan()).toContain('Approvals / Approval Center');
+    expect(settledShellSmokePlan.markdownForPlan()).not.toContain('Approvals / Approval Center');
   });
 
   it('marks current route screenshots as shell smoke instead of loaded-state proof', () => {
@@ -181,13 +180,13 @@ describe('evaOS local shell smoke', () => {
     }
   });
 
-  it('requires the evaOS support affordance on shell-smoke routes', () => {
+  it('requires the sidebar support affordance on shell-smoke routes', () => {
     for (const route of localShellSmoke.ROUTE_CHECKS) {
-      expect(route.requiredSelectors).toContain('[data-testid="evaos-support-bubble"]');
+      expect(route.requiredSelectors).toContain('[data-testid="evaos-sidebar-support"]');
     }
 
     for (const route of localShellSmoke.BROKER_GUARDED_ROUTE_CHECKS) {
-      expect(route.requiredSelectors).toContain('[data-testid="evaos-support-bubble"]');
+      expect(route.requiredSelectors).toContain('[data-testid="evaos-sidebar-support"]');
     }
 
     const about = localShellSmoke.ROUTE_CHECKS.find((check) => check.name === 'about-support-metadata');

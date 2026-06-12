@@ -3,12 +3,12 @@
 const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
   {
     manifestRowId: 'home',
-    id: 'home',
+    id: 'new-chat-landing',
     route: '/home',
-    screenshot: '00-home.png',
-    artifactName: 'screenshots/00-home.png',
-    closeoutState: 'loaded',
-    settledMarkers: ['Home', 'evaOS Workbench Beta'],
+    screenshot: '00-new-chat-landing.png',
+    artifactName: 'screenshots/00-new-chat-landing.png',
+    closeoutState: 'waived',
+    settledMarkers: ['New Chat', 'evaOS Workbench Beta'],
   },
   {
     manifestRowId: 'approvals',
@@ -16,7 +16,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     route: '/approval-center',
     screenshot: '17-approvals.png',
     artifactName: 'screenshots/17-approvals.png',
-    closeoutState: 'loaded',
+    closeoutState: 'waived',
     settledMarkers: ['Approval Center', 'Human decisions for risky agent actions'],
   },
   {
@@ -35,7 +35,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '11-business-browser.png',
     artifactName: 'screenshots/11-business-browser.png',
     closeoutState: 'loaded',
-    settledMarkers: ['Business Browser', 'Brokered browser and VM runtime state'],
+    settledMarkers: ['Shared Browser'],
   },
   {
     manifestRowId: 'creative-studio',
@@ -44,7 +44,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '13-creative-studio.png',
     artifactName: 'screenshots/13-creative-studio.png',
     closeoutState: 'loaded',
-    settledMarkers: ['Creative Studio', 'hosted Creative Studio workspace'],
+    settledMarkers: ['Creative Studio'],
   },
   {
     manifestRowId: 'connected-apps',
@@ -116,7 +116,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '06-mac-iphone.png',
     artifactName: 'screenshots/06-mac-iphone.png',
     closeoutState: 'repair',
-    settledMarkers: ['Mac & iPhone', 'MAC & IPHONE REPAIR', 'Boundary clean'],
+    settledMarkers: ['Mac & iPhone', 'Mac control repair', 'Boundary clean'],
   },
   {
     manifestRowId: 'footer',

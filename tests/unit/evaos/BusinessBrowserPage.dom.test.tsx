@@ -271,7 +271,7 @@ describe('BusinessBrowserPage', () => {
     );
   });
 
-  it('hides advanced diagnostics for the default RC user view', async () => {
+  it('lets the embedded Shared Browser dominate the default RC user view', async () => {
     localStorage.clear();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
@@ -281,7 +281,7 @@ describe('BusinessBrowserPage', () => {
       success: true,
       data: {
         status: 'attached',
-        message: 'Attached Business Browser.',
+        message: 'Attached Shared Browser.',
         browser: browserView({ currentUrlDisplay: 'workspace.example.test/app' }),
         runtimeSurface: {
           schemaVersion: 'evaos.runtime_surface.v1',
@@ -290,7 +290,7 @@ describe('BusinessBrowserPage', () => {
           partition: 'evaos-runtime-browser-fixture',
           customerId: 'david-poku',
           runtimeKey: 'browser',
-          displayLabel: 'Business Browser',
+          displayLabel: 'Shared Browser',
           status: 'attached',
           sourcePointer: 'broker:runtime_launch:browser',
           auditId: 'audit-browser-launch',
@@ -301,12 +301,17 @@ describe('BusinessBrowserPage', () => {
 
     render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
+    const surface = await screen.findByTestId('evaos-business-browser-surface');
+    expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-fixture/');
     expect(screen.queryByRole('button', { name: 'Diagnostics' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Browser is ready')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Attached Shared Browser/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/audit-browser-launch/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Attached runtime surface/i)).not.toBeInTheDocument();
   });
 
-  it('mounts an embedded Business Browser surface from an opaque broker handle', async () => {
+  it('mounts an embedded Shared Browser surface from an opaque broker handle', async () => {
     const user = userEvent.setup();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
@@ -503,7 +508,7 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Business Browser support blocker')).toBeInTheDocument();
+    expect(await screen.findByText('Shared Browser support blocker')).toBeInTheDocument();
     expect(screen.getByText(/Route \/business-browser for David Poku Co/)).toBeInTheDocument();
     expect(screen.getByText(/broker did not provide a browser runtime surface handle/)).toBeInTheDocument();
     expect(screen.getByText(/Source broker:runtime_status:browser/)).toBeInTheDocument();
@@ -532,7 +537,7 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Business Browser support blocker')).toBeInTheDocument();
+    expect(await screen.findByText('Shared Browser support blocker')).toBeInTheDocument();
     expect(screen.getByText(/Route \/business-browser for David Poku Co/)).toBeInTheDocument();
     expect(screen.getByText(/broker did not provide a browser runtime surface handle/)).toBeInTheDocument();
     expect(screen.getByText(/Audit audit_browser_open_url_only/)).toBeInTheDocument();
@@ -560,7 +565,7 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Business Browser support blocker')).toBeInTheDocument();
+    expect(await screen.findByText('Shared Browser support blocker')).toBeInTheDocument();
     expect(screen.getByText(/Route \/business-browser for David Poku Co/)).toBeInTheDocument();
     expect(screen.getByText(/broker did not provide a browser runtime surface handle/)).toBeInTheDocument();
     expect(screen.getByText(/Audit audit_browser_disabled_launch/)).toBeInTheDocument();
@@ -689,7 +694,7 @@ describe('BusinessBrowserPage', () => {
     render(<BusinessBrowserPage />);
 
     expect(
-      await screen.findByText('Business Browser broker returned evidence for a different customer.')
+      await screen.findByText('Shared Browser broker returned evidence for a different customer.')
     ).toBeInTheDocument();
     expect(screen.queryByText('app.two.test/home')).not.toBeInTheDocument();
     expect(browserMocks.launch).not.toHaveBeenCalled();
@@ -718,7 +723,7 @@ describe('BusinessBrowserPage', () => {
     });
 
     expect(
-      await screen.findByText('Business Browser broker returned evidence for a different customer.')
+      await screen.findByText('Shared Browser broker returned evidence for a different customer.')
     ).toBeInTheDocument();
     expect(screen.queryByText('app.two.test/home')).not.toBeInTheDocument();
   });
@@ -848,7 +853,7 @@ describe('BusinessBrowserPage', () => {
 
     expect(await screen.findByText('Route denied')).toBeInTheDocument();
     expect(
-      screen.getByText('Business Browser requires the open_business_browser scope for this customer account.')
+      screen.getByText('Shared Browser requires the open_business_browser scope for this customer account.')
     ).toBeInTheDocument();
     await openDiagnostics(user);
     expect(screen.getByRole('button', { name: /^launch$/i })).toBeDisabled();

@@ -98,7 +98,7 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
   },
   {
     key: 'browser',
-    title: 'Business Browser',
+    title: 'Shared Browser',
     subtitle: 'Brokered customer browser workspace.',
     section: 'workspace',
     routePath: '/business-browser',

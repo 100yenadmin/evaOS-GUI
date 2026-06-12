@@ -12,8 +12,8 @@ const PROOF_STAGES = {
   PRODUCT_LOADED_STATE: 'product-loaded-state',
 };
 
-const SUPPORT_BUBBLE_SELECTOR = '[data-testid="evaos-support-bubble"]';
-const SUPPORT_BUBBLE_ROUTE_GUARD = [SUPPORT_BUBBLE_SELECTOR];
+const SIDEBAR_SUPPORT_SELECTOR = '[data-testid="evaos-sidebar-support"]';
+const SIDEBAR_SUPPORT_ROUTE_GUARD = [SIDEBAR_SUPPORT_SELECTOR];
 
 const ROUTE_CHECKS = [
   {
@@ -25,7 +25,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
     expected: ['evaOS', 'Primary evaOS agent workspace', 'Customer context', 'Runtime action blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'hermes-dashboard',
@@ -36,7 +36,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['broker runtime status', 'customer scoped runtime proof'],
     expected: ['Hermes', 'Hermes agent dashboard', 'Customer context', 'Runtime action blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship', 'desktop_session', 'Bearer'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'mission-control',
@@ -47,7 +47,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['paperclip runtime status', 'customer scoped runtime proof'],
     expected: ['Mission Control', 'Paperclip mission queue', 'Customer context', 'Runtime action blocked'],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'beta-readiness',
@@ -65,7 +65,7 @@ const ROUTE_CHECKS = [
       'No runtime evidence loaded yet.',
     ],
     forbidden: ['Root PR #15', 'Stack approval', 'ship public beta', 'ready to ship'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'agent-settings-remote-guardrail',
@@ -77,7 +77,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['local agent inventory result', 'remote guardrail copy'],
     expected: ['Local Agents', 'Custom uses your configured model providers', 'Detect Custom Agent'],
     forbidden: ['Root PR #15', 'Stack approval', 'Remote Agents', 'Allow insecure', 'Handshake', 'Connect remote'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'display-settings-branding',
@@ -88,7 +88,7 @@ const ROUTE_CHECKS = [
     loadedStateRequiredMarkers: ['visible theme presets', 'neutral default theme card'],
     expected: ['Theme', 'Scale', 'CSS Settings', 'evaOS Default'],
     forbidden: ['iOfficeAI/AionUi', 'aionui.com', 'Default AionUi', 'Aion CLI'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'about-support-metadata',
@@ -111,15 +111,15 @@ const ROUTE_CHECKS = [
       'Support reports include route, app version, commit, channel, redacted logs, and screenshots only when requested.',
     ],
     forbidden: ['iOfficeAI/AionUi', 'aionui.com', 'Default AionUi', 'Aion CLI'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'native-companion-boundary',
     hash: '/native-companion',
     title: 'Mac & iPhone',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['Mac & iPhone', 'MAC & IPHONE REPAIR', 'Boundary clean'],
-    settledAnyMarkers: ['Native companion ready', 'Native companion repair required'],
+    settledMarkers: ['Mac & iPhone', 'Mac control repair', 'Boundary clean'],
+    settledAnyMarkers: ['Mac control is ready', 'Repair needed', 'Needs permission'],
     loadedStateRequiredMarkers: [
       'native companion status matrix',
       'open-native handoff',
@@ -128,15 +128,15 @@ const ROUTE_CHECKS = [
     ],
     expected: [
       'Mac & iPhone',
-      'Repair Mac pairing, permissions, iPhone Mirroring, and local-control readiness before evaOS or Hermes starts chat.',
+      'Check Mac control readiness for evaOS and Hermes. iPhone Mirroring is deferred for this controlled RC.',
       'Trust authority',
-      'Native companion',
-      'MAC & IPHONE REPAIR',
+      'Workbench connector',
+      'Mac control repair',
       'Advanced diagnostics',
       'Boundary clean',
     ],
     forbidden: ['AionUi', 'desktop_session', 'Bearer', 'provider_grant', 'access_token', 'refresh_token'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
 ];
 
@@ -147,7 +147,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'people-access-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['People Access', 'Fixture Owner', 'member rows', 'desktop_session', 'Bearer', 'provider_grant'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'approval-center-broker-guard',
@@ -155,7 +155,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'approval-center-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Approval Center', 'approval request rows', 'desktop_session', 'Bearer', 'provider_grant'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'connected-apps-broker-guard',
@@ -163,7 +163,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'connected-apps-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Connected Apps', 'Google Workspace', 'desktop_session', 'Bearer', 'provider_grant', 'grant_handle'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'business-browser-broker-guard',
@@ -171,7 +171,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'business-browser-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Business Browser', 'fixture.example.test', 'desktop_session', 'Bearer', 'provider_grant'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'company-brain-broker-guard',
@@ -179,7 +179,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     screenshotName: 'company-brain-broker-guard',
     expected: ['evaOS Workbench Beta'],
     forbidden: ['Company Brain', 'Renewal fixture brief', 'desktop_session', 'Bearer', 'provider_grant'],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
     name: 'webui-beta-guardrail',
@@ -197,7 +197,7 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
       'Bearer',
       'provider_grant',
     ],
-    requiredSelectors: SUPPORT_BUBBLE_ROUTE_GUARD,
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
 ];
 

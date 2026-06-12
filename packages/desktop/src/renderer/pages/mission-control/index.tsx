@@ -55,7 +55,7 @@ type MissionRealitySnapshot = {
 const RUNTIME_TARGETS: RuntimeTarget[] = [
   {
     key: 'browser',
-    label: 'Business Browser',
+    label: 'Shared Browser',
     role: 'Customer browser session',
     kind: 'browser',
   },
@@ -120,6 +120,10 @@ function safeUiText(value: unknown, fallback: string): string {
     return fallback;
   }
   return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
+}
+
+function missionUiText(value: unknown, fallback: string): string {
+  return safeUiText(value, fallback).replace(/\bBusiness Browser\b/g, 'Shared Browser');
 }
 
 function emptyRuntimeStates(): RuntimeLoadState[] {
@@ -756,7 +760,7 @@ const RuntimeCard: React.FC<{ state: RuntimeLoadState }> = ({ state }) => {
   const bucket = statusBucket(state);
   const view = state.view;
   const statusText = safeUiText(view?.status, statusLabel(bucket));
-  const healthText = state.error ?? safeUiText(view?.healthSummary, 'No runtime evidence loaded yet.');
+  const healthText = state.error ?? missionUiText(view?.healthSummary, 'No runtime evidence loaded yet.');
   const activityAt = formatDate(view?.lastActivityAt ?? view?.lastCheckedAt);
   const Icon = state.target.kind === 'browser' ? Computer : state.target.kind === 'execution' ? CheckOne : Robot;
 

@@ -64,11 +64,17 @@ describe('agentLogo', () => {
       expect(getAgentLogo('')).toBeNull();
     });
 
-    it('returns logo for multi-variant agents', () => {
+    it('returns the evaOS app logo for OpenClaw/evaOS runtime variants', () => {
       const logo1 = getAgentLogo('openclaw-gateway');
       const logo2 = getAgentLogo('openclaw');
-      expect(logo1).toContain('openclaw.svg');
-      expect(logo2).toContain('openclaw.svg');
+      expect(logo1).toContain('app-light.png');
+      expect(logo2).toContain('app-light.png');
+    });
+
+    it('returns the dark evaOS app logo for OpenClaw/evaOS variants in dark theme', () => {
+      (global.document.documentElement.getAttribute as any).mockReturnValue('dark');
+      const logo = getAgentLogo('openclaw-gateway');
+      expect(logo).toContain('app-dark.png');
     });
 
     it('applies dark theme variant for opencode', () => {

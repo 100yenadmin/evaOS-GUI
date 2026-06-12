@@ -151,19 +151,27 @@ describe('goldenWorkbenchParityManifest', () => {
     );
   });
 
-  it('keeps old Workbench visible navigation labels and Home as an owned route', () => {
+  it('tracks hidden RC routes separately from visible Workbench navigation labels', () => {
     const homeRow = GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'home');
 
     expect(homeRow).toMatchObject({
       expectedRoute: '/home',
       sidebarSection: 'Home',
       sidebarLabel: 'Home',
+      waiverIssue: 'https://github.com/100yenadmin/evaOS-GUI/issues/275',
+      proofTarget: expect.objectContaining({ closeoutState: 'waived' }),
     });
-    expect(homeRow?.waiverIssue).toBeUndefined();
     expect(GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'approvals')).toMatchObject({
       expectedRoute: '/approval-center',
       sidebarSection: 'Home',
       sidebarLabel: 'Approvals',
+      waiverIssue: 'https://github.com/100yenadmin/evaOS-GUI/issues/275',
+      proofTarget: expect.objectContaining({ closeoutState: 'waived' }),
+    });
+    expect(GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'business-browser')).toMatchObject({
+      expectedRoute: '/business-browser',
+      sidebarSection: 'Workspaces',
+      sidebarLabel: 'Shared Browser',
     });
     expect(GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === 'people-access')).toMatchObject({
       expectedRoute: '/people-access',
@@ -183,6 +191,8 @@ describe('goldenWorkbenchParityManifest', () => {
   it('keeps implemented manifest routes aligned with discoverable AionUi route and sidebar policy', () => {
     const evaosRoutesSource = readSource('packages/desktop/src/renderer/evaos/evaosRoutes.tsx');
     const sidebarSectionSource = readSource('packages/desktop/src/renderer/evaos/EvaosSidebarSection.tsx');
+    const siderSource = readSource('packages/desktop/src/renderer/components/layout/Sider/index.tsx');
+    const sidebarNavigationSource = `${sidebarSectionSource}\n${siderSource}`;
     const sidebarEntrySource = fs
       .readdirSync(path.join(repoRoot, 'packages/desktop/src/renderer/evaos/sidebar'))
       .filter((fileName) => fileName.endsWith('.tsx'))
@@ -202,9 +212,9 @@ describe('goldenWorkbenchParityManifest', () => {
       expect(evaosRoutesSource, `${row.id}: renderer route`).toContain(`path='${row.expectedRoute}'`);
 
       if (row.sidebarLabel) {
-        expect(sidebarSectionSource, `${row.id}: sidebar navigate target`).toContain(
-          `onNavigate('${row.expectedRoute}')`
-        );
+        const expectedNavigationSnippet =
+          row.id === 'terminal' ? `handleEvaosNavigate('${row.expectedRoute}')` : `onNavigate('${row.expectedRoute}')`;
+        expect(sidebarNavigationSource, `${row.id}: sidebar navigate target`).toContain(expectedNavigationSnippet);
         expect(sidebarEntrySource, `${row.id}: sidebar label`).toContain(`const label = '${row.sidebarLabel}'`);
       }
     }

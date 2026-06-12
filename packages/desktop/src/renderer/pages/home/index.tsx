@@ -18,7 +18,7 @@ const QUICK_ACTIONS = [
     route: '/approval-center',
   },
   {
-    title: 'Business Browser',
+    title: 'Shared Browser',
     detail: 'Open the shared customer browser with runtime evidence and customer isolation.',
     route: '/business-browser',
   },

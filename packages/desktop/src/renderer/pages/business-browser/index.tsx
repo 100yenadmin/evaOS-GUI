@@ -28,6 +28,10 @@ function safeUiText(value: unknown, fallback: string): string {
   return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
 }
 
+function sharedBrowserUiText(value: unknown, fallback: string): string {
+  return safeUiText(value, fallback).replace(/\bBusiness Browser\b/g, 'Shared Browser');
+}
+
 function statusColor(view: IEvaosBusinessBrowserView): 'green' | 'orange' | 'red' | 'gray' {
   const status = view.status.toLowerCase();
   if (view.routeDenied) return 'orange';
@@ -38,7 +42,7 @@ function statusColor(view: IEvaosBusinessBrowserView): 'green' | 'orange' | 'red
 }
 
 function actionSummary(result: IEvaosBusinessBrowserActionResult): string {
-  const parts = [safeUiText(result.message, `Business Browser ${result.status}.`)];
+  const parts = [sharedBrowserUiText(result.message, `Shared Browser ${result.status}.`)];
   if (result.urlSummary?.displayText) {
     parts.push(`URL ${result.urlSummary.displayText}.`);
   }
@@ -99,7 +103,7 @@ function businessBrowserSupportBlockerMessage(
   const parts = [`${route} for ${customer} is blocked: broker did not provide a browser runtime surface handle.`];
   const status = safeUiText(view.status, 'unknown');
   parts.push(`Status ${status}.`);
-  const healthSummary = safeUiText(view.healthSummary, '');
+  const healthSummary = sharedBrowserUiText(view.healthSummary, '');
   if (healthSummary) {
     parts.push(healthSummary);
   }
@@ -213,7 +217,7 @@ const BusinessBrowserPage: React.FC = () => {
       if (!selectedCustomerId) {
         setBrowserView(null);
         setRuntimeSurface(null);
-        setBrowserError('Choose a customer before loading Business Browser.');
+        setBrowserError('Choose a customer before loading Shared Browser.');
         return;
       }
 
@@ -230,13 +234,13 @@ const BusinessBrowserPage: React.FC = () => {
         if (!response.success || !response.data) {
           setBrowserView(null);
           setRuntimeSurface(null);
-          setBrowserError(safeUiText(response.msg, 'Business Browser failed closed.'));
+          setBrowserError(sharedBrowserUiText(response.msg, 'Shared Browser failed closed.'));
           return;
         }
         if (response.data.customerId !== selectedCustomerId) {
           setBrowserView(null);
           setRuntimeSurface(null);
-          setBrowserError('Business Browser broker returned evidence for a different customer.');
+          setBrowserError('Shared Browser broker returned evidence for a different customer.');
           return;
         }
         if (response.data.routeDenied) {
@@ -249,7 +253,7 @@ const BusinessBrowserPage: React.FC = () => {
         }
         setBrowserView(null);
         setRuntimeSurface(null);
-        setBrowserError('Business Browser broker request failed closed.');
+        setBrowserError('Shared Browser broker request failed closed.');
       } finally {
         if (isCurrentRequest(requestEpoch, selectedCustomerId)) {
           setLoadingStatus(false);
@@ -271,6 +275,9 @@ const BusinessBrowserPage: React.FC = () => {
   const actionInFlight = actionTarget !== null;
   const supportBlockerMessage =
     browserView && !runtimeSurface ? businessBrowserSupportBlockerMessage(browserView, selectedCustomerLabel) : null;
+  const showLoadedSurfaceChrome = showDiagnostics || !runtimeSurface;
+  const showHeader = showLoadedSurfaceChrome || Boolean(browserError || actionError);
+  const showActionStatus = Boolean(actionStatus) && (showDiagnostics || !runtimeSurface);
 
   const runBrowserAction = useCallback(
     async (action: 'launch' | 'openUrl' | 'stop') => {
@@ -285,7 +292,7 @@ const BusinessBrowserPage: React.FC = () => {
         return;
       }
       if (action === 'openUrl' && !openUrl.trim()) {
-        setActionError('Enter a URL before opening Business Browser.');
+        setActionError('Enter a URL before opening Shared Browser.');
         return;
       }
 
@@ -311,7 +318,7 @@ const BusinessBrowserPage: React.FC = () => {
           if (response.data.browser.customerId !== selectedCustomerId) {
             setBrowserView(null);
             setRuntimeSurface(null);
-            setActionError('Business Browser broker returned evidence for a different customer.');
+            setActionError('Shared Browser broker returned evidence for a different customer.');
             return;
           }
           setBrowserView(response.data.browser);
@@ -330,10 +337,10 @@ const BusinessBrowserPage: React.FC = () => {
           setRuntimeSurface(response.data.runtimeSurface);
         } else if (response.data.runtimeSurface) {
           setRuntimeSurface(null);
-          setActionError('Business Browser broker returned an invalid runtime surface handle.');
+          setActionError('Shared Browser broker returned an invalid runtime surface handle.');
           return;
         } else if (action === 'launch' || (action === 'openUrl' && !runtimeSurface)) {
-          setActionError('Business Browser broker action did not return a runtime surface handle.');
+          setActionError('Shared Browser broker action did not return a runtime surface handle.');
           return;
         }
         setActionStatus(actionSummary(response.data));
@@ -414,43 +421,43 @@ const BusinessBrowserPage: React.FC = () => {
       )}
     >
       <div className='mx-auto flex h-full min-h-0 w-full max-w-none box-border flex-col gap-12px'>
-        <header className='flex flex-wrap items-center justify-between gap-12px'>
-          <div className='min-w-0'>
-            <div className='flex flex-wrap items-center gap-8px'>
-              <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>Business Browser</h1>
-              {browserView || runtimeSurface ? (
-                <Tag color={runtimeSurface ? 'green' : statusColor(browserView)}>
-                  {runtimeSurface ? 'loaded' : browserView?.status}
-                </Tag>
+        {showHeader ? (
+          <header className='flex flex-wrap items-center justify-between gap-12px'>
+            <div className='min-w-0'>
+              <div className='flex flex-wrap items-center gap-8px'>
+                <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>Shared Browser</h1>
+                {browserView || runtimeSurface ? (
+                  <Tag color={runtimeSurface ? 'green' : statusColor(browserView)}>
+                    {runtimeSurface ? 'loaded' : browserView?.status}
+                  </Tag>
+                ) : null}
+              </div>
+              <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
+                {customerContext.loading
+                  ? 'Loading customer targets...'
+                  : browserError || actionError || browserView?.healthSummary || selectedCustomerLabel}
+              </p>
+            </div>
+            <div className='flex shrink-0 flex-wrap items-center gap-8px'>
+              {browserError || actionError || !runtimeSurface ? (
+                <Button
+                  type='primary'
+                  icon={<Refresh theme='outline' size='16' />}
+                  loading={loadingStatus || actionInFlight}
+                  disabled={actionInFlight || !customerContext.selectedCustomerId}
+                  onClick={() => void loadStatus()}
+                >
+                  Retry
+                </Button>
+              ) : null}
+              {showDiagnostics ? (
+                <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
+                  Diagnostics
+                </Button>
               ) : null}
             </div>
-            <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
-              {customerContext.loading
-                ? 'Loading customer targets...'
-                : runtimeSurface
-                  ? selectedCustomerLabel
-                  : browserError || actionError || browserView?.healthSummary || selectedCustomerLabel}
-            </p>
-          </div>
-          <div className='flex shrink-0 flex-wrap items-center gap-8px'>
-            {browserError || actionError || !runtimeSurface ? (
-              <Button
-                type='primary'
-                icon={<Refresh theme='outline' size='16' />}
-                loading={loadingStatus || actionInFlight}
-                disabled={actionInFlight || !customerContext.selectedCustomerId}
-                onClick={() => void loadStatus()}
-              >
-                Retry
-              </Button>
-            ) : null}
-            {showDiagnostics ? (
-              <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
-                Diagnostics
-              </Button>
-            ) : null}
-          </div>
-        </header>
+          </header>
+        ) : null}
 
         {loadingStatus ? (
           <div className='flex min-h-0 flex-1 items-center justify-center rounded-8px border border-dashed border-[var(--color-border-2)] bg-fill-1'>
@@ -465,14 +472,17 @@ const BusinessBrowserPage: React.FC = () => {
                   <div className='min-w-0'>
                     <h2 className='m-0 text-15px font-semibold leading-22px'>Route denied</h2>
                     <p className='m-0 mt-4px text-13px leading-20px'>
-                      {browserView.routeDenialReason ?? 'This customer account does not allow Business Browser.'}
+                      {sharedBrowserUiText(
+                        browserView.routeDenialReason,
+                        'This customer account does not allow Shared Browser.'
+                      )}
                     </p>
                   </div>
                 </div>
               </section>
             ) : null}
 
-            {actionStatus ? (
+            {showActionStatus ? (
               <p className='m-0 rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px text-13px leading-20px text-[rgb(var(--success-6))]'>
                 {actionStatus}
               </p>
@@ -488,16 +498,18 @@ const BusinessBrowserPage: React.FC = () => {
                 className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
                 data-testid='evaos-business-browser-surface-container'
               >
-                <div className='flex shrink-0 items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
-                  <div className='min-w-0'>
-                    <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
-                      {safeUiText(runtimeSurface.displayLabel, 'Business Browser')}
-                    </div>
-                    <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>
-                      {selectedCustomerLabel}
+                {showDiagnostics ? (
+                  <div className='flex shrink-0 items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
+                    <div className='min-w-0'>
+                      <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
+                        {sharedBrowserUiText(runtimeSurface.displayLabel, 'Shared Browser')}
+                      </div>
+                      <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>
+                        {selectedCustomerLabel}
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : null}
                 <webview
                   data-testid='evaos-business-browser-surface'
                   src={runtimeSurface.surfaceUri}
@@ -513,13 +525,13 @@ const BusinessBrowserPage: React.FC = () => {
                     <Browser theme='outline' size='22' />
                   </span>
                   <h2 className='m-0 mt-14px text-20px font-semibold leading-26px text-t-primary'>
-                    {supportBlockerMessage ? 'Business Browser support blocker' : 'Business Browser not attached'}
+                    {supportBlockerMessage ? 'Shared Browser support blocker' : 'Shared Browser not attached'}
                   </h2>
                   <p className='m-0 mt-8px text-13px leading-20px text-t-secondary'>
                     {supportBlockerMessage ??
                       actionError ??
                       browserError ??
-                      'Opening Business Browser. The app will attach automatically when the browser is available.'}
+                      'Opening Shared Browser. The app will attach automatically when the browser is available.'}
                   </p>
                   {!browserView.routeDenied ? (
                     <div className='mt-14px flex justify-center gap-8px'>
@@ -634,10 +646,10 @@ const BusinessBrowserPage: React.FC = () => {
                               {browserView.waitingOnUser ? <Tag color='orange'>waiting</Tag> : null}
                             </div>
                             <h2 className='m-0 mt-10px text-17px font-semibold leading-24px text-t-primary'>
-                              {browserView.displayLabel}
+                              {sharedBrowserUiText(browserView.displayLabel, 'Shared Browser')}
                             </h2>
                             <p className='m-0 mt-4px text-13px leading-20px text-t-secondary'>
-                              {browserView.healthSummary ?? 'No runtime health summary returned.'}
+                              {sharedBrowserUiText(browserView.healthSummary, 'No runtime health summary returned.')}
                             </p>
                           </div>
                           <div className='flex max-w-full flex-wrap justify-end gap-8px'>
