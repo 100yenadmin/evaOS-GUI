@@ -6,6 +6,7 @@ ARTIFACTS_DIR="${1:-build-artifacts}"
 VERSION="${MOCK_VERSION:-1.0.0}"
 PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench Beta}"
 RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
+MOCK_MACOS_DMG_ONLY="${EVAOS_MOCK_MACOS_DMG_ONLY:-0}"
 
 case "$RELEASE_TARGET_PLATFORMS" in
   all|macos)
@@ -59,25 +60,29 @@ fi
 
 # macOS x64
 touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.dmg"
-touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
-cat > "$ARTIFACTS_DIR/macos-build-x64/latest-mac.yml" <<EOF
+if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
+  touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
+  cat > "$ARTIFACTS_DIR/macos-build-x64/latest-mac.yml" <<EOF
 version: ${VERSION}
 files:
   - url: ${PRODUCT_NAME}-${VERSION}-mac-x64.dmg
     sha512: fake-sha512-mac-x64
     size: 200000
 EOF
+fi
 
 # macOS arm64
 touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.dmg"
-touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.zip"
-cat > "$ARTIFACTS_DIR/macos-build-arm64/latest-mac.yml" <<EOF
+if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
+  touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.zip"
+  cat > "$ARTIFACTS_DIR/macos-build-arm64/latest-mac.yml" <<EOF
 version: ${VERSION}
 files:
   - url: ${PRODUCT_NAME}-${VERSION}-mac-arm64.dmg
     sha512: fake-sha512-mac-arm64
     size: 200000
 EOF
+fi
 
 # Linux x64
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then

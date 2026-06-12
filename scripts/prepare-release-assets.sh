@@ -126,13 +126,82 @@ MAC_ARM64_LATEST=$(find "$ARTIFACTS_DIR" -type f -path "*/macos-build-arm64/*" -
 LINUX_X64_LATEST=$(find "$ARTIFACTS_DIR" -type f -path "*/linux-build-x64/*" -name "latest-linux.yml" | sort | head -n 1 || true)
 LINUX_ARM64_LATEST=$(find "$ARTIFACTS_DIR" -type f -path "*/linux-build-arm64/*" -name "latest-linux-arm64.yml" | sort | head -n 1 || true)
 
+metadata_version() {
+  if [ -n "${MOCK_VERSION:-}" ]; then
+    echo "$MOCK_VERSION"
+    return
+  fi
+  node -p "require('./package.json').version"
+}
+
+file_size_bytes() {
+  local file="$1"
+  stat -c%s "$file" 2>/dev/null || stat -f%z "$file"
+}
+
+sha512_base64() {
+  local file="$1"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha512 -binary "$file" | openssl base64 -A
+    return
+  fi
+  python3 - "$file" <<'PY'
+import base64
+import hashlib
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+print(base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode("ascii"), end="")
+PY
+}
+
+write_macos_dmg_metadata() {
+  local arch="$1"
+  local output_name="$2"
+  local dmg
+
+  dmg=$(find "$ARTIFACTS_DIR" -type f -path "*/macos-build-$arch/*" -name "*.dmg" | sort | head -n 1 || true)
+  if [ -z "$dmg" ]; then
+    return
+  fi
+
+  local base
+  local version
+  local sha512
+  local size
+  local release_date
+
+  base="$(basename "$dmg")"
+  version="$(metadata_version)"
+  sha512="$(sha512_base64 "$dmg")"
+  size="$(file_size_bytes "$dmg")"
+  release_date="$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
+
+  cat > "$OUTPUT_DIR/$output_name" <<EOF
+version: ${version}
+files:
+  - url: ${base}
+    sha512: ${sha512}
+    size: ${size}
+path: ${base}
+sha512: ${sha512}
+releaseDate: '${release_date}'
+EOF
+  echo "Generated $output_name from DMG-only macOS artifact: $base"
+}
+
 # ---------------------------------------------------------------------------
 # 3) Publish deterministic canonical metadata for electron-updater
 #    (avoid nondeterministic overwrite when multiple jobs produce same names)
 # ---------------------------------------------------------------------------
 echo "==> Writing canonical updater metadata ..."
 
-[ -n "$MAC_X64_LATEST" ]    && cp -f "$MAC_X64_LATEST"    "$OUTPUT_DIR/latest-mac.yml"
+if [ -n "$MAC_X64_LATEST" ]; then
+  cp -f "$MAC_X64_LATEST" "$OUTPUT_DIR/latest-mac.yml"
+else
+  write_macos_dmg_metadata "x64" "latest-mac.yml"
+fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   [ -n "$WIN_X64_LATEST" ]    && cp -f "$WIN_X64_LATEST"    "$OUTPUT_DIR/latest.yml"
   [ -n "$LINUX_X64_LATEST" ]  && cp -f "$LINUX_X64_LATEST"  "$OUTPUT_DIR/latest-linux.yml"
@@ -150,7 +219,11 @@ fi
 
 # electron-updater on macOS constructs the yml filename as "${channel}-mac.yml".
 # For arm64, channel is "latest-arm64", so it looks for "latest-arm64-mac.yml".
-[ -n "$MAC_ARM64_LATEST" ]  && cp -f "$MAC_ARM64_LATEST"  "$OUTPUT_DIR/latest-arm64-mac.yml"
+if [ -n "$MAC_ARM64_LATEST" ]; then
+  cp -f "$MAC_ARM64_LATEST" "$OUTPUT_DIR/latest-arm64-mac.yml"
+else
+  write_macos_dmg_metadata "arm64" "latest-arm64-mac.yml"
+fi
 
 # ---------------------------------------------------------------------------
 # 5) Hard validation for required updater metadata

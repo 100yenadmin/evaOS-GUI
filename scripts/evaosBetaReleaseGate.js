@@ -726,9 +726,6 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
   if (!actualAssets.some((name) => name.endsWith('.dmg'))) {
     throw new Error('Release manifest verification requires at least one macOS DMG asset.');
   }
-  if (!actualAssets.some((name) => name.endsWith('.zip'))) {
-    throw new Error('Release manifest verification requires at least one macOS ZIP asset.');
-  }
   if (!actualAssets.some((name) => name.endsWith('.yml'))) {
     throw new Error('Release manifest verification requires updater metadata.');
   }

@@ -407,6 +407,38 @@ describe('evaOS beta release gate', () => {
     }
   });
 
+  it('verifies release manifests for DMG-only macOS release assets', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-dmg-only-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
+      fs.writeFileSync(
+        path.join(dir, 'latest-arm64-mac.yml'),
+        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
+      );
+
+      releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+        GITHUB_WORKFLOW: 'Build and Release',
+        EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
+        GITHUB_RUN_ID: '12345',
+        GITHUB_RUN_ATTEMPT: '1',
+        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
+        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
+        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+      });
+
+      expect(
+        releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('binds distribution verification to the trusted workflow manifest artifact', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-trusted-release-'));
     try {

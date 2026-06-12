@@ -115,13 +115,34 @@ for f in "${ARCH_METADATA[@]}"; do
   fi
 done
 
+if [ -f "$OUTPUT_DIR/latest-arm64-mac.yml" ]; then
+  assert_metadata_points_to_existing_file "latest-arm64-mac.yml" "(mac-arm64|darwin-arm64|arm64)"
+fi
+
+assert_required_glob() {
+  local label="$1"
+  local pattern="$2"
+  local matches=()
+
+  while IFS= read -r match; do
+    matches+=("$match")
+  done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "$pattern" | sort)
+
+  if [ "${#matches[@]}" -eq 0 ]; then
+    echo "FAIL: missing distributable matching $label: $pattern"
+    ERRORS=$((ERRORS + 1))
+    return
+  fi
+
+  local match
+  for match in "${matches[@]}"; do
+    echo "PASS: $(basename "$match") exists"
+  done
+}
+
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-  REQUIRED_DISTRIBUTABLES=(
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.dmg"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.zip"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.dmg"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.zip"
-  )
+  assert_required_glob "macOS x64 DMG" "${MOCK_PRODUCT_NAME}-*-mac-x64.dmg"
+  assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_NAME}-*-mac-arm64.dmg"
 else
   REQUIRED_DISTRIBUTABLES=(
     "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-x64.exe"
@@ -131,16 +152,16 @@ else
     "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-x64.deb"
     "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-arm64.deb"
   )
-fi
 
-for f in "${REQUIRED_DISTRIBUTABLES[@]}"; do
-  if [ ! -f "$OUTPUT_DIR/$f" ]; then
-    echo "FAIL: missing distributable: $f"
-    ERRORS=$((ERRORS + 1))
-  else
-    echo "PASS: $f exists"
-  fi
-done
+  for f in "${REQUIRED_DISTRIBUTABLES[@]}"; do
+    if [ ! -f "$OUTPUT_DIR/$f" ]; then
+      echo "FAIL: missing distributable: $f"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $f exists"
+    fi
+  done
+fi
 
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   DEFERRED_PLATFORM_FILES=(
