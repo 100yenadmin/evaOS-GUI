@@ -205,6 +205,7 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   },
   {
     routePath: '/creative-studio',
+    allowMissingBroker: true,
     anyRequiredScopes: ['use_creative_studio'],
   },
   {
