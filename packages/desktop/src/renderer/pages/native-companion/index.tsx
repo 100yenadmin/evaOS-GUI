@@ -18,8 +18,9 @@ import {
   type EvaosNativeCompanionStatusScenario,
   type EvaosNativeCompanionStatusSeverity,
 } from '@/common/evaos/nativeCompanionBoundary';
-import type { IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
+import type { IEvaosNativeCompanionRepairAction, IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
+import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
 import {
   getNativeCompanionRepairViewModel,
   type NativeCompanionReadinessItem,
@@ -34,11 +35,12 @@ const NativeCompanionPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const violations = getEvaosNativeCompanionBoundaryViolations();
-  const { status, loading, error, refresh, openReleasedWorkbench } = useEvaosNativeCompanionStatus();
+  const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction } = useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);
   const { openFeedback } = useFeedback();
   const viewModel = getNativeCompanionRepairViewModel({ status, loading, error });
+  const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
   const supportReportContext = React.useMemo(
     () =>
       buildEvaosSupportReportContext({
@@ -82,14 +84,18 @@ const NativeCompanionPage: React.FC = () => {
   }, [openReleasedWorkbench]);
 
   const handlePrimaryAction = React.useCallback(async () => {
-    if (viewModel.primaryAction.kind === 'open_released_workbench') {
-      await handleOpenReleasedWorkbench();
-      return;
-    }
     if (viewModel.primaryAction.kind === 'refresh') {
       await refresh();
     }
-  }, [handleOpenReleasedWorkbench, refresh, viewModel.primaryAction.kind]);
+  }, [refresh, viewModel.primaryAction.kind]);
+
+  const handleOpenRepairAction = React.useCallback(
+    async (action: IEvaosNativeCompanionRepairAction) => {
+      const result = await openRepairAction(action);
+      setHandoffMessage(result.message);
+    },
+    [openRepairAction]
+  );
 
   const handleOpenSupportReport = React.useCallback(async () => {
     try {
@@ -111,8 +117,8 @@ const NativeCompanionPage: React.FC = () => {
           <div className='min-w-0'>
             <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Mac &amp; iPhone</h1>
             <p className='m-0 mt-4px max-w-760px text-14px leading-22px text-t-secondary'>
-              Repair Mac pairing, permissions, iPhone Mirroring, and local-control readiness before evaOS or Hermes
-              starts chat.
+              Repair Mac pairing, permissions, and local-control readiness before evaOS or Hermes starts chat. iPhone
+              Mirroring is deferred for this controlled RC.
             </p>
           </div>
           <div className='flex flex-wrap items-center gap-8px'>
@@ -173,43 +179,57 @@ const NativeCompanionPage: React.FC = () => {
             ))}
           </div>
 
+          <div className='mt-14px flex flex-wrap gap-8px' aria-label='Mac repair actions'>
+            <Button type='secondary' onClick={() => void handleOpenRepairAction('accessibility')}>
+              Open Accessibility
+            </Button>
+            <Button type='secondary' onClick={() => void handleOpenRepairAction('screen_recording')}>
+              Open Screen Recording
+            </Button>
+            <Button type='secondary' loading={loading} onClick={() => void refresh()}>
+              Refresh status
+            </Button>
+          </div>
+
           <div className='mt-14px rounded-8px bg-fill-2 px-14px py-12px text-12px leading-18px text-t-secondary'>
             {viewModel.supportText}
           </div>
         </section>
 
-        <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'>
-          <button
-            type='button'
-            aria-expanded={advancedOpen}
-            className='flex w-full cursor-pointer items-center justify-between border-0 bg-transparent p-0 text-left'
-            onClick={() => setAdvancedOpen((open) => !open)}
-          >
-            <span>
-              <span className='block text-17px font-semibold leading-24px text-t-primary'>Advanced diagnostics</span>
-              <span className='mt-4px block text-12px leading-18px text-t-secondary'>
-                Status matrix, native boundary proof, secure callback policy, and RC canary requirements.
+        {showDiagnostics ? (
+          <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'>
+            <button
+              type='button'
+              aria-expanded={advancedOpen}
+              className='flex w-full cursor-pointer items-center justify-between border-0 bg-transparent p-0 text-left'
+              onClick={() => setAdvancedOpen((open) => !open)}
+            >
+              <span>
+                <span className='block text-17px font-semibold leading-24px text-t-primary'>Advanced diagnostics</span>
+                <span className='mt-4px block text-12px leading-18px text-t-secondary'>
+                  Status matrix, native boundary proof, secure callback policy, and RC canary requirements.
+                </span>
               </span>
-            </span>
-            <Tag color='gray'>{advancedOpen ? 'Open' : 'Collapsed'}</Tag>
-          </button>
+              <Tag color='gray'>{advancedOpen ? 'Open' : 'Collapsed'}</Tag>
+            </button>
 
-          {advancedOpen && (
-            <div className='mt-16px flex flex-col gap-16px'>
-              <AdvancedStatusPanel
-                status={status}
-                loading={loading}
-                onRefresh={() => void refresh()}
-                onOpenReleasedWorkbench={() => void handleOpenReleasedWorkbench()}
-              />
-              <StatusMatrixSection />
-              <BoundarySection />
-              <CallbackPolicySection />
-              <CapabilitySection />
-              <CanarySection />
-            </div>
-          )}
-        </section>
+            {advancedOpen && (
+              <div className='mt-16px flex flex-col gap-16px'>
+                <AdvancedStatusPanel
+                  status={status}
+                  loading={loading}
+                  onRefresh={() => void refresh()}
+                  onOpenReleasedWorkbench={() => void handleOpenReleasedWorkbench()}
+                />
+                <StatusMatrixSection />
+                <BoundarySection />
+                <CallbackPolicySection />
+                <CapabilitySection />
+                <CanarySection />
+              </div>
+            )}
+          </section>
+        ) : null}
       </div>
     </div>
   );

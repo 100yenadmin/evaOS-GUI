@@ -67,6 +67,7 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
 describe('RuntimeDashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem('evaos.supportDiagnostics', '1');
     window.location.hash = '#/evaos';
     evaosBrokerMock.runtimeStatus.mockResolvedValue({
       success: true,
@@ -117,6 +118,22 @@ describe('RuntimeDashboardPage', () => {
     expect(await screen.findByText(/evaOS broker attach did not return a runtime surface handle/)).toBeInTheDocument();
     expect(screen.queryByTestId('evaos-runtime-surface-openclaw')).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
+  });
+
+  it('hides advanced diagnostics for the default RC user view', async () => {
+    localStorage.clear();
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    expect(await screen.findByText(/evaOS broker attach did not return a runtime surface handle/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Diagnostics' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Customer context/)).not.toBeInTheDocument();
   });
 
   it.each([

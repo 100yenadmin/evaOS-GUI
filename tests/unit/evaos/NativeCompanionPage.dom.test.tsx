@@ -14,6 +14,7 @@ import NativeCompanionPage from '@/renderer/pages/native-companion';
 const bridgeMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   openReleasedWorkbench: vi.fn(),
+  openRepairAction: vi.fn(),
 }));
 
 const feedbackMock = vi.hoisted(() => ({
@@ -28,6 +29,9 @@ vi.mock('@/common', () => ({
       },
       openReleasedWorkbench: {
         invoke: bridgeMocks.openReleasedWorkbench,
+      },
+      openRepairAction: {
+        invoke: bridgeMocks.openRepairAction,
       },
     },
   },
@@ -53,10 +57,12 @@ describe('NativeCompanionPage', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    localStorage.clear();
     window.location.hash = '';
   });
 
   it('renders read-only native companion status and opens the advanced released Workbench repair handoff', async () => {
+    localStorage.setItem('evaos.supportDiagnostics', '1');
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -176,35 +182,36 @@ describe('NativeCompanionPage', () => {
         },
       },
     });
-    bridgeMocks.openReleasedWorkbench.mockResolvedValue({
+    bridgeMocks.openRepairAction.mockResolvedValue({
       success: true,
       data: {
         opened: true,
-        path: '/Applications/evaOS.app',
-        message: 'Opened released evaOS Workbench for native pairing and repair.',
+        message: 'Opened macOS privacy settings.',
       },
     });
 
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByRole('button', { name: 'Pair this Mac' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Check again' })).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone repair')).toBeInTheDocument();
     expect(screen.queryByText('Native companion status matrix')).not.toBeInTheDocument();
     expect(screen.queryByText('RC native canary contract')).not.toBeInTheDocument();
+    expect(screen.queryByText('Advanced diagnostics')).not.toBeInTheDocument();
     expect(screen.queryByText('Open released Workbench')).not.toBeInTheDocument();
     expect(screen.queryByText('Not installed')).not.toBeInTheDocument();
 
     const repairCard = screen.getByTestId('native-companion-repair-card');
-    expect(within(repairCard).getAllByRole('button')).toHaveLength(1);
+    expect(within(repairCard).getByRole('button', { name: 'Open Accessibility' })).toBeInTheDocument();
+    expect(within(repairCard).getByRole('button', { name: 'Open Screen Recording' })).toBeInTheDocument();
 
-    await user.click(within(repairCard).getByRole('button', { name: 'Pair this Mac' }));
-    await waitFor(() => expect(bridgeMocks.openReleasedWorkbench).toHaveBeenCalledTimes(1));
+    await user.click(within(repairCard).getByRole('button', { name: 'Open Accessibility' }));
+    await user.click(within(repairCard).getByRole('button', { name: 'Open Screen Recording' }));
 
-    await user.click(screen.getByText('Advanced diagnostics'));
-    expect(await screen.findByText('Native companion status matrix')).toBeInTheDocument();
-    expect(screen.getByText('RC native canary contract')).toBeInTheDocument();
-    expect(screen.getByText('Open released Workbench fallback')).toBeInTheDocument();
+    await waitFor(() => expect(bridgeMocks.openRepairAction).toHaveBeenCalledTimes(2));
+    expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'accessibility' });
+    expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'screen_recording' });
+    expect(bridgeMocks.openReleasedWorkbench).not.toHaveBeenCalled();
   });
 
   it('opens an evaOS support report with native audit ids and screenshot request', async () => {

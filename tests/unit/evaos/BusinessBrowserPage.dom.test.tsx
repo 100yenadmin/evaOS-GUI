@@ -149,6 +149,7 @@ async function openDiagnostics(user: ReturnType<typeof userEvent.setup>) {
 describe('BusinessBrowserPage', () => {
   beforeEach(() => {
     clearEvaosCustomerContext();
+    localStorage.setItem('evaos.supportDiagnostics', '1');
     brokerMocks.getSessionStatus.mockReset();
     brokerMocks.getSessionStatus.mockResolvedValue({
       success: true,
@@ -268,6 +269,41 @@ describe('BusinessBrowserPage', () => {
     expect(container.textContent).not.toMatch(
       /\b(?:eds|epg)_[A-Za-z0-9_-]+\b|access_token|refresh_token|desktop_session|provider_grant_handle|grant_handle|Bearer/i
     );
+  });
+
+  it('hides advanced diagnostics for the default RC user view', async () => {
+    localStorage.clear();
+    browserMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: browserView({ actions: [] }),
+    });
+    browserMocks.launch.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'attached',
+        message: 'Attached Business Browser.',
+        browser: browserView({ currentUrlDisplay: 'workspace.example.test/app' }),
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-browser-fixture',
+          surfaceUri: 'evaos-runtime-surface://surface-browser-fixture/',
+          partition: 'evaos-runtime-browser-fixture',
+          customerId: 'david-poku',
+          runtimeKey: 'browser',
+          displayLabel: 'Business Browser',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:browser',
+          auditId: 'audit-browser-launch',
+        },
+        backendEnforced: true,
+      },
+    });
+
+    render(<BusinessBrowserPage />);
+
+    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Diagnostics' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
   });
 
   it('mounts an embedded Business Browser surface from an opaque broker handle', async () => {

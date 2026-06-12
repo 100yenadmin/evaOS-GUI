@@ -167,7 +167,7 @@ describe('HomePage broker-policy quick actions', () => {
     renderHome();
 
     expect(screen.getByRole('button', { name: /Business Browser/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Company Brain/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Company Brain/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Connected Apps/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Approvals/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^evaOS/i })).not.toBeInTheDocument();

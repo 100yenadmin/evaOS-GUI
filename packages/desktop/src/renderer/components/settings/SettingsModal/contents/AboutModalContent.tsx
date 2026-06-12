@@ -10,7 +10,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
-import { isElectronDesktop, openExternalUrl } from '@/renderer/utils/platform';
+import { isElectronDesktop, openEvaosExternalUrl } from '@/renderer/utils/platform';
 import FeedbackReportModal from './FeedbackReportModal';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 
@@ -29,10 +29,8 @@ type LinkItem =
 
 export const EVAOS_BETA_ABOUT_LINKS = {
   appName: 'evaOS Workbench Beta',
-  repository: 'https://www.electricsheephq.com',
-  documentation: 'https://www.electricsheephq.com',
-  releases: 'https://www.electricsheephq.com/contact',
-  support: 'https://www.electricsheephq.com/contact',
+  website: 'https://www.electricsheephq.com/dashboard/',
+  support: 'mailto:support@electricsheephq.com',
 } as const;
 
 // Release-audit breadcrumb only. Keep this out of rendered About/support links.
@@ -40,10 +38,9 @@ export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/e
 
 export const EVAOS_BETA_SUPPORT_NOTICE = {
   title: 'Beta support',
-  body: 'The released macOS app remains the fallback until public beta gates pass.',
-  supportRoute: 'Open ElectricSheep support',
-  diagnostics:
-    'Support reports include route, app version, commit, channel, redacted logs, and screenshots only when requested.',
+  body: 'Use Report Issue or email support for this controlled RC. The app will include route, version, and screenshot context when you send a report.',
+  supportRoute: 'Email support@electricsheephq.com',
+  diagnostics: 'Diagnostics stay hidden unless support mode is enabled; reports never include desktop-session secrets.',
 } as const;
 
 export const EVAOS_BETA_BUILD_METADATA = [
@@ -52,7 +49,7 @@ export const EVAOS_BETA_BUILD_METADATA = [
   { label: 'Commit', value: APP_COMMIT },
   { label: 'Bundle ID', value: EVAOS_BETA_IDENTITY.appId },
   { label: 'Protocol', value: EVAOS_BETA_IDENTITY.protocolScheme },
-  { label: 'Fallback', value: 'released macOS app' },
+  { label: 'Updater', value: 'controlled beta feed' },
 ] as const;
 
 const checkUpdate = () => {
@@ -82,23 +79,13 @@ const AboutModalContent: React.FC = () => {
 
   const openLink = async (url: string) => {
     try {
-      await openExternalUrl(url);
+      await openEvaosExternalUrl(url);
     } catch (error) {
       console.log('Failed to open link:', error);
     }
   };
 
   const linkItems: LinkItem[] = [
-    {
-      title: t('settings.helpDocumentation'),
-      url: EVAOS_BETA_ABOUT_LINKS.documentation,
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.updateLog'),
-      url: EVAOS_BETA_ABOUT_LINKS.releases,
-      icon: <Right theme='outline' size='16' />,
-    },
     {
       title: t('settings.bugReport'),
       onClick: () => setShowFeedbackModal(true),
@@ -107,11 +94,6 @@ const AboutModalContent: React.FC = () => {
     {
       title: t('settings.contactMe'),
       url: EVAOS_BETA_ABOUT_LINKS.support,
-      icon: <Right theme='outline' size='16' />,
-    },
-    {
-      title: t('settings.officialWebsite'),
-      url: EVAOS_BETA_ABOUT_LINKS.repository,
       icon: <Right theme='outline' size='16' />,
     },
   ];
@@ -141,7 +123,7 @@ const AboutModalContent: React.FC = () => {
                 title='Open ElectricSheep'
                 aria-label='Open ElectricSheep'
                 onClick={() =>
-                  openLink(EVAOS_BETA_ABOUT_LINKS.repository).catch((error) =>
+                  openLink(EVAOS_BETA_ABOUT_LINKS.website).catch((error) =>
                     console.error('Failed to open link:', error)
                   )
                 }

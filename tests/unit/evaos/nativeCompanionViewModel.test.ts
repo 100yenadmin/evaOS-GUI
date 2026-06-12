@@ -135,12 +135,16 @@ describe('nativeCompanionViewModel', () => {
     });
 
     expect(viewModel.state).toBe('not_paired');
-    expect(viewModel.primaryAction.kind).toBe('open_released_workbench');
-    expect(viewModel.primaryAction.label).toBe('Pair this Mac');
+    expect(viewModel.primaryAction.kind).toBe('refresh');
+    expect(viewModel.primaryAction.label).toBe('Check again');
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).not.toMatch(/AionUi|Aion CLI/i);
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).toContain(
       'evaOS Workbench only presents status and opens the repair workflow.'
     );
+    expect(viewModel.readinessStrip.find((item) => item.label === 'iPhone')).toMatchObject({
+      value: 'Deferred',
+      tone: 'neutral',
+    });
     expect(viewModel.repairSteps.join(' ')).not.toMatch(
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );

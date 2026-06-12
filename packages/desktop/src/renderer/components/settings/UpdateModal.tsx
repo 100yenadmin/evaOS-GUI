@@ -12,6 +12,7 @@ import AionModal from '@/renderer/components/base/AionModal';
 import MarkdownView from '@/renderer/components/Markdown';
 import type { UpdateDownloadProgressEvent, UpdateReleaseInfo, AutoUpdateStatus } from '@/common/update/updateTypes';
 import { useTranslation } from 'react-i18next';
+import { openEvaosExternalUrl } from '@/renderer/utils/platform';
 
 type UpdateStatus = 'checking' | 'upToDate' | 'available' | 'downloading' | 'downloaded' | 'success' | 'error';
 
@@ -50,7 +51,7 @@ const UpdateModal: React.FC = () => {
 
   const openReleasePage = () => {
     if (!releasePageUrl) return;
-    void ipcBridge.shell.openExternal.invoke(releasePageUrl).catch((error) => {
+    void openEvaosExternalUrl(releasePageUrl).catch((error) => {
       console.error('Failed to open release page:', error);
     });
   };

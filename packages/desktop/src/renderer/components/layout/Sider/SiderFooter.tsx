@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '@arco-design/web-react';
-import { ArrowCircleLeft, CloseOne, Login, Moon, SettingTwo, SunOne } from '@icon-park/react';
+import { ArrowCircleLeft, CloseOne, Comment, Login, Moon, SettingTwo, SunOne } from '@icon-park/react';
 import classNames from 'classnames';
 import { iconColors } from '@renderer/styles/colors';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -18,7 +18,7 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
 const EVAOS_CHANNEL_LABEL = 'controlled beta';
 
-type FooterAction = 'settings' | 'sign-in' | 'sign-out' | 'theme';
+type FooterAction = 'settings' | 'support' | 'sign-in' | 'sign-out' | 'theme';
 type FooterActionHandlers = Partial<Record<FooterAction, () => void>>;
 
 const FOOTER_ACTION_ATTRIBUTE = 'data-evaos-footer-action';
@@ -109,6 +109,7 @@ interface SiderFooterProps {
   theme: string;
   siderTooltipProps: SiderTooltipProps;
   onSettingsClick: () => void;
+  onSupportClick?: () => void;
   onThemeToggle: () => void;
   accountLabel?: string | null;
   selectedCustomerId?: string;
@@ -130,6 +131,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   theme,
   siderTooltipProps,
   onSettingsClick,
+  onSupportClick,
   onThemeToggle,
   accountLabel,
   selectedCustomerId,
@@ -171,6 +173,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
 
   const footerActionHandlers = {
     settings: onSettingsClick,
+    ...(onSupportClick ? { support: onSupportClick } : {}),
     ...(showSignIn && onSignInClick ? { 'sign-in': onSignInClick } : {}),
     ...(showLogout && onLogoutClick ? { 'sign-out': onLogoutClick } : {}),
     ...(showThemeToggle ? { theme: onThemeToggle } : {}),
@@ -239,6 +242,34 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             </span>
           </div>
         </Tooltip>
+        {onSupportClick ? (
+          <Tooltip {...siderTooltipProps} content='Support' position='right'>
+            <button
+              type='button'
+              aria-label='Support'
+              data-evaos-footer-action='support'
+              onClick={onSupportClick}
+              className={classNames(
+                'border-0 bg-transparent h-32px flex items-center rd-0.5rem cursor-pointer transition-colors hover:bg-[rgba(var(--primary-6),0.14)] active:bg-fill-2',
+                collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-10px px-14px',
+                isMobile && 'sider-footer-btn-mobile'
+              )}
+            >
+              <span className='size-20px flex items-center justify-center shrink-0'>
+                <Comment
+                  theme='outline'
+                  size='16'
+                  fill={iconColors.primary}
+                  className='block leading-none'
+                  style={{ lineHeight: 0 }}
+                />
+              </span>
+              <span className='collapsed-hidden text-t-primary text-14px font-[500] leading-24px truncate'>
+                Support
+              </span>
+            </button>
+          </Tooltip>
+        ) : null}
         {showLogout && onLogoutClick && (
           <Tooltip {...siderTooltipProps} content='Sign out' position='right'>
             <button

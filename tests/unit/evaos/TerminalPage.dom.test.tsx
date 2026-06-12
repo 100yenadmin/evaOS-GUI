@@ -71,6 +71,7 @@ function customerTargets() {
 describe('TerminalPage', () => {
   beforeEach(() => {
     clearEvaosCustomerContext();
+    localStorage.setItem('evaos.supportDiagnostics', '1');
     brokerMocks.getSessionStatus.mockReset();
     brokerMocks.getSessionStatus.mockResolvedValue({
       success: true,

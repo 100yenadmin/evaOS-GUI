@@ -20,6 +20,7 @@ import {
   initEvaosProviderHubBridge,
 } from './evaosPeopleAccessBridge';
 import { initEvaosNativeCompanionBridge } from './evaosNativeCompanionBridge';
+import { initEvaosExternalLinkBridge } from './evaosExternalLinkBridge';
 
 export type BridgeDependencies = Record<string, never>;
 
@@ -38,6 +39,7 @@ export function initAllBridges(_deps: BridgeDependencies = {}): void {
   initEvaosBusinessBrowserBridge();
   initEvaosCompanyBrainBridge();
   initEvaosNativeCompanionBridge();
+  initEvaosExternalLinkBridge();
 }
 
 export {
@@ -47,6 +49,7 @@ export {
   initEvaosBrokerBridge,
   initEvaosBusinessBrowserBridge,
   initEvaosCompanyBrainBridge,
+  initEvaosExternalLinkBridge,
   initEvaosNativeCompanionBridge,
   initEvaosPeopleAccessBridge,
   initEvaosProviderHubBridge,

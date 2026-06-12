@@ -10,6 +10,7 @@ import { Button, Input, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Browser, CloseOne, Open, Refresh, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
 import {
   evaosBusinessBrowser,
   type IEvaosBusinessBrowserActionResult,
@@ -133,6 +134,7 @@ const BusinessBrowserPage: React.FC = () => {
   const autoLoadKeyRef = useRef<string | null>(null);
   const autoLaunchKeyRef = useRef<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
 
   useEffect(() => {
     const nextSelectedCustomerId = customerContext.selectedCustomerId;
@@ -416,8 +418,11 @@ const BusinessBrowserPage: React.FC = () => {
           <div className='min-w-0'>
             <div className='flex flex-wrap items-center gap-8px'>
               <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>Business Browser</h1>
-              {browserView ? <Tag color={statusColor(browserView)}>{browserView.status}</Tag> : null}
-              {runtimeSurface ? <Tag color='green'>attached</Tag> : null}
+              {browserView || runtimeSurface ? (
+                <Tag color={runtimeSurface ? 'green' : statusColor(browserView)}>
+                  {runtimeSurface ? 'loaded' : browserView?.status}
+                </Tag>
+              ) : null}
             </div>
             <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
               {customerContext.loading
@@ -439,9 +444,11 @@ const BusinessBrowserPage: React.FC = () => {
                 Retry
               </Button>
             ) : null}
-            <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
-              Diagnostics
-            </Button>
+            {showDiagnostics ? (
+              <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
+                Diagnostics
+              </Button>
+            ) : null}
           </div>
         </header>
 
@@ -490,7 +497,6 @@ const BusinessBrowserPage: React.FC = () => {
                       {selectedCustomerLabel}
                     </div>
                   </div>
-                  <Tag color='green'>{safeUiText(runtimeSurface.status, 'attached')}</Tag>
                 </div>
                 <webview
                   data-testid='evaos-business-browser-surface'
@@ -513,7 +519,7 @@ const BusinessBrowserPage: React.FC = () => {
                     {supportBlockerMessage ??
                       actionError ??
                       browserError ??
-                      'Waiting for a brokered browser surface. The app will attach automatically when the browser runtime is available.'}
+                      'Opening Business Browser. The app will attach automatically when the browser is available.'}
                   </p>
                   {!browserView.routeDenied ? (
                     <div className='mt-14px flex justify-center gap-8px'>
@@ -544,162 +550,164 @@ const BusinessBrowserPage: React.FC = () => {
               </section>
             )}
 
-            <section className='shrink-0 rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
-              <button
-                type='button'
-                aria-expanded={advancedOpen}
-                className='flex w-full cursor-pointer items-center justify-between border-0 bg-transparent p-0 text-left'
-                onClick={() => setAdvancedOpen((open) => !open)}
-              >
-                <span>
-                  <span className='block text-13px font-semibold leading-20px text-t-primary'>
-                    Advanced diagnostics
+            {showDiagnostics ? (
+              <section className='shrink-0 rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
+                <button
+                  type='button'
+                  aria-expanded={advancedOpen}
+                  className='flex w-full cursor-pointer items-center justify-between border-0 bg-transparent p-0 text-left'
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                >
+                  <span>
+                    <span className='block text-13px font-semibold leading-20px text-t-primary'>
+                      Advanced diagnostics
+                    </span>
+                    <span className='block text-11px leading-16px text-t-secondary'>
+                      Customer targets, broker actions, URL open controls, and policy evidence.
+                    </span>
                   </span>
-                  <span className='block text-11px leading-16px text-t-secondary'>
-                    Customer targets, broker actions, URL open controls, and policy evidence.
-                  </span>
-                </span>
-                <Tag color={advancedOpen ? 'arcoblue' : 'gray'}>{advancedOpen ? 'Open' : 'Collapsed'}</Tag>
-              </button>
+                  <Tag color={advancedOpen ? 'arcoblue' : 'gray'}>{advancedOpen ? 'Open' : 'Collapsed'}</Tag>
+                </button>
 
-              {advancedOpen ? (
-                <div className='mt-12px flex flex-col gap-12px'>
-                  <div className='flex flex-wrap items-center justify-between gap-10px'>
-                    <div className='min-w-0'>
-                      <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
-                      <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
-                        {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
+                {advancedOpen ? (
+                  <div className='mt-12px flex flex-col gap-12px'>
+                    <div className='flex flex-wrap items-center justify-between gap-10px'>
+                      <div className='min-w-0'>
+                        <div className='text-13px font-medium leading-20px text-t-primary'>Customer context</div>
+                        <div className='mt-2px truncate text-12px leading-18px text-t-secondary'>
+                          {customerContext.loading ? 'Loading customer targets...' : selectedCustomerLabel}
+                        </div>
                       </div>
-                    </div>
-                    <div className='flex shrink-0 flex-wrap gap-8px'>
-                      <Button
-                        size='small'
-                        loading={customerContext.loading}
-                        disabled={actionInFlight}
-                        onClick={() => void refreshCustomerTargets()}
-                      >
-                        Refresh targets
-                      </Button>
-                      <Button
-                        size='small'
-                        loading={loadingStatus || customerContext.loading}
-                        disabled={actionInFlight || !customerContext.selectedCustomerId}
-                        onClick={() => void loadStatus()}
-                      >
-                        Check status
-                      </Button>
-                    </div>
-                  </div>
-                  <div className='flex flex-wrap gap-8px'>
-                    {customerContext.targets.length === 0 ? (
-                      <Tag color={customerContext.error ? 'orange' : 'gray'}>
-                        {customerContext.error ?? customerContext.summaryText}
-                      </Tag>
-                    ) : (
-                      customerContext.targets.map((target) => (
+                      <div className='flex shrink-0 flex-wrap gap-8px'>
                         <Button
-                          key={target.customerId}
                           size='small'
-                          type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                          loading={customerContext.loading}
                           disabled={actionInFlight}
-                          onClick={() => clearLoadedStatusForTargetChange(target.customerId)}
+                          onClick={() => void refreshCustomerTargets()}
                         >
-                          {target.displayName}
+                          Refresh targets
                         </Button>
-                      ))
-                    )}
-                  </div>
-                  <section className='grid grid-cols-1 gap-10px md:grid-cols-4'>
-                    <SummaryTile label='Status' value={browserView.status} />
-                    <SummaryTile label='Control' value={browserView.controlSessionActive ? 'active' : 'inactive'} />
-                    <SummaryTile label='Current URL' value={browserView.currentUrlSummary?.displayText ?? '-'} />
-                    <SummaryTile label='Audit' value={browserView.auditId ?? browserView.policyAuditId ?? '-'} />
-                  </section>
-
-                  <section className='grid grid-cols-1 gap-12px lg:grid-cols-[minmax(0,1fr)_340px]'>
-                    <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-                      <div className='flex flex-wrap items-start justify-between gap-12px'>
-                        <div className='min-w-0'>
-                          <div className='flex flex-wrap items-center gap-6px'>
-                            <Tag color={statusColor(browserView)}>{browserView.status}</Tag>
-                            {browserView.authNeeded ? <Tag color='orange'>auth needed</Tag> : null}
-                            {browserView.captchaNeeded ? <Tag color='orange'>captcha</Tag> : null}
-                            {browserView.waitingOnUser ? <Tag color='orange'>waiting</Tag> : null}
-                          </div>
-                          <h2 className='m-0 mt-10px text-17px font-semibold leading-24px text-t-primary'>
-                            {browserView.displayLabel}
-                          </h2>
-                          <p className='m-0 mt-4px text-13px leading-20px text-t-secondary'>
-                            {browserView.healthSummary ?? 'No runtime health summary returned.'}
-                          </p>
-                        </div>
-                        <div className='flex max-w-full flex-wrap justify-end gap-8px'>
-                          <Button
-                            icon={<Browser theme='outline' size='15' />}
-                            disabled={actionInFlight || browserView.routeDenied || !browserView.canLaunch}
-                            loading={actionTarget === 'launch'}
-                            onClick={() => void runBrowserAction('launch')}
-                          >
-                            Launch
-                          </Button>
-                          <Button
-                            status='danger'
-                            icon={<CloseOne theme='outline' size='15' />}
-                            disabled={actionInFlight || browserView.routeDenied || !browserView.canStop}
-                            loading={actionTarget === 'stop'}
-                            onClick={() => void runBrowserAction('stop')}
-                          >
-                            Stop
-                          </Button>
-                        </div>
-                      </div>
-                    </article>
-
-                    <aside className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-                      <div className='flex items-center gap-8px'>
-                        <span className='flex size-30px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
-                          <Open theme='outline' size='17' />
-                        </span>
-                        <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Open URL</h2>
-                      </div>
-                      <div className='mt-12px flex flex-col gap-8px'>
-                        <Input
-                          aria-label='Open URL'
-                          value={openUrl}
-                          placeholder='https://example.com/work'
-                          disabled={actionInFlight || browserView.routeDenied || !browserView.canOpenUrl}
-                          onChange={setOpenUrl}
-                          onPressEnter={() => void runBrowserAction('openUrl')}
-                        />
                         <Button
-                          type='primary'
-                          icon={<Open theme='outline' size='15' />}
-                          disabled={
-                            actionInFlight || browserView.routeDenied || !browserView.canOpenUrl || !openUrl.trim()
-                          }
-                          loading={actionTarget === 'openUrl'}
-                          onClick={() => void runBrowserAction('openUrl')}
+                          size='small'
+                          loading={loadingStatus || customerContext.loading}
+                          disabled={actionInFlight || !customerContext.selectedCustomerId}
+                          onClick={() => void loadStatus()}
                         >
-                          Open
+                          Check status
                         </Button>
                       </div>
-                    </aside>
-                  </section>
+                    </div>
+                    <div className='flex flex-wrap gap-8px'>
+                      {customerContext.targets.length === 0 ? (
+                        <Tag color={customerContext.error ? 'orange' : 'gray'}>
+                          {customerContext.error ?? customerContext.summaryText}
+                        </Tag>
+                      ) : (
+                        customerContext.targets.map((target) => (
+                          <Button
+                            key={target.customerId}
+                            size='small'
+                            type={target.customerId === customerContext.selectedCustomerId ? 'primary' : 'secondary'}
+                            disabled={actionInFlight}
+                            onClick={() => clearLoadedStatusForTargetChange(target.customerId)}
+                          >
+                            {target.displayName}
+                          </Button>
+                        ))
+                      )}
+                    </div>
+                    <section className='grid grid-cols-1 gap-10px md:grid-cols-4'>
+                      <SummaryTile label='Status' value={browserView.status} />
+                      <SummaryTile label='Control' value={browserView.controlSessionActive ? 'active' : 'inactive'} />
+                      <SummaryTile label='Current URL' value={browserView.currentUrlSummary?.displayText ?? '-'} />
+                      <SummaryTile label='Audit' value={browserView.auditId ?? browserView.policyAuditId ?? '-'} />
+                    </section>
 
-                  <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
-                    <div className='flex items-center gap-8px'>
-                      <Shield theme='outline' size='17' />
-                      <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Policy evidence</h2>
-                    </div>
-                    <div className='mt-10px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary md:grid-cols-3'>
-                      <span>Account: {browserView.customerAccountId ?? '-'}</span>
-                      <span>Customer: {browserView.customerId}</span>
-                      <span>Source: {browserView.sourcePointer ?? '-'}</span>
-                    </div>
-                  </section>
-                </div>
-              ) : null}
-            </section>
+                    <section className='grid grid-cols-1 gap-12px lg:grid-cols-[minmax(0,1fr)_340px]'>
+                      <article className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+                        <div className='flex flex-wrap items-start justify-between gap-12px'>
+                          <div className='min-w-0'>
+                            <div className='flex flex-wrap items-center gap-6px'>
+                              <Tag color={statusColor(browserView)}>{browserView.status}</Tag>
+                              {browserView.authNeeded ? <Tag color='orange'>auth needed</Tag> : null}
+                              {browserView.captchaNeeded ? <Tag color='orange'>captcha</Tag> : null}
+                              {browserView.waitingOnUser ? <Tag color='orange'>waiting</Tag> : null}
+                            </div>
+                            <h2 className='m-0 mt-10px text-17px font-semibold leading-24px text-t-primary'>
+                              {browserView.displayLabel}
+                            </h2>
+                            <p className='m-0 mt-4px text-13px leading-20px text-t-secondary'>
+                              {browserView.healthSummary ?? 'No runtime health summary returned.'}
+                            </p>
+                          </div>
+                          <div className='flex max-w-full flex-wrap justify-end gap-8px'>
+                            <Button
+                              icon={<Browser theme='outline' size='15' />}
+                              disabled={actionInFlight || browserView.routeDenied || !browserView.canLaunch}
+                              loading={actionTarget === 'launch'}
+                              onClick={() => void runBrowserAction('launch')}
+                            >
+                              Launch
+                            </Button>
+                            <Button
+                              status='danger'
+                              icon={<CloseOne theme='outline' size='15' />}
+                              disabled={actionInFlight || browserView.routeDenied || !browserView.canStop}
+                              loading={actionTarget === 'stop'}
+                              onClick={() => void runBrowserAction('stop')}
+                            >
+                              Stop
+                            </Button>
+                          </div>
+                        </div>
+                      </article>
+
+                      <aside className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+                        <div className='flex items-center gap-8px'>
+                          <span className='flex size-30px items-center justify-center rounded-8px bg-fill-3 text-t-primary'>
+                            <Open theme='outline' size='17' />
+                          </span>
+                          <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Open URL</h2>
+                        </div>
+                        <div className='mt-12px flex flex-col gap-8px'>
+                          <Input
+                            aria-label='Open URL'
+                            value={openUrl}
+                            placeholder='https://example.com/work'
+                            disabled={actionInFlight || browserView.routeDenied || !browserView.canOpenUrl}
+                            onChange={setOpenUrl}
+                            onPressEnter={() => void runBrowserAction('openUrl')}
+                          />
+                          <Button
+                            type='primary'
+                            icon={<Open theme='outline' size='15' />}
+                            disabled={
+                              actionInFlight || browserView.routeDenied || !browserView.canOpenUrl || !openUrl.trim()
+                            }
+                            loading={actionTarget === 'openUrl'}
+                            onClick={() => void runBrowserAction('openUrl')}
+                          >
+                            Open
+                          </Button>
+                        </div>
+                      </aside>
+                    </section>
+
+                    <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-14px'>
+                      <div className='flex items-center gap-8px'>
+                        <Shield theme='outline' size='17' />
+                        <h2 className='m-0 text-16px font-semibold leading-22px text-t-primary'>Policy evidence</h2>
+                      </div>
+                      <div className='mt-10px grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary md:grid-cols-3'>
+                        <span>Account: {browserView.customerAccountId ?? '-'}</span>
+                        <span>Customer: {browserView.customerId}</span>
+                        <span>Source: {browserView.sourcePointer ?? '-'}</span>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
           </>
         ) : (
           <div className='rounded-8px border border-dashed border-[var(--color-border-2)] bg-fill-1 p-16px text-13px leading-20px text-t-secondary'>

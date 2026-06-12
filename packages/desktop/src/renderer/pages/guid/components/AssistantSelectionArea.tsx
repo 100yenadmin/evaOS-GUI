@@ -9,6 +9,7 @@ import { useDetectedAgents, useAssistantEditor, useAssistantList } from '@/rende
 import {
   getEvaosAssistantDisplayDescription,
   getEvaosAssistantDisplayName,
+  isEvaosAssistantVisibleInRc,
 } from '@/renderer/evaos/evaosAssistantPresentation';
 import AssistantEditDrawer from '@/renderer/pages/settings/AssistantSettings/AssistantEditDrawer';
 import DeleteAssistantModal from '@/renderer/pages/settings/AssistantSettings/DeleteAssistantModal';
@@ -281,7 +282,7 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
       >
         <div className={styles.assistantCardGrid}>
           {assistants
-            .filter((a) => a.enabled !== false)
+            .filter((a) => a.enabled !== false && isEvaosAssistantVisibleInRc(a))
             .toSorted((a, b) => {
               if (a.id === 'cowork') return -1;
               if (b.id === 'cowork') return 1;

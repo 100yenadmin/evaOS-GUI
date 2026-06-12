@@ -17,7 +17,7 @@ import AboutModalContent, {
 
 const platformMocks = vi.hoisted(() => ({
   isElectronDesktop: vi.fn(() => true),
-  openExternalUrl: vi.fn(() => Promise.resolve()),
+  openEvaosExternalUrl: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -30,7 +30,7 @@ vi.mock('@/renderer/components/settings/SettingsModal/settingsViewContext', () =
 
 vi.mock('@/renderer/utils/platform', () => ({
   isElectronDesktop: platformMocks.isElectronDesktop,
-  openExternalUrl: platformMocks.openExternalUrl,
+  openEvaosExternalUrl: platformMocks.openEvaosExternalUrl,
 }));
 
 vi.mock('@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal', () => ({
@@ -85,22 +85,33 @@ describe('AboutModalContent evaOS beta identity', () => {
     expect(screen.queryByText(/github\.com\/100yenadmin\//i)).not.toBeInTheDocument();
   });
 
-  it('routes About support links to evaOS-owned surfaces', async () => {
+  it('routes About support links to evaOS-owned release surfaces only', async () => {
     const user = userEvent.setup();
     renderAbout();
 
     expect(Object.values(EVAOS_BETA_ABOUT_LINKS).join(' ')).not.toMatch(/AionUi|iOfficeAI|aionui\.com/i);
 
-    await user.click(screen.getByText('settings.helpDocumentation'));
-    await user.click(screen.getByText('settings.updateLog'));
+    await user.click(screen.getByLabelText('Open ElectricSheep'));
+    await user.click(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.supportRoute));
     await user.click(screen.getByText('settings.contactMe'));
-    await user.click(screen.getByText('settings.officialWebsite'));
 
-    expect(platformMocks.openExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.documentation);
-    expect(platformMocks.openExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.releases);
-    expect(platformMocks.openExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.support);
-    expect(platformMocks.openExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.repository);
-    expect(platformMocks.openExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('iOfficeAI/AionUi'));
-    expect(platformMocks.openExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('aionui.com'));
+    expect(platformMocks.openEvaosExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.website);
+    expect(platformMocks.openEvaosExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.support);
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('docs'));
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('releases'));
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('iOfficeAI/AionUi'));
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('aionui.com'));
+  });
+
+  it('keeps bug reporting in-app instead of linking to broken external issue surfaces', async () => {
+    const user = userEvent.setup();
+    renderAbout();
+
+    expect(screen.getByTestId('feedback-modal')).toHaveTextContent('false');
+
+    await user.click(screen.getByText('settings.bugReport'));
+
+    expect(screen.getByTestId('feedback-modal')).toHaveTextContent('true');
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('github.com'));
   });
 });

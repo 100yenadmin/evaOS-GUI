@@ -6,7 +6,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ipcBridge } from '@/common';
-import type { IEvaosNativeCompanionOpenResult, IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
+import type {
+  IEvaosNativeCompanionOpenResult,
+  IEvaosNativeCompanionRepairAction,
+  IEvaosNativeCompanionRepairActionResult,
+  IEvaosNativeCompanionStatusView,
+} from '@/common/evaos/bridgeTypes';
 
 interface EvaosNativeCompanionStatusState {
   status: IEvaosNativeCompanionStatusView | null;
@@ -14,6 +19,7 @@ interface EvaosNativeCompanionStatusState {
   error: string | null;
   refresh: () => Promise<void>;
   openReleasedWorkbench: () => Promise<IEvaosNativeCompanionOpenResult>;
+  openRepairAction: (action: IEvaosNativeCompanionRepairAction) => Promise<IEvaosNativeCompanionRepairActionResult>;
 }
 
 export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompanionStatusState {
@@ -58,6 +64,17 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
     return response.data;
   }, []);
 
+  const openRepairAction = useCallback(async (action: IEvaosNativeCompanionRepairAction) => {
+    const response = await ipcBridge.evaosNativeCompanion.openRepairAction.invoke({ action });
+    if (!response.success || !response.data) {
+      return {
+        opened: false,
+        message: response.msg || 'Native repair action could not be opened.',
+      };
+    }
+    return response.data;
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -68,5 +85,6 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
     error,
     refresh,
     openReleasedWorkbench,
+    openRepairAction,
   };
 }

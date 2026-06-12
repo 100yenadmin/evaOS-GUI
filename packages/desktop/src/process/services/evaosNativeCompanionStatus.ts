@@ -10,6 +10,8 @@ import { promisify } from 'node:util';
 import type {
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
+  IEvaosNativeCompanionRepairActionRequest,
+  IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
 } from '@/common/evaos/bridgeTypes';
 
@@ -41,6 +43,7 @@ export type EvaosNativeCompanionStatusDeps = {
   existsSync?: (path: string) => boolean;
   execFile?: (file: string, args: string[], options: { timeout: number }) => Promise<ExecFileResult>;
   openPath?: (path: string) => Promise<string>;
+  openExternal?: (url: string) => Promise<void>;
 };
 
 type BridgePayload = {
@@ -307,6 +310,32 @@ export async function openReleasedEvaosWorkbench(
   };
 }
 
+export async function openNativeCompanionRepairAction(
+  request: IEvaosNativeCompanionRepairActionRequest,
+  deps: EvaosNativeCompanionStatusDeps = {}
+): Promise<IEvaosNativeCompanionRepairActionResult> {
+  if (request.action === 'released_workbench_fallback') {
+    const result = await openReleasedEvaosWorkbench(deps);
+    return {
+      opened: result.opened,
+      target: result.path,
+      message: result.message,
+    };
+  }
+
+  const target = systemSettingsUrlForRepairAction(request.action);
+  const openExternal = deps.openExternal ?? defaultOpenExternal;
+  await openExternal(target);
+  return {
+    opened: true,
+    target,
+    message:
+      request.action === 'accessibility'
+        ? 'Opened macOS Accessibility permissions for evaOS Workbench.'
+        : 'Opened macOS Screen Recording permissions for evaOS Workbench.',
+  };
+}
+
 function resolveBridgeExecutable(paths: string[], existsSync: (path: string) => boolean): string | undefined {
   return paths.find((path) => existsSync(path));
 }
@@ -344,6 +373,21 @@ async function defaultExecFile(file: string, args: string[], options: { timeout:
 async function defaultOpenPath(path: string): Promise<string> {
   const { shell } = await import('electron');
   return shell.openPath(path);
+}
+
+async function defaultOpenExternal(url: string): Promise<void> {
+  const { shell } = await import('electron');
+  await shell.openExternal(url);
+}
+
+function systemSettingsUrlForRepairAction(action: IEvaosNativeCompanionRepairActionRequest['action']): string {
+  if (action === 'accessibility') {
+    return 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
+  }
+  if (action === 'screen_recording') {
+    return 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+  }
+  throw new Error('Unsupported native companion repair action.');
 }
 
 function permissionView(input: unknown): IEvaosNativeCompanionPermissionView | undefined {

@@ -16,7 +16,7 @@ export type NativeCompanionUserState =
 
 export type NativeCompanionTone = 'ready' | 'attention' | 'offline' | 'neutral';
 
-export type NativeCompanionPrimaryActionKind = 'open_released_workbench' | 'refresh' | 'none';
+export type NativeCompanionPrimaryActionKind = 'refresh' | 'none';
 
 export interface NativeCompanionReadinessItem {
   label: string;
@@ -76,9 +76,9 @@ export function getNativeCompanionRepairViewModel(
     statusTone,
     readinessStrip: readinessStripForState(input.status, state, input.loading),
     repairSteps: repairStepsForState(input.status, state),
-    primaryAction: primaryActionForState(input.status, state, input.loading),
+    primaryAction: primaryActionForState(state, input.loading),
     supportText:
-      'Need help? Open Advanced diagnostics for audit IDs, boundary proof, and canary status before contacting support.',
+      'Need help? Use Report to support. Support diagnostics can reveal audit IDs and canary status without exposing secrets.',
     reportedSummary,
   };
 }
@@ -171,9 +171,9 @@ function readinessStripForState(
     },
     {
       label: 'iPhone',
-      value: iPhoneValue(status, loading),
-      tone: iPhoneTone(status, loading),
-      help: 'iPhone Mirroring readiness as reported by the native companion.',
+      value: 'Deferred',
+      tone: 'neutral',
+      help: 'iPhone Mirroring is deferred for this controlled RC.',
     },
     {
       label: 'Trust authority',
@@ -205,9 +205,9 @@ function repairStepsForState(
       state: state === 'ready' ? 'ready' : state === 'not_paired' ? 'attention' : 'neutral',
     },
     {
-      title: 'Connect iPhone Mirroring',
-      detail: iPhoneStepDetail(status),
-      state: iPhoneTone(status, false),
+      title: 'iPhone Mirroring',
+      detail: 'Deferred for this controlled RC; Mac connector readiness is the release requirement.',
+      state: 'neutral',
     },
     {
       title: 'Run a setup check',
@@ -218,11 +218,7 @@ function repairStepsForState(
   ];
 }
 
-function primaryActionForState(
-  status: IEvaosNativeCompanionStatusView | null | undefined,
-  state: NativeCompanionUserState,
-  loading: boolean
-): NativeCompanionPrimaryAction {
+function primaryActionForState(state: NativeCompanionUserState, loading: boolean): NativeCompanionPrimaryAction {
   if (loading) {
     return {
       kind: 'none',
@@ -241,38 +237,12 @@ function primaryActionForState(
     };
   }
 
-  if (status?.canOpenReleasedWorkbench) {
-    return {
-      kind: 'open_released_workbench',
-      label: primaryOpenLabel(state),
-      disabled: false,
-      detail:
-        'Opens the released native Workbench repair fallback. Pairing and permission authority stay native-owned.',
-    };
-  }
-
   return {
     kind: 'refresh',
-    label: 'Refresh status',
+    label: 'Check again',
     disabled: false,
-    detail: 'The native repair fallback is not available from this beta shell.',
+    detail: 'Refresh the native companion status after repairing macOS permissions or pairing.',
   };
-}
-
-function primaryOpenLabel(state: NativeCompanionUserState): string {
-  switch (state) {
-    case 'not_paired':
-      return 'Pair this Mac';
-    case 'permission_needed':
-      return 'Repair permissions';
-    case 'unsupported':
-      return 'Open install fallback';
-    case 'repair_required':
-      return 'Start repair';
-    case 'ready':
-    case 'offline':
-      return 'Refresh status';
-  }
 }
 
 function connectorValue(
@@ -321,19 +291,6 @@ function permissionsTone(
   return permissionsValue(status, state, loading) === 'Granted' ? 'ready' : 'attention';
 }
 
-function iPhoneValue(status: IEvaosNativeCompanionStatusView | null | undefined, loading: boolean): string {
-  if (loading) return 'Checking';
-  if (!status) return 'Unavailable';
-  if (!status.iPhone.installed) return 'Unavailable';
-  return status.iPhone.running ? 'Running' : 'Available';
-}
-
-function iPhoneTone(status: IEvaosNativeCompanionStatusView | null | undefined, loading: boolean): NativeCompanionTone {
-  if (loading) return 'neutral';
-  if (!status || !status.iPhone.installed || status.iPhone.status === 'unavailable') return 'offline';
-  return 'ready';
-}
-
 function connectorStepDetail(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   state: NativeCompanionUserState
@@ -361,11 +318,6 @@ function pairingStepDetail(state: NativeCompanionUserState): string {
     return 'Pairing and trust claims stay inside the native companion. This shell only opens the repair workflow.';
   }
   return 'Confirm native pairing after connector and permission repair.';
-}
-
-function iPhoneStepDetail(status: IEvaosNativeCompanionStatusView | null | undefined): string {
-  if (!status?.iPhone.installed) return 'Install or open Apple iPhone Mirroring when phone workflows are needed.';
-  return status.iPhone.running ? 'iPhone Mirroring is running.' : 'iPhone Mirroring is available; open it when needed.';
 }
 
 function permissionsNeedRepair(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {

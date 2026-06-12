@@ -7,14 +7,23 @@ type AssistantPresentation = {
 
 const EVAOS_ASSISTANT_PRESENTATION = new Map<string, AssistantPresentation>([
   [
-    'openclaw-setup',
+    'hermes-setup',
     {
-      name: 'evaOS Setup Expert',
+      name: 'Hermes Setup Expert',
       description:
-        'Expert guide for installing, deploying, configuring, and troubleshooting evaOS. Proactively helps with setup, diagnoses issues, and provides security best practices.',
+        'Expert guide for configuring Hermes, repairing native Mac access, and getting Hermes ready for customer work.',
+    },
+  ],
+  [
+    'hermes-expert',
+    {
+      name: 'Hermes Expert',
+      description: 'Specialist for Hermes agent setup, workflow planning, and customer handoff support.',
     },
   ],
 ]);
+
+const EVAOS_HIDDEN_RC_ASSISTANT_IDS = new Set(['openclaw-setup', 'moltbook']);
 
 function normalizeAssistantId(id: string): string {
   return id.replace(/^builtin-/, '');
@@ -22,6 +31,10 @@ function normalizeAssistantId(id: string): string {
 
 function presentationForAssistant(assistant: Pick<Assistant, 'id'>): AssistantPresentation | undefined {
   return EVAOS_ASSISTANT_PRESENTATION.get(normalizeAssistantId(assistant.id));
+}
+
+export function isEvaosAssistantVisibleInRc(assistant: Pick<Assistant, 'id'>): boolean {
+  return !EVAOS_HIDDEN_RC_ASSISTANT_IDS.has(normalizeAssistantId(assistant.id));
 }
 
 export function getEvaosAssistantDisplayName(

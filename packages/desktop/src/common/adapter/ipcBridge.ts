@@ -250,6 +250,10 @@ import type {
   IEvaosApprovalDecisionResult,
   IEvaosNativeCompanionStatusView,
   IEvaosNativeCompanionOpenResult,
+  IEvaosNativeCompanionRepairActionRequest,
+  IEvaosNativeCompanionRepairActionResult,
+  IEvaosExternalLinkOpenRequest,
+  IEvaosExternalLinkOpenResult,
 } from '../evaos/bridgeTypes';
 export type {
   IEvaosRuntimeKey,
@@ -316,6 +320,10 @@ export type {
   IEvaosApprovalDecisionResult,
   IEvaosNativeCompanionStatusView,
   IEvaosNativeCompanionOpenResult,
+  IEvaosNativeCompanionRepairActionRequest,
+  IEvaosNativeCompanionRepairActionResult,
+  IEvaosExternalLinkOpenRequest,
+  IEvaosExternalLinkOpenResult,
 } from '../evaos/bridgeTypes';
 
 // ---------------------------------------------------------------------------
@@ -1496,6 +1504,16 @@ export const evaosNativeCompanion = {
   ),
   openReleasedWorkbench: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionOpenResult>, void>(
     'evaos.native-companion.open-released-workbench'
+  ),
+  openRepairAction: buildEvaosProvider<
+    IBridgeResponse<IEvaosNativeCompanionRepairActionResult>,
+    IEvaosNativeCompanionRepairActionRequest
+  >('evaos.native-companion.open-repair-action'),
+};
+
+export const evaosExternalLink = {
+  open: buildEvaosProvider<IBridgeResponse<IEvaosExternalLinkOpenResult>, IEvaosExternalLinkOpenRequest>(
+    'evaos.external-link.open'
   ),
 };
 

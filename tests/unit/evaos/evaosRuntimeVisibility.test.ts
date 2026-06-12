@@ -198,6 +198,16 @@ describe('evaosRuntimeVisibility', () => {
         authenticated: true,
         roles: ['member'],
         scopes: ['view_company_brain'],
+        userEmail: 'analyst@example.test',
+      })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+
+    expect(
+      evaosRuntimeRouteDecision('/company-brain', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['view_company_brain'],
+        userEmail: 'admin@100yen.org',
       })
     ).toEqual({ allowed: true, fallbackPath: '/guid' });
 

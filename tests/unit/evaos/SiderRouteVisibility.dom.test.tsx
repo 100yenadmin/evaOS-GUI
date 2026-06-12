@@ -287,7 +287,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('People & Access')).toBeInTheDocument();
     expect(screen.getByText('Connected Apps')).toBeInTheDocument();
-    expect(screen.getByText('Company Brain')).toBeInTheDocument();
+    expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
     expect(screen.getByText('Design Workspace')).toBeInTheDocument();
     expect(screen.getByText('Business Browser')).toBeInTheDocument();
     expect(screen.getByText('Creative Studio')).toBeInTheDocument();

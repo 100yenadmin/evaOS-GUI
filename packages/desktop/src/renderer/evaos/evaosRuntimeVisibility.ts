@@ -50,6 +50,7 @@ export interface EvaosRuntimeRouteDecision {
 
 const ADMIN_RUNTIME_ROLES = new Set(['owner', 'admin', 'technical_admin']);
 const OPERATOR_ADMIN_ROLES = new Set(['customer_service', 'support']);
+const ELECTRIC_SHEEP_COMPANY_BRAIN_ADMINS = new Set(['admin@100yen.org']);
 
 export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
   {
@@ -223,6 +224,10 @@ export function canAccessEvaosAdminRuntimes(context: EvaosRuntimeVisibilityConte
   return Boolean(context.isOperator && roles.some((role) => OPERATOR_ADMIN_ROLES.has(role)));
 }
 
+export function canAccessEvaosCompanyBrain(context: EvaosRuntimeVisibilityContext): boolean {
+  return context.authenticated && ELECTRIC_SHEEP_COMPANY_BRAIN_ADMINS.has(normalizeEmail(context.userEmail) ?? '');
+}
+
 export function visibleEvaosRuntimeCatalog(context: EvaosRuntimeVisibilityContext): EvaosRuntimeDefinition[] {
   if (!context.authenticated) return [];
   return EVAOS_RUNTIME_CATALOG.filter((runtime) => canOpenRuntime(runtime, context));
@@ -278,6 +283,7 @@ function hasRequiredScopes(runtime: EvaosRuntimeDefinition, scopes: IEvaosAccoun
 
 function canOpenRoutePolicy(policy: EvaosRoutePolicy, context: EvaosRuntimeVisibilityContext): boolean {
   if (!context.authenticated) return false;
+  if (normalizeRoutePath(policy.routePath) === '/company-brain' && !canAccessEvaosCompanyBrain(context)) return false;
   const adminAccess = canAccessEvaosAdminRuntimes(context);
   if (adminAccess) return true;
   if (policy.requiresAdmin) return false;

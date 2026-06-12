@@ -401,7 +401,7 @@ jobs:
           } > "$PROOF_DIR/launch-smoke.md"
 
           {
-            echo "PASS: update repo is 100yenadmin/AionUi and iOfficeAI/AionUi blocked for beta assets."
+            echo "PASS: update repo is 100yenadmin/evaOS-GUI and iOfficeAI/AionUi blocked for beta assets."
             echo "Artifact grep found no upstream feed/support references in app resources."
           } > "$PROOF_DIR/updater-feed-audit.md"
 
@@ -449,7 +449,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "Support route: 100yenadmin/AionUi."
+            echo "Support route: 100yenadmin/evaOS-GUI."
             echo "The released macOS app remains the fallback while beta is gated."
             echo "RC proof artifact: evaos-beta-rc-proof-$TAG"
           } > "$PROOF_DIR/support-notes.md"

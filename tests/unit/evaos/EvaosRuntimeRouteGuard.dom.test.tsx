@@ -389,12 +389,26 @@ describe('EvaosRuntimeRouteGuard', () => {
     expect(screen.getByText('People Access loaded')).toBeInTheDocument();
   });
 
-  it('allows Company Brain with either reader or manager scope', () => {
+  it('allows Company Brain only for the Electric Sheep admin account', async () => {
     customerContextMock.roles = ['member'];
     customerContextMock.scopes = ['view_company_brain'];
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
       userEmail: 'analyst@example.test',
+    };
+
+    renderGuardedRoute('/company-brain');
+
+    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
+    expect(screen.queryByText('Company Brain loaded')).not.toBeInTheDocument();
+  });
+
+  it('allows Company Brain for admin@100yen.org', () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = ['view_company_brain'];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'admin@100yen.org',
     };
 
     renderGuardedRoute('/company-brain');

@@ -205,6 +205,28 @@ export interface IEvaosNativeCompanionOpenResult {
   path?: string;
 }
 
+export type IEvaosNativeCompanionRepairAction = 'accessibility' | 'screen_recording' | 'released_workbench_fallback';
+
+export interface IEvaosNativeCompanionRepairActionRequest {
+  action: IEvaosNativeCompanionRepairAction;
+}
+
+export interface IEvaosNativeCompanionRepairActionResult {
+  opened: boolean;
+  message: string;
+  target?: string;
+}
+
+export interface IEvaosExternalLinkOpenRequest {
+  url: string;
+}
+
+export interface IEvaosExternalLinkOpenResult {
+  opened: boolean;
+  url: string;
+  message: string;
+}
+
 export interface IEvaosBusinessBrowserRequest {
   customerId: string;
 }

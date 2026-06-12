@@ -92,3 +92,17 @@ export const openExternalUrl = async (url: string): Promise<void> => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 };
+
+export const openEvaosExternalUrl = async (url: string): Promise<void> => {
+  if (!url) return;
+
+  if (isElectronDesktop()) {
+    const { ipcBridge } = await import('@/common');
+    const response = await ipcBridge.evaosExternalLink.open.invoke({ url });
+    if (!response.success) {
+      throw new Error(response.msg || 'evaOS external link could not be opened.');
+    }
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};

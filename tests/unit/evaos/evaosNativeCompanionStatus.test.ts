@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   getEvaosNativeCompanionStatus,
+  openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
   type EvaosNativeCompanionStatusDeps,
 } from '@/process/services/evaosNativeCompanionStatus';
@@ -218,5 +219,31 @@ describe('evaosNativeCompanionStatus', () => {
       message: 'Opened released evaOS Workbench for native pairing and repair.',
     });
     expect(openPath).toHaveBeenCalledWith('/Applications/evaOS.app');
+  });
+
+  it('opens new-app macOS repair targets without launching the released Workbench', async () => {
+    const openPath = vi.fn(async () => '');
+    const openExternal = vi.fn(async () => undefined);
+    const deps = depsWithResponses(
+      {},
+      {
+        openPath,
+        openExternal,
+      }
+    );
+
+    const accessibility = await openNativeCompanionRepairAction({ action: 'accessibility' }, deps);
+    const screenRecording = await openNativeCompanionRepairAction({ action: 'screen_recording' }, deps);
+
+    expect(accessibility).toMatchObject({
+      opened: true,
+      target: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+    });
+    expect(screenRecording).toMatchObject({
+      opened: true,
+      target: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+    });
+    expect(openExternal).toHaveBeenCalledTimes(2);
+    expect(openPath).not.toHaveBeenCalled();
   });
 });

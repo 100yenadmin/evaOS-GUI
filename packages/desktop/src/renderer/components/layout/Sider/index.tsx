@@ -8,6 +8,7 @@ import { clearEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomer
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
+import { openEvaosExternalUrl } from '@renderer/utils/platform';
 import {
   EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT,
   EVAOS_DESKTOP_SESSION_CLEARED_EVENT,
@@ -135,6 +136,12 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const handleQuickThemeToggle = () => {
     void setTheme(theme === 'dark' ? 'light' : 'dark');
   };
+
+  const handleSupportClick = useCallback(() => {
+    void openEvaosExternalUrl('mailto:support@electricsheephq.com').catch((error) => {
+      console.error('evaOS support link failed:', error);
+    });
+  }, []);
 
   const handleBeginDesktopAuth = useCallback(async () => {
     cleanupSiderTooltips();
@@ -348,6 +355,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         theme={theme}
         siderTooltipProps={siderTooltipProps}
         onSettingsClick={handleSettingsClick}
+        onSupportClick={handleSupportClick}
         onThemeToggle={handleQuickThemeToggle}
         accountLabel={user?.username ?? evaosSidebarState.accountLabel}
         selectedCustomerId={evaosSidebarState.selectedCustomerId}
