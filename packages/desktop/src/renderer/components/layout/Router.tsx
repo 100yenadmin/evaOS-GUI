@@ -67,7 +67,7 @@ const DesktopSessionImportListener: React.FC = () => {
         const response = await evaosBroker.getSessionStatus.invoke();
         if (!disposed && response.success && response.data?.authenticated === true && !response.data.expired) {
           dispatchDesktopSessionImported(source, true);
-          void navigate('/home', { replace: true });
+          void navigate('/guid', { replace: true });
         }
       } catch {
         // Existing broker-session hooks will surface a safe signed-out/support state.
@@ -94,10 +94,10 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
       <Routes>
         <Route
           path='/login'
-          element={status === 'authenticated' ? <Navigate to='/home' replace /> : withRouteFallback(LoginPage)}
+          element={status === 'authenticated' ? <Navigate to='/guid' replace /> : withRouteFallback(LoginPage)}
         />
         <Route element={<ProtectedLayout layout={layout} />}>
-          <Route index element={<Navigate to='/home' replace />} />
+          <Route index element={<Navigate to='/guid' replace />} />
           <Route path='/guid' element={withRouteFallback(Guid)} />
           {renderEvaosRoutes()}
           <Route path='/conversation/:id' element={withRouteFallback(Conversation)} />
@@ -129,7 +129,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/scheduled' element={withRouteFallback(ScheduledTasksPage)} />
           <Route path='/scheduled/:job_id' element={withRouteFallback(TaskDetailPage)} />
         </Route>
-        <Route path='*' element={<Navigate to={status === 'authenticated' ? '/home' : '/login'} replace />} />
+        <Route path='*' element={<Navigate to={status === 'authenticated' ? '/guid' : '/login'} replace />} />
       </Routes>
     </HashRouter>
   );

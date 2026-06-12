@@ -24,7 +24,6 @@ const BetaReadiness = React.lazy(() => import('@renderer/pages/mission-control')
 const DesignWorkspace = React.lazy(() => import('@renderer/pages/design-workspace'));
 const EvaosDashboard = React.lazy(() => import('@renderer/pages/evaos-dashboard'));
 const HermesDashboard = React.lazy(() => import('@renderer/pages/hermes-dashboard'));
-const Home = React.lazy(() => import('@renderer/pages/home'));
 const MissionControl = React.lazy(() => import('@renderer/pages/paperclip-mission-control'));
 const NativeCompanion = React.lazy(() => import('@renderer/pages/native-companion'));
 const PeopleAccess = React.lazy(() => import('@renderer/pages/people-access'));
@@ -44,7 +43,7 @@ export function renderEvaosRoutes(): React.ReactNode {
   return (
     <>
       <Route path='/openclaw' element={<Navigate to='/evaos' replace />} />
-      <Route path='/home' element={withEvaosRuntimeRouteGuard('/home', Home)} />
+      <Route path='/home' element={<Navigate to='/guid' replace />} />
       <Route path='/evaos' element={withEvaosRuntimeRouteGuard('/evaos', EvaosDashboard)} />
       <Route path='/hermes' element={withEvaosRuntimeRouteGuard('/hermes', HermesDashboard)} />
       <Route path='/mission-control' element={withEvaosRuntimeRouteGuard('/mission-control', MissionControl)} />

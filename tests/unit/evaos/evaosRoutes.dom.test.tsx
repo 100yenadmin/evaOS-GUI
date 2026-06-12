@@ -47,5 +47,14 @@ describe('evaosRoutes', () => {
       to: '/evaos',
       replace: true,
     });
+
+    const homeRedirect = routes.find((route) => route.props.path === '/home')?.props.element;
+    expect(React.isValidElement(homeRedirect) ? homeRedirect.type : undefined).toBe(Navigate);
+    expect(
+      React.isValidElement<{ to?: string; replace?: boolean }>(homeRedirect) ? homeRedirect.props : {}
+    ).toMatchObject({
+      to: '/guid',
+      replace: true,
+    });
   });
 });
