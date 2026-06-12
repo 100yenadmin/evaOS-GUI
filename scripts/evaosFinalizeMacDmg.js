@@ -13,7 +13,7 @@ const SIGNING_IDENTITY_ENV = {
   aliases: ['EVAOS_DMG_CODESIGN_IDENTITY', 'IDENTITY_SHA', 'CODESIGN_IDENTITY', 'identity', 'CSC_NAME'],
 };
 const SIGNING_KEYCHAIN_ENV = {
-  aliases: ['EVAOS_DMG_CODESIGN_KEYCHAIN', 'RELEASE_KEYCHAIN', 'NOTARY_KEYCHAIN', 'KEYCHAIN'],
+  aliases: ['EVAOS_DMG_CODESIGN_KEYCHAIN', 'CODESIGN_KEYCHAIN'],
 };
 const KEYCHAIN_PROFILE_ENV = {
   aliases: ['NOTARY_PROFILE', 'KEYCHAIN_PROFILE', 'keychainProfile'],
@@ -268,6 +268,18 @@ function waitForNotarySubmission(submissionId, env = process.env, sleep = sleepS
   );
 }
 
+function buildDmgCodesignArgs(dmgPath, identity, env = process.env) {
+  const signArgs = ['--force', '--sign', identity, '--timestamp'];
+  // Do not reuse NOTARY_KEYCHAIN here. It may only contain a notarytool profile,
+  // while codesign must use the Developer ID signing keychain or default search list.
+  const signingKeychain = getEnvValue(env, SIGNING_KEYCHAIN_ENV);
+  if (signingKeychain) {
+    signArgs.push('--keychain', signingKeychain);
+  }
+  signArgs.push(dmgPath);
+  return signArgs;
+}
+
 function finalizeDmg(dmgPath, env = process.env) {
   const identity = getEnvValue(env, SIGNING_IDENTITY_ENV);
   if (!identity) {
@@ -278,13 +290,7 @@ function finalizeDmg(dmgPath, env = process.env) {
 
   assertPublicBetaNotarizationEnv(env);
 
-  const signArgs = ['--force', '--sign', identity, '--timestamp'];
-  const signingKeychain = getEnvValue(env, SIGNING_KEYCHAIN_ENV);
-  if (signingKeychain) {
-    signArgs.push('--keychain', signingKeychain);
-  }
-  signArgs.push(dmgPath);
-  run('codesign', signArgs);
+  run('codesign', buildDmgCodesignArgs(dmgPath, identity, env));
   run('codesign', ['--verify', '--verbose=2', dmgPath]);
 
   const submitArgs = buildNotarytoolSubmitArgs(dmgPath, env);
@@ -342,6 +348,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildDmgCodesignArgs,
   buildNotarytoolInfoArgs,
   buildNotarytoolSubmitArgs,
   finalizeMacDmgs,

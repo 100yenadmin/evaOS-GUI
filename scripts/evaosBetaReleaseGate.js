@@ -314,6 +314,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const rcCanary = readText(rootDir, '.github/workflows/evaos-beta-rc-canary.yml');
   const reusableBuild = readText(rootDir, '.github/workflows/_build-reusable.yml');
   const afterSign = readText(rootDir, 'scripts/afterSign.js');
+  const dmgFinalizer = readText(rootDir, 'scripts/evaosFinalizeMacDmg.js');
   const prepareAssets = readText(rootDir, 'scripts/prepare-release-assets.sh');
   const rollbackDoc = readText(rootDir, 'docs/evaos/public-beta-packaging-rollback.md');
   const changelog = readText(rootDir, 'CHANGELOG.md');
@@ -550,6 +551,14 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(afterSign, 'appleApiKey', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_BETA_REQUIRE_SIGNING', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'Ad-hoc signing is not allowed', 'scripts/afterSign.js', issues);
+  requireText(dmgFinalizer, 'buildDmgCodesignArgs', 'scripts/evaosFinalizeMacDmg.js', issues);
+  requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_KEYCHAIN', 'scripts/evaosFinalizeMacDmg.js', issues);
+  const dmgSigningKeychainSection = dmgFinalizer.split('const NOTARY_KEYCHAIN_ENV')[0] || '';
+  if (dmgSigningKeychainSection.includes('NOTARY_KEYCHAIN') || dmgSigningKeychainSection.includes('RELEASE_KEYCHAIN')) {
+    issues.push(
+      'scripts/evaosFinalizeMacDmg.js: DMG codesign keychain aliases must not reuse NOTARY_KEYCHAIN or RELEASE_KEYCHAIN'
+    );
+  }
 
   requireText(prChecks, "'evaos/**'", '.github/workflows/pr-checks.yml', issues, 'EVAOS stacked PR branch trigger');
 
