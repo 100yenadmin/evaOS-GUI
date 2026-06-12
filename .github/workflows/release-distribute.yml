@@ -1,13 +1,8 @@
 name: Distribute evaOS Beta Release Assets
 
-# evaOS beta fork: manual-only distribution. This workflow must never mirror
-# upstream AionUi assets or historical upstream tags.
-#
-# All credentials / identifiers are read from repository secrets:
-#   - AWS_REGION
-#   - AWS_ROLE_ARN
-#   - AWS_S3_BUCKET
-# Do NOT hardcode these values in this file.
+# evaOS beta fork: manual-only GitHub Release promotion. This workflow must
+# never mirror upstream AionUi assets, historical upstream tags, or upload
+# release artifacts to external object storage.
 
 on:
   # Manual trigger for smoke testing or for retrying a missed release:
@@ -36,8 +31,7 @@ on:
           - macos
 
 permissions:
-  id-token: write # required for OIDC token
-  contents: read
+  contents: write
   actions: read
 
 env:
@@ -104,26 +98,6 @@ jobs:
 
           echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
           echo "Validated $TAG at $TAG_COMMIT against ${EVAOS_BETA_RELEASE_BRANCH}."
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Guard against same-version overwrite
-        env:
-          S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          DEST="s3://${S3_BUCKET}/releases/${VERSION}/"
-          COUNT=$(aws s3 ls "$DEST" 2>/dev/null | wc -l | tr -d ' ')
-          if [ "$COUNT" -gt 0 ]; then
-            echo "::error::Version directory already contains $COUNT file(s). Refusing to overwrite."
-            echo "::error::Same-version re-publish is not allowed (downstream caches would serve stale files). Release a new version instead."
-            aws s3 ls "$DEST"
-            exit 1
-          fi
 
       - name: Download release assets from GitHub
         env:
@@ -286,13 +260,28 @@ jobs:
 
           node scripts/evaosBetaReleaseGate.js verify-rc-proof rc-proof "$TAG"
 
-      - name: Upload assets
+      - name: Publish GitHub prerelease
         env:
-          S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          aws s3 cp dist/ "s3://${S3_BUCKET}/releases/${VERSION}/" --recursive
-          echo "Uploaded release ${VERSION}"
+          set -euo pipefail
+          gh release edit "$TAG" \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --prerelease
+
+          RELEASE_JSON=$(gh release view "$TAG" --repo "${{ github.repository }}" --json isDraft,isPrerelease,url)
+          node - "$RELEASE_JSON" <<'NODE'
+          const release = JSON.parse(process.argv[2]);
+          if (release.isDraft) {
+            throw new Error(`Release is still draft: ${release.url}`);
+          }
+          if (!release.isPrerelease) {
+            throw new Error(`Release is not marked prerelease: ${release.url}`);
+          }
+          console.log(`Published GitHub prerelease: ${release.url}`);
+          NODE
 
       - name: Summary
         env:
@@ -304,4 +293,5 @@ jobs:
             echo ""
             echo "- Tag: \`${TAG}\`"
             echo "- Version: \`${VERSION}\`"
+            echo "- Destination: GitHub Release"
           } >> $GITHUB_STEP_SUMMARY
