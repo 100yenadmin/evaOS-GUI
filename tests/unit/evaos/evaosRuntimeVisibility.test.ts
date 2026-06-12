@@ -161,7 +161,7 @@ describe('evaosRuntimeVisibility', () => {
 
     expect(
       EVAOS_ROUTE_POLICIES.filter((policy) => policy.allowMissingBroker).map((policy) => policy.routePath)
-    ).toEqual(['/home', '/native-companion']);
+    ).toEqual(['/home', '/native-companion', '/creative-studio']);
   });
 
   it('lets signed-in admins reach evaOS and Hermes routes while preserving broker repair states', () => {
