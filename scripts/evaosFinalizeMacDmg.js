@@ -43,6 +43,7 @@ const DEFAULT_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
 const DEFAULT_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
 const DEFAULT_DMG_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -269,7 +270,13 @@ function waitForNotarySubmission(submissionId, env = process.env, sleep = sleepS
 }
 
 function buildDmgCodesignArgs(dmgPath, identity, env = process.env) {
-  const signArgs = ['--force', '--sign', identity, '--timestamp'];
+  const signArgs = ['--force', '--sign', identity];
+  // The app bundle carries the Developer ID timestamp. In CI, DMG timestamping
+  // can stall before notarization; notarization, stapling, and Gatekeeper-open
+  // assessment remain the release gates for the disk image.
+  if (TRUTHY.has(String(env.EVAOS_DMG_CODESIGN_TIMESTAMP || '').toLowerCase())) {
+    signArgs.push('--timestamp');
+  }
   // Do not reuse NOTARY_KEYCHAIN here. It may only contain a notarytool profile,
   // while codesign must use the Developer ID signing keychain or default search list.
   const signingKeychain = getEnvValue(env, SIGNING_KEYCHAIN_ENV);
