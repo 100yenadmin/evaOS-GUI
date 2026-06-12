@@ -295,7 +295,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });
 
-  it('keeps only setup routes visible when the web session exists but broker policy is missing', () => {
+  it('keeps setup and hosted handoff routes visible when the web session exists but broker policy is missing', () => {
     brokerSessionMock.session = {
       state: 'missing',
       authenticated: false,
@@ -308,10 +308,10 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
-    expect(screen.queryByText('Creative Studio')).not.toBeInTheDocument();
     expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
     expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
@@ -397,9 +397,9 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
-    expect(screen.queryByText('Creative Studio')).not.toBeInTheDocument();
     expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
     expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
