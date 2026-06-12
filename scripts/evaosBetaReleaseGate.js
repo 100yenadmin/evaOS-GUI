@@ -526,6 +526,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(afterSign, 'assertPublicBetaNotarizationEnv', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'buildAppNotarytoolSubmitArgs', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'getNotarizationOptions', 'scripts/afterSign.js', issues);
   if (afterSign.includes('@electron/notarize')) {
     issues.push('scripts/afterSign.js: afterSign must use the bounded evaOS notarytool path, not @electron/notarize');

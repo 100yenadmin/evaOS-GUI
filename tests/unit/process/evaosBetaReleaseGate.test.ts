@@ -23,6 +23,7 @@ const afterSign = require('../../../scripts/afterSign.js') as {
   default: (context: unknown) => Promise<void>;
   buildAppNotarytoolSubmitArgs: (archivePath: string, notarizationOptions: Record<string, string>) => string[];
   getAppNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
+  getAppTrustProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotarizationOptions: (
     env: Record<string, string | undefined>,
     baseOptions: Record<string, string>
@@ -246,6 +247,11 @@ describe('evaOS beta release gate', () => {
     expect(() => afterSign.getAppNotaryProcessTimeoutMs({ EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS: '-1' })).toThrow(
       /positive integer/
     );
+    expect(afterSign.getAppTrustProcessTimeoutMs({})).toBe(5 * 60 * 1000);
+    expect(afterSign.getAppTrustProcessTimeoutMs({ EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS: '45000' })).toBe(45000);
+    expect(() => afterSign.getAppTrustProcessTimeoutMs({ EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS: '0' })).toThrow(
+      /positive integer/
+    );
   });
 
   it('isolates keychain notarization from ambient App Store Connect API env', async () => {
@@ -308,17 +314,17 @@ describe('evaOS beta release gate', () => {
       {
         command: 'xcrun',
         args: ['stapler', 'staple', '/release/evaOS Workbench Beta.app'],
-        options: { stdio: 'inherit' },
+        options: { stdio: 'inherit', timeout: 5 * 60 * 1000 },
       },
       {
         command: 'xcrun',
         args: ['stapler', 'validate', '/release/evaOS Workbench Beta.app'],
-        options: { stdio: 'inherit' },
+        options: { stdio: 'inherit', timeout: 5 * 60 * 1000 },
       },
       {
         command: 'spctl',
         args: ['--assess', '--type', 'execute', '--verbose', '/release/evaOS Workbench Beta.app'],
-        options: { stdio: 'inherit' },
+        options: { stdio: 'inherit', timeout: 5 * 60 * 1000 },
       },
     ]);
   });

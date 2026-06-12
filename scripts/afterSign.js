@@ -19,6 +19,7 @@ const AMBIENT_APPLE_API_ENV_KEYS = [
   'appleApiIndividualKey',
 ];
 const DEFAULT_APP_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 
 function getAppleIdNotarizationOptions(env) {
   const appleId = getEnvValue(env, { aliases: ['appleId', 'APPLE_ID'] });
@@ -117,23 +118,48 @@ async function withKeychainCredentialIsolation(notarizationOptions, operation) {
   }
 }
 
-function getAppNotaryProcessTimeoutMs(env = process.env) {
-  const rawTimeout = env.EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS;
+function getPositiveProcessTimeoutMs(env, envKey, defaultMs) {
+  const rawTimeout = env[envKey];
   if (!rawTimeout) {
-    return DEFAULT_APP_NOTARY_PROCESS_TIMEOUT_MS;
+    return defaultMs;
   }
 
   const timeoutMs = Number.parseInt(rawTimeout, 10);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error(`EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS must be a positive integer, got: ${rawTimeout}`);
+    throw new Error(`${envKey} must be a positive integer, got: ${rawTimeout}`);
   }
   return timeoutMs;
 }
 
-function runTrustCommand(label, command, args, runCommand = execFileSync) {
+function getAppNotaryProcessTimeoutMs(env = process.env) {
+  return getPositiveProcessTimeoutMs(env, 'EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS', DEFAULT_APP_NOTARY_PROCESS_TIMEOUT_MS);
+}
+
+function getAppTrustProcessTimeoutMs(env = process.env) {
+  return getPositiveProcessTimeoutMs(env, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS);
+}
+
+function isProcessTimeoutError(error) {
+  return (
+    error &&
+    (error.code === 'ETIMEDOUT' ||
+      error.signal === 'SIGTERM' ||
+      String(error.message || '')
+        .toLowerCase()
+        .includes('timed out'))
+  );
+}
+
+function runTrustCommand(label, command, args, runCommand = execFileSync, options = {}, env = process.env) {
+  const timeoutMs = getAppTrustProcessTimeoutMs(env);
   try {
-    runCommand(command, args, { stdio: 'inherit' });
+    runCommand(command, args, { stdio: 'inherit', timeout: timeoutMs, ...options });
   } catch (error) {
+    if (isProcessTimeoutError(error)) {
+      throw new Error(
+        `${label} timed out after ${timeoutMs}ms; check for hidden prompts, trust-policy stalls, or a wedged macOS trust command.`
+      );
+    }
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${label} failed: ${message}`);
   }
@@ -192,14 +218,7 @@ function runAppNotarytoolSubmit(submitArgs, env = process.env, runCommand = exec
   try {
     runCommand('xcrun', submitArgs, { stdio: 'inherit', timeout: timeoutMs });
   } catch (error) {
-    const timedOut =
-      error &&
-      (error.code === 'ETIMEDOUT' ||
-        error.signal === 'SIGTERM' ||
-        String(error.message || '')
-          .toLowerCase()
-          .includes('timed out'));
-    if (timedOut) {
+    if (isProcessTimeoutError(error)) {
       throw new Error(
         `app notarytool submit timed out after ${timeoutMs}ms; check for hidden prompts, credential-mode drift, or Apple notarization stalls.`
       );
@@ -227,11 +246,9 @@ function notarizeAndStapleApp(appPath, notarizationOptions, env = process.env, r
       'App notarization archive',
       'ditto',
       ['-c', '-k', '--sequesterRsrc', '--keepParent', path.basename(appPath), archivePath],
-      (command, args, options) =>
-        runCommand(command, args, {
-          ...options,
-          cwd: path.dirname(appPath),
-        })
+      runCommand,
+      { cwd: path.dirname(appPath) },
+      env
     );
 
     const submitArgs = buildAppNotarytoolSubmitArgs(archivePath, notarizationOptions);
@@ -316,6 +333,7 @@ module.exports = afterSign;
 module.exports.default = afterSign;
 module.exports.buildAppNotarytoolSubmitArgs = buildAppNotarytoolSubmitArgs;
 module.exports.getAppNotaryProcessTimeoutMs = getAppNotaryProcessTimeoutMs;
+module.exports.getAppTrustProcessTimeoutMs = getAppTrustProcessTimeoutMs;
 module.exports.getNotarizationOptions = getNotarizationOptions;
 module.exports.notarizeAndStapleApp = notarizeAndStapleApp;
 module.exports.stapleAndValidateApp = stapleAndValidateApp;
