@@ -44,6 +44,7 @@ describe('AgentPillBar evaOS presentation', () => {
         agent_type: 'openclaw-gateway',
         backend: 'openclaw-gateway',
         name: 'OpenClaw',
+        icon: 'https://example.com/legacy-openclaw-lobster.svg',
       },
       {
         agent_type: 'acp',
@@ -62,6 +63,9 @@ describe('AgentPillBar evaOS presentation', () => {
     expect(screen.getByText('Custom')).toBeInTheDocument();
     expect(screen.queryByText('OpenClaw')).not.toBeInTheDocument();
     expect(screen.queryByText('Aion CLI')).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId('agent-pill-openclaw-gateway').querySelector('img')?.getAttribute('src') ?? ''
+    ).not.toMatch(/openclaw|lobster/i);
     expect(screen.getByTestId('agent-pill-aionrs').querySelector('img')?.getAttribute('src') ?? '').not.toMatch(
       /aion/i
     );

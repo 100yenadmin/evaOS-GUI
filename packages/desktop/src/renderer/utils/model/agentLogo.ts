@@ -61,6 +61,17 @@ function normalizeLogoUrl(logo: string): string {
   return applyThemeVariant(resolveBackendAssetUrl(logo) ?? logo);
 }
 
+function resolveEvaosAgentLogo(
+  backend: string | undefined | null,
+  customAgentId: string | undefined | null
+): string | null {
+  const keys = [backend, customAgentId?.split(':').pop()]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .map((value) => value.trim().toLowerCase());
+
+  return keys.some((key) => EVAOS_AGENT_LOGO_KEYS.has(key)) ? (isDarkTheme() ? evaosLogoDark : evaosLogoLight) : null;
+}
+
 function isDarkTheme(): boolean {
   if (typeof document === 'undefined') return false;
   const theme = document.documentElement.getAttribute('data-theme');
@@ -105,6 +116,8 @@ export function resolveAgentLogo(opts: {
   custom_agent_id?: string | null;
   isExtension?: boolean;
 }): string | null {
+  const evaosLogo = resolveEvaosAgentLogo(opts.backend, opts.custom_agent_id);
+  if (evaosLogo) return evaosLogo;
   if (opts.icon) return normalizeLogoUrl(opts.icon);
 
   // For extension agents, extract adapter ID from custom_agent_id

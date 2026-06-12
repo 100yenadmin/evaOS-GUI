@@ -46,6 +46,7 @@ const REPAIR_NATIVE_STATUSES = new Set([
   'unavailable',
   'offline',
   'stale',
+  'repair_required',
 ]);
 
 function nativeAgentKey(agent: EvaosNativeAgentIdentity): string {

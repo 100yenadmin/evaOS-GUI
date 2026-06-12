@@ -50,6 +50,23 @@ describe('evaosNativeAgentAvailability', () => {
     expect(availability.reasonParams).toEqual({ status: 'not_paired' });
   });
 
+  it('treats repair_required as Mac control repair copy instead of an unusable backend error', () => {
+    const availability = getEvaosNativeAgentAvailability({
+      agent_type: 'openclaw-gateway',
+      backend: 'openclaw-gateway',
+      name: 'OpenClaw',
+      handshake: {
+        native_companion: {
+          status: 'repair_required',
+        },
+      },
+    });
+
+    expect(availability.status).toBe('repair_required');
+    expect(availability.reasonKey).toBe('settings.agentManagement.nativeStatusReason');
+    expect(availability.reasonParams).toEqual({ status: 'repair_required' });
+  });
+
   it('allows native-dependent agents only when native readiness is explicitly provided', () => {
     const availability = getEvaosNativeAgentAvailability({
       agent_type: 'acp',
