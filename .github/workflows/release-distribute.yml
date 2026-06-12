@@ -129,7 +129,9 @@ jobs:
       - name: Download release assets from GitHub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
+          set -euo pipefail
           mkdir -p dist
           case "${EVAOS_RELEASE_TARGET_PLATFORMS}" in
             all)
@@ -157,7 +159,7 @@ jobs:
               exit 1
               ;;
           esac
-          gh release download "${{ steps.version.outputs.tag }}" \
+          gh release download "$TAG" \
             --repo "${{ github.repository }}" \
             --dir dist \
             "${patterns[@]}"
@@ -241,7 +243,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
-        run: node scripts/evaosBetaReleaseGate.js verify-manifest dist "${{ steps.version.outputs.tag }}"
+          TAG: ${{ steps.version.outputs.tag }}
+        run: node scripts/evaosBetaReleaseGate.js verify-manifest dist "$TAG"
 
       - name: Validate release candidate proof
         env:
