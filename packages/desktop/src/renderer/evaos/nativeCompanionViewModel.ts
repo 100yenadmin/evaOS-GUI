@@ -100,38 +100,38 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
 }
 
 function titleForState(state: NativeCompanionUserState, loading: boolean): string {
-  if (loading) return 'Checking Mac & iPhone';
+  if (loading) return 'Checking Mac control';
   switch (state) {
     case 'ready':
-      return 'Mac & iPhone are ready';
+      return 'Mac control is ready';
     case 'not_paired':
       return 'Pair this Mac';
     case 'permission_needed':
       return 'Allow Mac control';
     case 'offline':
-      return 'Reconnect native companion';
+      return 'Reconnect Mac control';
     case 'unsupported':
-      return 'Install native companion';
+      return 'Set up Mac control';
     case 'repair_required':
       return 'Repair Mac access';
   }
 }
 
 function summaryForState(state: NativeCompanionUserState, loading: boolean): string {
-  if (loading) return 'Checking the native companion before evaOS or Hermes uses local Mac control.';
+  if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
   switch (state) {
     case 'ready':
-      return 'Native companion proof is ready. evaOS and Hermes can use brokered Mac control when the native side approves it.';
+      return 'Workbench connector proof is ready. evaOS and Hermes can use approved Mac control when local readiness allows it.';
     case 'not_paired':
       return 'This Mac must be paired again before evaOS or Hermes chat can use Mac control.';
     case 'permission_needed':
       return 'macOS Accessibility or Screen Recording needs attention before approved local-control actions can run.';
     case 'offline':
-      return 'Native status is offline or stale. Refresh the status or use the support repair path before starting local-control chat.';
+      return 'Mac control status is offline or stale. Refresh the status or use the support repair path before starting local-control chat.';
     case 'unsupported':
-      return 'The native companion is not available on this Mac. Install or open the released repair fallback before continuing.';
+      return 'Mac control is not available on this Mac yet. Use setup or support before continuing.';
     case 'repair_required':
-      return 'Native companion is installed, but Mac access needs repair before evaOS or Hermes can use local control.';
+      return 'Workbench connector is installed, but Mac access needs repair before evaOS or Hermes can use local control.';
   }
 }
 
@@ -155,13 +155,13 @@ function readinessStripForState(
       label: 'Connector',
       value: connectorValue(status, state, loading),
       tone: connectorTone(status, state, loading),
-      help: 'Secure local connector status reported by the native companion.',
+      help: 'Secure local connector status reported by Workbench.',
     },
     {
       label: 'Pairing',
       value: state === 'not_paired' ? 'Pair this Mac' : state === 'ready' ? 'Ready' : 'Repair needed',
       tone: state === 'ready' ? 'ready' : state === 'offline' || state === 'unsupported' ? 'offline' : 'attention',
-      help: 'Mac pairing must come from the native companion, not from the renderer.',
+      help: 'Mac pairing is handled by the Workbench connector.',
     },
     {
       label: 'Permissions',
@@ -177,9 +177,9 @@ function readinessStripForState(
     },
     {
       label: 'Trust authority',
-      value: 'Native companion',
+      value: 'Workbench connector',
       tone: 'neutral',
-      help: 'evaOS Workbench only presents status and opens the repair workflow.',
+      help: 'evaOS Workbench presents status and opens repair actions.',
     },
   ];
 }
@@ -212,7 +212,7 @@ function repairStepsForState(
     {
       title: 'Run a setup check',
       detail:
-        'Refresh this page after the native repair completes. evaOS and Hermes stay blocked until readiness is ready.',
+        'Refresh this page after Mac control repair completes. evaOS and Hermes stay blocked until readiness is ready.',
       state: state === 'ready' ? 'ready' : 'neutral',
     },
   ];
@@ -224,7 +224,7 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
       kind: 'none',
       label: 'Checking...',
       disabled: true,
-      detail: 'Native companion status is still loading.',
+      detail: 'Mac control status is still loading.',
     };
   }
 
@@ -233,7 +233,7 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
       kind: 'refresh',
       label: 'Refresh status',
       disabled: false,
-      detail: 'Refresh the read-only native status proof.',
+      detail: 'Refresh the read-only Mac control proof.',
     };
   }
 
@@ -241,7 +241,7 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
     kind: 'refresh',
     label: 'Check again',
     disabled: false,
-    detail: 'Refresh the native companion status after repairing macOS permissions or pairing.',
+    detail: 'Refresh Mac control status after repairing macOS permissions or pairing.',
   };
 }
 
@@ -295,9 +295,8 @@ function connectorStepDetail(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   state: NativeCompanionUserState
 ): string {
-  if (state === 'ready') return 'The native connector is reporting ready.';
-  if (!status?.bridgeCli.installed)
-    return 'Install or open the native repair fallback so the connector can report status.';
+  if (state === 'ready') return 'Workbench connector is reporting ready.';
+  if (!status?.bridgeCli.installed) return 'Set up Mac control so the connector can report status.';
   return 'Use the repair workflow to restart or repair the secure local connector.';
 }
 
@@ -307,17 +306,17 @@ function permissionsStepDetail(
 ): string {
   if (state === 'ready') return 'Accessibility and Screen Recording are ready.';
   if (permissionsNeedRepair(status?.bridgeCli.permissions) || permissionsNeedRepair(status?.customerMac.permissions)) {
-    return 'Review macOS Accessibility and Screen Recording in the native repair workflow.';
+    return 'Review macOS Accessibility and Screen Recording for Workbench.';
   }
   return 'Permission proof looks present; continue with pairing and setup check.';
 }
 
 function pairingStepDetail(state: NativeCompanionUserState): string {
-  if (state === 'ready') return 'This Mac is paired for native companion use.';
+  if (state === 'ready') return 'This Mac is paired for Workbench connector use.';
   if (state === 'not_paired') {
-    return 'Pairing and trust claims stay inside the native companion. This shell only opens the repair workflow.';
+    return 'Pairing and trust claims stay inside the Workbench connector. This shell only opens the repair workflow.';
   }
-  return 'Confirm native pairing after connector and permission repair.';
+  return 'Confirm Mac pairing after connector and permission repair.';
 }
 
 function permissionsNeedRepair(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {
@@ -332,6 +331,9 @@ function safeReportedSummary(input: NativeCompanionRepairViewModelInput): string
   if (!text) return undefined;
   return text
     .replace(/\bNOT_PAIRED\b/gi, 'pairing required')
+    .replace(/\bnative companion\b/gi, 'Workbench connector')
+    .replace(/\bnative bridge\b/gi, 'Workbench connector')
+    .replace(/\breleased Workbench\b/gi, 'advanced repair fallback')
     .replace(
       /\b(?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|bearer|secret)\b/gi,
       '[redacted]'

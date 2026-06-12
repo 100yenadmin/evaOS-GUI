@@ -61,7 +61,7 @@ describe('NativeCompanionPage', () => {
     window.location.hash = '';
   });
 
-  it('renders read-only native companion status and opens the advanced released Workbench repair handoff', async () => {
+  it('renders integrated Mac control status and keeps legacy fallback advanced-only', async () => {
     localStorage.setItem('evaos.supportDiagnostics', '1');
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
@@ -119,11 +119,13 @@ describe('NativeCompanionPage', () => {
     });
 
     const user = userEvent.setup();
-    renderNativeCompanion();
+    const { container } = renderNativeCompanion();
 
-    expect(await screen.findByText('Mac & iPhone are ready')).toBeInTheDocument();
-    expect(screen.getByText(/Native companion proof is ready/i)).toBeInTheDocument();
-    expect(screen.getByText(/Native bridge ready from read-only adapter proof/i)).toBeInTheDocument();
+    expect(await screen.findByText('Mac control is ready')).toBeInTheDocument();
+    expect(screen.getByText(/Workbench connector proof is ready/i)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(
+      /Native companion|Native bridge|released Workbench|\/Applications\/evaOS\.app/i
+    );
     expect(screen.queryByText(/Bearer|desktop_session|provider_grant/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByText('Advanced diagnostics'));
@@ -194,12 +196,13 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
 
     expect(await screen.findByRole('button', { name: 'Check again' })).toBeInTheDocument();
-    expect(screen.getByText('Mac & iPhone repair')).toBeInTheDocument();
-    expect(screen.queryByText('Native companion status matrix')).not.toBeInTheDocument();
+    expect(screen.getByText('Mac control repair')).toBeInTheDocument();
+    expect(screen.queryByText('Mac control status matrix')).not.toBeInTheDocument();
     expect(screen.queryByText('RC native canary contract')).not.toBeInTheDocument();
     expect(screen.queryByText('Advanced diagnostics')).not.toBeInTheDocument();
     expect(screen.queryByText('Open released Workbench')).not.toBeInTheDocument();
     expect(screen.queryByText('Not installed')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Native companion|released Workbench|\/Applications\/evaOS\.app/i);
 
     const repairCard = screen.getByTestId('native-companion-repair-card');
     expect(within(repairCard).getByRole('button', { name: 'Open Accessibility' })).toBeInTheDocument();
@@ -267,6 +270,7 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
 
     expect(await screen.findByText('Allow Mac control')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Report to support' })).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Report to support' }));
 
     await waitFor(() => expect(feedbackMock.openFeedback).toHaveBeenCalledTimes(1));

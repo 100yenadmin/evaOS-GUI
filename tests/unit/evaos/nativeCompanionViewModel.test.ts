@@ -139,7 +139,7 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.primaryAction.label).toBe('Check again');
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).not.toMatch(/AionUi|Aion CLI/i);
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).toContain(
-      'evaOS Workbench only presents status and opens the repair workflow.'
+      'evaOS Workbench presents status and opens repair actions.'
     );
     expect(viewModel.readinessStrip.find((item) => item.label === 'iPhone')).toMatchObject({
       value: 'Deferred',

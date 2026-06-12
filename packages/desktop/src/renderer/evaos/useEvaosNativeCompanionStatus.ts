@@ -41,13 +41,13 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
       const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke();
       if (!response.success || !response.data) {
         setStatus(null);
-        setError(response.msg || 'Native companion status failed safely.');
+        setError(response.msg || 'Workbench connector status failed safely.');
         return;
       }
       setStatus(response.data);
     } catch {
       setStatus(null);
-      setError('Native companion status could not be reached.');
+      setError('Workbench connector status could not be reached.');
     } finally {
       setLoading(false);
     }

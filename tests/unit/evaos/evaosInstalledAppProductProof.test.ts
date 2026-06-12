@@ -219,12 +219,12 @@ describe('evaOS installed app product proof', () => {
       screenshot: '06-mac-iphone.png',
       artifactName: 'screenshots/06-mac-iphone.png',
       closeoutState: 'repair',
-      settledMarkers: ['Mac & iPhone', 'MAC & IPHONE REPAIR', 'Boundary clean'],
+      settledMarkers: ['Mac & iPhone', 'Mac control repair', 'Boundary clean'],
     });
     expect(byId.get('mac-iphone')?.waitSelectors).toEqual(
       expect.arrayContaining([
         'body:has-text("Mac & iPhone")',
-        'body:has-text("MAC & IPHONE REPAIR")',
+        'body:has-text("Mac control repair")',
         'body:has-text("Boundary clean")',
       ])
     );

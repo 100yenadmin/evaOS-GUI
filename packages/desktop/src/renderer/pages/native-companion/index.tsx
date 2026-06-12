@@ -58,7 +58,7 @@ const NativeCompanionPage: React.FC = () => {
           status?.iPhone.auditId,
         ],
         customer: {
-          summaryText: 'Native companion route; customer runtime context is broker-owned.',
+          summaryText: 'Mac control route; customer runtime context is broker-owned.',
         },
       }),
     [
@@ -117,18 +117,10 @@ const NativeCompanionPage: React.FC = () => {
           <div className='min-w-0'>
             <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Mac &amp; iPhone</h1>
             <p className='m-0 mt-4px max-w-760px text-14px leading-22px text-t-secondary'>
-              Repair Mac pairing, permissions, and local-control readiness before evaOS or Hermes starts chat. iPhone
-              Mirroring is deferred for this controlled RC.
+              Check Mac control readiness for evaOS and Hermes. iPhone Mirroring is deferred for this controlled RC.
             </p>
           </div>
           <div className='flex flex-wrap items-center gap-8px'>
-            <Button
-              type='secondary'
-              icon={<Comment theme='outline' size='16' />}
-              onClick={() => void handleOpenSupportReport()}
-            >
-              Report to support
-            </Button>
             <Tag color={tagColorForTone(viewModel.statusTone)}>{viewModel.statusLabel}</Tag>
             <Tag color={violations.length === 0 ? 'green' : 'orange'}>
               {violations.length === 0 ? 'Boundary clean' : 'Boundary blocked'}
@@ -136,7 +128,7 @@ const NativeCompanionPage: React.FC = () => {
           </div>
         </header>
 
-        <section className='grid grid-cols-1 gap-10px md:grid-cols-5' aria-label='Native readiness'>
+        <section className='grid grid-cols-1 gap-10px md:grid-cols-5' aria-label='Mac control readiness'>
           {viewModel.readinessStrip.map((item) => (
             <ReadinessTile key={item.label} item={item} />
           ))}
@@ -148,14 +140,12 @@ const NativeCompanionPage: React.FC = () => {
         >
           <div className='flex flex-wrap items-start justify-between gap-12px'>
             <div className='min-w-0'>
-              <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>
-                Mac &amp; iPhone repair
-              </p>
+              <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>Mac control repair</p>
               <h2 className='m-0 mt-4px text-20px font-semibold leading-26px text-t-primary'>{viewModel.title}</h2>
               <p className='m-0 mt-6px max-w-760px text-13px leading-20px text-t-secondary'>{viewModel.summary}</p>
               {viewModel.reportedSummary && (
                 <p className='m-0 mt-6px max-w-760px text-12px leading-18px text-t-secondary'>
-                  Native report: {viewModel.reportedSummary}
+                  Connector report: {viewModel.reportedSummary}
                 </p>
               )}
               {handoffMessage && <p className='m-0 mt-6px text-12px leading-18px text-t-secondary'>{handoffMessage}</p>}
@@ -189,6 +179,15 @@ const NativeCompanionPage: React.FC = () => {
             <Button type='secondary' loading={loading} onClick={() => void refresh()}>
               Refresh status
             </Button>
+            {viewModel.statusTone !== 'ready' ? (
+              <Button
+                type='secondary'
+                icon={<Comment theme='outline' size='16' />}
+                onClick={() => void handleOpenSupportReport()}
+              >
+                Report to support
+              </Button>
+            ) : null}
           </div>
 
           <div className='mt-14px rounded-8px bg-fill-2 px-14px py-12px text-12px leading-18px text-t-secondary'>

@@ -238,37 +238,66 @@ describe('Sider runtime route visibility', () => {
     };
   });
 
-  it('shows Mission Control for owner sessions', () => {
+  it('orders RC navigation around chat, evaOS surfaces, scheduled tasks, terminal, support, and collapsed groups', async () => {
     customerContextMock.roles = ['owner'];
 
-    renderSider();
+    let view = renderSider();
+    const { container } = view;
 
-    expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.getByText('Approvals')).toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+    expect(screen.queryByText('Approvals')).not.toBeInTheDocument();
+    expect(screen.getByText('evaOS')).toBeInTheDocument();
+    expect(screen.getByText('Hermes')).toBeInTheDocument();
     expect(screen.getByText('Mission Control')).toBeInTheDocument();
+    expect(screen.getByText('Shared Browser')).toBeInTheDocument();
+    expect(screen.getByText('cron.scheduledTasks')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
+    expect(screen.getByText('Support')).toBeInTheDocument();
+    expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
+    expect(screen.queryByText('Mac & iPhone')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Design section' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Admin section' })).toHaveAttribute('aria-expanded', 'false');
+
+    const content = container.textContent ?? '';
+    expect(content.indexOf('evaOS')).toBeLessThan(content.indexOf('Hermes'));
+    expect(content.indexOf('Hermes')).toBeLessThan(content.indexOf('Mission Control'));
+    expect(content.indexOf('Mission Control')).toBeLessThan(content.indexOf('Shared Browser'));
+    expect(content.indexOf('Shared Browser')).toBeLessThan(content.indexOf('Design'));
+    expect(content.indexOf('cron.scheduledTasks')).toBeLessThan(content.indexOf('Terminal'));
+    expect(content.indexOf('Terminal')).toBeLessThan(content.indexOf('Support'));
+    expect(content.indexOf('Support')).toBeLessThan(content.indexOf('Admin'));
+
+    view.unmount();
+    view = renderSider('/design-workspace');
+    expect(screen.getByRole('button', { name: 'Design section' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Design Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
+
+    view.unmount();
+    renderSider('/native-companion');
+    expect(screen.getByRole('button', { name: 'Admin section' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
   });
 
-  it('hides Mission Control for member sessions without technical runtime access', () => {
+  it('hides Mission Control for member sessions without technical runtime access', async () => {
     customerContextMock.roles = ['member'];
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
       userEmail: 'member@example.test',
     };
 
-    renderSider();
+    renderSider('/native-companion');
 
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
     expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
-    expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
   });
 
-  it('shows product routes only when the broker policy grants the matching scopes', () => {
+  it('shows product routes only when the broker policy grants the matching scopes', async () => {
     customerContextMock.roles = ['member'];
     customerContextMock.scopes = [
       'manage_members',
@@ -283,19 +312,22 @@ describe('Sider runtime route visibility', () => {
       userEmail: 'member@example.test',
     };
 
-    renderSider();
+    const { unmount } = renderSider('/people-access');
 
     expect(screen.getByText('People & Access')).toBeInTheDocument();
     expect(screen.getByText('Connected Apps')).toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
+
+    unmount();
+    renderSider('/design-workspace');
     expect(screen.getByText('Design Workspace')).toBeInTheDocument();
-    expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('Shared Browser')).toBeInTheDocument();
     expect(screen.getByText('Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });
 
-  it('keeps setup and hosted handoff routes visible when the web session exists but broker policy is missing', () => {
+  it('keeps setup and hosted handoff routes visible when the web session exists but broker policy is missing', async () => {
     brokerSessionMock.session = {
       state: 'missing',
       authenticated: false,
@@ -304,14 +336,17 @@ describe('Sider runtime route visibility', () => {
       message: 'Sign in required',
     };
 
-    renderSider();
+    const { unmount } = renderSider('/native-companion');
 
-    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+
+    unmount();
+    renderSider('/creative-studio');
     expect(screen.getByText('Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
-    expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
     expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
     expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
@@ -341,14 +376,14 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
   });
 
-  it('renders old Workbench Home, Approvals, and People & Access labels for eligible sessions', () => {
+  it('renders RC Workbench labels without Home or Approvals clutter for eligible sessions', async () => {
     customerContextMock.roles = ['owner'];
     customerContextMock.scopes = ['manage_members', 'approve_actions'];
 
-    renderSider();
+    renderSider('/people-access');
 
-    expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.getByText('Approvals')).toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+    expect(screen.queryByText('Approvals')).not.toBeInTheDocument();
     expect(screen.getByText('People & Access')).toBeInTheDocument();
     expect(screen.queryByText('Approval Center')).not.toBeInTheDocument();
     expect(screen.queryByText('People Access')).not.toBeInTheDocument();
@@ -391,15 +426,18 @@ describe('Sider runtime route visibility', () => {
       message: 'Sign in required',
     };
 
-    renderSider();
+    const { unmount } = renderSider('/native-companion');
 
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+
+    unmount();
+    renderSider('/creative-studio');
     expect(screen.getByText('Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
-    expect(screen.queryByText('Business Browser')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
     expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
     expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
@@ -543,7 +581,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
   });
 
-  it('lets employees reach Mac & iPhone setup without exposing technical runtimes', () => {
+  it('lets employees reach Mac & iPhone setup without exposing technical runtimes', async () => {
     customerContextMock.roles = ['member'];
     customerContextMock.isOperator = false;
     customerContextMock.scopes = [];
@@ -552,7 +590,7 @@ describe('Sider runtime route visibility', () => {
       userEmail: 'employee@example.test',
     };
 
-    renderSider();
+    renderSider('/native-companion');
 
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
     expect(screen.queryByText('evaOS')).not.toBeInTheDocument();
@@ -606,19 +644,21 @@ describe('Sider runtime route visibility', () => {
       },
     ];
 
-    renderSider();
+    const { unmount } = renderSider();
 
     expect(screen.getByText('Viewing')).toBeInTheDocument();
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
     expect(screen.getByText(/v2\.1\.12-evaos-beta\.0/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Selected customer')).toHaveValue('david-poku');
-    expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByText('evaOS')).toBeInTheDocument();
     expect(screen.getByText('Hermes')).toBeInTheDocument();
     expect(screen.getByText('Mission Control')).toBeInTheDocument();
-    expect(screen.getByText('Business Browser')).toBeInTheDocument();
+    expect(screen.getByText('Shared Browser')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
+
+    unmount();
+    renderSider('/people-access');
     expect(screen.getByText('People & Access')).toBeInTheDocument();
     expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
 

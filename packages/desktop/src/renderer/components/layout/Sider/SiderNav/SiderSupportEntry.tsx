@@ -6,38 +6,38 @@
 
 import React from 'react';
 import { Tooltip } from '@arco-design/web-react';
-import { Browser } from '@icon-park/react';
+import { Comment } from '@icon-park/react';
 import classNames from 'classnames';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 
-interface SiderBusinessBrowserEntryProps {
+interface SiderSupportEntryProps {
   isMobile: boolean;
-  isActive: boolean;
   collapsed: boolean;
   siderTooltipProps: SiderTooltipProps;
   onClick: () => void;
 }
 
-const SiderBusinessBrowserEntry: React.FC<SiderBusinessBrowserEntryProps> = ({
-  isMobile,
-  isActive,
-  collapsed,
-  siderTooltipProps,
-  onClick,
-}) => {
-  const label = 'Shared Browser';
+const SiderSupportEntry: React.FC<SiderSupportEntryProps> = ({ isMobile, collapsed, siderTooltipProps, onClick }) => {
+  const label = 'Support';
 
   if (collapsed) {
     return (
       <Tooltip {...siderTooltipProps} content={label} position='right'>
         <div
-          className={classNames(
-            'w-full h-34px flex items-center justify-center cursor-pointer transition-colors rd-8px text-t-primary',
-            isActive ? 'bg-fill-3' : 'hover:bg-fill-3 active:bg-fill-4'
-          )}
+          aria-label={label}
+          data-testid='evaos-sidebar-support'
+          className='w-full h-34px flex items-center justify-center cursor-pointer transition-colors rd-8px text-t-primary hover:bg-fill-3 active:bg-fill-4'
+          role='button'
+          tabIndex={0}
           onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onClick();
+            }
+          }}
         >
-          <Browser
+          <Comment
             theme='outline'
             size='20'
             fill='currentColor'
@@ -52,15 +52,24 @@ const SiderBusinessBrowserEntry: React.FC<SiderBusinessBrowserEntryProps> = ({
   return (
     <Tooltip {...siderTooltipProps} content={label} position='right'>
       <div
+        aria-label={label}
+        data-testid='evaos-sidebar-support'
         className={classNames(
-          'box-border group h-34px w-full flex items-center justify-start gap-8px pl-10px pr-8px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary',
-          isMobile && 'sider-action-btn-mobile',
-          isActive ? 'bg-fill-3' : 'hover:bg-fill-3 active:bg-fill-4'
+          'box-border group h-34px w-full flex items-center justify-start gap-8px pl-10px pr-8px rd-0.5rem cursor-pointer shrink-0 transition-all text-t-primary hover:bg-fill-3 active:bg-fill-4',
+          isMobile && 'sider-action-btn-mobile'
         )}
+        role='button'
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick();
+          }
+        }}
       >
         <span className='size-22px flex items-center justify-center shrink-0 text-t-primary'>
-          <Browser
+          <Comment
             theme='outline'
             size='16'
             fill='currentColor'
@@ -74,4 +83,4 @@ const SiderBusinessBrowserEntry: React.FC<SiderBusinessBrowserEntryProps> = ({
   );
 };
 
-export default SiderBusinessBrowserEntry;
+export default SiderSupportEntry;

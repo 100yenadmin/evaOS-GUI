@@ -7,23 +7,24 @@ const DEFAULT_PLAN_PATH =
   process.env.AIONUI_SETTLED_SHELL_SMOKE_PLAN_PATH ||
   '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/shell-smoke-plan.md';
 
-const COMMON_WAIT_SELECTORS = ['[data-testid="evaos-support-bubble"]', 'body:text("evaOS Workbench Beta")'];
+const COMMON_WAIT_SELECTORS = ['[data-testid="evaos-sidebar-support"]', 'body:text("evaOS Workbench Beta")'];
 
 const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
-    id: 'home',
-    route: '/home',
-    screenshot: '00-home.png',
-    target: 'Home route with signed-in Workbench shell entry point',
+    id: 'new-chat-landing',
+    route: '/guid',
+    screenshot: '00-new-chat-landing.png',
+    target: 'New Chat landing with streamlined RC navigation',
     waitSelectors: [
       'body:text("evaOS Workbench Beta")',
-      'body:text("Home")',
-      'body:text("Mission Control")',
-      'body:text("Mac & iPhone")',
+      'body:text("New Chat")',
+      'body:text("evaOS")',
+      'body:text("Hermes")',
+      '[data-testid="evaos-sidebar-support"]',
     ],
     notes: [
-      'Capture after the Home route settles; this proves the old Workbench Home entry is route-owned, not just sidebar copy.',
-      'If signed out, the proof may show sign-in repair copy but must not redirect to an upstream AionUi placeholder.',
+      'Capture the default RC landing state after the New Chat route settles.',
+      'Home and Approvals should remain absent from the normal sidebar for this controlled RC.',
     ],
   },
   {
@@ -93,17 +94,15 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     id: 'mac-iphone',
     route: '/native-companion',
     screenshot: '06-mac-iphone.png',
-    target: 'Mac & iPhone native companion status and repair handoff',
+    target: 'Mac & iPhone Mac control status and repair handoff',
     action: 'click-native-companion-advanced-diagnostics',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
       'body:text("Mac & iPhone")',
-      'body:text("Native companion status matrix")',
+      'body:text("Mac control")',
       'body:text("Boundary clean")',
     ],
-    notes: [
-      'Capture repair/ready copy after the native companion status settles; do not expose callback or local secrets.',
-    ],
+    notes: ['Capture repair/ready copy after Mac control status settles; do not expose callback or local secrets.'],
   },
   {
     id: 'evaos',
@@ -164,11 +163,11 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     id: 'business-browser',
     route: '/business-browser',
     screenshot: '11-business-browser.png',
-    target: 'Business Browser brokered runtime state',
+    target: 'Shared Browser brokered runtime state',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
-      'body:text("Business Browser")',
-      'body:text("Brokered browser and VM runtime state")',
+      'body:text("Shared Browser")',
+      '[data-testid="evaos-business-browser-surface"]',
     ],
     notes: [
       'Loaded-state proof should include current URL summary, runtime source, and browser audit ID with no grant handles.',
@@ -188,14 +187,14 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     id: 'creative-studio',
     route: '/creative-studio',
     screenshot: '13-creative-studio.png',
-    target: 'Creative Studio route and external-runtime handoff state',
+    target: 'Creative Studio embedded workspace state',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
       'body:text("Creative Studio")',
-      'body:text("hosted Creative Studio workspace")',
+      '[data-testid="evaos-creative-studio-surface"]',
     ],
     notes: [
-      'This is a post-parity-fix target route. Screenshot should prove the shell handoff/guard state, not external Comfy Cloud readiness.',
+      'This is a post-parity-fix target route. Screenshot should prove the embedded Creative Studio surface, with external open as fallback only.',
     ],
   },
   {
@@ -234,21 +233,6 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
       'body:text("Org-scoped account directory")',
     ],
     notes: ['Loaded-state proof should include directory/query source pointers and no raw embeddings or prompts.'],
-  },
-  {
-    id: 'approvals',
-    route: '/approval-center',
-    screenshot: '17-approvals.png',
-    target: 'Approvals / Approval Center request list and decision controls',
-    waitSelectors: [
-      ...COMMON_WAIT_SELECTORS,
-      'body:text("Approval Center")',
-      'body:text("Human decisions for risky agent actions")',
-    ],
-    notes: [
-      'Parity target label is Approvals; current route copy may still read Approval Center until the naming fix lands.',
-      'Loaded-state proof should show request rows, decision source, and audit ID after a deny/approve loop.',
-    ],
   },
 ];
 

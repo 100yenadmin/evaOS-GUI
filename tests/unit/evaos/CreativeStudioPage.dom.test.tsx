@@ -6,8 +6,7 @@
 
 import React from 'react';
 import { ConfigProvider } from '@arco-design/web-react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import CreativeStudioPage from '@/renderer/pages/creative-studio';
 
@@ -31,26 +30,23 @@ function renderCreativeStudio() {
   );
 }
 
-describe('CreativeStudioPage RC handoff', () => {
+describe('CreativeStudioPage RC embedded surface', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
   });
 
-  it('shows a hosted creative studio handoff instead of a missing broker repair state', async () => {
-    const user = userEvent.setup();
+  it('embeds the hosted creative studio surface instead of sending users to an external handoff first', () => {
     renderCreativeStudio();
 
-    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
-    expect(screen.getByText('Website handoff')).toBeInTheDocument();
-    expect(screen.getByText('https://www.comfy.org/cloud')).toBeInTheDocument();
-    expect(screen.getByText(/native broker-owned generation runtime parity is tracked in #272/i)).toBeInTheDocument();
+    const surface = screen.getByTestId('evaos-creative-studio-surface');
+    expect(surface).toHaveAttribute('src', 'https://www.comfy.org/cloud');
+    expect(surface).toHaveAttribute('partition', 'persist:evaos-creative-studio');
+    expect(screen.queryByText('Website handoff')).not.toBeInTheDocument();
+    expect(screen.queryByText('https://www.comfy.org/cloud')).not.toBeInTheDocument();
+    expect(screen.queryByText(/native broker-owned generation runtime parity/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/broker endpoint was not found/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Retry|Refresh/i })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Open Creative Studio' }));
-
-    await waitFor(() => expect(platformMocks.openEvaosExternalUrl).toHaveBeenCalledWith('https://www.comfy.org/cloud'));
-    expect(await screen.findByText('Opened Creative Studio in your browser.')).toBeInTheDocument();
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalled();
   });
 });

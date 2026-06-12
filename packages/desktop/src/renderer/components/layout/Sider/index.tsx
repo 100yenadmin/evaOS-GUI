@@ -17,9 +17,10 @@ import { useAllCronJobs } from '@renderer/pages/cron/useCronJobs';
 import { useTeamCreatedRedirect } from '@renderer/pages/team/hooks/useTeamCreatedRedirect';
 import EvaosSidebarSection from '@renderer/evaos/EvaosSidebarSection';
 import { useEvaosSidebarState } from '@renderer/evaos/useEvaosSidebarState';
+import { SiderTerminalEntry } from '@renderer/evaos/sidebar';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
-import { SiderScheduledEntry, SiderSearchEntry, SiderToolbar } from './SiderNav';
+import { SiderScheduledEntry, SiderSearchEntry, SiderSupportEntry, SiderToolbar } from './SiderNav';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
 import TeamSiderSection from './TeamSiderSection';
@@ -287,22 +288,20 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               onSessionClick={onSessionClick}
             />
             <EvaosSidebarSection
+              group='primary'
               isMobile={isMobile}
               collapsed={collapsed}
               pathname={pathname}
               siderTooltipProps={siderTooltipProps}
-              canSeeHome={evaosSidebarState.canSeeHome}
               canSeeEvaos={evaosSidebarState.canSeeEvaos}
               canSeeHermes={evaosSidebarState.canSeeHermes}
               canSeeMissionControl={evaosSidebarState.canSeeMissionControl}
-              canSeeTerminal={evaosSidebarState.canSeeTerminal}
               canSeePeopleAccess={evaosSidebarState.canSeePeopleAccess}
               canSeeConnectedApps={evaosSidebarState.canSeeConnectedApps}
               canSeeDesignWorkspace={evaosSidebarState.canSeeDesignWorkspace}
               canSeeBusinessBrowser={evaosSidebarState.canSeeBusinessBrowser}
               canSeeCreativeStudio={evaosSidebarState.canSeeCreativeStudio}
               canSeeCompanyBrain={evaosSidebarState.canSeeCompanyBrain}
-              canSeeApprovalCenter={evaosSidebarState.canSeeApprovalCenter}
               canSeeNativeCompanion={evaosSidebarState.canSeeNativeCompanion}
               onNavigate={handleEvaosNavigate}
             />
@@ -313,6 +312,39 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               collapsed={collapsed}
               siderTooltipProps={siderTooltipProps}
               onClick={handleScheduledClick}
+            />
+            {evaosSidebarState.canSeeTerminal ? (
+              <SiderTerminalEntry
+                isMobile={isMobile}
+                isActive={pathname === '/terminal'}
+                collapsed={collapsed}
+                siderTooltipProps={siderTooltipProps}
+                onClick={() => handleEvaosNavigate('/terminal')}
+              />
+            ) : null}
+            <SiderSupportEntry
+              isMobile={isMobile}
+              collapsed={collapsed}
+              siderTooltipProps={siderTooltipProps}
+              onClick={handleSupportClick}
+            />
+            <EvaosSidebarSection
+              group='admin'
+              isMobile={isMobile}
+              collapsed={collapsed}
+              pathname={pathname}
+              siderTooltipProps={siderTooltipProps}
+              canSeeEvaos={evaosSidebarState.canSeeEvaos}
+              canSeeHermes={evaosSidebarState.canSeeHermes}
+              canSeeMissionControl={evaosSidebarState.canSeeMissionControl}
+              canSeePeopleAccess={evaosSidebarState.canSeePeopleAccess}
+              canSeeConnectedApps={evaosSidebarState.canSeeConnectedApps}
+              canSeeDesignWorkspace={evaosSidebarState.canSeeDesignWorkspace}
+              canSeeBusinessBrowser={evaosSidebarState.canSeeBusinessBrowser}
+              canSeeCreativeStudio={evaosSidebarState.canSeeCreativeStudio}
+              canSeeCompanyBrain={evaosSidebarState.canSeeCompanyBrain}
+              canSeeNativeCompanion={evaosSidebarState.canSeeNativeCompanion}
+              onNavigate={handleEvaosNavigate}
             />
             {/* Divider between fixed top nav and scrollable content area */}
             <div
@@ -355,7 +387,6 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         theme={theme}
         siderTooltipProps={siderTooltipProps}
         onSettingsClick={handleSettingsClick}
-        onSupportClick={handleSupportClick}
         onThemeToggle={handleQuickThemeToggle}
         accountLabel={user?.username ?? evaosSidebarState.accountLabel}
         selectedCustomerId={evaosSidebarState.selectedCustomerId}

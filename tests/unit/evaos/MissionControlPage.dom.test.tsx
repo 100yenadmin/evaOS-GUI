@@ -508,7 +508,7 @@ describe('MissionControlPage', () => {
 
     const browserCard = screen.getByTestId('mission-runtime-card-browser');
     await waitFor(() => {
-      expect(browserCard).toHaveTextContent('Backend policy denied Business Browser control.');
+      expect(browserCard).toHaveTextContent('Backend policy denied Shared Browser control.');
     });
     expect(browserCard).toHaveTextContent('Blocked');
     expect(browserCard).toHaveTextContent('deny_audit_73');
