@@ -1,14 +1,7 @@
-name: Distribute Release Assets
+name: Distribute evaOS Beta Release Assets
 
-# Triggered after a GitHub Release is officially published.
-# Mirrors installer assets to the configured distribution endpoint for external download.
-#
-# Why `published` (not `released`)?
-#   - `released` is supposed to fire when a non-prerelease release is published,
-#     but GitHub sometimes only emits `published` (not `released`) when a pre-existing
-#     draft is publicly released, causing the workflow to be silently skipped.
-#   - `published` reliably fires on every draft → public transition, including
-#     prereleases. The `if` guard on the job filters out prereleases explicitly.
+# evaOS beta fork: manual-only distribution. This workflow must never mirror
+# upstream AionUi assets or historical upstream tags.
 #
 # All credentials / identifiers are read from repository secrets:
 #   - AWS_REGION
@@ -17,27 +10,44 @@ name: Distribute Release Assets
 # Do NOT hardcode these values in this file.
 
 on:
-  release:
-    types: [published]
   # Manual trigger for smoke testing or for retrying a missed release:
   # pick any existing release tag to re-run the distribution against.
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing release tag to redistribute (e.g. v1.9.21)'
+      beta_distribution_ack:
+        description: 'Type evaos-beta to acknowledge this distribution workflow is manual-only on the evaOS beta fork.'
         required: true
         type: string
+      tag:
+        description: 'Existing evaOS beta release tag to distribute (must start with evaos-beta-)'
+        required: true
+        type: string
+      rc_proof_run_id:
+        description: 'Successful evaOS Beta RC Canary workflow run id for the same tag.'
+        required: true
+        type: string
+      release_target_platforms:
+        description: 'Release target platforms for verification: all keeps Windows/macOS/Linux; macos distributes only macOS assets.'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
 
 permissions:
   id-token: write # required for OIDC token
   contents: read
+  actions: read
+
+env:
+  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
 
 jobs:
   distribute:
     name: Distribute release assets
     runs-on: ubuntu-latest
-    # Skip prereleases: manual dispatch always runs, automatic event runs only when not a prerelease.
-    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    if: github.event.inputs.beta_distribution_ack == 'evaos-beta' && vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'
     steps:
       - name: Extract version from tag
         id: version
@@ -50,10 +60,50 @@ jobs:
             echo "::error::No tag provided (event did not supply one)."
             exit 1
           fi
-          VERSION="${TAG#v}"
+          if [[ "$TAG" != evaos-beta-* ]]; then
+            echo "::error::Refusing to distribute non-evaOS beta tag: $TAG"
+            exit 1
+          fi
+          if [[ "$TAG" == *"-dev" || "$TAG" == *"-dev-"* || "$TAG" == *"-dev."* ]]; then
+            echo "::error::Refusing to distribute development beta tag: $TAG"
+            exit 1
+          fi
+          VERSION="${TAG#evaos-beta-}"
+          VERSION="${VERSION#v}"
+          if [[ "$VERSION" != *evaos-beta* ]]; then
+            echo "::error::Refusing to distribute tag without evaos-beta version marker: $TAG"
+            exit 1
+          fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Tag: $TAG / Version: $VERSION"
+
+      - name: Checkout release refs
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate release branch provenance
+        id: provenance
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          EVAOS_BETA_RELEASE_BRANCH: ${{ vars.EVAOS_BETA_RELEASE_BRANCH }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EVAOS_BETA_RELEASE_BRANCH:-}" ]; then
+            echo "::error::EVAOS_BETA_RELEASE_BRANCH must be set before public beta distribution."
+            exit 1
+          fi
+
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" "refs/heads/${EVAOS_BETA_RELEASE_BRANCH}:refs/remotes/origin/${EVAOS_BETA_RELEASE_BRANCH}"
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG")
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" "origin/${EVAOS_BETA_RELEASE_BRANCH}"; then
+            echo "::error::Tag $TAG ($TAG_COMMIT) is not reachable from approved release branch ${EVAOS_BETA_RELEASE_BRANCH}."
+            exit 1
+          fi
+
+          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "Validated $TAG at $TAG_COMMIT against ${EVAOS_BETA_RELEASE_BRANCH}."
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -80,16 +130,161 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p dist
+          case "${EVAOS_RELEASE_TARGET_PLATFORMS}" in
+            all)
+              patterns=(
+                --pattern "*.dmg"
+                --pattern "*.exe"
+                --pattern "*.msi"
+                --pattern "*.deb"
+                --pattern "*.zip"
+                --pattern "*.yml"
+                --pattern "evaos-beta-release-manifest.json"
+              )
+              ;;
+            macos)
+              patterns=(
+                --pattern "*.dmg"
+                --pattern "*.zip"
+                --pattern "latest-mac.yml"
+                --pattern "latest-arm64-mac.yml"
+                --pattern "evaos-beta-release-manifest.json"
+              )
+              ;;
+            *)
+              echo "::error::Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: ${EVAOS_RELEASE_TARGET_PLATFORMS}"
+              exit 1
+              ;;
+          esac
           gh release download "${{ steps.version.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --dir dist \
-            --pattern "*.dmg" \
-            --pattern "*.exe" \
-            --pattern "*.msi" \
-            --pattern "*.deb" \
-            --pattern "*.zip"
+            "${patterns[@]}"
           echo "Downloaded files:"
           ls -la dist
+
+      - name: Download trusted release manifest artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ ! -f dist/evaos-beta-release-manifest.json ]; then
+            echo "::error::Release is missing evaOS beta release manifest."
+            exit 1
+          fi
+
+          RELEASE_RUN_ID=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseRunId || ''));")
+          if [ -z "$RELEASE_RUN_ID" ]; then
+            echo "::error::Release manifest is missing releaseRunId."
+            exit 1
+          fi
+
+          mkdir -p trusted-manifest
+          gh run download "$RELEASE_RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "evaos-beta-release-manifest-${TAG}" \
+            --dir trusted-manifest
+          TRUSTED_MANIFEST_PATH=$(find trusted-manifest -type f -name evaos-beta-release-manifest.json | head -n 1)
+          if [ -z "$TRUSTED_MANIFEST_PATH" ]; then
+            echo "::error::Trusted manifest artifact did not contain evaos-beta-release-manifest.json."
+            exit 1
+          fi
+          if [ "$TRUSTED_MANIFEST_PATH" != "trusted-manifest/evaos-beta-release-manifest.json" ]; then
+            cp "$TRUSTED_MANIFEST_PATH" trusted-manifest/evaos-beta-release-manifest.json
+          fi
+
+      - name: Validate evaOS beta asset identity
+        run: |
+          shopt -s nullglob
+          files=(dist/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No release assets downloaded."
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            base="$(basename "$file")"
+            if [ "$base" = "evaos-beta-release-manifest.json" ]; then
+              continue
+            fi
+            if [[ "$base" == *.yml ]]; then
+              continue
+            fi
+            case "$base" in
+              *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
+                echo "::error::Refusing to distribute upstream AionUi asset: $base"
+                exit 1
+                ;;
+            esac
+
+            case "$base" in
+              *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+                ;;
+              *)
+                echo "::error::Refusing to distribute asset without evaOS beta identity marker: $base"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Verify release updater metadata
+        env:
+          INCLUDE_WEB_CLI_ASSETS: '0'
+          EVAOS_RELEASE_TARGET_PLATFORMS: ${{ env.EVAOS_RELEASE_TARGET_PLATFORMS }}
+          MOCK_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/verify-release-assets.sh dist
+
+      - name: Validate release manifest and workflow provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
+        run: node scripts/evaosBetaReleaseGate.js verify-manifest dist "${{ steps.version.outputs.tag }}"
+
+      - name: Validate release candidate proof
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC_PROOF_RUN_ID: ${{ github.event.inputs.rc_proof_run_id }}
+          TAG: ${{ steps.version.outputs.tag }}
+          EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RC_PROOF_RUN_ID" ]; then
+            echo "::error::rc_proof_run_id is required before public beta distribution."
+            exit 1
+          fi
+
+          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName)
+          node - "$RUN_JSON" <<'NODE'
+          const run = JSON.parse(process.argv[2]);
+          if (run.conclusion !== 'success') {
+            throw new Error(`RC proof run did not succeed: ${run.conclusion}`);
+          }
+          if (run.workflowName !== 'evaOS Beta RC Canary') {
+            throw new Error(`RC proof run used unexpected workflow: ${run.workflowName}`);
+          }
+          if (run.event !== 'workflow_dispatch') {
+            throw new Error(`RC proof run was not manually dispatched: ${run.event}`);
+          }
+          NODE
+
+          rm -rf rc-proof-download rc-proof
+          mkdir -p rc-proof-download
+          gh run download "$RC_PROOF_RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "evaos-beta-rc-proof-${TAG}" \
+            --dir rc-proof-download
+          PROOF_MANIFEST=$(find rc-proof-download -type f -name evaos-beta-rc-proof.json | head -n 1)
+          if [ -z "$PROOF_MANIFEST" ]; then
+            echo "::error::RC proof artifact did not contain evaos-beta-rc-proof.json."
+            exit 1
+          fi
+          PROOF_ROOT=$(dirname "$PROOF_MANIFEST")
+          mkdir -p rc-proof
+          cp -R "$PROOF_ROOT"/. rc-proof/
+
+          node scripts/evaosBetaReleaseGate.js verify-rc-proof rc-proof "$TAG"
 
       - name: Upload assets
         env:
