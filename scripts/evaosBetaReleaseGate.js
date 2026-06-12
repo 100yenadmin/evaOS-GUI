@@ -74,6 +74,7 @@ const KEYCHAIN_PROFILE_NOTARIZATION_ENV = {
   description: 'notarytool keychain profile for notarization',
 };
 
+/** Environment inputs required before a public beta release can be signed and notarized. */
 const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
   ...REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV,
   ...REQUIRED_APPLE_ID_NOTARIZATION_ENV,
@@ -126,6 +127,12 @@ const REQUIRED_RC_PROOF_CHECKS = [
   },
 ];
 
+/**
+ * Converts common CI truthy strings into a boolean.
+ *
+ * @param {unknown} value - Environment-style value to normalize.
+ * @returns {boolean} True when the value is an accepted truthy token.
+ */
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
     String(value || '')
@@ -134,10 +141,23 @@ function normalizeBoolean(value) {
   );
 }
 
+/**
+ * Checks whether public beta signing enforcement is enabled.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env] - Environment object to inspect.
+ * @returns {boolean} True when signing enforcement is explicitly enabled.
+ */
 function isStrictPublicBetaReleaseEnv(env = process.env) {
   return normalizeBoolean(env.EVAOS_BETA_PUBLIC_RELEASE) || normalizeBoolean(env.EVAOS_BETA_REQUIRE_SIGNING);
 }
 
+/**
+ * Reads the first non-empty value from an environment entry and aliases.
+ *
+ * @param {NodeJS.ProcessEnv} env - Environment object to inspect.
+ * @param {{aliases: string[]}} entry - Primary env name plus aliases.
+ * @returns {string|undefined} Matching environment value when present.
+ */
 function getEnvValue(env, entry) {
   for (const key of entry.aliases) {
     const value = env[key];
@@ -203,6 +223,12 @@ function formatMissingNotarizationEnv(env) {
   ];
 }
 
+/**
+ * Verifies that CI has both code-signing and notarization inputs.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env] - Environment object to inspect.
+ * @throws {Error} If any required signing or notarization input is missing.
+ */
 function assertPublicBetaReleaseSigningEnv(env = process.env) {
   const missing = [...formatMissing(REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV, env), ...formatMissingNotarizationEnv(env)];
   if (missing.length > 0) {
@@ -210,6 +236,12 @@ function assertPublicBetaReleaseSigningEnv(env = process.env) {
   }
 }
 
+/**
+ * Verifies that CI has a valid notarization credential path.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env] - Environment object to inspect.
+ * @throws {Error} If notarization inputs are incomplete.
+ */
 function assertPublicBetaNotarizationEnv(env = process.env) {
   const missing = formatMissingNotarizationEnv(env);
   if (missing.length > 0) {
@@ -270,6 +302,12 @@ function assertEvaosBetaReleaseTag(tag) {
   }
 }
 
+/**
+ * Verifies that a release tag is safe for public beta distribution.
+ *
+ * @param {string} tag - Release tag to validate.
+ * @throws {Error} If the tag is not an evaOS beta public distribution tag.
+ */
 function assertPublicDistributionTag(tag) {
   assertEvaosBetaReleaseTag(tag);
   if (isDevBetaTag(tag)) {
@@ -301,6 +339,12 @@ function getTopLevelYamlSection(text, sectionName) {
   return section.join('\n');
 }
 
+/**
+ * Collects release configuration drift that would make an RC unsafe to publish.
+ *
+ * @param {string} [rootDir=process.cwd()] - Repository root to audit.
+ * @returns {string[]} Human-readable release configuration issues.
+ */
 function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const issues = [];
   const packageJson = readJson(rootDir, 'package.json');
@@ -576,6 +620,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   return issues;
 }
 
+/**
+ * Fails when the repository release configuration is not beta-safe.
+ *
+ * @param {string} [rootDir=process.cwd()] - Repository root to audit.
+ * @returns {true} True when the audit passes.
+ * @throws {Error} If release configuration checks find drift.
+ */
 function assertReleaseConfig(rootDir = process.cwd()) {
   const issues = collectReleaseConfigIssues(rootDir);
   if (issues.length > 0) {
@@ -584,6 +635,15 @@ function assertReleaseConfig(rootDir = process.cwd()) {
   return true;
 }
 
+/**
+ * Writes a checksum manifest for prepared evaOS beta release assets.
+ *
+ * @param {string} outputDir - Directory containing prepared release assets.
+ * @param {string} tag - evaOS beta release tag represented by the assets.
+ * @param {NodeJS.ProcessEnv} [env=process.env] - Environment metadata from CI.
+ * @returns {object} Release manifest that was written to disk.
+ * @throws {Error} If the tag is not an evaOS beta release tag.
+ */
 function createReleaseManifest(outputDir, tag, env = process.env) {
   assertEvaosBetaReleaseTag(tag);
 
@@ -635,6 +695,8 @@ function readManifestFile(manifestPath) {
 }
 
 function canonicalManifestJson(manifest) {
+  // The trusted manifest must be byte-order equivalent to the workflow artifact;
+  // key-order drift is treated as provenance drift, not normalized away.
   return JSON.stringify(manifest);
 }
 
@@ -690,6 +752,15 @@ function verifyGitHubRun(manifest, env = process.env) {
   }
 }
 
+/**
+ * Verifies prepared release assets against the trusted release manifest.
+ *
+ * @param {string} outputDir - Directory containing release assets and manifest.
+ * @param {string} tag - Expected public distribution tag.
+ * @param {NodeJS.ProcessEnv} [env=process.env] - Verification environment.
+ * @returns {true} True when manifest, checksums, and CI provenance pass.
+ * @throws {Error} If any manifest, asset, tag, or provenance check fails.
+ */
 function verifyReleaseManifest(outputDir, tag, env = process.env) {
   assertPublicDistributionTag(tag);
 
@@ -795,6 +866,14 @@ function assertConcreteBlockedReason(reason, label) {
   }
 }
 
+/**
+ * Writes an editable proof template for the signed RC canary.
+ *
+ * @param {string} proofDir - Directory where proof files should be written.
+ * @param {string} tag - Public beta release tag being proven.
+ * @returns {object} RC proof manifest template.
+ * @throws {Error} If the tag is not a public distribution tag.
+ */
 function writeRcProofTemplate(proofDir, tag) {
   assertPublicDistributionTag(tag);
   fs.mkdirSync(proofDir, { recursive: true });
@@ -840,6 +919,15 @@ function writeRcProofTemplate(proofDir, tag) {
   return manifest;
 }
 
+/**
+ * Verifies signed RC canary evidence before distribution is allowed.
+ *
+ * @param {string} proofDir - Directory containing RC proof manifest and evidence.
+ * @param {string} tag - Expected public beta release tag.
+ * @param {NodeJS.ProcessEnv} [env=process.env] - Verification environment.
+ * @returns {true} True when all RC proof checks pass.
+ * @throws {Error} If any proof, asset, manifest, or evidence check fails.
+ */
 function verifyRcProof(proofDir, tag, env = process.env) {
   const manifestPath = requireExistingRelativeFile(proofDir, RC_PROOF_MANIFEST_NAME, 'RC proof manifest');
   const manifest = readManifestFile(manifestPath);

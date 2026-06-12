@@ -41,9 +41,13 @@ on:
           - all
           - macos
 
+concurrency:
+  group: evaos-beta-rc-canary-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
-  actions: read
+  actions: read # required for gh run view/download of release manifest artifacts
 
 env:
   EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
@@ -92,9 +96,10 @@ jobs:
           fi
 
       - name: Checkout release refs
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -199,13 +204,13 @@ jobs:
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
           EVAOS_RELEASE_TARGET_PLATFORMS: ${{ env.EVAOS_RELEASE_TARGET_PLATFORMS }}
+          TAG: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag }}"
           VERSION="${TAG#evaos-beta-}"
           VERSION="${VERSION#v}"
           INCLUDE_WEB_CLI_ASSETS=0 MOCK_VERSION="$VERSION" bash scripts/verify-release-assets.sh release-assets
-          node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "${{ github.event.inputs.tag }}"
+          node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "$TAG"
 
       - name: Download released fallback app
         env:

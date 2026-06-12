@@ -38,7 +38,7 @@ on:
 permissions:
   id-token: write # required for OIDC token
   contents: read
-  actions: read
+  actions: read # required for gh run view/download of RC proof artifacts
 
 env:
   EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
@@ -79,9 +79,10 @@ jobs:
           echo "Tag: $TAG / Version: $VERSION"
 
       - name: Checkout release refs
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate release branch provenance
         id: provenance
