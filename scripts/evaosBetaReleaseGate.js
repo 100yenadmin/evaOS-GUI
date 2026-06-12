@@ -493,6 +493,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(reusableBuild, 'assert-public-release-env', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'EVAOS_BETA_REQUIRE_SIGNING', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'appleApiKey', '.github/workflows/_build-reusable.yml', issues);
+  requireText(reusableBuild, 'APPLE_API_KEY_ID', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'APPLE_API_ISSUER', '.github/workflows/_build-reusable.yml', issues);
   requireText(
     reusableBuild,
@@ -505,6 +506,14 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'Notarization failed during public beta release',
     '.github/workflows/_build-reusable.yml',
     issues
+  );
+  requireText(reusableBuild, 'Validate macOS app staple inside DMG', '.github/workflows/_build-reusable.yml', issues);
+  requireText(
+    reusableBuild,
+    'xcrun stapler validate "$APP_PATH"',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'mounted app stapler validation'
   );
 
   requireText(afterSign, 'assertPublicBetaNotarizationEnv', 'scripts/afterSign.js', issues);
