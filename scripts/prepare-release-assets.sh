@@ -33,6 +33,11 @@ mkdir -p "$OUTPUT_DIR"
 
 echo "==> Release target platforms: $RELEASE_TARGET_PLATFORMS"
 
+github_release_asset_name() {
+  local base="$1"
+  printf '%s\n' "${base// /.}"
+}
+
 # ---------------------------------------------------------------------------
 # 1) Copy all distributables (unique file names)
 # ---------------------------------------------------------------------------
@@ -57,7 +62,12 @@ else
   \) | sort)
 fi
 
-DUPLICATE_BASENAMES=$(for file in "${DISTRIBUTABLES[@]}"; do basename "$file"; done | sort | uniq -d || true)
+SANITIZED_DISTRIBUTABLE_BASENAMES=()
+for file in "${DISTRIBUTABLES[@]}"; do
+  SANITIZED_DISTRIBUTABLE_BASENAMES+=("$(github_release_asset_name "$(basename "$file")")")
+done
+
+DUPLICATE_BASENAMES=$(printf '%s\n' "${SANITIZED_DISTRIBUTABLE_BASENAMES[@]}" | sort | uniq -d || true)
 if [ -n "$DUPLICATE_BASENAMES" ]; then
   echo "::error::Found duplicate distributable basenames that would be overwritten in flat output:"
   echo "$DUPLICATE_BASENAMES"
@@ -65,7 +75,7 @@ if [ -n "$DUPLICATE_BASENAMES" ]; then
 fi
 
 for file in "${DISTRIBUTABLES[@]}"; do
-  cp -f "$file" "$OUTPUT_DIR/"
+  cp -f "$file" "$OUTPUT_DIR/$(github_release_asset_name "$(basename "$file")")"
 done
 
 if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
@@ -156,6 +166,41 @@ print(base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode("ascii
 PY
 }
 
+sanitize_updater_metadata_asset_refs() {
+  local metadata_file="$1"
+  python3 - "$metadata_file" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+lines = path.read_text().splitlines()
+pattern = re.compile(r'^(\s*(?:-\s*)?(?:url|path):\s*)(.+?)(\s*)$')
+rewritten = []
+
+for line in lines:
+    match = pattern.match(line)
+    if not match:
+        rewritten.append(line)
+        continue
+
+    prefix, value, suffix = match.groups()
+    value = value.strip()
+    if value.startswith(("http://", "https://")):
+        rewritten.append(line)
+        continue
+
+    quote = ""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        quote = value[0]
+        value = value[1:-1]
+
+    rewritten.append(f"{prefix}{quote}{value.replace(' ', '.')}{quote}{suffix}")
+
+path.write_text("\n".join(rewritten) + "\n")
+PY
+}
+
 write_macos_dmg_metadata() {
   local arch="$1"
   local output_name="$2"
@@ -172,7 +217,7 @@ write_macos_dmg_metadata() {
   local size
   local release_date
 
-  base="$(basename "$dmg")"
+  base="$(github_release_asset_name "$(basename "$dmg")")"
   version="$(metadata_version)"
   sha512="$(sha512_base64 "$dmg")"
   size="$(file_size_bytes "$dmg")"
@@ -199,13 +244,23 @@ echo "==> Writing canonical updater metadata ..."
 
 if [ -n "$MAC_X64_LATEST" ]; then
   cp -f "$MAC_X64_LATEST" "$OUTPUT_DIR/latest-mac.yml"
+  sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-mac.yml"
 else
   write_macos_dmg_metadata "x64" "latest-mac.yml"
 fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
-  [ -n "$WIN_X64_LATEST" ]    && cp -f "$WIN_X64_LATEST"    "$OUTPUT_DIR/latest.yml"
-  [ -n "$LINUX_X64_LATEST" ]  && cp -f "$LINUX_X64_LATEST"  "$OUTPUT_DIR/latest-linux.yml"
-  [ -n "$LINUX_ARM64_LATEST" ] && cp -f "$LINUX_ARM64_LATEST" "$OUTPUT_DIR/latest-linux-arm64.yml"
+  if [ -n "$WIN_X64_LATEST" ]; then
+    cp -f "$WIN_X64_LATEST" "$OUTPUT_DIR/latest.yml"
+    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest.yml"
+  fi
+  if [ -n "$LINUX_X64_LATEST" ]; then
+    cp -f "$LINUX_X64_LATEST" "$OUTPUT_DIR/latest-linux.yml"
+    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-linux.yml"
+  fi
+  if [ -n "$LINUX_ARM64_LATEST" ]; then
+    cp -f "$LINUX_ARM64_LATEST" "$OUTPUT_DIR/latest-linux-arm64.yml"
+    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-linux-arm64.yml"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -214,13 +269,17 @@ fi
 echo "==> Writing architecture-specific updater metadata ..."
 
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
-  [ -n "$WIN_ARM64_LATEST" ]  && cp -f "$WIN_ARM64_LATEST"  "$OUTPUT_DIR/latest-win-arm64.yml"
+  if [ -n "$WIN_ARM64_LATEST" ]; then
+    cp -f "$WIN_ARM64_LATEST" "$OUTPUT_DIR/latest-win-arm64.yml"
+    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-win-arm64.yml"
+  fi
 fi
 
 # electron-updater on macOS constructs the yml filename as "${channel}-mac.yml".
 # For arm64, channel is "latest-arm64", so it looks for "latest-arm64-mac.yml".
 if [ -n "$MAC_ARM64_LATEST" ]; then
   cp -f "$MAC_ARM64_LATEST" "$OUTPUT_DIR/latest-arm64-mac.yml"
+  sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-arm64-mac.yml"
 else
   write_macos_dmg_metadata "arm64" "latest-arm64-mac.yml"
 fi
@@ -243,7 +302,7 @@ assert_evaos_beta_asset_identity() {
   esac
 
   case "$base" in
-    *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+    *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
       ;;
     *)
       echo "::error::Refusing beta asset without evaOS beta identity marker: $base"

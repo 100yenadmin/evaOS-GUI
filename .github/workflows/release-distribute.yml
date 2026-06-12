@@ -219,7 +219,7 @@ jobs:
             esac
 
             case "$base" in
-              *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+              *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
                 ;;
               *)
                 echo "::error::Refusing to distribute asset without evaOS beta identity marker: $base"

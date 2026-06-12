@@ -6,6 +6,7 @@ OUTPUT_DIR="${1:-release-assets}"
 INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
 MOCK_VERSION="${MOCK_VERSION:-1.0.0}"
 MOCK_PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench Beta}"
+MOCK_PRODUCT_ASSET_NAME="${MOCK_PRODUCT_NAME// /.}"
 RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 ERRORS=0
 shopt -s nullglob
@@ -34,7 +35,7 @@ assert_evaos_beta_asset_identity() {
   esac
 
   case "$base" in
-    *"evaOS Workbench Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+    *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
       ;;
     *)
       echo "FAIL: beta asset lacks evaOS identity marker: $base"
@@ -141,16 +142,16 @@ assert_required_glob() {
 }
 
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-  assert_required_glob "macOS x64 DMG" "${MOCK_PRODUCT_NAME}-*-mac-x64.dmg"
-  assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_NAME}-*-mac-arm64.dmg"
+  assert_required_glob "macOS x64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-x64.dmg"
+  assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
 else
   REQUIRED_DISTRIBUTABLES=(
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-x64.exe"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-win-arm64.exe"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-x64.dmg"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-mac-arm64.dmg"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-x64.deb"
-    "${MOCK_PRODUCT_NAME}-${MOCK_VERSION}-linux-arm64.deb"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-x64.exe"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-arm64.exe"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-mac-x64.dmg"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-mac-arm64.dmg"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-linux-x64.deb"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-linux-arm64.deb"
   )
 
   for f in "${REQUIRED_DISTRIBUTABLES[@]}"; do
