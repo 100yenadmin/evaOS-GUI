@@ -3,11 +3,9 @@ name: Distribute evaOS Beta Release Assets
 # evaOS beta fork: manual-only distribution. This workflow must never mirror
 # upstream AionUi assets or historical upstream tags.
 #
-# All credentials / identifiers are read from repository secrets:
-#   - AWS_REGION
-#   - AWS_ROLE_ARN
-#   - AWS_S3_BUCKET
-# Do NOT hardcode these values in this file.
+# Distribution is GitHub Releases only. The workflow validates the existing
+# draft release assets and RC canary proof, then publishes the same draft
+# GitHub prerelease. No external bucket or CDN is used for this RC.
 
 on:
   # Manual trigger for smoke testing or for retrying a missed release:
@@ -35,19 +33,21 @@ on:
           - all
           - macos
 
-permissions:
-  id-token: write # required for OIDC token
-  contents: read
-  actions: read # required for gh run view/download of RC proof artifacts
-
 env:
   EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
+
+concurrency:
+  group: evaos-beta-distribute-${{ github.event.inputs.tag || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   distribute:
     name: Distribute release assets
     runs-on: ubuntu-latest
     if: github.event.inputs.beta_distribution_ack == 'evaos-beta' && vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'
+    permissions:
+      contents: write # required to publish the validated GitHub prerelease after RC proof
+      actions: read # required for gh run view/download of RC proof artifacts
     steps:
       - name: Extract version from tag
         id: version
@@ -106,25 +106,126 @@ jobs:
           echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
           echo "Validated $TAG at $TAG_COMMIT against ${EVAOS_BETA_RELEASE_BRANCH}."
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Guard against same-version overwrite
+      - name: Guard GitHub release is still draft
         env:
-          S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          DEST="s3://${S3_BUCKET}/releases/${VERSION}/"
-          COUNT=$(aws s3 ls "$DEST" 2>/dev/null | wc -l | tr -d ' ')
-          if [ "$COUNT" -gt 0 ]; then
-            echo "::error::Version directory already contains $COUNT file(s). Refusing to overwrite."
-            echo "::error::Same-version re-publish is not allowed (downstream caches would serve stale files). Release a new version instead."
-            aws s3 ls "$DEST"
-            exit 1
-          fi
+          RELEASE_JSON=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName,publishedAt)
+          node - "$RELEASE_JSON" <<'NODE'
+          const release = JSON.parse(process.argv[2]);
+          if (!release.isDraft) {
+            throw new Error(`Release ${release.tagName} is already published; refusing same-tag redistribution.`);
+          }
+          if (!release.isPrerelease) {
+            throw new Error(`Release ${release.tagName} must remain marked as a prerelease.`);
+          }
+          NODE
+
+      - name: Validate GitHub draft asset platform set
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,tagName)
+          node - "$RELEASE_JSON" "$EVAOS_RELEASE_TARGET_PLATFORMS" <<'NODE'
+          const fs = require('fs');
+          const release = JSON.parse(process.argv[2]);
+          const target = process.argv[3];
+          const assets = release.assets || [];
+          if (assets.length === 0) {
+            throw new Error(`Release ${release.tagName} has no draft assets to publish.`);
+          }
+
+          function normalizeAsset(asset) {
+            return {
+              name: asset.name || '',
+              size: Number(asset.size || 0),
+              digest: asset.digest || '',
+              state: asset.state || '',
+              contentType: asset.contentType || '',
+            };
+          }
+
+          function writeSnapshot() {
+            const snapshot = assets.map(normalizeAsset).sort((a, b) => a.name.localeCompare(b.name));
+            fs.writeFileSync('draft-release-assets.snapshot.json', `${JSON.stringify(snapshot, null, 2)}\n`);
+          }
+
+          if (target === 'all') {
+            const hasFamily = {
+              macos: assets.some((asset) => (
+                /\.(dmg|pkg)$/i.test(asset.name || '') ||
+                /^latest(?:-arm64)?-mac\.ya?ml$/i.test(asset.name || '') ||
+                /(^|[._ -])(mac|macos|darwin)([._ -]|$)/i.test(asset.name || '')
+              )),
+              windows: assets.some((asset) => (
+                /\.(exe|msi|appx|appxbundle|msix|msixbundle|nupkg)$/i.test(asset.name || '') ||
+                /^latest(?:-(?:win|windows)(?:-.+)?)?\.ya?ml$/i.test(asset.name || '') ||
+                /(^|[._ -])(win|windows)([._ -]|$)/i.test(asset.name || '')
+              )),
+              linux: assets.some((asset) => (
+                /\.(deb|rpm|appimage|snap|pacman)$/i.test(asset.name || '') ||
+                /\.tar\.(gz|xz|bz2)$/i.test(asset.name || '') ||
+                /^latest-linux(?:-.+)?\.ya?ml$/i.test(asset.name || '') ||
+                /(^|[._ -])linux([._ -]|$)/i.test(asset.name || '')
+              )),
+            };
+            const missing = Object.entries(hasFamily)
+              .filter(([, present]) => !present)
+              .map(([family]) => family);
+            if (missing.length > 0) {
+              throw new Error(`release_target_platforms=all is missing required platform families: ${missing.join(', ')}`);
+            }
+            writeSnapshot();
+            console.log(`All-platform draft asset set accepted for ${release.tagName}.`);
+            process.exit(0);
+          }
+          if (target !== 'macos') {
+            throw new Error(`Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: ${target}`);
+          }
+
+          const disallowed = [];
+          for (const asset of assets) {
+            const name = asset.name || '';
+            const lower = name.toLowerCase();
+            const reasons = [];
+            if (/\.(exe|msi|appx|appxbundle|msix|msixbundle|nupkg)$/i.test(name)) {
+              reasons.push('Windows installer/package');
+            }
+            if (/\.(deb|rpm|appimage|snap|pacman)$/i.test(name)) {
+              reasons.push('Linux installer/package');
+            }
+            if (/\.tar\.(gz|xz|bz2)$/i.test(name)) {
+              reasons.push('Linux/archive package');
+            }
+            if (/^latest(?:-(?:win|windows|linux)(?:-.+)?)?\.ya?ml$/i.test(name)) {
+              reasons.push('non-macOS updater metadata');
+            }
+            if (/\.(exe|msi)\.blockmap$/i.test(name)) {
+              reasons.push('Windows blockmap');
+            }
+            if (/(^|[._ -])(win|windows|linux)([._ -]|$)/i.test(name)) {
+              reasons.push('non-macOS platform marker');
+            }
+            if (lower.includes('appimage')) {
+              reasons.push('Linux AppImage marker');
+            }
+            if (reasons.length > 0) {
+              disallowed.push(`${name} (${[...new Set(reasons)].join(', ')})`);
+            }
+          }
+
+          if (disallowed.length > 0) {
+            throw new Error(
+              `macOS-only distribution cannot publish non-macOS draft assets for ${release.tagName}:\n` +
+              disallowed.map((entry) => `- ${entry}`).join('\n')
+            );
+          }
+          writeSnapshot();
+          console.log(`macOS-only draft asset set accepted for ${release.tagName}: ${assets.map((asset) => asset.name).join(', ')}`);
+          NODE
 
       - name: Download release assets from GitHub
         env:
@@ -160,7 +261,7 @@ jobs:
               ;;
           esac
           gh release download "$TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --dir dist \
             "${patterns[@]}"
           echo "Downloaded files:"
@@ -185,7 +286,7 @@ jobs:
 
           mkdir -p trusted-manifest
           gh run download "$RELEASE_RUN_ID" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --name "evaos-beta-release-manifest-${TAG}" \
             --dir trusted-manifest
           TRUSTED_MANIFEST_PATH=$(find trusted-manifest -type f -name evaos-beta-release-manifest.json | head -n 1)
@@ -259,7 +360,7 @@ jobs:
             exit 1
           fi
 
-          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName)
+          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion,event,workflowName)
           node - "$RUN_JSON" <<'NODE'
           const run = JSON.parse(process.argv[2]);
           if (run.conclusion !== 'success') {
@@ -276,7 +377,7 @@ jobs:
           rm -rf rc-proof-download rc-proof
           mkdir -p rc-proof-download
           gh run download "$RC_PROOF_RUN_ID" \
-            --repo "${{ github.repository }}" \
+            --repo "$GITHUB_REPOSITORY" \
             --name "evaos-beta-rc-proof-${TAG}" \
             --dir rc-proof-download
           PROOF_MANIFEST=$(find rc-proof-download -type f -name evaos-beta-rc-proof.json | head -n 1)
@@ -290,13 +391,71 @@ jobs:
 
           node scripts/evaosBetaReleaseGate.js verify-rc-proof rc-proof "$TAG"
 
-      - name: Upload assets
+      - name: Publish GitHub prerelease
         env:
-          S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          aws s3 cp dist/ "s3://${S3_BUCKET}/releases/${VERSION}/" --recursive
-          echo "Uploaded release ${VERSION}"
+          RELEASE_JSON=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName,publishedAt)
+          node - "$RELEASE_JSON" <<'NODE'
+          const fs = require('fs');
+          const release = JSON.parse(process.argv[2]);
+          if (!release.isDraft) {
+            throw new Error(`Release ${release.tagName} is already published; refusing same-tag redistribution.`);
+          }
+          if (!release.isPrerelease) {
+            throw new Error(`Release ${release.tagName} must remain marked as a prerelease.`);
+          }
+          if (!fs.existsSync('draft-release-assets.snapshot.json')) {
+            throw new Error('Missing draft-release-assets.snapshot.json from the asset validation step.');
+          }
+
+          const expected = JSON.parse(fs.readFileSync('draft-release-assets.snapshot.json', 'utf8'));
+          const current = (release.assets || []).map((asset) => ({
+            name: asset.name || '',
+            size: Number(asset.size || 0),
+            digest: asset.digest || '',
+            state: asset.state || '',
+            contentType: asset.contentType || '',
+          })).sort((a, b) => a.name.localeCompare(b.name));
+
+          if (JSON.stringify(current) !== JSON.stringify(expected)) {
+            const expectedByName = new Map(expected.map((asset) => [asset.name, asset]));
+            const currentByName = new Map(current.map((asset) => [asset.name, asset]));
+            const missing = expected.filter((asset) => !currentByName.has(asset.name)).map((asset) => asset.name);
+            const extra = current.filter((asset) => !expectedByName.has(asset.name)).map((asset) => asset.name);
+            const changed = current
+              .filter((asset) => expectedByName.has(asset.name) && JSON.stringify(asset) !== JSON.stringify(expectedByName.get(asset.name)))
+              .map((asset) => asset.name);
+            throw new Error(
+              `Release ${release.tagName} draft assets changed after validation; refusing publish.\n` +
+              `Missing: ${missing.join(', ') || 'none'}\n` +
+              `Extra: ${extra.join(', ') || 'none'}\n` +
+              `Changed metadata: ${changed.join(', ') || 'none'}`
+            );
+          }
+          NODE
+
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --prerelease=true \
+            --latest=false \
+            --verify-tag
+
+          RELEASE_JSON=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName,publishedAt)
+          node - "$RELEASE_JSON" <<'NODE'
+          const release = JSON.parse(process.argv[2]);
+          if (release.isDraft) {
+            throw new Error(`Release ${release.tagName} is still a draft after publish.`);
+          }
+          if (!release.isPrerelease) {
+            throw new Error(`Release ${release.tagName} lost prerelease status.`);
+          }
+          if (!release.publishedAt) {
+            throw new Error(`Release ${release.tagName} has no publishedAt timestamp.`);
+          }
+          NODE
 
       - name: Summary
         env:
@@ -308,4 +467,6 @@ jobs:
             echo ""
             echo "- Tag: \`${TAG}\`"
             echo "- Version: \`${VERSION}\`"
+            echo "- Channel: GitHub Releases prerelease"
+            echo "- URL: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
           } >> $GITHUB_STEP_SUMMARY
