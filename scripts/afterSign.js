@@ -3,8 +3,18 @@ const {
   assertPublicBetaNotarizationEnv,
   getEnvValue,
   isStrictPublicBetaReleaseEnv,
-  normalizeBoolean,
 } = require('./evaosBetaReleaseGate');
+
+const AMBIENT_APPLE_API_ENV_KEYS = [
+  'APPLE_API_KEY',
+  'APPLE_API_KEY_ID',
+  'APPLE_API_ISSUER',
+  'APPLE_API_INDIVIDUAL_KEY',
+  'appleApiKey',
+  'appleApiKeyId',
+  'appleApiIssuer',
+  'appleApiIndividualKey',
+];
 
 function getAppleIdNotarizationOptions(env) {
   const appleId = getEnvValue(env, { aliases: ['appleId', 'APPLE_ID'] });
@@ -26,24 +36,16 @@ function getApiKeyNotarizationOptions(env) {
   const appleApiKey = getEnvValue(env, { aliases: ['appleApiKey', 'APPLE_API_KEY'] });
   const appleApiKeyId = getEnvValue(env, { aliases: ['appleApiKeyId', 'APPLE_API_KEY_ID'] });
   const appleApiIssuer = getEnvValue(env, { aliases: ['appleApiIssuer', 'APPLE_API_ISSUER'] });
-  const individualApiKey = normalizeBoolean(
-    getEnvValue(env, { aliases: ['APPLE_API_INDIVIDUAL_KEY', 'appleApiIndividualKey'] })
-  );
 
-  if (!appleApiKey || !appleApiKeyId) {
+  if (!appleApiKey || !appleApiKeyId || !appleApiIssuer) {
     return undefined;
   }
 
-  const options = {
+  return {
     appleApiKey,
     appleApiKeyId,
+    appleApiIssuer,
   };
-
-  if (!individualApiKey && appleApiIssuer) {
-    options.appleApiIssuer = appleApiIssuer;
-  }
-
-  return options;
 }
 
 function getKeychainNotarizationOptions(env) {
@@ -66,9 +68,9 @@ function getKeychainNotarizationOptions(env) {
 }
 
 function getNotarizationOptions(env, baseOptions) {
-  const keychainOptions = getKeychainNotarizationOptions(env);
-  if (keychainOptions) {
-    return { ...baseOptions, ...keychainOptions };
+  const apiKeyOptions = getApiKeyNotarizationOptions(env);
+  if (apiKeyOptions) {
+    return { ...baseOptions, ...apiKeyOptions };
   }
 
   const appleIdOptions = getAppleIdNotarizationOptions(env);
@@ -76,12 +78,39 @@ function getNotarizationOptions(env, baseOptions) {
     return { ...baseOptions, ...appleIdOptions };
   }
 
-  const apiKeyOptions = getApiKeyNotarizationOptions(env);
-  if (apiKeyOptions) {
-    return { ...baseOptions, ...apiKeyOptions };
+  const keychainOptions = getKeychainNotarizationOptions(env);
+  if (keychainOptions) {
+    return { ...baseOptions, ...keychainOptions };
   }
 
   return undefined;
+}
+
+async function withKeychainCredentialIsolation(notarizationOptions, operation) {
+  if (!notarizationOptions || !notarizationOptions.keychainProfile) {
+    return operation();
+  }
+
+  const previousValues = new Map();
+  for (const key of AMBIENT_APPLE_API_ENV_KEYS) {
+    previousValues.set(key, {
+      exists: Object.prototype.hasOwnProperty.call(process.env, key),
+      value: process.env[key],
+    });
+    delete process.env[key];
+  }
+
+  try {
+    return await operation();
+  } finally {
+    for (const [key, previous] of previousValues.entries()) {
+      if (previous.exists && typeof previous.value === 'string') {
+        process.env[key] = previous.value;
+      } else {
+        delete process.env[key];
+      }
+    }
+  }
 }
 
 exports.default = async function afterSign(context) {
@@ -140,7 +169,7 @@ exports.default = async function afterSign(context) {
   console.log(`Starting notarization for ${appName} (${appBundleId})...`);
 
   try {
-    await notarize(notarizationOptions);
+    await withKeychainCredentialIsolation(notarizationOptions, () => notarize(notarizationOptions));
     console.log('Notarization completed successfully');
   } catch (error) {
     console.error('Notarization failed:', error);
@@ -149,3 +178,4 @@ exports.default = async function afterSign(context) {
 };
 
 exports.getNotarizationOptions = getNotarizationOptions;
+exports.withKeychainCredentialIsolation = withKeychainCredentialIsolation;

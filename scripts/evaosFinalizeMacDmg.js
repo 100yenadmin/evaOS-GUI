@@ -39,6 +39,7 @@ const API_KEY_ID_ENV = {
 const API_ISSUER_ENV = {
   aliases: ['appleApiIssuer', 'APPLE_API_ISSUER'],
 };
+const DEFAULT_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -53,6 +54,18 @@ function findDmgArtifacts(outDir) {
 }
 
 function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
+  const apiKey = getEnvValue(env, API_KEY_ENV);
+  const apiKeyId = getEnvValue(env, API_KEY_ID_ENV);
+  const apiIssuer = getEnvValue(env, API_ISSUER_ENV);
+  if (apiKey || apiKeyId || apiIssuer) {
+    if (!apiKey || !apiKeyId || !apiIssuer) {
+      throw new Error(
+        'App Store Connect API-key DMG notarization requires APPLE_API_KEY, APPLE_API_KEY_ID, and APPLE_API_ISSUER.'
+      );
+    }
+    return ['notarytool', 'submit', dmgPath, '--key', apiKey, '--key-id', apiKeyId, '--issuer', apiIssuer];
+  }
+
   const keychainProfile = getEnvValue(env, KEYCHAIN_PROFILE_ENV);
   if (keychainProfile) {
     const args = ['notarytool', 'submit', dmgPath, '--keychain-profile', keychainProfile];
@@ -74,18 +87,20 @@ function buildNotarytoolSubmitArgs(dmgPath, env = process.env) {
     return args;
   }
 
-  const apiKey = getEnvValue(env, API_KEY_ENV);
-  const apiKeyId = getEnvValue(env, API_KEY_ID_ENV);
-  const apiIssuer = getEnvValue(env, API_ISSUER_ENV);
-  if (apiKey && apiKeyId) {
-    const args = ['notarytool', 'submit', dmgPath, '--key', apiKey, '--key-id', apiKeyId];
-    if (apiIssuer) {
-      args.push('--issuer', apiIssuer);
-    }
-    return args;
+  return [];
+}
+
+function getNotaryProcessTimeoutMs(env = process.env) {
+  const rawTimeout = env.EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS;
+  if (!rawTimeout) {
+    return DEFAULT_NOTARY_PROCESS_TIMEOUT_MS;
   }
 
-  return [];
+  const timeoutMs = Number.parseInt(rawTimeout, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS must be a positive integer, got: ${rawTimeout}`);
+  }
+  return timeoutMs;
 }
 
 function run(command, args, options = {}) {
@@ -93,6 +108,25 @@ function run(command, args, options = {}) {
     stdio: 'inherit',
     ...options,
   });
+}
+
+function runNotarytoolSubmit(submitArgs, env = process.env) {
+  const timeoutMs = getNotaryProcessTimeoutMs(env);
+  try {
+    run('xcrun', submitArgs, { timeout: timeoutMs });
+  } catch (error) {
+    const timedOut =
+      error &&
+      (error.code === 'ETIMEDOUT' ||
+        error.signal === 'SIGTERM' ||
+        String(error.message || '').toLowerCase().includes('timed out'));
+    if (timedOut) {
+      throw new Error(
+        `notarytool submit timed out after ${timeoutMs}ms; check for hidden keychain prompts, credential-mode drift, or Apple notarization stalls.`
+      );
+    }
+    throw error;
+  }
 }
 
 function finalizeDmg(dmgPath, env = process.env) {
@@ -118,8 +152,15 @@ function finalizeDmg(dmgPath, env = process.env) {
   if (submitArgs.length === 0) {
     throw new Error('evaOS DMG finalization could not build notarytool submit arguments.');
   }
-  submitArgs.push('--wait', '--timeout', env.EVAOS_DMG_NOTARY_TIMEOUT || '15m', '--no-progress');
-  run('xcrun', submitArgs);
+  submitArgs.push(
+    '--wait',
+    '--timeout',
+    env.EVAOS_DMG_NOTARY_TIMEOUT || '15m',
+    '--no-progress',
+    '--output-format',
+    'json'
+  );
+  runNotarytoolSubmit(submitArgs, env);
   run('xcrun', ['stapler', 'staple', dmgPath]);
   run('xcrun', ['stapler', 'validate', dmgPath]);
   run('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose', dmgPath]);
@@ -171,4 +212,5 @@ module.exports = {
   buildNotarytoolSubmitArgs,
   finalizeMacDmgs,
   findDmgArtifacts,
+  getNotaryProcessTimeoutMs,
 };
