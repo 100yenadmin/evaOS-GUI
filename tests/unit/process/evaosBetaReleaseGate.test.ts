@@ -21,6 +21,8 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
   default: (context: unknown) => Promise<void>;
+  buildAppNotarytoolSubmitArgs: (archivePath: string, notarizationOptions: Record<string, string>) => string[];
+  getAppNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotarizationOptions: (
     env: Record<string, string | undefined>,
     baseOptions: Record<string, string>
@@ -203,6 +205,47 @@ describe('evaOS beta release gate', () => {
       keychainProfile: 'evaos-workbench-notary',
       keychain: '/secure/evaos-release-signing.keychain-db',
     });
+  });
+
+  it('builds bounded afterSign app notarytool submit args', () => {
+    expect(
+      afterSign.buildAppNotarytoolSubmitArgs('/tmp/evaOS.zip', {
+        appleApiKey: '/secure/AuthKey_ABC123.p8',
+        appleApiKeyId: 'ABC123',
+        appleApiIssuer: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+      })
+    ).toEqual([
+      'notarytool',
+      'submit',
+      '/tmp/evaOS.zip',
+      '--key',
+      '/secure/AuthKey_ABC123.p8',
+      '--key-id',
+      'ABC123',
+      '--issuer',
+      'd5631714-a680-4b4b-8156-b4ed624c0845',
+    ]);
+
+    expect(
+      afterSign.buildAppNotarytoolSubmitArgs('/tmp/evaOS.zip', {
+        keychainProfile: 'evaos-workbench-notary',
+        keychain: '/secure/evaos-release-signing.keychain-db',
+      })
+    ).toEqual([
+      'notarytool',
+      'submit',
+      '/tmp/evaOS.zip',
+      '--keychain-profile',
+      'evaos-workbench-notary',
+      '--keychain',
+      '/secure/evaos-release-signing.keychain-db',
+    ]);
+
+    expect(afterSign.getAppNotaryProcessTimeoutMs({})).toBe(20 * 60 * 1000);
+    expect(afterSign.getAppNotaryProcessTimeoutMs({ EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS: '90000' })).toBe(90000);
+    expect(() => afterSign.getAppNotaryProcessTimeoutMs({ EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS: '-1' })).toThrow(
+      /positive integer/
+    );
   });
 
   it('isolates keychain notarization from ambient App Store Connect API env', async () => {

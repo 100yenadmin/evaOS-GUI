@@ -1,3 +1,6 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { execFileSync, execSync } = require('child_process');
 const {
   assertPublicBetaNotarizationEnv,
@@ -15,6 +18,7 @@ const AMBIENT_APPLE_API_ENV_KEYS = [
   'appleApiIssuer',
   'appleApiIndividualKey',
 ];
+const DEFAULT_APP_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
 
 function getAppleIdNotarizationOptions(env) {
   const appleId = getEnvValue(env, { aliases: ['appleId', 'APPLE_ID'] });
@@ -113,12 +117,94 @@ async function withKeychainCredentialIsolation(notarizationOptions, operation) {
   }
 }
 
+function getAppNotaryProcessTimeoutMs(env = process.env) {
+  const rawTimeout = env.EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS;
+  if (!rawTimeout) {
+    return DEFAULT_APP_NOTARY_PROCESS_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number.parseInt(rawTimeout, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS must be a positive integer, got: ${rawTimeout}`);
+  }
+  return timeoutMs;
+}
+
 function runTrustCommand(label, command, args, runCommand = execFileSync) {
   try {
     runCommand(command, args, { stdio: 'inherit' });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${label} failed: ${message}`);
+  }
+}
+
+function buildAppNotarytoolSubmitArgs(archivePath, notarizationOptions) {
+  if (notarizationOptions.appleApiKey || notarizationOptions.appleApiKeyId || notarizationOptions.appleApiIssuer) {
+    if (!notarizationOptions.appleApiKey || !notarizationOptions.appleApiKeyId || !notarizationOptions.appleApiIssuer) {
+      throw new Error(
+        'App Store Connect API-key app notarization requires APPLE_API_KEY, APPLE_API_KEY_ID, and APPLE_API_ISSUER.'
+      );
+    }
+    return [
+      'notarytool',
+      'submit',
+      archivePath,
+      '--key',
+      notarizationOptions.appleApiKey,
+      '--key-id',
+      notarizationOptions.appleApiKeyId,
+      '--issuer',
+      notarizationOptions.appleApiIssuer,
+    ];
+  }
+
+  if (notarizationOptions.appleId || notarizationOptions.appleIdPassword || notarizationOptions.teamId) {
+    if (!notarizationOptions.appleId || !notarizationOptions.appleIdPassword || !notarizationOptions.teamId) {
+      throw new Error('Apple ID app notarization requires APPLE_ID, APPLE_ID_PASSWORD, and TEAM_ID.');
+    }
+    return [
+      'notarytool',
+      'submit',
+      archivePath,
+      '--apple-id',
+      notarizationOptions.appleId,
+      '--password',
+      notarizationOptions.appleIdPassword,
+      '--team-id',
+      notarizationOptions.teamId,
+    ];
+  }
+
+  if (notarizationOptions.keychainProfile) {
+    const args = ['notarytool', 'submit', archivePath, '--keychain-profile', notarizationOptions.keychainProfile];
+    if (notarizationOptions.keychain) {
+      args.push('--keychain', notarizationOptions.keychain);
+    }
+    return args;
+  }
+
+  throw new Error('No app notarization credential mode was provided.');
+}
+
+function runAppNotarytoolSubmit(submitArgs, env = process.env, runCommand = execFileSync) {
+  const timeoutMs = getAppNotaryProcessTimeoutMs(env);
+  try {
+    runCommand('xcrun', submitArgs, { stdio: 'inherit', timeout: timeoutMs });
+  } catch (error) {
+    const timedOut =
+      error &&
+      (error.code === 'ETIMEDOUT' ||
+        error.signal === 'SIGTERM' ||
+        String(error.message || '')
+          .toLowerCase()
+          .includes('timed out'));
+    if (timedOut) {
+      throw new Error(
+        `app notarytool submit timed out after ${timeoutMs}ms; check for hidden prompts, credential-mode drift, or Apple notarization stalls.`
+      );
+    }
+    throw error;
   }
 }
 
@@ -133,16 +219,43 @@ function stapleAndValidateApp(appPath, runCommand = execFileSync) {
   );
 }
 
+function notarizeAndStapleApp(appPath, notarizationOptions, env = process.env, runCommand = execFileSync) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-app-notary-'));
+  try {
+    const archivePath = path.join(tempDir, `${path.basename(appPath, '.app')}.zip`);
+    runTrustCommand(
+      'App notarization archive',
+      'ditto',
+      ['-c', '-k', '--sequesterRsrc', '--keepParent', path.basename(appPath), archivePath],
+      (command, args, options) =>
+        runCommand(command, args, {
+          ...options,
+          cwd: path.dirname(appPath),
+        })
+    );
+
+    const submitArgs = buildAppNotarytoolSubmitArgs(archivePath, notarizationOptions);
+    submitArgs.push(
+      '--wait',
+      '--timeout',
+      env.EVAOS_APP_NOTARY_TIMEOUT || '15m',
+      '--no-progress',
+      '--output-format',
+      'json'
+    );
+    runAppNotarytoolSubmit(submitArgs, env, runCommand);
+    stapleAndValidateApp(appPath, runCommand);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function afterSign(context) {
   const { electronPlatformName, appOutDir } = context;
 
   if (electronPlatformName !== 'darwin') {
     return;
   }
-
-  // Lazy-load notarize because @electron/notarize is ESM-only
-  const { notarize } = await import('@electron/notarize');
-
   const appName = context.packager.appInfo.productFilename;
   const appBundleId = context.packager.appInfo.id;
   const appPath = `${appOutDir}/${appName}.app`;
@@ -189,8 +302,9 @@ async function afterSign(context) {
   console.log(`Starting notarization for ${appName} (${appBundleId})...`);
 
   try {
-    await withKeychainCredentialIsolation(notarizationOptions, () => notarize(notarizationOptions));
-    stapleAndValidateApp(appPath);
+    await withKeychainCredentialIsolation(notarizationOptions, () =>
+      notarizeAndStapleApp(appPath, notarizationOptions, process.env)
+    );
     console.log('Notarization, app stapling, and Gatekeeper validation completed successfully');
   } catch (error) {
     console.error('Notarization failed:', error);
@@ -200,6 +314,9 @@ async function afterSign(context) {
 
 module.exports = afterSign;
 module.exports.default = afterSign;
+module.exports.buildAppNotarytoolSubmitArgs = buildAppNotarytoolSubmitArgs;
+module.exports.getAppNotaryProcessTimeoutMs = getAppNotaryProcessTimeoutMs;
 module.exports.getNotarizationOptions = getNotarizationOptions;
+module.exports.notarizeAndStapleApp = notarizeAndStapleApp;
 module.exports.stapleAndValidateApp = stapleAndValidateApp;
 module.exports.withKeychainCredentialIsolation = withKeychainCredentialIsolation;
