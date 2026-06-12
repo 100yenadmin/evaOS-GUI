@@ -44,7 +44,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '13-creative-studio.png',
     artifactName: 'screenshots/13-creative-studio.png',
     closeoutState: 'loaded',
-    settledMarkers: ['Creative Studio', 'External creative generation workspace'],
+    settledMarkers: ['Creative Studio', 'hosted Creative Studio workspace'],
   },
   {
     manifestRowId: 'connected-apps',

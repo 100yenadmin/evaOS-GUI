@@ -192,7 +192,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
       'body:text("Creative Studio")',
-      'body:text("External creative generation workspace")',
+      'body:text("hosted Creative Studio workspace")',
     ],
     notes: [
       'This is a post-parity-fix target route. Screenshot should prove the shell handoff/guard state, not external Comfy Cloud readiness.',

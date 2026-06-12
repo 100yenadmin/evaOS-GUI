@@ -170,7 +170,7 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
       planId: 'creative-studio',
       screenshot: '13-creative-studio.png',
       artifactName: 'screenshots/13-creative-studio.png',
-      settledMarkers: ['Creative Studio', 'External creative generation workspace'],
+      settledMarkers: ['Creative Studio', 'hosted Creative Studio workspace'],
     },
     testId: 'tests/unit/evaos/evaosRoutes.dom.test.tsx',
   },
