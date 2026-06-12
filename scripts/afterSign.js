@@ -133,7 +133,7 @@ function stapleAndValidateApp(appPath, runCommand = execFileSync) {
   );
 }
 
-exports.default = async function afterSign(context) {
+async function afterSign(context) {
   const { electronPlatformName, appOutDir } = context;
 
   if (electronPlatformName !== 'darwin') {
@@ -196,8 +196,10 @@ exports.default = async function afterSign(context) {
     console.error('Notarization failed:', error);
     throw error;
   }
-};
+}
 
-exports.getNotarizationOptions = getNotarizationOptions;
-exports.stapleAndValidateApp = stapleAndValidateApp;
-exports.withKeychainCredentialIsolation = withKeychainCredentialIsolation;
+module.exports = afterSign;
+module.exports.default = afterSign;
+module.exports.getNotarizationOptions = getNotarizationOptions;
+module.exports.stapleAndValidateApp = stapleAndValidateApp;
+module.exports.withKeychainCredentialIsolation = withKeychainCredentialIsolation;

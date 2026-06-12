@@ -19,6 +19,8 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
 };
 const afterSign = require('../../../scripts/afterSign.js') as {
+  (context: unknown): Promise<void>;
+  default: (context: unknown) => Promise<void>;
   getNotarizationOptions: (
     env: Record<string, string | undefined>,
     baseOptions: Record<string, string>
@@ -48,6 +50,11 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.isStrictPublicBetaReleaseEnv({ EVAOS_BETA_PUBLIC_RELEASE: 'true' })).toBe(true);
     expect(releaseGate.isStrictPublicBetaReleaseEnv({ EVAOS_BETA_REQUIRE_SIGNING: '1' })).toBe(true);
     expect(releaseGate.isStrictPublicBetaReleaseEnv({ EVAOS_BETA_PUBLIC_RELEASE: 'false' })).toBe(false);
+  });
+
+  it('exports the electron-builder afterSign hook as a callable CommonJS module', () => {
+    expect(typeof afterSign).toBe('function');
+    expect(afterSign.default).toBe(afterSign);
   });
 
   it('fails closed when public beta signing inputs are missing', () => {
