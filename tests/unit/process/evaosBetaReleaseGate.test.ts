@@ -23,10 +23,15 @@ const afterSign = require('../../../scripts/afterSign.js') as {
     env: Record<string, string | undefined>,
     baseOptions: Record<string, string>
   ) => Record<string, string> | undefined;
+  withKeychainCredentialIsolation: <T>(
+    notarizationOptions: Record<string, string> | undefined,
+    operation: () => Promise<T> | T
+  ) => Promise<T>;
 };
 const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
   buildNotarytoolSubmitArgs: (dmgPath: string, env: Record<string, string | undefined>) => string[];
   findDmgArtifacts: (outDir: string) => string[];
+  getNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
 };
 
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -81,7 +86,7 @@ describe('evaOS beta release gate', () => {
         APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
         APPLE_API_KEY_ID: 'ABC123',
       })
-    ).toThrow(/appleApiIssuer|APPLE_API_INDIVIDUAL_KEY/);
+    ).toThrow(/appleApiIssuer|APPLE_API_ISSUER/);
     expect(() =>
       releaseGate.assertPublicBetaNotarizationEnv({
         APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
@@ -95,7 +100,7 @@ describe('evaOS beta release gate', () => {
         APPLE_API_KEY_ID: 'ABC123',
         APPLE_API_INDIVIDUAL_KEY: 'true',
       })
-    ).not.toThrow();
+    ).toThrow(/appleApiIssuer|APPLE_API_ISSUER/);
     expect(() =>
       releaseGate.assertPublicBetaNotarizationEnv({
         NOTARY_PROFILE: 'evaos-workbench-notary',
@@ -116,9 +121,6 @@ describe('evaOS beta release gate', () => {
           APPLE_ID: 'release@example.com',
           APPLE_ID_PASSWORD: 'app-password',
           TEAM_ID: 'TEAMID',
-          APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
-          APPLE_API_KEY_ID: 'ABC123',
-          APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
         },
         baseOptions
       )
@@ -127,6 +129,25 @@ describe('evaOS beta release gate', () => {
       appleId: 'release@example.com',
       appleIdPassword: 'app-password',
       teamId: 'TEAMID',
+    });
+
+    expect(
+      afterSign.getNotarizationOptions(
+        {
+          APPLE_ID: 'release@example.com',
+          APPLE_ID_PASSWORD: 'app-password',
+          TEAM_ID: 'TEAMID',
+          APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+          APPLE_API_KEY_ID: 'ABC123',
+          APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+        },
+        baseOptions
+      )
+    ).toMatchObject({
+      ...baseOptions,
+      appleApiKey: '/secure/AuthKey_ABC123.p8',
+      appleApiKeyId: 'ABC123',
+      appleApiIssuer: 'd5631714-a680-4b4b-8156-b4ed624c0845',
     });
 
     expect(
@@ -150,12 +171,11 @@ describe('evaOS beta release gate', () => {
         {
           APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
           APPLE_API_KEY_ID: 'ABC123',
-          APPLE_API_ISSUER: 'should-be-omitted',
           APPLE_API_INDIVIDUAL_KEY: 'true',
         },
         baseOptions
       )
-    ).not.toHaveProperty('appleApiIssuer');
+    ).toBeUndefined();
 
     expect(
       afterSign.getNotarizationOptions(
@@ -172,6 +192,55 @@ describe('evaOS beta release gate', () => {
       keychainProfile: 'evaos-workbench-notary',
       keychain: '/secure/evaos-release-signing.keychain-db',
     });
+  });
+
+  it('isolates keychain notarization from ambient App Store Connect API env', async () => {
+    const keys = [
+      'APPLE_API_KEY',
+      'APPLE_API_KEY_ID',
+      'APPLE_API_ISSUER',
+      'APPLE_API_INDIVIDUAL_KEY',
+      'appleApiKey',
+      'appleApiKeyId',
+      'appleApiIssuer',
+      'appleApiIndividualKey',
+    ];
+    const previous = new Map(keys.map((key) => [key, process.env[key]]));
+    const assignedValues: Record<string, string> = {
+      APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+      APPLE_API_KEY_ID: 'ABC123',
+      APPLE_API_ISSUER: 'issuer',
+      APPLE_API_INDIVIDUAL_KEY: 'true',
+      appleApiKey: '/secure/AuthKey_ABC123.p8',
+      appleApiKeyId: 'ABC123',
+      appleApiIssuer: 'issuer',
+      appleApiIndividualKey: 'true',
+    };
+
+    try {
+      for (const [key, value] of Object.entries(assignedValues)) {
+        process.env[key] = value;
+      }
+
+      await afterSign.withKeychainCredentialIsolation({ keychainProfile: 'evaos-workbench-notary' }, async () => {
+        for (const key of keys) {
+          expect(process.env[key]).toBeUndefined();
+        }
+      });
+
+      for (const key of keys) {
+        expect(process.env[key]).toBe(assignedValues[key]);
+      }
+    } finally {
+      for (const key of keys) {
+        const value = previous.get(key);
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   it('builds notarytool submit args for DMG finalization credential paths', () => {
@@ -213,6 +282,7 @@ describe('evaOS beta release gate', () => {
         APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
         APPLE_API_KEY_ID: 'ABC123',
         APPLE_API_ISSUER: 'd5631714-a680-4b4b-8156-b4ed624c0845',
+        NOTARY_PROFILE: 'evaos-workbench-notary',
       })
     ).toEqual([
       'notarytool',
@@ -225,6 +295,22 @@ describe('evaOS beta release gate', () => {
       '--issuer',
       'd5631714-a680-4b4b-8156-b4ed624c0845',
     ]);
+
+    expect(() =>
+      macDmgFinalizer.buildNotarytoolSubmitArgs('/release/evaOS.dmg', {
+        APPLE_API_KEY: '/secure/AuthKey_ABC123.p8',
+        APPLE_API_KEY_ID: 'ABC123',
+        NOTARY_PROFILE: 'evaos-workbench-notary',
+      })
+    ).toThrow(/APPLE_API_ISSUER/);
+  });
+
+  it('uses a bounded external process timeout for DMG notarytool submit', () => {
+    expect(macDmgFinalizer.getNotaryProcessTimeoutMs({})).toBe(20 * 60 * 1000);
+    expect(macDmgFinalizer.getNotaryProcessTimeoutMs({ EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS: '90000' })).toBe(90000);
+    expect(() => macDmgFinalizer.getNotaryProcessTimeoutMs({ EVAOS_DMG_NOTARY_PROCESS_TIMEOUT_MS: 'invalid' })).toThrow(
+      /positive integer/
+    );
   });
 
   it('finds macOS DMG artifacts in stable sort order', () => {

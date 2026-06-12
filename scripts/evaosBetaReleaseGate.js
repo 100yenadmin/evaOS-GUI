@@ -65,7 +65,7 @@ const API_KEY_ISSUER_ENV = {
 const API_KEY_INDIVIDUAL_ACK_ENV = {
   name: 'APPLE_API_INDIVIDUAL_KEY',
   aliases: ['APPLE_API_INDIVIDUAL_KEY', 'appleApiIndividualKey'],
-  description: 'explicit acknowledgement that the API key is an individual App Store Connect key',
+  description: 'legacy individual App Store Connect API key acknowledgement; not accepted for CI public beta releases',
 };
 
 const KEYCHAIN_PROFILE_NOTARIZATION_ENV = {
@@ -161,15 +161,24 @@ function hasIndividualApiKeyAck(env) {
 }
 
 function formatMissingApiKeyIssuer(env) {
-  if (getEnvValue(env, API_KEY_ISSUER_ENV) || hasIndividualApiKeyAck(env)) {
+  if (getEnvValue(env, API_KEY_ISSUER_ENV)) {
     return [];
   }
-  return [
-    `${API_KEY_ISSUER_ENV.name} (${API_KEY_ISSUER_ENV.description}) or ${API_KEY_INDIVIDUAL_ACK_ENV.name} (${API_KEY_INDIVIDUAL_ACK_ENV.description})`,
-  ];
+  return [`${API_KEY_ISSUER_ENV.name} (${API_KEY_ISSUER_ENV.description})`];
 }
 
 function formatMissingNotarizationEnv(env) {
+  const apiKeyMissing = formatMissing(REQUIRED_API_KEY_NOTARIZATION_ENV, env);
+  const apiKeyIssuerMissing = apiKeyMissing.length === 0 ? formatMissingApiKeyIssuer(env) : [];
+  const hasApiKeyInput =
+    hasAny(REQUIRED_API_KEY_NOTARIZATION_ENV, env) ||
+    Boolean(getEnvValue(env, API_KEY_ISSUER_ENV)) ||
+    hasIndividualApiKeyAck(env);
+
+  if (hasApiKeyInput) {
+    return [...apiKeyMissing, ...apiKeyIssuerMissing];
+  }
+
   if (getEnvValue(env, KEYCHAIN_PROFILE_NOTARIZATION_ENV)) {
     return [];
   }
@@ -179,21 +188,11 @@ function formatMissingNotarizationEnv(env) {
     return [];
   }
 
-  const apiKeyMissing = formatMissing(REQUIRED_API_KEY_NOTARIZATION_ENV, env);
-  const apiKeyIssuerMissing = apiKeyMissing.length === 0 ? formatMissingApiKeyIssuer(env) : [];
   if (apiKeyMissing.length === 0 && apiKeyIssuerMissing.length === 0) {
     return [];
   }
 
   const hasAppleIdInput = hasAny(REQUIRED_APPLE_ID_NOTARIZATION_ENV, env);
-  const hasApiKeyInput =
-    hasAny(REQUIRED_API_KEY_NOTARIZATION_ENV, env) ||
-    Boolean(getEnvValue(env, API_KEY_ISSUER_ENV)) ||
-    hasIndividualApiKeyAck(env);
-
-  if (hasApiKeyInput && !hasAppleIdInput) {
-    return [...apiKeyMissing, ...apiKeyIssuerMissing];
-  }
   if (hasAppleIdInput && !hasApiKeyInput) {
     return appleIdMissing;
   }
@@ -494,7 +493,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(reusableBuild, 'assert-public-release-env', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'EVAOS_BETA_REQUIRE_SIGNING', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'appleApiKey', '.github/workflows/_build-reusable.yml', issues);
-  requireText(reusableBuild, 'APPLE_API_INDIVIDUAL_KEY', '.github/workflows/_build-reusable.yml', issues);
+  requireText(reusableBuild, 'APPLE_API_ISSUER', '.github/workflows/_build-reusable.yml', issues);
+  requireText(
+    reusableBuild,
+    'Preflight macOS notarization credentials',
+    '.github/workflows/_build-reusable.yml',
+    issues
+  );
   requireText(
     reusableBuild,
     'Notarization failed during public beta release',

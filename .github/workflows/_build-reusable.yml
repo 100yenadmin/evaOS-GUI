@@ -266,8 +266,111 @@ jobs:
           teamId: ${{ secrets.TEAM_ID }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
         run: node scripts/evaosBetaReleaseGate.js assert-public-release-env
+
+      - name: Preflight macOS notarization credentials (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
+          appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import subprocess
+          import sys
+
+          TRUTHY = {"1", "true", "yes", "on", "evaos-beta"}
+
+          def get(*names):
+              for name in names:
+                  value = os.environ.get(name, "").strip()
+                  if value:
+                      return value
+              return ""
+
+          strict = (
+              get("EVAOS_BETA_PUBLIC_RELEASE").lower() in TRUTHY
+              or get("EVAOS_BETA_REQUIRE_SIGNING").lower() in TRUTHY
+          )
+          if not strict:
+              print("Skipping notarization preflight outside strict evaOS beta release mode.")
+              sys.exit(0)
+
+          api_key = get("APPLE_API_KEY", "appleApiKey")
+          api_key_id = get("APPLE_API_KEY_ID", "appleApiKeyId")
+          api_issuer = get("APPLE_API_ISSUER", "appleApiIssuer")
+          profile = get("NOTARY_PROFILE", "KEYCHAIN_PROFILE", "keychainProfile")
+          keychain = get("NOTARY_KEYCHAIN", "RELEASE_KEYCHAIN", "KEYCHAIN", "keychain")
+
+          if api_key or api_key_id or api_issuer:
+              missing = [
+                  name
+                  for name, value in [
+                      ("APPLE_API_KEY", api_key),
+                      ("APPLE_API_KEY_ID", api_key_id),
+                      ("APPLE_API_ISSUER", api_issuer),
+                  ]
+                  if not value
+              ]
+              if missing:
+                  print(
+                      "::error::App Store Connect API-key notarization requires "
+                      + ", ".join(missing)
+                      + "; issuer-less individual API keys are not accepted for this GitHub release path."
+                  )
+                  sys.exit(1)
+              cmd = [
+                  "xcrun",
+                  "notarytool",
+                  "history",
+                  "--key",
+                  api_key,
+                  "--key-id",
+                  api_key_id,
+                  "--issuer",
+                  api_issuer,
+                  "--output-format",
+                  "json",
+                  "--no-progress",
+              ]
+              mode = "App Store Connect API key"
+          elif profile:
+              cmd = [
+                  "xcrun",
+                  "notarytool",
+                  "history",
+                  "--keychain-profile",
+                  profile,
+                  "--output-format",
+                  "json",
+                  "--no-progress",
+              ]
+              if keychain:
+                  cmd.extend(["--keychain", keychain])
+              mode = "notarytool keychain profile"
+          else:
+              print("::error::Strict evaOS beta release requires App Store Connect API key or notarytool profile credentials.")
+              sys.exit(1)
+
+          print(f"Running bounded notarization credential preflight using {mode}.")
+          try:
+              subprocess.run(cmd, check=True, timeout=90, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+          except subprocess.TimeoutExpired:
+              print("::error::notarytool history timed out after 90s; credentials may be prompting or Apple notarization is unavailable.")
+              sys.exit(1)
+          except subprocess.CalledProcessError as exc:
+              stderr = (exc.stderr or "").strip()
+              if stderr:
+                  print(stderr[:4000], file=sys.stderr)
+              print("::error::notarytool credential preflight failed.")
+              sys.exit(exc.returncode or 1)
+
+          print("notarytool credential preflight completed.")
+          PY
 
       # macOS code signing certificate installation
       - name: Setup macOS code signing (macOS only)
@@ -442,7 +545,6 @@ jobs:
           teamId: ${{ secrets.TEAM_ID }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
           identity: ${{ secrets.IDENTITY }}
           CSC_NAME: ${{ secrets.IDENTITY }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -539,7 +641,6 @@ jobs:
           teamId: ${{ secrets.TEAM_ID }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_INDIVIDUAL_KEY: ${{ vars.APPLE_API_INDIVIDUAL_KEY }}
           identity: ${{ secrets.IDENTITY }}
           CSC_NAME: ${{ secrets.IDENTITY }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
