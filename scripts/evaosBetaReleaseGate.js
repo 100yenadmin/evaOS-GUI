@@ -537,6 +537,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(afterSign, 'EVAOS_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_APP_NOTARY_POLL_INTERVAL_MS', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
+  requireText(afterSign, "killSignal: 'SIGKILL'", 'scripts/afterSign.js', issues, 'hard-kill bounded Apple commands');
   requireText(afterSign, 'notarytool info', 'scripts/afterSign.js', issues, 'app notarization status polling');
   requireText(afterSign, 'getNotarizationOptions', 'scripts/afterSign.js', issues);
   if (afterSign.includes('@electron/notarize')) {

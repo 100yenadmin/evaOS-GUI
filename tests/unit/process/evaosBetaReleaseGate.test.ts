@@ -56,6 +56,7 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
   buildNotarytoolInfoArgs: (submissionId: string, env: Record<string, string | undefined>) => string[];
   buildNotarytoolSubmitArgs: (dmgPath: string, env: Record<string, string | undefined>) => string[];
   findDmgArtifacts: (outDir: string) => string[];
+  getDmgTrustProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryPollIntervalMs: (env: Record<string, string | undefined>) => number;
   getNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
@@ -317,6 +318,7 @@ describe('evaOS beta release gate', () => {
           stdio: ['ignore', 'pipe', 'inherit'],
           encoding: 'utf8',
           timeout: 30000,
+          killSignal: 'SIGKILL',
         },
       },
     ]);
@@ -355,6 +357,7 @@ describe('evaOS beta release gate', () => {
           stdio: ['ignore', 'pipe', 'inherit'],
           encoding: 'utf8',
           timeout: 30000,
+          killSignal: 'SIGKILL',
         },
       },
     ]);
@@ -420,17 +423,17 @@ describe('evaOS beta release gate', () => {
       {
         command: 'xcrun',
         args: ['stapler', 'staple', '/release/evaOS Workbench Beta.app'],
-        options: { stdio: 'inherit', timeout: 5 * 60 * 1000 },
+        options: { stdio: 'inherit', timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' },
       },
       {
         command: 'xcrun',
         args: ['stapler', 'validate', '/release/evaOS Workbench Beta.app'],
-        options: { stdio: 'inherit', timeout: 5 * 60 * 1000 },
+        options: { stdio: 'inherit', timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' },
       },
       {
         command: 'spctl',
         args: ['--assess', '--type', 'execute', '--verbose', '/release/evaOS Workbench Beta.app'],
-        options: { stdio: 'inherit', timeout: 5 * 60 * 1000 },
+        options: { stdio: 'inherit', timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' },
       },
     ]);
   });
@@ -523,6 +526,8 @@ describe('evaOS beta release gate', () => {
     ).toBe(45000);
     expect(macDmgFinalizer.getNotaryPollIntervalMs({})).toBe(15 * 1000);
     expect(macDmgFinalizer.getNotaryPollIntervalMs({ EVAOS_DMG_NOTARY_POLL_INTERVAL_MS: '1000' })).toBe(1000);
+    expect(macDmgFinalizer.getDmgTrustProcessTimeoutMs({})).toBe(5 * 60 * 1000);
+    expect(macDmgFinalizer.getDmgTrustProcessTimeoutMs({ EVAOS_DMG_TRUST_PROCESS_TIMEOUT_MS: '30000' })).toBe(30000);
   });
 
   it('finds macOS DMG artifacts in stable sort order', () => {
