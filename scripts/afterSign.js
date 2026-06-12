@@ -158,6 +158,7 @@ function isProcessTimeoutError(error) {
     error &&
     (error.code === 'ETIMEDOUT' ||
       error.signal === 'SIGTERM' ||
+      error.signal === 'SIGKILL' ||
       String(error.message || '')
         .toLowerCase()
         .includes('timed out'))
@@ -167,7 +168,7 @@ function isProcessTimeoutError(error) {
 function runTrustCommand(label, command, args, runCommand = execFileSync, options = {}, env = process.env) {
   const timeoutMs = getAppTrustProcessTimeoutMs(env);
   try {
-    runCommand(command, args, { stdio: 'inherit', timeout: timeoutMs, ...options });
+    runCommand(command, args, { stdio: 'inherit', timeout: timeoutMs, killSignal: 'SIGKILL', ...options });
   } catch (error) {
     if (isProcessTimeoutError(error)) {
       throw new Error(
@@ -196,6 +197,7 @@ function runNotarytoolJson(label, args, env = process.env, runCommand = execFile
       stdio: ['ignore', 'pipe', 'inherit'],
       encoding: 'utf8',
       timeout: timeoutMs,
+      killSignal: 'SIGKILL',
     });
     return parseNotarytoolJson(label, output);
   } catch (error) {

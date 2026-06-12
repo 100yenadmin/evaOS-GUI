@@ -42,6 +42,7 @@ const API_ISSUER_ENV = {
 const DEFAULT_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
 const DEFAULT_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
+const DEFAULT_DMG_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -141,13 +142,6 @@ function getNotaryPollIntervalMs(env = process.env) {
   return timeoutMs;
 }
 
-function run(command, args, options = {}) {
-  execFileSync(command, args, {
-    stdio: 'inherit',
-    ...options,
-  });
-}
-
 function parseNotarytoolJson(label, output) {
   const text = Buffer.isBuffer(output) ? output.toString('utf8') : String(output || '');
   try {
@@ -163,10 +157,41 @@ function isProcessTimeoutError(error) {
     error &&
     (error.code === 'ETIMEDOUT' ||
       error.signal === 'SIGTERM' ||
+      error.signal === 'SIGKILL' ||
       String(error.message || '')
         .toLowerCase()
         .includes('timed out'))
   );
+}
+
+function getDmgTrustProcessTimeoutMs(env = process.env) {
+  const rawTimeout = env.EVAOS_DMG_TRUST_PROCESS_TIMEOUT_MS;
+  if (!rawTimeout) {
+    return DEFAULT_DMG_TRUST_PROCESS_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number.parseInt(rawTimeout, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`EVAOS_DMG_TRUST_PROCESS_TIMEOUT_MS must be a positive integer, got: ${rawTimeout}`);
+  }
+  return timeoutMs;
+}
+
+function run(command, args, options = {}, env = process.env) {
+  const timeoutMs = getDmgTrustProcessTimeoutMs(env);
+  try {
+    execFileSync(command, args, {
+      stdio: 'inherit',
+      timeout: timeoutMs,
+      killSignal: 'SIGKILL',
+      ...options,
+    });
+  } catch (error) {
+    if (isProcessTimeoutError(error)) {
+      throw new Error(`${command} ${args.join(' ')} timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  }
 }
 
 function runNotarytoolJson(label, args, env = process.env) {
@@ -176,6 +201,7 @@ function runNotarytoolJson(label, args, env = process.env) {
       stdio: ['ignore', 'pipe', 'inherit'],
       encoding: 'utf8',
       timeout: timeoutMs,
+      killSignal: 'SIGKILL',
     });
     return parseNotarytoolJson(label, output);
   } catch (error) {
@@ -320,6 +346,7 @@ module.exports = {
   buildNotarytoolSubmitArgs,
   finalizeMacDmgs,
   findDmgArtifacts,
+  getDmgTrustProcessTimeoutMs,
   getNotaryCommandProcessTimeoutMs,
   getNotaryPollIntervalMs,
   getNotaryProcessTimeoutMs,
