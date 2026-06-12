@@ -514,6 +514,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/_build-reusable.yml',
     issues
   );
+  requireText(
+    reusableBuild,
+    'timeout-minutes: 45',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'bounded macOS release packaging step'
+  );
   requireText(reusableBuild, 'Validate macOS app staple inside DMG', '.github/workflows/_build-reusable.yml', issues);
   requireText(
     reusableBuild,
@@ -525,8 +532,12 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
 
   requireText(afterSign, 'assertPublicBetaNotarizationEnv', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'buildAppNotarytoolSubmitArgs', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'buildAppNotarytoolInfoArgs', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_APP_NOTARY_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'EVAOS_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'EVAOS_APP_NOTARY_POLL_INTERVAL_MS', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', 'scripts/afterSign.js', issues);
+  requireText(afterSign, 'notarytool info', 'scripts/afterSign.js', issues, 'app notarization status polling');
   requireText(afterSign, 'getNotarizationOptions', 'scripts/afterSign.js', issues);
   if (afterSign.includes('@electron/notarize')) {
     issues.push('scripts/afterSign.js: afterSign must use the bounded evaOS notarytool path, not @electron/notarize');
