@@ -81,6 +81,10 @@
       "description": "현재 설치에 필요한 로컬 리소스가 없어 managed runtime를 시작할 수 없습니다. 최신 evaOS Workbench를 다운로드하여 다시 설치하세요. 다시 설치한 후에도 문제가 반복되면 보안 또는 바이러스 백신 소프트웨어가 managed runtime를 격리했는지 확인하세요.",
       "downloadLatest": "최신 버전 다운로드",
       "sendDiagnostics": "진단 보고서 보내기"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "파일 추가",

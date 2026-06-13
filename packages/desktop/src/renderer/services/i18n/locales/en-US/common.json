@@ -81,6 +81,10 @@
       "description": "This installation is missing required local resources, so managed runtime cannot start. Please download and reinstall the latest evaOS Workbench Beta. If the issue returns after reinstalling, check whether security or antivirus software quarantined managed runtime.",
       "downloadLatest": "Download latest",
       "sendDiagnostics": "Send diagnostics"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench Beta package architecture mismatch",
+      "description": "This evaOS Workbench Beta package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "Add files",

@@ -81,6 +81,10 @@
       "description": "Esta instalação está faltando recursos locais necessários, portanto o managed runtime não pode ser iniciado. Por favor, baixe e reinstale a versão mais recente do evaOS Workbench.",
       "downloadLatest": "Baixar mais recente",
       "sendDiagnostics": "Enviar diagnósticos"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "Adicionar arquivos",

@@ -169,6 +169,8 @@ export type I18nKey =
   | 'common.backendStartup.incompleteInstallation.downloadLatest'
   | 'common.backendStartup.incompleteInstallation.sendDiagnostics'
   | 'common.backendStartup.incompleteInstallation.title'
+  | 'common.backendStartup.packageArchitectureMismatch.description'
+  | 'common.backendStartup.packageArchitectureMismatch.title'
   | 'common.browse'
   | 'common.cancel'
   | 'common.clear'

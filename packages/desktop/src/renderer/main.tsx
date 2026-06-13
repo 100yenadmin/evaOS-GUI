@@ -238,12 +238,21 @@ const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFailureInfo
   const { t } = useTranslation();
 
   const isIncompatibleRuntime = failure.reason === 'backend_incompatible_runtime';
+  const isPackageArchitectureMismatch = failure.reason === 'backend_package_architecture_mismatch';
   const title = isIncompatibleRuntime
     ? t('common.backendStartup.incompatibleRuntime.title')
-    : t('common.backendStartup.incompleteInstallation.title');
+    : isPackageArchitectureMismatch
+      ? t('common.backendStartup.packageArchitectureMismatch.title')
+      : t('common.backendStartup.incompleteInstallation.title');
   const description = isIncompatibleRuntime
     ? t('common.backendStartup.incompatibleRuntime.description')
-    : t('common.backendStartup.incompleteInstallation.description');
+    : isPackageArchitectureMismatch
+      ? t('common.backendStartup.packageArchitectureMismatch.description', {
+          packageArch: failure.packageArch ?? 'x64',
+          deviceArch: failure.deviceArch ?? 'arm64',
+          expectedArch: failure.expectedDownloadArch ?? 'arm64',
+        })
+      : t('common.backendStartup.incompleteInstallation.description');
   const requiredVersions = failure.requiredVersions?.map((version) => `GLIBC_${version}`).join(', ');
 
   const handleDownload = () => {
@@ -285,6 +294,7 @@ const backendStartupFailure = window.__backendStartupFailure;
 const shouldShowBackendStartupFailureDialog =
   backendStartupFailure?.reason === 'backend_incompatible_runtime' ||
   backendStartupFailure?.reason === 'backend_incomplete_installation' ||
+  backendStartupFailure?.reason === 'backend_package_architecture_mismatch' ||
   backendStartupFailure?.reason === 'backend_startup_failed';
 if (backendStartupFailure && shouldShowBackendStartupFailureDialog) {
   root.render(

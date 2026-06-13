@@ -81,6 +81,10 @@
       "description": "当前安装缺少必要的本地资源，managed runtime 无法启动。请下载并重新安装最新版 evaOS Workbench；如果重新安装后仍然出现，请检查系统安全软件或杀毒软件是否隔离了 managed runtime。",
       "downloadLatest": "下载最新版",
       "sendDiagnostics": "发送诊断报告"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench 安装包架构不匹配",
+      "description": "当前 evaOS Workbench 安装包是 {{packageArch}}，但这台 Mac 是 {{deviceArch}}。你可能下载了错误的安装包，请重新下载并安装 {{expectedArch}} 版本。"
     }
   },
   "fileAttach.addFiles": "添加文件",

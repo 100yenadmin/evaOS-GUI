@@ -81,6 +81,10 @@
       "description": "Bu kurulumda gerekli yerel kaynaklar eksik, bu yüzden managed runtime başlatılamıyor. Lütfen en son evaOS Workbench sürümünü indirip yeniden kurun. Yeniden kurulumdan sonra sorun tekrarlarsa güvenlik veya antivirüs yazılımının managed runtime'u karantinaya alıp almadığını kontrol edin.",
       "downloadLatest": "Son sürümü indir",
       "sendDiagnostics": "Tanı raporu gönder"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "Dosya ekle",

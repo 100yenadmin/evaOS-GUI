@@ -80,6 +80,10 @@
       "description": "В этой установке отсутствуют обязательные локальные ресурсы, поэтому managed runtime не может запуститься. Загрузите и переустановите последнюю версию evaOS Workbench. Если проблема повторится после переустановки, проверьте, не поместило ли защитное или антивирусное ПО managed runtime в карантин.",
       "downloadLatest": "Скачать последнюю версию",
       "sendDiagnostics": "Отправить диагностику"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "Добавить файлы",

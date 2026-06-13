@@ -245,6 +245,24 @@ export async function captureBackendStartupFailure(error: unknown): Promise<void
     if (failureInfo.runtime) {
       scope.setTag('aionui.backend_startup.runtime', failureInfo.runtime);
     }
+    if (failureInfo.backendBoundaryCode) {
+      scope.setTag('aionui.backend_startup.boundary_code', failureInfo.backendBoundaryCode);
+    }
+    if (failureInfo.backendBoundaryStage) {
+      scope.setTag('aionui.backend_startup.boundary_stage', failureInfo.backendBoundaryStage);
+    }
+    if (failureInfo.packageArch) {
+      scope.setTag('aionui.backend_startup.package_arch', failureInfo.packageArch);
+    }
+    if (failureInfo.deviceArch) {
+      scope.setTag('aionui.backend_startup.device_arch', failureInfo.deviceArch);
+    }
+    if (failureInfo.expectedDownloadArch) {
+      scope.setTag('aionui.backend_startup.expected_download_arch', failureInfo.expectedDownloadArch);
+    }
+    if (typeof failureInfo.isRosettaTranslated === 'boolean') {
+      scope.setTag('aionui.backend_startup.rosetta_translated', getBooleanTagValue(failureInfo.isRosettaTranslated));
+    }
     if (typeof details?.stage === 'string') {
       scope.setTag('aionui.backend_startup.stage', details.stage);
     }

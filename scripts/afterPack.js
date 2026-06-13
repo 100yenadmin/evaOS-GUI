@@ -25,9 +25,41 @@ function getBackendBinaryName(electronPlatformName) {
   return electronPlatformName === 'win32' ? 'aioncore.exe' : 'aioncore';
 }
 
+function getManagedNodeBinaryName(electronPlatformName) {
+  return electronPlatformName === 'win32' ? 'node.exe' : 'node';
+}
+
+function getManagedNodeExecutableParts(electronPlatformName) {
+  return electronPlatformName === 'win32'
+    ? [getManagedNodeBinaryName(electronPlatformName)]
+    : ['bin', getManagedNodeBinaryName(electronPlatformName)];
+}
+
 function requirePackagedResource(resourcesDir, relativePath, missing) {
   const absolutePath = path.join(resourcesDir, relativePath);
   if (!fs.existsSync(absolutePath)) {
+    missing.push(relativePath);
+  }
+}
+
+function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformName, missing) {
+  const executableParts = getManagedNodeExecutableParts(electronPlatformName);
+  const relativePath = path.join('bundled-aioncore', runtimeKey, 'managed-resources', 'node', '*', ...executableParts);
+  const nodeRoot = path.join(resourcesDir, 'bundled-aioncore', runtimeKey, 'managed-resources', 'node');
+  if (!fs.existsSync(nodeRoot)) {
+    missing.push(relativePath);
+    return;
+  }
+
+  const versions = fs
+    .readdirSync(nodeRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const hasExecutable = versions.some((version) => {
+    const executablePath = path.join(nodeRoot, version, ...executableParts);
+    return fs.existsSync(executablePath);
+  });
+  if (!hasExecutable) {
     missing.push(relativePath);
   }
 }
@@ -43,6 +75,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   );
   requirePackagedResource(resourcesDir, path.join('bundled-aioncore', runtimeKey, 'manifest.json'), missing);
   requirePackagedResource(resourcesDir, path.join('bundled-aioncore', runtimeKey, 'managed-resources'), missing);
+  requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformName, missing);
 
   if (missing.length > 0) {
     throw new Error(`Packaged app is missing required resource(s): ${missing.join(', ')}`);
@@ -238,3 +271,5 @@ module.exports = async function afterPack(context) {
 
   console.log(`✅ All native modules rebuilt successfully for ${targetArch}\n`);
 };
+
+module.exports.verifyBundledResources = verifyBundledResources;

@@ -81,6 +81,10 @@
       "description": "У цьому встановленні бракує потрібних локальних ресурсів, тому managed runtime не може запуститися. Завантажте та перевстановіть останню версію evaOS Workbench. Якщо проблема повториться після перевстановлення, перевірте, чи захисне або антивірусне ПЗ не помістило managed runtime у карантин.",
       "downloadLatest": "Завантажити останню версію",
       "sendDiagnostics": "Надіслати діагностику"
+    },
+    "packageArchitectureMismatch": {
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "Додати файли",
