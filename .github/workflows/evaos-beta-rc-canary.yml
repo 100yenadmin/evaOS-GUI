@@ -276,8 +276,27 @@ jobs:
           set -euo pipefail
           rm -rf "$PROOF_DIR"
           mkdir -p "$PROOF_DIR/release-assets" "$PROOF_DIR/trusted-manifest"
-          cp -R release-assets/. "$PROOF_DIR/release-assets/"
+          cp release-assets/evaos-beta-release-manifest.json "$PROOF_DIR/release-assets/evaos-beta-release-manifest.json"
+          find release-assets -maxdepth 1 -type f -name "*.yml" -exec cp {} "$PROOF_DIR/release-assets/" \;
           cp trusted-manifest/evaos-beta-release-manifest.json "$PROOF_DIR/trusted-manifest/evaos-beta-release-manifest.json"
+          node - release-assets/evaos-beta-release-manifest.json "$PROOF_DIR/release-assets/release-assets-reference.json" <<'NODE'
+          const fs = require('fs');
+          const [manifestPath, outputPath] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const reference = {
+            schema: 'evaos-beta-release-assets-reference/v1',
+            tag: manifest.tag,
+            repository: manifest.repository,
+            releaseRunId: manifest.releaseRunId,
+            releaseCommit: manifest.releaseCommit,
+            assets: (manifest.assets || []).map((asset) => ({
+              name: asset.name,
+              size: asset.size,
+              sha256: asset.sha256,
+            })),
+          };
+          fs.writeFileSync(outputPath, `${JSON.stringify(reference, null, 2)}\n`);
+          NODE
           node scripts/evaosBetaReleaseGate.js write-rc-proof-template "$PROOF_DIR" "$TAG"
 
       - name: Install fallback and beta apps

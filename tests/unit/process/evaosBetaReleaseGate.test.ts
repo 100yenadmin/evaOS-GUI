@@ -90,6 +90,74 @@ function writeArm64TrustEvidence(proofDir: string) {
   fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench Beta.app: accepted\n');
 }
 
+function writeProofReleaseAssetsReference(
+  proofDir: string,
+  tag: string,
+  options: { includeTrustedManifest?: boolean } = {}
+) {
+  const sourceReleaseAssetsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-source-'));
+  const proofReleaseAssetsDir = path.join(proofDir, 'release-assets');
+  const version = '2.1.10-evaos-beta.0';
+
+  fs.mkdirSync(proofReleaseAssetsDir, { recursive: true });
+  fs.writeFileSync(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.dmg`), 'mac');
+  fs.writeFileSync(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.zip`), 'zip');
+  fs.writeFileSync(
+    path.join(sourceReleaseAssetsDir, 'latest-arm64-mac.yml'),
+    `path: evaOS Workbench Beta-${version}-mac-arm64.dmg\n`
+  );
+
+  releaseGate.createReleaseManifest(sourceReleaseAssetsDir, tag, {
+    GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+    GITHUB_WORKFLOW: 'Build and Release',
+    GITHUB_RUN_ID: '12345',
+    GITHUB_RUN_ATTEMPT: '1',
+    EVAOS_BETA_RELEASE_COMMIT: 'abc123',
+    EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
+    EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+  });
+
+  const sourceManifestPath = path.join(sourceReleaseAssetsDir, 'evaos-beta-release-manifest.json');
+  const proofManifestPath = path.join(proofReleaseAssetsDir, 'evaos-beta-release-manifest.json');
+  fs.copyFileSync(sourceManifestPath, proofManifestPath);
+  fs.copyFileSync(
+    path.join(sourceReleaseAssetsDir, 'latest-arm64-mac.yml'),
+    path.join(proofReleaseAssetsDir, 'latest-arm64-mac.yml')
+  );
+
+  const releaseManifest = JSON.parse(fs.readFileSync(sourceManifestPath, 'utf8'));
+  fs.writeFileSync(
+    path.join(proofReleaseAssetsDir, 'release-assets-reference.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-beta-release-assets-reference/v1',
+        tag,
+        repository: releaseManifest.repository,
+        releaseRunId: releaseManifest.releaseRunId,
+        releaseCommit: releaseManifest.releaseCommit,
+        assets: releaseManifest.assets.map((asset: { name: string; size: number; sha256: string }) => ({
+          name: asset.name,
+          size: asset.size,
+          sha256: asset.sha256,
+        })),
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  if (options.includeTrustedManifest !== false) {
+    fs.mkdirSync(path.join(proofDir, 'trusted-manifest'), { recursive: true });
+    fs.copyFileSync(sourceManifestPath, path.join(proofDir, 'trusted-manifest', 'evaos-beta-release-manifest.json'));
+  }
+
+  return {
+    cleanup: () => fs.rmSync(sourceReleaseAssetsDir, { recursive: true, force: true }),
+    proofManifestPath,
+    sourceReleaseAssetsDir,
+  };
+}
+
 describe('evaOS beta release gate', () => {
   it('detects strict public beta release mode', () => {
     expect(releaseGate.normalizeBoolean('true')).toBe(true);
@@ -844,31 +912,10 @@ describe('evaOS beta release gate', () => {
   it('verifies a release candidate proof packet with install, launch, updater, rollback, and support evidence', () => {
     const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-'));
-    const releaseAssetsDir = path.join(proofDir, 'release-assets');
+    let cleanupReleaseAssets = () => {};
 
     try {
-      fs.mkdirSync(releaseAssetsDir, { recursive: true });
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip');
-      fs.writeFileSync(
-        path.join(releaseAssetsDir, 'latest-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
-      );
-
-      releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
-        GITHUB_WORKFLOW: 'Build and Release',
-        GITHUB_RUN_ID: '12345',
-        GITHUB_RUN_ATTEMPT: '1',
-        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
-        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
-        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
-      });
-      fs.mkdirSync(path.join(proofDir, 'trusted-manifest'), { recursive: true });
-      fs.copyFileSync(
-        path.join(releaseAssetsDir, 'evaos-beta-release-manifest.json'),
-        path.join(proofDir, 'trusted-manifest', 'evaos-beta-release-manifest.json')
-      );
+      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
 
       releaseGate.writeRcProofTemplate(proofDir, tag);
       const manifestPath = path.join(proofDir, 'evaos-beta-rc-proof.json');
@@ -915,6 +962,7 @@ describe('evaOS beta release gate', () => {
         })
       ).toBe(true);
     } finally {
+      cleanupReleaseAssets();
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
   });
@@ -922,26 +970,12 @@ describe('evaOS beta release gate', () => {
   it('requires a trusted workflow manifest artifact for release candidate proof', () => {
     const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-untrusted-'));
-    const releaseAssetsDir = path.join(proofDir, 'release-assets');
+    let cleanupReleaseAssets = () => {};
 
     try {
-      fs.mkdirSync(releaseAssetsDir, { recursive: true });
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip');
-      fs.writeFileSync(
-        path.join(releaseAssetsDir, 'latest-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
-      );
-
-      releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
-        GITHUB_WORKFLOW: 'Build and Release',
-        GITHUB_RUN_ID: '12345',
-        GITHUB_RUN_ATTEMPT: '1',
-        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
-        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
-        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
-      });
+      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag, {
+        includeTrustedManifest: false,
+      }).cleanup;
       releaseGate.writeRcProofTemplate(proofDir, tag);
 
       expect(() =>
@@ -952,6 +986,30 @@ describe('evaOS beta release gate', () => {
         })
       ).toThrow(/trusted release manifest/);
     } finally {
+      cleanupReleaseAssets();
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects release candidate proof packets that embed release asset bytes', () => {
+    const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-embedded-assets-'));
+    let cleanupReleaseAssets = () => {};
+
+    try {
+      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
+      releaseGate.writeRcProofTemplate(proofDir, tag);
+      fs.writeFileSync(path.join(proofDir, 'release-assets', 'evaOS Workbench Beta-embedded-mac-arm64.dmg'), 'mac');
+
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+        })
+      ).toThrow(/must not embed release asset bytes/);
+    } finally {
+      cleanupReleaseAssets();
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
   });
@@ -959,31 +1017,10 @@ describe('evaOS beta release gate', () => {
   it('does not allow release candidate proof JSON to weaken built-in evidence markers', () => {
     const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-weakened-'));
-    const releaseAssetsDir = path.join(proofDir, 'release-assets');
+    let cleanupReleaseAssets = () => {};
 
     try {
-      fs.mkdirSync(releaseAssetsDir, { recursive: true });
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip');
-      fs.writeFileSync(
-        path.join(releaseAssetsDir, 'latest-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
-      );
-
-      releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
-        GITHUB_WORKFLOW: 'Build and Release',
-        GITHUB_RUN_ID: '12345',
-        GITHUB_RUN_ATTEMPT: '1',
-        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
-        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
-        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
-      });
-      fs.mkdirSync(path.join(proofDir, 'trusted-manifest'), { recursive: true });
-      fs.copyFileSync(
-        path.join(releaseAssetsDir, 'evaos-beta-release-manifest.json'),
-        path.join(proofDir, 'trusted-manifest', 'evaos-beta-release-manifest.json')
-      );
+      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
 
       releaseGate.writeRcProofTemplate(proofDir, tag);
       const manifestPath = path.join(proofDir, 'evaos-beta-rc-proof.json');
@@ -1001,6 +1038,7 @@ describe('evaOS beta release gate', () => {
         })
       ).toThrow(/built-in RC proof gate markers/);
     } finally {
+      cleanupReleaseAssets();
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
   });
@@ -1008,31 +1046,10 @@ describe('evaOS beta release gate', () => {
   it('fails release candidate proof verification when rollback evidence is incomplete', () => {
     const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-missing-'));
-    const releaseAssetsDir = path.join(proofDir, 'release-assets');
+    let cleanupReleaseAssets = () => {};
 
     try {
-      fs.mkdirSync(releaseAssetsDir, { recursive: true });
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      fs.writeFileSync(path.join(releaseAssetsDir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip');
-      fs.writeFileSync(
-        path.join(releaseAssetsDir, 'latest-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
-      );
-
-      releaseGate.createReleaseManifest(releaseAssetsDir, tag, {
-        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
-        GITHUB_WORKFLOW: 'Build and Release',
-        GITHUB_RUN_ID: '12345',
-        GITHUB_RUN_ATTEMPT: '1',
-        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
-        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
-        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
-      });
-      fs.mkdirSync(path.join(proofDir, 'trusted-manifest'), { recursive: true });
-      fs.copyFileSync(
-        path.join(releaseAssetsDir, 'evaos-beta-release-manifest.json'),
-        path.join(proofDir, 'trusted-manifest', 'evaos-beta-release-manifest.json')
-      );
+      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
 
       releaseGate.writeRcProofTemplate(proofDir, tag);
       const manifestPath = path.join(proofDir, 'evaos-beta-rc-proof.json');
@@ -1076,6 +1093,7 @@ describe('evaOS beta release gate', () => {
         })
       ).toThrow(/rollback-smoke/);
     } finally {
+      cleanupReleaseAssets();
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
   });

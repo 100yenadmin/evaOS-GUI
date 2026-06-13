@@ -117,7 +117,7 @@ GitHub RC canary workflow:
 
 The proof packet must include:
 
-- `release-assets/` with the audited `evaos-beta-release-manifest.json`.
+- `release-assets/` with the audited `evaos-beta-release-manifest.json`, updater metadata, and `release-assets-reference.json` listing release asset names, sizes, and SHA256 values without embedding DMG/ZIP installer bytes.
 - `trusted-manifest/evaos-beta-release-manifest.json` downloaded from the release workflow artifact, not copied from the mutable GitHub Release assets.
 - `codesign-dmg-macos-arm64.txt`, `stapler-dmg-macos-arm64.txt`, and `spctl-dmg-macos-arm64.txt`.
 - `codesign-macos-arm64.txt`, `stapler-macos-arm64.txt`, and `spctl-macos-arm64.txt`.

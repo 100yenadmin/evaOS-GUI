@@ -148,6 +148,7 @@ const REQUIRED_RC_PROOF_CHECKS = [
     requiredText: ['100yenadmin/evaOS-GUI', 'released macOS app remains the fallback'],
   },
 ];
+const RC_RELEASE_ASSETS_REFERENCE_NAME = 'release-assets-reference.json';
 
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
@@ -556,6 +557,20 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'scripts/evaosBetaReleaseGate.js verify-rc-proof',
     '.github/workflows/evaos-beta-rc-canary.yml',
     issues
+  );
+  requireText(
+    rcCanary,
+    'release-assets-reference.json',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'lightweight RC proof release asset checksum reference'
+  );
+  requireText(
+    rcCanary,
+    'cp release-assets/evaos-beta-release-manifest.json',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'RC proof should copy the manifest instead of embedding release asset bytes'
   );
   requireText(rcCanary, 'actions/upload-artifact', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   requireText(
@@ -1037,10 +1052,7 @@ function verifyGitHubRun(manifest, env = process.env) {
   }
 }
 
-function verifyReleaseManifest(outputDir, tag, env = process.env) {
-  assertPublicDistributionTag(tag);
-
-  const manifest = selectTrustedManifest(outputDir, env);
+function assertReleaseManifestMetadata(manifest, tag, env = process.env) {
   if (manifest.schema !== 'evaos-beta-release-manifest/v1') {
     throw new Error(`Unexpected release manifest schema: ${manifest.schema}`);
   }
@@ -1067,6 +1079,24 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
   if (expectedCommit && manifest.releaseCommit !== expectedCommit) {
     throw new Error(`Release manifest commit ${manifest.releaseCommit} does not match tag commit ${expectedCommit}.`);
   }
+}
+
+function assertReleaseManifestAssetList(manifest) {
+  const assetNames = (manifest.assets || []).map((asset) => asset.name).filter(Boolean);
+  if (!assetNames.some((name) => name.endsWith('.dmg'))) {
+    throw new Error('Release manifest verification requires at least one macOS DMG asset.');
+  }
+  if (!assetNames.some((name) => name.endsWith('.yml'))) {
+    throw new Error('Release manifest verification requires updater metadata.');
+  }
+}
+
+function verifyReleaseManifest(outputDir, tag, env = process.env) {
+  assertPublicDistributionTag(tag);
+
+  const manifest = selectTrustedManifest(outputDir, env);
+  assertReleaseManifestMetadata(manifest, tag, env);
+  assertReleaseManifestAssetList(manifest);
 
   const manifestAssets = new Map((manifest.assets || []).map((asset) => [asset.name, asset]));
   const actualAssets = listReleaseAssetFiles(outputDir);
@@ -1142,6 +1172,72 @@ function assertConcreteBlockedReason(reason, label) {
   }
 }
 
+function assertRcProofDoesNotEmbedReleaseAssets(proofDir) {
+  const embedded = [];
+
+  function walk(dir) {
+    for (const name of fs.readdirSync(dir)) {
+      const file = path.join(dir, name);
+      const stat = fs.statSync(file);
+      if (stat.isDirectory()) {
+        walk(file);
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      if (['.dmg', '.zip', '.exe', '.msi', '.deb'].includes(path.extname(name).toLowerCase())) {
+        embedded.push(path.relative(proofDir, file));
+      }
+    }
+  }
+
+  walk(proofDir);
+
+  if (embedded.length > 0) {
+    throw new Error(`RC proof packet must not embed release asset bytes: ${embedded.join(', ')}`);
+  }
+}
+
+function assertRcReleaseAssetsReference(referencePath, tag, releaseManifest) {
+  const reference = readManifestFile(referencePath);
+  if (reference.schema !== 'evaos-beta-release-assets-reference/v1') {
+    throw new Error(`Unexpected RC release assets reference schema: ${reference.schema}`);
+  }
+  if (reference.tag !== tag) {
+    throw new Error(`RC release assets reference tag ${reference.tag} does not match requested tag ${tag}.`);
+  }
+  if (reference.repository !== releaseManifest.repository) {
+    throw new Error(`RC release assets reference repository ${reference.repository} does not match release manifest.`);
+  }
+  if (String(reference.releaseRunId || '') !== String(releaseManifest.releaseRunId || '')) {
+    throw new Error(`RC release assets reference run id ${reference.releaseRunId} does not match release manifest.`);
+  }
+  if (String(reference.releaseCommit || '') !== String(releaseManifest.releaseCommit || '')) {
+    throw new Error(`RC release assets reference commit ${reference.releaseCommit} does not match release manifest.`);
+  }
+
+  const manifestAssets = new Map((releaseManifest.assets || []).map((asset) => [asset.name, asset]));
+  const referencedAssets = new Map((reference.assets || []).map((asset) => [asset.name, asset]));
+  if (manifestAssets.size === 0 || referencedAssets.size === 0) {
+    throw new Error('RC release assets reference must list release asset names, sizes, and SHA256 values.');
+  }
+
+  for (const [name, asset] of manifestAssets.entries()) {
+    const referenceAsset = referencedAssets.get(name);
+    if (!referenceAsset) {
+      throw new Error(`RC release assets reference is missing asset: ${name}`);
+    }
+    if (referenceAsset.size !== asset.size || referenceAsset.sha256 !== asset.sha256) {
+      throw new Error(`RC release assets reference does not match manifest checksum: ${name}`);
+    }
+  }
+
+  for (const name of referencedAssets.keys()) {
+    if (!manifestAssets.has(name)) {
+      throw new Error(`RC release assets reference lists unknown asset: ${name}`);
+    }
+  }
+}
+
 function writeRcProofTemplate(proofDir, tag) {
   assertPublicDistributionTag(tag);
   fs.mkdirSync(proofDir, { recursive: true });
@@ -1151,6 +1247,7 @@ function writeRcProofTemplate(proofDir, tag) {
     tag,
     repository: '100yenadmin/evaOS-GUI',
     releaseAssetsDir: 'release-assets',
+    releaseAssetsReferencePath: `release-assets/${RC_RELEASE_ASSETS_REFERENCE_NAME}`,
     trustedManifestPath: 'trusted-manifest/evaos-beta-release-manifest.json',
     macosX64: {
       status: 'blocked',
@@ -1211,6 +1308,7 @@ function verifyRcProof(proofDir, tag, env = process.env) {
     throw new Error(`RC proof release assets directory is missing: ${releaseAssetsDir}`);
   }
   requireExistingRelativeFile(resolvedReleaseAssetsDir, RELEASE_MANIFEST_NAME, 'RC proof release manifest');
+  const releaseManifest = readManifestFile(path.join(resolvedReleaseAssetsDir, RELEASE_MANIFEST_NAME));
 
   const trustedManifestRelativePath = manifest.trustedManifestPath || '';
   const trustedManifestPath = requireExistingRelativeFile(
@@ -1218,10 +1316,23 @@ function verifyRcProof(proofDir, tag, env = process.env) {
     trustedManifestRelativePath,
     'RC proof trusted release manifest'
   );
-  verifyReleaseManifest(resolvedReleaseAssetsDir, tag, {
-    ...env,
-    EVAOS_BETA_TRUSTED_MANIFEST_PATH: trustedManifestPath,
-  });
+  const trustedManifest = readManifestFile(trustedManifestPath);
+  if (canonicalManifestJson(releaseManifest) !== canonicalManifestJson(trustedManifest)) {
+    throw new Error(`RC proof release manifest does not match trusted workflow artifact ${trustedManifestPath}.`);
+  }
+  assertReleaseManifestMetadata(trustedManifest, tag, env);
+  assertReleaseManifestAssetList(trustedManifest);
+  verifyReleaseProvenance(trustedManifest, env);
+
+  const releaseAssetsReferenceRelativePath =
+    manifest.releaseAssetsReferencePath || path.join(releaseAssetsDir, RC_RELEASE_ASSETS_REFERENCE_NAME);
+  const releaseAssetsReferencePath = requireExistingRelativeFile(
+    proofDir,
+    releaseAssetsReferenceRelativePath,
+    'RC proof release assets reference'
+  );
+  assertRcReleaseAssetsReference(releaseAssetsReferencePath, tag, trustedManifest);
+  assertRcProofDoesNotEmbedReleaseAssets(proofDir);
 
   const checksById = new Map((manifest.checks || []).map((check) => [check.id, check]));
   for (const required of REQUIRED_RC_PROOF_CHECKS) {
