@@ -21,6 +21,7 @@
     "evaos:local-shell-smoke": "node scripts/evaosLocalShellSmoke.js",
     "evaos:installed-app-proof": "node scripts/evaosInstalledAppProductProof.js",
     "evaos:native-companion-state-proof": "node scripts/evaosNativeCompanionInstalledStateProof.js",
+    "evaos:upstream-guardrails": "node scripts/evaosUpstreamGuardrailAudit.js",
     "evaos:settled-shell-smoke-plan": "node scripts/evaosSettledShellSmokePlan.js",
     "evaos:live-canary-fixtures": "node scripts/evaosLiveCanaryEnvInventory.js --provisioning-template",
     "evaos:provision-live-canary-fixtures": "node scripts/evaosProvisionLiveCanaryFixtures.js provision",
