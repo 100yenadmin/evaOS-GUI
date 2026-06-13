@@ -32,6 +32,15 @@ on:
         description: 'Non-secret issue/packet reference proving broker login/session fallback state.'
         required: true
         type: string
+      trusted_manifest_run_id:
+        description: 'Optional workflow run id that uploaded the trusted release manifest artifact. Required for local-signed-dmg-fallback releases.'
+        required: false
+        type: string
+      local_signed_dmg_fallback_ack:
+        description: 'Type evaos-local-signed-dmg only when verifying locally finalized DMGs.'
+        required: false
+        default: ''
+        type: string
       release_target_platforms:
         description: 'Release target platforms for asset verification: all keeps Windows/macOS/Linux; macos verifies only macOS assets.'
         required: false
@@ -62,6 +71,7 @@ jobs:
           ACK: ${{ github.event.inputs.beta_rc_ack }}
           TAG: ${{ github.event.inputs.tag }}
           BROKER_SESSION_PROOF_REF: ${{ github.event.inputs.broker_session_proof_ref }}
+          LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: |
           set -euo pipefail
           if [ "$ACK" != "evaos-beta-rc" ]; then
@@ -84,6 +94,10 @@ jobs:
           fi
           if [ -z "$BROKER_SESSION_PROOF_REF" ] || [[ "$BROKER_SESSION_PROOF_REF" == *"Bearer "* ]]; then
             echo "::error::broker_session_proof_ref must be a non-secret issue or packet reference."
+            exit 1
+          fi
+          if [ -n "$LOCAL_SIGNED_DMG_FALLBACK_ACK" ] && [ "$LOCAL_SIGNED_DMG_FALLBACK_ACK" != "evaos-local-signed-dmg" ]; then
+            echo "::error::Wrong local signed DMG fallback acknowledgement. Type evaos-local-signed-dmg."
             exit 1
           fi
           if [ "$(uname -m)" != "arm64" ]; then
@@ -127,6 +141,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           TAG: ${{ github.event.inputs.tag }}
+          TRUSTED_MANIFEST_RUN_ID: ${{ github.event.inputs.trusted_manifest_run_id }}
+          LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
@@ -166,6 +182,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           TAG: ${{ github.event.inputs.tag }}
+          TRUSTED_MANIFEST_RUN_ID: ${{ github.event.inputs.trusted_manifest_run_id }}
+          LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: |
           set -euo pipefail
           if [ ! -f release-assets/evaos-beta-release-manifest.json ]; then
@@ -174,13 +192,26 @@ jobs:
           fi
 
           RELEASE_RUN_ID=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('release-assets/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseRunId || ''));")
+          RELEASE_PROVENANCE_MODE=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('release-assets/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseProvenance?.mode || 'github-release-workflow'));")
           if [ -z "$RELEASE_RUN_ID" ]; then
             echo "::error::Release manifest is missing releaseRunId."
             exit 1
           fi
+          DOWNLOAD_RUN_ID="$RELEASE_RUN_ID"
+          if [ "$RELEASE_PROVENANCE_MODE" = "local-signed-dmg-fallback" ]; then
+            if [ "$LOCAL_SIGNED_DMG_FALLBACK_ACK" != "evaos-local-signed-dmg" ]; then
+              echo "::error::Local signed DMG fallback release requires local_signed_dmg_fallback_ack=evaos-local-signed-dmg."
+              exit 1
+            fi
+            if [ -z "$TRUSTED_MANIFEST_RUN_ID" ]; then
+              echo "::error::Local signed DMG fallback release requires trusted_manifest_run_id."
+              exit 1
+            fi
+            DOWNLOAD_RUN_ID="$TRUSTED_MANIFEST_RUN_ID"
+          fi
 
           mkdir -p trusted-manifest
-          gh run download "$RELEASE_RUN_ID" \
+          gh run download "$DOWNLOAD_RUN_ID" \
             --repo "${{ github.repository }}" \
             --name "evaos-beta-release-manifest-${TAG}" \
             --dir trusted-manifest
@@ -198,6 +229,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
+          EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
           EVAOS_RELEASE_TARGET_PLATFORMS: ${{ env.EVAOS_RELEASE_TARGET_PLATFORMS }}
         run: |
           set -euo pipefail
@@ -334,7 +366,16 @@ jobs:
         run: |
           set -euo pipefail
           BETA_APP="/Applications/$BETA_APP_NAME"
+          BETA_DMG=$(find release-assets \( -name "*mac-arm64*.dmg" -o -name "*arm64*.dmg" \) -type f | sort | head -n 1)
+          if [ -z "$BETA_DMG" ]; then
+            echo "::error::Release assets do not include a macOS arm64 DMG."
+            exit 1
+          fi
+          codesign --verify --verbose=2 "$BETA_DMG" > "$PROOF_DIR/codesign-dmg-macos-arm64.txt" 2>&1
+          xcrun stapler validate "$BETA_DMG" > "$PROOF_DIR/stapler-dmg-macos-arm64.txt" 2>&1
+          spctl --assess --type open --context context:primary-signature --verbose "$BETA_DMG" > "$PROOF_DIR/spctl-dmg-macos-arm64.txt" 2>&1
           codesign --verify --deep --strict --verbose=2 "$BETA_APP" > "$PROOF_DIR/codesign-macos-arm64.txt" 2>&1
+          xcrun stapler validate "$BETA_APP" > "$PROOF_DIR/stapler-macos-arm64.txt" 2>&1
           spctl --assess --type execute --verbose "$BETA_APP" > "$PROOF_DIR/spctl-macos-arm64.txt" 2>&1
 
       - name: Launch beta and audit feed isolation
@@ -446,6 +487,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           TAG: ${{ github.event.inputs.tag }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: |
           set -euo pipefail
           {

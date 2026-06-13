@@ -12,7 +12,11 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   assertReleaseConfig: (rootDir: string) => boolean;
   collectReleaseConfigIssues: (rootDir: string) => string[];
   createReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => unknown;
+  isLocalSignedDmgFallbackManifest: (manifest: unknown) => boolean;
   isStrictPublicBetaReleaseEnv: (env: Record<string, string | undefined>) => boolean;
+  LOCAL_SIGNED_DMG_FALLBACK_ACK: string;
+  releaseProvenanceFromEnv: (env: Record<string, string | undefined>) => unknown;
+  RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK: string;
   normalizeBoolean: (value: unknown) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
@@ -67,6 +71,24 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
 };
 
 const repoRoot = path.resolve(__dirname, '../../..');
+
+function writeArm64TrustEvidence(proofDir: string) {
+  fs.writeFileSync(path.join(proofDir, 'codesign-dmg-macos-arm64.txt'), 'evaOS Workbench Beta.dmg: valid on disk\n');
+  fs.writeFileSync(
+    path.join(proofDir, 'stapler-dmg-macos-arm64.txt'),
+    'Processing: evaOS Workbench Beta.dmg\nThe validate action worked!\n'
+  );
+  fs.writeFileSync(path.join(proofDir, 'spctl-dmg-macos-arm64.txt'), 'evaOS Workbench Beta.dmg: accepted\n');
+  fs.writeFileSync(
+    path.join(proofDir, 'codesign-macos-arm64.txt'),
+    '/Applications/evaOS Workbench Beta.app: valid on disk\n/Applications/evaOS Workbench Beta.app: satisfies its Designated Requirement\n'
+  );
+  fs.writeFileSync(
+    path.join(proofDir, 'stapler-macos-arm64.txt'),
+    'Processing: /Applications/evaOS Workbench Beta.app\nThe validate action worked!\n'
+  );
+  fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench Beta.app: accepted\n');
+}
 
 describe('evaOS beta release gate', () => {
   it('detects strict public beta release mode', () => {
@@ -702,6 +724,61 @@ describe('evaOS beta release gate', () => {
     }
   });
 
+  it('verifies explicit local-signed DMG fallback release manifests with proof provenance', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-local-dmg-'));
+    const sourceSha = 'a'.repeat(40);
+    try {
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac-arm64');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.dmg'), 'mac-x64');
+      fs.writeFileSync(
+        path.join(dir, 'latest-arm64-mac.yml'),
+        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'latest-mac.yml'),
+        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.dmg\n'
+      );
+
+      const manifest = releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+        EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
+        EVAOS_BETA_RELEASE_COMMIT: sourceSha,
+        EVAOS_BETA_RELEASE_BRANCH: 'evaos/beta-rc-20260612',
+        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+        EVAOS_BETA_RELEASE_PROVENANCE_MODE: releaseGate.RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK,
+        EVAOS_BETA_LOCAL_DMG_SOURCE_RUN_ID: '27459204891',
+        EVAOS_BETA_LOCAL_DMG_SOURCE_WORKFLOW: 'Build and Release',
+        EVAOS_BETA_LOCAL_DMG_SOURCE_CONCLUSION: 'failure',
+        EVAOS_BETA_LOCAL_DMG_SOURCE_SHA: sourceSha,
+        EVAOS_BETA_LOCAL_DMG_SOURCE_BRANCH: 'evaos/beta-rc-20260612',
+        EVAOS_BETA_LOCAL_DMG_SOURCE_ARTIFACTS: 'macos-build-arm64,macos-build-x64',
+        EVAOS_BETA_LOCAL_DMG_FALLBACK_REASON: 'ci-dmg-codesign-timeout',
+        EVAOS_BETA_LOCAL_DMG_FINALIZATION_PROOF_REF: 'gh-proof-run-27459204891',
+        EVAOS_BETA_LOCAL_DMG_NOTARY_SUBMISSION_IDS:
+          '19f29881-3c5e-4c93-a8db-e227a17e1324,ee658e30-bbed-4057-bae7-002899da8117',
+      });
+
+      expect(releaseGate.isLocalSignedDmgFallbackManifest(manifest)).toBe(true);
+      expect(() =>
+        releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: sourceSha,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+        })
+      ).toThrow(/EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK/);
+      expect(
+        releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: sourceSha,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: releaseGate.LOCAL_SIGNED_DMG_FALLBACK_ACK,
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('binds distribution verification to the trusted workflow manifest artifact', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-trusted-release-'));
     try {
@@ -788,6 +865,7 @@ describe('evaOS beta release gate', () => {
       rcManifest.macosX64.reason = 'macOS x64 is explicitly deferred because this beta candidate only includes arm64.';
       fs.writeFileSync(manifestPath, `${JSON.stringify(rcManifest, null, 2)}\n`);
 
+      writeArm64TrustEvidence(proofDir);
       fs.writeFileSync(
         path.join(proofDir, 'codesign-macos-arm64.txt'),
         '/Applications/evaOS Workbench Beta.app: valid on disk\n/Applications/evaOS Workbench Beta.app: satisfies its Designated Requirement\n'
@@ -951,6 +1029,7 @@ describe('evaOS beta release gate', () => {
       rcManifest.macosX64.reason = 'macOS x64 is explicitly deferred because this beta candidate only includes arm64.';
       fs.writeFileSync(manifestPath, `${JSON.stringify(rcManifest, null, 2)}\n`);
 
+      writeArm64TrustEvidence(proofDir);
       fs.writeFileSync(
         path.join(proofDir, 'codesign-macos-arm64.txt'),
         '/Applications/evaOS Workbench Beta.app: valid on disk\n/Applications/evaOS Workbench Beta.app: satisfies its Designated Requirement\n'

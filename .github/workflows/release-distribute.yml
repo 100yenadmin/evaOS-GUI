@@ -21,6 +21,15 @@ on:
         description: 'Successful evaOS Beta RC Canary workflow run id for the same tag.'
         required: true
         type: string
+      trusted_manifest_run_id:
+        description: 'Optional workflow run id that uploaded the trusted release manifest artifact. Required for local-signed-dmg-fallback releases.'
+        required: false
+        type: string
+      local_signed_dmg_fallback_ack:
+        description: 'Type evaos-local-signed-dmg only when distributing locally finalized DMGs.'
+        required: false
+        default: ''
+        type: string
       release_target_platforms:
         description: 'Release target platforms for verification: all keeps Windows/macOS/Linux; macos distributes only macOS assets.'
         required: false
@@ -141,6 +150,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
+          TRUSTED_MANIFEST_RUN_ID: ${{ github.event.inputs.trusted_manifest_run_id }}
+          LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: |
           set -euo pipefail
           if [ ! -f dist/evaos-beta-release-manifest.json ]; then
@@ -149,13 +160,26 @@ jobs:
           fi
 
           RELEASE_RUN_ID=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseRunId || ''));")
+          RELEASE_PROVENANCE_MODE=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/evaos-beta-release-manifest.json','utf8')); process.stdout.write(String(m.releaseProvenance?.mode || 'github-release-workflow'));")
           if [ -z "$RELEASE_RUN_ID" ]; then
             echo "::error::Release manifest is missing releaseRunId."
             exit 1
           fi
+          DOWNLOAD_RUN_ID="$RELEASE_RUN_ID"
+          if [ "$RELEASE_PROVENANCE_MODE" = "local-signed-dmg-fallback" ]; then
+            if [ "$LOCAL_SIGNED_DMG_FALLBACK_ACK" != "evaos-local-signed-dmg" ]; then
+              echo "::error::Local signed DMG fallback release requires local_signed_dmg_fallback_ack=evaos-local-signed-dmg."
+              exit 1
+            fi
+            if [ -z "$TRUSTED_MANIFEST_RUN_ID" ]; then
+              echo "::error::Local signed DMG fallback release requires trusted_manifest_run_id."
+              exit 1
+            fi
+            DOWNLOAD_RUN_ID="$TRUSTED_MANIFEST_RUN_ID"
+          fi
 
           mkdir -p trusted-manifest
-          gh run download "$RELEASE_RUN_ID" \
+          gh run download "$DOWNLOAD_RUN_ID" \
             --repo "${{ github.repository }}" \
             --name "evaos-beta-release-manifest-${TAG}" \
             --dir trusted-manifest
@@ -214,6 +238,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_TRUSTED_MANIFEST_PATH: trusted-manifest/evaos-beta-release-manifest.json
+          EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: node scripts/evaosBetaReleaseGate.js verify-manifest dist "${{ steps.version.outputs.tag }}"
 
       - name: Validate release candidate proof
@@ -222,6 +247,7 @@ jobs:
           RC_PROOF_RUN_ID: ${{ github.event.inputs.rc_proof_run_id }}
           TAG: ${{ steps.version.outputs.tag }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+          EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
         run: |
           set -euo pipefail
           if [ -z "$RC_PROOF_RUN_ID" ]; then

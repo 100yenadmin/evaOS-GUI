@@ -7,6 +7,7 @@ Documentation is organized by reader intent, not by document type.
 | [`guides/`](guides)             | Users & operators        | How to deploy, test, and run the product. Server deployment, WebUI, Hub testing, CDP debugging.                               |
 | [`contributing/`](contributing) | Contributors             | Dev environment setup, file-structure conventions, PR automation workflow.                                                    |
 | [`architecture/`](architecture) | Engineers & architects   | System architecture overview, subsystem deep-dives (ACP, queue, team mode), and supporting research notes.                    |
+| [`evaos/`](evaos)               | Release operators        | evaOS Workbench Beta release gates, macOS RC packaging, rollback, manifest, canary, and distribution proof.                   |
 | [`specs/`](specs)               | Engineering-driven specs | Feature design docs, requirements, implementation plans (ACP rewrite, extension market, remote agent, wake prompt, PR notes). |
 | [`prds/`](prds)                 | Product team             | Formal Product Requirement Documents maintained by the product team. **Do not reorganize without their consent.**             |
 | [`readme/`](readme)             | Global users             | Translated copies of the root `readme.md` (Chinese, Japanese, Korean, Spanish, etc.).                                         |
@@ -17,6 +18,7 @@ Documentation is organized by reader intent, not by document type.
 - Setting up a dev environment? See [`contributing/development.md`](contributing/development.md).
 - Writing code? The entry point for code-style, linting, formatting, and commit rules is [`AGENTS.md`](../AGENTS.md) at the repo root.
 - Deploying a server? [`guides/deploy-server.md`](guides/deploy-server.md).
+- Cutting evaOS Workbench Beta? Start with [`evaos/public-beta-packaging-rollback.md`](evaos/public-beta-packaging-rollback.md).
 
 ## Where to put new docs
 

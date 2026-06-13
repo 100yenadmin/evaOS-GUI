@@ -21,6 +21,17 @@ Manual release workflows accept `release_target_platforms` and the scripts honor
 - `macos` is the controlled 1.0 RC profile. It builds, prepares, verifies, canaries, and distributes only macOS x64/arm64 desktop assets plus macOS updater metadata.
 - Windows and Linux assets are deferred in the `macos` profile; do not treat their absence as a release failure for the controlled 1.0 RC.
 
+## evaOS macOS RC DMG finalization
+
+For the current controlled RC, use one lane at a time:
+
+1. Product or polish PR: focused tests plus PR macOS smoke. Do not run full signing/notarization/canary/distribution for copy or layout changes.
+2. Staged RC artifact: dispatch `Build and Release` with `beta_release_ack=evaos-beta`, `release_target_platforms=macos`, and `macos_dmg_finalization=local`. This builds app-notarized DMGs, uploads artifacts, and stops before tag/release creation.
+3. Local DMG finalization: download the exact staged DMGs, Developer ID sign the DMG containers, submit them to Apple, staple them, and verify `xcrun stapler validate <dmg>` plus `spctl --assess --type open --context context:primary-signature <dmg>`.
+4. Updater metadata: regenerate `latest-mac.yml` and `latest-arm64-mac.yml` from the finalized DMGs because DMG signing/stapling changes the bytes and checksums.
+5. Trusted manifest: attach the finalized DMGs/updater metadata to the GitHub prerelease, then run `Register evaOS Beta Local-Signed DMG Manifest` with `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
+6. Canary and distribution: run `evaOS Beta RC Canary` and `Distribute evaOS Beta Release Assets` with the manifest registration `trusted_manifest_run_id`; distribution remains GitHub-release based, not S3/AWS.
+
 ### Agent operating rule
 
 Agents working on the finish-line sprint must treat macOS as the only active release platform. Do not open, block, or delay parity PRs for Windows or Ubuntu/Linux failures unless the PR explicitly changes Windows packaging, Linux packaging, Electron builder platform metadata, or shared runtime code that cannot be proven safely on macOS. If a cross-platform concern is found, file it as post-1.0 follow-up work and keep the macOS RC lane moving.

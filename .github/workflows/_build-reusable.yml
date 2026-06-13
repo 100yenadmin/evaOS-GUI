@@ -23,6 +23,10 @@ on:
         description: 'Only upload primary installers (exe/msi/dmg/deb), skip zip/yml/blockmap'
         type: boolean
         default: false
+      macos_dmg_finalization:
+        description: 'macOS DMG finalization owner: ci signs/notarizes DMGs in GitHub; local stages app-notarized DMGs for local Developer ID finalization.'
+        type: string
+        default: ci
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -621,24 +625,39 @@ jobs:
           # If build succeeded completely
           if [ $BUILD_EXIT_CODE -eq 0 ]; then
             echo "✅ Build completed successfully"
-            echo "notarization_status=success" >> $GITHUB_OUTPUT
+            if [ "${EVAOS_DMG_CODESIGN:-true}" = "false" ]; then
+              echo "📦 DMG staged for local Developer ID finalization"
+              echo "notarization_status=dmg_staged_for_local_finalization" >> $GITHUB_OUTPUT
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "## 📦 DMG staged for local finalization" >> $GITHUB_STEP_SUMMARY
+              echo "The app bundle inside the DMG was built for the beta release path. The DMG container still requires local Developer ID signing, Apple notarization, stapling, and Gatekeeper primary-signature validation before publication." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "notarization_status=success" >> $GITHUB_OUTPUT
+            fi
             exit 0
           fi
 
-          # Build failed - check if it's just notarization failure
+          # Build failed - classify the DMG finalization lane precisely.
           if [ "$DMG_EXISTS" = true ]; then
-            # DMG exists but build failed - likely notarization issue
+            if grep -qiE "codesign .*timed out|timed out after .*codesign|codesign .* timed out after" "${RUNNER_TEMP}/build.log"; then
+              echo "❌ DMG created but CI DMG codesign timed out"
+              echo "notarization_status=dmg_codesign_timeout" >> $GITHUB_OUTPUT
+              echo "::error title=DMG codesign timeout::DMG exists, but GitHub-hosted DMG codesign timed out. Use local DMG finalization for this RC."
+              exit 1
+            fi
+            if grep -qiE "primary-signature|rejected|source=no usable signature" "${RUNNER_TEMP}/build.log"; then
+              echo "❌ DMG created but Gatekeeper primary signature is missing or rejected"
+              echo "notarization_status=dmg_primary_signature_missing" >> $GITHUB_OUTPUT
+              echo "::error title=DMG primary signature missing::DMG exists, but Gatekeeper primary-signature validation failed. Locally sign, notarize, staple, and validate the exact DMG before publication."
+              exit 1
+            fi
             if grep -qiE "notariz|staple" "${RUNNER_TEMP}/build.log"; then
-              echo "⚠️ DMG created but notarization failed"
-              echo "notarization_status=failed" >> $GITHUB_OUTPUT
-              echo "::warning title=Notarization Failed::DMG was built and signed successfully, but **notarization failed**."
+              echo "⚠️ DMG created but notarization or stapling failed"
+              echo "notarization_status=notarization_failed" >> $GITHUB_OUTPUT
+              echo "::warning title=Notarization Failed::DMG was created, but notarization or stapling failed."
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "## ⚠️ Notarization Warning" >> $GITHUB_STEP_SUMMARY
-              echo "DMG was built and signed successfully, but **notarization failed**." >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "Users may see Gatekeeper warnings when opening the app for the first time." >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "To fix: Right-click the app → Open → Open" >> $GITHUB_STEP_SUMMARY
+              echo "DMG was created, but notarization or stapling failed." >> $GITHUB_STEP_SUMMARY
               if [ "${EVAOS_BETA_PUBLIC_RELEASE:-}" = "true" ] || [ "${EVAOS_BETA_PUBLIC_RELEASE:-}" = "1" ] || [ "${EVAOS_BETA_REQUIRE_SIGNING:-}" = "true" ] || [ "${EVAOS_BETA_REQUIRE_SIGNING:-}" = "1" ]; then
                 echo "::error title=Notarization failed during public beta release::Public beta artifacts must be notarized."
                 exit 1
@@ -657,7 +676,7 @@ jobs:
           APP_ID: ${{ secrets.APP_ID }}
           EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
           EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
-          EVAOS_DMG_CODESIGN: true
+          EVAOS_DMG_CODESIGN: ${{ inputs.macos_dmg_finalization == 'ci' && 'true' || 'false' }}
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
@@ -768,6 +787,8 @@ jobs:
           echo "Common causes:"
           echo "  • hdiutil/DMG creation failure (Device not configured)"
           echo "  • Code signing issues"
+          echo "  • DMG codesign timeout"
+          echo "  • DMG primary-signature rejection"
           echo "  • Notarization timeout"
           echo "  • Out of memory (OOM)"
           echo ""
@@ -853,7 +874,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         if: >-
-          (success() || (startsWith(matrix.platform, 'macos') && steps.macos-build.outputs.notarization_status == 'failed')) &&
+          (success() || (startsWith(matrix.platform, 'macos') && contains('notarization_failed,dmg_codesign_timeout,dmg_primary_signature_missing,dmg_staged_for_local_finalization', steps.macos-build.outputs.notarization_status))) &&
           (!startsWith(matrix.platform, 'windows') || steps.windows-build.outputs.result == 'success')
         with:
           name: ${{ inputs.append_commit_hash && format('{0}-{1}', matrix.artifact-name, steps.commit.outputs.short) || matrix.artifact-name }}

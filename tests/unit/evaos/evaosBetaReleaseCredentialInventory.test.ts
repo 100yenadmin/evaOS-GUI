@@ -33,7 +33,7 @@ const apiKeySigningSecrets = [
   'APPLE_API_ISSUER',
 ];
 
-const distributionSecrets = ['GH_TOKEN', 'AWS_REGION', 'AWS_ROLE_ARN', 'AWS_S3_BUCKET'];
+const distributionSecrets = ['GH_TOKEN'];
 
 const releaseVariables = ['EVAOS_BETA_RELEASE_BRANCH', 'EVAOS_BETA_RELEASE_PUBLISH_ENABLED'];
 
@@ -46,7 +46,8 @@ describe('evaOS beta release credential inventory', () => {
     expect(report.readyForDistribution).toBe(false);
     expect(report.missingSecrets).toContain('BUILD_CERTIFICATE_BASE64');
     expect(report.missingSecrets).toContain('APPLE_ID_PASSWORD');
-    expect(report.missingSecrets).toContain('AWS_ROLE_ARN');
+    expect(report.missingSecrets).toContain('GH_TOKEN');
+    expect(report.missingSecrets).not.toContain('AWS_ROLE_ARN');
     expect(report.missingVariables).toContain('EVAOS_BETA_RELEASE_BRANCH');
     expect(report.missingVariables).toContain('EVAOS_BETA_RELEASE_PUBLISH_ENABLED');
   });
@@ -89,7 +90,8 @@ describe('evaOS beta release credential inventory', () => {
     expect(report.readyForSignedCandidate).toBe(true);
     expect(report.readyForDistribution).toBe(true);
     expect(report.satisfiedSecrets).toContain('BUILD_CERTIFICATE_BASE64');
-    expect(report.satisfiedSecrets).toContain('AWS_S3_BUCKET');
+    expect(report.satisfiedSecrets).toContain('GH_TOKEN');
+    expect(report.satisfiedSecrets).not.toContain('AWS_S3_BUCKET');
     expect(report.satisfiedVariables).toContain('EVAOS_BETA_RELEASE_BRANCH');
   });
 
@@ -101,7 +103,8 @@ describe('evaOS beta release credential inventory', () => {
     const markdown = inventory.renderMarkdown(report);
 
     expect(markdown).toContain('BUILD_CERTIFICATE_BASE64');
-    expect(markdown).toContain('AWS_S3_BUCKET');
+    expect(markdown).toContain('GH_TOKEN');
+    expect(markdown).not.toContain('AWS_S3_BUCKET');
     expect(markdown).toContain('EVAOS_BETA_RELEASE_BRANCH');
     expect(markdown).not.toContain('BEGIN CERTIFICATE');
     expect(markdown).not.toContain('apple-app-specific-password');

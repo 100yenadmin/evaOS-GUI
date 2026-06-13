@@ -8,7 +8,7 @@ This document is the issue #12 release gate for the AionUi-based evaOS public be
 - macOS bundle id: `com.evaos.workbench.beta`
 - Executable name: `EvaOSWorkbenchBeta`
 - Protocol scheme: `evaos-workbench-beta`
-- GitHub release repo: `100yenadmin/AionUi`
+- GitHub release repo: `100yenadmin/evaOS-GUI`
 - Release tag prefix: `evaos-beta-`
 - Artifact identity marker: `evaOS Workbench Beta`, `EvaOSWorkbenchBeta`, or `evaos-workbench-beta`
 
@@ -25,7 +25,7 @@ The beta release path is manual-only:
 5. Distribute assets only with `Distribute evaOS Beta Release Assets`, `beta_distribution_ack=evaos-beta`, and a tag that starts with `evaos-beta-`.
 6. Run `evaOS Beta RC Canary` for the same non-dev tag and keep the successful workflow run id.
 7. Do not distribute `-dev-` beta tags. Public distribution requires a non-dev `evaos-beta-` tag that is reachable from `EVAOS_BETA_RELEASE_BRANCH`.
-8. Distribution must validate `evaos-beta-release-manifest.json`, matching asset checksums, the tag commit, the successful `Build and Release` workflow run, and the successful `evaOS Beta RC Canary` proof run before S3 upload.
+8. Distribution must validate `evaos-beta-release-manifest.json`, matching asset checksums, the tag commit, the trusted manifest artifact, and the successful `evaOS Beta RC Canary` proof run before GitHub prerelease promotion/distribution.
 
 Release target profile:
 
@@ -33,7 +33,7 @@ Release target profile:
 - Controlled 1.0 RC runs set `EVAOS_RELEASE_TARGET_PLATFORMS=macos` or select `release_target_platforms=macos` in the manual workflow. This profile requires only macOS x64/arm64 DMG/ZIP assets plus `latest-mac.yml` and `latest-arm64-mac.yml`.
 - Windows and Linux installers, packages, and updater metadata are explicitly deferred while the macOS profile is active. Their absence is not a controlled 1.0 RC blocker.
 
-The release config audit runs in PR checks and in the manual release workflow:
+PR release-script safety checks use mock or staged assets; they do not imply a finished RC artifact. RC artifact publication uses the manual release workflow, signing/notarization proof, trusted manifest registration, RC canary, and distribution workflow:
 
 ```bash
 node scripts/evaosBetaReleaseGate.js audit-config
@@ -42,6 +42,8 @@ EVAOS_RELEASE_TARGET_PLATFORMS=macos bash scripts/verify-release-assets.sh relea
 node scripts/evaosBetaReleaseGate.js write-manifest release-assets evaos-beta-v<version>
 node scripts/evaosBetaReleaseGate.js verify-manifest release-assets evaos-beta-v<version>
 ```
+
+For the current macOS controlled RC, `Build and Release` should use `macos_dmg_finalization=local`. That mode stages app-notarized DMGs as workflow artifacts and intentionally stops before tag/release creation. After local Developer ID DMG signing, DMG notarization, stapling, and Gatekeeper primary-signature validation, run `Register evaOS Beta Local-Signed DMG Manifest`, then pass its run id to the RC canary and distribution workflows as `trusted_manifest_run_id` with `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
 
 ## Signing And Notarization
 
@@ -75,9 +77,12 @@ In public beta mode, ad-hoc signing is a hard failure and notarization failure i
 
 Before sharing a public beta link, attach proof to issue #12:
 
-- Signed macOS arm64 artifact exists.
+- Signed and stapled macOS arm64 DMG exists.
 - Signed macOS x64 artifact exists or x64 is explicitly blocked.
+- `xcrun stapler validate <dmg>` passes.
+- `spctl --assess --type open --context context:primary-signature --verbose <dmg>` passes.
 - `codesign --verify --deep --strict --verbose=2 <app>` passes.
+- `xcrun stapler validate <app>` passes.
 - `spctl --assess --type execute --verbose <app>` passes or the exact notarization/Gatekeeper blocker is recorded.
 - Install smoke: DMG opens and app copies to `/Applications` without replacing the old released app identity.
 - Launch smoke: app starts, shows beta identity, and does not require upstream AionUi update/feed state.
@@ -104,14 +109,17 @@ GitHub RC canary workflow:
 3. Set `tag` to the existing non-dev `evaos-beta-*` release tag.
 4. Set `fallback_release_repo`, `fallback_release_tag`, `fallback_asset_pattern`, and `fallback_app_name` to the currently released macOS fallback app.
 5. Set `broker_session_proof_ref` to a non-secret issue, packet, or canary reference proving broker login/session state for the fallback.
-6. Download the uploaded artifact named `evaos-beta-rc-proof-<tag>`.
-7. Pass the successful canary workflow run id to `Distribute evaOS Beta Release Assets` as `rc_proof_run_id`.
+6. Before manifest registration for locally finalized DMGs, regenerate `latest-mac.yml` and `latest-arm64-mac.yml` from the finalized DMGs. Do not reuse updater metadata from the unsigned staged DMGs.
+7. For locally finalized DMGs, set `trusted_manifest_run_id` to the successful manifest-registration workflow run id and set `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
+8. Download the uploaded artifact named `evaos-beta-rc-proof-<tag>`.
+9. Pass the successful canary workflow run id to `Distribute evaOS Beta Release Assets` as `rc_proof_run_id`.
 
 The proof packet must include:
 
 - `release-assets/` with the audited `evaos-beta-release-manifest.json`.
 - `trusted-manifest/evaos-beta-release-manifest.json` downloaded from the release workflow artifact, not copied from the mutable GitHub Release assets.
-- `codesign-macos-arm64.txt` and `spctl-macos-arm64.txt`.
+- `codesign-dmg-macos-arm64.txt`, `stapler-dmg-macos-arm64.txt`, and `spctl-dmg-macos-arm64.txt`.
+- `codesign-macos-arm64.txt`, `stapler-macos-arm64.txt`, and `spctl-macos-arm64.txt`.
 - `install-smoke.md`, `launch-smoke.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
 - macOS x64 signing/Gatekeeper proof, or a concrete `macosX64.status=blocked` reason in `evaos-beta-rc-proof.json`.
 

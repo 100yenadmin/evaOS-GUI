@@ -52,18 +52,6 @@ const DISTRIBUTION_SECRETS = [
     name: 'GH_TOKEN',
     reason: 'PAT used by the manual beta release workflow for protected release/tag operations',
   },
-  {
-    name: 'AWS_REGION',
-    reason: 'AWS region for public beta asset distribution',
-  },
-  {
-    name: 'AWS_ROLE_ARN',
-    reason: 'OIDC role used to upload public beta assets',
-  },
-  {
-    name: 'AWS_S3_BUCKET',
-    reason: 'destination bucket for public beta assets',
-  },
 ];
 
 const RELEASE_VARIABLES = [

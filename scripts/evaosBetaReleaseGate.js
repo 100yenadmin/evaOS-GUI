@@ -81,11 +81,34 @@ const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
 const RELEASE_MANIFEST_NAME = 'evaos-beta-release-manifest.json';
 const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
+const RELEASE_PROVENANCE_GITHUB_WORKFLOW = 'github-release-workflow';
+const RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK = 'local-signed-dmg-fallback';
+const LOCAL_SIGNED_DMG_FALLBACK_ACK = 'evaos-local-signed-dmg';
 const REQUIRED_RC_PROOF_CHECKS = [
+  {
+    id: 'macos-arm64-dmg-codesign',
+    evidence: 'codesign-dmg-macos-arm64.txt',
+    requiredText: ['valid on disk'],
+  },
+  {
+    id: 'macos-arm64-dmg-stapler',
+    evidence: 'stapler-dmg-macos-arm64.txt',
+    requiredText: ['The validate action worked'],
+  },
+  {
+    id: 'macos-arm64-dmg-gatekeeper',
+    evidence: 'spctl-dmg-macos-arm64.txt',
+    requiredText: ['accepted'],
+  },
   {
     id: 'macos-arm64-codesign',
     evidence: 'codesign-macos-arm64.txt',
     requiredText: ['valid on disk', 'satisfies its Designated Requirement'],
+  },
+  {
+    id: 'macos-arm64-app-stapler',
+    evidence: 'stapler-macos-arm64.txt',
+    requiredText: ['The validate action worked'],
   },
   {
     id: 'macos-arm64-gatekeeper',
@@ -312,6 +335,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const prChecks = readText(rootDir, '.github/workflows/pr-checks.yml');
   const distribute = readText(rootDir, '.github/workflows/release-distribute.yml');
   const rcCanary = readText(rootDir, '.github/workflows/evaos-beta-rc-canary.yml');
+  const localSignedDmgManifest = readText(rootDir, '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml');
   const reusableBuild = readText(rootDir, '.github/workflows/_build-reusable.yml');
   const afterSign = readText(rootDir, 'scripts/afterSign.js');
   const dmgFinalizer = readText(rootDir, 'scripts/evaosFinalizeMacDmg.js');
@@ -497,6 +521,30 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     issues
   );
   requireText(rcCanary, 'actions/upload-artifact', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(
+    localSignedDmgManifest,
+    'Register evaOS Beta Local-Signed DMG Manifest',
+    '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
+    issues
+  );
+  requireText(
+    localSignedDmgManifest,
+    'evaos-local-signed-dmg',
+    '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
+    issues
+  );
+  requireText(
+    localSignedDmgManifest,
+    'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
+    '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
+    issues
+  );
+  requireText(
+    localSignedDmgManifest,
+    'scripts/evaosBetaReleaseGate.js verify-manifest',
+    '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
+    issues
+  );
 
   requireText(reusableBuild, 'assert-public-release-env', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'EVAOS_BETA_REQUIRE_SIGNING', '.github/workflows/_build-reusable.yml', issues);
@@ -559,26 +607,30 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_PROCESS_TIMEOUT_MS', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(
     dmgFinalizer,
-    'Gatekeeper primary-signature validation may fail',
+    'dmg_staged_for_local_finalization',
     'scripts/evaosFinalizeMacDmg.js',
     issues,
-    'DMG codesign remains default-on for Gatekeeper primary-signature validation'
+    'DMG signing opt-out stages artifacts for local finalization instead of notarizing unsigned DMGs'
   );
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_KEYCHAIN', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(
     reusableBuild,
-    'EVAOS_DMG_CODESIGN: true',
+    'macos_dmg_finalization',
     '.github/workflows/_build-reusable.yml',
     issues,
-    'GitHub release jobs DMG-sign before notarization so Gatekeeper primary-signature validation can pass'
+    'macOS DMG finalization mode input'
   );
   requireText(
     reusableBuild,
-    "steps.macos-build.outputs.notarization_status == 'failed'",
+    'dmg_staged_for_local_finalization',
     '.github/workflows/_build-reusable.yml',
     issues,
-    'macOS notarized/stapled staging artifacts upload on expected DMG signature-gate failure'
+    'macOS app-notarized DMG staging status'
   );
+  requireText(reusableBuild, 'dmg_codesign_timeout', '.github/workflows/_build-reusable.yml', issues);
+  requireText(reusableBuild, 'dmg_primary_signature_missing', '.github/workflows/_build-reusable.yml', issues);
+  requireText(distribute, 'local_signed_dmg_fallback_ack', '.github/workflows/release-distribute.yml', issues);
+  requireText(rcCanary, 'local_signed_dmg_fallback_ack', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   const dmgSigningKeychainSection = dmgFinalizer.split('const NOTARY_KEYCHAIN_ENV')[0] || '';
   if (dmgSigningKeychainSection.includes('NOTARY_KEYCHAIN') || dmgSigningKeychainSection.includes('RELEASE_KEYCHAIN')) {
     issues.push(
@@ -668,6 +720,14 @@ function createReleaseManifest(outputDir, tag, env = process.env) {
       sha256: sha256File(filePath),
     };
   });
+  const releaseProvenance = releaseProvenanceFromEnv(env);
+  if (releaseProvenance.mode === RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK) {
+    releaseProvenance.finalizedDmgs = finalizedDmgProvenanceFromAssets(assets);
+  }
+  const releaseRunId =
+    releaseProvenance.mode === RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK
+      ? releaseProvenance.sourceCiRunId
+      : env.GITHUB_RUN_ID || '';
 
   const manifest = {
     schema: 'evaos-beta-release-manifest/v1',
@@ -675,7 +735,7 @@ function createReleaseManifest(outputDir, tag, env = process.env) {
     developmentTag: isDevBetaTag(tag),
     repository: env.GITHUB_REPOSITORY || '',
     releaseWorkflow: env.EVAOS_BETA_RELEASE_WORKFLOW || env.GITHUB_WORKFLOW || '',
-    releaseRunId: env.GITHUB_RUN_ID || '',
+    releaseRunId,
     releaseRunAttempt: env.GITHUB_RUN_ATTEMPT || '',
     releaseCommit: env.EVAOS_BETA_RELEASE_COMMIT || env.GITHUB_SHA || '',
     releaseBranch: env.EVAOS_BETA_RELEASE_BRANCH || '',
@@ -692,6 +752,7 @@ function createReleaseManifest(outputDir, tag, env = process.env) {
       publishAutoUpdate: false,
       upstreamFeedAllowed: false,
     },
+    releaseProvenance,
     assets,
   };
 
@@ -709,6 +770,162 @@ function readManifestFile(manifestPath) {
 
 function canonicalManifestJson(manifest) {
   return JSON.stringify(manifest);
+}
+
+function splitCsvEnv(value) {
+  return String(value || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function finalizedDmgProvenanceFromAssets(assets) {
+  const finalizedDmgs = {};
+  for (const asset of assets || []) {
+    if (!asset.name?.endsWith('.dmg')) continue;
+    const arch = asset.name.includes('arm64') ? 'arm64' : asset.name.includes('x64') ? 'x64' : asset.name;
+    finalizedDmgs[arch] = {
+      assetName: asset.name,
+      sha256: asset.sha256,
+      size: asset.size,
+    };
+  }
+  return finalizedDmgs;
+}
+
+function releaseProvenanceFromEnv(env = process.env) {
+  const mode = env.EVAOS_BETA_RELEASE_PROVENANCE_MODE || RELEASE_PROVENANCE_GITHUB_WORKFLOW;
+  if (mode === RELEASE_PROVENANCE_GITHUB_WORKFLOW) {
+    return {
+      mode,
+      sourceCiRunId: env.GITHUB_RUN_ID || '',
+      sourceCiWorkflow: env.EVAOS_BETA_RELEASE_WORKFLOW || env.GITHUB_WORKFLOW || '',
+      sourceCiConclusion: env.EVAOS_BETA_RELEASE_RUN_CONCLUSION || '',
+      sourceCiHeadSha: env.EVAOS_BETA_RELEASE_COMMIT || env.GITHUB_SHA || '',
+      sourceCiHeadBranch: env.EVAOS_BETA_RELEASE_BRANCH || '',
+    };
+  }
+
+  if (mode !== RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK) {
+    throw new Error(`Unsupported evaOS beta release provenance mode: ${mode}`);
+  }
+
+  return {
+    mode,
+    sourceCiRunId: env.EVAOS_BETA_LOCAL_DMG_SOURCE_RUN_ID || env.GITHUB_RUN_ID || '',
+    sourceCiWorkflow: env.EVAOS_BETA_LOCAL_DMG_SOURCE_WORKFLOW || 'Build and Release',
+    sourceCiConclusion: env.EVAOS_BETA_LOCAL_DMG_SOURCE_CONCLUSION || '',
+    sourceCiHeadSha: env.EVAOS_BETA_LOCAL_DMG_SOURCE_SHA || env.EVAOS_BETA_RELEASE_COMMIT || env.GITHUB_SHA || '',
+    sourceCiHeadBranch: env.EVAOS_BETA_LOCAL_DMG_SOURCE_BRANCH || env.EVAOS_BETA_RELEASE_BRANCH || '',
+    sourceArtifactNames: splitCsvEnv(env.EVAOS_BETA_LOCAL_DMG_SOURCE_ARTIFACTS || 'macos-build-arm64,macos-build-x64'),
+    fallbackReason: env.EVAOS_BETA_LOCAL_DMG_FALLBACK_REASON || 'ci-dmg-codesign-timeout',
+    localFinalizationProofRef: env.EVAOS_BETA_LOCAL_DMG_FINALIZATION_PROOF_REF || '',
+    dmgNotarizationSubmissionIds: splitCsvEnv(env.EVAOS_BETA_LOCAL_DMG_NOTARY_SUBMISSION_IDS),
+  };
+}
+
+function isLocalSignedDmgFallbackManifest(manifest) {
+  return manifest.releaseProvenance?.mode === RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK;
+}
+
+function localSignedDmgFallbackAcked(env = process.env) {
+  return (
+    env.EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK === LOCAL_SIGNED_DMG_FALLBACK_ACK ||
+    env.LOCAL_SIGNED_DMG_FALLBACK_ACK === LOCAL_SIGNED_DMG_FALLBACK_ACK
+  );
+}
+
+function assertNonSecretProofRef(value, label) {
+  const text = String(value || '').trim();
+  if (text.length < 8) {
+    throw new Error(`${label} must include a non-secret proof reference.`);
+  }
+  if (/Bearer\s+|eyJ[a-zA-Z0-9_-]+\.|password|secret|token/i.test(text)) {
+    throw new Error(`${label} must not contain token or secret-looking material.`);
+  }
+}
+
+function assertNotarySubmissionIds(ids, label) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error(`${label} must include at least one Apple notarization submission id.`);
+  }
+  for (const id of ids) {
+    if (!/^[0-9a-f-]{24,}$/i.test(String(id))) {
+      throw new Error(`${label} contains an invalid Apple notarization submission id: ${id}`);
+    }
+  }
+}
+
+function verifyReleaseProvenance(manifest, env = process.env) {
+  if (!isLocalSignedDmgFallbackManifest(manifest)) {
+    verifyGitHubRun(manifest, env);
+    return;
+  }
+
+  if (!localSignedDmgFallbackAcked(env)) {
+    throw new Error(
+      `Local signed DMG fallback manifests require EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK=${LOCAL_SIGNED_DMG_FALLBACK_ACK}.`
+    );
+  }
+
+  const provenance = manifest.releaseProvenance || {};
+  assertNonSecretProofRef(provenance.sourceCiRunId, 'Local signed DMG source run id');
+  assertNonSecretProofRef(provenance.sourceCiHeadSha, 'Local signed DMG source SHA');
+  assertNonSecretProofRef(provenance.sourceCiWorkflow, 'Local signed DMG source workflow');
+  assertNonSecretProofRef(provenance.sourceCiHeadBranch, 'Local signed DMG source branch');
+  assertNonSecretProofRef(provenance.fallbackReason, 'Local signed DMG fallback reason');
+  assertNonSecretProofRef(provenance.localFinalizationProofRef, 'Local signed DMG finalization proof reference');
+  assertNotarySubmissionIds(provenance.dmgNotarizationSubmissionIds, 'Local signed DMG notarization submission ids');
+  if (!['failure', 'cancelled', 'success'].includes(String(provenance.sourceCiConclusion || ''))) {
+    throw new Error('Local signed DMG source conclusion must be failure, cancelled, or success.');
+  }
+
+  if (!Array.isArray(provenance.sourceArtifactNames) || provenance.sourceArtifactNames.length === 0) {
+    throw new Error('Local signed DMG manifest must list source artifact names.');
+  }
+  if (!provenance.finalizedDmgs || Object.keys(provenance.finalizedDmgs).length === 0) {
+    throw new Error('Local signed DMG manifest must record finalized DMG checksums.');
+  }
+
+  if (manifest.releaseRunId && manifest.releaseRunId !== provenance.sourceCiRunId) {
+    throw new Error('Local signed DMG manifest releaseRunId must match releaseProvenance.sourceCiRunId.');
+  }
+  if (manifest.releaseCommit && manifest.releaseCommit !== provenance.sourceCiHeadSha) {
+    throw new Error('Local signed DMG manifest releaseCommit must match releaseProvenance.sourceCiHeadSha.');
+  }
+
+  if (!normalizeBoolean(env.EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY)) {
+    const repo = manifest.repository || env.GITHUB_REPOSITORY;
+    const runJson = execFileSync(
+      'gh',
+      [
+        'run',
+        'view',
+        String(provenance.sourceCiRunId),
+        '--repo',
+        repo,
+        '--json',
+        'conclusion,headSha,headBranch,workflowName,event',
+      ],
+      { encoding: 'utf8' }
+    );
+    const run = JSON.parse(runJson);
+    if (run.workflowName !== provenance.sourceCiWorkflow) {
+      throw new Error(`Local signed DMG source run workflow mismatch: ${run.workflowName}`);
+    }
+    if (provenance.sourceCiConclusion && run.conclusion !== provenance.sourceCiConclusion) {
+      throw new Error(`Local signed DMG source run conclusion ${run.conclusion} does not match manifest.`);
+    }
+    if (run.event !== 'workflow_dispatch') {
+      throw new Error(`Local signed DMG source run was not manually dispatched: ${run.event}`);
+    }
+    if (run.headSha !== provenance.sourceCiHeadSha) {
+      throw new Error(`Local signed DMG source run head ${run.headSha} does not match manifest.`);
+    }
+    if (provenance.sourceCiHeadBranch && run.headBranch !== provenance.sourceCiHeadBranch) {
+      throw new Error(`Local signed DMG source run branch ${run.headBranch} does not match manifest.`);
+    }
+  }
 }
 
 function selectTrustedManifest(outputDir, env = process.env) {
@@ -822,7 +1039,7 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
     }
   }
 
-  verifyGitHubRun(manifest, env);
+  verifyReleaseProvenance(manifest, env);
   return true;
 }
 
@@ -1064,7 +1281,12 @@ module.exports = {
   collectReleaseConfigIssues,
   createReleaseManifest,
   getEnvValue,
+  isLocalSignedDmgFallbackManifest,
   isStrictPublicBetaReleaseEnv,
+  LOCAL_SIGNED_DMG_FALLBACK_ACK,
+  releaseProvenanceFromEnv,
+  RELEASE_PROVENANCE_GITHUB_WORKFLOW,
+  RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK,
   verifyReleaseManifest,
   verifyRcProof,
   normalizeBoolean,

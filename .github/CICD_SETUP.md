@@ -1,8 +1,10 @@
 # CI/CD 设置指南
 
+> **evaOS Workbench Beta RC note:** this is legacy upstream AionUi CI/CD guidance. It is not the controlled macOS evaOS Workbench Beta RC release path. For the current RC, use `.github/workflows/README.md`, `docs/evaos/public-beta-packaging-rollback.md`, and `/Volumes/LEXAR/Codex/runbooks/evaos-workbench-rc-speed-and-trust.md`.
+
 ## 概述
 
-这个项目配置了完整的 GitHub Actions CI/CD 流水线，支持自动构建、测试和发布到多个平台。
+这个项目保留了完整的 GitHub Actions CI/CD 流水线说明，支持自动构建、测试和发布到多个平台。evaOS Workbench Beta RC 当前是 manual-only macOS release lane: `Build and Release` with `beta_release_ack=evaos-beta`, `release_target_platforms=macos`, and `macos_dmg_finalization=local` for staged DMGs followed by local Developer ID DMG finalization.
 
 ## 工作流说明
 

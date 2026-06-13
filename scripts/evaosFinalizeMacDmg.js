@@ -52,6 +52,7 @@ const FALSY = new Set(['0', 'false', 'no', 'off']);
 const DMG_CODESIGN_MODE_SIGN = 'sign';
 const DMG_CODESIGN_MODE_VERIFY_EXISTING = 'verify-existing';
 const DMG_CODESIGN_MODES = new Set([DMG_CODESIGN_MODE_SIGN, DMG_CODESIGN_MODE_VERIFY_EXISTING]);
+const DMG_FINALIZATION_STATUS_STAGED = 'dmg_staged_for_local_finalization';
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -350,7 +351,13 @@ function finalizeDmg(dmgPath, env = process.env) {
       run('codesign', ['--verify', '--verbose=2', dmgPath]);
     }
   } else {
-    console.log('Skipping DMG codesign by explicit opt-out; Gatekeeper primary-signature validation may fail.');
+    console.log(
+      `${DMG_FINALIZATION_STATUS_STAGED}: skipping DMG codesign, DMG notarization, stapling, and Gatekeeper primary-signature validation by explicit opt-out.`
+    );
+    console.log(
+      'Stage this exact DMG for local Developer ID signing, DMG notarization, stapling, and spctl open validation.'
+    );
+    return DMG_FINALIZATION_STATUS_STAGED;
   }
 
   const submitArgs = buildNotarytoolSubmitArgs(dmgPath, env);
@@ -363,6 +370,7 @@ function finalizeDmg(dmgPath, env = process.env) {
   run('xcrun', ['stapler', 'staple', dmgPath]);
   run('xcrun', ['stapler', 'validate', dmgPath]);
   run('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose', dmgPath]);
+  return 'finalized';
 }
 
 function finalizeMacDmgs({ outDir = path.resolve(__dirname, '../out'), env = process.env } = {}) {
@@ -411,6 +419,8 @@ module.exports = {
   buildDmgCodesignArgs,
   buildNotarytoolInfoArgs,
   buildNotarytoolSubmitArgs,
+  DMG_FINALIZATION_STATUS_STAGED,
+  finalizeDmg,
   finalizeMacDmgs,
   findDmgArtifacts,
   getDmgCodesignProcessTimeoutMs,
