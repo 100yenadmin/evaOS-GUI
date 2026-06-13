@@ -57,6 +57,7 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
   buildNotarytoolInfoArgs: (submissionId: string, env: Record<string, string | undefined>) => string[];
   buildNotarytoolSubmitArgs: (dmgPath: string, env: Record<string, string | undefined>) => string[];
   findDmgArtifacts: (outDir: string) => string[];
+  getDmgCodesignProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getDmgTrustProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryPollIntervalMs: (env: Record<string, string | undefined>) => number;
@@ -516,9 +517,10 @@ describe('evaOS beta release gate', () => {
     ).toThrow(/APPLE_API_ISSUER/);
   });
 
-  it('keeps DMG codesign opt-in and separate from notarization keychain credentials', () => {
-    expect(macDmgFinalizer.shouldCodesignDmg({})).toBe(false);
+  it('keeps DMG codesign default-on and separate from notarization keychain credentials', () => {
+    expect(macDmgFinalizer.shouldCodesignDmg({})).toBe(true);
     expect(macDmgFinalizer.shouldCodesignDmg({ EVAOS_DMG_CODESIGN: 'true' })).toBe(true);
+    expect(macDmgFinalizer.shouldCodesignDmg({ EVAOS_DMG_CODESIGN: 'false' })).toBe(false);
 
     expect(
       macDmgFinalizer.buildDmgCodesignArgs('/release/evaOS.dmg', 'Developer ID Application: evaOS', {
@@ -559,6 +561,13 @@ describe('evaOS beta release gate', () => {
     expect(macDmgFinalizer.getNotaryPollIntervalMs({ EVAOS_DMG_NOTARY_POLL_INTERVAL_MS: '1000' })).toBe(1000);
     expect(macDmgFinalizer.getDmgTrustProcessTimeoutMs({})).toBe(5 * 60 * 1000);
     expect(macDmgFinalizer.getDmgTrustProcessTimeoutMs({ EVAOS_DMG_TRUST_PROCESS_TIMEOUT_MS: '30000' })).toBe(30000);
+    expect(macDmgFinalizer.getDmgCodesignProcessTimeoutMs({})).toBe(15 * 60 * 1000);
+    expect(macDmgFinalizer.getDmgCodesignProcessTimeoutMs({ EVAOS_DMG_CODESIGN_PROCESS_TIMEOUT_MS: '900000' })).toBe(
+      900000
+    );
+    expect(() =>
+      macDmgFinalizer.getDmgCodesignProcessTimeoutMs({ EVAOS_DMG_CODESIGN_PROCESS_TIMEOUT_MS: 'invalid' })
+    ).toThrow(/positive integer/);
   });
 
   it('finds macOS DMG artifacts in stable sort order', () => {

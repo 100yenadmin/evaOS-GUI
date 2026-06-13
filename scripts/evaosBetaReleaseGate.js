@@ -554,12 +554,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(dmgFinalizer, 'buildDmgCodesignArgs', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(dmgFinalizer, 'shouldCodesignDmg', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN', 'scripts/evaosFinalizeMacDmg.js', issues);
+  requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_PROCESS_TIMEOUT_MS', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(
     dmgFinalizer,
-    'Skipping DMG codesign',
+    'Gatekeeper primary-signature validation may fail',
     'scripts/evaosFinalizeMacDmg.js',
     issues,
-    'DMG codesign is opt-in; DMG notarization, stapling, and Gatekeeper remain required'
+    'DMG codesign remains default-on for Gatekeeper primary-signature validation'
   );
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_KEYCHAIN', 'scripts/evaosFinalizeMacDmg.js', issues);
   const dmgSigningKeychainSection = dmgFinalizer.split('const NOTARY_KEYCHAIN_ENV')[0] || '';

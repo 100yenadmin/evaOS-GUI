@@ -43,7 +43,9 @@ const DEFAULT_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
 const DEFAULT_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
 const DEFAULT_DMG_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_DMG_CODESIGN_PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
+const FALSY = new Set(['0', 'false', 'no', 'off']);
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -178,14 +180,27 @@ function getDmgTrustProcessTimeoutMs(env = process.env) {
   return timeoutMs;
 }
 
+function getDmgCodesignProcessTimeoutMs(env = process.env) {
+  const rawTimeout = env.EVAOS_DMG_CODESIGN_PROCESS_TIMEOUT_MS;
+  if (!rawTimeout) {
+    return DEFAULT_DMG_CODESIGN_PROCESS_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number.parseInt(rawTimeout, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`EVAOS_DMG_CODESIGN_PROCESS_TIMEOUT_MS must be a positive integer, got: ${rawTimeout}`);
+  }
+  return timeoutMs;
+}
+
 function run(command, args, options = {}, env = process.env) {
-  const timeoutMs = getDmgTrustProcessTimeoutMs(env);
+  const timeoutMs = options.timeout || getDmgTrustProcessTimeoutMs(env);
   try {
     execFileSync(command, args, {
       stdio: 'inherit',
-      timeout: timeoutMs,
       killSignal: 'SIGKILL',
       ...options,
+      timeout: timeoutMs,
     });
   } catch (error) {
     if (isProcessTimeoutError(error)) {
@@ -288,7 +303,7 @@ function buildDmgCodesignArgs(dmgPath, identity, env = process.env) {
 }
 
 function shouldCodesignDmg(env = process.env) {
-  return TRUTHY.has(String(env.EVAOS_DMG_CODESIGN || '').toLowerCase());
+  return !FALSY.has(String(env.EVAOS_DMG_CODESIGN || '').toLowerCase());
 }
 
 function finalizeDmg(dmgPath, env = process.env) {
@@ -300,10 +315,12 @@ function finalizeDmg(dmgPath, env = process.env) {
       throw new Error('evaOS DMG codesign requires EVAOS_DMG_CODESIGN_IDENTITY, IDENTITY_SHA, identity, or CSC_NAME.');
     }
 
-    run('codesign', buildDmgCodesignArgs(dmgPath, identity, env));
+    run('codesign', buildDmgCodesignArgs(dmgPath, identity, env), {
+      timeout: getDmgCodesignProcessTimeoutMs(env),
+    });
     run('codesign', ['--verify', '--verbose=2', dmgPath]);
   } else {
-    console.log('Skipping DMG codesign; notarization, stapling, and Gatekeeper-open validation remain required.');
+    console.log('Skipping DMG codesign by explicit opt-out; Gatekeeper primary-signature validation may fail.');
   }
 
   const submitArgs = buildNotarytoolSubmitArgs(dmgPath, env);
@@ -367,6 +384,7 @@ module.exports = {
   finalizeMacDmgs,
   findDmgArtifacts,
   getDmgTrustProcessTimeoutMs,
+  getDmgCodesignProcessTimeoutMs,
   getNotaryCommandProcessTimeoutMs,
   getNotaryPollIntervalMs,
   getNotaryProcessTimeoutMs,
