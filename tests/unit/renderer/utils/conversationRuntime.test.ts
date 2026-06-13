@@ -13,6 +13,7 @@ describe('isConversationProcessing', () => {
           has_task: false,
           is_processing: false,
           pending_confirmations: 0,
+          turn_id: null,
         },
       })
     ).toBe(false);
@@ -28,6 +29,7 @@ describe('isConversationProcessing', () => {
           has_task: false,
           is_processing: true,
           pending_confirmations: 0,
+          turn_id: null,
         },
       })
     ).toBe(true);
