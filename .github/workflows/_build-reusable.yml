@@ -393,19 +393,27 @@ jobs:
         run: |
           if [ -n "$BUILD_CERTIFICATE_BASE64" ]; then
             echo "Installing code signing certificate..."
+            BUILD_KEYCHAIN_PATH="${RUNNER_TEMP}/evaos-build-signing.keychain-db"
 
             # Create certificate file
             echo $BUILD_CERTIFICATE_BASE64 | base64 --decode > certificate.p12
 
             # Create temporary keychain
-            security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-            security default-keychain -s build.keychain
-            security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$BUILD_KEYCHAIN_PATH"
+            security default-keychain -s "$BUILD_KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$BUILD_KEYCHAIN_PATH"
 
             # Import certificate
-            security import certificate.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-            echo "EVAOS_DMG_CODESIGN_KEYCHAIN=build.keychain" >> "$GITHUB_ENV"
+            security import certificate.p12 -k "$BUILD_KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$BUILD_KEYCHAIN_PATH"
+
+            DMG_CODESIGN_IDENTITY="$(security find-identity -v -p codesigning "$BUILD_KEYCHAIN_PATH" | awk '/Developer ID Application/ {print $2; exit}')"
+            if [ -z "$DMG_CODESIGN_IDENTITY" ]; then
+              echo "::error::No Developer ID Application identity found in build signing keychain."
+              exit 1
+            fi
+            echo "EVAOS_DMG_CODESIGN_IDENTITY=$DMG_CODESIGN_IDENTITY" >> "$GITHUB_ENV"
+            echo "EVAOS_DMG_CODESIGN_KEYCHAIN=$BUILD_KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
             # Clean up certificate file
             rm certificate.p12
@@ -737,7 +745,11 @@ jobs:
       - name: Clean up keychain (macOS only)
         if: startsWith(matrix.platform, 'macos') && always()
         run: |
-          if security list-keychains | grep -q build.keychain; then
+          BUILD_KEYCHAIN_PATH="${RUNNER_TEMP}/evaos-build-signing.keychain-db"
+          if [ -f "$BUILD_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$BUILD_KEYCHAIN_PATH"
+            echo "Temporary keychain deleted"
+          elif security list-keychains | grep -q build.keychain; then
             security delete-keychain build.keychain
             echo "Temporary keychain deleted"
           fi
