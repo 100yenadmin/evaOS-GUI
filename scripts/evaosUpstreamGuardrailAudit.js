@@ -222,7 +222,10 @@ const REQUIRED_MARKERS = Object.freeze([
       { label: 'evaOS route contribution remains mounted', text: 'renderEvaosRoutes()' },
       { label: 'desktop session listener remains mounted', text: '<DesktopSessionImportListener />' },
       { label: 'desktop session import action remains handled', text: 'EVAOS_DESKTOP_SESSION_IMPORTED_ACTION' },
-      { label: 'team route remains feature-gated', text: 'TEAM_MODE_ENABLED ? withRouteFallback(TeamIndex)' },
+      {
+        label: 'team route remains controlled by shell constant',
+        text: 'TEAM_MODE_ENABLED ? withRouteFallback(TeamIndex)',
+      },
     ],
   },
   {
@@ -291,7 +294,7 @@ const REQUIRED_MARKERS = Object.freeze([
         text: "const appTitle = useMemo(() => 'evaOS Workbench Beta', []);",
       },
       {
-        label: 'team titlebar affordance remains feature-gated',
+        label: 'team titlebar affordance remains controlled by shell constant',
         text: 'const isTeamRoute = TEAM_MODE_ENABLED && /^\\/team\\/[^/]+/.test(location.pathname);',
       },
     ],

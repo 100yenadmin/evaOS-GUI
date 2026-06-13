@@ -950,11 +950,11 @@ const LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS = [
 ];
 
 const TEAM_ROUTE_CHECK = {
-  name: 'team-route-redirect',
+  name: 'team-route-enabled',
   hash: '/team/local-smoke',
-  screenshotName: 'team-route-redirects-to-guid',
+  screenshotName: 'team-route-enabled',
   expected: ['evaOS Workbench Beta'],
-  forbidden: ['Team Space', 'Create team', 'team mode'],
+  forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
 };
 
 const GLOBAL_FORBIDDEN_PATTERNS = [
@@ -1637,7 +1637,7 @@ async function runLocalShellSmoke(options = {}) {
     }
 
     await navigate(page, TEAM_ROUTE_CHECK.hash);
-    await page.waitForURL(/#\/guid/, { timeout: 8000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {});
     const teamRedirectText = await page.locator('body').innerText({ timeout: 10000 });
     findings.push(
       ...textFindings(TEAM_ROUTE_CHECK.name, teamRedirectText, TEAM_ROUTE_CHECK.expected, TEAM_ROUTE_CHECK.forbidden)
@@ -1650,7 +1650,7 @@ async function runLocalShellSmoke(options = {}) {
       textLength: teamRedirectText.trim().length,
       proofStage: PROOF_STAGES.SHELL_SMOKE,
       settledMarkers: TEAM_ROUTE_CHECK.expected,
-      loadedStateRequiredMarkers: ['redirected #/guid route', 'beta shell fallback copy'],
+      loadedStateRequiredMarkers: ['team route enabled by beta shell', 'no renderer secret leakage'],
     });
 
     for (const error of pageErrors) {

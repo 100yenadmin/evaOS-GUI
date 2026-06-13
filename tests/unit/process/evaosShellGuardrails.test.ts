@@ -15,8 +15,8 @@ import { getAgentModes, mergeWithCapabilities } from '../../../packages/desktop/
 const repoRoot = resolve(__dirname, '../../..');
 
 describe('evaOS shell guardrails', () => {
-  it('keeps team mode disabled by default for the public beta shell', () => {
-    expect(TEAM_MODE_ENABLED).toBe(false);
+  it('keeps team mode enabled for the beta shell', () => {
+    expect(TEAM_MODE_ENABLED).toBe(true);
   });
 
   it('keeps core evaOS beta routes visible unless explicitly disabled', () => {
@@ -41,7 +41,7 @@ describe('evaOS shell guardrails', () => {
     expect(getFullAutoMode('opencode')).toBe('plan');
   });
 
-  it('keeps team and insecure remote-agent UI surfaces fenced', () => {
+  it('keeps team visible and insecure remote-agent UI surfaces fenced', () => {
     const sider = readFileSync(
       resolve(repoRoot, 'packages/desktop/src/renderer/components/layout/Sider/index.tsx'),
       'utf8'
