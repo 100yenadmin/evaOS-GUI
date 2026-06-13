@@ -16,6 +16,17 @@ const upstreamGuardrailAudit = require('../../../scripts/evaosUpstreamGuardrailA
     owner: string;
     protectedPaths: string[];
   }>;
+  EVAOS_UPSTREAM_CANARY_BUCKETS: Array<{
+    id: string;
+    requiredProof: string;
+    pathGlobs: string[];
+  }>;
+  classifyEvaosUpstreamSeamPaths: (changedPaths: string[]) => Array<{
+    id: string;
+    requiredProof: string;
+    pathGlobs: string[];
+    matchedPaths: string[];
+  }>;
   collectEvaosUpstreamGuardrailIssues: (rootDir: string) => string[];
   collectEvaosUpstreamGuardrailIssuesFromFiles: (files: Record<string, string>) => string[];
 };
@@ -27,7 +38,7 @@ describe('evaOS upstream import guardrail audit', () => {
     expect(upstreamGuardrailAudit.EVAOS_UPSTREAM_ALIGNMENT_TARGET).toEqual({
       targetTag: 'v2.1.18',
       targetSha: 'ddd20d3',
-      defaultImportRange: 'v2.1.13..v2.1.18',
+      defaultImportRange: 'v2.1.12..v2.1.18',
       optionalMainCommit: '57aa0d0',
       optionalMainCommitScope: 'voice-stt-only',
     });
@@ -43,11 +54,55 @@ describe('evaOS upstream import guardrail audit', () => {
       'ipc-namespace-registration',
       'native-connector-boundary',
       'release-identity',
+      'voice-native-boundary',
+      'team-runtime',
+      'assistant-governance',
+      'aioncore-runtime-pin',
     ]);
 
     expect(upstreamGuardrailAudit.EVAOS_UPSTREAM_IMPORT_SEAMS.flatMap((seam) => seam.protectedPaths)).toEqual(
-      expect.arrayContaining(['packages/desktop/src/common/adapter/ipcBridge.ts'])
+      expect.arrayContaining([
+        'packages/desktop/src/renderer/components/layout/Router.tsx',
+        'packages/desktop/src/renderer/components/layout/Titlebar/index.tsx',
+        'packages/desktop/src/common/adapter/ipcBridge.ts',
+        'packages/desktop/src/process/bridge/index.ts',
+        '.github/workflows/build-and-release.yml',
+        'entitlements.plist',
+      ])
     );
+  });
+
+  it('classifies upstream changed paths into required evaOS canary buckets', () => {
+    const classifications = upstreamGuardrailAudit.classifyEvaosUpstreamSeamPaths([
+      'packages/desktop/src/common/adapter/ipcBridge.ts',
+      'packages/desktop/src/renderer/services/speech/SpeechStreamClient.ts',
+      'packages/desktop/src/renderer/pages/team/TeamPage.tsx',
+      'packages/desktop/src/renderer/pages/settings/AssistantSettings/index.tsx',
+      './packages/desktop/src/common/evaos/nativeCompanionBoundary.ts',
+      'packages/desktop/src/process/evaosBetaSafety.ts',
+      'packages/shared-scripts/src/prepare-aioncore.js',
+      '.github/workflows/release-distribute.yml',
+    ]);
+
+    expect(classifications.map((classification) => classification.id).sort()).toEqual([
+      'aioncore-runtime',
+      'assistant-governance',
+      'broker-ipc',
+      'native-connector',
+      'native-voice',
+      'release-identity',
+      'runtime-team',
+    ]);
+    expect(classifications.find((classification) => classification.id === 'native-connector')?.matchedPaths).toEqual([
+      'packages/desktop/src/common/evaos/nativeCompanionBoundary.ts',
+    ]);
+    expect(classifications.find((classification) => classification.id === 'native-voice')?.requiredProof).toContain(
+      'microphone permission'
+    );
+  });
+
+  it('returns no classifier buckets for unrelated upstream files', () => {
+    expect(upstreamGuardrailAudit.classifyEvaosUpstreamSeamPaths(['docs/readme/readme_ch.md'])).toEqual([]);
   });
 
   it('passes against the current evaOS fork before upstream imports land', () => {
@@ -60,6 +115,11 @@ describe('evaOS upstream import guardrail audit', () => {
       'packages/desktop/src/renderer/evaos/evaosRoutes.tsx': "<Route path='/openclaw' />",
       'packages/desktop/src/common/adapter/ipcBridge.ts': 'export const shell = {};',
       'packages/desktop/src/process/evaosBetaSafety.ts': "const repo = 'iOfficeAI/AionUi';",
+      'packages/desktop/src/renderer/components/layout/Router.tsx': '<Routes />',
+      'packages/desktop/src/renderer/components/layout/Titlebar/index.tsx': "const appTitle = 'AionUi';",
+      'packages/desktop/src/process/bridge/index.ts': 'export function initAllBridges() {}',
+      'package.json': '{"name":"AionUi","productName":"AionUi"}',
+      '.github/workflows/build-and-release.yml': 'name: upstream release',
     });
 
     expect(issues).toEqual(
@@ -68,6 +128,7 @@ describe('evaOS upstream import guardrail audit', () => {
         expect.stringContaining('route-contribution'),
         expect.stringContaining('ipc-namespace-registration'),
         expect.stringContaining('update-feed-provider'),
+        expect.stringContaining('footer-account-context'),
       ])
     );
   });
