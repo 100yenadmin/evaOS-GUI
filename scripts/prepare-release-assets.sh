@@ -19,11 +19,11 @@ INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
 RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos)
+  all|macos|macos-arm64)
     ;;
   *)
     echo "::error::Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
-    echo "::error::Supported values: all, macos"
+    echo "::error::Supported values: all, macos, macos-arm64"
     exit 1
     ;;
 esac
@@ -43,24 +43,35 @@ github_release_asset_name() {
 # ---------------------------------------------------------------------------
 echo "==> Copying distributables from $ARTIFACTS_DIR ..."
 DISTRIBUTABLES=()
-if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-  while IFS= read -r file; do
-    DISTRIBUTABLES+=("$file")
-  done < <(find "$ARTIFACTS_DIR" -type f \( \
-    \( -path "*/macos-build-x64/*" -o -path "*/macos-build-arm64/*" \) -a \
-    \( -name "*.dmg" -o -name "*.zip" \) \
-  \) | sort)
-else
-  while IFS= read -r file; do
-    DISTRIBUTABLES+=("$file")
-  done < <(find "$ARTIFACTS_DIR" -type f \( \
-    -name "*.exe" -o \
-    -name "*.msi" -o \
-    -name "*.dmg" -o \
-    -name "*.deb" -o \
-    -name "*.zip" \
-  \) | sort)
-fi
+case "$RELEASE_TARGET_PLATFORMS" in
+  macos)
+    while IFS= read -r file; do
+      DISTRIBUTABLES+=("$file")
+    done < <(find "$ARTIFACTS_DIR" -type f \( \
+      \( -path "*/macos-build-x64/*" -o -path "*/macos-build-arm64/*" \) -a \
+      \( -name "*.dmg" -o -name "*.zip" \) \
+    \) | sort)
+    ;;
+  macos-arm64)
+    while IFS= read -r file; do
+      DISTRIBUTABLES+=("$file")
+    done < <(find "$ARTIFACTS_DIR" -type f \( \
+      -path "*/macos-build-arm64/*" -a \
+      \( -name "*.dmg" -o -name "*.zip" \) \
+    \) | sort)
+    ;;
+  all)
+    while IFS= read -r file; do
+      DISTRIBUTABLES+=("$file")
+    done < <(find "$ARTIFACTS_DIR" -type f \( \
+      -name "*.exe" -o \
+      -name "*.msi" -o \
+      -name "*.dmg" -o \
+      -name "*.deb" -o \
+      -name "*.zip" \
+    \) | sort)
+    ;;
+esac
 
 SANITIZED_DISTRIBUTABLE_BASENAMES=()
 for file in "${DISTRIBUTABLES[@]}"; do
@@ -84,21 +95,32 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   # ---------------------------------------------------------------------------
   echo "==> Copying web-cli tarballs from $ARTIFACTS_DIR ..."
   WEB_CLI_FILES=()
-  if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-    while IFS= read -r file; do
-      WEB_CLI_FILES+=("$file")
-    done < <(find "$ARTIFACTS_DIR" -type f \( \
-      \( -path "*/web-cli-darwin-arm64/*" -o -path "*/web-cli-darwin-x86_64/*" \) -a \
-      \( -name "aionui-web-*.tar.gz" -o -name "aionui-web-*.tar.gz.sha256" \) \
-    \) | sort)
-  else
-    while IFS= read -r file; do
-      WEB_CLI_FILES+=("$file")
-    done < <(find "$ARTIFACTS_DIR" -type f \( \
-      -name "aionui-web-*.tar.gz" -o \
-      -name "aionui-web-*.tar.gz.sha256" \
-    \) | sort)
-  fi
+  case "$RELEASE_TARGET_PLATFORMS" in
+    macos)
+      while IFS= read -r file; do
+        WEB_CLI_FILES+=("$file")
+      done < <(find "$ARTIFACTS_DIR" -type f \( \
+        \( -path "*/web-cli-darwin-arm64/*" -o -path "*/web-cli-darwin-x86_64/*" \) -a \
+        \( -name "aionui-web-*.tar.gz" -o -name "aionui-web-*.tar.gz.sha256" \) \
+      \) | sort)
+      ;;
+    macos-arm64)
+      while IFS= read -r file; do
+        WEB_CLI_FILES+=("$file")
+      done < <(find "$ARTIFACTS_DIR" -type f \( \
+        -path "*/web-cli-darwin-arm64/*" -a \
+        \( -name "aionui-web-*.tar.gz" -o -name "aionui-web-*.tar.gz.sha256" \) \
+      \) | sort)
+      ;;
+    all)
+      while IFS= read -r file; do
+        WEB_CLI_FILES+=("$file")
+      done < <(find "$ARTIFACTS_DIR" -type f \( \
+        -name "aionui-web-*.tar.gz" -o \
+        -name "aionui-web-*.tar.gz.sha256" \
+      \) | sort)
+      ;;
+  esac
 
   WEB_CLI_DUPS=$(for file in "${WEB_CLI_FILES[@]}"; do basename "$file"; done | sort | uniq -d || true)
   if [ -n "$WEB_CLI_DUPS" ]; then
@@ -242,11 +264,13 @@ EOF
 # ---------------------------------------------------------------------------
 echo "==> Writing canonical updater metadata ..."
 
-if [ -n "$MAC_X64_LATEST" ]; then
-  cp -f "$MAC_X64_LATEST" "$OUTPUT_DIR/latest-mac.yml"
-  sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-mac.yml"
-else
-  write_macos_dmg_metadata "x64" "latest-mac.yml"
+if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+  if [ -n "$MAC_X64_LATEST" ]; then
+    cp -f "$MAC_X64_LATEST" "$OUTPUT_DIR/latest-mac.yml"
+    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-mac.yml"
+  else
+    write_macos_dmg_metadata "x64" "latest-mac.yml"
+  fi
 fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   if [ -n "$WIN_X64_LATEST" ]; then
@@ -311,10 +335,17 @@ assert_evaos_beta_asset_identity() {
   esac
 }
 
-REQUIRED_METADATA=(latest-mac.yml)
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
-  REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
-fi
+case "$RELEASE_TARGET_PLATFORMS" in
+  all)
+    REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
+    ;;
+  macos)
+    REQUIRED_METADATA=(latest-mac.yml)
+    ;;
+  macos-arm64)
+    REQUIRED_METADATA=(latest-arm64-mac.yml)
+    ;;
+esac
 
 for required in "${REQUIRED_METADATA[@]}"; do
   if [ ! -f "$OUTPUT_DIR/$required" ]; then
@@ -335,20 +366,28 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   echo "==> Validating web-cli assets ..."
 
   VERSION="${MOCK_VERSION:-$(node -p "require('./package.json').version")}"
-  if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-    WEB_PLATFORMS=(
-      "darwin-arm64"
-      "darwin-x86_64"
-    )
-  else
-    WEB_PLATFORMS=(
-      "darwin-arm64"
-      "darwin-x86_64"
-      "linux-arm64"
-      "linux-x86_64"
-      "win-x86_64"
-    )
-  fi
+  case "$RELEASE_TARGET_PLATFORMS" in
+    macos)
+      WEB_PLATFORMS=(
+        "darwin-arm64"
+        "darwin-x86_64"
+      )
+      ;;
+    macos-arm64)
+      WEB_PLATFORMS=(
+        "darwin-arm64"
+      )
+      ;;
+    all)
+      WEB_PLATFORMS=(
+        "darwin-arm64"
+        "darwin-x86_64"
+        "linux-arm64"
+        "linux-x86_64"
+        "win-x86_64"
+      )
+      ;;
+  esac
 
   for plat in "${WEB_PLATFORMS[@]}"; do
     tarball="aionui-web-${VERSION}-${plat}.tar.gz"

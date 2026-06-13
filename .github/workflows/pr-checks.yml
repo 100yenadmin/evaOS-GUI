@@ -790,6 +790,43 @@ jobs:
             exit 1
           fi
 
+      - name: Validate Apple Silicon-only macOS release profile
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: 100yenadmin/evaOS-GUI
+          GITHUB_WORKFLOW: Build and Release
+          EVAOS_BETA_RELEASE_WORKFLOW: Build and Release
+          GITHUB_RUN_ID: '12345'
+          GITHUB_RUN_ATTEMPT: '1'
+          EVAOS_BETA_RELEASE_COMMIT: mock-sha
+          EVAOS_BETA_RELEASE_BRANCH: evaos/release-public-beta
+          EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true'
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1'
+          EXPECTED_RELEASE_COMMIT: mock-sha
+          INCLUDE_WEB_CLI_ASSETS: '0'
+          EVAOS_RELEASE_TARGET_PLATFORMS: macos-arm64
+          MOCK_VERSION: '1.0.0'
+        run: |
+          bash scripts/create-mock-release-artifacts.sh build-artifacts-macos-arm64
+          bash scripts/prepare-release-assets.sh build-artifacts-macos-arm64 release-assets-macos-arm64
+          node scripts/evaosBetaReleaseGate.js write-manifest release-assets-macos-arm64 evaos-beta-v1.0.0-evaos-beta.0
+          node scripts/evaosBetaReleaseGate.js verify-manifest release-assets-macos-arm64 evaos-beta-v1.0.0-evaos-beta.0
+          bash scripts/verify-release-assets.sh release-assets-macos-arm64
+          if find release-assets-macos-arm64 -type f \( \
+            -name "*.exe" -o \
+            -name "*.msi" -o \
+            -name "*.deb" -o \
+            -name "*-mac-x64.*" -o \
+            -name "latest.yml" -o \
+            -name "latest-mac.yml" -o \
+            -name "latest-win-arm64.yml" -o \
+            -name "latest-linux*.yml" \
+          \) | grep -q .; then
+            echo "::error::macOS arm64 release profile emitted deferred platform or x64 assets/metadata."
+            find release-assets-macos-arm64 -type f | sort
+            exit 1
+          fi
+
       - name: Validate macOS-only DMG-only release profile
         shell: bash
         env:

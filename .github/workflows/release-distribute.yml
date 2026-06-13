@@ -31,13 +31,14 @@ on:
         default: ''
         type: string
       release_target_platforms:
-        description: 'Release target platforms for verification: all keeps Windows/macOS/Linux; macos distributes only macOS assets.'
+        description: 'Release target platforms for verification: all keeps Windows/macOS/Linux; macos distributes x64+arm64 macOS; macos-arm64 distributes only Apple Silicon macOS.'
         required: false
         default: all
         type: choice
         options:
           - all
           - macos
+          - macos-arm64
 
 permissions:
   contents: write
@@ -130,6 +131,14 @@ jobs:
                 --pattern "*.dmg"
                 --pattern "*.zip"
                 --pattern "latest-mac.yml"
+                --pattern "latest-arm64-mac.yml"
+                --pattern "evaos-beta-release-manifest.json"
+              )
+              ;;
+            macos-arm64)
+              patterns=(
+                --pattern "*arm64*.dmg"
+                --pattern "*arm64*.zip"
                 --pattern "latest-arm64-mac.yml"
                 --pattern "evaos-beta-release-manifest.json"
               )

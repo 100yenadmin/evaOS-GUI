@@ -34,7 +34,7 @@ on:
         default: evaos/beta-rc-20260612
         type: string
       source_artifact_names:
-        description: 'Comma-separated source artifact names from the staged run.'
+        description: 'Comma-separated source artifact names from the staged run. Use macos-build-arm64 for macos-arm64 releases.'
         required: true
         default: macos-build-arm64,macos-build-x64
         type: string
@@ -58,6 +58,7 @@ on:
         type: choice
         options:
           - macos
+          - macos-arm64
           - all
 
 permissions:
@@ -114,6 +115,13 @@ jobs:
                 --pattern "*.dmg"
                 --pattern "*.zip"
                 --pattern "latest-mac.yml"
+                --pattern "latest-arm64-mac.yml"
+              )
+              ;;
+            macos-arm64)
+              patterns=(
+                --pattern "*arm64*.dmg"
+                --pattern "*arm64*.zip"
                 --pattern "latest-arm64-mac.yml"
               )
               ;;
