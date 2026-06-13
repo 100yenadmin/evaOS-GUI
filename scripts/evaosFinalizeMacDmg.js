@@ -287,18 +287,24 @@ function buildDmgCodesignArgs(dmgPath, identity, env = process.env) {
   return signArgs;
 }
 
-function finalizeDmg(dmgPath, env = process.env) {
-  const identity = getEnvValue(env, SIGNING_IDENTITY_ENV);
-  if (!identity) {
-    throw new Error(
-      'evaOS DMG finalization requires EVAOS_DMG_CODESIGN_IDENTITY, IDENTITY_SHA, identity, or CSC_NAME.'
-    );
-  }
+function shouldCodesignDmg(env = process.env) {
+  return TRUTHY.has(String(env.EVAOS_DMG_CODESIGN || '').toLowerCase());
+}
 
+function finalizeDmg(dmgPath, env = process.env) {
   assertPublicBetaNotarizationEnv(env);
 
-  run('codesign', buildDmgCodesignArgs(dmgPath, identity, env));
-  run('codesign', ['--verify', '--verbose=2', dmgPath]);
+  if (shouldCodesignDmg(env)) {
+    const identity = getEnvValue(env, SIGNING_IDENTITY_ENV);
+    if (!identity) {
+      throw new Error('evaOS DMG codesign requires EVAOS_DMG_CODESIGN_IDENTITY, IDENTITY_SHA, identity, or CSC_NAME.');
+    }
+
+    run('codesign', buildDmgCodesignArgs(dmgPath, identity, env));
+    run('codesign', ['--verify', '--verbose=2', dmgPath]);
+  } else {
+    console.log('Skipping DMG codesign; notarization, stapling, and Gatekeeper-open validation remain required.');
+  }
 
   const submitArgs = buildNotarytoolSubmitArgs(dmgPath, env);
   if (submitArgs.length === 0) {
@@ -365,5 +371,6 @@ module.exports = {
   getNotaryPollIntervalMs,
   getNotaryProcessTimeoutMs,
   runNotarytoolSubmit,
+  shouldCodesignDmg,
   waitForNotarySubmission,
 };

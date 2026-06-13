@@ -552,6 +552,15 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(afterSign, 'EVAOS_BETA_REQUIRE_SIGNING', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'Ad-hoc signing is not allowed', 'scripts/afterSign.js', issues);
   requireText(dmgFinalizer, 'buildDmgCodesignArgs', 'scripts/evaosFinalizeMacDmg.js', issues);
+  requireText(dmgFinalizer, 'shouldCodesignDmg', 'scripts/evaosFinalizeMacDmg.js', issues);
+  requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN', 'scripts/evaosFinalizeMacDmg.js', issues);
+  requireText(
+    dmgFinalizer,
+    'Skipping DMG codesign',
+    'scripts/evaosFinalizeMacDmg.js',
+    issues,
+    'DMG codesign is opt-in; DMG notarization, stapling, and Gatekeeper remain required'
+  );
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_KEYCHAIN', 'scripts/evaosFinalizeMacDmg.js', issues);
   const dmgSigningKeychainSection = dmgFinalizer.split('const NOTARY_KEYCHAIN_ENV')[0] || '';
   if (dmgSigningKeychainSection.includes('NOTARY_KEYCHAIN') || dmgSigningKeychainSection.includes('RELEASE_KEYCHAIN')) {

@@ -61,6 +61,7 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
   getNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryPollIntervalMs: (env: Record<string, string | undefined>) => number;
   getNotaryProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
+  shouldCodesignDmg: (env: Record<string, string | undefined>) => boolean;
 };
 
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -515,7 +516,10 @@ describe('evaOS beta release gate', () => {
     ).toThrow(/APPLE_API_ISSUER/);
   });
 
-  it('keeps DMG codesign keychain separate from notarization keychain credentials', () => {
+  it('keeps DMG codesign opt-in and separate from notarization keychain credentials', () => {
+    expect(macDmgFinalizer.shouldCodesignDmg({})).toBe(false);
+    expect(macDmgFinalizer.shouldCodesignDmg({ EVAOS_DMG_CODESIGN: 'true' })).toBe(true);
+
     expect(
       macDmgFinalizer.buildDmgCodesignArgs('/release/evaOS.dmg', 'Developer ID Application: evaOS', {
         NOTARY_KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
