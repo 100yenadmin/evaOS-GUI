@@ -17,6 +17,14 @@ on:
         description: 'Type evaos-beta to acknowledge this workflow is manual-only on the evaOS beta fork.'
         required: true
         type: string
+      release_operation:
+        description: 'Build artifacts or register a trusted local-signed DMG manifest for an existing draft prerelease.'
+        required: false
+        default: build
+        type: choice
+        options:
+          - build
+          - register-local-signed-dmg-manifest
       release_target_platforms:
         description: 'Release target platforms: all keeps Windows/macOS/Linux; macos builds only macOS and defers Windows/Linux.'
         required: false
@@ -25,6 +33,14 @@ on:
         options:
           - all
           - macos
+      manifest_release_target_platforms:
+        description: 'Release target platforms for local-signed DMG manifest registration.'
+        required: false
+        default: macos
+        type: choice
+        options:
+          - macos
+          - all
       macos_dmg_finalization:
         description: 'macOS DMG finalization owner. local stages app-notarized DMGs for local Developer ID finalization; ci attempts full CI DMG signing/notarization.'
         required: false
@@ -33,6 +49,60 @@ on:
         options:
           - local
           - ci
+      local_signed_dmg_fallback_ack:
+        description: 'Type evaos-local-signed-dmg when release_operation registers locally finalized DMGs.'
+        required: false
+        default: ''
+        type: string
+      tag:
+        description: 'Existing non-dev evaOS beta release tag for manifest registration.'
+        required: false
+        default: ''
+        type: string
+      source_ci_run_id:
+        description: 'Build and Release run id that produced the staged macOS artifacts.'
+        required: false
+        default: ''
+        type: string
+      source_ci_head_sha:
+        description: 'Commit SHA used by the staged Build and Release run.'
+        required: false
+        default: ''
+        type: string
+      source_ci_conclusion:
+        description: 'Conclusion of the staged Build and Release run.'
+        required: false
+        default: success
+        type: choice
+        options:
+          - failure
+          - cancelled
+          - success
+      source_ci_head_branch:
+        description: 'Branch used by the staged Build and Release run.'
+        required: false
+        default: evaos/beta-rc-20260612
+        type: string
+      source_artifact_names:
+        description: 'Comma-separated source artifact names from the staged run.'
+        required: false
+        default: macos-build-arm64,macos-build-x64
+        type: string
+      fallback_reason:
+        description: 'Concrete reason for local DMG finalization.'
+        required: false
+        default: ci-dmg-codesign-timeout
+        type: string
+      local_finalization_proof_ref:
+        description: 'Non-secret issue, run, or artifact reference containing local signing/notarization/stapling proof.'
+        required: false
+        default: ''
+        type: string
+      dmg_notary_submission_ids:
+        description: 'Comma-separated Apple notary submission ids for the finalized DMGs.'
+        required: false
+        default: ''
+        type: string
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -44,7 +114,7 @@ jobs:
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
-    if: github.event.inputs.beta_release_ack == 'evaos-beta'
+    if: github.event.inputs.beta_release_ack == 'evaos-beta' && (inputs.release_operation || 'build') == 'build'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -110,7 +180,7 @@ jobs:
     needs: code-quality
     # evaOS beta fork: release builds are manual-only until issue #12 creates
     # an audited beta release feed. Do not trigger from branch or tag pushes.
-    if: needs.code-quality.result == 'success' && github.event.inputs.beta_release_ack == 'evaos-beta'
+    if: needs.code-quality.result == 'success' && github.event.inputs.beta_release_ack == 'evaos-beta' && (inputs.release_operation || 'build') == 'build'
     with:
       skip_code_quality: true
       macos_dmg_finalization: ${{ inputs.macos_dmg_finalization || 'local' }}
@@ -124,7 +194,7 @@ jobs:
     needs: code-quality
     # evaOS beta fork: release builds are manual-only until issue #12 creates
     # an audited beta release feed. Do not trigger from branch or tag pushes.
-    if: needs.code-quality.result == 'success' && github.event.inputs.beta_release_ack == 'evaos-beta' && (inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all') == 'all'
+    if: needs.code-quality.result == 'success' && github.event.inputs.beta_release_ack == 'evaos-beta' && (inputs.release_operation || 'build') == 'build' && (inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all') == 'all'
     with:
       ref: ''
       append_commit_hash: false
@@ -422,7 +492,7 @@ jobs:
     name: Local DMG Finalization Handoff
     runs-on: ubuntu-latest
     needs: build-pipeline
-    if: needs.build-pipeline.result == 'success' && (inputs.macos_dmg_finalization || 'local') == 'local'
+    if: needs.build-pipeline.result == 'success' && (inputs.release_operation || 'build') == 'build' && (inputs.macos_dmg_finalization || 'local') == 'local'
     steps:
       - name: Summarize staged macOS artifacts
         run: |
@@ -440,4 +510,162 @@ jobs:
             echo "5. Validate each DMG with stapler and Gatekeeper primary-signature checks."
             echo "6. Regenerate latest-mac.yml and latest-arm64-mac.yml from the finalized DMGs."
             echo "7. Create/update the GitHub prerelease with the finalized DMGs and run the local signed DMG manifest registration workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  register-local-signed-dmg-manifest:
+    name: Register trusted local-signed DMG manifest
+    runs-on: ubuntu-latest
+    if: github.event.inputs.beta_release_ack == 'evaos-beta' && inputs.release_operation == 'register-local-signed-dmg-manifest'
+    env:
+      EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.manifest_release_target_platforms || 'macos' }}
+    steps:
+      - name: Validate manifest registration inputs
+        env:
+          ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
+          TAG: ${{ github.event.inputs.tag }}
+          SOURCE_RUN_ID: ${{ github.event.inputs.source_ci_run_id }}
+          SOURCE_SHA: ${{ github.event.inputs.source_ci_head_sha }}
+          PROOF_REF: ${{ github.event.inputs.local_finalization_proof_ref }}
+          NOTARY_IDS: ${{ github.event.inputs.dmg_notary_submission_ids }}
+        run: |
+          set -euo pipefail
+          if [ "$ACK" != "evaos-local-signed-dmg" ]; then
+            echo "::error::Wrong local signed DMG fallback acknowledgement. Type evaos-local-signed-dmg."
+            exit 1
+          fi
+          if [[ "$TAG" != evaos-beta-* ]]; then
+            echo "::error::Refusing non-evaOS beta tag: $TAG"
+            exit 1
+          fi
+          if [[ "$TAG" == *"-dev" || "$TAG" == *"-dev-"* || "$TAG" == *"-dev."* ]]; then
+            echo "::error::Refusing development beta tag: $TAG"
+            exit 1
+          fi
+          if [ -z "$SOURCE_RUN_ID" ] || [ -z "$SOURCE_SHA" ]; then
+            echo "::error::source_ci_run_id and source_ci_head_sha are required."
+            exit 1
+          fi
+          if [ ${#PROOF_REF} -lt 8 ] || [[ "$PROOF_REF" == *"Bearer "* ]] || [[ "$PROOF_REF" == *"token"* ]]; then
+            echo "::error::local_finalization_proof_ref must be a concrete non-secret reference."
+            exit 1
+          fi
+          if [ -z "$NOTARY_IDS" ]; then
+            echo "::error::dmg_notary_submission_ids is required."
+            exit 1
+          fi
+
+      - name: Checkout release branch scripts
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download finalized release assets
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          case "${EVAOS_RELEASE_TARGET_PLATFORMS}" in
+            macos)
+              patterns=(
+                --pattern "*.dmg"
+                --pattern "*.zip"
+                --pattern "latest-mac.yml"
+                --pattern "latest-arm64-mac.yml"
+              )
+              ;;
+            all)
+              patterns=(
+                --pattern "*.dmg"
+                --pattern "*.exe"
+                --pattern "*.msi"
+                --pattern "*.deb"
+                --pattern "*.zip"
+                --pattern "*.yml"
+              )
+              ;;
+            *)
+              echo "::error::Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: ${EVAOS_RELEASE_TARGET_PLATFORMS}"
+              exit 1
+              ;;
+          esac
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --dir release-assets \
+            "${patterns[@]}"
+          rm -f release-assets/evaos-beta-release-manifest.json
+          ls -la release-assets
+
+      - name: Verify finalized release assets
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          EVAOS_RELEASE_TARGET_PLATFORMS: ${{ env.EVAOS_RELEASE_TARGET_PLATFORMS }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#evaos-beta-}"
+          VERSION="${VERSION#v}"
+          INCLUDE_WEB_CLI_ASSETS=0 MOCK_VERSION="$VERSION" bash scripts/verify-release-assets.sh release-assets
+
+      - name: Write local-signed fallback manifest
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          EVAOS_BETA_RELEASE_WORKFLOW: Build and Release
+          EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true'
+          EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback
+          EVAOS_BETA_RELEASE_COMMIT: ${{ github.event.inputs.source_ci_head_sha }}
+          EVAOS_BETA_RELEASE_BRANCH: ${{ github.event.inputs.source_ci_head_branch }}
+          EVAOS_BETA_LOCAL_DMG_SOURCE_RUN_ID: ${{ github.event.inputs.source_ci_run_id }}
+          EVAOS_BETA_LOCAL_DMG_SOURCE_WORKFLOW: Build and Release
+          EVAOS_BETA_LOCAL_DMG_SOURCE_CONCLUSION: ${{ github.event.inputs.source_ci_conclusion }}
+          EVAOS_BETA_LOCAL_DMG_SOURCE_SHA: ${{ github.event.inputs.source_ci_head_sha }}
+          EVAOS_BETA_LOCAL_DMG_SOURCE_BRANCH: ${{ github.event.inputs.source_ci_head_branch }}
+          EVAOS_BETA_LOCAL_DMG_SOURCE_ARTIFACTS: ${{ github.event.inputs.source_artifact_names }}
+          EVAOS_BETA_LOCAL_DMG_FALLBACK_REASON: ${{ github.event.inputs.fallback_reason }}
+          EVAOS_BETA_LOCAL_DMG_FINALIZATION_PROOF_REF: ${{ github.event.inputs.local_finalization_proof_ref }}
+          EVAOS_BETA_LOCAL_DMG_NOTARY_SUBMISSION_IDS: ${{ github.event.inputs.dmg_notary_submission_ids }}
+        run: node scripts/evaosBetaReleaseGate.js write-manifest release-assets "$TAG_NAME"
+
+      - name: Verify local-signed fallback manifest
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          EXPECTED_RELEASE_COMMIT: ${{ github.event.inputs.source_ci_head_sha }}
+          EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
+        run: node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "${{ github.event.inputs.tag }}"
+
+      - name: Upload trusted manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaos-beta-release-manifest-${{ github.event.inputs.tag }}
+          path: release-assets/evaos-beta-release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach manifest to GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" release-assets/evaos-beta-release-manifest.json \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+      - name: Summary
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          {
+            echo "## Registered trusted local-signed DMG manifest"
+            echo ""
+            echo "- Tag: \`$TAG\`"
+            echo "- Manifest artifact: \`evaos-beta-release-manifest-$TAG\`"
+            echo "- Next: run evaOS Beta RC Canary with \`trusted_manifest_run_id=${{ github.run_id }}\` and \`local_signed_dmg_fallback_ack=evaos-local-signed-dmg\`."
           } >> "$GITHUB_STEP_SUMMARY"

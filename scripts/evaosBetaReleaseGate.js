@@ -438,6 +438,34 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     buildRelease,
+    'register-local-signed-dmg-manifest',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'visible local-signed DMG manifest registration operation'
+  );
+  requireText(
+    buildRelease,
+    'manifest_release_target_platforms',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'macOS-default target platform input for local manifest registration'
+  );
+  requireText(
+    buildRelease,
+    'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'local-signed DMG fallback provenance writing'
+  );
+  requireText(
+    buildRelease,
+    'evaos-local-signed-dmg',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'local-signed DMG fallback acknowledgement'
+  );
+  requireText(
+    buildRelease,
     'scripts/verify-release-assets.sh release-assets',
     '.github/workflows/build-and-release.yml',
     issues
