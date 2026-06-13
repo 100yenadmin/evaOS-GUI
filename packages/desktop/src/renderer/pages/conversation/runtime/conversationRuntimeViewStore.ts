@@ -114,6 +114,8 @@ const applyRuntimeSummary = (
   runtime: TConversationRuntimeSummary,
   options: { preserveLocalSubmitting?: boolean } = {}
 ): ConversationRuntimeView => {
+  const isCancelling = runtime.state === 'cancelling';
+
   if (previous.localSubmitting && options.preserveLocalSubmitting !== false) {
     return {
       ...previous,
@@ -129,8 +131,8 @@ const applyRuntimeSummary = (
   return {
     ...previous,
     state: runtime.state,
-    isProcessing: runtime.is_processing,
-    canSendMessage: runtime.can_send_message,
+    isProcessing: isCancelling || runtime.is_processing,
+    canSendMessage: !isCancelling && runtime.can_send_message,
     pendingConfirmations: runtime.pending_confirmations,
     hasBackendRuntime: true,
     hydrated: true,
@@ -142,17 +144,21 @@ const applyRuntimeSummary = (
 const applyRuntimeCompletionSummary = (
   previous: ConversationRuntimeView,
   runtime: TConversationRuntimeSummary
-): ConversationRuntimeView => ({
-  ...previous,
-  state: runtime.state,
-  isProcessing: runtime.is_processing,
-  canSendMessage: runtime.can_send_message,
-  pendingConfirmations: runtime.pending_confirmations,
-  hasBackendRuntime: true,
-  hydrated: true,
-  localSubmitting: runtime.state === 'idle' ? false : previous.localSubmitting,
-  localStopping: runtime.state === 'idle' ? false : previous.localStopping,
-});
+): ConversationRuntimeView => {
+  const isCancelling = runtime.state === 'cancelling';
+
+  return {
+    ...previous,
+    state: runtime.state,
+    isProcessing: isCancelling || runtime.is_processing,
+    canSendMessage: !isCancelling && runtime.can_send_message,
+    pendingConfirmations: runtime.pending_confirmations,
+    hasBackendRuntime: true,
+    hydrated: true,
+    localSubmitting: runtime.state === 'idle' ? false : previous.localSubmitting,
+    localStopping: runtime.state === 'idle' ? false : previous.localStopping,
+  };
+};
 
 const withLogs = (
   view: ConversationRuntimeView,
