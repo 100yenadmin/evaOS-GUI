@@ -124,7 +124,7 @@ describe('evaOS local shell smoke', () => {
       'company-brain-broker-guard',
       'webui-beta-guardrail',
     ]);
-    expect(localShellSmoke.TEAM_ROUTE_CHECK.name).toBe('team-route-redirect');
+    expect(localShellSmoke.TEAM_ROUTE_CHECK.name).toBe('team-route-enabled');
   });
 
   it('prepares the settled screenshot matrix for the finish-line shell smoke pass', () => {
@@ -710,7 +710,7 @@ describe('evaOS local shell smoke', () => {
     );
     expect(agentSettings?.settledAnyMarkers).toEqual(['Paired']);
     expect(localShellSmoke.TEAM_ROUTE_CHECK.forbidden).toEqual(
-      expect.arrayContaining(['Team Space', 'Create team', 'team mode'])
+      expect.arrayContaining(['desktop_session', 'Bearer', 'provider_grant'])
     );
   });
 
