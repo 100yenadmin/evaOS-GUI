@@ -15,6 +15,9 @@ const SIGNING_IDENTITY_ENV = {
 const SIGNING_KEYCHAIN_ENV = {
   aliases: ['EVAOS_DMG_CODESIGN_KEYCHAIN', 'CODESIGN_KEYCHAIN'],
 };
+const DMG_CODESIGN_MODE_ENV = {
+  aliases: ['EVAOS_DMG_CODESIGN_MODE'],
+};
 const KEYCHAIN_PROFILE_ENV = {
   aliases: ['NOTARY_PROFILE', 'KEYCHAIN_PROFILE', 'keychainProfile'],
 };
@@ -46,6 +49,9 @@ const DEFAULT_DMG_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_DMG_CODESIGN_PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 const FALSY = new Set(['0', 'false', 'no', 'off']);
+const DMG_CODESIGN_MODE_SIGN = 'sign';
+const DMG_CODESIGN_MODE_VERIFY_EXISTING = 'verify-existing';
+const DMG_CODESIGN_MODES = new Set([DMG_CODESIGN_MODE_SIGN, DMG_CODESIGN_MODE_VERIFY_EXISTING]);
 
 function findDmgArtifacts(outDir) {
   if (!fs.existsSync(outDir)) {
@@ -308,19 +314,41 @@ function shouldCodesignDmg(env = process.env) {
   return !FALSY.has(String(env.EVAOS_DMG_CODESIGN || '').toLowerCase());
 }
 
+function getDmgCodesignMode(env = process.env) {
+  const mode = String(getEnvValue(env, DMG_CODESIGN_MODE_ENV) || DMG_CODESIGN_MODE_SIGN)
+    .trim()
+    .toLowerCase();
+  if (!DMG_CODESIGN_MODES.has(mode)) {
+    throw new Error(
+      `EVAOS_DMG_CODESIGN_MODE must be ${DMG_CODESIGN_MODE_SIGN} or ${DMG_CODESIGN_MODE_VERIFY_EXISTING}, got: ${mode}`
+    );
+  }
+  return mode;
+}
+
 function finalizeDmg(dmgPath, env = process.env) {
   assertPublicBetaNotarizationEnv(env);
 
   if (shouldCodesignDmg(env)) {
-    const identity = getEnvValue(env, SIGNING_IDENTITY_ENV);
-    if (!identity) {
-      throw new Error('evaOS DMG codesign requires EVAOS_DMG_CODESIGN_IDENTITY, IDENTITY_SHA, identity, or CSC_NAME.');
-    }
+    const codesignMode = getDmgCodesignMode(env);
+    if (codesignMode === DMG_CODESIGN_MODE_VERIFY_EXISTING) {
+      console.log('Verifying existing DMG code signature from electron-builder.');
+      run('codesign', ['--verify', '--verbose=2', dmgPath], {
+        timeout: getDmgCodesignProcessTimeoutMs(env),
+      });
+    } else {
+      const identity = getEnvValue(env, SIGNING_IDENTITY_ENV);
+      if (!identity) {
+        throw new Error(
+          'evaOS DMG codesign requires EVAOS_DMG_CODESIGN_IDENTITY, IDENTITY_SHA, identity, or CSC_NAME.'
+        );
+      }
 
-    run('codesign', buildDmgCodesignArgs(dmgPath, identity, env), {
-      timeout: getDmgCodesignProcessTimeoutMs(env),
-    });
-    run('codesign', ['--verify', '--verbose=2', dmgPath]);
+      run('codesign', buildDmgCodesignArgs(dmgPath, identity, env), {
+        timeout: getDmgCodesignProcessTimeoutMs(env),
+      });
+      run('codesign', ['--verify', '--verbose=2', dmgPath]);
+    }
   } else {
     console.log('Skipping DMG codesign by explicit opt-out; Gatekeeper primary-signature validation may fail.');
   }
@@ -385,8 +413,9 @@ module.exports = {
   buildNotarytoolSubmitArgs,
   finalizeMacDmgs,
   findDmgArtifacts,
-  getDmgTrustProcessTimeoutMs,
   getDmgCodesignProcessTimeoutMs,
+  getDmgCodesignMode,
+  getDmgTrustProcessTimeoutMs,
   getNotaryCommandProcessTimeoutMs,
   getNotaryPollIntervalMs,
   getNotaryProcessTimeoutMs,

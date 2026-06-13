@@ -657,6 +657,7 @@ jobs:
           APP_ID: ${{ secrets.APP_ID }}
           EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
           EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_DMG_CODESIGN_MODE: verify-existing
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}

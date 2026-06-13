@@ -58,6 +58,7 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
   buildNotarytoolSubmitArgs: (dmgPath: string, env: Record<string, string | undefined>) => string[];
   findDmgArtifacts: (outDir: string) => string[];
   getDmgCodesignProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
+  getDmgCodesignMode: (env: Record<string, string | undefined>) => string;
   getDmgTrustProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
   getNotaryPollIntervalMs: (env: Record<string, string | undefined>) => number;
@@ -521,6 +522,11 @@ describe('evaOS beta release gate', () => {
     expect(macDmgFinalizer.shouldCodesignDmg({})).toBe(true);
     expect(macDmgFinalizer.shouldCodesignDmg({ EVAOS_DMG_CODESIGN: 'true' })).toBe(true);
     expect(macDmgFinalizer.shouldCodesignDmg({ EVAOS_DMG_CODESIGN: 'false' })).toBe(false);
+    expect(macDmgFinalizer.getDmgCodesignMode({})).toBe('sign');
+    expect(macDmgFinalizer.getDmgCodesignMode({ EVAOS_DMG_CODESIGN_MODE: 'verify-existing' })).toBe('verify-existing');
+    expect(() => macDmgFinalizer.getDmgCodesignMode({ EVAOS_DMG_CODESIGN_MODE: 'ambient' })).toThrow(
+      /EVAOS_DMG_CODESIGN_MODE/
+    );
 
     expect(
       macDmgFinalizer.buildDmgCodesignArgs('/release/evaOS.dmg', 'Developer ID Application: evaOS', {
