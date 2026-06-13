@@ -253,7 +253,7 @@ const AionrsSendBox: React.FC<{
           files,
         });
         setActiveMsgId(res.msg_id);
-        runtimeView.markSendAccepted(res.msg_id);
+        runtimeView.markSendAccepted(res.turn_id ?? res.runtime?.turn_id, res.runtime, res.msg_id);
         emitter.emit('chat.history.refresh');
         if (files.length > 0) {
           emitter.emit('aionrs.workspace.refresh');
@@ -560,13 +560,14 @@ const AionrsSendBox: React.FC<{
   const handleStop = async (): Promise<void> => {
     // Best-effort cancel: swallow rejections so they don't bubble up as
     // unhandled rejections. UI state is still reset via finally.
-    runtimeView.markStopRequested();
+    const turnId = runtimeView.activeTurnId;
+    runtimeView.markStopRequested(turnId);
     try {
-      await ipcBridge.conversation.stop.invoke({ conversation_id });
+      const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
+      runtimeView.markStopAcknowledged(turnId, result.runtime);
     } catch (error) {
       console.warn('[AionrsSendBox] stop request failed', error);
     } finally {
-      runtimeView.markStopAcknowledged();
       resetState();
       resetActiveExecution('stop');
     }
