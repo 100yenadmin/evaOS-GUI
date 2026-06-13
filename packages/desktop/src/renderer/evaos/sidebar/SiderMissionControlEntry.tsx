@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Tooltip } from '@arco-design/web-react';
-import { Home } from '@icon-park/react';
+import { Rocket } from '@icon-park/react';
 import classNames from 'classnames';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 
@@ -37,7 +37,7 @@ const SiderMissionControlEntry: React.FC<SiderMissionControlEntryProps> = ({
           )}
           onClick={onClick}
         >
-          <Home
+          <Rocket
             theme='outline'
             size='20'
             fill='currentColor'
@@ -60,7 +60,7 @@ const SiderMissionControlEntry: React.FC<SiderMissionControlEntryProps> = ({
         onClick={onClick}
       >
         <span className='size-22px flex items-center justify-center shrink-0 text-t-primary'>
-          <Home
+          <Rocket
             theme='outline'
             size='16'
             fill='currentColor'

@@ -14,8 +14,8 @@ const evaosBrokerMock = vi.hoisted(() => ({
   runtimeAction: vi.fn(),
 }));
 
-const feedbackMock = vi.hoisted(() => ({
-  openFeedback: vi.fn(),
+const supportEmailMock = vi.hoisted(() => ({
+  openEvaosSupportEmail: vi.fn(),
 }));
 
 const customerContextMock = vi.hoisted(() => ({
@@ -49,8 +49,8 @@ vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   }),
 }));
 
-vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
-  useFeedback: () => feedbackMock,
+vi.mock('@/renderer/utils/platform', () => ({
+  openEvaosSupportEmail: supportEmailMock.openEvaosSupportEmail,
 }));
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
@@ -143,6 +143,7 @@ describe('RuntimeDashboardPage', () => {
   ] as const)(
     'mounts an embedded %s runtime surface when the broker returns an opaque surface handle',
     async (runtimeKey, title, issueRef) => {
+      localStorage.clear();
       evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
         success: true,
         data: {
@@ -203,6 +204,9 @@ describe('RuntimeDashboardPage', () => {
       expect(surface).toHaveClass('h-full');
       expect(surface).toHaveStyle({ display: 'flex', height: '100%', width: '100%' });
       expect(surface).not.toHaveAttribute('allowpopups', 'true');
+      expect(screen.queryByRole('heading', { name: title })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Report to support' })).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('Acme Fixture Co');
       expect(document.body.textContent).not.toMatch(/desktop_session|eds_|Bearer|token=|launch_url/i);
       expect(document.body.textContent).not.toContain('runtime.example.test');
     }
@@ -298,7 +302,7 @@ describe('RuntimeDashboardPage', () => {
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
   });
 
-  it('opens an evaOS support report with route, customer, audit ids, and screenshot request', async () => {
+  it('opens evaOS support email with route and state context', async () => {
     window.location.hash = '#/terminal';
     evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
       success: true,
@@ -323,35 +327,16 @@ describe('RuntimeDashboardPage', () => {
     expect(await screen.findByText(/Terminal access denied by broker policy/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Report to support' }));
 
-    await waitFor(() => expect(feedbackMock.openFeedback).toHaveBeenCalledTimes(1));
-    const payload = feedbackMock.openFeedback.mock.calls[0][0];
-    expect(payload.autoScreenshot).toBe(true);
-    expect(payload.tags).toMatchObject({
-      support_surface: 'runtime:terminal',
-      evaos_route: '/terminal',
-      evaos_state: 'denied',
-      evaos_runtime: 'terminal',
-      evaos_issue: '#228',
+    await waitFor(() => expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledTimes(1));
+    expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledWith({
+      subject: 'evaOS Workbench Beta support: Terminal',
+      body: expect.stringContaining('Route: runtime:terminal'),
     });
-    expect(payload.extra).toMatchObject({
-      support_packet_version: 'evaos.support_report.v1',
-      product: 'evaOS Workbench Beta',
-      bundle_id: 'com.evaos.workbench.beta',
-      protocol_scheme: 'evaos-workbench-beta',
-      route: '/terminal',
-      runtime_key: 'terminal',
-      source_pointer: 'broker:runtime_status:terminal',
-      audit_ids: ['audit-terminal-denied'],
-      customer: {
-        selected_customer_id: 'fixture-customer-acme',
-        selected_customer_label: 'Acme Fixture Co',
-        summary: '1 customer target loaded',
-      },
-      screenshot: {
-        auto_capture_requested: true,
-      },
-    });
-    expect(JSON.stringify(payload)).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
+    const payload = supportEmailMock.openEvaosSupportEmail.mock.calls[0][0];
+    expect(payload.body).toContain('State: denied');
+    expect(payload.body).toContain('Status: denied');
+    expect(payload.body).toContain('Issue: #228');
+    expect(JSON.stringify(payload)).not.toMatch(/Acme Fixture Co|desktop_session|eds_|Bearer|token=/i);
   });
 
   it('maps open-dashboard evidence to a safe broker open action', async () => {

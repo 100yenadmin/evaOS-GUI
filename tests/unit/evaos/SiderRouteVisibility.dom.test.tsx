@@ -253,8 +253,8 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('cron.scheduledTasks')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
     expect(screen.getByText('Support')).toBeInTheDocument();
-    expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
-    expect(screen.queryByText('Mac & iPhone')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Design Workspace')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Mac & iPhone')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Design section' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Admin section' })).toHaveAttribute('aria-expanded', 'false');
 
@@ -270,13 +270,13 @@ describe('Sider runtime route visibility', () => {
     view.unmount();
     view = renderSider('/design-workspace');
     expect(screen.getByRole('button', { name: 'Design section' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Design Workspace')).toBeInTheDocument();
-    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
+    expect(screen.getByText('- Design Workspace')).toBeInTheDocument();
+    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
 
     view.unmount();
     renderSider('/native-companion');
     expect(screen.getByRole('button', { name: 'Admin section' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
   });
 
   it('hides Mission Control for member sessions without technical runtime access', async () => {
@@ -290,11 +290,11 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
-    expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
-    expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
-    expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Connected Apps')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
     expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
-    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
   });
 
   it('shows product routes only when the broker policy grants the matching scopes', async () => {
@@ -314,15 +314,15 @@ describe('Sider runtime route visibility', () => {
 
     const { unmount } = renderSider('/people-access');
 
-    expect(screen.getByText('People & Access')).toBeInTheDocument();
-    expect(screen.getByText('Connected Apps')).toBeInTheDocument();
-    expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
+    expect(screen.getByText('- People & Access')).toBeInTheDocument();
+    expect(screen.getByText('- Connected Apps')).toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
 
     unmount();
     renderSider('/design-workspace');
-    expect(screen.getByText('Design Workspace')).toBeInTheDocument();
+    expect(screen.getByText('- Design Workspace')).toBeInTheDocument();
     expect(screen.getByText('Shared Browser')).toBeInTheDocument();
-    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
+    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });
@@ -339,17 +339,17 @@ describe('Sider runtime route visibility', () => {
     const { unmount } = renderSider('/native-companion');
 
     expect(screen.queryByText('Home')).not.toBeInTheDocument();
-    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
 
     unmount();
     renderSider('/creative-studio');
-    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
+    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
-    expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Design Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
-    expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
-    expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
-    expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Connected Apps')).not.toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });
 
@@ -384,7 +384,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.queryByText('Home')).not.toBeInTheDocument();
     expect(screen.queryByText('Approvals')).not.toBeInTheDocument();
-    expect(screen.getByText('People & Access')).toBeInTheDocument();
+    expect(screen.getByText('- People & Access')).toBeInTheDocument();
     expect(screen.queryByText('Approval Center')).not.toBeInTheDocument();
     expect(screen.queryByText('People Access')).not.toBeInTheDocument();
   });
@@ -431,16 +431,16 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
     expect(screen.queryByText('Sign in to open Eva workspaces')).not.toBeInTheDocument();
-    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
 
     unmount();
     renderSider('/creative-studio');
-    expect(screen.getByText('Creative Studio')).toBeInTheDocument();
-    expect(screen.queryByText('Design Workspace')).not.toBeInTheDocument();
+    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
+    expect(screen.queryByText('- Design Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
-    expect(screen.queryByText('Connected Apps')).not.toBeInTheDocument();
-    expect(screen.queryByText('People & Access')).not.toBeInTheDocument();
-    expect(screen.queryByText('Company Brain')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Connected Apps')).not.toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign In' }));
@@ -592,7 +592,7 @@ describe('Sider runtime route visibility', () => {
 
     renderSider('/native-companion');
 
-    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
     expect(screen.queryByText('evaOS')).not.toBeInTheDocument();
     expect(screen.queryByText('Hermes')).not.toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
@@ -659,8 +659,8 @@ describe('Sider runtime route visibility', () => {
 
     unmount();
     renderSider('/people-access');
-    expect(screen.getByText('People & Access')).toBeInTheDocument();
-    expect(screen.getByText('Mac & iPhone')).toBeInTheDocument();
+    expect(screen.getByText('- People & Access')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
 

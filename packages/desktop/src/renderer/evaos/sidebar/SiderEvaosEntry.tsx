@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Tooltip } from '@arco-design/web-react';
-import { Robot } from '@icon-park/react';
+import { Home } from '@icon-park/react';
 import classNames from 'classnames';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 
@@ -37,7 +37,7 @@ const SiderEvaosEntry: React.FC<SiderEvaosEntryProps> = ({
           )}
           onClick={onClick}
         >
-          <Robot
+          <Home
             theme='outline'
             size='20'
             fill='currentColor'
@@ -60,7 +60,7 @@ const SiderEvaosEntry: React.FC<SiderEvaosEntryProps> = ({
         onClick={onClick}
       >
         <span className='size-22px flex items-center justify-center shrink-0 text-t-primary'>
-          <Robot
+          <Home
             theme='outline'
             size='16'
             fill='currentColor'

@@ -4,15 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Button, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Comment, Open, Refresh, Robot, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
-import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
-import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
+import { openEvaosSupportEmail } from '@/renderer/utils/platform';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
 import type {
   IEvaosRuntimeActionResult,
@@ -156,7 +155,6 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const requestEpochRef = useRef(0);
   const autoAttachKeyRef = useRef<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const { openFeedback } = useFeedback();
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
 
   const clearRuntimeEvidence = useCallback(() => {
@@ -332,51 +330,25 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const canOpenRuntime =
     canRequestBrokerRuntimeAction && hasRuntimeAction(statusView, ['open_dashboard', 'open']) && !canAttachRuntime;
   const attachAvailable = canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(statusView));
-  const supportReportContext = useMemo(
-    () =>
-      buildEvaosSupportReportContext({
-        surface: `runtime:${runtimeKey}`,
-        runtimeKey,
-        issueRef,
-        settledState: runtimeSurface ? 'loaded' : settledState,
-        status: runtimeSurface?.status ?? statusText,
-        healthSummary: runtimeSurface ? selectedCustomerLabel : healthText,
-        blocker: actionError ?? runtimeError,
-        sourcePointer: runtimeSurface?.sourcePointer ?? statusView?.sourcePointer,
-        auditIds: [runtimeSurface?.auditId, statusView?.auditId],
-        customer: {
-          selectedCustomerId: customerContext.selectedCustomerId,
-          selectedCustomerLabel,
-          summaryText: customerContext.summaryText,
-          roles: customerContext.roles,
-          scopes: customerContext.scopes,
-        },
-      }),
-    [
-      actionError,
-      customerContext.roles,
-      customerContext.scopes,
-      customerContext.selectedCustomerId,
-      customerContext.summaryText,
-      healthText,
-      issueRef,
-      runtimeError,
-      runtimeKey,
-      runtimeSurface,
-      selectedCustomerLabel,
-      settledState,
-      statusText,
-      statusView?.auditId,
-      statusView?.sourcePointer,
-    ]
-  );
+  const showHeader = !runtimeSurface || showDiagnostics || Boolean(actionError || runtimeError);
   const openSupportReport = useCallback(async () => {
     try {
-      await openFeedback(supportReportContext);
+      await openEvaosSupportEmail({
+        subject: `evaOS Workbench Beta support: ${title}`,
+        body: [
+          `Route: runtime:${runtimeKey}`,
+          `State: ${runtimeSurface ? 'loaded' : settledState}`,
+          `Status: ${runtimeSurface?.status ?? statusText}`,
+          issueRef ? `Issue: ${issueRef}` : null,
+          actionError || runtimeError ? `Blocker: ${actionError ?? runtimeError}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      });
     } catch (error) {
       console.error('[RuntimeDashboardPage] Failed to open evaOS support report:', error);
     }
-  }, [openFeedback, supportReportContext]);
+  }, [actionError, issueRef, runtimeError, runtimeKey, runtimeSurface, settledState, statusText, title]);
 
   useEffect(() => {
     const selectedCustomerId = customerContext.selectedCustomerId;
@@ -414,44 +386,48 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
       )}
     >
       <div className='mx-auto flex h-full min-h-0 w-full max-w-none box-border flex-col gap-12px'>
-        <header className='flex flex-wrap items-center justify-between gap-12px'>
-          <div className='min-w-0'>
-            <div className='flex flex-wrap items-center gap-8px'>
-              <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>{title}</h1>
-              <Tag color={runtimeSurface ? 'green' : settledStateColor(settledState)}>
-                {runtimeSurface ? 'loaded' : settledState}
-              </Tag>
+        {showHeader ? (
+          <header className='flex flex-wrap items-center justify-between gap-12px'>
+            <div className='min-w-0'>
+              <div className='flex flex-wrap items-center gap-8px'>
+                <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>{title}</h1>
+                <Tag color={runtimeSurface ? 'green' : settledStateColor(settledState)}>
+                  {runtimeSurface ? 'loaded' : settledState}
+                </Tag>
+              </div>
+              {!runtimeSurface ? (
+                <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
+                  {loadingStatus ? `Loading ${title}...` : healthText}
+                </p>
+              ) : null}
             </div>
-            <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
-              {loadingStatus ? `Loading ${title}...` : runtimeSurface ? selectedCustomerLabel : healthText}
-            </p>
-          </div>
-          <div className='flex shrink-0 flex-wrap items-center gap-8px'>
-            <Button
-              type='secondary'
-              icon={<Comment theme='outline' size='16' />}
-              onClick={() => void openSupportReport()}
-            >
-              Report to support
-            </Button>
-            {actionError || runtimeError ? (
+            <div className='flex shrink-0 flex-wrap items-center gap-8px'>
               <Button
-                type='primary'
-                icon={<Refresh theme='outline' size='16' />}
-                loading={loadingStatus || actionTarget !== null}
-                disabled={!customerContext.selectedCustomerId}
-                onClick={() => (runtimeSurface ? void runRuntimeAction('attach') : void loadRuntimeStatus())}
+                type='secondary'
+                icon={<Comment theme='outline' size='16' />}
+                onClick={() => void openSupportReport()}
               >
-                Retry
+                Report to support
               </Button>
-            ) : null}
-            {showDiagnostics ? (
-              <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
-                Diagnostics
-              </Button>
-            ) : null}
-          </div>
-        </header>
+              {actionError || runtimeError ? (
+                <Button
+                  type='primary'
+                  icon={<Refresh theme='outline' size='16' />}
+                  loading={loadingStatus || actionTarget !== null}
+                  disabled={!customerContext.selectedCustomerId}
+                  onClick={() => (runtimeSurface ? void runRuntimeAction('attach') : void loadRuntimeStatus())}
+                >
+                  Retry
+                </Button>
+              ) : null}
+              {showDiagnostics ? (
+                <Button type='secondary' onClick={() => setAdvancedOpen((open) => !open)}>
+                  Diagnostics
+                </Button>
+              ) : null}
+            </div>
+          </header>
+        ) : null}
 
         <main
           className='flex min-h-0 flex-1 flex-col overflow-hidden'
@@ -462,14 +438,6 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
               className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
               data-testid={`evaos-runtime-surface-container-${runtimeKey}`}
             >
-              <div className='flex shrink-0 items-center justify-between gap-12px border-0 border-b border-solid border-[var(--color-border-2)] px-14px py-10px'>
-                <div className='min-w-0'>
-                  <div className='truncate text-13px font-semibold leading-20px text-t-primary'>
-                    {safeUiText(runtimeSurface.displayLabel, title)}
-                  </div>
-                  <div className='mt-1px truncate text-11px leading-16px text-t-tertiary'>{selectedCustomerLabel}</div>
-                </div>
-              </div>
               <webview
                 data-testid={`evaos-runtime-surface-${runtimeKey}`}
                 src={runtimeSurface.surfaceUri}

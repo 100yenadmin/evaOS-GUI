@@ -215,7 +215,12 @@ describe('goldenWorkbenchParityManifest', () => {
         const expectedNavigationSnippet =
           row.id === 'terminal' ? `handleEvaosNavigate('${row.expectedRoute}')` : `onNavigate('${row.expectedRoute}')`;
         expect(sidebarNavigationSource, `${row.id}: sidebar navigate target`).toContain(expectedNavigationSnippet);
-        expect(sidebarEntrySource, `${row.id}: sidebar label`).toContain(`const label = '${row.sidebarLabel}'`);
+        const canonicalLabel = `const label = '${row.sidebarLabel}'`;
+        const nestedRcLabel = `const label = '- ${row.sidebarLabel}'`;
+        expect(
+          sidebarEntrySource.includes(canonicalLabel) || sidebarEntrySource.includes(nestedRcLabel),
+          `${row.id}: sidebar label`
+        ).toBe(true);
       }
     }
   });

@@ -25,7 +25,7 @@ const SiderPeopleAccessEntry: React.FC<SiderPeopleAccessEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'People & Access';
+  const label = '- People & Access';
 
   if (collapsed) {
     return (

@@ -233,20 +233,20 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
     await waitFor(() => {
       expect(browserMocks.launch).toHaveBeenCalledWith({ customerId: 'david-poku' });
     });
-    expect(
-      await screen.findByText('Browser launched. URL chatgpt.com/codex. Audit audit_launch_123.')
-    ).toBeInTheDocument();
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-launch/');
     expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-launch');
+    expect(screen.queryByText('Browser is ready')).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
     await openDiagnostics(user);
     expect(await screen.findByRole('button', { name: 'David Poku Co' })).toBeInTheDocument();
+    expect(
+      await screen.findByText('Browser launched. URL chatgpt.com/codex. Audit audit_launch_123.')
+    ).toBeInTheDocument();
     expect(await screen.findByText('chatgpt.com/codex')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Open URL'), 'https://workspace.example.test/app?view=alpha#section');
@@ -312,7 +312,6 @@ describe('BusinessBrowserPage', () => {
   });
 
   it('mounts an embedded Shared Browser surface from an opaque broker handle', async () => {
-    const user = userEvent.setup();
     browserMocks.getStatus.mockResolvedValue({
       success: true,
       data: browserView({ actions: [] }),
@@ -341,16 +340,13 @@ describe('BusinessBrowserPage', () => {
 
     const { container } = render(<BusinessBrowserPage />);
 
-    expect(await screen.findByText('Browser is ready')).toBeInTheDocument();
-    await openDiagnostics(user);
-    await user.click(screen.getByRole('button', { name: /^launch$/i }));
-
     const surface = await screen.findByTestId('evaos-business-browser-surface');
     expect(surface).toHaveAttribute('src', 'evaos-runtime-surface://surface-browser-fixture/');
     expect(surface).toHaveAttribute('partition', 'evaos-runtime-browser-fixture');
     expect(surface).toHaveClass('h-full');
     expect(surface).toHaveStyle({ display: 'flex', height: '100%', width: '100%' });
     expect(surface).not.toHaveAttribute('allowpopups', 'true');
+    expect(screen.queryByText('Browser is ready')).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/launch_url|desktop_session|eds_|Bearer|token=/i);
     expect(container.textContent).not.toContain('runtime.example.test');
   });

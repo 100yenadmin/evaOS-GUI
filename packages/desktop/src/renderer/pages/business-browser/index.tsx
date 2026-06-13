@@ -432,11 +432,13 @@ const BusinessBrowserPage: React.FC = () => {
                   </Tag>
                 ) : null}
               </div>
-              <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
-                {customerContext.loading
-                  ? 'Loading customer targets...'
-                  : browserError || actionError || browserView?.healthSummary || selectedCustomerLabel}
-              </p>
+              {!runtimeSurface ? (
+                <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
+                  {customerContext.loading
+                    ? 'Loading customer targets...'
+                    : browserError || actionError || browserView?.healthSummary || 'Opening Shared Browser'}
+                </p>
+              ) : null}
             </div>
             <div className='flex shrink-0 flex-wrap items-center gap-8px'>
               {browserError || actionError || !runtimeSurface ? (

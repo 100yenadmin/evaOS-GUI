@@ -25,7 +25,7 @@ const SiderDesignWorkspaceEntry: React.FC<SiderDesignWorkspaceEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'Design Workspace';
+  const label = '- Design Workspace';
 
   if (collapsed) {
     return (

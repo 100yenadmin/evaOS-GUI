@@ -17,8 +17,8 @@ const bridgeMocks = vi.hoisted(() => ({
   openRepairAction: vi.fn(),
 }));
 
-const feedbackMock = vi.hoisted(() => ({
-  openFeedback: vi.fn(),
+const supportEmailMock = vi.hoisted(() => ({
+  openEvaosSupportEmail: vi.fn(),
 }));
 
 vi.mock('@/common', () => ({
@@ -41,8 +41,8 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
   useLayoutContext: () => ({ isMobile: false }),
 }));
 
-vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
-  useFeedback: () => feedbackMock,
+vi.mock('@/renderer/utils/platform', () => ({
+  openEvaosSupportEmail: supportEmailMock.openEvaosSupportEmail,
 }));
 
 function renderNativeCompanion() {
@@ -217,7 +217,7 @@ describe('NativeCompanionPage', () => {
     expect(bridgeMocks.openReleasedWorkbench).not.toHaveBeenCalled();
   });
 
-  it('opens an evaOS support report with native audit ids and screenshot request', async () => {
+  it('opens evaOS support email with Mac control state context', async () => {
     window.location.hash = '#/native-companion';
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
@@ -273,27 +273,14 @@ describe('NativeCompanionPage', () => {
     expect(screen.getAllByRole('button', { name: 'Report to support' })).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Report to support' }));
 
-    await waitFor(() => expect(feedbackMock.openFeedback).toHaveBeenCalledTimes(1));
-    const payload = feedbackMock.openFeedback.mock.calls[0][0];
-    expect(payload.autoScreenshot).toBe(true);
-    expect(payload.tags).toMatchObject({
-      support_surface: 'native-companion',
-      evaos_route: '/native-companion',
-      evaos_state: 'permission_needed',
-      evaos_issue: '#179',
+    await waitFor(() => expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledTimes(1));
+    expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledWith({
+      subject: 'evaOS Workbench Beta support: Mac control',
+      body: expect.stringContaining('Route: /native-companion'),
     });
-    expect(payload.extra).toMatchObject({
-      support_packet_version: 'evaos.support_report.v1',
-      product: 'evaOS Workbench Beta',
-      bundle_id: 'com.evaos.workbench.beta',
-      protocol_scheme: 'evaos-workbench-beta',
-      route: '/native-companion',
-      source_pointer: 'native-companion:read-only-bridge',
-      audit_ids: ['audit-mac-permission', 'audit-iphone-available', 'audit-bridge-permission'],
-      screenshot: {
-        auto_capture_requested: true,
-      },
-    });
+    const payload = supportEmailMock.openEvaosSupportEmail.mock.calls[0][0];
+    expect(payload.body).toContain('State: permission_needed');
+    expect(payload.body).toContain('Summary: Screen Recording permission is required before repair can continue.');
     expect(JSON.stringify(payload)).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
   });
 });

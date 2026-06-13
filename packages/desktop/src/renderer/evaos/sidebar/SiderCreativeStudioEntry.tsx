@@ -25,7 +25,7 @@ const SiderCreativeStudioEntry: React.FC<SiderCreativeStudioEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'Creative Studio';
+  const label = '- Creative Studio';
 
   if (collapsed) {
     return (

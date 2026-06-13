@@ -25,7 +25,7 @@ const SiderNativeCompanionEntry: React.FC<SiderNativeCompanionEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'Mac & iPhone';
+  const label = '- Mac & iPhone';
 
   if (collapsed) {
     return (

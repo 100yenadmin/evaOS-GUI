@@ -25,7 +25,7 @@ const SiderConnectedAppsEntry: React.FC<SiderConnectedAppsEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'Connected Apps';
+  const label = '- Connected Apps';
 
   if (collapsed) {
     return (

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Tooltip } from '@arco-design/web-react';
-import { Connection } from '@icon-park/react';
+import { H } from '@icon-park/react';
 import classNames from 'classnames';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 
@@ -37,7 +37,7 @@ const SiderHermesEntry: React.FC<SiderHermesEntryProps> = ({
           )}
           onClick={onClick}
         >
-          <Connection
+          <H
             theme='outline'
             size='20'
             fill='currentColor'
@@ -60,13 +60,7 @@ const SiderHermesEntry: React.FC<SiderHermesEntryProps> = ({
         onClick={onClick}
       >
         <span className='size-22px flex items-center justify-center shrink-0 text-t-primary'>
-          <Connection
-            theme='outline'
-            size='16'
-            fill='currentColor'
-            className='block leading-none'
-            style={{ lineHeight: 0 }}
-          />
+          <H theme='outline' size='16' fill='currentColor' className='block leading-none' style={{ lineHeight: 0 }} />
         </span>
         <span className='collapsed-hidden text-t-primary text-14px font-[500] leading-24px'>{label}</span>
       </div>

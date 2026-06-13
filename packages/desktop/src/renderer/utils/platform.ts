@@ -106,3 +106,20 @@ export const openEvaosExternalUrl = async (url: string): Promise<void> => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 };
+
+const EVAOS_SUPPORT_MAILBOX = 'support@electricsheephq.com';
+
+export const openEvaosSupportEmail = async (options?: { subject?: string; body?: string }): Promise<void> => {
+  const params = new URLSearchParams();
+  if (options?.subject) params.set('subject', options.subject);
+  if (options?.body) params.set('body', options.body);
+  const query = params.toString();
+  const mailto = `mailto:${EVAOS_SUPPORT_MAILBOX}${query ? `?${query}` : ''}`;
+
+  try {
+    await openEvaosExternalUrl(mailto);
+  } catch (error) {
+    console.error('evaOS support link failed; falling back to generic external opener:', error);
+    await openExternalUrl(mailto);
+  }
+};

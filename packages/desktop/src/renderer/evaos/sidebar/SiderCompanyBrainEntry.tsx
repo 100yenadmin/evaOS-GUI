@@ -25,7 +25,7 @@ const SiderCompanyBrainEntry: React.FC<SiderCompanyBrainEntryProps> = ({
   siderTooltipProps,
   onClick,
 }) => {
-  const label = 'Company Brain';
+  const label = '- Company Brain';
 
   if (collapsed) {
     return (
