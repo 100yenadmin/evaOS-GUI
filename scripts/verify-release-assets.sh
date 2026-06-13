@@ -12,11 +12,11 @@ ERRORS=0
 shopt -s nullglob
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos)
+  all|macos|macos-arm64)
     ;;
   *)
     echo "FAIL: unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
-    echo "FAIL: supported values: all, macos"
+    echo "FAIL: supported values: all, macos, macos-arm64"
     exit 1
     ;;
 esac
@@ -44,10 +44,17 @@ assert_evaos_beta_asset_identity() {
   esac
 }
 
-REQUIRED_METADATA=(latest-mac.yml)
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
-  REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
-fi
+case "$RELEASE_TARGET_PLATFORMS" in
+  all)
+    REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
+    ;;
+  macos)
+    REQUIRED_METADATA=(latest-mac.yml)
+    ;;
+  macos-arm64)
+    REQUIRED_METADATA=(latest-arm64-mac.yml)
+    ;;
+esac
 
 for f in "${REQUIRED_METADATA[@]}"; do
   if [ ! -f "$OUTPUT_DIR/$f" ]; then
@@ -95,7 +102,9 @@ assert_metadata_points_to_existing_file() {
   echo "PASS: $metadata_name -> $ref_file"
 }
 
-assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
+if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+  assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
+fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   assert_metadata_points_to_existing_file "latest.yml" "(win-x64|win32-x64|x64)"
   assert_metadata_points_to_existing_file "latest-linux.yml" "(linux|AppImage|deb)"
@@ -144,6 +153,8 @@ assert_required_glob() {
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   assert_required_glob "macOS x64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-x64.dmg"
   assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
+elif [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
+  assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
 else
   REQUIRED_DISTRIBUTABLES=(
     "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-x64.exe"
@@ -164,7 +175,7 @@ else
   done
 fi
 
-if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
   DEFERRED_PLATFORM_FILES=(
     "$OUTPUT_DIR"/*.exe
     "$OUTPUT_DIR"/*.msi
@@ -180,6 +191,19 @@ if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   done
 fi
 
+if [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
+  DEFERRED_MACOS_X64_FILES=(
+    "$OUTPUT_DIR"/*-mac-x64.dmg
+    "$OUTPUT_DIR"/*-mac-x64.zip
+    "$OUTPUT_DIR"/latest-mac.yml
+  )
+  for f in "${DEFERRED_MACOS_X64_FILES[@]}"; do
+    [ -e "$f" ] || continue
+    echo "FAIL: macOS arm64 release profile contains deferred x64 asset or metadata: $(basename "$f")"
+    ERRORS=$((ERRORS + 1))
+  done
+fi
+
 for f in "$OUTPUT_DIR"/*.{exe,msi,dmg,deb,zip}; do
   [ -e "$f" ] || continue
   assert_evaos_beta_asset_identity "$(basename "$f")"
@@ -187,11 +211,17 @@ done
 
 if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   # Web-CLI tarballs + checksums
-  if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-    WEB_PLATFORMS=(darwin-arm64 darwin-x86_64)
-  else
-    WEB_PLATFORMS=(darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64)
-  fi
+  case "$RELEASE_TARGET_PLATFORMS" in
+    macos)
+      WEB_PLATFORMS=(darwin-arm64 darwin-x86_64)
+      ;;
+    macos-arm64)
+      WEB_PLATFORMS=(darwin-arm64)
+      ;;
+    all)
+      WEB_PLATFORMS=(darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64)
+      ;;
+  esac
 
   for plat in "${WEB_PLATFORMS[@]}"; do
     tarball="aionui-web-${MOCK_VERSION}-${plat}.tar.gz"

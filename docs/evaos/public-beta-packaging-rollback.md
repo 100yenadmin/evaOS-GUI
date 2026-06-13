@@ -30,15 +30,16 @@ The beta release path is manual-only:
 Release target profile:
 
 - Default `EVAOS_RELEASE_TARGET_PLATFORMS=all` keeps the existing Windows, macOS, and Linux artifact contract for future all-platform releases.
-- Controlled 1.0 RC runs set `EVAOS_RELEASE_TARGET_PLATFORMS=macos` or select `release_target_platforms=macos` in the manual workflow. This profile requires only macOS x64/arm64 DMG/ZIP assets plus `latest-mac.yml` and `latest-arm64-mac.yml`.
+- Controlled Apple-Silicon RC runs set `EVAOS_RELEASE_TARGET_PLATFORMS=macos-arm64` or select `release_target_platforms=macos-arm64` in the manual workflow. This profile requires only the macOS arm64 DMG/ZIP assets plus `latest-arm64-mac.yml`.
+- Universal macOS RC runs set `EVAOS_RELEASE_TARGET_PLATFORMS=macos` or select `release_target_platforms=macos` in the manual workflow. This profile requires macOS x64/arm64 DMG/ZIP assets plus `latest-mac.yml` and `latest-arm64-mac.yml`.
 - Windows and Linux installers, packages, and updater metadata are explicitly deferred while the macOS profile is active. Their absence is not a controlled 1.0 RC blocker.
 
 PR release-script safety checks use mock or staged assets; they do not imply a finished RC artifact. RC artifact publication uses the manual release workflow, signing/notarization proof, trusted manifest registration, RC canary, and distribution workflow:
 
 ```bash
 node scripts/evaosBetaReleaseGate.js audit-config
-EVAOS_RELEASE_TARGET_PLATFORMS=macos bash scripts/prepare-release-assets.sh build-artifacts release-assets
-EVAOS_RELEASE_TARGET_PLATFORMS=macos bash scripts/verify-release-assets.sh release-assets
+EVAOS_RELEASE_TARGET_PLATFORMS=macos-arm64 bash scripts/prepare-release-assets.sh build-artifacts release-assets
+EVAOS_RELEASE_TARGET_PLATFORMS=macos-arm64 bash scripts/verify-release-assets.sh release-assets
 node scripts/evaosBetaReleaseGate.js write-manifest release-assets evaos-beta-v<version>
 node scripts/evaosBetaReleaseGate.js verify-manifest release-assets evaos-beta-v<version>
 ```
@@ -109,7 +110,7 @@ GitHub RC canary workflow:
 3. Set `tag` to the existing non-dev `evaos-beta-*` release tag.
 4. Set `fallback_release_repo`, `fallback_release_tag`, `fallback_asset_pattern`, and `fallback_app_name` to the currently released macOS fallback app.
 5. Set `broker_session_proof_ref` to a non-secret issue, packet, or canary reference proving broker login/session state for the fallback.
-6. Before manifest registration for locally finalized DMGs, regenerate `latest-mac.yml` and `latest-arm64-mac.yml` from the finalized DMGs. Do not reuse updater metadata from the unsigned staged DMGs.
+6. Before manifest registration for locally finalized DMGs, regenerate `latest-arm64-mac.yml` from the finalized arm64 DMG, and regenerate `latest-mac.yml` only when x64 is included. Do not reuse updater metadata from the unsigned staged DMGs.
 7. For locally finalized DMGs, set `trusted_manifest_run_id` to the successful manifest-registration workflow run id and set `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
 8. Download the uploaded artifact named `evaos-beta-rc-proof-<tag>`.
 9. Pass the successful canary workflow run id to `Distribute evaOS Beta Release Assets` as `rc_proof_run_id`.

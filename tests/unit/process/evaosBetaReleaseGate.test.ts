@@ -779,6 +779,18 @@ describe('evaOS beta release gate', () => {
     }
   });
 
+  it('defaults local-signed DMG provenance to arm64-only source artifacts for the macos-arm64 profile', () => {
+    const provenance = releaseGate.releaseProvenanceFromEnv({
+      EVAOS_BETA_RELEASE_PROVENANCE_MODE: releaseGate.RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK,
+      EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+      EVAOS_BETA_LOCAL_DMG_SOURCE_RUN_ID: '27459204891',
+      EVAOS_BETA_LOCAL_DMG_SOURCE_SHA: 'a'.repeat(40),
+      EVAOS_BETA_LOCAL_DMG_SOURCE_BRANCH: 'evaos/beta-rc-20260612',
+    }) as { sourceArtifactNames: string[] };
+
+    expect(provenance.sourceArtifactNames).toEqual(['macos-build-arm64']);
+  });
+
   it('binds distribution verification to the trusted workflow manifest artifact', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-trusted-release-'));
     try {

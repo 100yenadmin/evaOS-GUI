@@ -452,6 +452,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     buildRelease,
+    'macos-arm64',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'Apple-Silicon-only release target profile'
+  );
+  requireText(
+    buildRelease,
     'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
     '.github/workflows/build-and-release.yml',
     issues,
@@ -521,6 +528,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(distribute, 'EVAOS_BETA_TRUSTED_MANIFEST_PATH', '.github/workflows/release-distribute.yml', issues);
   requireText(distribute, 'scripts/verify-release-assets.sh dist', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, 'macos-arm64', '.github/workflows/release-distribute.yml', issues);
   requireText(distribute, 'rc_proof_run_id', '.github/workflows/release-distribute.yml', issues);
   requireText(distribute, 'evaOS Beta RC Canary', '.github/workflows/release-distribute.yml', issues);
   requireText(
@@ -533,6 +541,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(rcCanary, 'name: evaOS Beta RC Canary', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   requireText(rcCanary, 'workflow_dispatch:', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   requireText(rcCanary, 'evaos-beta-rc', '.github/workflows/evaos-beta-rc-canary.yml', issues);
+  requireText(rcCanary, 'macos-arm64', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   requireText(rcCanary, 'fallback_release_repo', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   requireText(rcCanary, 'broker_session_proof_ref', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   requireText(
@@ -566,6 +575,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
     '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
     issues
+  );
+  requireText(
+    localSignedDmgManifest,
+    'macos-arm64',
+    '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
+    issues,
+    'Apple-Silicon-only local-signed DMG manifest registration profile'
   );
   requireText(
     localSignedDmgManifest,
@@ -669,6 +685,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(prChecks, "'evaos/**'", '.github/workflows/pr-checks.yml', issues, 'EVAOS stacked PR branch trigger');
 
   requireText(prepareAssets, 'Refusing upstream-branded beta asset', 'scripts/prepare-release-assets.sh', issues);
+  requireText(
+    prepareAssets,
+    'macos-arm64',
+    'scripts/prepare-release-assets.sh',
+    issues,
+    'Apple-Silicon-only release asset preparation profile'
+  );
   requireText(
     prepareAssets,
     'Refusing beta asset without evaOS beta identity marker',
@@ -807,6 +830,12 @@ function splitCsvEnv(value) {
     .filter(Boolean);
 }
 
+function defaultLocalDmgSourceArtifacts(env = process.env) {
+  return env.EVAOS_RELEASE_TARGET_PLATFORMS === 'macos-arm64'
+    ? 'macos-build-arm64'
+    : 'macos-build-arm64,macos-build-x64';
+}
+
 function finalizedDmgProvenanceFromAssets(assets) {
   const finalizedDmgs = {};
   for (const asset of assets || []) {
@@ -845,7 +874,7 @@ function releaseProvenanceFromEnv(env = process.env) {
     sourceCiConclusion: env.EVAOS_BETA_LOCAL_DMG_SOURCE_CONCLUSION || '',
     sourceCiHeadSha: env.EVAOS_BETA_LOCAL_DMG_SOURCE_SHA || env.EVAOS_BETA_RELEASE_COMMIT || env.GITHUB_SHA || '',
     sourceCiHeadBranch: env.EVAOS_BETA_LOCAL_DMG_SOURCE_BRANCH || env.EVAOS_BETA_RELEASE_BRANCH || '',
-    sourceArtifactNames: splitCsvEnv(env.EVAOS_BETA_LOCAL_DMG_SOURCE_ARTIFACTS || 'macos-build-arm64,macos-build-x64'),
+    sourceArtifactNames: splitCsvEnv(env.EVAOS_BETA_LOCAL_DMG_SOURCE_ARTIFACTS || defaultLocalDmgSourceArtifacts(env)),
     fallbackReason: env.EVAOS_BETA_LOCAL_DMG_FALLBACK_REASON || 'ci-dmg-codesign-timeout',
     localFinalizationProofRef: env.EVAOS_BETA_LOCAL_DMG_FINALIZATION_PROOF_REF || '',
     dmgNotarizationSubmissionIds: splitCsvEnv(env.EVAOS_BETA_LOCAL_DMG_NOTARY_SUBMISSION_IDS),

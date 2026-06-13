@@ -9,17 +9,19 @@ RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 MOCK_MACOS_DMG_ONLY="${EVAOS_MOCK_MACOS_DMG_ONLY:-0}"
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos)
+  all|macos|macos-arm64)
     ;;
   *)
     echo "Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS" >&2
-    echo "Supported values: all, macos" >&2
+    echo "Supported values: all, macos, macos-arm64" >&2
     exit 1
     ;;
 esac
 
 rm -rf "$ARTIFACTS_DIR"
-mkdir -p "$ARTIFACTS_DIR/macos-build-x64"
+if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+  mkdir -p "$ARTIFACTS_DIR/macos-build-x64"
+fi
 mkdir -p "$ARTIFACTS_DIR/macos-build-arm64"
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   mkdir -p "$ARTIFACTS_DIR/windows-build-x64"
@@ -59,16 +61,18 @@ EOF
 fi
 
 # macOS x64
-touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.dmg"
-if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
-  touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
-  cat > "$ARTIFACTS_DIR/macos-build-x64/latest-mac.yml" <<EOF
+if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+  touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.dmg"
+  if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
+    touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
+    cat > "$ARTIFACTS_DIR/macos-build-x64/latest-mac.yml" <<EOF
 version: ${VERSION}
 files:
   - url: ${PRODUCT_NAME}-${VERSION}-mac-x64.dmg
     sha512: fake-sha512-mac-x64
     size: 200000
 EOF
+  fi
 fi
 
 # macOS arm64
@@ -108,21 +112,29 @@ files:
 EOF
 fi
 
-# Web-CLI tarballs (5 platforms)
-if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-  WEB_PLATFORMS=(
-    "darwin-arm64"
-    "darwin-x86_64"
-  )
-else
-  WEB_PLATFORMS=(
-    "darwin-arm64"
-    "darwin-x86_64"
-    "linux-arm64"
-    "linux-x86_64"
-    "win-x86_64"
-  )
-fi
+# Web-CLI tarballs (profile-dependent)
+case "$RELEASE_TARGET_PLATFORMS" in
+  macos)
+    WEB_PLATFORMS=(
+      "darwin-arm64"
+      "darwin-x86_64"
+    )
+    ;;
+  macos-arm64)
+    WEB_PLATFORMS=(
+      "darwin-arm64"
+    )
+    ;;
+  all)
+    WEB_PLATFORMS=(
+      "darwin-arm64"
+      "darwin-x86_64"
+      "linux-arm64"
+      "linux-x86_64"
+      "win-x86_64"
+    )
+    ;;
+esac
 
 for plat in "${WEB_PLATFORMS[@]}"; do
   dir="$ARTIFACTS_DIR/web-cli-${plat}"
