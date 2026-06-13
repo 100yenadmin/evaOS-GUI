@@ -17,7 +17,7 @@
  * is recorded in N4c-final.md Deviations.
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 
 describe('OfficeWatchViewer module shape', () => {
   it('module loads and exposes a default export', async () => {
@@ -37,5 +37,53 @@ describe('OfficeWatchViewer module shape', () => {
     expect(mod.default).toBeDefined();
     // Component functions in React typically have at most one required argument (props).
     expect((mod.default as { length: number }).length).toBeLessThanOrEqual(2);
+  });
+});
+
+const loadResolveOfficeWatchUrl = async () => {
+  const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
+  return mod.resolveOfficeWatchUrl;
+};
+
+describe('resolveOfficeWatchUrl in WebUI mode', () => {
+  let electronApiStub: unknown;
+
+  beforeEach(() => {
+    const w = window as Window & { electronAPI?: unknown };
+    electronApiStub = w.electronAPI;
+    delete w.electronAPI;
+  });
+
+  afterEach(() => {
+    (window as Window & { electronAPI?: unknown }).electronAPI = electronApiStub;
+  });
+
+  it('returns the backend proxy URL without appending a trailing slash', async () => {
+    const resolveOfficeWatchUrl = await loadResolveOfficeWatchUrl();
+    expect(resolveOfficeWatchUrl('/api/ppt-proxy/59324', 'ppt')).toBe('/api/ppt-proxy/59324');
+  });
+
+  it('drops a bare trailing slash from the proxy URL', async () => {
+    const resolveOfficeWatchUrl = await loadResolveOfficeWatchUrl();
+    expect(resolveOfficeWatchUrl('/api/office-watch-proxy/59324/', 'word')).toBe('/api/office-watch-proxy/59324');
+  });
+
+  it('keeps a real sub-path on the proxy URL', async () => {
+    const resolveOfficeWatchUrl = await loadResolveOfficeWatchUrl();
+    expect(resolveOfficeWatchUrl('/api/office-watch-proxy/59324/index.html', 'excel')).toBe(
+      '/api/office-watch-proxy/59324/index.html'
+    );
+  });
+
+  it('maps an absolute localhost watch URL to the proxy path without a trailing slash', async () => {
+    const resolveOfficeWatchUrl = await loadResolveOfficeWatchUrl();
+    expect(resolveOfficeWatchUrl('http://127.0.0.1:59324', 'ppt')).toBe('/api/ppt-proxy/59324');
+  });
+});
+
+describe('resolveOfficeWatchUrl in Electron mode', () => {
+  it('still resolves proxy paths to the direct loopback URL', async () => {
+    const resolveOfficeWatchUrl = await loadResolveOfficeWatchUrl();
+    expect(resolveOfficeWatchUrl('/api/ppt-proxy/59324', 'ppt')).toBe('http://127.0.0.1:59324/');
   });
 });
