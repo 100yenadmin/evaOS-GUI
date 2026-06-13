@@ -405,6 +405,7 @@ jobs:
             # Import certificate
             security import certificate.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
             security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+            echo "EVAOS_DMG_CODESIGN_KEYCHAIN=build.keychain" >> "$GITHUB_ENV"
 
             # Clean up certificate file
             rm certificate.p12

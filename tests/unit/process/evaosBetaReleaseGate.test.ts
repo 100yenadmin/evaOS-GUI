@@ -528,7 +528,7 @@ describe('evaOS beta release gate', () => {
         RELEASE_KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
         KEYCHAIN: '/secure/evaos-release-signing.keychain-db',
       })
-    ).toEqual(['--force', '--sign', 'Developer ID Application: evaOS', '/release/evaOS.dmg']);
+    ).toEqual(['--force', '--sign', 'Developer ID Application: evaOS', '--timestamp=none', '/release/evaOS.dmg']);
 
     expect(
       macDmgFinalizer.buildDmgCodesignArgs('/release/evaOS.dmg', 'Developer ID Application: evaOS', {
