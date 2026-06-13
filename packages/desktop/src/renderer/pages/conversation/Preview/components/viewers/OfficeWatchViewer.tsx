@@ -83,7 +83,7 @@ interface OfficeWatchErrorState {
   message: string;
 }
 
-function resolveOfficeWatchUrl(url: string, docType: DocType): string {
+export function resolveOfficeWatchUrl(url: string, docType: DocType): string {
   const proxyMatch = url.match(/^\/api\/(?:office-watch-proxy|ppt-proxy)\/(\d+)(\/.*)?$/);
   if (proxyMatch && isElectronDesktop()) {
     const [, port, suffix] = proxyMatch;
@@ -95,7 +95,10 @@ function resolveOfficeWatchUrl(url: string, docType: DocType): string {
       const proxyPortMatch = url.match(/^\/api\/(?:office-watch-proxy|ppt-proxy)\/(\d+)(\/.*)?$/);
       if (proxyPortMatch) {
         const [, port, suffix] = proxyPortMatch;
-        return `${PROXY_PATH[docType]}/${port}${suffix || '/'}`;
+        // The backend registers /{port} and /{port}/{*path}; a bare trailing
+        // slash matches neither route in WebUI mode and returns 404.
+        const subPath = suffix && suffix !== '/' ? suffix : '';
+        return `${PROXY_PATH[docType]}/${port}${subPath}`;
       }
     }
     return `${getBaseUrl()}${url}`;
@@ -103,7 +106,7 @@ function resolveOfficeWatchUrl(url: string, docType: DocType): string {
 
   if (!isElectronDesktop()) {
     const parsed = new URL(url);
-    return `${PROXY_PATH[docType]}/${parsed.port}/`;
+    return `${PROXY_PATH[docType]}/${parsed.port}`;
   }
 
   return url;
