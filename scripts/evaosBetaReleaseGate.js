@@ -306,7 +306,6 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const packageJson = readJson(rootDir, 'package.json');
   const builder = readText(rootDir, 'packages/desktop/electron-builder.yml');
   const macBuilder = getTopLevelYamlSection(builder, 'mac');
-  const dmgBuilder = getTopLevelYamlSection(builder, 'dmg');
   const winBuilder = getTopLevelYamlSection(builder, 'win');
   const linuxBuilder = getTopLevelYamlSection(builder, 'linux');
   const buildRelease = readText(rootDir, '.github/workflows/build-and-release.yml');
@@ -368,13 +367,6 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'packages/desktop/electron-builder.yml',
     issues,
     'mac.notarize false so afterSign owns app notarization'
-  );
-  requireText(
-    dmgBuilder,
-    'sign: true',
-    'packages/desktop/electron-builder.yml',
-    issues,
-    'dmg.sign true so electron-builder owns DMG container signing'
   );
   requireText(
     winBuilder,
@@ -575,10 +567,17 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_KEYCHAIN', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(
     reusableBuild,
-    'EVAOS_DMG_CODESIGN_MODE: verify-existing',
+    'EVAOS_DMG_CODESIGN: false',
     '.github/workflows/_build-reusable.yml',
     issues,
-    'GitHub release jobs verify the electron-builder DMG signature instead of re-signing DMGs'
+    'GitHub release jobs stage unsigned DMGs for bounded local signing fallback'
+  );
+  requireText(
+    reusableBuild,
+    "steps.macos-build.outputs.notarization_status == 'failed'",
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'macOS notarized/stapled staging artifacts upload on expected DMG signature-gate failure'
   );
   const dmgSigningKeychainSection = dmgFinalizer.split('const NOTARY_KEYCHAIN_ENV')[0] || '';
   if (dmgSigningKeychainSection.includes('NOTARY_KEYCHAIN') || dmgSigningKeychainSection.includes('RELEASE_KEYCHAIN')) {

@@ -657,7 +657,7 @@ jobs:
           APP_ID: ${{ secrets.APP_ID }}
           EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
           EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
-          EVAOS_DMG_CODESIGN_MODE: verify-existing
+          EVAOS_DMG_CODESIGN: false
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}
           teamId: ${{ secrets.TEAM_ID }}
@@ -853,7 +853,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         if: >-
-          success() &&
+          (success() || (startsWith(matrix.platform, 'macos') && steps.macos-build.outputs.notarization_status == 'failed')) &&
           (!startsWith(matrix.platform, 'windows') || steps.windows-build.outputs.result == 'success')
         with:
           name: ${{ inputs.append_commit_hash && format('{0}-{1}', matrix.artifact-name, steps.commit.outputs.short) || matrix.artifact-name }}
