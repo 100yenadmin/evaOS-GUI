@@ -149,6 +149,20 @@ describe('buildSpawnArgs', () => {
     expect(args).toContain('bundled');
   });
 
+  it('passes parent pid when provided', () => {
+    const args = buildSpawnArgs({
+      port: 1,
+      dbPath: '/d',
+      local: false,
+      appVersion: '0.0.1',
+      isPackaged: true,
+      parentPid: 4242,
+    });
+
+    expect(args).toContain('--parent-pid');
+    expect(args).toContain('4242');
+  });
+
   it('respects AIONUI_LOG_LEVEL override', () => {
     const prev = process.env.AIONUI_LOG_LEVEL;
     process.env.AIONUI_LOG_LEVEL = 'trace';
@@ -281,6 +295,8 @@ describe('BackendLifecycleManager.start (success path)', () => {
       '0',
       '--data-dir',
       '/db/path',
+      '--parent-pid',
+      String(process.pid),
       '--log-level',
       'info',
       '--app-version',
@@ -333,6 +349,8 @@ describe('BackendLifecycleManager.start (success path)', () => {
         '0',
         '--data-dir',
         '/db/path',
+        '--parent-pid',
+        String(process.pid),
         '--log-level',
         'info',
         '--app-version',
