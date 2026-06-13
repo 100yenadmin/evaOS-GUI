@@ -60,14 +60,14 @@ Public beta publishing requires real macOS signing and notarization. When `EVAOS
 Run the name-only credential inventory before attempting a signed beta candidate. It lists required repository secret and variable names without printing credential values:
 
 ```bash
-node scripts/evaosBetaReleaseCredentialInventory.js --repo 100yenadmin/AionUi --strict --markdown
+node scripts/evaosBetaReleaseCredentialInventory.js --repo 100yenadmin/evaOS-GUI --strict --markdown
 ```
 
 In public beta mode, ad-hoc signing is a hard failure and notarization failure is a hard failure. The ad-hoc path remains available only for internal smoke builds where public publishing is disabled.
 
 ## Updater And Feed Boundary
 
-- `electron-builder` publish config points at `100yenadmin/AionUi`.
+- `electron-builder` publish config points at `100yenadmin/evaOS-GUI`.
 - `publishAutoUpdate` is `false`.
 - Releases are created as draft releases.
 - Runtime auto-update is disabled by default for evaOS beta builds.
@@ -193,7 +193,7 @@ Rollback verification must capture:
 
 Public beta support must point to evaOS-owned channels:
 
-- GitHub issue: `100yenadmin/AionUi` issue #12 for packaging, issue #13 for final ship/continue/kill decision.
+- GitHub issue: `100yenadmin/evaOS-GUI` issue #12 for packaging, issue #13 for final ship/continue/kill decision.
 - Evidence packet: `/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/12-public-beta-packaging-rollback/`
 - User-facing support note: beta is gated, can be withdrawn, and the released macOS app remains the fallback until public beta gates pass.
 

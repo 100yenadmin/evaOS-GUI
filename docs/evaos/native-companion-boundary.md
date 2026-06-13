@@ -1,6 +1,6 @@
 # evaOS Native Companion Boundary
 
-Issue: https://github.com/100yenadmin/AionUi/issues/133
+Issue: https://github.com/100yenadmin/evaOS-GUI/issues/133
 
 Version: `2026-06-06.rc-parity`
 

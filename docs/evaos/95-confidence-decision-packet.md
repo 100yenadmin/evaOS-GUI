@@ -1,8 +1,8 @@
 # evaOS AionUi Public Beta 95% Decision Packet
 
-Issue: https://github.com/100yenadmin/AionUi/issues/13
+Issue: https://github.com/100yenadmin/evaOS-GUI/issues/13
 
-Milestone: https://github.com/100yenadmin/AionUi/milestone/1
+Milestone: https://github.com/100yenadmin/evaOS-GUI/milestone/1
 
 Decision date: 2026-06-05
 

@@ -719,9 +719,10 @@ export function initUpdateBridge(): void {
         return;
       }
 
-      autoUpdaterService.quitAndInstall();
+      await autoUpdaterService.quitAndInstall();
     } catch (err: unknown) {
       console.error('quitAndInstall failed:', err);
+      throw err;
     }
   });
 }

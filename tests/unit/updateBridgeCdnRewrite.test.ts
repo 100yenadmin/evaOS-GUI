@@ -38,6 +38,7 @@ vi.mock('electron', () => ({
   app: {
     getVersion: vi.fn(() => '1.0.0'),
     getPath: vi.fn(() => '/test/path'),
+    exit: vi.fn(),
     isPackaged: true,
   },
 }));
@@ -146,6 +147,28 @@ const getDownloadHandler = async () => {
   const lastCall = provider.mock.calls.at(-1);
   if (!lastCall) throw new Error('update.download handler not registered');
   return lastCall[0];
+};
+
+const getAutoUpdateQuitAndInstallHandler = async () => {
+  const { initUpdateBridge } = await import('@process/bridge/updateBridge');
+  const { ipcBridge } = await import('@/common');
+
+  initUpdateBridge();
+
+  const provider = vi.mocked(ipcBridge.autoUpdate.quitAndInstall.provider);
+  const lastCall = provider.mock.calls.at(-1);
+  if (!lastCall) throw new Error('autoUpdate.quitAndInstall handler not registered');
+  return lastCall[0];
+};
+
+const makeDeferred = () => {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 };
 
 describe('updateBridge CDN URL rewriting', () => {
@@ -337,5 +360,95 @@ describe('updateBridge allowlist includes CDN host', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('autoUpdate quitAndInstall lifecycle', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    process.env.AIONUI_EVAOS_BETA = '1';
+    process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    delete process.env.AIONUI_EVAOS_BETA;
+    delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
+    delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+  });
+
+  it('waits for the pre-install cleanup before starting the installer', async () => {
+    const cleanup = makeDeferred();
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => cleanup.promise);
+
+    const installPromise = autoUpdaterService.quitAndInstall();
+    await Promise.resolve();
+
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    cleanup.resolve();
+    await installPromise;
+
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(true, true);
+  });
+
+  it('does not start the installer when the pre-install cleanup fails', async () => {
+    const cleanupError = new Error('backend did not stop');
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => {
+      throw cleanupError;
+    });
+
+    await expect(autoUpdaterService.quitAndInstall()).rejects.toThrow('backend did not stop');
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it('keeps the IPC request pending until quitAndInstall cleanup completes', async () => {
+    const cleanup = makeDeferred();
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => cleanup.promise);
+
+    const handler = await getAutoUpdateQuitAndInstallHandler();
+    let handlerSettled = false;
+    const handlerPromise = handler().then(() => {
+      handlerSettled = true;
+    });
+
+    await Promise.resolve();
+
+    expect(handlerSettled).toBe(false);
+
+    cleanup.resolve();
+    await handlerPromise;
+
+    expect(handlerSettled).toBe(true);
+  });
+
+  it('surfaces IPC cleanup failures instead of starting the installer', async () => {
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => {
+      throw new Error('backend did not stop');
+    });
+
+    const handler = await getAutoUpdateQuitAndInstallHandler();
+
+    await expect(handler()).rejects.toThrow('backend did not stop');
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 });

@@ -75,6 +75,12 @@ function makeFakeChild(): ChildProcess {
   return child as ChildProcess;
 }
 
+function makeFakeTaskkillChild(): ChildProcess {
+  const child = new EventEmitter() as EventEmitter & Partial<ChildProcess>;
+  child.unref = vi.fn() as unknown as ChildProcess['unref'];
+  return child as ChildProcess;
+}
+
 function emitListening(child: ChildProcess, port: number): void {
   child.stdout?.emit('data', Buffer.from(`AIONCORE_LISTENING {"host":"127.0.0.1","port":${port}}\n`));
 }
@@ -85,6 +91,18 @@ function makeFakeSocket(): Socket {
   socket.destroy = vi.fn() as unknown as Socket['destroy'];
   socket.end = vi.fn() as unknown as Socket['end'];
   return socket as Socket;
+}
+
+async function withMockedPlatform<T>(platform: NodeJS.Platform, run: () => Promise<T>): Promise<T> {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: platform });
+  try {
+    return await run();
+  } finally {
+    if (originalPlatform) {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
+  }
 }
 
 beforeEach(() => {
@@ -889,6 +907,90 @@ describe('BackendLifecycleManager.stop', () => {
     fetchSpy.mockRestore();
     killSpy.mockRestore();
   }, 7_000);
+
+  it('waits for Windows taskkill to finish before cleaning registered agent processes', async () => {
+    await withMockedPlatform('win32', async () => {
+      vi.mocked(createServer).mockImplementation(
+        () => makeFakeServer(22224) as unknown as ReturnType<typeof createServer>
+      );
+      const child = makeFakeChild();
+      const taskkillChild = makeFakeTaskkillChild();
+      vi.mocked(spawn)
+        .mockReturnValueOnce(child as unknown as ChildProcess)
+        .mockReturnValueOnce(taskkillChild as unknown as ChildProcess);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('ok', { status: 200 }) as unknown as Response);
+
+      const mgr = new BackendLifecycleManager(APP_META, () => '/x');
+      const startPromise = mgr.start('/db');
+      await Promise.resolve();
+      emitListening(child, 22224);
+      await startPromise;
+
+      const stopPromise = mgr.stop();
+      child.emit('exit', 0);
+      await Promise.resolve();
+
+      expect(cleanupRegisteredAgentProcesses).not.toHaveBeenCalledWith('/db');
+
+      taskkillChild.emit('close', 0);
+      await stopPromise;
+
+      expect(spawn).toHaveBeenLastCalledWith('taskkill', ['/PID', '99999', '/T'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      expect(cleanupRegisteredAgentProcesses).toHaveBeenCalledWith('/db');
+
+      fetchSpy.mockRestore();
+    });
+  });
+
+  it('waits for forced Windows taskkill before cleanup when graceful stop times out', async () => {
+    await withMockedPlatform('win32', async () => {
+      vi.useFakeTimers();
+      vi.mocked(createServer).mockImplementation(
+        () => makeSyncFakeServer(22225) as unknown as ReturnType<typeof createServer>
+      );
+      const child = makeFakeChild();
+      const gracefulTaskkillChild = makeFakeTaskkillChild();
+      const forcedTaskkillChild = makeFakeTaskkillChild();
+      vi.mocked(spawn)
+        .mockReturnValueOnce(child as unknown as ChildProcess)
+        .mockReturnValueOnce(gracefulTaskkillChild as unknown as ChildProcess)
+        .mockReturnValueOnce(forcedTaskkillChild as unknown as ChildProcess);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('ok', { status: 200 }) as unknown as Response);
+
+      const mgr = new BackendLifecycleManager(APP_META, () => '/x');
+      const startPromise = mgr.start('/db');
+      await Promise.resolve();
+      emitListening(child, 22225);
+      await startPromise;
+
+      const stopPromise = mgr.stop();
+      gracefulTaskkillChild.emit('close', 0);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.resolve();
+
+      expect(cleanupRegisteredAgentProcesses).not.toHaveBeenCalledWith('/db');
+
+      forcedTaskkillChild.emit('close', 0);
+      await stopPromise;
+
+      expect(spawn).toHaveBeenLastCalledWith('taskkill', ['/F', '/PID', '99999', '/T'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      expect(cleanupRegisteredAgentProcesses).toHaveBeenCalledWith('/db');
+
+      fetchSpy.mockRestore();
+    });
+  });
 });
 
 describe('BackendLifecycleManager crash restart', () => {
