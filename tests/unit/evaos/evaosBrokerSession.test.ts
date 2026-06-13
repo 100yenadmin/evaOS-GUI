@@ -1047,6 +1047,10 @@ describe('EvaosBrokerSessionClient', () => {
           customers: [
             {
               customer_id: 'david-poku',
+              customer_account_id: 'acct_david',
+              membership_id: 'mem_david_admin',
+              membership_role: 'admin',
+              target_kind: 'customer_account',
               display_name: 'David Poku Co',
               email: 'ops@example.test',
               status: 'active',
@@ -1056,13 +1060,29 @@ describe('EvaosBrokerSessionClient', () => {
             },
             {
               customer_id: 'second-customer',
+              customer_account_id: 'acct_second',
+              membership_id: 'mem_second_owner',
+              membership_role: 'owner',
+              target_kind: 'customer',
+              account_only: false,
               display_name: 'Second Customer',
               email: 'owner@example.test',
               status: 'active',
               health_status: 'needs_attention',
             },
             {
+              customer_account_id: 'acct_account_only',
+              membership_id: 'mem_account_only',
+              membership_role: 'owner',
+              target_kind: 'customer_account',
+              account_only: true,
+              display_name: 'Account-only membership',
+            },
+            {
               customer_id: 'bad-secret',
+              customer_account_id: 'eds_bad_account_secret',
+              membership_id: 'provider_grant_should_not_render',
+              membership_role: 'owner',
               display_name: 'Bearer eds_hidden',
               email: 'secret@example.test',
             },
@@ -1090,6 +1110,10 @@ describe('EvaosBrokerSessionClient', () => {
       customers: [
         {
           customerId: 'david-poku',
+          customerAccountId: 'acct_david',
+          membershipId: 'mem_david_admin',
+          membershipRole: 'admin',
+          targetKind: 'customer_account',
           displayName: 'David Poku Co',
           email: 'ops@example.test',
           status: 'active',
@@ -1098,6 +1122,11 @@ describe('EvaosBrokerSessionClient', () => {
         },
         {
           customerId: 'second-customer',
+          customerAccountId: 'acct_second',
+          membershipId: 'mem_second_owner',
+          membershipRole: 'owner',
+          targetKind: 'customer',
+          accountOnly: false,
           displayName: 'Second Customer',
           email: 'owner@example.test',
           status: 'active',
@@ -1109,7 +1138,7 @@ describe('EvaosBrokerSessionClient', () => {
       summaryText: '2 customer targets loaded',
     });
     expect(JSON.stringify(targets)).not.toMatch(
-      /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access_token|desktop_session|Bearer/i
+      /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access_token|desktop_session|provider_grant|Bearer/i
     );
   });
 

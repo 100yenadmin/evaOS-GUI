@@ -41,6 +41,10 @@ function customerTargets(selectedCustomerId = 'david-poku') {
       customers: [
         {
           customerId: 'david-poku',
+          customerAccountId: 'acct_david',
+          membershipId: 'mem_david_admin',
+          membershipRole: 'admin',
+          targetKind: 'customer_account',
           displayName: 'David Poku Co',
           status: 'active',
           healthStatus: 'ready',
@@ -48,6 +52,11 @@ function customerTargets(selectedCustomerId = 'david-poku') {
         },
         {
           customerId: 'second-customer',
+          customerAccountId: 'acct_second',
+          membershipId: 'mem_second_owner',
+          membershipRole: 'owner',
+          targetKind: 'customer',
+          accountOnly: false,
           displayName: 'Second Customer',
           status: 'active',
           healthStatus: 'needs_attention',
@@ -154,6 +163,12 @@ describe('EvaosCustomerContext', () => {
 
     await waitFor(() => expect(result.current.selectedCustomerId).toBe('david-poku'));
     expect(result.current.selectedTarget?.displayName).toBe('David Poku Co');
+    expect(result.current.selectedTarget).toMatchObject({
+      customerAccountId: 'acct_david',
+      membershipId: 'mem_david_admin',
+      membershipRole: 'admin',
+      targetKind: 'customer_account',
+    });
     expect(result.current.roles).toEqual(['admin']);
     expect(result.current.isOperator).toBe(true);
     expect(result.current.loaded).toBe(true);
@@ -379,5 +394,64 @@ describe('EvaosCustomerContext', () => {
 
     expect(await screen.findByText('Customer target')).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/eds_customer_secret|refresh_token/i);
+  });
+
+  it('preserves safe account target metadata without surfacing secret-shaped membership fields', async () => {
+    brokerMocks.getCustomerTargets.mockResolvedValue({
+      success: true,
+      data: {
+        roles: ['admin'],
+        isOperator: true,
+        defaultCustomerId: 'customer_safe',
+        selectedCustomerId: 'customer_safe',
+        customers: [
+          {
+            customerId: 'customer_safe',
+            customerAccountId: 'acct_safe',
+            membershipId: 'mem_safe_admin',
+            membershipRole: 'technical_admin',
+            targetKind: 'customer_account',
+            accountOnly: true,
+            displayName: 'Safe Customer',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: true,
+          },
+          {
+            customerId: 'customer_dirty',
+            customerAccountId: 'eds_account_secret',
+            membershipId: 'provider_grant_should_not_render',
+            membershipRole: 'root',
+            targetKind: 'secret',
+            accountOnly: true,
+            displayName: 'Dirty Customer',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: false,
+          },
+        ],
+        summaryText: '2 customer targets loaded',
+      },
+    });
+
+    const { result } = renderHook(() => useEvaosCustomerContext(true));
+
+    await waitFor(() => expect(result.current.selectedCustomerId).toBe('customer_safe'));
+    expect(result.current.targets[0]).toMatchObject({
+      customerAccountId: 'acct_safe',
+      membershipId: 'mem_safe_admin',
+      membershipRole: 'technical_admin',
+      targetKind: 'customer_account',
+      accountOnly: true,
+    });
+    expect(result.current.targets[1]).toMatchObject({
+      displayName: 'Dirty Customer',
+      targetKind: 'customer_account',
+      accountOnly: true,
+    });
+    expect(result.current.targets[1].customerAccountId).toBeUndefined();
+    expect(result.current.targets[1].membershipId).toBeUndefined();
+    expect(result.current.targets[1].membershipRole).toBeUndefined();
+    expect(JSON.stringify(result.current)).not.toMatch(/eds_account_secret|provider_grant_should_not_render/);
   });
 });

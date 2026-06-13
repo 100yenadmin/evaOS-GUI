@@ -39,8 +39,15 @@ export interface IEvaosBrokerBeginDesktopAuthResult {
   message: string;
 }
 
+export type IEvaosCustomerTargetKind = 'customer' | 'customer_account';
+
 export interface IEvaosCustomerTargetView {
   customerId: string;
+  customerAccountId?: string;
+  membershipId?: string;
+  membershipRole?: IEvaosAccountPolicyRole;
+  targetKind?: IEvaosCustomerTargetKind;
+  accountOnly?: boolean;
   displayName: string;
   email?: string;
   status?: string;

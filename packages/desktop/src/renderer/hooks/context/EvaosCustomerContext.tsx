@@ -8,9 +8,11 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import type {
+  IEvaosAccountPolicyRole,
   IEvaosAccountPolicyScope,
   IEvaosBrokerSessionStatus,
   IEvaosCustomerTargetView,
+  IEvaosCustomerTargetKind,
   IEvaosCustomerTargetsView,
 } from '@/common/evaos/bridgeTypes';
 
@@ -31,6 +33,16 @@ const ACCOUNT_POLICY_SCOPES = new Set<IEvaosAccountPolicyScope>([
   'access_hermes_dashboard',
   'access_terminal',
   'access_technical_diagnostics',
+]);
+const ACCOUNT_POLICY_ROLES = new Set<IEvaosAccountPolicyRole>([
+  'owner',
+  'admin',
+  'billing_admin',
+  'technical_admin',
+  'manager',
+  'member',
+  'agent_only',
+  'support',
 ]);
 
 type EvaosCustomerContextState = {
@@ -106,13 +118,34 @@ function safeScopeList(value: unknown): IEvaosAccountPolicyScope[] {
     .filter((item): item is IEvaosAccountPolicyScope => ACCOUNT_POLICY_SCOPES.has(item as IEvaosAccountPolicyScope));
 }
 
+function safeAccountPolicyRole(value: unknown): IEvaosAccountPolicyRole | undefined {
+  const role = safeOptionalUiText(value);
+  return role && ACCOUNT_POLICY_ROLES.has(role as IEvaosAccountPolicyRole)
+    ? (role as IEvaosAccountPolicyRole)
+    : undefined;
+}
+
+function safeCustomerTargetKind(value: unknown, accountOnly?: boolean): IEvaosCustomerTargetKind | undefined {
+  const kind = safeOptionalUiText(value);
+  if (kind === 'customer' || kind === 'customer_account') {
+    return kind;
+  }
+  return accountOnly === true ? 'customer_account' : undefined;
+}
+
 function customerTargetsSummary(count: number): string {
   return count === 1 ? '1 customer target loaded' : `${count} customer targets loaded`;
 }
 
 function safeCustomerTarget(target: IEvaosCustomerTargetView): IEvaosCustomerTargetView {
+  const accountOnly = target.accountOnly === true;
   return {
     ...target,
+    customerAccountId: safeOptionalUiText(target.customerAccountId),
+    membershipId: safeOptionalUiText(target.membershipId),
+    membershipRole: safeAccountPolicyRole(target.membershipRole),
+    targetKind: safeCustomerTargetKind(target.targetKind, accountOnly),
+    accountOnly: target.accountOnly === undefined ? undefined : accountOnly,
     displayName: safeUiText(target.displayName, safeOptionalUiText(target.customerId) ?? 'Customer target'),
     email: safeOptionalUiText(target.email),
     status: safeOptionalUiText(target.status),

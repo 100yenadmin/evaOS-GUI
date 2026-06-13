@@ -1726,9 +1726,15 @@ function safeCustomerTargets(value: unknown): IEvaosCustomerTargetView[] {
       if (!customerId || !displayName) {
         return undefined;
       }
+      const accountOnly = safeBoolean(record.account_only ?? record.accountOnly);
 
       return stripUndefined({
         customerId,
+        customerAccountId: safeText(record.customer_account_id ?? record.customerAccountId),
+        membershipId: safeText(record.membership_id ?? record.membershipId),
+        membershipRole: normalizeAccountRoleValue(record.membership_role ?? record.membershipRole),
+        targetKind: normalizeCustomerTargetKind(record.target_kind ?? record.targetKind, accountOnly),
+        accountOnly,
         displayName,
         email: safeText(record.email),
         status: safeText(record.status),
@@ -1737,6 +1743,17 @@ function safeCustomerTargets(value: unknown): IEvaosCustomerTargetView[] {
       });
     })
     .filter((target): target is IEvaosCustomerTargetView => Boolean(target));
+}
+
+function normalizeCustomerTargetKind(
+  value: unknown,
+  accountOnly?: boolean
+): IEvaosCustomerTargetView['targetKind'] | undefined {
+  const kind = safeText(value, 80);
+  if (kind === 'customer' || kind === 'customer_account') {
+    return kind;
+  }
+  return accountOnly === true ? 'customer_account' : undefined;
 }
 
 const ACCOUNT_POLICY_SCHEMA_VERSION: IEvaosPeopleAccessPolicyView['schemaVersion'] = 'evaos.account_policy.v1';
