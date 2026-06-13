@@ -567,10 +567,10 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN_KEYCHAIN', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(
     reusableBuild,
-    'EVAOS_DMG_CODESIGN: false',
+    'EVAOS_DMG_CODESIGN: true',
     '.github/workflows/_build-reusable.yml',
     issues,
-    'GitHub release jobs stage unsigned DMGs for bounded local signing fallback'
+    'GitHub release jobs DMG-sign before notarization so Gatekeeper primary-signature validation can pass'
   );
   requireText(
     reusableBuild,
