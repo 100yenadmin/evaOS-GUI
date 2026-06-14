@@ -21,7 +21,7 @@ import { Message } from '@arco-design/web-react';
 import coworkSvg from '@/renderer/assets/icons/cowork.svg';
 import { useDetectedAgents, useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
-import { resolveAvatarImageSrc } from './assistantUtils';
+import { prepareEvaosAssistantListForRc, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
 import AssistantListPanel from './AssistantListPanel';
 import DeleteAssistantModal from './DeleteAssistantModal';
@@ -63,9 +63,13 @@ const AssistantSettings: React.FC = () => {
     reorderAssistants,
     localeKey,
   } = useAssistantList();
+  const visibleAssistants = useMemo(
+    () => prepareEvaosAssistantListForRc(assistants, localeKey),
+    [assistants, localeKey]
+  );
   const builtinAvatarOptions = useMemo(
     () =>
-      assistants
+      visibleAssistants
         .filter((assistant) => assistant.source === 'builtin' && assistant.avatar?.startsWith('/api/assistants/'))
         .map((assistant) => {
           const src = resolveAvatarImageSrc(assistant.avatar, avatarImageMap);
@@ -80,7 +84,7 @@ const AssistantSettings: React.FC = () => {
           };
         })
         .filter((option): option is NonNullable<typeof option> => option !== null),
-    [assistants, avatarImageMap, localeKey]
+    [visibleAssistants, avatarImageMap, localeKey]
   );
 
   const { availableBackends, refreshAgentDetection } = useDetectedAgents();
@@ -215,7 +219,7 @@ const AssistantSettings: React.FC = () => {
             />
           ) : (
             <AssistantListPanel
-              assistants={assistants}
+              assistants={visibleAssistants}
               localeKey={localeKey}
               avatarImageMap={avatarImageMap}
               onEdit={(assistant) => void editor.handleEdit(assistant)}
