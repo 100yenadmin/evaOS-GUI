@@ -98,11 +98,10 @@ describe('evaosNativeCompanionBoundary', () => {
     }
   });
 
-  it('does not grant macOS automation, capture, or device-control entitlements to the beta shell', () => {
+  it('does not grant macOS automation or device-control entitlements to the beta shell', () => {
     const entitlements = readFileSync(resolve(repoRoot, 'entitlements.plist'), 'utf8');
     const forbiddenEntitlements = [
       'com.apple.security.automation.apple-events',
-      'com.apple.security.device.audio-input',
       'com.apple.security.device.bluetooth',
       'com.apple.security.device.camera',
       'com.apple.security.device.usb',
@@ -113,5 +112,13 @@ describe('evaosNativeCompanionBoundary', () => {
     for (const key of forbiddenEntitlements) {
       expect(entitlements, key).not.toContain(key);
     }
+  });
+
+  it('allows only the microphone entitlement added for Milestone 2 voice input', () => {
+    const entitlements = readFileSync(resolve(repoRoot, 'entitlements.plist'), 'utf8');
+
+    expect(entitlements).toContain('com.apple.security.device.audio-input');
+    expect(entitlements).not.toContain('com.apple.security.device.camera');
+    expect(entitlements).not.toContain('com.apple.security.automation.apple-events');
   });
 });

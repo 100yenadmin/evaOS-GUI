@@ -44,7 +44,6 @@ import type {
   ProviderHealthCheckResponse,
   UpdateProviderRequest,
 } from '../types/provider/providerApi';
-import type { SpeechToTextRequest, SpeechToTextResult } from '../types/provider/speech';
 import type {
   ITeamAgentRemovedEvent,
   ITeamAgentRenamedEvent,
@@ -867,14 +866,6 @@ export const fs = {
   ),
   enableSkillsMarket: httpPost<void, void>('/api/skills/market/enable'),
   disableSkillsMarket: httpPost<void, void>('/api/skills/market/disable'),
-};
-
-// ---------------------------------------------------------------------------
-// Speech to Text — routed to backend
-// ---------------------------------------------------------------------------
-
-export const speechToText = {
-  transcribe: httpPost<SpeechToTextResult, SpeechToTextRequest>('/api/stt'),
 };
 
 // ---------------------------------------------------------------------------
