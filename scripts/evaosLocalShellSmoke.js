@@ -146,7 +146,15 @@ const BROKER_GUARDED_ROUTE_CHECKS = [
     hash: '/people-access',
     screenshotName: 'people-access-broker-guard',
     expected: ['evaOS Workbench Beta'],
-    forbidden: ['People Access', 'Fixture Owner', 'member rows', 'desktop_session', 'Bearer', 'provider_grant'],
+    forbidden: [
+      'People Access',
+      'People & Access',
+      'Fixture Owner',
+      'member rows',
+      'desktop_session',
+      'Bearer',
+      'provider_grant',
+    ],
     requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
@@ -388,59 +396,24 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
   {
     name: 'people-access-loaded-fixture',
     hash: '/people-access',
-    title: 'People Access',
+    title: 'People & Access',
     proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
-    settledMarkers: [
-      'People Access',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Fixture Owner',
-      'fixture-audit-people-policy',
-    ],
-    loadedStateRequiredMarkers: ['member rows', 'role badges', 'account policy audit id'],
-    action: 'click-load-default-customer',
+    settledMarkers: ['People & Access', 'Website handoff', 'https://www.electricsheephq.com/dashboard/invites'],
+    loadedStateRequiredMarkers: ['people access dashboard handoff', 'dashboard invites url'],
     isolateRendererState: true,
     expected: [
-      'People Access',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Acme Fixture Co',
-      'Fixture Owner',
-      'Fixture Admin',
-      'pending-member@example.test',
-      '6 of 6',
-      'Seat limit reached',
-      'Seat limit reached. Add seats before inviting another member.',
-      'Backend enforced',
-      'Audit: fixture-audit-people-policy',
-    ],
-    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
-  },
-  {
-    name: 'people-access-switch-clears-fixture',
-    hash: '/people-access',
-    title: 'People Access',
-    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
-    settledMarkers: [
-      'People Access',
-      'Denied Browser Fixture Co',
-      'People Access denied for wrong customer fixture',
-      'fixture-audit-people-denied-policy',
-    ],
-    loadedStateRequiredMarkers: ['people stale-state clearing', 'account policy audit id'],
-    action: 'click-people-access-switch-clears',
-    isolateRendererState: true,
-    expected: [
-      'People Access',
-      'Denied Browser Fixture Co',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'People Access denied for wrong customer fixture',
-      'Route denied',
-      'Audit: fixture-audit-people-denied-policy',
+      'People & Access',
+      'Team permissions',
+      'Website handoff',
+      'https://www.electricsheephq.com/dashboard/invites',
+      'Open dashboard',
     ],
     forbidden: [
       'Fixture Owner',
       'Fixture Admin',
       'pending-member@example.test',
       'fixture-audit-people-policy',
+      'Load a customer account',
       'desktop_session',
       'Bearer',
       'provider_grant',
@@ -454,35 +427,28 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     hash: '/connected-apps',
     title: 'Connected Apps',
     proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
-    settledMarkers: [
-      'Connected Apps',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Google Workspace',
-      'fixture-audit-providers',
-    ],
-    loadedStateRequiredMarkers: ['provider profile cards', 'grant/revoke status badges', 'provider source pointer'],
-    action: 'click-load-default-customer',
+    settledMarkers: ['Connected Apps', 'Website handoff', 'https://www.electricsheephq.com/dashboard/providers'],
+    loadedStateRequiredMarkers: ['connected apps dashboard handoff', 'dashboard providers url'],
     isolateRendererState: true,
     expected: [
       'Connected Apps',
+      'Provider access',
+      'Website handoff',
+      'https://www.electricsheephq.com/dashboard/providers',
+      'Open dashboard',
+    ],
+    forbidden: [
       'Brokered provider status, grants, and revocation',
-      'Acme Fixture Co',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
       'Google Workspace',
       'Slack',
-      'Notion',
-      'GitHub',
-      'Linear',
-      'Ready',
-      'Needs login',
-      'Needs reconnection',
-      'Revoked',
-      'Approval required',
-      'auditable handle',
-      'local-fixture:provider_profiles',
       'fixture-audit-providers',
+      'desktop_session',
+      'Bearer',
+      'provider_grant',
+      'grant_handle',
+      'access_token',
+      'refresh_token',
     ],
-    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
   },
   {
     name: 'approval-center-deny-fixture',
@@ -671,41 +637,6 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
   },
   {
-    name: 'connected-apps-switch-clears-fixture',
-    hash: '/connected-apps',
-    title: 'Connected Apps',
-    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
-    settledMarkers: [
-      'Connected Apps',
-      'Denied Browser Fixture Co',
-      'Connected Apps denied for wrong customer fixture',
-      'fixture-audit-provider-denied',
-    ],
-    loadedStateRequiredMarkers: ['provider stale-state clearing', 'provider denied source pointer'],
-    action: 'click-connected-apps-switch-clears',
-    isolateRendererState: true,
-    expected: [
-      'Connected Apps',
-      'Denied Browser Fixture Co',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Connected Apps denied for wrong customer fixture',
-      'Route denied',
-      'Source: local-fixture:provider_profiles:denied',
-      'fixture-audit-provider-denied',
-    ],
-    forbidden: [
-      'fixture-audit-providers',
-      'local-fixture:provider:google_workspace',
-      'workspace@example.test',
-      'desktop_session',
-      'Bearer',
-      'provider_grant',
-      'grant_handle',
-      'access_token',
-      'refresh_token',
-    ],
-  },
-  {
     name: 'business-browser-switch-clears-fixture',
     hash: '/business-browser',
     title: 'Business Browser',
@@ -745,75 +676,19 @@ const LOCAL_PRODUCT_ROUTE_CHECKS = [
     hash: '/company-brain',
     title: 'Company Brain',
     proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
-    settledMarkers: [
-      'Company Brain',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Northstar Fixture Account',
-      'Renewal fixture brief',
-      'local-fixture:company-brain:query:fixture-company-renewal',
-      'fixture-audit-company-directory',
-    ],
-    loadedStateRequiredMarkers: [
-      'account directory rows',
-      'account 360 panel',
-      'query answer source pointer',
-      'directory source pointer',
-    ],
-    action: 'click-load-company-brain',
+    settledMarkers: ['Company Brain', 'Website handoff', 'https://www.electricsheephq.com/dashboard/company-brain'],
+    loadedStateRequiredMarkers: ['company brain dashboard handoff', 'dashboard company-brain url'],
     isolateRendererState: true,
     expected: [
       'Company Brain',
-      'Org-scoped account directory, account brief, timeline, query, and exception evidence.',
-      'Acme Fixture Co',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Northstar Fixture Account',
-      'Atlas Fixture Account',
-      'Signal Error Fixture Account',
-      'Source local-fixture:company-brain:directory',
-      'Renewal fixture brief',
-      'Fixture kickoff call',
-      'Synthetic ingest still running',
-      'Source local-fixture:company-brain:account-360:fixture-company-renewal',
-      'Brief source local-fixture:company-brain:brief:fixture-company-renewal',
-      'Source local-fixture:company-brain:query:fixture-company-renewal',
-      'fixture-audit-company-directory',
-      'fixture-audit-policy',
+      'Company intelligence',
+      'Website handoff',
+      'https://www.electricsheephq.com/dashboard/company-brain',
+      'not yet a finished native Workbench surface',
+      'Open dashboard',
     ],
     forbidden: [
-      'desktop_session',
-      'Bearer',
-      'provider_grant',
-      'grant_handle',
-      'access_token',
-      'refresh_token',
-      'raw_embedding',
-      'raw_prompt',
-    ],
-  },
-  {
-    name: 'company-brain-switch-clears-fixture',
-    hash: '/company-brain',
-    title: 'Company Brain',
-    proofStage: PROOF_STAGES.PRODUCT_LOADED_STATE,
-    settledMarkers: [
-      'Company Brain',
-      'Denied Browser Fixture Co',
-      'Company Brain denied for wrong customer fixture',
-      'fixture-audit-company-denied',
-    ],
-    loadedStateRequiredMarkers: ['company-brain stale-state clearing', 'company-brain denied source pointer'],
-    action: 'click-company-brain-switch-clears',
-    isolateRendererState: true,
-    expected: [
-      'Company Brain',
-      'Denied Browser Fixture Co',
-      'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-      'Company Brain denied for wrong customer fixture',
-      'Route denied',
-      'Source local-fixture:company-brain:denied',
-      'fixture-audit-company-denied',
-    ],
-    forbidden: [
+      'Org-scoped account directory',
       'Northstar Fixture Account',
       'Renewal fixture brief',
       'fixture-audit-company-directory',
@@ -1124,26 +999,6 @@ async function clickRefreshTargets(page) {
   await page.waitForTimeout(350);
 }
 
-async function clickFirstCompanyBrainAccount(page) {
-  const viewButton = page.getByRole('button', { name: /^View$/ }).first();
-  await viewButton.waitFor({ state: 'visible', timeout: 10000 });
-  await viewButton.click();
-  await page.waitForFunction(() => document.body.innerText.includes('Renewal fixture brief'), { timeout: 10000 });
-}
-
-async function askCompanyBrainFixtureQuestion(page) {
-  const queryInput = page.getByLabel('Ask Company Brain');
-  await queryInput.fill('What needs attention?');
-  await page.getByRole('button', { name: /^Ask$/ }).click();
-  await page.waitForFunction(
-    () => document.body.innerText.includes('local-fixture:company-brain:query:fixture-company-renewal'),
-    { timeout: 10000 }
-  );
-  await page
-    .getByText('Source local-fixture:company-brain:query:fixture-company-renewal')
-    .scrollIntoViewIfNeeded({ timeout: 10000 });
-}
-
 async function clickBusinessBrowserLaunch(page) {
   await clickLoad(page);
   const stopButton = page.getByRole('button', { name: /^Stop$/ }).first();
@@ -1241,45 +1096,6 @@ async function waitForStaleMarkersCleared(page, route, staleMarkers) {
   }
 }
 
-async function clickPeopleAccessSwitchClears(page) {
-  await clickLoadDefaultCustomer(page);
-  await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-people-policy'), {
-    timeout: 10000,
-  });
-  await clickCustomerTarget(page, 'Denied Browser Fixture Co');
-  await waitForStaleMarkersCleared(page, 'people-access-switch-clears-fixture', [
-    'Fixture Owner',
-    'Fixture Admin',
-    'pending-member@example.test',
-    'fixture-audit-people-policy',
-  ]);
-  await clickLoad(page);
-  await page.waitForFunction(
-    () => document.body.innerText.includes('People Access denied for wrong customer fixture'),
-    {
-      timeout: 10000,
-    }
-  );
-}
-
-async function clickConnectedAppsSwitchClears(page) {
-  await clickLoadDefaultCustomer(page);
-  await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-providers'), { timeout: 10000 });
-  await clickCustomerTarget(page, 'Denied Browser Fixture Co');
-  await waitForStaleMarkersCleared(page, 'connected-apps-switch-clears-fixture', [
-    'fixture-audit-providers',
-    'local-fixture:provider:google_workspace',
-    'workspace@example.test',
-  ]);
-  await clickLoad(page);
-  await page.waitForFunction(
-    () => document.body.innerText.includes('Connected Apps denied for wrong customer fixture'),
-    {
-      timeout: 10000,
-    }
-  );
-}
-
 async function clickApprovalCenterDeny(page) {
   await clickLoadDefaultCustomer(page);
   await page.waitForFunction(() => document.body.innerText.includes('fixture-audit-approval-request'), {
@@ -1332,26 +1148,6 @@ async function clickNativeCompanionAdvancedDiagnostics(page) {
   await page.waitForFunction(() => document.body.innerText.includes('Native companion status matrix'), {
     timeout: 10000,
   });
-}
-
-async function clickCompanyBrainSwitchClears(page) {
-  await clickLoadDefaultCustomer(page);
-  await clickFirstCompanyBrainAccount(page);
-  await askCompanyBrainFixtureQuestion(page);
-  await clickCustomerTarget(page, 'Denied Browser Fixture Co');
-  await waitForStaleMarkersCleared(page, 'company-brain-switch-clears-fixture', [
-    'Northstar Fixture Account',
-    'Renewal fixture brief',
-    'fixture-audit-company-directory',
-    'local-fixture:company-brain:query:fixture-company-renewal',
-  ]);
-  await clickLoad(page);
-  await page.waitForFunction(
-    () => document.body.innerText.includes('Company Brain denied for wrong customer fixture'),
-    {
-      timeout: 10000,
-    }
-  );
 }
 
 async function bodyText(page, timeout = 1500) {
@@ -1547,10 +1343,6 @@ async function runLocalShellSmoke(options = {}) {
             throw new Error(`${check.name} is missing a runtime surface selector.`);
           }
           await clickRuntimeDashboardAttach(page, surfaceTestId);
-        } else if (check.action === 'click-load-company-brain') {
-          await clickLoadDefaultCustomer(page);
-          await clickFirstCompanyBrainAccount(page);
-          await askCompanyBrainFixtureQuestion(page);
         } else if (check.action === 'click-business-browser-launch') {
           await clickBusinessBrowserLaunch(page);
         } else if (check.action === 'click-business-browser-stop') {
@@ -1567,18 +1359,12 @@ async function runLocalShellSmoke(options = {}) {
           await clickMissionControlCheck(page);
         } else if (check.action === 'click-mission-control-switch-clears') {
           await clickMissionControlSwitchClears(page);
-        } else if (check.action === 'click-people-access-switch-clears') {
-          await clickPeopleAccessSwitchClears(page);
-        } else if (check.action === 'click-connected-apps-switch-clears') {
-          await clickConnectedAppsSwitchClears(page);
         } else if (check.action === 'click-business-browser-switch-clears') {
           await clickBusinessBrowserSwitchClears(page);
         } else if (check.action === 'click-terminal-switch-clears') {
           await clickTerminalSwitchClears(page);
         } else if (check.action === 'click-native-companion-advanced-diagnostics') {
           await clickNativeCompanionAdvancedDiagnostics(page);
-        } else if (check.action === 'click-company-brain-switch-clears') {
-          await clickCompanyBrainSwitchClears(page);
         } else if (check.action === 'click-refresh-targets') {
           await clickRefreshTargets(page);
         }

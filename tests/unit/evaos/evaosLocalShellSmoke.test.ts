@@ -207,7 +207,6 @@ describe('evaOS local shell smoke', () => {
       'design-workspace-loaded-fixture',
       'creative-studio-loaded-fixture',
       'people-access-loaded-fixture',
-      'people-access-switch-clears-fixture',
       'connected-apps-loaded-fixture',
       'approval-center-deny-fixture',
       'business-browser-loaded-fixture',
@@ -216,10 +215,8 @@ describe('evaOS local shell smoke', () => {
       'business-browser-denied-fixture',
       'business-browser-offline-fixture',
       'business-browser-failed-fixture',
-      'connected-apps-switch-clears-fixture',
       'business-browser-switch-clears-fixture',
       'company-brain-loaded-fixture',
-      'company-brain-switch-clears-fixture',
       'terminal-loaded-fixture',
       'terminal-switch-clears-fixture',
       'native-companion-boundary-fixture',
@@ -341,50 +338,37 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'people-access-loaded-fixture'
     );
     expect(peopleAccessLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(peopleAccessLoaded?.action).toBe('click-load-default-customer');
+    expect(peopleAccessLoaded?.action).toBeUndefined();
     expect(peopleAccessLoaded?.expected).toEqual(
       expect.arrayContaining([
-        'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-        'Fixture Owner',
-        'Fixture Admin',
-        'pending-member@example.test',
-        'Audit: fixture-audit-people-policy',
+        'People & Access',
+        'Team permissions',
+        'Website handoff',
+        'https://www.electricsheephq.com/dashboard/invites',
       ])
     );
     expect(peopleAccessLoaded?.forbidden).toEqual(
-      expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle'])
-    );
-
-    const peopleAccessSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
-      (check) => check.name === 'people-access-switch-clears-fixture'
-    );
-    expect(peopleAccessSwitch).toEqual(
-      expect.objectContaining({
-        action: 'click-people-access-switch-clears',
-        loadedStateRequiredMarkers: ['people stale-state clearing', 'account policy audit id'],
-        forbidden: expect.arrayContaining([
-          'Fixture Owner',
-          'pending-member@example.test',
-          'fixture-audit-people-policy',
-        ]),
-      })
+      expect.arrayContaining([
+        'Fixture Owner',
+        'pending-member@example.test',
+        'fixture-audit-people-policy',
+        'desktop_session',
+        'provider_grant',
+        'grant_handle',
+      ])
     );
 
     const connectedAppsLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
       (check) => check.name === 'connected-apps-loaded-fixture'
     );
     expect(connectedAppsLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(connectedAppsLoaded?.action).toBe('click-load-default-customer');
+    expect(connectedAppsLoaded?.action).toBeUndefined();
     expect(connectedAppsLoaded?.expected).toEqual(
       expect.arrayContaining([
-        'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-        'Google Workspace',
-        'Slack',
-        'Notion',
-        'GitHub',
-        'Linear',
-        'local-fixture:provider_profiles',
-        'fixture-audit-providers',
+        'Connected Apps',
+        'Provider access',
+        'Website handoff',
+        'https://www.electricsheephq.com/dashboard/providers',
       ])
     );
     expect(connectedAppsLoaded?.forbidden).toEqual(
@@ -499,17 +483,6 @@ describe('evaOS local shell smoke', () => {
       })
     );
 
-    const connectedAppsSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
-      (check) => check.name === 'connected-apps-switch-clears-fixture'
-    );
-    expect(connectedAppsSwitch).toEqual(
-      expect.objectContaining({
-        action: 'click-connected-apps-switch-clears',
-        loadedStateRequiredMarkers: ['provider stale-state clearing', 'provider denied source pointer'],
-        forbidden: expect.arrayContaining(['fixture-audit-providers', 'local-fixture:provider:google_workspace']),
-      })
-    );
-
     const businessBrowserSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
       (check) => check.name === 'business-browser-switch-clears-fixture'
     );
@@ -525,43 +498,20 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'company-brain-loaded-fixture'
     );
     expect(companyBrainLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(companyBrainLoaded?.action).toBe('click-load-company-brain');
+    expect(companyBrainLoaded?.action).toBeUndefined();
     expect(companyBrainLoaded?.expected).toEqual(
       expect.arrayContaining([
-        'LOCAL FIXTURE - NOT LIVE BETA PROOF',
-        'Northstar Fixture Account',
-        'Atlas Fixture Account',
-        'Source local-fixture:company-brain:directory',
-        'Renewal fixture brief',
-        'Fixture kickoff call',
-        'Synthetic ingest still running',
-        'Source local-fixture:company-brain:account-360:fixture-company-renewal',
-        'Brief source local-fixture:company-brain:brief:fixture-company-renewal',
-        'Source local-fixture:company-brain:query:fixture-company-renewal',
-        'fixture-audit-company-directory',
+        'Company Brain',
+        'Company intelligence',
+        'Website handoff',
+        'https://www.electricsheephq.com/dashboard/company-brain',
+        'not yet a finished native Workbench surface',
       ])
     );
     expect(companyBrainLoaded?.loadedStateRequiredMarkers).toEqual([
-      'account directory rows',
-      'account 360 panel',
-      'query answer source pointer',
-      'directory source pointer',
+      'company brain dashboard handoff',
+      'dashboard company-brain url',
     ]);
-
-    const companyBrainSwitch = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
-      (check) => check.name === 'company-brain-switch-clears-fixture'
-    );
-    expect(companyBrainSwitch).toEqual(
-      expect.objectContaining({
-        action: 'click-company-brain-switch-clears',
-        loadedStateRequiredMarkers: ['company-brain stale-state clearing', 'company-brain denied source pointer'],
-        forbidden: expect.arrayContaining([
-          'Northstar Fixture Account',
-          'Renewal fixture brief',
-          'fixture-audit-company-directory',
-        ]),
-      })
-    );
 
     const terminalLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
       (check) => check.name === 'terminal-loaded-fixture'
@@ -680,11 +630,8 @@ describe('evaOS local shell smoke', () => {
 
   it('exercises customer-target recovery in fixture mode on product routes that depend on Workbench customer context', () => {
     for (const [routeName, action] of [
-      ['people-access-loaded-fixture', 'click-load-default-customer'],
       ['approval-center-deny-fixture', 'click-approval-center-deny'],
-      ['connected-apps-loaded-fixture', 'click-load-default-customer'],
       ['business-browser-loaded-fixture', 'click-load-default-customer'],
-      ['company-brain-loaded-fixture', 'click-load-company-brain'],
     ] as const) {
       const route = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find((check) => check.name === routeName);
       expect(route?.action).toBe(action);

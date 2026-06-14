@@ -53,7 +53,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '14-connected-apps.png',
     artifactName: 'screenshots/14-connected-apps.png',
     closeoutState: 'loaded',
-    settledMarkers: ['Connected Apps', 'Brokered provider status, grants, and revocation'],
+    settledMarkers: ['Connected Apps', 'Website handoff', 'https://www.electricsheephq.com/dashboard/providers'],
   },
   {
     manifestRowId: 'people-access',
@@ -62,7 +62,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '15-people-and-access.png',
     artifactName: 'screenshots/15-people-and-access.png',
     closeoutState: 'loaded',
-    settledMarkers: ['People Access', 'Load a customer account'],
+    settledMarkers: ['People & Access', 'Website handoff', 'https://www.electricsheephq.com/dashboard/invites'],
   },
   {
     manifestRowId: 'company-brain',
@@ -71,7 +71,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '16-company-brain.png',
     artifactName: 'screenshots/16-company-brain.png',
     closeoutState: 'loaded',
-    settledMarkers: ['Company Brain', 'Org-scoped account directory'],
+    settledMarkers: ['Company Brain', 'Website handoff', 'https://www.electricsheephq.com/dashboard/company-brain'],
   },
   {
     manifestRowId: 'evaos-dashboard',

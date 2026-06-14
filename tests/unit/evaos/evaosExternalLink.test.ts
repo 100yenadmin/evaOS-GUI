@@ -28,10 +28,18 @@ describe('evaosExternalLink', () => {
       opened: true,
     });
     await expect(
+      openEvaosExternalLink({ url: 'mailto:support@electricsheephq.com?subject=evaOS+Workbench+Beta+support' })
+    ).resolves.toMatchObject({
+      opened: true,
+    });
+    await expect(
       openEvaosExternalLink({ url: 'https://github.com/100yenadmin/evaOS-GUI/releases/tag/evaos-beta-test' })
     ).resolves.toMatchObject({ opened: true });
 
-    expect(electronMock.shell.openExternal).toHaveBeenCalledTimes(3);
+    expect(electronMock.shell.openExternal).toHaveBeenCalledTimes(4);
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
+      'mailto:support@electricsheephq.com?subject=evaOS+Workbench+Beta+support'
+    );
   });
 
   it('blocks unrelated external links from evaOS release surfaces', async () => {
