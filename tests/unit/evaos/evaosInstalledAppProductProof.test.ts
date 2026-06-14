@@ -320,8 +320,8 @@ describe('evaOS installed app product proof', () => {
       const key = args[1];
       if (key === 'Print:CFBundleIdentifier') return 'com.evaos.workbench.beta\n';
       if (key === 'Print:CFBundleName') return 'evaOS Workbench Beta\n';
-      if (key === 'Print:CFBundleVersion') return '2.1.12-evaos-beta.0\n';
-      if (key === 'Print:CFBundleShortVersionString') return '2.1.12-evaos-beta.0\n';
+      if (key === 'Print:CFBundleVersion') return '2.1.18-evaos-beta.0\n';
+      if (key === 'Print:CFBundleShortVersionString') return '2.1.18-evaos-beta.0\n';
       if (key === 'Print:CFBundleURLTypes:0:CFBundleURLSchemes') return 'Array {\n    evaos-workbench-beta\n}\n';
       throw new Error(`unexpected key ${key}`);
     };
@@ -329,8 +329,8 @@ describe('evaOS installed app product proof', () => {
     expect(installedAppProof.readInfoPlist('/Applications/evaOS Workbench Beta.app', fakeExec)).toEqual({
       bundleId: 'com.evaos.workbench.beta',
       bundleName: 'evaOS Workbench Beta',
-      bundleVersion: '2.1.12-evaos-beta.0',
-      shortVersion: '2.1.12-evaos-beta.0',
+      bundleVersion: '2.1.18-evaos-beta.0',
+      shortVersion: '2.1.18-evaos-beta.0',
       protocolSchemes: ['evaos-workbench-beta'],
     });
     expect(calls.every((args) => args.at(-1) === '/Applications/evaOS Workbench Beta.app/Contents/Info.plist')).toBe(
@@ -414,8 +414,8 @@ describe('evaOS installed app product proof', () => {
     const bundleInfo = {
       bundleId: 'com.evaos.workbench.beta',
       bundleName: 'evaOS Workbench Beta',
-      bundleVersion: '2.1.12-evaos-beta.0',
-      shortVersion: '2.1.12-evaos-beta.0',
+      bundleVersion: '2.1.18-evaos-beta.0',
+      shortVersion: '2.1.18-evaos-beta.0',
       protocolSchemes: ['evaos-workbench-beta'],
     };
     const files = installedAppProof.writeDryRunProofFiles({
@@ -489,8 +489,8 @@ describe('evaOS installed app product proof', () => {
     const bundleInfo = {
       bundleId: 'com.evaos.workbench.beta',
       bundleName: 'evaOS Workbench Beta',
-      bundleVersion: '2.1.12-evaos-beta.0',
-      shortVersion: '2.1.12-evaos-beta.0',
+      bundleVersion: '2.1.18-evaos-beta.0',
+      shortVersion: '2.1.18-evaos-beta.0',
       protocolSchemes: ['evaos-workbench-beta'],
     };
     const files = installedAppProof.writeDryRunProofFiles({

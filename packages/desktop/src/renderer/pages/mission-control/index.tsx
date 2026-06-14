@@ -96,7 +96,7 @@ const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
   },
   {
     label: 'Upstream regression',
-    detail: 'Upstream shell v2.1.12 runtime, preview, ACP, workspace, and realtime fixes must be reconciled.',
+    detail: 'Upstream shell v2.1.18 runtime, preview, ACP, workspace, voice, and team fixes must stay proven.',
   },
   {
     label: 'Visible branding',
