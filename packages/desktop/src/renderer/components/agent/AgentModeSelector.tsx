@@ -69,6 +69,8 @@ export interface AgentModeSelectorProps {
   dynamicModes?: AgentModeOption[];
   /** Optional runtime preparation before reading active-session mode. */
   beforeRuntimeSync?: () => Promise<void>;
+  /** Whether switching mode should persist into the backend-wide preference key. */
+  persistGlobalPreference?: boolean;
 }
 
 /**
@@ -97,6 +99,7 @@ const AgentModeSelector: React.FC<AgentModeSelectorProps> = ({
   onModeChanged,
   dynamicModes,
   beforeRuntimeSync,
+  persistGlobalPreference = true,
 }) => {
   const { t } = useTranslation();
   const layout = useLayoutContext();
@@ -218,7 +221,7 @@ const AgentModeSelector: React.FC<AgentModeSelectorProps> = ({
 
         setCurrentMode(confirmedMode);
         onModeChanged?.(confirmedMode);
-        if (backend) {
+        if (backend && persistGlobalPreference) {
           // Mirror Guid page behaviour so a switch made inside the
           // conversation also becomes the next-session default.
           void savePreferredMode(backend, confirmedMode);
@@ -231,7 +234,7 @@ const AgentModeSelector: React.FC<AgentModeSelectorProps> = ({
         setIsLoading(false);
       }
     },
-    [backend, beforeRuntimeSync, conversation_id, current_mode, onModeChanged, onModeSelect, t]
+    [backend, beforeRuntimeSync, conversation_id, current_mode, onModeChanged, onModeSelect, persistGlobalPreference, t]
   );
 
   const renderLogo = () => (

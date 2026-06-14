@@ -60,6 +60,7 @@
   "more": "その他",
   "refresh": "更新",
   "tray.showWindow": "evaOS Workbench を表示",
+  "readOnly": "読み取り専用",
   "tray.newChat": "新しいチャット",
   "tray.closeToTray": "トレイに隠す",
   "tray.about": "evaOS Workbench について",
@@ -102,5 +103,9 @@
   "import": "インポート",
   "processing": "処理中...",
   "optional": "（任意）",
-  "clear": "クリア"
+  "clear": "クリア",
+  "unit": {
+    "minute_short": "分",
+    "second_short": "秒"
+  }
 }

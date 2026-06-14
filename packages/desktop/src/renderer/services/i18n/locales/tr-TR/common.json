@@ -60,6 +60,7 @@
   "more": "Daha Fazla",
   "refresh": "Yenile",
   "tray.showWindow": "evaOS Workbench'yi Göster",
+  "readOnly": "Salt okunur",
   "tray.newChat": "Yeni Sohbet",
   "tray.closeToTray": "Tepsiye Gizle",
   "tray.about": "evaOS Workbench Hakkında",
@@ -102,5 +103,9 @@
   "import": "İçe Aktar",
   "processing": "İşleniyor...",
   "optional": "(isteğe bağlı)",
-  "clear": "Temizle"
+  "clear": "Temizle",
+  "unit": {
+    "minute_short": "dk",
+    "second_short": "sn"
+  }
 }
