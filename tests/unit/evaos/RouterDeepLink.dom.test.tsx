@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Router from '@/renderer/components/layout/Router';
 import type { DeepLinkPayload } from '@/renderer/hooks/system/useDeepLink';
@@ -54,12 +54,58 @@ vi.mock('@renderer/pages/login', () => ({
   default: () => <div data-testid='login-page'>Login</div>,
 }));
 
+const signedOutBrokerSession = {
+  success: true,
+  data: {
+    state: 'signed_out',
+    authenticated: false,
+    expired: false,
+    source: 'none',
+    message: 'No evaOS desktop session is active.',
+  },
+};
+
+const activeBrokerSession = {
+  success: true,
+  data: {
+    state: 'authenticated',
+    authenticated: true,
+    expired: false,
+    source: 'callback',
+    message: 'evaOS desktop session is active.',
+  },
+};
+
 describe('Router deep-link listener', () => {
   beforeEach(() => {
     authMock.status = 'unauthenticated';
     brokerMock.getSessionStatus.mockReset();
+    brokerMock.getSessionStatus.mockResolvedValue(signedOutBrokerSession);
     bridgeMock.deepLinkHandlers.clear();
     window.location.hash = '#/login';
+  });
+
+  it('allows broker desktop-session auth to carry protected routes when web auth is not hydrated', async () => {
+    window.location.hash = '#/guid';
+    brokerMock.getSessionStatus.mockResolvedValue(activeBrokerSession);
+
+    const { getByTestId } = render(<Router layout={<div data-testid='protected-layout' />} />);
+
+    await waitFor(() => {
+      expect(getByTestId('protected-layout')).toBeInTheDocument();
+    });
+  });
+
+  it('redirects the login route when broker desktop-session auth is already active', async () => {
+    window.location.hash = '#/login';
+    brokerMock.getSessionStatus.mockResolvedValue(activeBrokerSession);
+
+    const { getByTestId, queryByTestId } = render(<Router layout={<div data-testid='protected-layout' />} />);
+
+    await waitFor(() => {
+      expect(getByTestId('protected-layout')).toBeInTheDocument();
+    });
+    expect(queryByTestId('login-page')).not.toBeInTheDocument();
   });
 
   it('handles desktop-session imports before legacy web auth is established', async () => {
@@ -68,29 +114,26 @@ describe('Router deep-link listener', () => {
       importedEvents.push((event as CustomEvent).detail);
     };
     window.addEventListener('evaos:desktop-session-imported', handleImported);
-    brokerMock.getSessionStatus.mockResolvedValue({
-      success: true,
-      data: {
-        state: 'authenticated',
-        authenticated: true,
-        expired: false,
-        source: 'callback',
-        message: 'evaOS desktop session is active.',
-      },
-    });
+    brokerMock.getSessionStatus.mockResolvedValueOnce(signedOutBrokerSession).mockResolvedValue(activeBrokerSession);
 
     render(<Router layout={<div data-testid='protected-layout' />} />);
 
     await waitFor(() => {
       expect(bridgeMock.deepLinkHandlers.size).toBe(1);
     });
-
-    bridgeMock.deepLinkHandlers.forEach((handler) =>
-      handler({ action: 'evaos-auth/session-imported', params: { source: 'loopback' } })
-    );
-
     await waitFor(() => {
       expect(brokerMock.getSessionStatus).toHaveBeenCalledTimes(1);
+    });
+    brokerMock.getSessionStatus.mockClear();
+
+    await act(async () => {
+      bridgeMock.deepLinkHandlers.forEach((handler) =>
+        handler({ action: 'evaos-auth/session-imported', params: { source: 'loopback' } })
+      );
+    });
+
+    await waitFor(() => {
+      expect(brokerMock.getSessionStatus).toHaveBeenCalled();
     });
     expect(importedEvents).toEqual([
       { source: 'loopback', confirmed: false },
@@ -112,6 +155,10 @@ describe('Router deep-link listener', () => {
     await waitFor(() => {
       expect(bridgeMock.deepLinkHandlers.size).toBe(1);
     });
+    await waitFor(() => {
+      expect(brokerMock.getSessionStatus).toHaveBeenCalledTimes(1);
+    });
+    brokerMock.getSessionStatus.mockClear();
 
     bridgeMock.deepLinkHandlers.forEach((handler) =>
       handler({ action: 'add-provider', params: { base_url: 'https://provider.example', api_key: 'sk-test' } })
