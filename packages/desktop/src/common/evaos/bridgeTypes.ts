@@ -183,6 +183,14 @@ export interface IEvaosNativeCompanionStatusView {
     permissions?: IEvaosNativeCompanionPermissionView;
     readOnly: boolean;
   };
+  connectorService?: {
+    status: IEvaosNativeCompanionStatusValue;
+    running?: boolean;
+    reachable?: boolean;
+    managedBy?: string;
+    tailnetIp?: string;
+    permissionTarget?: string;
+  };
   customerMac: {
     status: IEvaosNativeCompanionStatusValue;
     auditId?: string;
@@ -198,6 +206,13 @@ export interface IEvaosNativeCompanionStatusView {
     installed?: boolean;
     running?: boolean;
     killSwitchAvailable?: boolean;
+  };
+  controlSession?: {
+    status: IEvaosNativeCompanionStatusValue;
+    auditId?: string;
+    active?: boolean;
+    mode?: 'full-access' | 'ask-permission';
+    killSwitch?: boolean;
   };
   audit: {
     status: IEvaosNativeCompanionStatusValue;
@@ -222,6 +237,70 @@ export interface IEvaosNativeCompanionRepairActionResult {
   opened: boolean;
   message: string;
   target?: string;
+}
+
+export type IEvaosNativeCompanionControlMode = 'full-access' | 'ask-permission';
+
+export type IEvaosNativeCompanionAction =
+  | 'connector_start'
+  | 'connector_stop'
+  | 'setup_check'
+  | 'control_status'
+  | 'control_start'
+  | 'control_stop'
+  | 'kill_switch'
+  | 'audit_tail'
+  | 'create_pairing_prompt';
+
+export interface IEvaosNativeCompanionActionRequest {
+  action: IEvaosNativeCompanionAction;
+  customerId?: string;
+  mode?: IEvaosNativeCompanionControlMode;
+  agentLabel?: string;
+}
+
+export type IEvaosNativeCompanionActionStatus = 'succeeded' | 'failed' | 'repair_required' | 'unsupported';
+
+export interface IEvaosNativeCompanionAuditEvent {
+  id: string;
+  action: string;
+  outcome: string;
+  createdAt?: string;
+}
+
+export interface IEvaosNativeCompanionPairingPrompt {
+  customerId: string;
+  pairingCode: string;
+  expiresAt?: string;
+  connectorUrl: string;
+  setupPrompt: string;
+}
+
+export interface IEvaosNativeCompanionSetupSummary {
+  connectorReady: boolean;
+  macReady: boolean;
+  controlReady: boolean;
+  iPhoneDeferred: boolean;
+}
+
+export interface IEvaosNativeCompanionControlSummary {
+  active?: boolean;
+  mode?: IEvaosNativeCompanionControlMode;
+  killSwitch?: boolean;
+}
+
+export interface IEvaosNativeCompanionActionResult {
+  action: IEvaosNativeCompanionAction;
+  status: IEvaosNativeCompanionActionStatus;
+  message: string;
+  sourcePointer: string;
+  auditId?: string;
+  auditIds: string[];
+  refreshRecommended: boolean;
+  setup?: IEvaosNativeCompanionSetupSummary;
+  control?: IEvaosNativeCompanionControlSummary;
+  pairing?: IEvaosNativeCompanionPairingPrompt;
+  events?: IEvaosNativeCompanionAuditEvent[];
 }
 
 export interface IEvaosExternalLinkOpenRequest {

@@ -9,6 +9,7 @@ import {
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
+  runNativeCompanionAction,
   type EvaosNativeCompanionStatusDeps,
 } from '@/process/services/evaosNativeCompanionStatus';
 
@@ -107,6 +108,15 @@ describe('evaosNativeCompanionStatus', () => {
           },
         },
       },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: {
+          reachable: true,
+        },
+        tailnet_ip: '100.64.0.10',
+        permission_target: 'evaOS Workbench',
+      },
       'customer-mac status --json': {
         ok: true,
         audit_id: 'audit-mac',
@@ -142,6 +152,15 @@ describe('evaosNativeCompanionStatus', () => {
           },
         },
       },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: false,
+          mode: 'ask-permission',
+          kill_switch: false,
+        },
+      },
       'audit-tail --json --limit 5': {
         ok: true,
         audit_id: 'audit-tail',
@@ -163,6 +182,12 @@ describe('evaosNativeCompanionStatus', () => {
         auditId: 'audit-bridge',
         readOnly: true,
       },
+      connectorService: {
+        status: 'ready',
+        running: true,
+        reachable: true,
+        tailnetIp: '100.64.0.10',
+      },
       customerMac: {
         status: 'ready',
         auditId: 'audit-mac',
@@ -173,6 +198,13 @@ describe('evaosNativeCompanionStatus', () => {
         auditId: 'audit-iphone',
         installed: true,
         running: false,
+      },
+      controlSession: {
+        status: 'ready',
+        auditId: 'audit-control',
+        active: false,
+        mode: 'ask-permission',
+        killSwitch: false,
       },
       audit: {
         status: 'ready',
@@ -198,7 +230,88 @@ describe('evaosNativeCompanionStatus', () => {
       installed: false,
       status: 'missing',
     });
-    expect(status.summaryText).toContain('Bridge CLI is not installed');
+    expect(status.summaryText).toContain('Workbench connector tools are not installed');
+  });
+
+  it('runs the setup check through fixed connector commands', async () => {
+    const deps = depsWithResponses({
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: false,
+          mode: 'ask-permission',
+          kill_switch: false,
+        },
+      },
+      'audit-tail --json --limit 12': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-control' }],
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'setup_check' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:setup-check',
+      auditIds: ['audit-mac', 'audit-control'],
+      setup: {
+        connectorReady: true,
+        macReady: true,
+        controlReady: true,
+        iPhoneDeferred: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+  });
+
+  it('creates a renderer-safe pairing prompt without exposing connector private material', async () => {
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+        },
+      },
+      {
+        createCustomerMacEnrollment: vi.fn(async () => ({
+          customerId: 'golden',
+          pairingCode: 'PAIR-1234',
+          expiresAt: '2026-06-07T04:00:00.000Z',
+        })),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+    expect(result.status).toBe('succeeded');
+    expect(result.pairing).toMatchObject({
+      customerId: 'golden',
+      connectorUrl: 'http://100.64.0.10:8765',
+    });
+    expect(result.pairing?.setupPrompt).toContain('customer_mac_complete_pairing');
+    expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
   });
 
   it('opens only the released Workbench fallback path', async () => {

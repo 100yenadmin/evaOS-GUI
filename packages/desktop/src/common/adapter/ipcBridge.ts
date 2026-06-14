@@ -266,6 +266,8 @@ import type {
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
+  IEvaosNativeCompanionActionRequest,
+  IEvaosNativeCompanionActionResult,
   IEvaosExternalLinkOpenRequest,
   IEvaosExternalLinkOpenResult,
 } from '../evaos/bridgeTypes';
@@ -336,6 +338,8 @@ export type {
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
+  IEvaosNativeCompanionActionRequest,
+  IEvaosNativeCompanionActionResult,
   IEvaosExternalLinkOpenRequest,
   IEvaosExternalLinkOpenResult,
 } from '../evaos/bridgeTypes';
@@ -1526,6 +1530,9 @@ export const evaosNativeCompanion = {
     IBridgeResponse<IEvaosNativeCompanionRepairActionResult>,
     IEvaosNativeCompanionRepairActionRequest
   >('evaos.native-companion.open-repair-action'),
+  runAction: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionActionResult>, IEvaosNativeCompanionActionRequest>(
+    'evaos.native-companion.run-action'
+  ),
 };
 
 export const evaosExternalLink = {

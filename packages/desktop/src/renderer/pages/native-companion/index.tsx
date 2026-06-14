@@ -18,7 +18,12 @@ import {
   type EvaosNativeCompanionStatusScenario,
   type EvaosNativeCompanionStatusSeverity,
 } from '@/common/evaos/nativeCompanionBoundary';
-import type { IEvaosNativeCompanionRepairAction, IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
+import type {
+  IEvaosNativeCompanionActionRequest,
+  IEvaosNativeCompanionActionResult,
+  IEvaosNativeCompanionRepairAction,
+  IEvaosNativeCompanionStatusView,
+} from '@/common/evaos/bridgeTypes';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
 import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
 import {
@@ -28,15 +33,21 @@ import {
   type NativeCompanionTone,
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { openEvaosSupportEmail } from '@/renderer/utils/platform';
 
 const NativeCompanionPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const violations = getEvaosNativeCompanionBoundaryViolations();
-  const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction } = useEvaosNativeCompanionStatus();
+  const { customerContext } = useEvaosBrokeredCustomerContext();
+  const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
+    useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);
+  const [actionResult, setActionResult] = React.useState<IEvaosNativeCompanionActionResult | null>(null);
+  const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
+  const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const viewModel = getNativeCompanionRepairViewModel({ status, loading, error });
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
 
@@ -58,6 +69,35 @@ const NativeCompanionPage: React.FC = () => {
     },
     [openRepairAction]
   );
+
+  const handleRunAction = React.useCallback(
+    async (request: IEvaosNativeCompanionActionRequest) => {
+      setActionInFlight(request.action);
+      setCopyMessage(null);
+      try {
+        const result = await runAction({
+          ...request,
+          customerId: request.customerId ?? customerContext.selectedCustomerId,
+          agentLabel: request.agentLabel ?? 'evaOS Workbench',
+        });
+        setActionResult(result);
+        setHandoffMessage(result.message);
+        if (result.refreshRecommended) {
+          await refresh();
+        }
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [customerContext.selectedCustomerId, refresh, runAction]
+  );
+
+  const handleCopyPairingPrompt = React.useCallback(async () => {
+    const prompt = actionResult?.pairing?.setupPrompt;
+    if (!prompt) return;
+    await navigator.clipboard.writeText(prompt);
+    setCopyMessage('Pairing prompt copied.');
+  }, [actionResult?.pairing?.setupPrompt]);
 
   const handleOpenSupportReport = React.useCallback(async () => {
     try {
@@ -139,6 +179,125 @@ const NativeCompanionPage: React.FC = () => {
             {viewModel.repairSteps.map((step, index) => (
               <RepairStep key={step.title} step={step} index={index + 1} />
             ))}
+          </div>
+
+          <div className='mt-14px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-12px'>
+            <div className='flex flex-wrap items-start justify-between gap-10px'>
+              <div className='min-w-0'>
+                <h3 className='m-0 text-14px font-semibold leading-20px text-t-primary'>Workbench connector actions</h3>
+                <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
+                  Start Mac Access, pair this Mac to evaOS, and choose how approved agents may use Mac control.
+                </p>
+              </div>
+              <Tag color={status?.readiness === 'ready' ? 'green' : 'orange'}>
+                {status?.readiness === 'ready' ? 'Ready' : 'Setup needed'}
+              </Tag>
+            </div>
+
+            <div className='mt-12px flex flex-wrap gap-8px' aria-label='Workbench connector actions'>
+              <Button
+                type='primary'
+                loading={actionInFlight === 'connector_start'}
+                onClick={() => void handleRunAction({ action: 'connector_start' })}
+              >
+                Turn On Mac Access
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'setup_check'}
+                onClick={() => void handleRunAction({ action: 'setup_check' })}
+              >
+                Run Setup Check
+              </Button>
+              <Button
+                type='secondary'
+                disabled={!customerContext.selectedCustomerId}
+                loading={actionInFlight === 'create_pairing_prompt'}
+                onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
+              >
+                Create Pairing Prompt
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'control_start'}
+                onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
+              >
+                Full Access
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'control_start'}
+                onClick={() => void handleRunAction({ action: 'control_start', mode: 'ask-permission' })}
+              >
+                Ask Permission
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'control_stop'}
+                onClick={() => void handleRunAction({ action: 'control_stop' })}
+              >
+                Stop Agent Control
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'kill_switch'}
+                onClick={() => void handleRunAction({ action: 'kill_switch' })}
+              >
+                Kill Switch
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'audit_tail'}
+                onClick={() => void handleRunAction({ action: 'audit_tail' })}
+              >
+                Show Audit Tail
+              </Button>
+              <Button
+                type='secondary'
+                loading={actionInFlight === 'connector_stop'}
+                onClick={() => void handleRunAction({ action: 'connector_stop' })}
+              >
+                Stop Mac Access
+              </Button>
+            </div>
+
+            {actionResult ? (
+              <div data-testid='native-companion-action-result' className='mt-12px rounded-8px bg-fill-1 p-12px'>
+                <div className='flex flex-wrap items-center gap-8px'>
+                  <Tag color={tagColorForActionStatus(actionResult.status)}>{actionResult.status}</Tag>
+                  <span className='text-12px leading-18px text-t-secondary'>{actionResult.message}</span>
+                </div>
+                {actionResult.setup ? (
+                  <div className='mt-8px grid grid-cols-1 gap-6px text-12px leading-18px text-t-secondary md:grid-cols-4'>
+                    <EvidenceRow label='Connector' value={actionResult.setup.connectorReady ? 'ready' : 'repair'} />
+                    <EvidenceRow label='Mac control' value={actionResult.setup.macReady ? 'ready' : 'repair'} />
+                    <EvidenceRow label='Agent control' value={actionResult.setup.controlReady ? 'ready' : 'repair'} />
+                    <EvidenceRow label='iPhone' value='deferred' />
+                  </div>
+                ) : null}
+                {actionResult.pairing ? (
+                  <div className='mt-10px'>
+                    <div className='mb-6px flex flex-wrap items-center justify-between gap-8px'>
+                      <span className='text-12px font-semibold leading-18px text-t-primary'>Agent setup prompt</span>
+                      <Button size='small' type='secondary' onClick={() => void handleCopyPairingPrompt()}>
+                        Copy prompt
+                      </Button>
+                    </div>
+                    <pre className='m-0 max-h-220px overflow-auto rounded-8px bg-fill-3 p-10px text-11px leading-16px text-t-secondary'>
+                      {actionResult.pairing.setupPrompt}
+                    </pre>
+                    {copyMessage ? <p className='m-0 mt-6px text-12px text-t-secondary'>{copyMessage}</p> : null}
+                  </div>
+                ) : null}
+                {actionResult.events?.length ? (
+                  <div className='mt-10px grid grid-cols-1 gap-6px text-12px leading-18px text-t-secondary md:grid-cols-2'>
+                    {actionResult.events.slice(0, 6).map((event) => (
+                      <EvidenceRow key={event.id} label={event.action} value={`${event.outcome}: ${event.id}`} />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className='mt-14px flex flex-wrap gap-8px' aria-label='Mac repair actions'>
@@ -472,6 +631,13 @@ function tagColorForTone(tone: NativeCompanionTone): string {
   if (tone === 'attention') return 'orange';
   if (tone === 'offline') return 'red';
   return 'gray';
+}
+
+function tagColorForActionStatus(status: IEvaosNativeCompanionActionResult['status']): string {
+  if (status === 'succeeded') return 'green';
+  if (status === 'repair_required') return 'orange';
+  if (status === 'unsupported') return 'gray';
+  return 'red';
 }
 
 function toneDotClass(tone: NativeCompanionTone): string {
