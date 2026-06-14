@@ -201,38 +201,40 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     id: 'connected-apps',
     route: '/connected-apps',
     screenshot: '14-connected-apps.png',
-    target: 'Connected Apps provider profiles and grant/revoke state',
+    target: 'Connected Apps production dashboard handoff',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
       'body:text("Connected Apps")',
-      'body:text("Brokered provider status, grants, and revocation")',
+      'body:text("Website handoff")',
+      'body:text("https://www.electricsheephq.com/dashboard/providers")',
     ],
-    notes: [
-      'Loaded-state proof should show provider source pointers and status badges without renderer-visible grant handles.',
-    ],
+    notes: ['Controlled RC links provider access to the production dashboard while native parity remains post-RC.'],
   },
   {
     id: 'people-access',
     route: '/people-access',
     screenshot: '15-people-and-access.png',
-    target: 'People & Access member, role, invite, and seat-policy state',
-    waitSelectors: [...COMMON_WAIT_SELECTORS, 'body:text("People Access")', 'body:text("Load a customer account")'],
-    notes: [
-      'Parity target label is People & Access; current route copy may still read People Access until the naming fix lands.',
-      'Loaded-state proof should wait for member rows, role badges, and account policy audit ID.',
+    target: 'People & Access production dashboard handoff',
+    waitSelectors: [
+      ...COMMON_WAIT_SELECTORS,
+      'body:text("People & Access")',
+      'body:text("Website handoff")',
+      'body:text("https://www.electricsheephq.com/dashboard/invites")',
     ],
+    notes: ['Controlled RC links team permissions to the production dashboard while native parity remains post-RC.'],
   },
   {
     id: 'company-brain',
     route: '/company-brain',
     screenshot: '16-company-brain.png',
-    target: 'Company Brain directory, account brief, timeline, query, and exception evidence',
+    target: 'Company Brain production dashboard handoff',
     waitSelectors: [
       ...COMMON_WAIT_SELECTORS,
       'body:text("Company Brain")',
-      'body:text("Org-scoped account directory")',
+      'body:text("Website handoff")',
+      'body:text("https://www.electricsheephq.com/dashboard/company-brain")',
     ],
-    notes: ['Loaded-state proof should include directory/query source pointers and no raw embeddings or prompts.'],
+    notes: ['Controlled RC links Company Brain to the production dashboard while native parity remains post-RC.'],
   },
 ];
 
