@@ -16,6 +16,7 @@ import {
   sortAssistants,
   filterAssistants,
   groupAssistantsByEnabled,
+  prepareEvaosAssistantListForRc,
 } from '@/renderer/pages/settings/AssistantSettings/assistantUtils';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
 
@@ -217,6 +218,60 @@ describe('assistantUtils', () => {
       ];
       expect(filterAssistants(i18nList, '克劳德', 'all', 'zh')).toHaveLength(1);
       expect(filterAssistants(i18nList, 'claude', 'all', 'zh')).toHaveLength(0); // i18n text doesn't contain "claude"
+    });
+  });
+
+  describe('prepareEvaosAssistantListForRc', () => {
+    it('hides deferred upstream presets and applies evaOS assistant display names in Settings', () => {
+      const assistants: AssistantListItem[] = [
+        {
+          id: 'openclaw-setup',
+          name: 'OpenClaw Setup Expert',
+          description: 'OpenClaw setup.',
+          source: 'builtin',
+          enabled: true,
+          sort_order: 1,
+        },
+        {
+          id: 'builtin-moltbook',
+          name: 'moltbook',
+          description: 'The social network for AI agents.',
+          source: 'builtin',
+          enabled: true,
+          sort_order: 2,
+        },
+        {
+          id: 'builtin-hermes-expert',
+          name: 'Expert',
+          name_i18n: { 'en-US': 'Expert' },
+          description: 'Generic expert.',
+          description_i18n: { 'en-US': 'Generic expert.' },
+          source: 'builtin',
+          enabled: true,
+          sort_order: 3,
+        },
+        {
+          id: 'cowork',
+          name: 'Cowork',
+          description: 'Autonomous task execution.',
+          source: 'builtin',
+          enabled: true,
+          sort_order: 4,
+        },
+      ];
+
+      const prepared = prepareEvaosAssistantListForRc(assistants, 'en-US');
+
+      expect(prepared.map((assistant) => assistant.id)).toEqual(['builtin-hermes-expert', 'cowork']);
+      expect(prepared[0]).toMatchObject({
+        name: 'Hermes Expert',
+        description: expect.stringContaining('Hermes agent setup'),
+        name_i18n: { 'en-US': 'Hermes Expert' },
+      });
+      expect(prepared[1]).toMatchObject({
+        name: 'Cowork',
+        description: 'Autonomous task execution.',
+      });
     });
   });
 

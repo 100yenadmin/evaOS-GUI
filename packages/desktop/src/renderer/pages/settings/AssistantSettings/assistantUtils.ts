@@ -1,4 +1,9 @@
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import {
+  getEvaosAssistantDisplayDescription,
+  getEvaosAssistantDisplayName,
+  isEvaosAssistantVisibleInRc,
+} from '@/renderer/evaos/evaosAssistantPresentation';
 import type { AssistantListItem } from './types';
 
 export type AssistantListFilter = 'all' | 'enabled' | 'disabled' | 'builtin' | 'user';
@@ -105,6 +110,34 @@ export const applyAssistantSortOrders = (assistants: AssistantListItem[]): Assis
     ...assistant,
     sort_order: (index + 1) * ASSISTANT_SORT_ORDER_GAP,
   }));
+
+/**
+ * Apply the controlled-RC assistant catalog policy to the full settings list.
+ * New Chat already uses this policy; Settings must not leak hidden upstream
+ * presets or stale display names.
+ */
+export const prepareEvaosAssistantListForRc = (
+  assistants: AssistantListItem[],
+  localeKey: string
+): AssistantListItem[] =>
+  assistants.filter(isEvaosAssistantVisibleInRc).map((assistant) => {
+    const name = getEvaosAssistantDisplayName(assistant, localeKey);
+    const description = getEvaosAssistantDisplayDescription(assistant, localeKey);
+
+    return {
+      ...assistant,
+      name,
+      description,
+      name_i18n: {
+        ...assistant.name_i18n,
+        [localeKey]: name,
+      },
+      description_i18n: {
+        ...assistant.description_i18n,
+        [localeKey]: description,
+      },
+    };
+  });
 
 /**
  * Apply search and management filter to assistant list.

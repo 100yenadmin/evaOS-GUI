@@ -58,6 +58,7 @@ vi.mock('@/renderer/pages/settings/AssistantSettings/SkillConfirmModals', () => 
 }));
 
 vi.mock('@/renderer/pages/settings/AssistantSettings/assistantUtils', () => ({
+  prepareEvaosAssistantListForRc: (assistants: unknown[]) => assistants,
   resolveAvatarImageSrc: () => undefined,
 }));
 
