@@ -509,8 +509,11 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
       );
     }
     const message = item as TMessage;
-    // User messages keep their own copy row; AI text only shows it at the turn end.
-    const showCopyRow = message.position !== 'left' || message.type !== 'text' || aiCopyRowTextIds.has(message.id);
+    const isTeammateText =
+      message.type === 'text' && message.position === 'left' && message.content.teammateMessage === true;
+    // User and teammate messages keep their own copy row; AI text only shows it at the turn end.
+    const showCopyRow =
+      isTeammateText || message.position !== 'left' || message.type !== 'text' || aiCopyRowTextIds.has(message.id);
     return (
       <MessageItem message={message} key={message.id} highlighted={highlighted} showCopyRow={showCopyRow}></MessageItem>
     );

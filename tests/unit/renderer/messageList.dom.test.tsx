@@ -192,6 +192,33 @@ describe('MessageList', () => {
     expect(screen.getByTestId('msgtext-text-c').getAttribute('data-copy-row')).toBe('true');
   });
 
+  it('keeps copy rows on complete teammate messages inside an AI turn window', () => {
+    const messages = [
+      {
+        id: 'mate-a',
+        type: 'text',
+        position: 'left',
+        content: { content: 'first', teammateMessage: true },
+        created_at: 1,
+      },
+      {
+        id: 'mate-b',
+        type: 'text',
+        position: 'left',
+        content: { content: 'second', teammateMessage: true },
+        created_at: 2,
+      },
+      { id: 'user-1', type: 'text', position: 'right', content: { content: 'next' }, created_at: 3 },
+    ] as unknown as IMessageText[];
+
+    render(<MessageList />, {
+      wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper>,
+    });
+
+    expect(screen.getByTestId('msgtext-mate-a').getAttribute('data-copy-row')).toBe('true');
+    expect(screen.getByTestId('msgtext-mate-b').getAttribute('data-copy-row')).toBe('true');
+  });
+
   it('renders the empty slot when there are no messages', () => {
     render(<MessageList emptySlot={<div>empty state</div>} />, {
       wrapper: ({ children }) => <Wrapper messages={[]}>{children}</Wrapper>,
