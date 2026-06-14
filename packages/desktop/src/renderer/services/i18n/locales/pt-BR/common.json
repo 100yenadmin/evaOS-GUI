@@ -19,6 +19,7 @@
   "website": "Site",
   "version": "Versão",
   "contact": "Contato",
+  "supportEmailFallback": "Envie um email para {{mailbox}} para suporte. O endereço foi copiado quando possível.",
   "github": "Github",
   "loading": "Por favor, aguarde...",
   "copy": "Copiar",

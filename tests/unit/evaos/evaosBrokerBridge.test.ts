@@ -15,6 +15,10 @@ const runtimeSurfaceRegistryMock = vi.hoisted(() => ({
   createEvaosRuntimeSurface: vi.fn(),
 }));
 
+const providerAuthWindowMock = vi.hoisted(() => ({
+  clearEvaosProviderAuthSessionData: vi.fn(),
+}));
+
 vi.mock('@office-ai/platform', () => ({
   bridge: {
     buildProvider: vi.fn(() => ({
@@ -37,6 +41,7 @@ vi.mock('@office-ai/platform', () => ({
 }));
 
 vi.mock('@process/services/evaosRuntimeSurfaceRegistry', () => runtimeSurfaceRegistryMock);
+vi.mock('@process/services/evaosProviderAuthWindow', () => providerAuthWindowMock);
 
 async function loadBrokerBridge() {
   vi.resetModules();
@@ -59,6 +64,7 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfaces.mockReset();
     runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfacesForCustomer.mockReset();
     runtimeSurfaceRegistryMock.createEvaosRuntimeSurface.mockReset();
+    providerAuthWindowMock.clearEvaosProviderAuthSessionData.mockReset();
   });
 
   it('accepts sanitized broker status payloads', async () => {
@@ -201,12 +207,42 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     const response = await handler({ customerId: 'david-poku' });
 
     expect(runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfacesForCustomer).toHaveBeenCalledWith('david-poku');
+    expect(providerAuthWindowMock.clearEvaosProviderAuthSessionData).toHaveBeenCalledTimes(1);
     expect(runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfaces).not.toHaveBeenCalled();
     expect(response).toEqual({
       success: true,
       data: {
         cleared: true,
         customerId: 'david-poku',
+      },
+    });
+  });
+
+  it('clears runtime and provider-auth state before revoking the broker session', async () => {
+    const { initEvaosBrokerBridge, ipcBridge } = await loadBrokerBridge();
+    const client = {
+      revokeSession: vi.fn(async () => ({
+        state: 'missing',
+        authenticated: false,
+        expired: false,
+        source: 'none',
+        message: 'Sign in to evaOS to connect this desktop shell.',
+      })),
+    } as unknown as EvaosBrokerSessionClient;
+
+    initEvaosBrokerBridge(client);
+
+    const handler = lastProviderHandler(vi.mocked(ipcBridge.evaosBroker.revokeSession.provider));
+    const response = await handler();
+
+    expect(runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfaces).toHaveBeenCalledTimes(1);
+    expect(providerAuthWindowMock.clearEvaosProviderAuthSessionData).toHaveBeenCalledTimes(1);
+    expect(client.revokeSession).toHaveBeenCalledTimes(1);
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        authenticated: false,
+        state: 'missing',
       },
     });
   });

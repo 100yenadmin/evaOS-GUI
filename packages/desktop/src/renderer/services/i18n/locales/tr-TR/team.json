@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "Create Team",
+    "tooltip": "Ekipler, bir lider ajanın çok adımlı işleri tek bir konuşmada tutarak yardımcı ajanları koordine etmesini sağlar.",
+    "tooltipLabel": "Ekipler nedir?",
     "namePlaceholder": "Team name",
+    "searchPlaceholder": "Ajan ara...",
+    "noSearchResults": "Sonuç bulunamadı",
     "dispatchAgentPlaceholder": "Takım liderini seçin",
     "subAgentsPlaceholder": "Select sub agents",
     "confirm": "Create Team",

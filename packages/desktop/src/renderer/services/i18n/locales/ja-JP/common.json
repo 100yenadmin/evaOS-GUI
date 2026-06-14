@@ -19,6 +19,7 @@
   "website": "公式サイト",
   "version": "バージョン",
   "contact": "お問い合わせ",
+  "supportEmailFallback": "サポートが必要な場合は {{mailbox}} までメールしてください。可能な場合はアドレスをコピーしました。",
   "github": "Github",
   "loading": "お待ちください...",
   "copy": "コピー",

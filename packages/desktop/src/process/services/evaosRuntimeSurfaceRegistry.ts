@@ -16,6 +16,7 @@ interface EvaosRuntimeSurfaceRecord {
   customerId: string;
   runtimeKey: IEvaosRuntimeKey;
   displayLabel: string;
+  partition: string;
   sourcePointer?: string;
   auditId?: string;
   expiresAt?: string;
@@ -46,6 +47,7 @@ export function createEvaosRuntimeSurface(
     customerId: input.customerId,
     runtimeKey: input.runtimeKey,
     displayLabel: input.displayLabel,
+    partition,
     sourcePointer: input.sourcePointer,
     auditId: input.auditId,
     expiresAt: input.expiresAt ?? new Date(Date.now() + DEFAULT_RUNTIME_SURFACE_TTL_MS).toISOString(),
@@ -101,16 +103,38 @@ function runtimeSurfacePartition(surfaceId: string): string {
   return `evaos-runtime-${safeSurface}`;
 }
 
-export function clearEvaosRuntimeSurfacesForCustomer(customerId: string): void {
+export async function clearEvaosRuntimeSurfacesForCustomer(customerId: string): Promise<void> {
+  const partitions = new Set<string>();
+  const surfaceIds: string[] = [];
   for (const [surfaceId, surface] of surfaces.entries()) {
     if (surface.customerId === customerId) {
-      surfaces.delete(surfaceId);
+      partitions.add(surface.partition);
+      surfaceIds.push(surfaceId);
     }
+  }
+  await clearRuntimeSurfacePartitionStorage(partitions);
+  for (const surfaceId of surfaceIds) {
+    surfaces.delete(surfaceId);
   }
 }
 
-export function clearEvaosRuntimeSurfaces(): void {
+export async function clearEvaosRuntimeSurfaces(): Promise<void> {
+  const partitions = new Set<string>();
+  for (const surface of surfaces.values()) {
+    partitions.add(surface.partition);
+  }
+  await clearRuntimeSurfacePartitionStorage(partitions);
   surfaces.clear();
+}
+
+async function clearRuntimeSurfacePartitionStorage(partitions: Iterable<string>): Promise<void> {
+  const results = await Promise.allSettled(
+    [...partitions].map((partition) => session.fromPartition(partition).clearStorageData())
+  );
+  const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected) {
+    throw rejected.reason;
+  }
 }
 
 function surfaceIdFromRequestUrl(value: string): string | undefined {

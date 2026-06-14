@@ -509,6 +509,44 @@ describe('Sider runtime route visibility', () => {
     expect(customerContextMock.selectCustomer).toHaveBeenCalledWith('second-customer');
   });
 
+  it('keeps company admins customer-scoped without the global customer switcher', () => {
+    customerContextMock.roles = ['admin'];
+    customerContextMock.isOperator = false;
+    customerContextMock.scopes = ['manage_integrations', 'manage_members', 'open_business_browser'];
+    customerContextMock.selectedCustomerId = 'company-admin-customer';
+    customerContextMock.targets = [
+      {
+        customerId: 'company-admin-customer',
+        displayName: 'Company Admin Customer',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: true,
+      },
+      {
+        customerId: 'other-customer',
+        displayName: 'Other Customer',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: false,
+      },
+    ];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'company-admin@example.test',
+    };
+
+    renderSider('/connected-apps');
+
+    expect(screen.getByText('- Connected Apps')).toBeInTheDocument();
+    expect(screen.getByText('- People & Access')).toBeInTheDocument();
+    expect(screen.getByText('Shared Browser')).toBeInTheDocument();
+    expect(screen.queryByText('evaOS')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hermes')).not.toBeInTheDocument();
+    expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
+    expect(screen.getByText('Company Admin Customer')).toBeInTheDocument();
+  });
+
   it('clears broker-owned customer runtime state before switching footer customers', async () => {
     const user = userEvent.setup();
     const customerChangedListener = vi.fn();

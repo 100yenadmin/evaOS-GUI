@@ -305,7 +305,8 @@ describe('AssistantSelectionArea', () => {
       </ConfigProvider>
     );
 
-    expect(screen.queryByTestId('preset-pill-openclaw-setup')).not.toBeInTheDocument();
+    expect(screen.getByTestId('preset-pill-openclaw-setup')).toBeInTheDocument();
+    expect(screen.getByText('Gateway Debug Expert')).toBeInTheDocument();
     expect(screen.queryByTestId('preset-pill-builtin-moltbook')).not.toBeInTheDocument();
     expect(screen.getByTestId('preset-pill-hermes-expert')).toBeInTheDocument();
     expect(screen.getByText('Hermes Expert')).toBeInTheDocument();

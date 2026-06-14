@@ -19,6 +19,7 @@
   "website": "官网",
   "version": "版本号",
   "contact": "联系我们",
+  "supportEmailFallback": "请发送邮件至 {{mailbox}} 获取支持。已尽可能复制该地址。",
   "github": "Github",
   "loading": "请稍候...",
   "copy": "复制",

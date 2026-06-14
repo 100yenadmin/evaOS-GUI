@@ -18,7 +18,7 @@ import {
   SiderNativeCompanionEntry,
   SiderPeopleAccessEntry,
 } from '@renderer/evaos/sidebar';
-import { Down, Right } from '@icon-park/react';
+import { Right } from '@icon-park/react';
 import classNames from 'classnames';
 import {
   EVAOS_BUSINESS_BROWSER_ENABLED,
@@ -314,11 +314,12 @@ const SidebarGroupToggle: React.FC<{
       {label}
     </span>
     <span className='ml-auto flex size-18px items-center justify-center text-t-tertiary'>
-      {isOpen ? (
-        <Down theme='outline' size='12' fill='currentColor' />
-      ) : (
-        <Right theme='outline' size='12' fill='currentColor' />
-      )}
+      <Right
+        theme='outline'
+        size='12'
+        fill='currentColor'
+        className={classNames('transition-transform duration-150', { 'rotate-90': isOpen })}
+      />
     </span>
   </button>
 );

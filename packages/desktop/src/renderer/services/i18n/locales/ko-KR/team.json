@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "Create Team",
+    "tooltip": "팀은 하나의 리드 에이전트가 여러 단계의 작업을 한 대화 안에서 진행하도록 보조 에이전트를 조율합니다.",
+    "tooltipLabel": "팀이란?",
     "namePlaceholder": "Team name",
+    "searchPlaceholder": "에이전트 검색...",
+    "noSearchResults": "결과가 없습니다",
     "dispatchAgentPlaceholder": "팀 리더 선택",
     "subAgentsPlaceholder": "Select sub agents",
     "confirm": "Create Team",

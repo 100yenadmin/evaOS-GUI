@@ -19,6 +19,8 @@ import {
   AgentOptionLabel,
   cliAgentToOption,
   assistantToOption,
+  compactTeamAgentOptions,
+  sortTeamLeaderOptions,
 } from './agentSelectUtils';
 import type { TeamAgentOption } from './agentSelectUtils';
 import { resolveDefaultTeamAgentModel } from './teamCreateModelResolver';
@@ -38,30 +40,43 @@ const AgentRadioRow: React.FC<{
   agent: TeamAgentOption;
   isSelected: boolean;
   onClick: () => void;
-}> = ({ agent, isSelected, onClick }) => (
-  <div
-    className={`flex cursor-pointer items-center gap-12px rounded-8px px-12px py-9px transition-colors ${
-      isSelected ? 'bg-aou-1' : 'hover:bg-fill-2'
-    }`}
-    style={isSelected ? { boxShadow: 'inset 0 0 0 1px var(--aou-6)' } : undefined}
-    onClick={onClick}
-    data-testid={`team-create-agent-option-${agentKey(agent)}`}
-  >
+}> = ({ agent, isSelected, onClick }) => {
+  const row = (
     <div
-      className='h-16px w-16px flex-shrink-0 rounded-full transition-all'
-      style={{
-        boxSizing: 'border-box',
-        border: isSelected ? '5px solid var(--aou-6)' : '1.5px solid var(--color-border-3)',
-      }}
-    />
-    <div className='flex-1 overflow-hidden'>
-      <AgentOptionLabel agent={agent} />
+      className={`flex cursor-pointer items-center gap-12px rounded-8px px-12px py-9px transition-colors ${
+        isSelected ? 'bg-aou-1' : 'hover:bg-fill-2'
+      }`}
+      style={isSelected ? { boxShadow: 'inset 0 0 0 1px var(--aou-6)' } : undefined}
+      onClick={onClick}
+      data-testid={`team-create-agent-option-${agentKey(agent)}`}
+      aria-label={agent.description ? `${agent.name}: ${agent.description}` : agent.name}
+    >
+      <div
+        className='h-16px w-16px flex-shrink-0 rounded-full transition-all'
+        style={{
+          boxSizing: 'border-box',
+          border: isSelected ? '5px solid var(--aou-6)' : '1.5px solid var(--color-border-3)',
+        }}
+      />
+      <div className='flex-1 overflow-hidden'>
+        <AgentOptionLabel agent={agent} />
+      </div>
     </div>
-  </div>
-);
+  );
+
+  if (!agent.description) {
+    return row;
+  }
+
+  return (
+    <Tooltip content={agent.description} position='right'>
+      {row}
+    </Tooltip>
+  );
+};
 
 const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const { cliAgents, presetAssistants } = useConversationAgents();
   const [name, setName] = useState('');
@@ -94,18 +109,21 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
     [cliAgents]
   );
   const presetAssistantOptions = useMemo(
-    () => presetAssistants.map((a) => assistantToOption(a, teamCapableKeys)),
-    [presetAssistants, teamCapableKeys]
+    () => compactTeamAgentOptions(presetAssistants.map((a) => assistantToOption(a, teamCapableKeys, i18n.language))),
+    [i18n.language, presetAssistants, teamCapableKeys]
   );
-  const allAgents = filterTeamSupportedAgents([...cliAgentOptions, ...presetAssistantOptions]);
+  const allAgents = useMemo(
+    () => sortTeamLeaderOptions(filterTeamSupportedAgents([...cliAgentOptions, ...presetAssistantOptions])),
+    [cliAgentOptions, presetAssistantOptions]
+  );
 
   const { supportedCliAgents, supportedPresetAssistants } = useMemo(() => {
     const supportedKeys = new Set(allAgents.map(agentKey));
     return {
-      supportedCliAgents: cliAgentOptions.filter((a) => supportedKeys.has(agentKey(a))),
-      supportedPresetAssistants: presetAssistantOptions.filter((a) => supportedKeys.has(agentKey(a))),
+      supportedCliAgents: allAgents.filter((a) => supportedKeys.has(agentKey(a)) && Boolean(a.agent_type)),
+      supportedPresetAssistants: allAgents.filter((a) => supportedKeys.has(agentKey(a)) && !a.agent_type),
     };
-  }, [allAgents, cliAgentOptions, presetAssistantOptions]);
+  }, [allAgents]);
 
   const { filteredCliAgents, filteredPresetAssistants } = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -214,9 +232,25 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       header={{
         render: () => (
           <div className='flex items-center justify-between border-b border-border-2 bg-dialog-fill-0 px-24px py-18px'>
-            <h3 className='m-0 text-16px font-600 text-t-primary'>
-              {t('team.create.title', { defaultValue: 'Create Team' })}
-            </h3>
+            <div className='flex items-center gap-6px'>
+              <h3 className='m-0 text-16px font-600 text-t-primary'>
+                {t('team.create.title', { defaultValue: 'Create Team' })}
+              </h3>
+              <Tooltip
+                content={t('team.create.tooltip', {
+                  defaultValue:
+                    'Teams let one lead agent coordinate helper agents for multi-step work while keeping the conversation in one place.',
+                })}
+                position='right'
+              >
+                <span
+                  className='inline-flex size-16px items-center justify-center rounded-full border border-border-2 text-11px font-600 text-t-tertiary'
+                  aria-label={t('team.create.tooltipLabel', { defaultValue: 'What are teams?' })}
+                >
+                  ?
+                </span>
+              </Tooltip>
+            </div>
             <Button
               type='text'
               icon={<Close size='18' fill='currentColor' className='text-t-secondary' />}

@@ -19,6 +19,7 @@
   "website": "Web Sitesi",
   "version": "Sürüm",
   "contact": "İletişim",
+  "supportEmailFallback": "Destek için {{mailbox}} adresine e-posta gönderin. Mümkünse adres kopyalandı.",
   "github": "Github",
   "loading": "Lütfen bekleyin...",
   "copy": "Kopyala",

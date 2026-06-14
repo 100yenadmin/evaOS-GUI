@@ -7,6 +7,14 @@ type AssistantPresentation = {
 
 const EVAOS_ASSISTANT_PRESENTATION = new Map<string, AssistantPresentation>([
   [
+    'openclaw-setup',
+    {
+      name: 'Gateway Debug Expert',
+      description:
+        'Debugs evaOS/OpenClaw and Hermes gateways by checking the API docs first, then walking through safe setup, routing, and repair steps.',
+    },
+  ],
+  [
     'hermes-setup',
     {
       name: 'Hermes Setup Expert',
@@ -23,7 +31,7 @@ const EVAOS_ASSISTANT_PRESENTATION = new Map<string, AssistantPresentation>([
   ],
 ]);
 
-const EVAOS_HIDDEN_RC_ASSISTANT_IDS = new Set(['openclaw-setup', 'moltbook']);
+const EVAOS_HIDDEN_RC_ASSISTANT_IDS = new Set(['moltbook']);
 
 function normalizeAssistantId(id: string): string {
   return id.replace(/^builtin-/, '');

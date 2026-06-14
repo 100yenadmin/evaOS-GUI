@@ -24,7 +24,7 @@ export async function openEvaosProviderAuthWindow(url: string): Promise<void> {
     throw new Error('Invalid evaOS provider auth URL.');
   }
 
-  await session.fromPartition(PROVIDER_AUTH_WINDOW_PARTITION).clearStorageData();
+  await clearEvaosProviderAuthSessionData();
 
   closeCurrentProviderAuthWindow();
   const authWindow = new BrowserWindow(buildProviderAuthWindowOptions());
@@ -34,6 +34,10 @@ export async function openEvaosProviderAuthWindow(url: string): Promise<void> {
 
   await authWindow.loadURL(startUrl);
   authWindow.show();
+}
+
+export async function clearEvaosProviderAuthSessionData(): Promise<void> {
+  await session.fromPartition(PROVIDER_AUTH_WINDOW_PARTITION).clearStorageData();
 }
 
 function buildProviderAuthWindowOptions(): Electron.BrowserWindowConstructorOptions {

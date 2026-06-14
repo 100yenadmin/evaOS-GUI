@@ -36,6 +36,7 @@ import {
   clearEvaosRuntimeSurfacesForCustomer,
   createEvaosRuntimeSurface,
 } from '@process/services/evaosRuntimeSurfaceRegistry';
+import { clearEvaosProviderAuthSessionData } from '@process/services/evaosProviderAuthWindow';
 
 export { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
 
@@ -74,8 +75,9 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
     async ({
       customerId,
     }: IEvaosCustomerRuntimeStateClearRequest): Promise<BridgeResponse<IEvaosCustomerRuntimeStateClearResult>> =>
-      toBridgeResponse(() => {
-        clearEvaosRuntimeSurfacesForCustomer(customerId);
+      toBridgeResponse(async () => {
+        await clearEvaosRuntimeSurfacesForCustomer(customerId);
+        await clearEvaosProviderAuthSessionData();
         return {
           cleared: true,
           customerId,
@@ -104,7 +106,8 @@ export function initEvaosBrokerBridge(client: EvaosBrokerSessionClient = getDefa
   ipcBridge.evaosBroker.revokeSession.provider(
     async (): Promise<BridgeResponse<IEvaosBrokerSessionStatus>> =>
       toBridgeResponse(async () => {
-        clearEvaosRuntimeSurfaces();
+        await clearEvaosRuntimeSurfaces();
+        await clearEvaosProviderAuthSessionData();
         return client.revokeSession();
       })
   );

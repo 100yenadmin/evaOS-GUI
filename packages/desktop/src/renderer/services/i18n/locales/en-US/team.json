@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "Create Team",
+    "tooltip": "Teams let one lead agent coordinate helper agents for multi-step work while keeping the conversation in one place.",
+    "tooltipLabel": "What are teams?",
     "namePlaceholder": "Team name",
+    "searchPlaceholder": "Search agents...",
+    "noSearchResults": "No results found",
     "dispatchAgentPlaceholder": "Select team leader",
     "subAgentsPlaceholder": "Select sub agents",
     "confirm": "Create Team",

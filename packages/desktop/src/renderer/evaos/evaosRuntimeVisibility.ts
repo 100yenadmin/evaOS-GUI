@@ -48,7 +48,7 @@ export interface EvaosRuntimeRouteDecision {
   reason?: EvaosRouteDenialReason;
 }
 
-const ADMIN_RUNTIME_ROLES = new Set(['owner', 'admin', 'technical_admin']);
+const CUSTOMER_ADMIN_ROLES = new Set(['owner', 'admin', 'technical_admin']);
 const OPERATOR_ADMIN_ROLES = new Set(['customer_service', 'support']);
 const ELECTRIC_SHEEP_COMPANY_BRAIN_ADMINS = new Set(['admin@100yen.org']);
 
@@ -217,11 +217,19 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
 const ROUTE_POLICY_BY_PATH = new Map(EVAOS_ROUTE_POLICIES.map((policy) => [policy.routePath, policy]));
 
 export function canAccessEvaosAdminRuntimes(context: EvaosRuntimeVisibilityContext): boolean {
-  if (!context.authenticated) return false;
-  if (normalizeEmail(context.userEmail) === 'admin@100yen.org') return true;
+  return canAccessEvaosGlobalAdminRuntimes(context);
+}
 
+export function canAccessEvaosGlobalAdminRuntimes(context: EvaosRuntimeVisibilityContext): boolean {
+  if (!context.authenticated) return false;
+  return normalizeEmail(context.userEmail) === 'admin@100yen.org';
+}
+
+export function canAccessEvaosCustomerAdminScope(context: EvaosRuntimeVisibilityContext): boolean {
+  if (!context.authenticated) return false;
+  if (canAccessEvaosGlobalAdminRuntimes(context)) return true;
   const roles = normalizedRoles(context.roles);
-  if (roles.some((role) => ADMIN_RUNTIME_ROLES.has(role))) return true;
+  if (roles.some((role) => CUSTOMER_ADMIN_ROLES.has(role))) return true;
   return Boolean(context.isOperator && roles.some((role) => OPERATOR_ADMIN_ROLES.has(role)));
 }
 
@@ -285,9 +293,11 @@ function hasRequiredScopes(runtime: EvaosRuntimeDefinition, scopes: IEvaosAccoun
 function canOpenRoutePolicy(policy: EvaosRoutePolicy, context: EvaosRuntimeVisibilityContext): boolean {
   if (!context.authenticated) return false;
   if (normalizeRoutePath(policy.routePath) === '/company-brain' && !canAccessEvaosCompanyBrain(context)) return false;
-  const adminAccess = canAccessEvaosAdminRuntimes(context);
-  if (adminAccess) return true;
+  const globalAdminAccess = canAccessEvaosGlobalAdminRuntimes(context);
+  const customerAdminAccess = canAccessEvaosCustomerAdminScope(context);
+  if (globalAdminAccess) return true;
   if (policy.requiresAdmin) return false;
+  if (customerAdminAccess) return true;
   if (!hasAllPolicyScopes(policy.requiredScopes, context.scopes)) return false;
   if (!hasAnyPolicyScope(policy.anyRequiredScopes, context.scopes)) return false;
   return true;
