@@ -144,6 +144,8 @@ mac:
   notarize: false
   entitlements: entitlements.plist
   entitlementsInherit: entitlements.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: evaOS Workbench Beta uses the microphone only when you record voice input to transcribe it into chat text.
 
 dmg:
   # Use UDZO format which is more reliable on CI
