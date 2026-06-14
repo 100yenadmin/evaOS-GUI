@@ -194,27 +194,29 @@ describe('MessageList', () => {
 
   it('keeps copy rows on complete teammate messages inside an AI turn window', () => {
     const messages = [
+      { id: 'assistant-a', type: 'text', position: 'left', content: { content: 'assistant' }, created_at: 1 },
       {
         id: 'mate-a',
         type: 'text',
         position: 'left',
         content: { content: 'first', teammateMessage: true },
-        created_at: 1,
+        created_at: 2,
       },
       {
         id: 'mate-b',
         type: 'text',
         position: 'left',
         content: { content: 'second', teammateMessage: true },
-        created_at: 2,
+        created_at: 3,
       },
-      { id: 'user-1', type: 'text', position: 'right', content: { content: 'next' }, created_at: 3 },
+      { id: 'user-1', type: 'text', position: 'right', content: { content: 'next' }, created_at: 4 },
     ] as unknown as IMessageText[];
 
     render(<MessageList />, {
       wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper>,
     });
 
+    expect(screen.getByTestId('msgtext-assistant-a').getAttribute('data-copy-row')).toBe('true');
     expect(screen.getByTestId('msgtext-mate-a').getAttribute('data-copy-row')).toBe('true');
     expect(screen.getByTestId('msgtext-mate-b').getAttribute('data-copy-row')).toBe('true');
   });

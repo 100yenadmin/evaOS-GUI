@@ -96,6 +96,9 @@ const highlightStyle: React.CSSProperties = {
   borderRadius: '12px',
 };
 
+const isTeammateTextMessage = (message: TMessage): boolean =>
+  message.type === 'text' && message.position === 'left' && message.content.teammateMessage === true;
+
 const getUnhandledMessageType = (_message: never): string => 'unknown';
 
 // Image preview context
@@ -371,7 +374,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
         flush();
         continue;
       }
-      if (message.type === 'text') {
+      if (message.type === 'text' && !isTeammateTextMessage(message)) {
         pendingTextId = message.id;
       }
     }
@@ -509,8 +512,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
       );
     }
     const message = item as TMessage;
-    const isTeammateText =
-      message.type === 'text' && message.position === 'left' && message.content.teammateMessage === true;
+    const isTeammateText = isTeammateTextMessage(message);
     // User and teammate messages keep their own copy row; AI text only shows it at the turn end.
     const showCopyRow =
       isTeammateText || message.position !== 'left' || message.type !== 'text' || aiCopyRowTextIds.has(message.id);
