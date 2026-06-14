@@ -5,6 +5,7 @@ import AppLoader from '@renderer/components/layout/AppLoader';
 import { EVAOS_BETA_WEBUI_FALLBACK_ROUTE, evaosBetaWebUIRouteElement } from '@renderer/evaos/evaosBetaShellPolicy';
 import { renderEvaosRoutes } from '@renderer/evaos/evaosRoutes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import { useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import {
   EVAOS_DESKTOP_SESSION_IMPORTED_ACTION,
   EVAOS_DESKTOP_SESSION_IMPORTED_EVENT,
@@ -33,14 +34,16 @@ const withRouteFallback = (Component: React.LazyExoticComponent<React.ComponentT
   </Suspense>
 );
 
-const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
-  const { status } = useAuth();
-
-  if (status === 'checking') {
+const ProtectedLayout: React.FC<{
+  layout: React.ReactElement;
+  shellAuthenticated: boolean;
+  shellLoading: boolean;
+}> = ({ layout, shellAuthenticated, shellLoading }) => {
+  if (shellLoading) {
     return <AppLoader />;
   }
 
-  if (status !== 'authenticated') {
+  if (!shellAuthenticated) {
     return <Navigate to='/login' replace />;
   }
 
@@ -87,6 +90,12 @@ const DesktopSessionImportListener: React.FC = () => {
 
 const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
   const { status } = useAuth();
+  const webAuthenticated = status === 'authenticated';
+  const brokerSessionStatus = useEvaosBrokerSessionStatus(!webAuthenticated);
+  const brokerAuthenticated =
+    brokerSessionStatus.session?.authenticated === true && brokerSessionStatus.session.expired !== true;
+  const shellAuthenticated = webAuthenticated || brokerAuthenticated;
+  const shellLoading = !shellAuthenticated && (status === 'checking' || brokerSessionStatus.loading);
 
   return (
     <HashRouter>
@@ -94,9 +103,21 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
       <Routes>
         <Route
           path='/login'
-          element={status === 'authenticated' ? <Navigate to='/guid' replace /> : withRouteFallback(LoginPage)}
+          element={
+            shellLoading ? (
+              <AppLoader />
+            ) : shellAuthenticated ? (
+              <Navigate to='/guid' replace />
+            ) : (
+              withRouteFallback(LoginPage)
+            )
+          }
         />
-        <Route element={<ProtectedLayout layout={layout} />}>
+        <Route
+          element={
+            <ProtectedLayout layout={layout} shellAuthenticated={shellAuthenticated} shellLoading={shellLoading} />
+          }
+        >
           <Route index element={<Navigate to='/guid' replace />} />
           <Route path='/guid' element={withRouteFallback(Guid)} />
           {renderEvaosRoutes()}
@@ -129,7 +150,10 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/scheduled' element={withRouteFallback(ScheduledTasksPage)} />
           <Route path='/scheduled/:job_id' element={withRouteFallback(TaskDetailPage)} />
         </Route>
-        <Route path='*' element={<Navigate to={status === 'authenticated' ? '/guid' : '/login'} replace />} />
+        <Route
+          path='*'
+          element={shellLoading ? <AppLoader /> : <Navigate to={shellAuthenticated ? '/guid' : '/login'} replace />}
+        />
       </Routes>
     </HashRouter>
   );
