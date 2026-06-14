@@ -172,6 +172,7 @@
   "cssSettings": "CSS Ayarları",
   "cssTheme": {
     "selectOrCustomize": "Hazır tema seç veya özel CSS kullan",
+    "followSystem": "Sistemi Takip Et",
     "addManually": "Manuel Ekle",
     "default": "Varsayılan",
     "addToPreset": "Tema Ekle",

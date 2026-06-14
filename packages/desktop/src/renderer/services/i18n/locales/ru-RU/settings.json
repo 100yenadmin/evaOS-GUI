@@ -172,6 +172,7 @@
   "cssSettings": "Настройки CSS",
   "cssTheme": {
     "selectOrCustomize": "Выбрать тему или настроить CSS",
+    "followSystem": "Как в системе",
     "addManually": "Добавить вручную",
     "default": "По умолчанию",
     "addToPreset": "Добавить тему",

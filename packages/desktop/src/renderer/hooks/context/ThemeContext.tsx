@@ -7,7 +7,7 @@
 // context/ThemeContext.tsx - Unified Theme Management Context 统一主题管理上下文
 import type { PropsWithChildren } from 'react';
 import React, { createContext, useContext } from 'react';
-import type { Theme } from '@renderer/hooks/system/useTheme';
+import type { Theme, ThemeSelection } from '@renderer/hooks/system/useTheme';
 import useTheme from '@renderer/hooks/system/useTheme';
 import type { ColorScheme } from '@renderer/hooks/ui/useColorScheme';
 import useColorScheme from '@renderer/hooks/ui/useColorScheme';
@@ -20,7 +20,8 @@ import useFontScale from '@renderer/hooks/ui/useFontScale';
 interface ThemeContextValue {
   // Light/Dark mode 明暗模式
   theme: Theme;
-  setTheme: (theme: Theme) => Promise<void>;
+  themeMode: ThemeSelection;
+  setTheme: (theme: ThemeSelection) => Promise<void>;
 
   // Color scheme 配色方案
   colorScheme: ColorScheme;
@@ -38,12 +39,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * Manages both light/dark mode and color schemes 同时管理明暗模式和配色方案
  */
 export const ThemeProvider: React.FC<PropsWithChildren> = ({ children }) => {
-  const [theme, setTheme] = useTheme();
+  const [theme, setTheme, themeMode] = useTheme();
   const [colorScheme, setColorScheme] = useColorScheme();
   const [fontScale, setFontScale] = useFontScale();
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, colorScheme, setColorScheme, fontScale, setFontScale }}>
+    <ThemeContext.Provider value={{ theme, themeMode, setTheme, colorScheme, setColorScheme, fontScale, setFontScale }}>
       {children}
     </ThemeContext.Provider>
   );

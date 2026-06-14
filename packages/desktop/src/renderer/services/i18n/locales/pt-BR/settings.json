@@ -172,6 +172,7 @@
   "cssSettings": "Configurações de CSS",
   "cssTheme": {
     "selectOrCustomize": "Selecionar tema predefinido ou CSS personalizado",
+    "followSystem": "Seguir o sistema",
     "addManually": "Adicionar Manualmente",
     "default": "Padrão",
     "addToPreset": "Adicionar Tema",

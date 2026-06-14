@@ -172,6 +172,7 @@
   "cssSettings": "Налаштування CSS",
   "cssTheme": {
     "selectOrCustomize": "Виберіть пресет теми або власний CSS",
+    "followSystem": "Як у системі",
     "addManually": "Додати вручну",
     "default": "За замовчуванням",
     "addToPreset": "Додати тему",

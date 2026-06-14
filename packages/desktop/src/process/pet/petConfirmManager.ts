@@ -5,9 +5,10 @@
  */
 
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, screen } from 'electron';
 import type { IConfirmation } from '@/common/chat/chatLib';
 import { ipcBridge } from '@/common';
+import { httpRequest } from '@/common/adapter/httpBridge';
 import { ProcessConfig } from '@process/utils/initStorage';
 import i18n from '@process/services/i18n';
 
@@ -24,6 +25,69 @@ let windowReady = false;
 // User-overridden confirm window position (set when user drags the window).
 // Persists for the current app session only; cleared on destroy.
 let userPosition: { x: number; y: number } | null = null;
+
+type PetConfirmTheme = 'light' | 'dark';
+type PetConfirmThemeSelection = PetConfirmTheme | 'system';
+
+const isPetConfirmThemeSelection = (value: unknown): value is PetConfirmThemeSelection =>
+  value === 'light' || value === 'dark' || value === 'system';
+
+const resolvePetConfirmThemeSelection = (selection: PetConfirmThemeSelection): PetConfirmTheme =>
+  selection === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : selection;
+
+let activePetConfirmThemeSelection: PetConfirmThemeSelection = 'light';
+
+function sendPetConfirmTheme(theme: PetConfirmTheme): void {
+  if (confirmWindow && !confirmWindow.isDestroyed() && windowReady) {
+    confirmWindow.webContents.send('pet:confirm-theme', theme);
+  }
+}
+
+async function readPetConfirmThemeSelection(): Promise<PetConfirmThemeSelection> {
+  try {
+    const backendTheme = await httpRequest<unknown>('GET', '/api/settings/client?key=theme', undefined, {
+      silentStatuses: [404],
+    });
+    if (isPetConfirmThemeSelection(backendTheme)) {
+      return backendTheme;
+    }
+  } catch (_e) {
+    /* fallback to local config */
+  }
+
+  try {
+    const storedTheme = await ProcessConfig.get('theme');
+    if (isPetConfirmThemeSelection(storedTheme)) {
+      return storedTheme;
+    }
+  } catch (_e) {
+    /* noop — default light theme */
+  }
+
+  return 'light';
+}
+
+async function readPetConfirmTheme(): Promise<PetConfirmTheme> {
+  activePetConfirmThemeSelection = await readPetConfirmThemeSelection();
+  return resolvePetConfirmThemeSelection(activePetConfirmThemeSelection);
+}
+
+nativeTheme.on('updated', () => {
+  if (!confirmWindow || confirmWindow.isDestroyed() || !windowReady) return;
+
+  void readPetConfirmThemeSelection()
+    .then((selection) => {
+      activePetConfirmThemeSelection = selection;
+      if (selection === 'system') {
+        sendPetConfirmTheme(resolvePetConfirmThemeSelection(selection));
+      }
+    })
+    .catch(() => {
+      if (activePetConfirmThemeSelection === 'system') {
+        sendPetConfirmTheme(resolvePetConfirmThemeSelection(activePetConfirmThemeSelection));
+      }
+    });
+});
 
 /**
  * Initialize pet confirm manager with anchor bounds (pet window position).
@@ -173,10 +237,7 @@ function createConfirmWindow(): void {
 
     // Send current theme to confirm window
     try {
-      const theme = ((await ProcessConfig.get('theme')) as string) || 'light';
-      if (confirmWindow && !confirmWindow.isDestroyed()) {
-        confirmWindow.webContents.send('pet:confirm-theme', theme);
-      }
+      sendPetConfirmTheme(await readPetConfirmTheme());
     } catch (_e) {
       /* noop — default light theme via CSS */
     }

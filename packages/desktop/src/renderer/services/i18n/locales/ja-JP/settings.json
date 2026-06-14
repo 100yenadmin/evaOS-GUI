@@ -172,6 +172,7 @@
   "cssSettings": "CSS設定",
   "cssTheme": {
     "selectOrCustomize": "プリセットテーマまたはカスタムCSSを選択",
+    "followSystem": "システムに従う",
     "addManually": "手動で追加",
     "default": "デフォルト",
     "addToPreset": "プリセットに追加",

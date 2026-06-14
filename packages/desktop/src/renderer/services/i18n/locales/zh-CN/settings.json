@@ -172,6 +172,7 @@
   "cssSettings": "CSS设置",
   "cssTheme": {
     "selectOrCustomize": "选择预设主题或自定义 CSS",
+    "followSystem": "跟随系统",
     "addManually": "手动添加",
     "default": "默认",
     "addToPreset": "添加主题",

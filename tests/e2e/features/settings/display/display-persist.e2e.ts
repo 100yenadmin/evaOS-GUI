@@ -7,8 +7,12 @@
 
 import { test, expect } from '../../../fixtures';
 import { goToSettings, waitForSettle } from '../../../helpers';
+import type { Locator } from '@playwright/test';
 
 const PERCENT_RE = /^\d{2,3}%$/;
+
+const themeButton = (themeGroup: Locator, theme: 'light' | 'dark') =>
+  themeGroup.locator(`[data-theme-option="${theme}"]`);
 
 function fontSizeControlLocator(page: import('@playwright/test').Page) {
   return page.locator('.font-scale-slider').locator('..');
@@ -66,7 +70,7 @@ test.describe('Display settings persistence across reload', () => {
     expect(initialTheme).toBeTruthy();
 
     const targetTheme = initialTheme === 'light' ? 'dark' : 'light';
-    const targetButton = themeGroup.locator('[role="radio"][aria-checked="false"]');
+    const targetButton = themeButton(themeGroup, targetTheme);
     await targetButton.click();
 
     await page.waitForFunction(
@@ -83,7 +87,7 @@ test.describe('Display settings persistence across reload', () => {
     // Restore original theme
     const revertGroup = page.locator('[role="radiogroup"]');
     await revertGroup.waitFor({ state: 'visible', timeout: 10_000 });
-    const revertButton = revertGroup.locator('[role="radio"][aria-checked="false"]');
+    const revertButton = themeButton(revertGroup, initialTheme as 'light' | 'dark');
     await revertButton.click();
     await page.waitForFunction(
       (expected) => document.documentElement.getAttribute('data-theme') === expected,
