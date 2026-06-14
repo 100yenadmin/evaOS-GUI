@@ -113,6 +113,7 @@ const AionrsSendBox: React.FC<{
   const isMobile = Boolean(layout?.isMobile);
   const conversationContext = useConversationContextSafe();
   const loadedSkills = conversationContext?.loadedSkills ?? [];
+  const assistantId = conversationContext?.assistantId;
   const loadedMcpStatuses =
     conversationContext?.loadedMcpStatuses ??
     (conversationContext?.loadedMcpServers ?? []).map<IConversationMcpStatus>((name) => ({
@@ -386,7 +387,9 @@ const AionrsSendBox: React.FC<{
         const confirmed = await ipcBridge.acpConversation.setMode.invoke({ conversation_id, mode });
         const confirmedMode = confirmed.mode || mode;
         setCurrentMode(confirmedMode);
-        void savePreferredMode('aionrs', confirmedMode);
+        if (!assistantId) {
+          void savePreferredMode('aionrs', confirmedMode);
+        }
         propagateMode?.(confirmedMode);
         Message.success(t('agentMode.switchSuccess'));
       } catch (error) {
@@ -394,7 +397,7 @@ const AionrsSendBox: React.FC<{
         Message.error(t('agentMode.switchFailed'));
       }
     },
-    [conversation_id, currentMode, prepareRuntimeSync, propagateMode, t]
+    [assistantId, conversation_id, currentMode, prepareRuntimeSync, propagateMode, t]
   );
 
   // Sync currentMode from backend when the sheet first opens / conversation switches
@@ -638,6 +641,7 @@ const AionrsSendBox: React.FC<{
             hideCompactLabelPrefixOnMobile
             onModeChanged={propagateMode}
             beforeRuntimeSync={prepareRuntimeSync}
+            persistGlobalPreference={!assistantId}
           />
         }
         prefix={

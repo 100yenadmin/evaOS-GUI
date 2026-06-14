@@ -142,16 +142,18 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
   conversation,
   sliderTitle,
 }) => {
+  const aionrsAssistantId = resolveAssistantConfigId(conversation) ?? undefined;
+  const persistGlobalPreference = !aionrsAssistantId;
   const onSelectModel = useCallback(
     async (_provider: IProvider, modelName: string) => {
       const selected = { ..._provider, use_model: modelName } as TProviderWithModel;
       // Kill running agent on model switch — will be rebuilt with new model on next message
       await ipcBridge.conversation.stop.invoke({ conversation_id: conversation.id });
       const ok = await ipcBridge.conversation.update.invoke({ id: conversation.id, updates: { model: selected } });
-      if (ok) void saveAionrsDefaultModel(_provider.id, modelName);
+      if (ok && persistGlobalPreference) void saveAionrsDefaultModel(_provider.id, modelName);
       return Boolean(ok);
     },
-    [conversation.id]
+    [conversation.id, persistGlobalPreference]
   );
 
   const modelSelection = useAionrsModelSelection({
@@ -160,7 +162,6 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
   });
   const workspaceEnabled = Boolean(conversation.extra?.workspace);
   const { info: presetAssistantInfo } = usePresetAssistantInfo(conversation);
-  const aionrsAssistantId = resolveAssistantConfigId(conversation) ?? undefined;
   const layout = useLayoutContext();
   // Mobile: model selection moved into the sendbox `+` action sheet to free up
   // header space; the dropdown stays available on desktop and tablets ≥768px.
@@ -202,6 +203,7 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
           (conversation.extra as { mcp_statuses?: IConversationMcpStatus[] } | undefined)?.mcp_statuses
         }
         agent_name={presetAssistantInfo?.name}
+        assistantId={aionrsAssistantId}
       />
     </ChatLayout>
   );
@@ -247,6 +249,7 @@ const ChatConversation: React.FC<{
             loadedMcpStatuses={
               (conversation.extra as { mcp_statuses?: IConversationMcpStatus[] } | undefined)?.mcp_statuses
             }
+            assistantId={acpAssistantId}
           ></AcpChat>
         );
       case 'gemini':
@@ -346,6 +349,7 @@ const ChatConversation: React.FC<{
           backend={extra.backend}
           initialModelId={extra.current_model_id}
           waitForWarmup
+          persistGlobalPreference={!acpAssistantId}
         />
       );
     }

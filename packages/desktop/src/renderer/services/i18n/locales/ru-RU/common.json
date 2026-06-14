@@ -59,6 +59,7 @@
   "more": "Ещё",
   "refresh": "Обновить",
   "tray.showWindow": "Показать evaOS Workbench",
+  "readOnly": "Только чтение",
   "tray.newChat": "Новый чат",
   "tray.closeToTray": "Свернуть в трей",
   "tray.about": "О программе evaOS Workbench",
@@ -102,5 +103,9 @@
   "optional": "(необязательно)",
   "clear": "Очистить",
   "historyBack": "Назад",
-  "agentMode": "Режим агента"
+  "agentMode": "Режим агента",
+  "unit": {
+    "minute_short": "мин",
+    "second_short": "с"
+  }
 }
