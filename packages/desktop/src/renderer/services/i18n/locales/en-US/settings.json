@@ -172,6 +172,7 @@
   "cssSettings": "CSS Settings",
   "cssTheme": {
     "selectOrCustomize": "Select preset theme or custom CSS",
+    "followSystem": "Follow System",
     "addManually": "Add Manually",
     "default": "Default",
     "addToPreset": "Add Theme",

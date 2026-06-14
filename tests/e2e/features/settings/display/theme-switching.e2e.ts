@@ -7,6 +7,10 @@
 
 import { test, expect } from '../../../fixtures';
 import { goToSettings } from '../../../helpers/navigation';
+import type { Locator } from '@playwright/test';
+
+const themeButton = (themeGroup: Locator, theme: 'light' | 'dark') =>
+  themeGroup.locator(`[data-theme-option="${theme}"]`);
 
 test.describe('Theme Switching', () => {
   test.beforeEach(async ({ page }) => {
@@ -22,7 +26,7 @@ test.describe('Theme Switching', () => {
 
     const targetTheme = initialTheme === 'light' ? 'dark' : 'light';
 
-    const targetButton = themeGroup.locator(`[role="radio"][aria-checked="false"]`);
+    const targetButton = themeButton(themeGroup, targetTheme);
     await targetButton.click();
 
     await page.waitForFunction(
@@ -34,7 +38,7 @@ test.describe('Theme Switching', () => {
     const newTheme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
     expect(newTheme).toBe(targetTheme);
 
-    const revertButton = themeGroup.locator(`[role="radio"][aria-checked="false"]`);
+    const revertButton = themeButton(themeGroup, initialTheme as 'light' | 'dark');
     await revertButton.click();
 
     await page.waitForFunction(
@@ -51,7 +55,7 @@ test.describe('Theme Switching', () => {
     const themeGroup = page.locator('[role="radiogroup"]');
     await themeGroup.waitFor({ state: 'visible', timeout: 10_000 });
 
-    const darkButton = themeGroup.locator('[role="radio"]').nth(1);
+    const darkButton = themeButton(themeGroup, 'dark');
     await darkButton.click();
 
     await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark', {
@@ -69,7 +73,7 @@ test.describe('Theme Switching', () => {
     const themeGroup = page.locator('[role="radiogroup"]');
     await themeGroup.waitFor({ state: 'visible', timeout: 10_000 });
 
-    const lightButton = themeGroup.locator('[role="radio"]').nth(0);
+    const lightButton = themeButton(themeGroup, 'light');
     await lightButton.click();
 
     await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'light', {
