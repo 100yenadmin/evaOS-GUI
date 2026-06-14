@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "Create Team",
+    "tooltip": "團隊讓一位主導 Agent 協調輔助 Agent，在同一個對話中完成多步驟工作。",
+    "tooltipLabel": "什麼是團隊？",
     "namePlaceholder": "Team name",
+    "searchPlaceholder": "搜尋 Agent...",
+    "noSearchResults": "找不到結果",
     "dispatchAgentPlaceholder": "選擇團隊 Leader",
     "subAgentsPlaceholder": "Select sub agents",
     "confirm": "Create Team",

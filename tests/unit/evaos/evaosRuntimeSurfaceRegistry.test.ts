@@ -10,7 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const protocolHandle = vi.hoisted(() => vi.fn());
 const partitionProtocolHandle = vi.hoisted(() => vi.fn());
-const fromPartition = vi.hoisted(() => vi.fn(() => ({ protocol: { handle: partitionProtocolHandle } })));
+const clearStorageData = vi.hoisted(() => vi.fn(async () => undefined));
+const fromPartition = vi.hoisted(() =>
+  vi.fn(() => ({ protocol: { handle: partitionProtocolHandle }, clearStorageData }))
+);
 
 vi.mock('electron', () => ({
   protocol: {
@@ -26,6 +29,7 @@ async function loadRegistry() {
   protocolHandle.mockClear();
   partitionProtocolHandle.mockClear();
   fromPartition.mockClear();
+  clearStorageData.mockClear();
   return import('@process/services/evaosRuntimeSurfaceRegistry');
 }
 
@@ -98,8 +102,58 @@ describe('evaOS runtime surface registry', () => {
     expect((await registeredHandler()({ url: expiredSurface.surfaceUri })).status).toBe(404);
     expect((await registeredHandler()({ url: activeSurface.surfaceUri })).status).toBe(302);
 
-    registry.clearEvaosRuntimeSurfaces();
+    await registry.clearEvaosRuntimeSurfaces();
 
     expect((await registeredHandler()({ url: activeSurface.surfaceUri })).status).toBe(404);
+    expect(clearStorageData).toHaveBeenCalled();
+  });
+
+  it('clears only the selected customer runtime surface partitions', async () => {
+    const registry = await loadRegistry();
+    registry.registerEvaosRuntimeSurfaceProtocol();
+    const first = registry.createEvaosRuntimeSurface('https://runtime.example.test/openclaw', {
+      customerId: 'customer-one',
+      runtimeKey: 'openclaw',
+      displayLabel: 'evaOS',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    const second = registry.createEvaosRuntimeSurface('https://runtime.example.test/hermes', {
+      customerId: 'customer-two',
+      runtimeKey: 'hermes',
+      displayLabel: 'Hermes',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    await registry.clearEvaosRuntimeSurfacesForCustomer('customer-one');
+
+    expect((await registeredHandler()({ url: first.surfaceUri })).status).toBe(404);
+    expect((await registeredHandler()({ url: second.surfaceUri })).status).toBe(302);
+    expect(fromPartition).toHaveBeenCalledWith(first.partition);
+    expect(clearStorageData).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps runtime surface records available when partition storage clearing fails', async () => {
+    const registry = await loadRegistry();
+    registry.registerEvaosRuntimeSurfaceProtocol();
+    const surface = registry.createEvaosRuntimeSurface('https://runtime.example.test/openclaw', {
+      customerId: 'customer-one',
+      runtimeKey: 'openclaw',
+      displayLabel: 'evaOS',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    clearStorageData.mockRejectedValueOnce(new Error('partition clear failed'));
+
+    await expect(registry.clearEvaosRuntimeSurfacesForCustomer('customer-one')).rejects.toThrow(
+      'partition clear failed'
+    );
+    expect((await registeredHandler()({ url: surface.surfaceUri })).status).toBe(302);
+
+    clearStorageData.mockResolvedValueOnce(undefined);
+
+    await registry.clearEvaosRuntimeSurfacesForCustomer('customer-one');
+
+    expect((await registeredHandler()({ url: surface.surfaceUri })).status).toBe(404);
+    expect(clearStorageData).toHaveBeenCalledTimes(2);
   });
 });

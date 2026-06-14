@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "创建团队",
+    "tooltip": "团队让一个主导 Agent 协调辅助 Agent，在同一个对话中完成多步骤工作。",
+    "tooltipLabel": "什么是团队？",
     "namePlaceholder": "团队名称",
+    "searchPlaceholder": "搜索 Agent...",
+    "noSearchResults": "未找到结果",
     "dispatchAgentPlaceholder": "选择团队 Leader",
     "subAgentsPlaceholder": "选择子 Agent",
     "confirm": "创建团队",

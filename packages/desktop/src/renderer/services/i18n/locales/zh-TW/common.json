@@ -19,6 +19,7 @@
   "website": "官網",
   "version": "版本號",
   "contact": "聯絡我們",
+  "supportEmailFallback": "請傳送電子郵件至 {{mailbox}} 取得支援。已盡可能複製該地址。",
   "github": "Github",
   "loading": "請稍候...",
   "copy": "複製",

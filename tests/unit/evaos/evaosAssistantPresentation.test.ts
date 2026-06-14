@@ -26,10 +26,13 @@ function assistant(overrides: Partial<Assistant>): Assistant {
 }
 
 describe('evaOS assistant presentation', () => {
-  it('hides OpenClaw setup and Moltbook from the controlled RC catalog', () => {
+  it('renames OpenClaw setup as Gateway Debug Expert and hides Moltbook from the controlled RC catalog', () => {
     const preset = assistant({});
 
-    expect(isEvaosAssistantVisibleInRc(preset)).toBe(false);
+    expect(isEvaosAssistantVisibleInRc(preset)).toBe(true);
+    expect(getEvaosAssistantDisplayName(preset, 'en-US')).toBe('Gateway Debug Expert');
+    expect(getEvaosAssistantDisplayDescription(preset, 'en-US')).toContain('OpenClaw and Hermes');
+    expect(getEvaosAssistantDisplayDescription(preset, 'en-US')).toContain('API docs first');
     expect(isEvaosAssistantVisibleInRc(assistant({ id: 'builtin-moltbook' }))).toBe(false);
   });
 

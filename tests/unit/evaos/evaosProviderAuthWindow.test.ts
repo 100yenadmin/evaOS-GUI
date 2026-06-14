@@ -7,7 +7,10 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { openEvaosProviderAuthWindow } from '@/process/services/evaosProviderAuthWindow';
+import {
+  clearEvaosProviderAuthSessionData,
+  openEvaosProviderAuthWindow,
+} from '@/process/services/evaosProviderAuthWindow';
 
 type FakeNavigationEvent = {
   preventDefault: ReturnType<typeof vi.fn>;
@@ -107,6 +110,12 @@ describe('openEvaosProviderAuthWindow', () => {
     });
     expect(win.loadURL).toHaveBeenCalledWith('https://connect.pipedream.com/oauth/start?token=fake-provider-token');
     expect(win.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears provider auth partition storage on demand', async () => {
+    await clearEvaosProviderAuthSessionData();
+
+    expect(clearStorageData).toHaveBeenCalledTimes(1);
   });
 
   it('allows OAuth popups only as isolated child auth windows', async () => {

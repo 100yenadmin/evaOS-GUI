@@ -6,6 +6,15 @@ import type { AgentMetadata } from '@renderer/utils/model/agentTypes';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import { resolveBackendAssetUrl } from '@renderer/utils/platform';
 import {
+  getEvaosAgentDisplayName,
+  sortEvaosDetectedAgentsForPresentation,
+} from '@renderer/evaos/evaosAgentPresentation';
+import {
+  getEvaosAssistantDisplayDescription,
+  getEvaosAssistantDisplayName,
+  isEvaosAssistantVisibleInRc,
+} from '@renderer/evaos/evaosAssistantPresentation';
+import {
   isDeprecatedRuntimeAgentType,
   resolveSupportedConversationType,
 } from '@/renderer/utils/model/agentTypeSupportPolicy';
@@ -23,9 +32,13 @@ export type TeamAgentOption = {
   backend?: string;
   /** Top-level runtime type from detected agents. Preset assistants leave this unset. */
   agent_type?: string;
+  /** Source marker from detected agents. Used to distinguish built-in AionRS from user custom agents. */
+  agent_source?: string;
   /** Icon / avatar token — an SVG filename, emoji, or key into
    *  `CUSTOM_AVATAR_IMAGE_MAP`. */
   icon?: string;
+  /** Short user-facing explanation shown in hover details. */
+  description?: string;
   /** Whether this agent supports team mode. Sourced from backend `team_capable` field. */
   team_capable?: boolean;
 };
@@ -33,22 +46,61 @@ export type TeamAgentOption = {
 export function cliAgentToOption(agent: AgentMetadata): TeamAgentOption {
   return {
     id: agent.id,
-    name: agent.name,
+    name: getEvaosAgentDisplayName(agent),
     backend: agent.backend || agent.agent_type,
     agent_type: agent.agent_type,
+    agent_source: agent.agent_source,
     icon: agent.icon,
+    description: agent.description,
     team_capable: agent.team_capable,
   };
 }
 
-export function assistantToOption(assistant: Assistant, teamCapableKeys?: Set<string>): TeamAgentOption {
+export function assistantToOption(
+  assistant: Assistant,
+  teamCapableKeys?: Set<string>,
+  localeKey = 'en-US'
+): TeamAgentOption | undefined {
+  if (!isEvaosAssistantVisibleInRc(assistant)) {
+    return undefined;
+  }
   return {
     id: assistant.id,
-    name: assistant.name,
+    name: getEvaosAssistantDisplayName(assistant, localeKey),
     backend: assistant.preset_agent_type,
     icon: assistant.avatar,
+    description: getEvaosAssistantDisplayDescription(assistant, localeKey),
     team_capable: teamCapableKeys ? teamCapableKeys.has(assistant.preset_agent_type) : undefined,
   };
+}
+
+export function compactTeamAgentOptions(options: Array<TeamAgentOption | undefined>): TeamAgentOption[] {
+  return options.filter((option): option is TeamAgentOption => Boolean(option));
+}
+
+export function sortTeamLeaderOptions(options: TeamAgentOption[]): TeamAgentOption[] {
+  const cliOptions = sortEvaosDetectedAgentsForPresentation(
+    options
+      .filter((option): option is TeamAgentOption & { agent_type: string } => Boolean(option.agent_type))
+      .map((option) => ({ ...option, name: option.name }))
+  );
+  const cliOrder = new Map(cliOptions.map((option, index) => [agentKey(option), index]));
+  return options
+    .map((option, index) => ({
+      option,
+      index,
+      rank:
+        option.backend === 'aionrs' && option.agent_source !== 'custom'
+          ? 10_000
+          : cliOrder.has(agentKey(option))
+            ? (cliOrder.get(agentKey(option)) ?? 100)
+            : 200,
+    }))
+    .toSorted((left, right) => {
+      if (left.rank !== right.rank) return left.rank - right.rank;
+      return left.index - right.index;
+    })
+    .map(({ option }) => option);
 }
 
 export function agentKey(agent: TeamAgentOption): string {

@@ -19,6 +19,7 @@
   "website": "웹사이트",
   "version": "버전",
   "contact": "연락처",
+  "supportEmailFallback": "지원이 필요하면 {{mailbox}}(으)로 이메일을 보내세요. 가능한 경우 주소를 복사했습니다.",
   "github": "Github",
   "loading": "기다려주세요...",
   "copy": "복사",

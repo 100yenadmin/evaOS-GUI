@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "Criar Equipe",
+    "tooltip": "Equipes permitem que um agente líder coordene agentes auxiliares em trabalhos de várias etapas, mantendo tudo em uma conversa.",
+    "tooltipLabel": "O que são equipes?",
     "namePlaceholder": "Nome da equipe",
+    "searchPlaceholder": "Buscar agentes...",
+    "noSearchResults": "Nenhum resultado encontrado",
     "dispatchAgentPlaceholder": "Selecione o líder da equipe",
     "subAgentsPlaceholder": "Selecione sub-agentes",
     "confirm": "Criar Equipe",

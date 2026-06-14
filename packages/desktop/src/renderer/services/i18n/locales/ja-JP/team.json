@@ -25,7 +25,11 @@
   },
   "create": {
     "title": "Create Team",
+    "tooltip": "チームでは、1 つのリード Agent がヘルパー Agent を調整し、複数ステップの作業を 1 つの会話内で進めます。",
+    "tooltipLabel": "チームとは？",
     "namePlaceholder": "Team name",
+    "searchPlaceholder": "Agent を検索...",
+    "noSearchResults": "結果が見つかりません",
     "dispatchAgentPlaceholder": "チームリーダーを選択",
     "subAgentsPlaceholder": "Select sub agents",
     "confirm": "Create Team",

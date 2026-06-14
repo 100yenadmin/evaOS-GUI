@@ -1,5 +1,7 @@
 import classNames from 'classnames';
+import { Message } from '@arco-design/web-react';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePreviewContext } from '@renderer/pages/conversation/Preview/context/PreviewContext';
 import { cleanupSiderTooltips, getSiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -8,7 +10,8 @@ import { clearEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomer
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
-import { openEvaosSupportEmail } from '@renderer/utils/platform';
+import { EVAOS_SUPPORT_MAILBOX, openEvaosSupportEmail } from '@renderer/utils/platform';
+import { copyText } from '@renderer/utils/ui/clipboard';
 import {
   EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT,
   EVAOS_DESKTOP_SESSION_CLEARED_EVENT,
@@ -51,6 +54,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { closePreview } = usePreviewContext();
   const { logout, user } = useAuth();
   const { theme, setTheme } = useThemeContext();
+  const { t } = useTranslation();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const { jobs: cronJobs } = useAllCronJobs();
   const evaosSidebarState = useEvaosSidebarState();
@@ -141,8 +145,12 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const handleSupportClick = useCallback(() => {
     void openEvaosSupportEmail({ subject: 'evaOS Workbench Beta support' }).catch((error) => {
       console.error('evaOS support link failed:', error);
+      void copyText(EVAOS_SUPPORT_MAILBOX).catch((copyError) => {
+        console.error('evaOS support mailbox copy failed:', copyError);
+      });
+      Message.warning(t('common.supportEmailFallback', { mailbox: EVAOS_SUPPORT_MAILBOX }));
     });
-  }, []);
+  }, [t]);
 
   const handleBeginDesktopAuth = useCallback(async () => {
     cleanupSiderTooltips();
@@ -165,13 +173,18 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     closePreview();
     setBrokerSignInError(null);
     try {
-      await evaosBroker.revokeSession.invoke();
+      const response = await evaosBroker.revokeSession.invoke();
+      if (!response.success) {
+        setBrokerSignInError(response.msg || 'Sign out could not clear the evaOS desktop session.');
+        return;
+      }
     } catch (error) {
       console.error('evaOS broker session revoke failed:', error);
-    } finally {
-      clearEvaosCustomerContext();
-      window.dispatchEvent(new CustomEvent(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, { detail: { source: 'footer' } }));
+      setBrokerSignInError('Sign out could not clear the evaOS desktop session.');
+      return;
     }
+    clearEvaosCustomerContext();
+    window.dispatchEvent(new CustomEvent(EVAOS_DESKTOP_SESSION_CLEARED_EVENT, { detail: { source: 'footer' } }));
     try {
       await logout();
     } catch (error) {

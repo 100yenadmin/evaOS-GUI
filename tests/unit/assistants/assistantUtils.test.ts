@@ -262,13 +262,18 @@ describe('assistantUtils', () => {
 
       const prepared = prepareEvaosAssistantListForRc(assistants, 'en-US');
 
-      expect(prepared.map((assistant) => assistant.id)).toEqual(['builtin-hermes-expert', 'cowork']);
+      expect(prepared.map((assistant) => assistant.id)).toEqual(['openclaw-setup', 'builtin-hermes-expert', 'cowork']);
       expect(prepared[0]).toMatchObject({
+        name: 'Gateway Debug Expert',
+        description: expect.stringContaining('OpenClaw and Hermes'),
+        name_i18n: { 'en-US': 'Gateway Debug Expert' },
+      });
+      expect(prepared[1]).toMatchObject({
         name: 'Hermes Expert',
         description: expect.stringContaining('Hermes agent setup'),
         name_i18n: { 'en-US': 'Hermes Expert' },
       });
-      expect(prepared[1]).toMatchObject({
+      expect(prepared[2]).toMatchObject({
         name: 'Cowork',
         description: 'Autonomous task execution.',
       });

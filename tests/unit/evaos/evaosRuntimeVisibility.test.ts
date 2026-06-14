@@ -9,6 +9,7 @@ import {
   EVAOS_RUNTIME_CATALOG,
   EVAOS_ROUTE_POLICIES,
   canAccessEvaosAdminRuntimes,
+  canAccessEvaosCustomerAdminScope,
   evaosRouteAllowsMissingBroker,
   evaosRuntimeRouteDecision,
   visibleEvaosRuntimeCatalog,
@@ -51,20 +52,20 @@ describe('evaosRuntimeVisibility', () => {
     });
   });
 
-  it('grants technical dashboard access only to owner/admin, support operator, or admin@100yen.org', () => {
+  it('grants global technical dashboard access only to admin@100yen.org', () => {
     expect(
       canAccessEvaosAdminRuntimes({
         authenticated: true,
         roles: ['owner'],
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       canAccessEvaosAdminRuntimes({
         authenticated: true,
         roles: ['support'],
         isOperator: true,
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       canAccessEvaosAdminRuntimes({
         authenticated: true,
@@ -80,6 +81,38 @@ describe('evaosRuntimeVisibility', () => {
       })
     ).toBe(false);
     expect(canAccessEvaosAdminRuntimes({ authenticated: false, roles: ['owner'] })).toBe(false);
+  });
+
+  it('keeps customer admin scope separate from global technical routes', () => {
+    expect(
+      canAccessEvaosCustomerAdminScope({
+        authenticated: true,
+        roles: ['owner'],
+        userEmail: 'owner@example.test',
+      })
+    ).toBe(true);
+    expect(
+      canAccessEvaosCustomerAdminScope({
+        authenticated: true,
+        roles: ['support'],
+        isOperator: true,
+        userEmail: 'support@example.test',
+      })
+    ).toBe(true);
+    expect(
+      evaosRuntimeRouteDecision('/evaos', {
+        authenticated: true,
+        roles: ['owner'],
+        userEmail: 'owner@example.test',
+      })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'admin_runtime_required' });
+    expect(
+      evaosRuntimeRouteDecision('/connected-apps', {
+        authenticated: true,
+        roles: ['owner'],
+        userEmail: 'owner@example.test',
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 
   it('hides admin-only and deferred runtimes from normal members while preserving assigned workspaces', () => {
@@ -104,6 +137,7 @@ describe('evaosRuntimeVisibility', () => {
     const hiddenTeamKeys = visibleEvaosRuntimeCatalog({
       authenticated: true,
       roles: ['admin'],
+      userEmail: 'admin@100yen.org',
       scopes: ['access_terminal'],
       teamChatEnabled: false,
     }).map((runtime) => runtime.key);
@@ -117,6 +151,7 @@ describe('evaosRuntimeVisibility', () => {
     const visibleTeamKeys = visibleEvaosRuntimeCatalog({
       authenticated: true,
       roles: ['admin'],
+      userEmail: 'admin@100yen.org',
       scopes: ['access_terminal'],
       teamChatEnabled: true,
     }).map((runtime) => runtime.key);

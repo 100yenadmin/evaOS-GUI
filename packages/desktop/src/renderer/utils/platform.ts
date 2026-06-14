@@ -107,7 +107,7 @@ export const openEvaosExternalUrl = async (url: string): Promise<void> => {
   }
 };
 
-const EVAOS_SUPPORT_MAILBOX = 'support@electricsheephq.com';
+export const EVAOS_SUPPORT_MAILBOX = 'support@electricsheephq.com';
 
 export const openEvaosSupportEmail = async (options?: { subject?: string; body?: string }): Promise<void> => {
   const params = new URLSearchParams();
@@ -119,7 +119,7 @@ export const openEvaosSupportEmail = async (options?: { subject?: string; body?:
   try {
     await openEvaosExternalUrl(mailto);
   } catch (error) {
-    console.error('evaOS support link failed; falling back to generic external opener:', error);
-    await openExternalUrl(mailto);
+    console.error('evaOS support link failed:', error);
+    throw error;
   }
 };
