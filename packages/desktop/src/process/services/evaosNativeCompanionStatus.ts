@@ -6,14 +6,20 @@
 
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
+import { hostname } from 'node:os';
 import { promisify } from 'node:util';
 import type {
+  IEvaosNativeCompanionActionRequest,
+  IEvaosNativeCompanionActionResult,
+  IEvaosNativeCompanionAuditEvent,
+  IEvaosNativeCompanionControlMode,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
 } from '@/common/evaos/bridgeTypes';
+import { getDefaultEvaosBrokerSessionClient } from './evaosBrokerSession';
 
 const execFileAsync = promisify(execFileCallback);
 
@@ -44,11 +50,22 @@ export type EvaosNativeCompanionStatusDeps = {
   execFile?: (file: string, args: string[], options: { timeout: number }) => Promise<ExecFileResult>;
   openPath?: (path: string) => Promise<string>;
   openExternal?: (url: string) => Promise<void>;
+  createCustomerMacEnrollment?: (request: {
+    customerId: string;
+    deviceName?: string;
+  }) => Promise<{ customerId: string; pairingCode: string; expiresAt?: string }>;
 };
 
 type BridgePayload = {
   ok?: boolean;
   audit_id?: string;
+  data?: Record<string, unknown>;
+  errors?: Array<Record<string, unknown>>;
+};
+
+type BridgeCommandResult = {
+  ok: boolean;
+  auditId?: string;
   data?: Record<string, unknown>;
   errors?: Array<Record<string, unknown>>;
 };
@@ -73,7 +90,7 @@ export async function getEvaosNativeCompanionStatus(
       schemaVersion: 'evaos.native_companion_status.v1',
       generatedAt,
       readiness: 'repair_required',
-      summaryText: 'Bridge CLI is not installed. Open the released evaOS Workbench fallback to repair Mac pairing.',
+      summaryText: 'Workbench connector tools are not installed. Use setup or support to repair Mac control.',
       sourcePointer: 'native-companion:bridge-cli-missing',
       canOpenReleasedWorkbench: releasedWorkbenchInstalled,
       releasedWorkbench: {
@@ -85,24 +102,29 @@ export async function getEvaosNativeCompanionStatus(
         status: 'missing',
         readOnly: true,
       },
+      connectorService: { status: 'missing' },
       customerMac: { status: 'unavailable' },
       iPhone: { status: 'unavailable' },
+      controlSession: { status: 'unavailable' },
       audit: { status: 'unavailable', auditIds: [] },
     };
   }
 
-  const [bridge, customerMac, iPhone, audit] = await Promise.all([
+  const [bridge, connectorService, customerMac, iPhone, controlSession, audit] = await Promise.all([
     runBridgeCommand(bridgePath, ['status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'iphone-mirroring', 'status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '5'], deps),
   ]);
 
   const bridgePermissions = permissionView(bridge.data?.permissions);
   const customerMacPermissions = permissionView(customerMac.data?.permissions);
   const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgePermissions);
+  const connectorServiceReady = connectorService.ok && connectorServiceIsRunning(connectorService.data);
   const customerMacReady = customerMac.ok && hasGrantedCorePermissions(customerMacPermissions);
-  const readiness = bridgeReady && customerMacReady ? 'ready' : 'repair_required';
+  const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
 
   return {
@@ -127,6 +149,14 @@ export async function getEvaosNativeCompanionStatus(
       permissions: bridgePermissions,
       readOnly: readBoolean(bridge.data?.safety, 'read_only') !== false,
     },
+    connectorService: {
+      status: connectorServiceReady ? 'ready' : connectorService.ok ? 'repair_required' : 'error',
+      running: readBoolean(connectorService.data, 'running'),
+      reachable: readNestedBoolean(connectorService.data, ['health', 'reachable']),
+      managedBy: readString(connectorService.data, 'managed_by'),
+      tailnetIp: readString(connectorService.data, 'tailnet_ip'),
+      permissionTarget: readString(connectorService.data, 'permission_target'),
+    },
     customerMac: {
       status: customerMacReady ? 'ready' : customerMac.ok ? 'repair_required' : 'error',
       auditId: customerMac.auditId,
@@ -142,6 +172,13 @@ export async function getEvaosNativeCompanionStatus(
       installed: readBoolean(iPhone.data, 'installed'),
       running: readBoolean(iPhone.data, 'running'),
       killSwitchAvailable: readBoolean(iPhone.data?.safety, 'kill_switch_available'),
+    },
+    controlSession: {
+      status: controlSession.ok ? 'ready' : 'unavailable',
+      auditId: controlSession.auditId,
+      active: readBoolean(controlSession.data, 'active'),
+      mode: controlModeFromPayload(controlSession.data),
+      killSwitch: readBoolean(controlSession.data, 'kill_switch'),
     },
     audit: {
       status: audit.ok ? 'ready' : 'unavailable',
@@ -193,6 +230,14 @@ function nativeCompanionFixtureStatus(
       },
       readOnly: true,
     },
+    connectorService: {
+      status: 'repair_required',
+      running: fixtureState === 'ready',
+      reachable: fixtureState === 'ready',
+      managedBy: 'fixture',
+      tailnetIp: '100.64.0.10',
+      permissionTarget: 'evaOS Workbench',
+    },
     customerMac: {
       status: 'repair_required',
       auditId: auditIds[2],
@@ -212,6 +257,13 @@ function nativeCompanionFixtureStatus(
       running: false,
       killSwitchAvailable: true,
     },
+    controlSession: {
+      status: 'ready',
+      auditId: `fixture-audit-native-control-${fixtureState}`,
+      active: false,
+      mode: 'ask-permission',
+      killSwitch: false,
+    },
     audit: {
       status: 'ready',
       auditIds,
@@ -225,6 +277,7 @@ function nativeCompanionFixtureStatus(
       readiness: 'ready',
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
       bridgeCli: { ...base.bridgeCli, status: 'ready' },
+      connectorService: { ...base.connectorService, status: 'ready', running: true, reachable: true },
       customerMac: { ...base.customerMac, status: 'ready' },
     };
   }
@@ -265,8 +318,10 @@ function nativeCompanionFixtureStatus(
       readiness: 'unavailable',
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native status source is offline or stale.',
       bridgeCli: { ...base.bridgeCli, status: 'unavailable' },
+      connectorService: { ...base.connectorService, status: 'unavailable', running: false, reachable: false },
       customerMac: { ...base.customerMac, status: 'unavailable' },
       iPhone: { ...base.iPhone, status: 'unavailable', running: false },
+      controlSession: { ...base.controlSession, status: 'unavailable', active: false },
       audit: {
         status: 'unavailable',
         auditIds,
@@ -279,6 +334,163 @@ function nativeCompanionFixtureStatus(
     ...base,
     summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair is required before chat can start.',
   };
+}
+
+async function runCommandAction(
+  action: IEvaosNativeCompanionActionRequest['action'],
+  bridgePath: string,
+  args: string[],
+  deps: EvaosNativeCompanionStatusDeps,
+  options: {
+    successMessage: string;
+    failureMessage: string;
+    includeControl?: boolean;
+  }
+): Promise<IEvaosNativeCompanionActionResult> {
+  const result = await runBridgeCommand(bridgePath, args, deps);
+  return nativeActionResult(
+    action,
+    result.ok ? 'succeeded' : 'repair_required',
+    result.ok ? options.successMessage : options.failureMessage,
+    {
+      sourcePointer: `native-companion:${args.slice(0, 3).join('-')}`,
+      auditId: result.auditId,
+      auditIds: compactStrings([result.auditId]),
+      control: options.includeControl ? controlSummaryFromPayload(result.data) : undefined,
+    }
+  );
+}
+
+async function runSetupCheckAction(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  const [connectorService, customerMac, controlSession, audit] = await Promise.all([
+    runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '12'], deps),
+  ]);
+  const permissions = permissionView(customerMac.data?.permissions);
+  const setup = {
+    connectorReady: connectorService.ok && connectorServiceIsRunning(connectorService.data),
+    macReady: customerMac.ok && hasGrantedCorePermissions(permissions),
+    controlReady: controlSession.ok,
+    iPhoneDeferred: true,
+  };
+  const ready = setup.connectorReady && setup.macReady && setup.controlReady;
+  const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
+  return nativeActionResult(
+    'setup_check',
+    ready ? 'succeeded' : 'repair_required',
+    ready
+      ? 'Mac control setup check passed. evaOS and Hermes can use the paired Workbench connector.'
+      : 'Mac control setup needs repair before evaOS or Hermes can use this Workbench connector.',
+    {
+      sourcePointer: 'native-companion:setup-check',
+      auditId: auditIds[0],
+      auditIds,
+      setup,
+      control: controlSummaryFromPayload(controlSession.data),
+    }
+  );
+}
+
+async function runAuditTailAction(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  const result = await runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '12'], deps);
+  const events = auditEventsFromPayload(result);
+  const auditIds = compactStrings([...events.map((event) => event.id), result.auditId]);
+  return nativeActionResult(
+    'audit_tail',
+    result.ok ? 'succeeded' : 'repair_required',
+    result.ok ? 'Recent Mac control audit records loaded.' : 'Mac control audit records are unavailable.',
+    {
+      sourcePointer: 'native-companion:audit-tail',
+      auditId: auditIds[0],
+      auditIds,
+      events,
+      refreshRecommended: false,
+    }
+  );
+}
+
+async function createPairingPromptAction(
+  request: IEvaosNativeCompanionActionRequest,
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  const customerId = request.customerId?.trim();
+  if (!customerId) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Choose a customer before creating a pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-missing-customer',
+      }
+    );
+  }
+
+  const connector = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  const connectorContext = connectorEnrollmentContext(connector.data);
+  if (!connector.ok || !connectorContext) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Start Mac Access and confirm the secure connector is reachable before creating a pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-connector-not-ready',
+      }
+    );
+  }
+
+  const createEnrollment =
+    deps.createCustomerMacEnrollment ??
+    ((input) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(input));
+  const enrollment = await createEnrollment({
+    customerId,
+    deviceName: hostname() || 'Customer Mac',
+  });
+  const setupPrompt = pairingPromptText({
+    customerId: enrollment.customerId,
+    pairingCode: enrollment.pairingCode,
+    connectorUrl: connectorContext.connectorUrl,
+  });
+
+  return nativeActionResult(
+    'create_pairing_prompt',
+    'succeeded',
+    'Pairing prompt is ready. Paste it into evaOS or OpenClaw to complete the link.',
+    {
+      sourcePointer: 'native-companion:pairing-prompt',
+      pairing: {
+        customerId: enrollment.customerId,
+        pairingCode: enrollment.pairingCode,
+        expiresAt: enrollment.expiresAt,
+        connectorUrl: connectorContext.connectorUrl,
+        setupPrompt,
+      },
+      refreshRecommended: false,
+    }
+  );
+}
+
+async function primeRepairPermission(
+  action: IEvaosNativeCompanionRepairActionRequest['action'],
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<void> {
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? DEFAULT_BRIDGE_PATHS, existsSync);
+  if (!bridgePath) return;
+  if (action === 'accessibility') {
+    await runBridgeCommand(bridgePath, ['permissions', 'prime', '--json', '--permission', 'accessibility'], deps);
+  }
+  if (action === 'screen_recording') {
+    await runBridgeCommand(bridgePath, ['permissions', 'prime', '--json', '--permission', 'screen-recording'], deps);
+  }
 }
 
 export async function openReleasedEvaosWorkbench(
@@ -310,6 +522,86 @@ export async function openReleasedEvaosWorkbench(
   };
 }
 
+export async function runNativeCompanionAction(
+  request: IEvaosNativeCompanionActionRequest,
+  deps: EvaosNativeCompanionStatusDeps = {}
+): Promise<IEvaosNativeCompanionActionResult> {
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? DEFAULT_BRIDGE_PATHS, existsSync);
+  if (!bridgePath) {
+    return nativeActionResult(request.action, 'repair_required', 'Workbench connector tools are not installed.', {
+      sourcePointer: 'native-companion:bridge-cli-missing',
+    });
+  }
+
+  switch (request.action) {
+    case 'connector_start':
+      return runCommandAction(request.action, bridgePath, ['connector-service', 'start', '--json'], deps, {
+        successMessage: 'Mac Access connector started. Run setup check to confirm readiness.',
+        failureMessage: 'Mac Access connector could not start.',
+      });
+    case 'connector_stop':
+      return runCommandAction(request.action, bridgePath, ['connector-service', 'stop', '--json'], deps, {
+        successMessage: 'Mac Access connector stopped.',
+        failureMessage: 'Mac Access connector could not stop.',
+      });
+    case 'setup_check':
+      return runSetupCheckAction(bridgePath, deps);
+    case 'control_status':
+      return runCommandAction(request.action, bridgePath, ['customer-mac', 'control', 'status', '--json'], deps, {
+        successMessage: 'Agent control status refreshed.',
+        failureMessage: 'Agent control status is unavailable.',
+        includeControl: true,
+      });
+    case 'control_start': {
+      const mode = normalizeControlMode(request.mode);
+      return runCommandAction(
+        request.action,
+        bridgePath,
+        [
+          'customer-mac',
+          'control',
+          'start',
+          '--json',
+          '--mode',
+          mode,
+          '--agent-label',
+          safeAgentLabel(request.agentLabel),
+        ],
+        deps,
+        {
+          successMessage:
+            mode === 'ask-permission'
+              ? 'Ask Permission agent control is active.'
+              : 'Full Access agent control is active.',
+          failureMessage: 'Agent control could not start.',
+          includeControl: true,
+        }
+      );
+    }
+    case 'control_stop':
+      return runCommandAction(request.action, bridgePath, ['customer-mac', 'control', 'stop', '--json'], deps, {
+        successMessage: 'Agent control stopped.',
+        failureMessage: 'Agent control could not stop.',
+        includeControl: true,
+      });
+    case 'kill_switch':
+      return runCommandAction(request.action, bridgePath, ['customer-mac', 'control', 'kill-switch', '--json'], deps, {
+        successMessage: 'Kill switch is active. Agents are blocked until a new control session starts.',
+        failureMessage: 'Kill switch could not be activated.',
+        includeControl: true,
+      });
+    case 'audit_tail':
+      return runAuditTailAction(bridgePath, deps);
+    case 'create_pairing_prompt':
+      return createPairingPromptAction(request, bridgePath, deps);
+    default:
+      return nativeActionResult(request.action, 'unsupported', 'Workbench connector action is not supported.', {
+        sourcePointer: 'native-companion:unsupported-action',
+      });
+  }
+}
+
 export async function openNativeCompanionRepairAction(
   request: IEvaosNativeCompanionRepairActionRequest,
   deps: EvaosNativeCompanionStatusDeps = {}
@@ -324,6 +616,7 @@ export async function openNativeCompanionRepairAction(
   }
 
   const target = systemSettingsUrlForRepairAction(request.action);
+  await primeRepairPermission(request.action, deps);
   const openExternal = deps.openExternal ?? defaultOpenExternal;
   await openExternal(target);
   return {
@@ -344,19 +637,48 @@ async function runBridgeCommand(
   bridgePath: string,
   args: string[],
   deps: EvaosNativeCompanionStatusDeps
-): Promise<{ ok: boolean; auditId?: string; data?: Record<string, unknown> }> {
+): Promise<BridgeCommandResult> {
   const execFile = deps.execFile ?? defaultExecFile;
   try {
     const completed = await execFile(bridgePath, args, { timeout: COMMAND_TIMEOUT_MS });
-    const payload = JSON.parse(completed.stdout || '{}') as BridgePayload;
+    return parseBridgeCommandPayload(completed.stdout);
+  } catch (error) {
+    const stdout = readErrorStdout(error);
+    if (stdout) {
+      return parseBridgeCommandPayload(stdout);
+    }
+    return { ok: false };
+  }
+}
+
+function parseBridgeCommandPayload(stdout: string): BridgeCommandResult {
+  try {
+    const payload = JSON.parse(stdout || '{}') as BridgePayload & Record<string, unknown>;
+    const data = payload.data && typeof payload.data === 'object' ? payload.data : payloadDataFromTopLevel(payload);
     return {
       ok: payload.ok === true,
       auditId: typeof payload.audit_id === 'string' ? payload.audit_id : undefined,
-      data: payload.data && typeof payload.data === 'object' ? payload.data : undefined,
+      data,
+      errors: Array.isArray(payload.errors) ? payload.errors : undefined,
     };
   } catch {
     return { ok: false };
   }
+}
+
+function payloadDataFromTopLevel(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  const data = { ...payload };
+  delete data.data;
+  delete data.errors;
+  delete data.audit_id;
+  return Object.keys(data).length > 0 ? data : undefined;
+}
+
+function readErrorStdout(error: unknown): string | undefined {
+  const stdout = error && typeof error === 'object' ? (error as { stdout?: unknown }).stdout : undefined;
+  if (typeof stdout === 'string') return stdout;
+  if (Buffer.isBuffer(stdout)) return stdout.toString('utf8');
+  return undefined;
 }
 
 async function defaultExecFile(file: string, args: string[], options: { timeout: number }): Promise<ExecFileResult> {
@@ -399,8 +721,63 @@ function permissionView(input: unknown): IEvaosNativeCompanionPermissionView | u
   };
 }
 
+function nativeActionResult(
+  action: IEvaosNativeCompanionActionRequest['action'],
+  status: IEvaosNativeCompanionActionResult['status'],
+  message: string,
+  options: Partial<Omit<IEvaosNativeCompanionActionResult, 'action' | 'status' | 'message'>> = {}
+): IEvaosNativeCompanionActionResult {
+  return {
+    action,
+    status,
+    message,
+    sourcePointer: options.sourcePointer ?? 'native-companion:action',
+    auditId: options.auditId,
+    auditIds: options.auditIds ?? [],
+    refreshRecommended: options.refreshRecommended ?? true,
+    setup: options.setup,
+    control: options.control,
+    pairing: options.pairing,
+    events: options.events,
+  };
+}
+
 function hasGrantedCorePermissions(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {
   return permissions?.accessibility === 'granted' && permissions.screenRecording === 'granted';
+}
+
+function connectorServiceIsRunning(input: unknown): boolean {
+  return readBoolean(input, 'running') === true || readNestedBoolean(input, ['health', 'reachable']) === true;
+}
+
+function connectorEnrollmentContext(input: unknown): { connectorUrl: string } | undefined {
+  const tailnetIp = readString(input, 'tailnet_ip');
+  if (!tailnetIp || !connectorServiceIsRunning(input)) return undefined;
+  return {
+    connectorUrl: `http://${tailnetIp}:8765`,
+  };
+}
+
+function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {
+  return mode === 'ask-permission' ? 'ask-permission' : 'full-access';
+}
+
+function safeAgentLabel(label: string | undefined): string {
+  const trimmed = label?.trim().replace(/\s+/g, ' ').slice(0, 80);
+  return trimmed || 'evaOS Workbench';
+}
+
+function controlModeFromPayload(input: unknown): IEvaosNativeCompanionControlMode | undefined {
+  const mode = readString(input, 'mode');
+  return mode === 'ask-permission' || mode === 'full-access' ? mode : undefined;
+}
+
+function controlSummaryFromPayload(input: unknown): IEvaosNativeCompanionActionResult['control'] {
+  return {
+    active: readBoolean(input, 'active'),
+    mode: controlModeFromPayload(input),
+    killSwitch: readBoolean(input, 'kill_switch'),
+  };
 }
 
 function screenSharingSummary(input: unknown): string | undefined {
@@ -415,14 +792,88 @@ function auditIdsFromPayload(payload: { data?: Record<string, unknown> }): strin
   const records = payload.data?.records;
   if (!Array.isArray(records)) return [];
   return records
-    .map((record) => (record && typeof record === 'object' ? (record as Record<string, unknown>).audit_id : undefined))
+    .map((record) =>
+      record && typeof record === 'object'
+        ? ((record as Record<string, unknown>).audit_id ?? (record as Record<string, unknown>).id)
+        : undefined
+    )
     .filter((auditId): auditId is string => typeof auditId === 'string' && auditId.trim().length > 0);
+}
+
+function auditEventsFromPayload(payload: BridgeCommandResult): IEvaosNativeCompanionAuditEvent[] {
+  const records = payload.data?.records;
+  if (!Array.isArray(records)) return [];
+  return records
+    .map((record) => {
+      if (!record || typeof record !== 'object') return undefined;
+      const item = record as Record<string, unknown>;
+      const id = readString(item, 'audit_id') ?? readString(item, 'id');
+      if (!id) return undefined;
+      const createdAt = readString(item, 'created_at') ?? readString(item, 'timestamp');
+      const event: IEvaosNativeCompanionAuditEvent = {
+        id,
+        action: readString(item, 'command') ?? readString(item, 'action') ?? 'mac_control',
+        outcome: readBoolean(item, 'ok') === false ? 'failed' : (readString(item, 'outcome') ?? 'recorded'),
+      };
+      if (createdAt) {
+        event.createdAt = createdAt;
+      }
+      return event;
+    })
+    .filter((event): event is IEvaosNativeCompanionAuditEvent => Boolean(event));
+}
+
+function pairingPromptText(input: { customerId: string; pairingCode: string; connectorUrl: string }): string {
+  return [
+    'Finish my evaOS Workbench Mac pairing.',
+    '',
+    `Customer: ${input.customerId}`,
+    `Pairing code: ${input.pairingCode}`,
+    `Mac connector URL: ${input.connectorUrl}`,
+    '',
+    'From my evaOS VM, complete pairing with the customer_mac_complete_pairing tool.',
+    'Use exactly:',
+    `- connector_url: ${input.connectorUrl}`,
+    `- enrollment_code: ${input.pairingCode}`,
+    `- customer_id: ${input.customerId}`,
+    '',
+    'Do not ask me for hidden connector values. Workbench sends those directly through evaOS.',
+    '',
+    'Success criteria:',
+    '1. customer_mac_complete_pairing returns ok=true.',
+    '2. customer_mac_status reports the Mac connector and permissions state.',
+    '3. desktop_control_status reports whether Full Access or Ask Permission is active.',
+    '4. desktop_bridge_audit_tail shows pairing evidence without private material.',
+    '',
+    'Do not perform live Mac actions until I start Agent Control in Workbench.',
+  ].join('\n');
+}
+
+function compactStrings(values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))
+  );
 }
 
 function readBoolean(input: unknown, key: string): boolean | undefined {
   if (!input || typeof input !== 'object') return undefined;
   const value = (input as Record<string, unknown>)[key];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function readNestedBoolean(input: unknown, path: string[]): boolean | undefined {
+  let current = input;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'boolean' ? current : undefined;
+}
+
+function readString(input: unknown, key: string): string | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = (input as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function readNestedString(input: unknown, path: string[]): string | undefined {

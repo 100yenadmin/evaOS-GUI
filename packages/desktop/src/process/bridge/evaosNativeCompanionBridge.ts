@@ -6,6 +6,8 @@
 
 import { ipcBridge } from '@/common';
 import type {
+  IEvaosNativeCompanionActionRequest,
+  IEvaosNativeCompanionActionResult,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
@@ -15,6 +17,7 @@ import {
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
+  runNativeCompanionAction,
 } from '@process/services/evaosNativeCompanionStatus';
 import { evaosBrokerErrorMessage } from '@process/services/evaosBrokerSession';
 import { assertEvaosRendererSafePayload } from './evaosRendererSecretGuard';
@@ -41,6 +44,11 @@ export function initEvaosNativeCompanionBridge(): void {
       request: IEvaosNativeCompanionRepairActionRequest
     ): Promise<BridgeResponse<IEvaosNativeCompanionRepairActionResult>> =>
       toBridgeResponse(() => openNativeCompanionRepairAction(request))
+  );
+
+  ipcBridge.evaosNativeCompanion.runAction.provider(
+    async (request: IEvaosNativeCompanionActionRequest): Promise<BridgeResponse<IEvaosNativeCompanionActionResult>> =>
+      toBridgeResponse(() => runNativeCompanionAction(request))
   );
 }
 

@@ -80,6 +80,8 @@ import {
 
 export const EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT =
   'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session';
+export const EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT =
+  'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/customer-mac-control';
 
 const PROVIDER_CONNECTION_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 type EvaosBusinessBrowserActionKind = 'runtime_launch' | 'browser_open_url' | 'browser_stop';
@@ -180,6 +182,7 @@ export interface EvaosBusinessBrowserActionOptions {
 
 export interface EvaosBrokerSessionClientOptions {
   endpoint?: string;
+  customerMacControlEndpoint?: string;
   fetchImpl?: EvaosBrokerFetch;
   env?: Record<string, string | undefined>;
   legacyWorkbenchSessionLoader?: () => EvaosDesktopSession | null;
@@ -198,6 +201,7 @@ let defaultClient: EvaosBrokerSessionClient | null = null;
 
 export class EvaosBrokerSessionClient {
   private readonly endpoint: string;
+  private readonly customerMacControlEndpoint: string;
   private readonly fetchImpl: EvaosBrokerFetch;
   private readonly now: () => Date;
   private readonly sessionStore: EvaosDesktopSessionStore | null;
@@ -208,6 +212,9 @@ export class EvaosBrokerSessionClient {
 
   constructor(options: EvaosBrokerSessionClientOptions = {}) {
     this.endpoint = normalizeEndpoint(options.endpoint ?? process.env.AIONUI_EVAOS_BROKER_ENDPOINT);
+    this.customerMacControlEndpoint = normalizeCustomerMacControlEndpoint(
+      options.customerMacControlEndpoint ?? process.env.AIONUI_EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT
+    );
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
     const env = options.env ?? process.env;
@@ -710,6 +717,29 @@ export class EvaosBrokerSessionClient {
     return sanitizeProviderApprovalRequestResult(raw, { customerId, providerKey, requestedAction, policy });
   }
 
+  async createCustomerMacEnrollment(request: {
+    customerId: string;
+    deviceName?: string;
+  }): Promise<{ customerId: string; pairingCode: string; expiresAt?: string }> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before creating a Mac pairing prompt.'
+    );
+    const session = this.requireActiveSession('Sign in to evaOS before pairing this Mac.');
+    const raw = await this.postJsonToEndpoint(
+      this.customerMacControlEndpoint,
+      {
+        action: 'create_enrollment',
+        customer_id: customerId,
+        device_name: safeText(request.deviceName) ?? 'Customer Mac',
+        screen_sharing_opt_in: false,
+      },
+      session
+    );
+    return sanitizeCustomerMacEnrollment(raw, customerId);
+  }
+
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
     const session = this.session;
     this.session = null;
@@ -810,6 +840,14 @@ export class EvaosBrokerSessionClient {
   }
 
   private async postJson(body: Record<string, unknown>, session?: EvaosDesktopSession): Promise<unknown> {
+    return this.postJsonToEndpoint(this.endpoint, body, session);
+  }
+
+  private async postJsonToEndpoint(
+    endpoint: string,
+    body: Record<string, unknown>,
+    session?: EvaosDesktopSession
+  ): Promise<unknown> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
@@ -820,7 +858,7 @@ export class EvaosBrokerSessionClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(this.endpoint, {
+      response = await this.fetchImpl(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -975,6 +1013,31 @@ export function isEvaosBrokerSessionError(error: unknown): error is EvaosBrokerS
 function normalizeEndpoint(endpoint: string | undefined): string {
   const trimmed = endpoint?.trim();
   return trimmed || EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT;
+}
+
+function normalizeCustomerMacControlEndpoint(endpoint: string | undefined): string {
+  const trimmed = endpoint?.trim();
+  return trimmed || EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT;
+}
+
+function sanitizeCustomerMacEnrollment(
+  raw: unknown,
+  fallbackCustomerId: string
+): { customerId: string; pairingCode: string; expiresAt?: string } {
+  const response = asRecord(raw);
+  const customerId = safeText(response?.customer_id) ?? fallbackCustomerId;
+  const pairingCode = safeText(response?.enrollment_code);
+  if (!pairingCode) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return a usable Mac pairing code.'
+    );
+  }
+  return stripUndefined({
+    customerId,
+    pairingCode,
+    expiresAt: safeIsoDate(response?.enrollment_expires_at),
+  });
 }
 
 function normalizeDeviceCode(value: string): string {

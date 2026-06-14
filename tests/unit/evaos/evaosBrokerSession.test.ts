@@ -26,6 +26,7 @@ const electronMock = vi.hoisted(() => ({
 vi.mock('electron', () => electronMock);
 
 import {
+  EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT,
   EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT,
   EvaosBrokerSessionClient,
   EvaosBrokerSessionError,
@@ -455,6 +456,48 @@ describe('EvaosBrokerSessionClient', () => {
     expect(targets.selectedCustomerId).toBe('real-admin-customer');
     expect(JSON.stringify(status)).not.toContain('eds_callback_session_secret_for_test');
     expect(JSON.stringify(targets)).not.toContain('eds_callback_session_secret_for_test');
+  });
+
+  it('creates Mac pairing enrollment through the customer-mac-control endpoint with desktop session auth', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        customer_id: 'golden',
+        enrollment_code: 'PAIR-1234',
+        enrollment_expires_at: FUTURE,
+      })
+    );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}&email=admin%40100yen.org`
+    );
+    const result = await client.createCustomerMacEnrollment({
+      customerId: 'golden',
+      deviceName: 'Proof Mac',
+    });
+
+    expect(result).toEqual({
+      customerId: 'golden',
+      pairingCode: 'PAIR-1234',
+      expiresAt: FUTURE,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe(EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT);
+    expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBe('Bearer eds_callback_session_secret_for_test');
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'create_enrollment',
+      customer_id: 'golden',
+      device_name: 'Proof Mac',
+      screen_sharing_opt_in: false,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
   });
 
   it('rejects released Workbench loopback callback paths for the evaOS beta session importer', async () => {

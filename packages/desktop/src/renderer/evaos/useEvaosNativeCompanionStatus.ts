@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ipcBridge } from '@/common';
 import type {
+  IEvaosNativeCompanionActionRequest,
+  IEvaosNativeCompanionActionResult,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairAction,
   IEvaosNativeCompanionRepairActionResult,
@@ -20,6 +22,7 @@ interface EvaosNativeCompanionStatusState {
   refresh: () => Promise<void>;
   openReleasedWorkbench: () => Promise<IEvaosNativeCompanionOpenResult>;
   openRepairAction: (action: IEvaosNativeCompanionRepairAction) => Promise<IEvaosNativeCompanionRepairActionResult>;
+  runAction: (request: IEvaosNativeCompanionActionRequest) => Promise<IEvaosNativeCompanionActionResult>;
 }
 
 export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompanionStatusState {
@@ -75,6 +78,24 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
     return response.data;
   }, []);
 
+  const runAction = useCallback(
+    async (request: IEvaosNativeCompanionActionRequest): Promise<IEvaosNativeCompanionActionResult> => {
+      const response = await ipcBridge.evaosNativeCompanion.runAction.invoke(request);
+      if (!response.success || !response.data) {
+        return {
+          action: request.action,
+          status: 'failed',
+          message: response.msg || 'Workbench connector action failed safely.',
+          sourcePointer: 'native-companion:action-failed',
+          auditIds: [],
+          refreshRecommended: true,
+        };
+      }
+      return response.data;
+    },
+    []
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -86,5 +107,6 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
     refresh,
     openReleasedWorkbench,
     openRepairAction,
+    runAction,
   };
 }

@@ -15,6 +15,7 @@ const bridgeMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   openReleasedWorkbench: vi.fn(),
   openRepairAction: vi.fn(),
+  runAction: vi.fn(),
 }));
 
 const supportEmailMock = vi.hoisted(() => ({
@@ -33,8 +34,22 @@ vi.mock('@/common', () => ({
       openRepairAction: {
         invoke: bridgeMocks.openRepairAction,
       },
+      runAction: {
+        invoke: bridgeMocks.runAction,
+      },
     },
   },
+}));
+
+vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
+  useEvaosBrokeredCustomerContext: () => ({
+    customerContext: {
+      selectedCustomerId: 'benjamin-kennedy',
+      selectedTarget: { displayName: 'Benjamin Kennedy' },
+      loading: false,
+      loaded: true,
+    },
+  }),
 }));
 
 vi.mock('@renderer/hooks/context/LayoutContext', () => ({
@@ -282,5 +297,118 @@ describe('NativeCompanionPage', () => {
     expect(payload.body).toContain('State: permission_needed');
     expect(payload.body).toContain('Summary: Screen Recording permission is required before repair can continue.');
     expect(JSON.stringify(payload)).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
+  });
+
+  it('runs Workbench connector actions and renders a safe pairing prompt', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        readiness: 'repair_required',
+        summaryText: 'Mac control setup needs repair.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'repair_required',
+          auditId: 'audit-bridge',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+          tailnetIp: '100.64.0.10',
+        },
+        customerMac: {
+          status: 'repair_required',
+          auditId: 'audit-mac',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'ready',
+          auditId: 'audit-control',
+          active: false,
+          mode: 'ask-permission',
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac', 'audit-control'],
+        },
+      },
+    });
+    bridgeMocks.runAction
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'setup_check',
+          status: 'repair_required',
+          message: 'Mac control setup needs repair before evaOS or Hermes can use this Workbench connector.',
+          sourcePointer: 'native-companion:setup-check',
+          auditIds: ['audit-mac', 'audit-control'],
+          refreshRecommended: false,
+          setup: {
+            connectorReady: true,
+            macReady: false,
+            controlReady: true,
+            iPhoneDeferred: true,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready. Paste it into evaOS or OpenClaw to complete the link.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: [],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'benjamin-kennedy',
+            pairingCode: 'PAIR-1234',
+            connectorUrl: 'http://100.64.0.10:8765',
+            setupPrompt:
+              'Finish my evaOS Workbench Mac pairing.\nCustomer: benjamin-kennedy\nPairing code: PAIR-1234\nMac connector URL: http://100.64.0.10:8765',
+          },
+        },
+      });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    await user.click(await screen.findByRole('button', { name: 'Run Setup Check' }));
+    expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent('repair_required');
+    expect(screen.getByText('Connector:')).toBeInTheDocument();
+    expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+      action: 'setup_check',
+      customerId: 'benjamin-kennedy',
+      agentLabel: 'evaOS Workbench',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
+    expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+    expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+      action: 'create_pairing_prompt',
+      customerId: 'benjamin-kennedy',
+      agentLabel: 'evaOS Workbench',
+    });
   });
 });
