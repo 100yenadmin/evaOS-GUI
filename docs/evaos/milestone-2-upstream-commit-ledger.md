@@ -2,7 +2,7 @@
 
 This ledger covers the raw upstream range `iOfficeAI/AionUi v2.1.12..v2.1.18` for the evaOS Workbench fork.
 
-Current evaOS anchor: `evaos/beta-rc-20260612@9c11cb275cbc1a74c19b0ba4fcbb79140809e24a`.
+Current evaOS anchor: `evaos/beta-rc-20260612@f27df7c022a98801c84abb98b0d734301b3b32db`.
 
 Provenance:
 
