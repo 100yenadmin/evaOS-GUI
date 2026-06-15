@@ -121,7 +121,7 @@ function summaryForState(state: NativeCompanionUserState, loading: boolean): str
   if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
   switch (state) {
     case 'ready':
-      return 'Workbench connector proof is ready. evaOS and Hermes can use approved Mac control when local readiness allows it.';
+      return 'Local Workbench connector proof is ready. Pair evaOS/OpenClaw or Hermes with a scoped prompt before an agent uses Mac control.';
     case 'not_paired':
       return 'This Mac must be paired again before evaOS or Hermes chat can use Mac control.';
     case 'permission_needed':
@@ -159,9 +159,14 @@ function readinessStripForState(
     },
     {
       label: 'Pairing',
-      value: state === 'not_paired' ? 'Pair this Mac' : state === 'ready' ? 'Ready' : 'Repair needed',
-      tone: state === 'ready' ? 'ready' : state === 'offline' || state === 'unsupported' ? 'offline' : 'attention',
-      help: 'Mac pairing is handled by the Workbench connector.',
+      value: state === 'not_paired' ? 'Pair this Mac' : state === 'ready' ? 'Prompt required' : 'Repair needed',
+      tone:
+        state === 'ready' || state === 'not_paired'
+          ? 'attention'
+          : state === 'offline' || state === 'unsupported'
+            ? 'offline'
+            : 'attention',
+      help: 'Workbench creates a scoped prompt/code for the agent; the VM must connect through the broker-owned plugin.',
     },
     {
       label: 'Permissions',
@@ -200,9 +205,9 @@ function repairStepsForState(
       state: permissionsTone(status, state, false),
     },
     {
-      title: 'Pair this Mac to evaOS',
+      title: 'Pair the agent to this Mac',
       detail: pairingStepDetail(state),
-      state: state === 'ready' ? 'ready' : state === 'not_paired' ? 'attention' : 'neutral',
+      state: state === 'ready' || state === 'not_paired' ? 'attention' : 'neutral',
     },
     {
       title: 'iPhone Mirroring',
@@ -295,7 +300,7 @@ function connectorStepDetail(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   state: NativeCompanionUserState
 ): string {
-  if (state === 'ready') return 'Workbench connector is reporting ready.';
+  if (state === 'ready') return 'Workbench connector is reporting ready locally.';
   if (!status?.bridgeCli.installed) return 'Set up Mac control so the connector can report status.';
   return 'Use the repair workflow to restart or repair the secure local connector.';
 }
@@ -312,11 +317,13 @@ function permissionsStepDetail(
 }
 
 function pairingStepDetail(state: NativeCompanionUserState): string {
-  if (state === 'ready') return 'This Mac is paired for Workbench connector use.';
-  if (state === 'not_paired') {
-    return 'Pairing and trust claims stay inside the Workbench connector. This shell only opens the repair workflow.';
+  if (state === 'ready') {
+    return 'Create a scoped pairing prompt for evaOS/OpenClaw or Hermes; do not expose public Mac, VNC, SSH, or browser debug ports.';
   }
-  return 'Confirm Mac pairing after connector and permission repair.';
+  if (state === 'not_paired') {
+    return 'Pairing and trust claims stay inside Workbench. The agent must use the broker-owned connector plugin with the prompt/code.';
+  }
+  return 'After connector and permission repair, create a scoped agent pairing prompt.';
 }
 
 function permissionsNeedRepair(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {

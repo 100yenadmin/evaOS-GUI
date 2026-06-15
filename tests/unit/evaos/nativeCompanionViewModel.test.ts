@@ -149,4 +149,27 @@ describe('nativeCompanionViewModel', () => {
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );
   });
+
+  it('does not overclaim agent pairing when local Mac control is ready', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        summaryText: 'Workbench connector ready.',
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+    });
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
+    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
+
+    expect(viewModel.summary).toContain('Pair evaOS/OpenClaw or Hermes with a scoped prompt');
+    expect(pairing).toMatchObject({
+      value: 'Prompt required',
+      tone: 'attention',
+    });
+    expect(pairing?.help).toContain('broker-owned plugin');
+    expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
+  });
 });
