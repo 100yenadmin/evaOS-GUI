@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { hostname } from 'node:os';
 import {
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
@@ -14,6 +15,7 @@ import {
 } from '@/process/services/evaosNativeCompanionStatus';
 
 const json = (payload: unknown) => JSON.stringify(payload);
+const deviceName = hostname() || 'Customer Mac';
 
 function depsWithResponses(
   responses: Record<string, unknown>,
@@ -293,6 +295,12 @@ describe('evaosNativeCompanionStatus', () => {
           health: { reachable: true },
           tailnet_ip: '100.64.0.10',
         },
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+          {
+            ok: true,
+            audit_id: 'audit-pairing',
+            connector_registered: true,
+          },
       },
       {
         createCustomerMacEnrollment: vi.fn(async () => ({
@@ -308,10 +316,15 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result.status).toBe('succeeded');
     expect(result.pairing).toMatchObject({
       customerId: 'golden',
-      connectorUrl: 'http://100.64.0.10:8765',
+      pairingCode: 'PAIR-1234',
     });
     expect(result.pairing?.setupPrompt).toContain('customer_mac_complete_pairing');
-    expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+    expect(result.pairing?.setupPrompt).not.toMatch(
+      /connector_url|100\.64\.0\.10|8765|Bearer|secret-token|access_token|refresh_token/i
+    );
+    expect(JSON.stringify(result)).not.toMatch(
+      /Bearer|desktop_session|provider_grant|access_token|refresh_token|connectorUrl|secret-token/i
+    );
   });
 
   it('opens only the released Workbench fallback path', async () => {

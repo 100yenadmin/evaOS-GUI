@@ -272,7 +272,6 @@ export interface IEvaosNativeCompanionPairingPrompt {
   customerId: string;
   pairingCode: string;
   expiresAt?: string;
-  connectorUrl: string;
   setupPrompt: string;
 }
 

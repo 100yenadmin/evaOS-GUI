@@ -387,9 +387,8 @@ describe('NativeCompanionPage', () => {
           pairing: {
             customerId: 'benjamin-kennedy',
             pairingCode: 'PAIR-1234',
-            connectorUrl: 'http://100.64.0.10:8765',
             setupPrompt:
-              'Finish my evaOS Workbench Mac pairing.\nCustomer: benjamin-kennedy\nPairing code: PAIR-1234\nMac connector URL: http://100.64.0.10:8765',
+              'Please pair my Mac to my evaOS/OpenClaw or Hermes agent.\nCustomer: benjamin-kennedy\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with this code.',
           },
         },
       });
@@ -413,7 +412,9 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getAllByRole('button', { name: 'Create Pairing Prompt' })[0]);
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+    expect(document.body.textContent).not.toMatch(
+      /Bearer|desktop_session|provider_grant|access_token|refresh_token|connector_url|100\.64\.0\.10|8765|secret-token/i
+    );
     expect(bridgeMocks.runAction).toHaveBeenCalledWith({
       action: 'create_pairing_prompt',
       customerId: 'benjamin-kennedy',
@@ -486,7 +487,6 @@ describe('NativeCompanionPage', () => {
         pairing: {
           customerId: 'benjamin-kennedy',
           pairingCode: 'PAIR-1234',
-          connectorUrl: 'http://100.64.0.10:8765',
           setupPrompt: 'Finish my evaOS Workbench Mac pairing.\nCustomer: benjamin-kennedy\nPairing code: PAIR-1234',
         },
       },
