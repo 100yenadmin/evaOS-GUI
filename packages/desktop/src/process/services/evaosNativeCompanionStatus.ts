@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import type {
   IEvaosNativeCompanionActionRequest,
   IEvaosNativeCompanionActionResult,
+  IEvaosNativeCompanionAgentPairingStatus,
   IEvaosNativeCompanionAuditEvent,
   IEvaosNativeCompanionControlMode,
   IEvaosNativeCompanionOpenResult,
@@ -90,6 +91,7 @@ export async function getEvaosNativeCompanionStatus(
       schemaVersion: 'evaos.native_companion_status.v1',
       generatedAt,
       readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
       summaryText: 'Workbench connector tools are not installed. Use setup or support to repair Mac control.',
       sourcePointer: 'native-companion:bridge-cli-missing',
       canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -126,15 +128,19 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady = customerMac.ok && hasGrantedCorePermissions(customerMacPermissions);
   const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
+  const agentPairingStatus = agentPairingStatusFromStatus(readiness, controlSession.data);
 
   return {
     schemaVersion: 'evaos.native_companion_status.v1',
     generatedAt,
     readiness,
+    agentPairingStatus,
     summaryText:
       readiness === 'ready'
-        ? 'Native companion ready from read-only bridge proof.'
-        : 'Native companion repair is required before evaOS or Hermes can use Mac control.',
+        ? agentPairingStatus === 'agent_paired'
+          ? 'Workbench connector ready with agent pairing proof.'
+          : 'Workbench connector ready for code-only agent pairing.'
+        : 'Workbench connector repair is required before evaOS or Hermes can use Mac control.',
     sourcePointer: 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
     releasedWorkbench: {
@@ -209,6 +215,7 @@ function nativeCompanionFixtureStatus(
     schemaVersion: 'evaos.native_companion_status.v1',
     generatedAt,
     readiness: 'repair_required',
+    agentPairingStatus: 'not_ready',
     summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair state fixture.',
     sourcePointer: `local-fixture:native-companion:${fixtureState}`,
     canOpenReleasedWorkbench: true,
@@ -275,6 +282,7 @@ function nativeCompanionFixtureStatus(
     return {
       ...base,
       readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
       bridgeCli: { ...base.bridgeCli, status: 'ready' },
       connectorService: { ...base.connectorService, status: 'ready', running: true, reachable: true },
@@ -380,6 +388,7 @@ async function runSetupCheckAction(
   };
   const ready = setup.connectorReady && setup.macReady && setup.controlReady;
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
+  const agentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession.data) : 'not_ready';
   return nativeActionResult(
     'setup_check',
     ready ? 'succeeded' : 'repair_required',
@@ -392,6 +401,7 @@ async function runSetupCheckAction(
       auditIds,
       setup,
       control: controlSummaryFromPayload(controlSession.data),
+      agentPairingStatus,
     }
   );
 }
@@ -498,6 +508,7 @@ async function createPairingPromptAction(
         expiresAt: enrollment.expiresAt,
         setupPrompt,
       },
+      agentPairingStatus: 'pairing_prompt_created',
       refreshRecommended: false,
     }
   );
@@ -763,6 +774,7 @@ function nativeActionResult(
     setup: options.setup,
     control: options.control,
     pairing: options.pairing,
+    agentPairingStatus: options.agentPairingStatus,
     events: options.events,
   };
 }
@@ -787,6 +799,30 @@ function safeAgentLabel(label: string | undefined): string {
 function controlModeFromPayload(input: unknown): IEvaosNativeCompanionControlMode | undefined {
   const mode = readString(input, 'mode');
   return mode === 'ask-permission' || mode === 'full-access' ? mode : undefined;
+}
+
+function agentPairingStatusFromStatus(
+  readiness: IEvaosNativeCompanionStatusView['readiness'],
+  controlSession: unknown
+): IEvaosNativeCompanionAgentPairingStatus {
+  if (readiness !== 'ready') return 'not_ready';
+  const explicit =
+    readString(controlSession, 'agent_pairing_status') ?? readString(controlSession, 'agentPairingStatus');
+  if (isAgentPairingStatus(explicit)) return explicit;
+  if (readBoolean(controlSession, 'agent_paired') === true || readBoolean(controlSession, 'agentPaired') === true) {
+    return 'agent_paired';
+  }
+  return 'ready_for_agent_pairing';
+}
+
+function isAgentPairingStatus(value: string | undefined): value is IEvaosNativeCompanionAgentPairingStatus {
+  return (
+    value === 'not_ready' ||
+    value === 'ready_for_agent_pairing' ||
+    value === 'pairing_prompt_created' ||
+    value === 'agent_paired' ||
+    value === 'proof_failed'
+  );
 }
 
 function controlSummaryFromPayload(input: unknown): IEvaosNativeCompanionActionResult['control'] {

@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IEvaosNativeCompanionPermissionView, IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
+import type {
+  IEvaosNativeCompanionAgentPairingStatus,
+  IEvaosNativeCompanionPermissionView,
+  IEvaosNativeCompanionStatusView,
+} from '@/common/evaos/bridgeTypes';
 
 export type NativeCompanionUserState =
   | 'ready'
@@ -121,7 +125,7 @@ function summaryForState(state: NativeCompanionUserState, loading: boolean): str
   if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
   switch (state) {
     case 'ready':
-      return 'Local Workbench connector proof is ready. Pair evaOS/OpenClaw or Hermes with a scoped prompt before an agent uses Mac control.';
+      return 'Local Workbench connector proof is ready. Pair evaOS/OpenClaw or Hermes with a scoped prompt before an agent uses Mac control. Agent pairing proof is present only after setup/audit evidence confirms it.';
     case 'not_paired':
       return 'This Mac must be paired again before evaOS or Hermes chat can use Mac control.';
     case 'permission_needed':
@@ -159,13 +163,8 @@ function readinessStripForState(
     },
     {
       label: 'Pairing',
-      value: state === 'not_paired' ? 'Pair this Mac' : state === 'ready' ? 'Prompt required' : 'Repair needed',
-      tone:
-        state === 'ready' || state === 'not_paired'
-          ? 'attention'
-          : state === 'offline' || state === 'unsupported'
-            ? 'offline'
-            : 'attention',
+      value: pairingValue(status, state),
+      tone: pairingTone(status, state),
       help: 'Workbench creates a scoped prompt/code for the agent; the VM must connect through the broker-owned plugin.',
     },
     {
@@ -206,8 +205,8 @@ function repairStepsForState(
     },
     {
       title: 'Pair the agent to this Mac',
-      detail: pairingStepDetail(state),
-      state: state === 'ready' || state === 'not_paired' ? 'attention' : 'neutral',
+      detail: pairingStepDetail(status, state),
+      state: state === 'ready' || state === 'not_paired' ? pairingTone(status, state) : 'neutral',
     },
     {
       title: 'iPhone Mirroring',
@@ -316,7 +315,16 @@ function permissionsStepDetail(
   return 'Permission proof looks present; continue with pairing and setup check.';
 }
 
-function pairingStepDetail(state: NativeCompanionUserState): string {
+function pairingStepDetail(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  state: NativeCompanionUserState
+): string {
+  if (state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired') {
+    return 'Agent pairing proof is present. Continue with evaOS/OpenClaw and Hermes live proof through the shared Workbench connector.';
+  }
+  if (state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'pairing_prompt_created') {
+    return 'Prompt created. Paste it into evaOS/OpenClaw or Hermes, then run the setup check to confirm agent proof.';
+  }
   if (state === 'ready') {
     return 'Create a scoped pairing prompt for evaOS/OpenClaw or Hermes; do not expose public Mac, VNC, SSH, or browser debug ports.';
   }
@@ -324,6 +332,40 @@ function pairingStepDetail(state: NativeCompanionUserState): string {
     return 'Pairing and trust claims stay inside Workbench. The agent must use the broker-owned connector plugin with the prompt/code.';
   }
   return 'After connector and permission repair, create a scoped agent pairing prompt.';
+}
+
+function pairingValue(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  state: NativeCompanionUserState
+): string {
+  if (state === 'not_paired') return 'Pair this Mac';
+  if (state !== 'ready') return state === 'offline' || state === 'unsupported' ? 'Unavailable' : 'Repair needed';
+  switch (normalizeAgentPairingStatus(status?.agentPairingStatus)) {
+    case 'agent_paired':
+      return 'Agent paired';
+    case 'pairing_prompt_created':
+      return 'Prompt created';
+    case 'proof_failed':
+      return 'Proof failed';
+    case 'ready_for_agent_pairing':
+    case 'not_ready':
+      return 'Ready to pair';
+  }
+}
+
+function pairingTone(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  state: NativeCompanionUserState
+): NativeCompanionTone {
+  if (state === 'offline' || state === 'unsupported') return 'offline';
+  if (state !== 'ready') return 'attention';
+  return normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired' ? 'ready' : 'attention';
+}
+
+function normalizeAgentPairingStatus(
+  status: IEvaosNativeCompanionAgentPairingStatus | undefined
+): IEvaosNativeCompanionAgentPairingStatus {
+  return status ?? 'ready_for_agent_pairing';
 }
 
 function permissionsNeedRepair(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {

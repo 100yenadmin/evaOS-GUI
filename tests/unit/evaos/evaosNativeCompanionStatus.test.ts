@@ -177,6 +177,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(status).toMatchObject({
       schemaVersion: 'evaos.native_companion_status.v1',
       readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
       generatedAt: '2026-06-07T03:45:00.000Z',
       bridgeCli: {
         installed: true,
@@ -274,6 +275,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result).toMatchObject({
       action: 'setup_check',
       status: 'succeeded',
+      agentPairingStatus: 'ready_for_agent_pairing',
       sourcePointer: 'native-companion:setup-check',
       auditIds: ['audit-mac', 'audit-control'],
       setup: {
@@ -284,6 +286,55 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+  });
+
+  it('marks setup check as agent paired only when control status carries explicit proof', async () => {
+    const deps = depsWithResponses({
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: true,
+          mode: 'full-access',
+          kill_switch: false,
+          agent_pairing_status: 'agent_paired',
+        },
+      },
+      'audit-tail --json --limit 12': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-control' }],
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'setup_check' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'succeeded',
+      agentPairingStatus: 'agent_paired',
+      control: {
+        active: true,
+        mode: 'full-access',
+        killSwitch: false,
+      },
+    });
   });
 
   it('creates a renderer-safe pairing prompt without exposing connector private material', async () => {
@@ -314,6 +365,7 @@ describe('evaosNativeCompanionStatus', () => {
     const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
 
     expect(result.status).toBe('succeeded');
+    expect(result.agentPairingStatus).toBe('pairing_prompt_created');
     expect(result.pairing).toMatchObject({
       customerId: 'golden',
       pairingCode: 'PAIR-1234',

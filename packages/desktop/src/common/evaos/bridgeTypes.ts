@@ -147,6 +147,12 @@ export interface IEvaosRuntimeActionResult {
 }
 
 export type IEvaosNativeCompanionReadiness = 'ready' | 'repair_required' | 'unavailable';
+export type IEvaosNativeCompanionAgentPairingStatus =
+  | 'not_ready'
+  | 'ready_for_agent_pairing'
+  | 'pairing_prompt_created'
+  | 'agent_paired'
+  | 'proof_failed';
 export type IEvaosNativeCompanionStatusValue =
   | 'ready'
   | 'available'
@@ -164,6 +170,7 @@ export interface IEvaosNativeCompanionStatusView {
   schemaVersion: 'evaos.native_companion_status.v1';
   generatedAt: string;
   readiness: IEvaosNativeCompanionReadiness;
+  agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   summaryText: string;
   sourcePointer: string;
   canOpenReleasedWorkbench: boolean;
@@ -299,6 +306,7 @@ export interface IEvaosNativeCompanionActionResult {
   setup?: IEvaosNativeCompanionSetupSummary;
   control?: IEvaosNativeCompanionControlSummary;
   pairing?: IEvaosNativeCompanionPairingPrompt;
+  agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   events?: IEvaosNativeCompanionAuditEvent[];
 }
 
