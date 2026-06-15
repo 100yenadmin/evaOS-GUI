@@ -44,12 +44,20 @@ const NativeCompanionPage: React.FC = () => {
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
     useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [connectorActionsOpen, setConnectorActionsOpen] = React.useState(false);
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);
   const [actionResult, setActionResult] = React.useState<IEvaosNativeCompanionActionResult | null>(null);
   const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const viewModel = getNativeCompanionRepairViewModel({ status, loading, error });
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
+  const pairingPromptCreated = Boolean(actionResult?.pairing?.setupPrompt);
+  const guidedAction = getGuidedAction(
+    status,
+    viewModel.state,
+    Boolean(customerContext.selectedCustomerId),
+    pairingPromptCreated
+  );
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
@@ -184,9 +192,10 @@ const NativeCompanionPage: React.FC = () => {
           <div className='mt-14px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-12px'>
             <div className='flex flex-wrap items-start justify-between gap-10px'>
               <div className='min-w-0'>
-                <h3 className='m-0 text-14px font-semibold leading-20px text-t-primary'>Workbench connector actions</h3>
+                <h3 className='m-0 text-14px font-semibold leading-20px text-t-primary'>Guided Mac control setup</h3>
                 <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
-                  Start Mac Access, pair this Mac to evaOS, and choose how approved agents may use Mac control.
+                  Workbench starts the local connector, then creates a scoped pairing prompt for the agent. The VM must
+                  connect through the broker-owned OpenClaw/Hermes plugin path.
                 </p>
               </div>
               <Tag color={status?.readiness === 'ready' ? 'green' : 'orange'}>
@@ -194,72 +203,119 @@ const NativeCompanionPage: React.FC = () => {
               </Tag>
             </div>
 
-            <div className='mt-12px flex flex-wrap gap-8px' aria-label='Workbench connector actions'>
-              <Button
-                type='primary'
-                loading={actionInFlight === 'connector_start'}
-                onClick={() => void handleRunAction({ action: 'connector_start' })}
-              >
-                Turn On Mac Access
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'setup_check'}
-                onClick={() => void handleRunAction({ action: 'setup_check' })}
-              >
-                Run Setup Check
-              </Button>
-              <Button
-                type='secondary'
-                disabled={!customerContext.selectedCustomerId}
-                loading={actionInFlight === 'create_pairing_prompt'}
-                onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
-              >
-                Create Pairing Prompt
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'control_start'}
-                onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
-              >
-                Full Access
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'control_start'}
-                onClick={() => void handleRunAction({ action: 'control_start', mode: 'ask-permission' })}
-              >
-                Ask Permission
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'control_stop'}
-                onClick={() => void handleRunAction({ action: 'control_stop' })}
-              >
-                Stop Agent Control
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'kill_switch'}
-                onClick={() => void handleRunAction({ action: 'kill_switch' })}
-              >
-                Kill Switch
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'audit_tail'}
-                onClick={() => void handleRunAction({ action: 'audit_tail' })}
-              >
-                Show Audit Tail
-              </Button>
-              <Button
-                type='secondary'
-                loading={actionInFlight === 'connector_stop'}
-                onClick={() => void handleRunAction({ action: 'connector_stop' })}
-              >
-                Stop Mac Access
-              </Button>
+            <div className='mt-12px rounded-8px bg-fill-1 p-12px'>
+              <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>
+                Step {guidedAction.step} of 5
+              </p>
+              <div className='mt-6px flex flex-wrap items-start justify-between gap-10px'>
+                <div className='min-w-0'>
+                  <h4 className='m-0 text-16px font-semibold leading-22px text-t-primary'>{guidedAction.title}</h4>
+                  <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
+                    {guidedAction.detail}
+                  </p>
+                </div>
+                <Button
+                  type='primary'
+                  disabled={guidedAction.disabled}
+                  loading={guidedAction.loadingAction ? actionInFlight === guidedAction.loadingAction : loading}
+                  onClick={() => void runGuidedAction(guidedAction, handleRunAction, handleOpenRepairAction, refresh)}
+                >
+                  {guidedAction.label}
+                </Button>
+              </div>
             </div>
+
+            {status?.readiness === 'ready' && pairingPromptCreated ? (
+              <div className='mt-12px grid grid-cols-1 gap-10px md:grid-cols-2' aria-label='Agent connector proof'>
+                <AgentProofCard
+                  title='Test with evaOS / OpenClaw'
+                  detail='Use the evaOS/OpenClaw plugin to run status, desktop see, one low-impact action, audit tail, and stop or kill-switch proof through this connector.'
+                />
+                <AgentProofCard
+                  title='Test with Hermes'
+                  detail='Run the same connector contract through Hermes. Hermes must use the shared Workbench connector, not a second Mac-control backend.'
+                />
+              </div>
+            ) : null}
+
+            <Button
+              type='text'
+              size='small'
+              aria-expanded={connectorActionsOpen}
+              className='mt-12px !px-0 text-12px font-semibold leading-18px text-t-secondary hover:text-t-primary'
+              onClick={() => setConnectorActionsOpen((open) => !open)}
+            >
+              {connectorActionsOpen ? 'Hide advanced connector controls' : 'Show advanced connector controls'}
+            </Button>
+
+            {connectorActionsOpen ? (
+              <div className='mt-12px flex flex-wrap gap-8px' aria-label='Advanced Workbench connector actions'>
+                <Button
+                  type='primary'
+                  loading={actionInFlight === 'connector_start'}
+                  onClick={() => void handleRunAction({ action: 'connector_start' })}
+                >
+                  Turn On Mac Access
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'setup_check'}
+                  onClick={() => void handleRunAction({ action: 'setup_check' })}
+                >
+                  Run Setup Check
+                </Button>
+                <Button
+                  type='secondary'
+                  disabled={!customerContext.selectedCustomerId}
+                  loading={actionInFlight === 'create_pairing_prompt'}
+                  onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
+                >
+                  Create Pairing Prompt
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'control_start'}
+                  onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
+                >
+                  Full Access
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'control_start'}
+                  onClick={() => void handleRunAction({ action: 'control_start', mode: 'ask-permission' })}
+                >
+                  Ask Permission
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'control_stop'}
+                  onClick={() => void handleRunAction({ action: 'control_stop' })}
+                >
+                  Stop Agent Control
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'kill_switch'}
+                  onClick={() => void handleRunAction({ action: 'kill_switch' })}
+                >
+                  Kill Switch
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'audit_tail'}
+                  onClick={() => void handleRunAction({ action: 'audit_tail' })}
+                >
+                  Show Audit Tail
+                </Button>
+                <Button
+                  type='secondary'
+                  loading={actionInFlight === 'connector_stop'}
+                  onClick={() => void handleRunAction({ action: 'connector_stop' })}
+                >
+                  Stop Mac Access
+                </Button>
+              </div>
+            ) : null}
 
             {actionResult ? (
               <div data-testid='native-companion-action-result' className='mt-12px rounded-8px bg-fill-1 p-12px'>
@@ -624,6 +680,164 @@ function capabilityDisplayName(id: string): string {
     return 'broker session handoff';
   }
   return id;
+}
+
+type GuidedAction =
+  | {
+      kind: 'run';
+      action: IEvaosNativeCompanionActionRequest['action'];
+      label: string;
+      title: string;
+      detail: string;
+      step: number;
+      disabled?: boolean;
+      loadingAction: IEvaosNativeCompanionActionRequest['action'];
+    }
+  | {
+      kind: 'repair';
+      repairAction: IEvaosNativeCompanionRepairAction;
+      label: string;
+      title: string;
+      detail: string;
+      step: number;
+      disabled?: boolean;
+      loadingAction?: undefined;
+    }
+  | {
+      kind: 'refresh';
+      label: string;
+      title: string;
+      detail: string;
+      step: number;
+      disabled?: boolean;
+      loadingAction?: undefined;
+    };
+
+function getGuidedAction(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  state: ReturnType<typeof getNativeCompanionRepairViewModel>['state'],
+  hasCustomer: boolean,
+  pairingPromptCreated: boolean
+): GuidedAction {
+  if (state === 'ready' && !pairingPromptCreated) {
+    return {
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      loadingAction: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      title: 'Pair evaOS/OpenClaw or Hermes',
+      detail:
+        'Local Mac control is ready. Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin, not public ports.',
+      step: 3,
+      disabled: !hasCustomer,
+    };
+  }
+
+  if (state === 'ready') {
+    return {
+      kind: 'run',
+      action: 'setup_check',
+      loadingAction: 'setup_check',
+      label: 'Run setup check',
+      title: 'Run final setup check',
+      detail:
+        'After the agent reports pairing complete, run the setup check and then prove evaOS/OpenClaw and Hermes through the shared connector.',
+      step: 5,
+    };
+  }
+
+  if (!connectorReady(status)) {
+    return {
+      kind: 'run',
+      action: 'connector_start',
+      loadingAction: 'connector_start',
+      label: 'Turn On Mac Access',
+      title: 'Turn on Mac Access',
+      detail:
+        'Start the secure Workbench connector first. This is the local bridge evaOS and Hermes use after pairing.',
+      step: 1,
+    };
+  }
+
+  if (!permissionsReady(status)) {
+    const repairAction =
+      status?.bridgeCli.permissions?.accessibility === 'granted' &&
+      status?.customerMac.permissions?.accessibility === 'granted'
+        ? 'screen_recording'
+        : 'accessibility';
+    return {
+      kind: 'repair',
+      repairAction,
+      label: repairAction === 'screen_recording' ? 'Open Screen Recording' : 'Open Accessibility',
+      title: 'Allow screen and control',
+      detail:
+        'macOS must allow Workbench connector control before approved agent actions can run. After granting permission, return here and refresh.',
+      step: 2,
+    };
+  }
+
+  if (state === 'not_paired' || status?.readiness !== 'ready') {
+    return {
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      loadingAction: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      title: 'Pair evaOS/OpenClaw or Hermes',
+      detail:
+        'Create a scoped pairing prompt for the selected customer, then paste it into the agent so the VM-side connector is configured without open ports.',
+      step: 3,
+      disabled: !hasCustomer,
+    };
+  }
+
+  return {
+    kind: 'refresh',
+    label: 'Refresh status',
+    title: 'Refresh Mac control status',
+    detail: 'Refresh the local status before continuing.',
+    step: 1,
+  };
+}
+
+async function runGuidedAction(
+  guidedAction: GuidedAction,
+  runAction: (request: IEvaosNativeCompanionActionRequest) => Promise<void>,
+  openRepairAction: (action: IEvaosNativeCompanionRepairAction) => Promise<void>,
+  refresh: () => Promise<void>
+) {
+  if (guidedAction.kind === 'run') {
+    await runAction({ action: guidedAction.action });
+    return;
+  }
+  if (guidedAction.kind === 'repair') {
+    await openRepairAction(guidedAction.repairAction);
+    return;
+  }
+  await refresh();
+}
+
+function connectorReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  return status?.connectorService?.running === true || status?.connectorService?.reachable === true;
+}
+
+function permissionsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  const bridge = status?.bridgeCli.permissions;
+  const mac = status?.customerMac.permissions;
+  return (
+    bridge?.accessibility === 'granted' &&
+    bridge.screenRecording === 'granted' &&
+    mac?.accessibility === 'granted' &&
+    mac.screenRecording === 'granted'
+  );
+}
+
+function AgentProofCard({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
+      <p className='m-0 text-14px font-semibold leading-20px text-t-primary'>{title}</p>
+      <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>{detail}</p>
+    </div>
+  );
 }
 
 function tagColorForTone(tone: NativeCompanionTone): string {
