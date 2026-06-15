@@ -154,6 +154,7 @@ describe('nativeCompanionViewModel', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
         readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
         summaryText: 'Workbench connector ready.',
         bridgeCli: { installed: true, status: 'ready', readOnly: true },
         customerMac: { status: 'ready' },
@@ -166,10 +167,35 @@ describe('nativeCompanionViewModel', () => {
 
     expect(viewModel.summary).toContain('Pair evaOS/OpenClaw or Hermes with a scoped prompt');
     expect(pairing).toMatchObject({
-      value: 'Prompt required',
+      value: 'Ready to pair',
       tone: 'attention',
     });
     expect(pairing?.help).toContain('broker-owned plugin');
     expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
+  });
+
+  it('distinguishes a proven paired agent from local connector readiness', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'agent_paired',
+        summaryText: 'Workbench connector ready with agent proof.',
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+    });
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
+    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
+
+    expect(pairing).toMatchObject({
+      value: 'Agent paired',
+      tone: 'ready',
+    });
+    expect(pairingStep).toMatchObject({
+      state: 'ready',
+    });
+    expect(viewModel.summary).toContain('Agent pairing proof is present');
   });
 });

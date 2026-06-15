@@ -505,6 +505,178 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByRole('button', { name: 'Run setup check' })).toBeInTheDocument();
     expect(screen.getByText('Test with evaOS / OpenClaw')).toBeInTheDocument();
     expect(screen.getByText('Test with Hermes')).toBeInTheDocument();
+    expect(screen.getAllByText('Pending')).toHaveLength(2);
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
     expect(screen.getByText(/broker-owned plugin/i)).toBeInTheDocument();
+  });
+
+  it('marks agent proof cards proven only when status carries agent pairing proof', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'agent_paired',
+        summaryText: 'Workbench connector ready with agent proof.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge-ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac-ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'ready',
+          auditId: 'audit-control-ready',
+          active: true,
+          mode: 'full-access',
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready', 'audit-control-ready'],
+        },
+      },
+    });
+
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Agent paired')).toBeInTheDocument();
+    expect(screen.getByText('Test with evaOS / OpenClaw')).toBeInTheDocument();
+    expect(screen.getByText('Test with Hermes')).toBeInTheDocument();
+    expect(screen.getAllByText('Proven')).toHaveLength(2);
+    expect(screen.queryByText('Pending')).not.toBeInTheDocument();
+  });
+
+  it('does not mark setup check as proven without explicit agent pairing proof', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge-ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac-ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'ready',
+          auditId: 'audit-control-ready',
+          active: true,
+          mode: 'full-access',
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready', 'audit-control-ready'],
+        },
+      },
+    });
+    bridgeMocks.runAction
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready. Paste it into evaOS or OpenClaw to complete the link.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: [],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'benjamin-kennedy',
+            pairingCode: 'PAIR-1234',
+            setupPrompt: 'Finish my evaOS Workbench Mac pairing.\nCustomer: benjamin-kennedy\nPairing code: PAIR-1234',
+          },
+          agentPairingStatus: 'pairing_prompt_created',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'setup_check',
+          status: 'succeeded',
+          message: 'Mac control setup check passed. evaOS and Hermes can use the paired Workbench connector.',
+          sourcePointer: 'native-companion:setup-check',
+          auditIds: ['audit-mac-ready', 'audit-control-ready'],
+          refreshRecommended: false,
+          setup: {
+            connectorReady: true,
+            macReady: true,
+            controlReady: true,
+            iPhoneDeferred: true,
+          },
+          control: {
+            active: true,
+            mode: 'full-access',
+            killSwitch: false,
+          },
+          agentPairingStatus: 'ready_for_agent_pairing',
+        },
+      });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findAllByText('Pending')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Run setup check' }));
+
+    await waitFor(() => expect(bridgeMocks.runAction).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
   });
 });

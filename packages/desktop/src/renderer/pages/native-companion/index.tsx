@@ -21,6 +21,7 @@ import {
 import type {
   IEvaosNativeCompanionActionRequest,
   IEvaosNativeCompanionActionResult,
+  IEvaosNativeCompanionAgentPairingStatus,
   IEvaosNativeCompanionRepairAction,
   IEvaosNativeCompanionStatusView,
 } from '@/common/evaos/bridgeTypes';
@@ -51,12 +52,13 @@ const NativeCompanionPage: React.FC = () => {
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const viewModel = getNativeCompanionRepairViewModel({ status, loading, error });
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
-  const pairingPromptCreated = Boolean(actionResult?.pairing?.setupPrompt);
+  const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
+  const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const guidedAction = getGuidedAction(
     status,
     viewModel.state,
     Boolean(customerContext.selectedCustomerId),
-    pairingPromptCreated
+    agentPairingStatus
   );
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
@@ -225,14 +227,16 @@ const NativeCompanionPage: React.FC = () => {
               </div>
             </div>
 
-            {status?.readiness === 'ready' && pairingPromptCreated ? (
+            {shouldShowAgentProof ? (
               <div className='mt-12px grid grid-cols-1 gap-10px md:grid-cols-2' aria-label='Agent connector proof'>
                 <AgentProofCard
                   title='Test with evaOS / OpenClaw'
+                  pairingStatus={agentPairingStatus}
                   detail='Use the evaOS/OpenClaw plugin to run status, desktop see, one low-impact action, audit tail, and stop or kill-switch proof through this connector.'
                 />
                 <AgentProofCard
                   title='Test with Hermes'
+                  pairingStatus={agentPairingStatus}
                   detail='Run the same connector contract through Hermes. Hermes must use the shared Workbench connector, not a second Mac-control backend.'
                 />
               </div>
@@ -717,9 +721,21 @@ function getGuidedAction(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   state: ReturnType<typeof getNativeCompanionRepairViewModel>['state'],
   hasCustomer: boolean,
-  pairingPromptCreated: boolean
+  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus
 ): GuidedAction {
-  if (state === 'ready' && !pairingPromptCreated) {
+  if (state === 'ready' && agentPairingStatus === 'agent_paired') {
+    return {
+      kind: 'run',
+      action: 'setup_check',
+      loadingAction: 'setup_check',
+      label: 'Run setup check',
+      title: 'Agent pairing proven',
+      detail: 'Agent proof is present. Run setup check again before live release proof if the connector state changed.',
+      step: 5,
+    };
+  }
+
+  if (state === 'ready' && agentPairingStatus !== 'pairing_prompt_created' && agentPairingStatus !== 'proof_failed') {
     return {
       kind: 'run',
       action: 'create_pairing_prompt',
@@ -739,7 +755,7 @@ function getGuidedAction(
       action: 'setup_check',
       loadingAction: 'setup_check',
       label: 'Run setup check',
-      title: 'Run final setup check',
+      title: agentPairingStatus === 'proof_failed' ? 'Retry agent proof' : 'Run final setup check',
       detail:
         'After the agent reports pairing complete, run the setup check and then prove evaOS/OpenClaw and Hermes through the shared connector.',
       step: 5,
@@ -831,13 +847,51 @@ function permissionsReady(status: IEvaosNativeCompanionStatusView | null | undef
   );
 }
 
-function AgentProofCard({ title, detail }: { title: string; detail: string }) {
+function AgentProofCard({
+  title,
+  detail,
+  pairingStatus,
+}: {
+  title: string;
+  detail: string;
+  pairingStatus: IEvaosNativeCompanionAgentPairingStatus;
+}) {
+  const label = agentProofLabel(pairingStatus);
   return (
     <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
-      <p className='m-0 text-14px font-semibold leading-20px text-t-primary'>{title}</p>
+      <div className='flex flex-wrap items-center justify-between gap-8px'>
+        <p className='m-0 text-14px font-semibold leading-20px text-t-primary'>{title}</p>
+        <Tag color={tagColorForTone(label.tone)}>{label.text}</Tag>
+      </div>
       <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>{detail}</p>
     </div>
   );
+}
+
+function effectiveAgentPairingStatus(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  actionResult: IEvaosNativeCompanionActionResult | null
+): IEvaosNativeCompanionAgentPairingStatus {
+  if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
+  if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
+  return status?.agentPairingStatus ?? (status?.readiness === 'ready' ? 'ready_for_agent_pairing' : 'not_ready');
+}
+
+function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): boolean {
+  return status === 'pairing_prompt_created' || status === 'agent_paired' || status === 'proof_failed';
+}
+
+function agentProofLabel(status: IEvaosNativeCompanionAgentPairingStatus): {
+  text: string;
+  tone: NativeCompanionTone;
+} {
+  if (status === 'agent_paired') {
+    return { text: 'Proven', tone: 'ready' };
+  }
+  if (status === 'proof_failed') {
+    return { text: 'Needs retry', tone: 'attention' };
+  }
+  return { text: 'Pending', tone: 'neutral' };
 }
 
 function tagColorForTone(tone: NativeCompanionTone): string {
