@@ -435,8 +435,7 @@ async function createPairingPromptAction(
   }
 
   const connector = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  const connectorContext = connectorEnrollmentContext(connector.data);
-  if (!connector.ok || !connectorContext) {
+  if (!connector.ok || !connectorServiceIsRunning(connector.data)) {
     return nativeActionResult(
       'create_pairing_prompt',
       'repair_required',
@@ -450,27 +449,53 @@ async function createPairingPromptAction(
   const createEnrollment =
     deps.createCustomerMacEnrollment ??
     ((input) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(input));
+  const deviceName = hostname() || 'Customer Mac';
   const enrollment = await createEnrollment({
     customerId,
-    deviceName: hostname() || 'Customer Mac',
+    deviceName,
   });
+  const registration = await runBridgeCommand(
+    bridgePath,
+    [
+      'connector-service',
+      'complete-enrollment',
+      '--json',
+      '--enrollment-code',
+      enrollment.pairingCode,
+      '--customer-id',
+      enrollment.customerId,
+      '--device-name',
+      deviceName,
+    ],
+    deps
+  );
+  if (!registration.ok) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Workbench created a pairing code, but the local connector could not register it with evaOS.',
+      {
+        sourcePointer: 'native-companion:pairing-registration-failed',
+        auditId: registration.auditId,
+      }
+    );
+  }
   const setupPrompt = pairingPromptText({
     customerId: enrollment.customerId,
     pairingCode: enrollment.pairingCode,
-    connectorUrl: connectorContext.connectorUrl,
   });
 
   return nativeActionResult(
     'create_pairing_prompt',
     'succeeded',
-    'Pairing prompt is ready. Paste it into evaOS or OpenClaw to complete the link.',
+    'Pairing prompt is ready. Paste it into evaOS/OpenClaw or Hermes to complete the link.',
     {
       sourcePointer: 'native-companion:pairing-prompt',
+      auditId: registration.auditId,
       pairing: {
         customerId: enrollment.customerId,
         pairingCode: enrollment.pairingCode,
         expiresAt: enrollment.expiresAt,
-        connectorUrl: connectorContext.connectorUrl,
         setupPrompt,
       },
       refreshRecommended: false,
@@ -750,14 +775,6 @@ function connectorServiceIsRunning(input: unknown): boolean {
   return readBoolean(input, 'running') === true || readNestedBoolean(input, ['health', 'reachable']) === true;
 }
 
-function connectorEnrollmentContext(input: unknown): { connectorUrl: string } | undefined {
-  const tailnetIp = readString(input, 'tailnet_ip');
-  if (!tailnetIp || !connectorServiceIsRunning(input)) return undefined;
-  return {
-    connectorUrl: `http://${tailnetIp}:8765`,
-  };
-}
-
 function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {
   return mode === 'ask-permission' ? 'ask-permission' : 'full-access';
 }
@@ -823,27 +840,31 @@ function auditEventsFromPayload(payload: BridgeCommandResult): IEvaosNativeCompa
     .filter((event): event is IEvaosNativeCompanionAuditEvent => Boolean(event));
 }
 
-function pairingPromptText(input: { customerId: string; pairingCode: string; connectorUrl: string }): string {
+function pairingPromptText(input: { customerId: string; pairingCode: string }): string {
   return [
-    'Finish my evaOS Workbench Mac pairing.',
+    'Please pair my Mac to my evaOS/OpenClaw or Hermes agent.',
     '',
     `Customer: ${input.customerId}`,
     `Pairing code: ${input.pairingCode}`,
-    `Mac connector URL: ${input.connectorUrl}`,
     '',
-    'From my evaOS VM, complete pairing with the customer_mac_complete_pairing tool.',
-    'Use exactly:',
-    `- connector_url: ${input.connectorUrl}`,
-    `- enrollment_code: ${input.pairingCode}`,
-    `- customer_id: ${input.customerId}`,
+    'Use customer_mac_complete_pairing with this code, then run:',
+    '1. customer_mac_status',
+    '2. desktop_control_status',
+    '3. desktop_see',
+    '4. desktop_bridge_audit_tail',
     '',
-    'Do not ask me for hidden connector values. Workbench sends those directly through evaOS.',
+    'Tool input:',
+    JSON.stringify(
+      {
+        enrollment_code: input.pairingCode,
+        customer_id: input.customerId,
+        device_name: hostname() || 'Customer Mac',
+      },
+      null,
+      2
+    ),
     '',
-    'Success criteria:',
-    '1. customer_mac_complete_pairing returns ok=true.',
-    '2. customer_mac_status reports the Mac connector and permissions state.',
-    '3. desktop_control_status reports whether Full Access or Ask Permission is active.',
-    '4. desktop_bridge_audit_tail shows pairing evidence without private material.',
+    'Do not ask for connector URLs, IP addresses, ports, SSH, VNC, CDP, tokens, or secrets.',
     '',
     'Do not perform live Mac actions until I start Agent Control in Workbench.',
   ].join('\n');
