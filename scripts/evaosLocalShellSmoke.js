@@ -824,6 +824,40 @@ const LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS = [
   },
 ];
 
+const LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS = [
+  {
+    name: 'mission-control-employee-denied-fixture',
+    hash: '/mission-control',
+    title: 'evaOS Workbench Beta',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['evaOS Workbench Beta'],
+    loadedStateRequiredMarkers: ['redirected #/guid route', 'admin runtime hidden from employee persona'],
+    expected: ['evaOS Workbench Beta'],
+    forbidden: ['Mission Control', 'Terminal', 'evaOS', 'Hermes'],
+  },
+  {
+    name: 'creative-studio-employee-denied-fixture',
+    hash: '/creative-studio',
+    title: 'evaOS Workbench Beta',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['evaOS Workbench Beta'],
+    loadedStateRequiredMarkers: ['redirected #/guid route', 'creative scope hidden from employee persona'],
+    expected: ['evaOS Workbench Beta'],
+    forbidden: ['Creative Studio', 'Design Workspace', 'Shared Browser', 'Connected Apps', 'People & Access'],
+  },
+  {
+    name: 'native-companion-employee-allowed-fixture',
+    hash: '/native-companion',
+    title: 'Mac & iPhone',
+    proofStage: PROOF_STAGES.SHELL_SMOKE,
+    settledMarkers: ['Mac & iPhone', 'Workbench connector'],
+    loadedStateRequiredMarkers: ['employee setup/status route remains available'],
+    expected: ['Mac & iPhone', 'Workbench connector'],
+    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
+  },
+];
+
 const TEAM_ROUTE_CHECK = {
   name: 'team-route-enabled',
   hash: '/team/local-smoke',
@@ -879,7 +913,14 @@ function isLocalProductMemberPersona(env = process.env) {
   return env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA === 'member';
 }
 
+function isLocalProductEmployeePersona(env = process.env) {
+  return env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA === 'employee';
+}
+
 function routeChecksForEnv(env = process.env) {
+  if (isLocalProductFixtureMode(env) && isLocalProductEmployeePersona(env)) {
+    return LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS;
+  }
   if (isLocalProductFixtureMode(env) && isLocalProductMemberPersona(env)) {
     return LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS;
   }
@@ -1487,12 +1528,14 @@ module.exports = {
   BROKER_GUARDED_ROUTE_CHECKS,
   DEFAULT_ARTIFACT_ROOT,
   GLOBAL_FORBIDDEN_PATTERNS,
+  LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS,
   LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS,
   LOCAL_PRODUCT_ROUTE_CHECKS,
   PROOF_STAGES,
   ROUTE_CHECKS,
   TEAM_ROUTE_CHECK,
   isLocalProductFixtureMode,
+  isLocalProductEmployeePersona,
   isLocalProductMemberPersona,
   loadPlaywrightElectron,
   relevantConsoleErrors,

@@ -327,7 +327,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
   });
 
-  it('keeps setup and hosted handoff routes visible when the web session exists but broker policy is missing', async () => {
+  it('keeps only setup routes visible when the web session exists but broker policy is missing', async () => {
     brokerSessionMock.session = {
       state: 'missing',
       authenticated: false,
@@ -343,7 +343,7 @@ describe('Sider runtime route visibility', () => {
 
     unmount();
     renderSider('/creative-studio');
-    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
+    expect(screen.queryByText('- Creative Studio')).not.toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('- Design Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
@@ -435,7 +435,7 @@ describe('Sider runtime route visibility', () => {
 
     unmount();
     renderSider('/creative-studio');
-    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
+    expect(screen.queryByText('- Creative Studio')).not.toBeInTheDocument();
     expect(screen.queryByText('- Design Workspace')).not.toBeInTheDocument();
     expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
     expect(screen.queryByText('- Connected Apps')).not.toBeInTheDocument();
@@ -635,6 +635,12 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('Hermes')).not.toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
     expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Design Workspace')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Creative Studio')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Connected Apps')).not.toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
   });
 
   it('signs out by revoking the broker session before clearing the shell auth state', async () => {

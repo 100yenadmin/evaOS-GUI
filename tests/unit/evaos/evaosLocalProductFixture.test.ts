@@ -89,6 +89,25 @@ describe('evaOS local product fixture', () => {
     expect(stringValues({ session, customers }).join('\n')).not.toMatch(SECRET_PATTERN);
   });
 
+  it('supports an explicit employee persona for denied-by-default route proof', () => {
+    const env = { AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA: 'employee' };
+    const session = evaosLocalProductFixtureSessionStatus(env);
+    const customers = evaosLocalProductFixtureCustomerTargets(env);
+
+    expect(evaosLocalProductFixturePersona(env)).toBe('employee');
+    expect(session).toMatchObject({
+      state: 'authenticated',
+      authenticated: true,
+      userEmail: 'employee@example.test',
+      source: 'memory',
+    });
+    expect(customers.roles).toEqual(['agent_only']);
+    expect(customers.scopes).toEqual([]);
+    expect(customers.isOperator).toBe(false);
+    expect(customers.summaryText).toContain('employee persona');
+    expect(stringValues({ session, customers }).join('\n')).not.toMatch(SECRET_PATTERN);
+  });
+
   it('fails closed for a customer outside the local fixture', () => {
     const hub = evaosLocalProductFixtureProviderHub({ customerId: 'wrong-customer' });
 

@@ -141,6 +141,7 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
     technicalDashboard: false,
     deferred: true,
     featureFlag: 'team_chat',
+    requiredScopes: ['assign_agents'],
   },
 ];
 
@@ -205,12 +206,15 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   },
   {
     routePath: '/creative-studio',
-    allowMissingBroker: true,
     anyRequiredScopes: ['use_creative_studio'],
   },
   {
     routePath: '/company-brain',
     anyRequiredScopes: ['view_company_brain', 'manage_company_brain'],
+  },
+  {
+    routePath: '/team',
+    anyRequiredScopes: ['assign_agents'],
   },
 ];
 
@@ -280,6 +284,7 @@ function canOpenRuntime(runtime: EvaosRuntimeDefinition, context: EvaosRuntimeVi
   if (!context.authenticated) return false;
   if (runtime.deferred && runtime.featureFlag === 'team_chat' && !context.teamChatEnabled) return false;
   if (runtime.requiresAdmin) return canAccessEvaosAdminRuntimes(context);
+  if (canAccessEvaosGlobalAdminRuntimes(context)) return true;
   if (!hasRequiredScopes(runtime, context.scopes)) return false;
   return true;
 }
@@ -294,10 +299,8 @@ function canOpenRoutePolicy(policy: EvaosRoutePolicy, context: EvaosRuntimeVisib
   if (!context.authenticated) return false;
   if (normalizeRoutePath(policy.routePath) === '/company-brain' && !canAccessEvaosCompanyBrain(context)) return false;
   const globalAdminAccess = canAccessEvaosGlobalAdminRuntimes(context);
-  const customerAdminAccess = canAccessEvaosCustomerAdminScope(context);
   if (globalAdminAccess) return true;
   if (policy.requiresAdmin) return false;
-  if (customerAdminAccess) return true;
   if (!hasAllPolicyScopes(policy.requiredScopes, context.scopes)) return false;
   if (!hasAnyPolicyScope(policy.anyRequiredScopes, context.scopes)) return false;
   return true;
@@ -332,5 +335,6 @@ function normalizeEmail(email: string | null | undefined): string | undefined {
 
 function normalizeRoutePath(path: string): string {
   const [routePath] = path.split(/[?#]/, 1);
+  if (routePath === '/team' || routePath.startsWith('/team/')) return '/team';
   return routePath || '/';
 }
