@@ -199,6 +199,7 @@ describe('EvaosBrokerSessionClient provider hub', () => {
     expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
       action: 'provider_profiles',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
     });
     expect(hub.routeDenied).toBe(false);
     expect(hub.profiles).toHaveLength(6);
@@ -366,6 +367,7 @@ describe('EvaosBrokerSessionClient provider hub', () => {
     expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
       action: 'provider_auth_start',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
       provider_key: 'google_workspace',
     });
     expect(result).toMatchObject({
@@ -687,10 +689,12 @@ describe('EvaosBrokerSessionClient provider hub', () => {
     expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
       action: 'provider_profiles',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
     });
     expect(requestBody(fetchImpl.mock.calls[3])).toEqual({
       action: 'provider_mint_grant',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
       provider_key: 'google_workspace',
       agent_runtime: 'hermes',
     });

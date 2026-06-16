@@ -344,26 +344,32 @@ export class EvaosBrokerSessionClient {
       'invalid_customer',
       'Choose a customer before loading People Access.'
     );
+    const customerAccountId = safeText(request.customerAccountId);
     const session = this.requireActiveSession();
 
     const [accountRaw, permissionsRaw] = await Promise.all([
       this.postJson(
-        {
+        stripUndefined({
           action: 'current_customer_account',
           customer_id: customerId,
-        },
+          customer_account_id: customerAccountId,
+        }),
         session
       ),
       this.postJson(
-        {
+        stripUndefined({
           action: 'current_customer_account_permissions',
           customer_id: customerId,
-        },
+          customer_account_id: customerAccountId,
+        }),
         session
       ),
     ]);
 
-    return sanitizePeopleAccessPolicy(accountRaw, permissionsRaw, customerId);
+    return sanitizePeopleAccessPolicy(accountRaw, permissionsRaw, {
+      fallbackCustomerId: customerId,
+      expectedCustomerAccountId: customerAccountId,
+    });
   }
 
   async invitePeopleAccessMember(
@@ -377,9 +383,10 @@ export class EvaosBrokerSessionClient {
     const email = normalizeEmail(request.email);
     const role = normalizeInviteRole(request.role);
     const seatType = safeText(request.seatType, 80);
+    const customerAccountId = safeText(request.customerAccountId);
     const session = this.requireActiveSession();
 
-    const policy = await this.peopleAccessPolicy({ customerId });
+    const policy = await this.peopleAccessPolicy({ customerId, customerAccountId });
     assertPolicyScope(policy, 'manage_members', 'You do not have permission to invite members for this account.');
     assertPeopleAccessPolicyProof(policy);
 
@@ -387,6 +394,7 @@ export class EvaosBrokerSessionClient {
       stripUndefined({
         action: 'invite_customer_account_member',
         customer_id: customerId,
+        customer_account_id: policy.customerAccountId,
         email,
         role,
         seat_type: seatType,
@@ -512,8 +520,9 @@ export class EvaosBrokerSessionClient {
       'invalid_customer',
       'Choose a customer before loading Connected Apps.'
     );
+    const customerAccountId = safeText(request.customerAccountId);
     const session = this.requireActiveSession();
-    const policy = await this.peopleAccessPolicy({ customerId });
+    const policy = await this.peopleAccessPolicy({ customerId, customerAccountId });
 
     if (!policy.scopes.includes('manage_integrations')) {
       return {
@@ -535,6 +544,7 @@ export class EvaosBrokerSessionClient {
       {
         action: 'provider_profiles',
         customer_id: customerId,
+        customer_account_id: policy.customerAccountId,
       },
       session
     );
@@ -700,13 +710,15 @@ export class EvaosBrokerSessionClient {
         ? normalizeProviderAgentRuntime(request.agentRuntime ?? 'openclaw')
         : undefined;
     const session = this.requireActiveSession();
-    const policy = await this.peopleAccessPolicy({ customerId });
+    const customerAccountId = safeText(request.customerAccountId);
+    const policy = await this.peopleAccessPolicy({ customerId, customerAccountId });
     assertProviderPolicyProof(policy);
 
     const raw = await this.postJson(
       stripUndefined({
         action: 'provider_approval_request',
         customer_id: customerId,
+        customer_account_id: policy.customerAccountId,
         provider_key: providerKey,
         requested_action: requestedAction,
         agent_runtime: agentRuntime,
@@ -893,7 +905,8 @@ export class EvaosBrokerSessionClient {
     const agentRuntime =
       action === 'provider_mint_grant' ? normalizeProviderAgentRuntime(request.agentRuntime ?? 'openclaw') : undefined;
     const session = this.requireActiveSession();
-    const policy = await this.peopleAccessPolicy({ customerId });
+    const customerAccountId = safeText(request.customerAccountId);
+    const policy = await this.peopleAccessPolicy({ customerId, customerAccountId });
     assertPolicyScope(
       policy,
       'manage_integrations',
@@ -922,6 +935,7 @@ export class EvaosBrokerSessionClient {
       stripUndefined({
         action,
         customer_id: customerId,
+        customer_account_id: policy.customerAccountId,
         provider_key: providerKey,
         agent_runtime: agentRuntime,
       }),
@@ -944,6 +958,7 @@ export class EvaosBrokerSessionClient {
       {
         action: 'provider_profiles',
         customer_id: customerId,
+        customer_account_id: policy.customerAccountId,
       },
       session
     );
@@ -1784,16 +1799,18 @@ function safeCustomerTargets(value: unknown): IEvaosCustomerTargetView[] {
       if (!record) {
         return undefined;
       }
-      const customerId = safeText(record.customer_id);
+      const accountOnly = safeBoolean(record.account_only ?? record.accountOnly);
+      const customerAccountId = safeText(record.customer_account_id ?? record.customerAccountId);
+      const customerId =
+        safeText(record.customer_id ?? record.customerId) ?? (accountOnly === true ? customerAccountId : undefined);
       const displayName = safeText(record.display_name);
       if (!customerId || !displayName) {
         return undefined;
       }
-      const accountOnly = safeBoolean(record.account_only ?? record.accountOnly);
 
       return stripUndefined({
         customerId,
-        customerAccountId: safeText(record.customer_account_id ?? record.customerAccountId),
+        customerAccountId,
         membershipId: safeText(record.membership_id ?? record.membershipId),
         membershipRole: normalizeAccountRoleValue(record.membership_role ?? record.membershipRole),
         targetKind: normalizeCustomerTargetKind(record.target_kind ?? record.targetKind, accountOnly),
@@ -1893,7 +1910,10 @@ const APPROVAL_PAYLOAD_ALLOWLIST: ReadonlySet<string> = new Set([
 function sanitizePeopleAccessPolicy(
   accountRaw: unknown,
   permissionsRaw: unknown,
-  fallbackCustomerId: string
+  fallback: {
+    fallbackCustomerId: string;
+    expectedCustomerAccountId?: string;
+  }
 ): IEvaosPeopleAccessPolicyView {
   const account = asRecord(accountRaw);
   const permissions = asRecord(permissionsRaw);
@@ -1902,10 +1922,23 @@ function sanitizePeopleAccessPolicy(
   }
 
   const schemaVersion = safeText(permissions.schema_version ?? account.schema_version);
-  const customerAccountId = safeText(permissions.customer_account_id ?? account.customer_account_id ?? account.id);
+  const accountCustomerAccountId = safeText(account.customer_account_id ?? account.id);
+  const permissionsCustomerAccountId = safeText(permissions.customer_account_id);
+  const customerAccountId = permissionsCustomerAccountId ?? accountCustomerAccountId;
+  if (
+    (accountCustomerAccountId &&
+      permissionsCustomerAccountId &&
+      accountCustomerAccountId !== permissionsCustomerAccountId) ||
+    (fallback.expectedCustomerAccountId && customerAccountId !== fallback.expectedCustomerAccountId)
+  ) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker returned account policy evidence for a different customer account.'
+    );
+  }
   const selectedCustomerId =
     safeText(permissions.selected_customer_id ?? permissions.customer_id ?? account.selected_customer_id) ??
-    fallbackCustomerId;
+    fallback.fallbackCustomerId;
   const membershipRole = normalizeAccountRoleValue(
     permissions.membership_role ?? permissions.role ?? account.membership_role
   );

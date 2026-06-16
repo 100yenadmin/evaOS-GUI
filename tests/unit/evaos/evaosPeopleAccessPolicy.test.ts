@@ -331,6 +331,7 @@ describe('EvaosBrokerSessionClient People Access policy', () => {
     expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
       action: 'invite_customer_account_member',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
       email: 'new@example.test',
       role: 'member',
     });

@@ -1176,9 +1176,19 @@ describe('EvaosBrokerSessionClient', () => {
           healthStatus: 'needs_attention',
           isDefault: false,
         },
+        {
+          customerId: 'acct_account_only',
+          customerAccountId: 'acct_account_only',
+          membershipId: 'mem_account_only',
+          membershipRole: 'owner',
+          targetKind: 'customer_account',
+          accountOnly: true,
+          displayName: 'Account-only membership',
+          isDefault: false,
+        },
       ],
       selectedCustomerId: 'david-poku',
-      summaryText: '2 customer targets loaded',
+      summaryText: '3 customer targets loaded',
     });
     expect(JSON.stringify(targets)).not.toMatch(
       /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access_token|desktop_session|provider_grant|Bearer/i
@@ -1271,6 +1281,7 @@ describe('EvaosBrokerSessionClient', () => {
 
     const result = await client.requestProviderApproval({
       customerId: 'david-poku',
+      customerAccountId: 'acct_123',
       providerKey: 'linear',
       requestedAction: 'provider_mint_grant',
       agentRuntime: 'openclaw',
@@ -1280,14 +1291,17 @@ describe('EvaosBrokerSessionClient', () => {
     expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
       action: 'current_customer_account',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
     });
     expect(requestBody(fetchImpl.mock.calls[1])).toEqual({
       action: 'current_customer_account_permissions',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
     });
     expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
       action: 'provider_approval_request',
       customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
       provider_key: 'linear',
       requested_action: 'provider_mint_grant',
       agent_runtime: 'openclaw',
@@ -1301,6 +1315,52 @@ describe('EvaosBrokerSessionClient', () => {
       backendEnforced: true,
     });
     expect(JSON.stringify(result)).not.toMatch(/eds_|provider_grant|desktop_session|Bearer/i);
+  });
+
+  it('fails closed when account policy evidence belongs to a different customer account', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          schema_version: 'evaos.account_policy.v1',
+          customer_account_id: 'acct_other',
+          membership_id: 'mem_requester',
+          membership_role: 'admin',
+          members: [],
+          invites: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          schema_version: 'evaos.account_policy.v1',
+          customer_account_id: 'acct_123',
+          selected_customer_id: 'david-poku',
+          membership_id: 'mem_requester',
+          membership_role: 'admin',
+          scopes: ['manage_members'],
+          advanced_surfaces: {},
+          backend_enforced: true,
+          audit_id: 'audit_policy_requester',
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {
+        AIONUI_EVAOS_DESKTOP_SESSION: 'eds_requester_session_for_test',
+        AIONUI_EVAOS_DESKTOP_SESSION_EXPIRES_AT: FUTURE,
+      },
+      now: () => NOW,
+    });
+
+    await expect(
+      client.peopleAccessPolicy({
+        customerId: 'david-poku',
+        customerAccountId: 'acct_123',
+      })
+    ).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker returned account policy evidence for a different customer account.',
+    });
   });
 
   it('revokes the active desktop session without returning token material', async () => {

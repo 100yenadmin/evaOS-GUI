@@ -11,6 +11,8 @@ const TRUST_SURFACE_FILES = [
   'packages/desktop/src/renderer/pages/company-brain/index.tsx',
 ];
 
+const SHARED_SAFE_TEXT_HELPER = 'packages/desktop/src/renderer/utils/evaosSafeText.ts';
+
 const FORBIDDEN_STORAGE_OR_URL_PATTERNS = [
   /\blocalStorage\b/,
   /\bsessionStorage\b/,
@@ -45,20 +47,33 @@ const SECRET_MARKER_PATTERNS = [
 
 function auditRendererTrustSurfaces(rootDir = process.cwd()) {
   const issues = [];
+  const helperPath = path.join(rootDir, SHARED_SAFE_TEXT_HELPER);
+  const helperText = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
+  const hasSharedSafeTextHelper =
+    helperText.includes('SECRET_TEXT_PATTERN') && helperText.includes('function safeEvaosUiText');
+
+  if (helperText && !hasSharedSafeTextHelper) {
+    issues.push(`${SHARED_SAFE_TEXT_HELPER}: shared evaOS renderer sanitizer is missing its secret guard`);
+  }
 
   for (const relativePath of TRUST_SURFACE_FILES) {
     const filePath = path.join(rootDir, relativePath);
     const text = fs.readFileSync(filePath, 'utf8');
     const lines = text.split(/\r?\n/);
+    const usesSharedSafeText = text.includes('safeEvaosUiText');
+    const usesLocalSafeText = text.includes('SECRET_TEXT_PATTERN') && text.includes('function safeUiText');
+    const safeTextCallPattern = usesSharedSafeText ? 'safeEvaosUiText(response.msg' : 'safeUiText(response.msg';
 
-    if (!text.includes('SECRET_TEXT_PATTERN')) {
+    if (!usesLocalSafeText && !(usesSharedSafeText && hasSharedSafeTextHelper)) {
       issues.push(`${relativePath}: missing SECRET_TEXT_PATTERN guard`);
     }
-    if (!text.includes('function safeUiText')) {
+    if (!usesLocalSafeText && !usesSharedSafeText) {
       issues.push(`${relativePath}: missing safeUiText renderer sanitizer`);
     }
-    if (!text.includes('safeUiText(response.msg')) {
-      issues.push(`${relativePath}: broker error messages must pass through safeUiText`);
+    if (!text.includes(safeTextCallPattern)) {
+      issues.push(
+        `${relativePath}: broker error messages must pass through ${usesSharedSafeText ? 'safeEvaosUiText' : 'safeUiText'}`
+      );
     }
 
     let inSecretPatternDeclaration = false;

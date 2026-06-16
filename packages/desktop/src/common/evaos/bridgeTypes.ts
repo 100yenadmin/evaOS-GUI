@@ -520,6 +520,7 @@ export type IEvaosAccountPolicyScope =
 
 export interface IEvaosPeopleAccessPolicyRequest {
   customerId: string;
+  customerAccountId?: string;
 }
 
 export interface IEvaosPeopleAccessMemberView {
@@ -565,6 +566,7 @@ export interface IEvaosPeopleAccessPolicyView {
 
 export interface IEvaosPeopleAccessInviteMemberRequest {
   customerId: string;
+  customerAccountId?: string;
   email: string;
   role: IEvaosAccountPolicyRole;
   seatType?: string;
@@ -602,10 +604,12 @@ export type IEvaosProviderAgentRuntime = 'openclaw' | 'hermes';
 
 export interface IEvaosProviderHubRequest {
   customerId: string;
+  customerAccountId?: string;
 }
 
 export interface IEvaosProviderActionRequest {
   customerId: string;
+  customerAccountId?: string;
   providerKey: IEvaosProviderKey;
   agentRuntime?: IEvaosProviderAgentRuntime;
 }
@@ -614,6 +618,7 @@ export type IEvaosProviderApprovalRequestedAction = 'provider_mint_grant' | 'pro
 
 export interface IEvaosProviderApprovalRequest {
   customerId: string;
+  customerAccountId?: string;
   providerKey: IEvaosProviderKey;
   requestedAction: IEvaosProviderApprovalRequestedAction;
   agentRuntime?: IEvaosProviderAgentRuntime;
