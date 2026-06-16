@@ -20,7 +20,8 @@ Manual release workflows accept `release_target_platforms` and the scripts honor
 - `all` is the default and preserves the existing Windows, macOS, and Linux release contract.
 - `macos` is the universal macOS profile. It builds, prepares, verifies, canaries, and distributes only macOS x64/arm64 desktop assets plus macOS updater metadata.
 - `macos-arm64` is the controlled Apple-Silicon RC profile. It builds, prepares, verifies, canaries, and distributes only macOS arm64 desktop assets plus `latest-arm64-mac.yml`.
-- Windows and Linux assets are deferred in the `macos` and `macos-arm64` profiles; do not treat their absence as a release failure for the controlled 1.0 RC.
+- `windows` is the post-RC Windows restoration profile. It builds, prepares, and verifies only Windows x64/arm64 desktop assets plus `latest.yml` and `latest-win-arm64.yml`; it does not run macOS DMG/notary gates or Linux packaging.
+- Windows and Linux assets are deferred in the `macos` and `macos-arm64` profiles; macOS and Linux assets are deferred in the `windows` profile. Do not treat their absence as a release failure for the selected profile.
 
 ## evaOS macOS RC DMG finalization
 

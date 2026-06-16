@@ -805,6 +805,7 @@ function createReleaseManifest(outputDir, tag, env = process.env) {
     releaseRunAttempt: env.GITHUB_RUN_ATTEMPT || '',
     releaseCommit: env.EVAOS_BETA_RELEASE_COMMIT || env.GITHUB_SHA || '',
     releaseBranch: env.EVAOS_BETA_RELEASE_BRANCH || '',
+    releaseTargetPlatforms: env.EVAOS_RELEASE_TARGET_PLATFORMS || 'all',
     publicBeta: normalizeBoolean(env.EVAOS_BETA_RELEASE_PUBLISH_ENABLED),
     signing: {
       required: true,
@@ -1081,9 +1082,18 @@ function assertReleaseManifestMetadata(manifest, tag, env = process.env) {
   }
 }
 
-function assertReleaseManifestAssetList(manifest) {
+function releaseTargetPlatformsForManifest(manifest, env = process.env) {
+  return env.EVAOS_RELEASE_TARGET_PLATFORMS || manifest.releaseTargetPlatforms || 'all';
+}
+
+function assertReleaseManifestAssetList(manifest, env = process.env) {
+  const releaseTargetPlatforms = releaseTargetPlatformsForManifest(manifest, env);
   const assetNames = (manifest.assets || []).map((asset) => asset.name).filter(Boolean);
-  if (!assetNames.some((name) => name.endsWith('.dmg'))) {
+  if (releaseTargetPlatforms === 'windows') {
+    if (!assetNames.some((name) => name.endsWith('.exe') || name.endsWith('.msi'))) {
+      throw new Error('Release manifest verification for windows requires at least one Windows installer asset.');
+    }
+  } else if (!assetNames.some((name) => name.endsWith('.dmg'))) {
     throw new Error('Release manifest verification requires at least one macOS DMG asset.');
   }
   if (!assetNames.some((name) => name.endsWith('.yml'))) {
@@ -1096,11 +1106,16 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
 
   const manifest = selectTrustedManifest(outputDir, env);
   assertReleaseManifestMetadata(manifest, tag, env);
-  assertReleaseManifestAssetList(manifest);
+  assertReleaseManifestAssetList(manifest, env);
 
   const manifestAssets = new Map((manifest.assets || []).map((asset) => [asset.name, asset]));
   const actualAssets = listReleaseAssetFiles(outputDir);
-  if (!actualAssets.some((name) => name.endsWith('.dmg'))) {
+  const releaseTargetPlatforms = releaseTargetPlatformsForManifest(manifest, env);
+  if (releaseTargetPlatforms === 'windows') {
+    if (!actualAssets.some((name) => name.endsWith('.exe') || name.endsWith('.msi'))) {
+      throw new Error('Release manifest verification for windows requires at least one Windows installer asset.');
+    }
+  } else if (!actualAssets.some((name) => name.endsWith('.dmg'))) {
     throw new Error('Release manifest verification requires at least one macOS DMG asset.');
   }
   if (!actualAssets.some((name) => name.endsWith('.yml'))) {

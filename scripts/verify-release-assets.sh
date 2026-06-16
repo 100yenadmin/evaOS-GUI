@@ -12,11 +12,11 @@ ERRORS=0
 shopt -s nullglob
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos|macos-arm64)
+  all|macos|macos-arm64|windows)
     ;;
   *)
     echo "FAIL: unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
-    echo "FAIL: supported values: all, macos, macos-arm64"
+    echo "FAIL: supported values: all, macos, macos-arm64, windows"
     exit 1
     ;;
 esac
@@ -53,6 +53,9 @@ case "$RELEASE_TARGET_PLATFORMS" in
     ;;
   macos-arm64)
     REQUIRED_METADATA=(latest-arm64-mac.yml)
+    ;;
+  windows)
+    REQUIRED_METADATA=(latest.yml)
     ;;
 esac
 
@@ -102,11 +105,13 @@ assert_metadata_points_to_existing_file() {
   echo "PASS: $metadata_name -> $ref_file"
 }
 
-if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
 fi
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   assert_metadata_points_to_existing_file "latest.yml" "(win-x64|win32-x64|x64)"
+fi
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   assert_metadata_points_to_existing_file "latest-linux.yml" "(linux|AppImage|deb)"
   assert_metadata_points_to_existing_file "latest-linux-arm64.yml" "(arm64|aarch64)"
 fi
@@ -114,6 +119,8 @@ fi
 ARCH_METADATA=(latest-arm64-mac.yml)
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   ARCH_METADATA=(latest-win-arm64.yml latest-arm64-mac.yml)
+elif [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
+  ARCH_METADATA=(latest-win-arm64.yml)
 fi
 
 for f in "${ARCH_METADATA[@]}"; do
@@ -127,6 +134,9 @@ done
 
 if [ -f "$OUTPUT_DIR/latest-arm64-mac.yml" ]; then
   assert_metadata_points_to_existing_file "latest-arm64-mac.yml" "(mac-arm64|darwin-arm64|arm64)"
+fi
+if [ -f "$OUTPUT_DIR/latest-win-arm64.yml" ]; then
+  assert_metadata_points_to_existing_file "latest-win-arm64.yml" "(win-arm64|win32-arm64|arm64)"
 fi
 
 assert_required_glob() {
@@ -155,6 +165,20 @@ if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
 elif [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
   assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
+elif [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
+  REQUIRED_DISTRIBUTABLES=(
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-x64.exe"
+    "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-arm64.exe"
+  )
+
+  for f in "${REQUIRED_DISTRIBUTABLES[@]}"; do
+    if [ ! -f "$OUTPUT_DIR/$f" ]; then
+      echo "FAIL: missing distributable: $f"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $f exists"
+    fi
+  done
 else
   REQUIRED_DISTRIBUTABLES=(
     "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-x64.exe"
@@ -191,6 +215,22 @@ if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ] || [ "$RELEASE_TARGET_PLATFORMS" = 
   done
 fi
 
+if [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
+  DEFERRED_NON_WINDOWS_FILES=(
+    "$OUTPUT_DIR"/*.dmg
+    "$OUTPUT_DIR"/*.deb
+    "$OUTPUT_DIR"/*-mac-*.zip
+    "$OUTPUT_DIR"/latest-mac.yml
+    "$OUTPUT_DIR"/latest-arm64-mac.yml
+    "$OUTPUT_DIR"/latest-linux*.yml
+  )
+  for f in "${DEFERRED_NON_WINDOWS_FILES[@]}"; do
+    [ -e "$f" ] || continue
+    echo "FAIL: Windows release profile contains deferred macOS/Linux asset or metadata: $(basename "$f")"
+    ERRORS=$((ERRORS + 1))
+  done
+fi
+
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
   DEFERRED_MACOS_X64_FILES=(
     "$OUTPUT_DIR"/*-mac-x64.dmg
@@ -217,6 +257,9 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
       ;;
     macos-arm64)
       WEB_PLATFORMS=(darwin-arm64)
+      ;;
+    windows)
+      WEB_PLATFORMS=(win-x86_64)
       ;;
     all)
       WEB_PLATFORMS=(darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64)
