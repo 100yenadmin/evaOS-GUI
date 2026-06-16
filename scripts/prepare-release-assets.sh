@@ -19,11 +19,11 @@ INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
 RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos|macos-arm64)
+  all|macos|macos-arm64|windows)
     ;;
   *)
     echo "::error::Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
-    echo "::error::Supported values: all, macos, macos-arm64"
+    echo "::error::Supported values: all, macos, macos-arm64, windows"
     exit 1
     ;;
 esac
@@ -58,6 +58,14 @@ case "$RELEASE_TARGET_PLATFORMS" in
     done < <(find "$ARTIFACTS_DIR" -type f \( \
       -path "*/macos-build-arm64/*" -a \
       \( -name "*.dmg" -o -name "*.zip" \) \
+    \) | sort)
+    ;;
+  windows)
+    while IFS= read -r file; do
+      DISTRIBUTABLES+=("$file")
+    done < <(find "$ARTIFACTS_DIR" -type f \( \
+      \( -path "*/windows-build-x64/*" -o -path "*/windows-build-arm64/*" \) -a \
+      \( -name "*.exe" -o -name "*.msi" \) \
     \) | sort)
     ;;
   all)
@@ -109,6 +117,14 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
         WEB_CLI_FILES+=("$file")
       done < <(find "$ARTIFACTS_DIR" -type f \( \
         -path "*/web-cli-darwin-arm64/*" -a \
+        \( -name "aionui-web-*.tar.gz" -o -name "aionui-web-*.tar.gz.sha256" \) \
+      \) | sort)
+      ;;
+    windows)
+      while IFS= read -r file; do
+        WEB_CLI_FILES+=("$file")
+      done < <(find "$ARTIFACTS_DIR" -type f \( \
+        -path "*/web-cli-win-x86_64/*" -a \
         \( -name "aionui-web-*.tar.gz" -o -name "aionui-web-*.tar.gz.sha256" \) \
       \) | sort)
       ;;
@@ -264,7 +280,7 @@ EOF
 # ---------------------------------------------------------------------------
 echo "==> Writing canonical updater metadata ..."
 
-if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   if [ -n "$MAC_X64_LATEST" ]; then
     cp -f "$MAC_X64_LATEST" "$OUTPUT_DIR/latest-mac.yml"
     sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-mac.yml"
@@ -272,11 +288,13 @@ if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
     write_macos_dmg_metadata "x64" "latest-mac.yml"
   fi
 fi
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   if [ -n "$WIN_X64_LATEST" ]; then
     cp -f "$WIN_X64_LATEST" "$OUTPUT_DIR/latest.yml"
     sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest.yml"
   fi
+fi
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   if [ -n "$LINUX_X64_LATEST" ]; then
     cp -f "$LINUX_X64_LATEST" "$OUTPUT_DIR/latest-linux.yml"
     sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-linux.yml"
@@ -292,7 +310,7 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> Writing architecture-specific updater metadata ..."
 
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   if [ -n "$WIN_ARM64_LATEST" ]; then
     cp -f "$WIN_ARM64_LATEST" "$OUTPUT_DIR/latest-win-arm64.yml"
     sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-win-arm64.yml"
@@ -301,11 +319,13 @@ fi
 
 # electron-updater on macOS constructs the yml filename as "${channel}-mac.yml".
 # For arm64, channel is "latest-arm64", so it looks for "latest-arm64-mac.yml".
-if [ -n "$MAC_ARM64_LATEST" ]; then
-  cp -f "$MAC_ARM64_LATEST" "$OUTPUT_DIR/latest-arm64-mac.yml"
-  sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-arm64-mac.yml"
-else
-  write_macos_dmg_metadata "arm64" "latest-arm64-mac.yml"
+if [ "$RELEASE_TARGET_PLATFORMS" != "windows" ]; then
+  if [ -n "$MAC_ARM64_LATEST" ]; then
+    cp -f "$MAC_ARM64_LATEST" "$OUTPUT_DIR/latest-arm64-mac.yml"
+    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-arm64-mac.yml"
+  else
+    write_macos_dmg_metadata "arm64" "latest-arm64-mac.yml"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -345,6 +365,9 @@ case "$RELEASE_TARGET_PLATFORMS" in
   macos-arm64)
     REQUIRED_METADATA=(latest-arm64-mac.yml)
     ;;
+  windows)
+    REQUIRED_METADATA=(latest.yml latest-win-arm64.yml)
+    ;;
 esac
 
 for required in "${REQUIRED_METADATA[@]}"; do
@@ -376,6 +399,11 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
     macos-arm64)
       WEB_PLATFORMS=(
         "darwin-arm64"
+      )
+      ;;
+    windows)
+      WEB_PLATFORMS=(
+        "win-x86_64"
       )
       ;;
     all)

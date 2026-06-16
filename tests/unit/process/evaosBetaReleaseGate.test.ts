@@ -792,6 +792,43 @@ describe('evaOS beta release gate', () => {
     }
   });
 
+  it('verifies release manifests for Windows-only release assets', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-windows-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-win-x64.exe'), 'win-x64');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-win-arm64.exe'), 'win-arm64');
+      fs.writeFileSync(path.join(dir, 'latest.yml'), 'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-win-x64.exe\n');
+      fs.writeFileSync(
+        path.join(dir, 'latest-win-arm64.yml'),
+        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-win-arm64.exe\n'
+      );
+
+      const manifest = releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+        GITHUB_WORKFLOW: 'Build and Release',
+        EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
+        GITHUB_RUN_ID: '12345',
+        GITHUB_RUN_ATTEMPT: '1',
+        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
+        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
+        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+        EVAOS_RELEASE_TARGET_PLATFORMS: 'windows',
+      }) as { releaseTargetPlatforms: string };
+
+      expect(manifest.releaseTargetPlatforms).toBe('windows');
+      expect(
+        releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'windows',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('verifies explicit local-signed DMG fallback release manifests with proof provenance', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-local-dmg-'));
     const sourceSha = 'a'.repeat(40);

@@ -9,29 +9,33 @@ RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 MOCK_MACOS_DMG_ONLY="${EVAOS_MOCK_MACOS_DMG_ONLY:-0}"
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos|macos-arm64)
+  all|macos|macos-arm64|windows)
     ;;
   *)
     echo "Unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS" >&2
-    echo "Supported values: all, macos, macos-arm64" >&2
+    echo "Supported values: all, macos, macos-arm64, windows" >&2
     exit 1
     ;;
 esac
 
 rm -rf "$ARTIFACTS_DIR"
-if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   mkdir -p "$ARTIFACTS_DIR/macos-build-x64"
 fi
-mkdir -p "$ARTIFACTS_DIR/macos-build-arm64"
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" != "windows" ]; then
+  mkdir -p "$ARTIFACTS_DIR/macos-build-arm64"
+fi
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   mkdir -p "$ARTIFACTS_DIR/windows-build-x64"
   mkdir -p "$ARTIFACTS_DIR/windows-build-arm64"
+fi
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   mkdir -p "$ARTIFACTS_DIR/linux-build-x64"
   mkdir -p "$ARTIFACTS_DIR/linux-build-arm64"
 fi
 
 # Windows x64
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   touch "$ARTIFACTS_DIR/windows-build-x64/${PRODUCT_NAME}-${VERSION}-win-x64.exe"
   cat > "$ARTIFACTS_DIR/windows-build-x64/latest.yml" <<EOF
 version: ${VERSION}
@@ -46,7 +50,7 @@ EOF
 fi
 
 # Windows arm64
-if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   touch "$ARTIFACTS_DIR/windows-build-arm64/${PRODUCT_NAME}-${VERSION}-win-arm64.exe"
   cat > "$ARTIFACTS_DIR/windows-build-arm64/latest.yml" <<EOF
 version: ${VERSION}
@@ -61,7 +65,7 @@ EOF
 fi
 
 # macOS x64
-if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.dmg"
   if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
     touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
@@ -76,16 +80,18 @@ EOF
 fi
 
 # macOS arm64
-touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.dmg"
-if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
-  touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.zip"
-  cat > "$ARTIFACTS_DIR/macos-build-arm64/latest-mac.yml" <<EOF
+if [ "$RELEASE_TARGET_PLATFORMS" != "windows" ]; then
+  touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.dmg"
+  if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
+    touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.zip"
+    cat > "$ARTIFACTS_DIR/macos-build-arm64/latest-mac.yml" <<EOF
 version: ${VERSION}
 files:
   - url: ${PRODUCT_NAME}-${VERSION}-mac-arm64.dmg
     sha512: fake-sha512-mac-arm64
     size: 200000
 EOF
+  fi
 fi
 
 # Linux x64
@@ -123,6 +129,11 @@ case "$RELEASE_TARGET_PLATFORMS" in
   macos-arm64)
     WEB_PLATFORMS=(
       "darwin-arm64"
+    )
+    ;;
+  windows)
+    WEB_PLATFORMS=(
+      "win-x86_64"
     )
     ;;
   all)
