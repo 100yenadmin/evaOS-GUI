@@ -1336,7 +1336,10 @@ function verifyRcProof(proofDir, tag, env = process.env) {
     throw new Error(`RC proof release manifest does not match trusted workflow artifact ${trustedManifestPath}.`);
   }
   assertReleaseManifestMetadata(trustedManifest, tag, env);
-  assertReleaseManifestAssetList(trustedManifest);
+  assertReleaseManifestAssetList(trustedManifest, {
+    ...env,
+    EVAOS_RELEASE_TARGET_PLATFORMS: trustedManifest.releaseTargetPlatforms || '',
+  });
   verifyReleaseProvenance(trustedManifest, env);
 
   const releaseAssetsReferenceRelativePath =

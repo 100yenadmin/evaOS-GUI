@@ -115,6 +115,7 @@ function writeProofReleaseAssetsReference(
     EVAOS_BETA_RELEASE_COMMIT: 'abc123',
     EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
     EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+    EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
   });
 
   const sourceManifestPath = path.join(sourceReleaseAssetsDir, 'evaos-beta-release-manifest.json');
@@ -996,6 +997,7 @@ describe('evaOS beta release gate', () => {
           GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: 'abc123',
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'windows',
         })
       ).toBe(true);
     } finally {
