@@ -18,6 +18,7 @@ import starOffice from './starOffice.json';
 import guid from './guid.json';
 import agent from './agent.json';
 import team from './team.json';
+import evaos from './evaos.json';
 import pet from './pet.json';
 
 export default {
@@ -40,5 +41,6 @@ export default {
   guid,
   agent,
   team,
+  evaos,
   pet,
 };
