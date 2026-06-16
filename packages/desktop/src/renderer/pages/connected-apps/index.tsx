@@ -401,115 +401,117 @@ const ConnectedAppsPage: React.FC = () => {
               <p className='m-0 mt-12px text-13px leading-20px text-[rgb(var(--warning-6))]'>{actionError}</p>
             ) : null}
 
-            <div className='mt-14px grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-12px'>
-              {hub.profiles.length === 0 ? (
-                <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-14px text-13px leading-20px text-t-secondary'>
-                  {t('evaos.connectedApps.emptyProfiles')}
-                </div>
-              ) : (
-                hub.profiles.map((profile) => (
-                  <article
-                    key={profile.providerKey}
-                    className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-14px'
-                  >
-                    <div className='flex items-start justify-between gap-10px'>
-                      <div className='min-w-0'>
-                        <h3 className='m-0 text-15px leading-22px font-semibold text-t-primary'>
-                          {safeEvaosUiText(profile.title, profile.providerKey)}
-                        </h3>
-                        <p className='m-0 mt-3px text-12px leading-18px text-t-secondary'>
-                          {safeEvaosUiText(profile.subtitle, profile.summaryText)}
-                        </p>
+            {!hub.routeDenied ? (
+              <div className='mt-14px grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-12px'>
+                {hub.profiles.length === 0 ? (
+                  <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-14px text-13px leading-20px text-t-secondary'>
+                    {t('evaos.connectedApps.emptyProfiles')}
+                  </div>
+                ) : (
+                  hub.profiles.map((profile) => (
+                    <article
+                      key={profile.providerKey}
+                      className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-14px'
+                    >
+                      <div className='flex items-start justify-between gap-10px'>
+                        <div className='min-w-0'>
+                          <h3 className='m-0 text-15px leading-22px font-semibold text-t-primary'>
+                            {safeEvaosUiText(profile.title, profile.providerKey)}
+                          </h3>
+                          <p className='m-0 mt-3px text-12px leading-18px text-t-secondary'>
+                            {safeEvaosUiText(profile.subtitle, profile.summaryText)}
+                          </p>
+                        </div>
+                        <Tag color={statusColor(profile.status)}>{providerStatusLabel(t, profile.status)}</Tag>
                       </div>
-                      <Tag color={statusColor(profile.status)}>{providerStatusLabel(t, profile.status)}</Tag>
-                    </div>
-                    <div className='mt-10px flex flex-wrap gap-6px'>
-                      {profile.active ? (
-                        <Tag color='green' icon={<Success theme='outline' size='12' />}>
-                          {t('evaos.connectedApps.active')}
-                        </Tag>
-                      ) : null}
-                      {profile.approvalRequired ? (
-                        <Tag color='orange' icon={<Shield theme='outline' size='12' />}>
-                          {t('evaos.connectedApps.approvalRequired')}
-                        </Tag>
-                      ) : null}
-                      {profile.hasBrokeredGrant ? (
-                        <Tag color='green'>{t('evaos.connectedApps.brokeredGrant')}</Tag>
-                      ) : null}
-                      {profile.rawSecretsStoredInWorkbench ? (
-                        <Tag color='red' icon={<Attention theme='outline' size='12' />}>
-                          {t('evaos.connectedApps.unsafeSecretState')}
-                        </Tag>
-                      ) : (
-                        <Tag color='gray'>{t('evaos.connectedApps.noWorkbenchSecrets')}</Tag>
-                      )}
-                    </div>
-                    <p className='m-0 mt-10px text-12px leading-18px text-t-secondary'>
-                      {safeEvaosUiText(profile.usageSummary, profile.summaryText)}
-                    </p>
-                    {profile.capabilities.length > 0 ? (
                       <div className='mt-10px flex flex-wrap gap-6px'>
-                        {profile.capabilities.slice(0, 5).map((capability) => (
-                          <Tag key={capability} color='gray'>
-                            {safeEvaosUiText(capability, t('evaos.connectedApps.capability'))}
+                        {profile.active ? (
+                          <Tag color='green' icon={<Success theme='outline' size='12' />}>
+                            {t('evaos.connectedApps.active')}
                           </Tag>
-                        ))}
+                        ) : null}
+                        {profile.approvalRequired ? (
+                          <Tag color='orange' icon={<Shield theme='outline' size='12' />}>
+                            {t('evaos.connectedApps.approvalRequired')}
+                          </Tag>
+                        ) : null}
+                        {profile.hasBrokeredGrant ? (
+                          <Tag color='green'>{t('evaos.connectedApps.brokeredGrant')}</Tag>
+                        ) : null}
+                        {profile.rawSecretsStoredInWorkbench ? (
+                          <Tag color='red' icon={<Attention theme='outline' size='12' />}>
+                            {t('evaos.connectedApps.unsafeSecretState')}
+                          </Tag>
+                        ) : (
+                          <Tag color='gray'>{t('evaos.connectedApps.noWorkbenchSecrets')}</Tag>
+                        )}
                       </div>
-                    ) : null}
-                    <div className='mt-12px flex flex-wrap gap-8px'>
-                      {profile.status !== 'connected' ? (
-                        <Button
-                          size='small'
-                          icon={<LinkCloud theme='outline' size='14' />}
-                          loading={actionProviderKey === profile.providerKey}
-                          onClick={() => void runProviderAction(profile, 'startAuth')}
-                        >
-                          {t('evaos.connectedApps.connect')}
-                        </Button>
-                      ) : !profile.active ? (
-                        <Button
-                          size='small'
-                          type='primary'
-                          loading={actionProviderKey === profile.providerKey}
-                          onClick={() => void runProviderAction(profile, 'switchProvider')}
-                        >
-                          {t('evaos.connectedApps.makeActive')}
-                        </Button>
+                      <p className='m-0 mt-10px text-12px leading-18px text-t-secondary'>
+                        {safeEvaosUiText(profile.usageSummary, profile.summaryText)}
+                      </p>
+                      {profile.capabilities.length > 0 ? (
+                        <div className='mt-10px flex flex-wrap gap-6px'>
+                          {profile.capabilities.slice(0, 5).map((capability) => (
+                            <Tag key={capability} color='gray'>
+                              {safeEvaosUiText(capability, t('evaos.connectedApps.capability'))}
+                            </Tag>
+                          ))}
+                        </div>
                       ) : null}
-                      {profile.status === 'connected' && !profile.hasBrokeredGrant && !profile.approvalRequired ? (
-                        <Button
-                          size='small'
-                          loading={actionProviderKey === profile.providerKey}
-                          onClick={() => void runProviderAction(profile, 'mintGrant')}
-                        >
-                          {t('evaos.connectedApps.grantToAgents')}
-                        </Button>
-                      ) : null}
-                      {profile.approvalRequired ? (
-                        <Button
-                          size='small'
-                          loading={actionProviderKey === profile.providerKey}
-                          onClick={() => void runProviderAction(profile, 'requestApproval')}
-                        >
-                          {t('evaos.connectedApps.requestApproval')}
-                        </Button>
-                      ) : null}
-                      {profile.status === 'connected' ? (
-                        <Button
-                          size='small'
-                          status='danger'
-                          loading={actionProviderKey === profile.providerKey}
-                          onClick={() => void runProviderAction(profile, 'revokeProvider')}
-                        >
-                          {t('evaos.connectedApps.revoke')}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
+                      <div className='mt-12px flex flex-wrap gap-8px'>
+                        {profile.status !== 'connected' ? (
+                          <Button
+                            size='small'
+                            icon={<LinkCloud theme='outline' size='14' />}
+                            loading={actionProviderKey === profile.providerKey}
+                            onClick={() => void runProviderAction(profile, 'startAuth')}
+                          >
+                            {t('evaos.connectedApps.connect')}
+                          </Button>
+                        ) : !profile.active ? (
+                          <Button
+                            size='small'
+                            type='primary'
+                            loading={actionProviderKey === profile.providerKey}
+                            onClick={() => void runProviderAction(profile, 'switchProvider')}
+                          >
+                            {t('evaos.connectedApps.makeActive')}
+                          </Button>
+                        ) : null}
+                        {profile.status === 'connected' && !profile.hasBrokeredGrant && !profile.approvalRequired ? (
+                          <Button
+                            size='small'
+                            loading={actionProviderKey === profile.providerKey}
+                            onClick={() => void runProviderAction(profile, 'mintGrant')}
+                          >
+                            {t('evaos.connectedApps.grantToAgents')}
+                          </Button>
+                        ) : null}
+                        {profile.approvalRequired ? (
+                          <Button
+                            size='small'
+                            loading={actionProviderKey === profile.providerKey}
+                            onClick={() => void runProviderAction(profile, 'requestApproval')}
+                          >
+                            {t('evaos.connectedApps.requestApproval')}
+                          </Button>
+                        ) : null}
+                        {profile.status === 'connected' ? (
+                          <Button
+                            size='small'
+                            status='danger'
+                            loading={actionProviderKey === profile.providerKey}
+                            onClick={() => void runProviderAction(profile, 'revokeProvider')}
+                          >
+                            {t('evaos.connectedApps.revoke')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>

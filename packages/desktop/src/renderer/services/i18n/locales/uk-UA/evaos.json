@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} активних місць, {{invitedSeats}} запрошено",
     "seats": "Місця",
     "sendInvite": "Надіслати запрошення",
+    "status": {
+      "accepted": "Прийнято",
+      "active": "Активно",
+      "disabled": "Вимкнено",
+      "expired": "Минуло",
+      "invited": "Запрошено",
+      "pending": "Очікує",
+      "revoked": "Відкликано"
+    },
     "title": "Користувачі й доступ",
     "unlimited": "без обмежень",
     "yourRole": "Ваша роль"

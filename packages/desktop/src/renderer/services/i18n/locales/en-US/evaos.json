@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} active seats, {{invitedSeats}} invited",
     "seats": "Seats",
     "sendInvite": "Send invite",
+    "status": {
+      "accepted": "Accepted",
+      "active": "Active",
+      "disabled": "Disabled",
+      "expired": "Expired",
+      "invited": "Invited",
+      "pending": "Pending",
+      "revoked": "Revoked"
+    },
     "title": "People & Access",
     "unlimited": "unlimited",
     "yourRole": "Your role"

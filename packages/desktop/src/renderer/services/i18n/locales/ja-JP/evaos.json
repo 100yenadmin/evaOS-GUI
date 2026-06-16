@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} 使用中シート、{{invitedSeats}} 招待中",
     "seats": "シート",
     "sendInvite": "招待を送信",
+    "status": {
+      "accepted": "承諾済み",
+      "active": "アクティブ",
+      "disabled": "無効",
+      "expired": "期限切れ",
+      "invited": "招待済み",
+      "pending": "保留中",
+      "revoked": "取り消し済み"
+    },
     "title": "ユーザーとアクセス",
     "unlimited": "無制限",
     "yourRole": "あなたのロール"

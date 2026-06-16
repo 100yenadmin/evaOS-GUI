@@ -42,8 +42,24 @@ const ROLE_LABEL_KEYS: Record<IEvaosAccountPolicyRole, string> = {
   support: 'evaos.peopleAccess.roles.support',
 };
 
+const PEOPLE_ACCESS_STATUS_KEYS: Record<string, string> = {
+  accepted: 'evaos.peopleAccess.status.accepted',
+  active: 'evaos.peopleAccess.status.active',
+  disabled: 'evaos.peopleAccess.status.disabled',
+  expired: 'evaos.peopleAccess.status.expired',
+  invited: 'evaos.peopleAccess.status.invited',
+  pending: 'evaos.peopleAccess.status.pending',
+  revoked: 'evaos.peopleAccess.status.revoked',
+};
+
 function roleLabel(t: ReturnType<typeof useTranslation>['t'], role: IEvaosAccountPolicyRole): string {
   return t(ROLE_LABEL_KEYS[role]);
+}
+
+function statusLabel(t: ReturnType<typeof useTranslation>['t'], status: string): string {
+  return PEOPLE_ACCESS_STATUS_KEYS[status.toLowerCase()]
+    ? t(PEOPLE_ACCESS_STATUS_KEYS[status.toLowerCase()])
+    : safeEvaosUiText(status, t('evaos.shared.unknown'));
 }
 
 function statusColor(status: string): 'green' | 'orange' | 'red' | 'gray' {
@@ -491,9 +507,7 @@ const PeopleAccessPage: React.FC = () => {
                               {roleLabel(t, member.role)}
                             </div>
                           </div>
-                          <Tag color={statusColor(member.status)}>
-                            {safeEvaosUiText(member.status, t('common.status'))}
-                          </Tag>
+                          <Tag color={statusColor(member.status)}>{statusLabel(t, member.status)}</Tag>
                         </div>
                       </article>
                     ))}
@@ -523,9 +537,7 @@ const PeopleAccessPage: React.FC = () => {
                               {roleLabel(t, invite.role)}
                             </div>
                           </div>
-                          <Tag color={statusColor(invite.status)}>
-                            {safeEvaosUiText(invite.status, t('common.status'))}
-                          </Tag>
+                          <Tag color={statusColor(invite.status)}>{statusLabel(t, invite.status)}</Tag>
                         </div>
                       </article>
                     ))}

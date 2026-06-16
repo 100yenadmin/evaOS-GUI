@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} 個啟用席位，{{invitedSeats}} 個已邀請",
     "seats": "席位",
     "sendInvite": "傳送邀請",
+    "status": {
+      "accepted": "已接受",
+      "active": "有效",
+      "disabled": "已停用",
+      "expired": "已過期",
+      "invited": "已邀請",
+      "pending": "待處理",
+      "revoked": "已撤銷"
+    },
     "title": "人員與存取",
     "unlimited": "無限制",
     "yourRole": "你的角色"

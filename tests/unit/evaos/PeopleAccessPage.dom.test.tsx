@@ -50,6 +50,13 @@ vi.mock('react-i18next', () => ({
         'evaos.peopleAccess.roles.support': 'Support',
         'evaos.peopleAccess.roles.technicalAdmin': 'Technical admin',
         'evaos.peopleAccess.sendInvite': 'Send invite',
+        'evaos.peopleAccess.status.accepted': 'Accepted',
+        'evaos.peopleAccess.status.active': 'Active',
+        'evaos.peopleAccess.status.disabled': 'Disabled',
+        'evaos.peopleAccess.status.expired': 'Expired',
+        'evaos.peopleAccess.status.invited': 'Invited',
+        'evaos.peopleAccess.status.pending': 'Pending',
+        'evaos.peopleAccess.status.revoked': 'Revoked',
         'evaos.shared.unknown': 'Unknown',
         'evaos.shared.load': 'Load',
         'evaos.shared.refreshTargets': 'Refresh targets',
@@ -217,6 +224,8 @@ describe('PeopleAccessPage', () => {
 
     expect(await screen.findByText('Admin Owner')).toBeInTheDocument();
     expect(screen.getByText('new.member@example.test')).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
     expect(screen.getByText('beta-owner')).toBeInTheDocument();
     expect(screen.queryByText(/dashboard\/invites|Website handoff|Open dashboard/i)).not.toBeInTheDocument();
     expect(peopleAccessMocks.getPolicy).toHaveBeenCalledWith({

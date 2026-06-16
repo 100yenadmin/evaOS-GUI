@@ -245,7 +245,10 @@ describe('ConnectedAppsPage', () => {
     const user = userEvent.setup();
     providerHubMocks.getProfiles.mockResolvedValue({
       success: true,
-      data: providerHub(true),
+      data: {
+        ...providerHub(true),
+        profiles: providerHub(false).profiles,
+      },
     });
 
     render(<ConnectedAppsPage />);
@@ -257,6 +260,8 @@ describe('ConnectedAppsPage', () => {
     expect(
       screen.getByText('Connected Apps requires the manage_integrations scope for this customer account.')
     ).toBeInTheDocument();
+    expect(screen.queryByText('Google Workspace')).not.toBeInTheDocument();
+    expect(screen.queryByText('Slack')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^connect$/i })).not.toBeInTheDocument();
     expect(providerHubMocks.startAuth).not.toHaveBeenCalled();
   });

@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} etkin koltuk, {{invitedSeats}} davetli",
     "seats": "Koltuklar",
     "sendInvite": "Davet gönder",
+    "status": {
+      "accepted": "Kabul edildi",
+      "active": "Aktif",
+      "disabled": "Devre dışı",
+      "expired": "Süresi doldu",
+      "invited": "Davet edildi",
+      "pending": "Beklemede",
+      "revoked": "İptal edildi"
+    },
     "title": "Kişiler ve Erişim",
     "unlimited": "sınırsız",
     "yourRole": "Rolünüz"

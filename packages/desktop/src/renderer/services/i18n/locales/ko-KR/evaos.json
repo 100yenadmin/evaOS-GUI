@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} 활성 좌석, {{invitedSeats}} 초대됨",
     "seats": "좌석",
     "sendInvite": "초대 보내기",
+    "status": {
+      "accepted": "수락됨",
+      "active": "활성",
+      "disabled": "비활성화됨",
+      "expired": "만료됨",
+      "invited": "초대됨",
+      "pending": "대기 중",
+      "revoked": "취소됨"
+    },
     "title": "사용자 및 접근",
     "unlimited": "무제한",
     "yourRole": "내 역할"

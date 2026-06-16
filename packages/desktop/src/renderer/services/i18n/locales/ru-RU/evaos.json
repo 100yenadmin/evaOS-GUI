@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} активных мест, {{invitedSeats}} приглашено",
     "seats": "Места",
     "sendInvite": "Отправить приглашение",
+    "status": {
+      "accepted": "Принято",
+      "active": "Активно",
+      "disabled": "Отключено",
+      "expired": "Истекло",
+      "invited": "Приглашено",
+      "pending": "Ожидает",
+      "revoked": "Отозвано"
+    },
     "title": "Пользователи и доступ",
     "unlimited": "без ограничений",
     "yourRole": "Ваша роль"

@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} assentos ativos, {{invitedSeats}} convidados",
     "seats": "Assentos",
     "sendInvite": "Enviar convite",
+    "status": {
+      "accepted": "Aceito",
+      "active": "Ativo",
+      "disabled": "Desativado",
+      "expired": "Expirado",
+      "invited": "Convidado",
+      "pending": "Pendente",
+      "revoked": "Revogado"
+    },
     "title": "Pessoas e Acesso",
     "unlimited": "ilimitado",
     "yourRole": "Sua função"

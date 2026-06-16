@@ -90,6 +90,15 @@
     "seatSummary": "{{activeSeats}} 个活跃席位，{{invitedSeats}} 个已邀请",
     "seats": "席位",
     "sendInvite": "发送邀请",
+    "status": {
+      "accepted": "已接受",
+      "active": "活跃",
+      "disabled": "已禁用",
+      "expired": "已过期",
+      "invited": "已邀请",
+      "pending": "待处理",
+      "revoked": "已撤销"
+    },
     "title": "人员与访问",
     "unlimited": "无限",
     "yourRole": "你的角色"
