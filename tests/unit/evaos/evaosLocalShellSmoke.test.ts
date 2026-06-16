@@ -60,6 +60,17 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
     settledMarkers: string[];
     loadedStateRequiredMarkers: string[];
   }>;
+  LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS: Array<{
+    name: string;
+    hash: string;
+    title: string;
+    expected: string[];
+    forbidden: string[];
+    proofStage: string;
+    settledMarkers: string[];
+    loadedStateRequiredMarkers: string[];
+    requiredSelectors?: string[];
+  }>;
   TEAM_ROUTE_CHECK: {
     name: string;
     hash: string;
@@ -83,6 +94,7 @@ const localShellSmoke = require('../../../scripts/evaosLocalShellSmoke.js') as {
   }>;
   shellSmokeEnv: (artifactsDir: string, env?: NodeJS.ProcessEnv, repoRoot?: string) => NodeJS.ProcessEnv;
   isLocalProductMemberPersona: (env?: NodeJS.ProcessEnv) => boolean;
+  isLocalProductEmployeePersona: (env?: NodeJS.ProcessEnv) => boolean;
   textFindings: (
     route: string,
     text: string,
@@ -576,6 +588,12 @@ describe('evaOS local shell smoke', () => {
         AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA: 'member',
       })
     ).toBe(localShellSmoke.LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS);
+    expect(
+      localShellSmoke.routeChecksForEnv({
+        AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE: '1',
+        AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA: 'employee',
+      })
+    ).toBe(localShellSmoke.LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS);
   });
 
   it('keeps member-persona visual proof focused on route denial instead of product readiness', () => {
@@ -590,6 +608,35 @@ describe('evaOS local shell smoke', () => {
         proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
         expected: ['evaOS Workbench Beta'],
         forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'evaOS', 'Hermes']),
+      }),
+    ]);
+  });
+
+  it('keeps employee-persona visual proof denied by default while allowing Mac setup', () => {
+    expect(localShellSmoke.isLocalProductEmployeePersona({})).toBe(false);
+    expect(
+      localShellSmoke.isLocalProductEmployeePersona({ AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA: 'employee' })
+    ).toBe(true);
+    expect(localShellSmoke.LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS).toEqual([
+      expect.objectContaining({
+        name: 'mission-control-employee-denied-fixture',
+        hash: '/mission-control',
+        proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
+        expected: ['evaOS Workbench Beta'],
+        forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'evaOS', 'Hermes']),
+      }),
+      expect.objectContaining({
+        name: 'creative-studio-employee-denied-fixture',
+        hash: '/creative-studio',
+        proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
+        expected: ['evaOS Workbench Beta'],
+        forbidden: expect.arrayContaining(['Creative Studio', 'Design Workspace', 'Shared Browser']),
+      }),
+      expect.objectContaining({
+        name: 'native-companion-employee-allowed-fixture',
+        hash: '/native-companion',
+        proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
+        expected: expect.arrayContaining(['Mac & iPhone', 'Workbench connector']),
       }),
     ]);
   });

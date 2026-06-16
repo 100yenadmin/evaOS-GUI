@@ -132,6 +132,14 @@ function renderGuardedRoute(routePath = '/mission-control') {
             </EvaosRuntimeRouteGuard>
           }
         />
+        <Route
+          path='/team/:id'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/team'>
+              <p>Team loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
         <Route path='/guid' element={<p>Guid fallback</p>} />
         <Route path='/login' element={<p>Login fallback</p>} />
       </Routes>
@@ -414,5 +422,32 @@ describe('EvaosRuntimeRouteGuard', () => {
     renderGuardedRoute('/company-brain');
 
     expect(screen.getByText('Company Brain loaded')).toBeInTheDocument();
+  });
+
+  it('denies Team mode deep links for employees without assign-agent policy', async () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = [];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'employee@example.test',
+    };
+
+    renderGuardedRoute('/team/test-team');
+
+    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
+    expect(screen.queryByText('Team loaded')).not.toBeInTheDocument();
+  });
+
+  it('allows Team mode deep links when broker policy grants assign-agent scope', () => {
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = ['assign_agents'];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'employee@example.test',
+    };
+
+    renderGuardedRoute('/team/test-team');
+
+    expect(screen.getByText('Team loaded')).toBeInTheDocument();
   });
 });

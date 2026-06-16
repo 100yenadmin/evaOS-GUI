@@ -47,7 +47,7 @@ const MEMBERSHIP_ID = 'fixture-member-owner';
 const NOW = '2026-06-04T10:00:00.000Z';
 const FIXTURE_LABEL = 'LOCAL FIXTURE - NOT LIVE BETA PROOF';
 const BUSINESS_BROWSER_FIXTURE_URL = 'https://browser.fixture.example.test/workspace';
-type EvaosLocalProductFixturePersona = 'owner' | 'member';
+type EvaosLocalProductFixturePersona = 'owner' | 'member' | 'employee';
 type EvaosRuntimeFixture = Pick<IEvaosRuntimeStatusView, 'displayLabel' | 'status'> & Partial<IEvaosRuntimeStatusView>;
 const OWNER_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [
   'manage_members',
@@ -69,12 +69,14 @@ const MEMBER_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [
   'use_creative_studio',
   'use_design_workspace',
 ];
+const EMPLOYEE_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [];
 
 export function isEvaosLocalProductFixtureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.AIONUI_E2E_TEST === '1' && env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE === '1';
 }
 
 export function evaosLocalProductFixturePersona(env: NodeJS.ProcessEnv = process.env): EvaosLocalProductFixturePersona {
+  if (env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA === 'employee') return 'employee';
   return env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA === 'member' ? 'member' : 'owner';
 }
 
@@ -86,7 +88,12 @@ export function evaosLocalProductFixtureSessionStatus(env: NodeJS.ProcessEnv = p
     expired: false,
     sessionKey: `evaos-local-fixture-${persona}`,
     sessionEpoch: 1,
-    userEmail: persona === 'member' ? 'member@example.test' : 'admin@100yen.org',
+    userEmail:
+      persona === 'employee'
+        ? 'employee@example.test'
+        : persona === 'member'
+          ? 'member@example.test'
+          : 'admin@100yen.org',
     expiresAt: '2026-06-11T10:00:00.000Z',
     source: 'memory',
     message: `${FIXTURE_LABEL}: ${persona} desktop session active for local proof.`,
@@ -98,8 +105,13 @@ export function evaosLocalProductFixtureCustomerTargets(
 ): IEvaosCustomerTargetsView {
   const persona = evaosLocalProductFixturePersona(env);
   return clone({
-    roles: persona === 'member' ? ['member'] : ['owner'],
-    scopes: persona === 'member' ? MEMBER_FIXTURE_SCOPES : OWNER_FIXTURE_SCOPES,
+    roles: persona === 'employee' ? ['agent_only'] : persona === 'member' ? ['member'] : ['owner'],
+    scopes:
+      persona === 'employee'
+        ? EMPLOYEE_FIXTURE_SCOPES
+        : persona === 'member'
+          ? MEMBER_FIXTURE_SCOPES
+          : OWNER_FIXTURE_SCOPES,
     isOperator: persona === 'owner',
     defaultCustomerId: CUSTOMER_ID,
     selectedCustomerId: CUSTOMER_ID,

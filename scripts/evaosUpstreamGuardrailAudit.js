@@ -224,7 +224,11 @@ const REQUIRED_MARKERS = Object.freeze([
       { label: 'desktop session import action remains handled', text: 'EVAOS_DESKTOP_SESSION_IMPORTED_ACTION' },
       {
         label: 'team route remains controlled by shell constant',
-        text: 'TEAM_MODE_ENABLED ? withRouteFallback(TeamIndex)',
+        text: 'TEAM_MODE_ENABLED ? (',
+      },
+      {
+        label: 'team route remains protected by evaOS route policy',
+        text: "<EvaosRuntimeRouteGuard routePath='/team'>",
       },
     ],
   },

@@ -151,6 +151,7 @@ describe('HomePage broker-policy quick actions', () => {
     expect(screen.queryByRole('button', { name: /Connected Apps/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Approvals/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Shared Browser/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Creative Studio/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Company Brain/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^evaOS/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Hermes/i })).not.toBeInTheDocument();
@@ -168,6 +169,7 @@ describe('HomePage broker-policy quick actions', () => {
 
     expect(screen.getByRole('button', { name: /Shared Browser/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Company Brain/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Creative Studio/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Connected Apps/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Approvals/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^evaOS/i })).not.toBeInTheDocument();

@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes, useNavigate } from 'react-router-d
 import { deepLink, evaosBroker } from '@/common/adapter/ipcBridge';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import { EVAOS_BETA_WEBUI_FALLBACK_ROUTE, evaosBetaWebUIRouteElement } from '@renderer/evaos/evaosBetaShellPolicy';
+import { EvaosRuntimeRouteGuard } from '@renderer/components/layout/EvaosRuntimeRouteGuard';
 import { renderEvaosRoutes } from '@renderer/evaos/evaosRoutes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
@@ -124,7 +125,13 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route path='/conversation/:id' element={withRouteFallback(Conversation)} />
           <Route
             path='/team/:id'
-            element={TEAM_MODE_ENABLED ? withRouteFallback(TeamIndex) : <Navigate to='/guid' replace />}
+            element={
+              TEAM_MODE_ENABLED ? (
+                <EvaosRuntimeRouteGuard routePath='/team'>{withRouteFallback(TeamIndex)}</EvaosRuntimeRouteGuard>
+              ) : (
+                <Navigate to='/guid' replace />
+              )
+            }
           />
           <Route path='/settings/model' element={withRouteFallback(ModeSettings)} />
           <Route path='/settings/assistants' element={withRouteFallback(AssistantSettings)} />

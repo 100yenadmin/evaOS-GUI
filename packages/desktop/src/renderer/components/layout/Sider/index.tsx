@@ -373,7 +373,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
                   {...workspaceHistoryProps}
                   afterPinnedContent={
                     <>
-                      {TEAM_MODE_ENABLED ? (
+                      {TEAM_MODE_ENABLED && evaosSidebarState.canSeeTeamMode ? (
                         <TeamSiderSection
                           collapsed={collapsed}
                           pathname={pathname}

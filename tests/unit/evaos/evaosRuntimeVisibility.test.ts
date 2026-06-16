@@ -112,6 +112,14 @@ describe('evaosRuntimeVisibility', () => {
         roles: ['owner'],
         userEmail: 'owner@example.test',
       })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+    expect(
+      evaosRuntimeRouteDecision('/connected-apps', {
+        authenticated: true,
+        roles: ['owner'],
+        scopes: ['manage_integrations'],
+        userEmail: 'owner@example.test',
+      })
     ).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 
@@ -159,6 +167,35 @@ describe('evaosRuntimeVisibility', () => {
     expect(visibleTeamKeys).toContain('team_chat');
   });
 
+  it('keeps customer admins scoped to broker policy while preserving the global evaOS admin override', () => {
+    expect(
+      evaosRuntimeRouteDecision('/people-access', {
+        authenticated: true,
+        roles: ['admin'],
+        scopes: [],
+        userEmail: 'company-admin@example.test',
+      })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+
+    expect(
+      evaosRuntimeRouteDecision('/people-access', {
+        authenticated: true,
+        roles: ['admin'],
+        scopes: ['manage_members'],
+        userEmail: 'company-admin@example.test',
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
+
+    expect(
+      evaosRuntimeRouteDecision('/people-access', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: [],
+        userEmail: 'admin@100yen.org',
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
+  });
+
   it('fails closed for direct technical-dashboard routes when the session is not allowed', () => {
     expect(
       evaosRuntimeRouteDecision('/terminal', {
@@ -192,11 +229,12 @@ describe('evaosRuntimeVisibility', () => {
       '/business-browser',
       '/creative-studio',
       '/company-brain',
+      '/team',
     ]);
 
     expect(
       EVAOS_ROUTE_POLICIES.filter((policy) => policy.allowMissingBroker).map((policy) => policy.routePath)
-    ).toEqual(['/home', '/native-companion', '/creative-studio']);
+    ).toEqual(['/home', '/native-companion']);
   });
 
   it('lets signed-in admins reach evaOS and Hermes routes while preserving broker repair states', () => {
@@ -277,6 +315,22 @@ describe('evaosRuntimeVisibility', () => {
         scopes: [],
       })
     ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+
+    expect(
+      evaosRuntimeRouteDecision('/team/customer-team', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: [],
+      })
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+
+    expect(
+      evaosRuntimeRouteDecision('/team/customer-team', {
+        authenticated: true,
+        roles: ['member'],
+        scopes: ['assign_agents'],
+      })
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 
   it('lets authenticated employees reach Mac & iPhone repair without opening admin/runtime surfaces', () => {

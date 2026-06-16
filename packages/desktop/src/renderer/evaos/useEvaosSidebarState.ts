@@ -36,6 +36,7 @@ interface EvaosSidebarState {
   canSeeCompanyBrain: boolean;
   canSeeApprovalCenter: boolean;
   canSeeNativeCompanion: boolean;
+  canSeeTeamMode: boolean;
 }
 
 export function useEvaosSidebarState(): EvaosSidebarState {
@@ -134,5 +135,6 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     canSeeCompanyBrain: canSeeBrokeredRoute('/company-brain'),
     canSeeApprovalCenter: canSeeBrokeredRoute('/approval-center'),
     canSeeNativeCompanion,
+    canSeeTeamMode: canSeeBrokeredRoute('/team'),
   };
 }

@@ -51,7 +51,7 @@ describe('evaOS shell guardrails', () => {
       'utf8'
     );
 
-    expect(sider).toContain('TEAM_MODE_ENABLED ? (');
+    expect(sider).toContain('TEAM_MODE_ENABLED && evaosSidebarState.canSeeTeamMode ? (');
     expect(sider).toContain('<TeamSiderSection');
     expect(remoteAgents).toContain('EVAOS_BETA_REMOTE_AGENT_CONNECTIONS_ENABLED = false');
     expect(remoteAgents).toContain('EVAOS_BETA_REMOTE_AGENT_ALLOW_INSECURE = false');
