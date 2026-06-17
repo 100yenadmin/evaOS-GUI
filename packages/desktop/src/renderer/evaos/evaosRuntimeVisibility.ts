@@ -60,7 +60,7 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
     section: 'technical',
     routePath: '/evaos',
     brokered: true,
-    requiresAdmin: true,
+    requiresAdmin: false,
     technicalDashboard: true,
     requiredScopes: ['access_openclaw_dashboard'],
   },
@@ -71,7 +71,7 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
     section: 'technical',
     routePath: '/hermes',
     brokered: true,
-    requiresAdmin: true,
+    requiresAdmin: false,
     technicalDashboard: true,
     requiredScopes: ['access_hermes_dashboard'],
   },
@@ -82,8 +82,9 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
     section: 'technical',
     routePath: '/mission-control',
     brokered: true,
-    requiresAdmin: true,
+    requiresAdmin: false,
     technicalDashboard: true,
+    requiredScopes: ['access_technical_diagnostics'],
   },
   {
     key: 'opendesign',
@@ -114,7 +115,7 @@ export const EVAOS_RUNTIME_CATALOG: EvaosRuntimeDefinition[] = [
     section: 'technical',
     routePath: '/terminal',
     brokered: true,
-    requiresAdmin: true,
+    requiresAdmin: false,
     technicalDashboard: true,
     requiredScopes: ['access_terminal'],
   },
@@ -154,22 +155,19 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   },
   {
     routePath: '/evaos',
-    requiresAdmin: true,
     requiredScopes: ['access_openclaw_dashboard'],
   },
   {
     routePath: '/openclaw',
-    requiresAdmin: true,
     requiredScopes: ['access_openclaw_dashboard'],
   },
   {
     routePath: '/hermes',
-    requiresAdmin: true,
     requiredScopes: ['access_hermes_dashboard'],
   },
   {
     routePath: '/mission-control',
-    requiresAdmin: true,
+    requiredScopes: ['access_technical_diagnostics'],
   },
   {
     routePath: '/design-workspace',
@@ -181,7 +179,6 @@ export const EVAOS_ROUTE_POLICIES: EvaosRoutePolicy[] = [
   },
   {
     routePath: '/terminal',
-    requiresAdmin: true,
     requiredScopes: ['access_terminal'],
   },
   {

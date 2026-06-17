@@ -31,15 +31,25 @@ describe('evaosRuntimeVisibility', () => {
       title: 'evaOS',
       routePath: '/evaos',
       section: 'technical',
-      requiresAdmin: true,
+      requiresAdmin: false,
       brokered: true,
+      requiredScopes: ['access_openclaw_dashboard'],
     });
     expect(EVAOS_RUNTIME_CATALOG.find((runtime) => runtime.key === 'hermes')).toMatchObject({
       title: 'Hermes',
       routePath: '/hermes',
       section: 'technical',
-      requiresAdmin: true,
+      requiresAdmin: false,
       brokered: true,
+      requiredScopes: ['access_hermes_dashboard'],
+    });
+    expect(EVAOS_RUNTIME_CATALOG.find((runtime) => runtime.key === 'paperclip')).toMatchObject({
+      title: 'Mission Control',
+      routePath: '/mission-control',
+      section: 'technical',
+      requiresAdmin: false,
+      brokered: true,
+      requiredScopes: ['access_technical_diagnostics'],
     });
     expect(EVAOS_RUNTIME_CATALOG.find((runtime) => runtime.key === 'creative_studio')).toMatchObject({
       title: 'Creative Studio',
@@ -105,7 +115,7 @@ describe('evaosRuntimeVisibility', () => {
         roles: ['owner'],
         userEmail: 'owner@example.test',
       })
-    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'admin_runtime_required' });
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
     expect(
       evaosRuntimeRouteDecision('/connected-apps', {
         authenticated: true,
@@ -139,6 +149,56 @@ describe('evaosRuntimeVisibility', () => {
     }).map((runtime) => runtime.key);
 
     expect(visibleKeys).toEqual(['opendesign', 'browser', 'creative_studio']);
+  });
+
+  it('lets customer-scoped technical admins open technical runtimes with matching scopes', () => {
+    const context = {
+      authenticated: true,
+      roles: ['technical_admin'],
+      scopes: [
+        'manage_integrations',
+        'open_business_browser',
+        'use_creative_studio',
+        'use_design_workspace',
+        'view_company_brain',
+        'access_openclaw_dashboard',
+        'access_hermes_dashboard',
+        'access_terminal',
+        'access_technical_diagnostics',
+      ],
+      userEmail: 'benjamin@example.test',
+    };
+
+    expect(canAccessEvaosAdminRuntimes(context)).toBe(false);
+    expect(visibleEvaosRuntimeCatalog(context).map((runtime) => runtime.key)).toEqual([
+      'openclaw',
+      'hermes',
+      'paperclip',
+      'opendesign',
+      'browser',
+      'terminal',
+      'creative_studio',
+    ]);
+    expect(evaosRuntimeRouteDecision('/evaos', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+    expect(evaosRuntimeRouteDecision('/openclaw', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+    expect(evaosRuntimeRouteDecision('/hermes', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+    expect(evaosRuntimeRouteDecision('/mission-control', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+    expect(evaosRuntimeRouteDecision('/terminal', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+    expect(evaosRuntimeRouteDecision('/people-access', context)).toEqual({
+      allowed: false,
+      fallbackPath: '/guid',
+      reason: 'scope_required',
+    });
+    expect(evaosRuntimeRouteDecision('/approval-center', context)).toEqual({
+      allowed: false,
+      fallbackPath: '/guid',
+      reason: 'scope_required',
+    });
+    expect(evaosRuntimeRouteDecision('/company-brain', context)).toEqual({
+      allowed: false,
+      fallbackPath: '/guid',
+      reason: 'scope_required',
+    });
   });
 
   it('shows admin technical runtimes and keeps team chat deferred until enabled', () => {
@@ -203,7 +263,7 @@ describe('evaosRuntimeVisibility', () => {
         roles: ['member'],
         scopes: ['open_business_browser'],
       })
-    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'admin_runtime_required' });
+    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
     expect(
       evaosRuntimeRouteDecision('/openclaw', {
         authenticated: false,
@@ -348,17 +408,17 @@ describe('evaosRuntimeVisibility', () => {
     expect(evaosRuntimeRouteDecision('/evaos', employeeContext)).toEqual({
       allowed: false,
       fallbackPath: '/guid',
-      reason: 'admin_runtime_required',
+      reason: 'scope_required',
     });
     expect(evaosRuntimeRouteDecision('/hermes', employeeContext)).toEqual({
       allowed: false,
       fallbackPath: '/guid',
-      reason: 'admin_runtime_required',
+      reason: 'scope_required',
     });
     expect(evaosRuntimeRouteDecision('/terminal', employeeContext)).toEqual({
       allowed: false,
       fallbackPath: '/guid',
-      reason: 'admin_runtime_required',
+      reason: 'scope_required',
     });
   });
 });
