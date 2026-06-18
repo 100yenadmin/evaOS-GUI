@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
+import type { IEvaosAccountPolicyScope, IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
 
 export const GOLDEN_WORKBENCH_RELEASE_BASELINE = {
   releaseTag: 'evaos-workbench-v0.6.27',
@@ -24,7 +24,8 @@ export type GoldenWorkbenchRequiredRole =
   | 'owner-or-admin'
   | 'member-with-scope'
   | 'support-operator'
-  | 'public-brand-surface';
+  | 'public-brand-surface'
+  | `technical-scope:${IEvaosAccountPolicyScope}`;
 
 export type GoldenWorkbenchProofCloseoutState = 'loaded' | 'denied' | 'repair' | 'waived';
 
@@ -248,8 +249,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarSection: 'Technical Dashboards',
     sidebarLabel: 'evaOS',
     runtimeKey: 'openclaw',
-    requiredRole: 'owner-or-admin',
-    statusRequirement: 'admin-runtime-plus-brokered-dashboard-evidence',
+    requiredRole: 'technical-scope:access_openclaw_dashboard',
+    statusRequirement: 'broker-policy-scope:access_openclaw_dashboard',
     proofTarget: {
       closeoutState: 'denied',
       planId: 'evaos',
@@ -270,8 +271,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarSection: 'Technical Dashboards',
     sidebarLabel: 'Hermes',
     runtimeKey: 'hermes',
-    requiredRole: 'owner-or-admin',
-    statusRequirement: 'admin-runtime-plus-brokered-dashboard-evidence',
+    requiredRole: 'technical-scope:access_hermes_dashboard',
+    statusRequirement: 'broker-policy-scope:access_hermes_dashboard',
     proofTarget: {
       closeoutState: 'denied',
       planId: 'hermes',
@@ -292,8 +293,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarSection: 'Technical Dashboards',
     sidebarLabel: 'Mission Control',
     runtimeKey: 'paperclip',
-    requiredRole: 'owner-or-admin',
-    statusRequirement: 'admin-runtime-with-missing-broker-repair-visibility',
+    requiredRole: 'technical-scope:access_technical_diagnostics',
+    statusRequirement: 'broker-policy-scope:access_technical_diagnostics',
     proofTarget: {
       closeoutState: 'loaded',
       planId: 'mission-control',
@@ -310,8 +311,8 @@ export const GOLDEN_WORKBENCH_PARITY_MANIFEST = [
     sidebarSection: 'Technical Dashboards',
     sidebarLabel: 'Terminal',
     runtimeKey: 'terminal',
-    requiredRole: 'owner-or-admin',
-    statusRequirement: 'admin-runtime-scope:access_terminal',
+    requiredRole: 'technical-scope:access_terminal',
+    statusRequirement: 'broker-policy-scope:access_terminal',
     proofTarget: {
       closeoutState: 'denied',
       planId: 'terminal',
