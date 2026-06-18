@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
+import type { IEvaosAccountPolicyScope, IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
 
 export const GOLDEN_WORKBENCH_RELEASE_BASELINE = {
   releaseTag: 'evaos-workbench-v0.6.27',
@@ -24,7 +24,8 @@ export type GoldenWorkbenchRequiredRole =
   | 'owner-or-admin'
   | 'member-with-scope'
   | 'support-operator'
-  | 'public-brand-surface';
+  | 'public-brand-surface'
+  | `technical-scope:${IEvaosAccountPolicyScope}`;
 
 export type GoldenWorkbenchProofCloseoutState = 'loaded' | 'denied' | 'repair' | 'waived';
 
