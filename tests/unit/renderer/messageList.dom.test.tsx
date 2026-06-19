@@ -31,7 +31,12 @@ vi.mock('@arco-design/web-react', () => ({
 }));
 
 vi.mock('@/renderer/hooks/context/ConversationContext', () => ({
-  useConversationContextSafe: () => null,
+  useConversationContextSafe: () => ({ conversation_id: 'conversation-1', type: 'aionrs' }),
+}));
+
+let mockIsProcessing = false;
+vi.mock('@/renderer/pages/conversation/runtime/useConversationRuntimeView', () => ({
+  useConversationRuntimeView: () => ({ isProcessing: mockIsProcessing }),
 }));
 
 vi.mock('@/renderer/hooks/file/useAutoPreviewOfficeFiles', () => ({
@@ -153,6 +158,10 @@ function Wrapper({
 }
 
 describe('MessageList', () => {
+  beforeEach(() => {
+    mockIsProcessing = false;
+  });
+
   it('renders message rows with external margin spacing in the plain scroll list', () => {
     render(<MessageList />, {
       wrapper: ({ children }) => <Wrapper>{children}</Wrapper>,
@@ -190,6 +199,22 @@ describe('MessageList', () => {
     expect(screen.getByTestId('msgtext-user-1').getAttribute('data-copy-row')).toBe('true');
     // Turn 2's only/last text keeps the row.
     expect(screen.getByTestId('msgtext-text-c').getAttribute('data-copy-row')).toBe('true');
+  });
+
+  it('withholds the streaming turn copy row but keeps earlier finished turns', () => {
+    mockIsProcessing = true;
+    const messages = [
+      { id: 'text-a', type: 'text', position: 'left', content: { content: 'a' }, created_at: 1 },
+      { id: 'user-1', type: 'text', position: 'right', content: { content: 'q' }, created_at: 2 },
+      { id: 'text-b', type: 'text', position: 'left', content: { content: 'b' }, created_at: 3 },
+    ] as unknown as IMessageText[];
+
+    render(<MessageList />, {
+      wrapper: ({ children }) => <Wrapper messages={messages}>{children}</Wrapper>,
+    });
+
+    expect(screen.getByTestId('msgtext-text-a').getAttribute('data-copy-row')).toBe('true');
+    expect(screen.getByTestId('msgtext-text-b').getAttribute('data-copy-row')).toBe('false');
   });
 
   it('keeps copy rows on complete teammate messages inside an AI turn window', () => {

@@ -22,6 +22,7 @@ interface HTMLRendererProps {
   content: string;
   file_path?: string;
   workspace?: string;
+  isDirty?: boolean;
   containerRef?: React.RefObject<HTMLDivElement>;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
   inspectMode?: boolean; // 是否开启检查模式 / Whether inspect mode is enabled
@@ -34,6 +35,14 @@ interface HTMLRendererProps {
 interface ElectronWebView extends HTMLElement {
   src: string;
   executeJavaScript: (code: string) => Promise<void>;
+}
+
+function fingerprintContent(content: string): string {
+  let hash = 0;
+  for (let index = 0; index < content.length; index += 1) {
+    hash = (hash * 31 + content.charCodeAt(index)) >>> 0;
+  }
+  return `${content.length}-${hash.toString(16)}`;
 }
 
 /**
@@ -185,6 +194,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
   content,
   file_path,
   workspace,
+  isDirty = false,
   containerRef,
   onScroll,
   inspectMode = false,
@@ -221,17 +231,11 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // 判断是否应该直接从文件加载（支持相对资源）- 仅 Electron 环境
-  // Determine if should load directly from file (supports relative resources) - Electron only
+  // 判断是否应该直接从文件加载（保留正常 file:// origin 和 Web Storage）- 仅 Electron 环境
+  // Determine if should load directly from file (keeps normal file:// origin and Web Storage) - Electron only
   const shouldLoadFromFile = useMemo(() => {
-    if (!isElectron || !file_path) return false;
-    // 检查 HTML 是否引用了相对资源 / Check if HTML references relative resources
-    const hasRelativeResources =
-      /<link[^>]+href=["'](?!https?:\/\/|data:|\/\/)[^"']+["']/i.test(content) ||
-      /<script[^>]+src=["'](?!https?:\/\/|data:|\/\/)[^"']+["']/i.test(content) ||
-      /<img[^>]+src=["'](?!https?:\/\/|data:|\/\/)[^"']+["']/i.test(content);
-    return hasRelativeResources;
-  }, [content, file_path, isElectron]);
+    return isElectron && Boolean(file_path) && !isDirty;
+  }, [file_path, isDirty, isElectron]);
 
   // 检查是否有相对资源（用于 browser inline 处理）
   // Check if has relative resources (for browser inline processing)
@@ -305,8 +309,8 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
   // 计算 webview 的 src
   // Calculate webview src
   const webviewSrc = useMemo(() => {
-    // 如果有相对资源引用且有文件路径，直接用 file:// URL 加载
-    // If has relative resource references and has file path, load directly via file:// URL
+    // 如果有文件路径且内容未被编辑，直接用 file:// URL 加载，避免 data: URL 的 opaque origin 限制
+    // If file path exists and content is clean, load via file:// to avoid data: URL opaque origin limits
     if (shouldLoadFromFile && file_path) {
       return `file://${file_path}`;
     }
@@ -336,14 +340,21 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return `data:text/html;charset=utf-8,${encoded}`;
   }, [htmlContent, file_path, shouldLoadFromFile]);
 
-  // 当 webviewSrc 改变时重置加载状态 / Reset loading state when webviewSrc changes
+  const webviewKey = useMemo(() => {
+    if (shouldLoadFromFile && file_path) {
+      return `${webviewSrc}#${fingerprintContent(content)}`;
+    }
+    return webviewSrc;
+  }, [content, file_path, shouldLoadFromFile, webviewSrc]);
+
+  // 当 webviewKey 改变时重置加载状态 / Reset loading state when webviewKey changes
   useEffect(() => {
     webviewLoadedRef.current = false;
-  }, [webviewSrc]);
+  }, [webviewKey]);
 
   // 监听 webview 加载完成
-  // 依赖 webviewSrc 确保 webview 重新挂载时重新添加监听器
-  // Depend on webviewSrc to ensure listeners are re-added when webview remounts
+  // 依赖 webviewKey 确保 webview 重新挂载时重新添加监听器
+  // Depend on webviewKey to ensure listeners are re-added when webview remounts
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) return;
@@ -363,7 +374,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
       webview.removeEventListener('did-finish-load', handleDidFinishLoad);
       webview.removeEventListener('did-fail-load', handleDidFailLoad);
     };
-  }, [webviewSrc]);
+  }, [webviewKey]);
 
   // 生成检查模式注入脚本 / Generate inspect mode injection script
   // 使用 useMemo 缓存，只在 inspectMode 改变时重新生成 / Use useMemo to cache, only regenerate when inspectMode changes
@@ -410,7 +421,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return () => {
       webview.removeEventListener('did-finish-load', handleLoad);
     };
-  }, [executeScript]);
+  }, [executeScript, webviewKey]);
 
   // 监听 webview 控制台消息，捕获检查元素事件和滚动事件
   // Listen for webview console messages to capture inspect element events and scroll events
@@ -463,7 +474,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return () => {
       webview.removeEventListener('console-message', handleConsoleMessage);
     };
-  }, [onElementSelected, onScroll]);
+  }, [onElementSelected, onScroll, webviewKey]);
 
   // 注入滚动监听脚本 / Inject scroll listener script
   const scrollSyncScript = useMemo(
@@ -518,7 +529,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return () => {
       webview.removeEventListener('did-finish-load', injectScrollSync);
     };
-  }, [scrollSyncScript, onScroll]);
+  }, [scrollSyncScript, onScroll, webviewKey]);
 
   // 监听外部滚动同步请求 / Listen for external scroll sync requests
   const handleTargetScroll = useCallback((targetPercent: number) => {
@@ -594,7 +605,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
           {/* webview 固定在容器顶部 / webview fixed at container top */}
           {/* key 确保内容改变时 webview 重新挂载 / key ensures webview remounts when content changes */}
           <webview
-            key={webviewSrc}
+            key={webviewKey}
             ref={webviewRef}
             src={webviewSrc}
             className='w-full border-0'

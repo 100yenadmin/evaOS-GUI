@@ -1016,6 +1016,7 @@ export const acpConversation = {
   sendMessage: conversation.sendMessage,
   responseStream: conversation.responseStream,
   getAvailableAgents: httpGet<AgentMetadata[], void>('/api/agents'),
+  getManagedAgents: httpGet<AgentMetadata[], void>('/api/agents?include_disabled=true'),
   refreshCustomAgents: httpPost<void, void>('/api/agents/refresh'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },

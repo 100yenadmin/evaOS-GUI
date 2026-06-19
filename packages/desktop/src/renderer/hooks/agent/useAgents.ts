@@ -6,7 +6,12 @@
 
 import { ipcBridge } from '@/common';
 import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
-import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents } from '@/renderer/utils/model/agentTypes';
+import {
+  DETECTED_AGENTS_SWR_KEY,
+  MANAGED_AGENTS_SWR_KEY,
+  fetchDetectedAgents,
+  fetchManagedAgents,
+} from '@/renderer/utils/model/agentTypes';
 import useSWR, { mutate } from 'swr';
 
 export type UseAgentsResult = {
@@ -37,6 +42,34 @@ export const useAgents = (): UseAgentsResult => {
     refreshCustomAgents: async () => {
       await ipcBridge.acpConversation.refreshCustomAgents.invoke();
       await mutate(DETECTED_AGENTS_SWR_KEY);
+    },
+  };
+};
+
+/**
+ * Settings-only agent management hook. It includes disabled custom agents so
+ * users can re-enable them, while refreshing the detected cache so chat/team
+ * pickers stay in sync after toggles.
+ */
+export const useManagedAgents = (): UseAgentsResult => {
+  const { data, isLoading, error } = useSWR<AgentMetadata[]>(MANAGED_AGENTS_SWR_KEY, fetchManagedAgents);
+
+  const revalidateBoth = async () => {
+    const [managed] = await Promise.all([
+      mutate<AgentMetadata[]>(MANAGED_AGENTS_SWR_KEY),
+      mutate(DETECTED_AGENTS_SWR_KEY),
+    ]);
+    return managed;
+  };
+
+  return {
+    agents: data ?? [],
+    isLoading,
+    error,
+    revalidate: revalidateBoth,
+    refreshCustomAgents: async () => {
+      await ipcBridge.acpConversation.refreshCustomAgents.invoke();
+      await revalidateBoth();
     },
   };
 };

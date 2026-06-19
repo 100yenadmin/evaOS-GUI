@@ -440,14 +440,13 @@ const ChatWorkspace: React.FC<WorkspaceProps> = ({
                   const clickedKey = extractNodeKey(extra?.node);
                   const nodeData = extra && extra.node ? extractNodeData(extra.node) : null;
                   const isFileNode = Boolean(nodeData?.isFile);
-                  const wasSelected = clickedKey ? treeHook.selectedKeysRef.current.includes(clickedKey) : false;
 
                   if (isFileNode) {
                     // Single-click a file: highlight it as the sole selection and open its preview.
                     if (nodeData) {
                       treeHook.ensureNodeSelected(nodeData);
                     }
-                    if (nodeData && clickedKey && !wasSelected) {
+                    if (nodeData && clickedKey) {
                       void fileOpsHook.handlePreviewFile(nodeData);
                     }
                     return;

@@ -9,6 +9,14 @@ import { ipcBridge } from '@/common';
 /** SWR key for agent metadata rows (from `/api/agents`). */
 export const DETECTED_AGENTS_SWR_KEY = 'agents.detected';
 
+/**
+ * SWR key for the Agent settings management view
+ * (`/api/agents?include_disabled=true`). Kept separate from
+ * DETECTED_AGENTS_SWR_KEY so disabled custom agents can be re-enabled in
+ * Settings without leaking into chat/team pickers.
+ */
+export const MANAGED_AGENTS_SWR_KEY = 'agents.managed';
+
 /** Type of an agent. */
 export type AgentType = 'acp' | 'remote' | 'aionrs' | 'openclaw-gateway' | 'nanobot';
 
@@ -105,6 +113,19 @@ export type AgentMetadata = {
 export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
   try {
     const agents = await ipcBridge.acpConversation.getAvailableAgents.invoke();
+    if (Array.isArray(agents)) {
+      return agents as AgentMetadata[];
+    }
+  } catch {
+    // fallback to empty
+  }
+  return [];
+}
+
+/** Fetcher for the Settings-only management view that includes disabled rows. */
+export async function fetchManagedAgents(): Promise<AgentMetadata[]> {
+  try {
+    const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
     if (Array.isArray(agents)) {
       return agents as AgentMetadata[];
     }

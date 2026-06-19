@@ -116,10 +116,11 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
   }
 
   const { agent, onGoToChat, onEdit, onDelete, onToggle } = props;
+  const isDisabled = agent.enabled === false;
 
   return (
     <div className='flex items-center justify-between px-16px py-10px rd-8px bg-aou-1 hover:bg-aou-2'>
-      <div className='flex items-center gap-12px min-w-0 flex-1'>
+      <div className={`flex items-center gap-12px min-w-0 flex-1 ${isDisabled ? 'opacity-50' : ''}`}>
         <Avatar
           size={32}
           shape='square'
@@ -137,7 +138,7 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
       </div>
       <div className='flex items-center gap-8px'>
         <Switch size='small' checked={agent.enabled !== false} onChange={onToggle} />
-        <Button size='small' type='text' onClick={onGoToChat} disabled={agent.enabled === false}>
+        <Button size='small' type='text' onClick={onGoToChat} disabled={isDisabled}>
           {t('settings.agentManagement.goToChat')}
         </Button>
         <Button size='small' type='text' icon={<EditTwo theme='outline' size='14' />} onClick={onEdit} />
