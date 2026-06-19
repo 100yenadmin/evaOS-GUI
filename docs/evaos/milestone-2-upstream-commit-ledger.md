@@ -1,16 +1,17 @@
 # Milestone 2 Upstream Commit Ledger
 
-This ledger covers the raw upstream range `iOfficeAI/AionUi v2.1.12..v2.1.18` for the evaOS Workbench fork.
+This ledger covers the raw upstream range `iOfficeAI/AionUi v2.1.12..v2.1.21` for the evaOS Workbench fork.
 
-Current evaOS anchor: `evaos/beta-rc-20260612@f27df7c022a98801c84abb98b0d734301b3b32db`.
+Current evaOS anchor: `evaos/beta-rc-20260612@c820a94aeddd57c857bed7fe0f064216a90d7a21`.
 
 Provenance:
 
 - Generated during the 2026-06-14 Milestone 2 full-import sprint.
+- Refreshed on 2026-06-20 after upstream `v2.1.21`.
 - Upstream remote: `https://github.com/iOfficeAI/AionUi.git`.
-- Source range command: `git log --format='%h%x09%cs%x09%s' --reverse upstream-v2.1.12..upstream-v2.1.18`.
-- Ledger rows: 63 upstream release-range commits plus 2 post-tag candidates.
-- Post-tag command: `git log --format='%h%x09%s' --reverse upstream-v2.1.18..upstream/main`.
+- Original source range command: `git log --format='%h%x09%cs%x09%s' --reverse upstream-v2.1.12..upstream-v2.1.18`.
+- Refresh range command: `git log --format='%h%x09%cs%x09%s' --reverse v2.1.18..v2.1.21`.
+- Ledger rows: 63 original upstream release-range commits plus 33 v2.1.18-to-v2.1.21 refresh commits.
 - Guardrail classifier: `node scripts/evaosUpstreamGuardrailAudit.js --classify <changed-path> [...]`.
 
 Classification meanings:
@@ -89,9 +90,50 @@ Classification meanings:
 | 2.1.18 |     `554439ab5` | #3311 | needs-decision  | bump 2.1.18 and AionCore v0.1.29                       | AionCore/runtime lane; preserve evaOS identity.     |
 | 2.1.18 |     `ddd20d380` | #3313 | needs-decision  | increase web-cli build heap                            | Low-risk completion lane.                           |
 
-Post-tag candidates:
+v2.1.19-to-v2.1.21 refresh rows:
 
-| Upstream commit |    PR | Class          | Subject                                                   | evaOS status                         |
-| --------------: | ----: | -------------- | --------------------------------------------------------- | ------------------------------------ |
-|       `57aa0d0` | #3317 | needs-decision | keep recording when streaming fails before it establishes | Voice/STT lane.                      |
-|       `87f1d14` | #3310 | needs-decision | actionable server-side OfficeCLI install guidance         | Appearance/UX or low-risk help lane. |
+| Bucket | Upstream commit |    PR | Class          | Subject                                                   | evaOS status                                                                   |
+| ------ | --------------: | ----: | -------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 2.1.19 |       `57aa0d0` | #3317 | needs-decision | keep recording when streaming fails before it establishes | Low-risk user-facing lane; voice/STT fallback with existing mic guardrails.    |
+| 2.1.19 |       `87f1d14` | #3310 | needs-decision | actionable server-side OfficeCLI install guidance         | Low-risk user-facing lane; adapt copy without upstream branding.               |
+| 2.1.19 |       `46ecce4` | #3319 | needs-decision | keep disabled custom agents visible in settings           | Low-risk user-facing lane; preserve evaOS assistant curation rules.            |
+| 2.1.19 |       `a05650c` | #3320 | defer          | make sider wordmark a back-to-chat control in settings    | Conflicts with evaOS sidebar/titlebar ownership; only revisit as shell polish. |
+| 2.1.19 |       `632bceb` | #3323 | defer          | install libicu so officecli preview works on Linux server | Linux Docker-only; outside macOS Apple Silicon lane.                           |
+| 2.1.19 |       `b513c80` | #3324 | needs-decision | add observed config option selectors                      | ACP/model-controls canary; show only behind runtime capability detection.      |
+| 2.1.19 |       `ec1e545` | #3244 | danger         | use CDN metadata for stable auto updates                  | Reject direct import; beta updates stay on `100yenadmin/evaOS-GUI`.            |
+| 2.1.19 |       `91e2f15` | #3308 | defer          | hydrate Windows path for cli detection                    | Windows lane #305; not a macOS alignment blocker.                              |
+| 2.1.19 |       `986e3ee` | #3329 | needs-decision | remove star office ui remnants                            | Adapt cleanup only after static proof no Creative Studio/Shared Browser use.   |
+| 2.1.19 |       `de6240a` | #3333 | needs-decision | report installation integrity diagnostics                 | Updater/support lane; route through evaOS report/support surfaces.             |
+| 2.1.19 |       `0fa5c34` | #3334 | defer          | support slot-scoped stop controls                         | Team runtime canary; wait for slot stop/handoff/cancel proof.                  |
+| 2.1.19 |       `6b097f2` |   n/a | needs-decision | defer AI copy row until streaming ends                    | Low-risk user-facing lane.                                                     |
+| 2.1.19 |       `61f6f65` | #3337 | needs-decision | merge AI copy-row polish                                  | Covered by `6b097f2`; no separate import.                                      |
+| 2.1.19 |       `1650096` | #3336 | needs-decision | repair assistant cron and guid metadata flows             | Assistant metadata lane; preserve evaOS catalog/branding.                      |
+| 2.1.19 |       `ff752cf` | #3338 | needs-decision | prefer assistant avatars in team chats                    | Assistant metadata lane; preserve curated assistants and team safety.          |
+| 2.1.19 |       `86d5bc4` | #3340 | defer          | align team workspace display fallback                     | Team runtime canary.                                                           |
+| 2.1.19 |       `f868eee` | #3341 | defer          | bump version to 2.1.19 and AionCore v0.1.30               | Do not import package identity or AionCore through changelog bump.             |
+| 2.1.20 |       `6a0b5b7` |   n/a | defer          | update WeChat group QR code to wx-12                      | Upstream docs/community asset; not evaOS release content.                      |
+| 2.1.20 |       `0bcf40e` | #3343 | defer          | merge WeChat QR code update                               | Covered by `6a0b5b7`; no import.                                               |
+| 2.1.20 |       `d1cd349` | #2935 | needs-decision | Codex ACP image preview and download                      | Low-risk lane only with workspace-safe preview/download path handling.         |
+| 2.1.20 |       `6dca78b` |   n/a | needs-decision | remove leftover gap above assistant list                  | Low-risk user-facing lane.                                                     |
+| 2.1.20 |       `ecb3c2a` | #3344 | needs-decision | merge assistant list gap fix                              | Covered by `6dca78b`; no separate import.                                      |
+| 2.1.20 |       `9c85f29` | #3349 | defer          | handle queued team runtime metadata                       | Team runtime canary.                                                           |
+| 2.1.20 |       `9ef5e7f` | #3353 | defer          | wait for solo turn before handoff queue drain             | Team runtime canary.                                                           |
+| 2.1.20 |       `81a74d2` | #3351 | needs-decision | add singleton update notification                         | Updater lane; adapt reliability primitives, reject upstream CDN/stable feed.   |
+| 2.1.20 |       `bdceeb4` | #3358 | needs-decision | combine header model thinking selector                    | ACP/model-controls canary behind capability detection.                         |
+| 2.1.20 |       `9e6a072` | #3359 | defer          | bump version to 2.1.20 and AionCore v0.1.31               | Do not import package identity or AionCore through changelog bump.             |
+| 2.1.21 |       `b97ed41` | #3361 | needs-decision | wire pt-BR into language pickers and main-process loader  | Low-risk user-facing lane.                                                     |
+| 2.1.21 |       `12b591b` | #3366 | needs-decision | build valid file URL for PDF preview on Windows           | Low-risk lane with preview tests; Windows proof stays in #305.                 |
+| 2.1.21 |       `d51d493` | #3369 | needs-decision | restore local html and selected file reopen               | Low-risk lane with workspace-safe preview guardrails.                          |
+| 2.1.21 |       `acc3cf3` | #3370 | defer          | add German locale                                         | Non-blocking payload growth; defer unless explicitly requested.                |
+| 2.1.21 |       `db1812a` | #3373 | danger         | bump version to 2.1.21 and AionCore v0.1.32               | Do not import package identity or AionCore through changelog bump.             |
+| 2.1.21 |       `af6b1b4` | #3374 | danger         | remove PR automation skills                               | Reject; removes repo automation/agent material and sets AionCore `v0.1.33`.    |
+
+Direct-import rejection set for this refresh:
+
+- Direct upstream `v2.1.21` merge/rebase/reset.
+- Upstream CDN/stable update feed from #3244.
+- Upstream package identity/version/product metadata from #3341/#3359/#3373.
+- Upstream skills cleanup from #3374.
+- WeChat docs/community asset changes from #3343.
+- Linux Docker-only libicu change from #3323.
+- AionCore `v0.1.33`, Butler, remote-access, and Cloudflare tunnel behavior until dedicated evaOS canaries prove product and release boundaries.
