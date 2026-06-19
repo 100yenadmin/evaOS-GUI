@@ -182,6 +182,45 @@ describe('EvaosCustomerContext', () => {
     expect(result.current.error).toBeUndefined();
   });
 
+  it('honors broker default customer when it is not the first returned target', async () => {
+    brokerMocks.getCustomerTargets.mockResolvedValue({
+      success: true,
+      data: {
+        roles: ['admin'],
+        isOperator: true,
+        defaultCustomerId: 'golden',
+        customers: [
+          {
+            customerId: 'david-poku',
+            targetKind: 'customer_vm',
+            displayName: 'David Poku',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: false,
+          },
+          {
+            customerId: 'golden',
+            targetKind: 'customer_vm',
+            displayName: 'Golden Test VM',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: true,
+          },
+        ],
+        summaryText: '2 customer targets loaded',
+      },
+    });
+
+    const { result } = renderHook(() => useEvaosCustomerContext(true));
+
+    await waitFor(() => expect(result.current.selectedCustomerId).toBe('golden'));
+    expect(result.current.selectedTarget).toMatchObject({
+      customerId: 'golden',
+      targetKind: 'customer_vm',
+      displayName: 'Golden Test VM',
+    });
+  });
+
   it('renders a no-customer shell state when the session has no available customer target', async () => {
     brokerMocks.getCustomerTargets.mockResolvedValue(emptyCustomerTargets());
 

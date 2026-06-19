@@ -20,7 +20,7 @@ import type {
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
 } from '@/common/evaos/bridgeTypes';
-import { getDefaultEvaosBrokerSessionClient } from './evaosBrokerSession';
+import { getDefaultEvaosBrokerSessionClient, isEvaosBrokerSessionError } from './evaosBrokerSession';
 
 const execFileAsync = promisify(execFileCallback);
 
@@ -460,10 +460,27 @@ async function createPairingPromptAction(
     deps.createCustomerMacEnrollment ??
     ((input) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(input));
   const deviceName = hostname() || 'Customer Mac';
-  const enrollment = await createEnrollment({
-    customerId,
-    deviceName,
-  });
+  let enrollment: { customerId: string; pairingCode: string; expiresAt?: string };
+  try {
+    enrollment = await createEnrollment({
+      customerId,
+      deviceName,
+    });
+  } catch (error) {
+    if (isBrokerSessionReconnectRequired(error)) {
+      return nativeActionResult(
+        'create_pairing_prompt',
+        'repair_required',
+        'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can create a pairing code. Sign in again, then retry.',
+        {
+          sourcePointer: 'native-companion:pairing-broker-session-required',
+          agentPairingStatus: 'ready_for_agent_pairing',
+          refreshRecommended: false,
+        }
+      );
+    }
+    throw error;
+  }
   const registration = await runBridgeCommand(
     bridgePath,
     [
@@ -512,6 +529,12 @@ async function createPairingPromptAction(
       refreshRecommended: false,
     }
   );
+}
+
+function isBrokerSessionReconnectRequired(error: unknown): boolean {
+  if (!isEvaosBrokerSessionError(error)) return false;
+  if (error.code === 'missing_session' || error.code === 'expired_session') return true;
+  return error.code === 'broker_http_error' && (error.status === 401 || error.status === 403);
 }
 
 async function primeRepairPermission(

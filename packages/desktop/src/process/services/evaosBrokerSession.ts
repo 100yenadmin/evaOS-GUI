@@ -1830,7 +1830,7 @@ function normalizeCustomerTargetKind(
   accountOnly?: boolean
 ): IEvaosCustomerTargetView['targetKind'] | undefined {
   const kind = safeText(value, 80);
-  if (kind === 'customer' || kind === 'customer_account') {
+  if (kind === 'customer' || kind === 'customer_vm' || kind === 'customer_account') {
     return kind;
   }
   return accountOnly === true ? 'customer_account' : undefined;

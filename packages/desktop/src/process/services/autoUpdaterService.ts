@@ -12,10 +12,15 @@ import { EventEmitter } from 'events';
 import { recordAutoUpdateQuitAndInstall, recordAutoUpdateStatus } from './autoUpdateDiagnostics';
 import {
   EVAOS_BETA_UPDATE_DISABLED_MESSAGE,
+  type EvaosBetaRuntimeContext,
   getEvaosBetaUpdateRepo,
   isEvaosBetaBuild,
   shouldDisableAutoUpdate,
 } from '../evaosBetaSafety';
+
+function updaterRuntime(): EvaosBetaRuntimeContext {
+  return { isPackaged: app.isPackaged === true };
+}
 
 /**
  * Returns the appropriate update channel name based on the current platform and architecture.
@@ -87,7 +92,7 @@ class AutoUpdaterService extends EventEmitter {
 
     // Disable auto-download for manual control
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = !shouldDisableAutoUpdate();
+    autoUpdater.autoInstallOnAppQuit = !shouldDisableAutoUpdate(process.env, updaterRuntime());
     this.configureEvaosBetaFeed();
 
     // Set the correct update channel based on platform and architecture before
@@ -100,9 +105,9 @@ class AutoUpdaterService extends EventEmitter {
   }
 
   private configureEvaosBetaFeed(): void {
-    if (!isEvaosBetaBuild() || shouldDisableAutoUpdate()) return;
+    if (!isEvaosBetaBuild() || shouldDisableAutoUpdate(process.env, updaterRuntime())) return;
 
-    const repo = getEvaosBetaUpdateRepo();
+    const repo = getEvaosBetaUpdateRepo(process.env, updaterRuntime());
     const [owner, name] = repo?.split('/') ?? [];
     if (!owner || !name) {
       log.warn(EVAOS_BETA_UPDATE_DISABLED_MESSAGE);
@@ -296,7 +301,7 @@ class AutoUpdaterService extends EventEmitter {
 
   async checkForUpdates(): Promise<{ success: boolean; updateInfo?: UpdateInfo; error?: string }> {
     try {
-      if (shouldDisableAutoUpdate()) {
+      if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
         return { success: false, error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
       }
 
@@ -331,7 +336,7 @@ class AutoUpdaterService extends EventEmitter {
 
   async downloadUpdate(): Promise<{ success: boolean; error?: string }> {
     try {
-      if (shouldDisableAutoUpdate()) {
+      if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
         return { success: false, error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
       }
 
@@ -352,7 +357,7 @@ class AutoUpdaterService extends EventEmitter {
   }
 
   async quitAndInstall(): Promise<void> {
-    if (shouldDisableAutoUpdate()) {
+    if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
       log.warn(EVAOS_BETA_UPDATE_DISABLED_MESSAGE);
       return;
     }
@@ -383,7 +388,7 @@ class AutoUpdaterService extends EventEmitter {
    */
   async checkForUpdatesAndNotify(): Promise<void> {
     try {
-      if (shouldDisableAutoUpdate()) {
+      if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
         log.warn(EVAOS_BETA_UPDATE_DISABLED_MESSAGE);
         return;
       }

@@ -39,7 +39,7 @@ export interface IEvaosBrokerBeginDesktopAuthResult {
   message: string;
 }
 
-export type IEvaosCustomerTargetKind = 'customer' | 'customer_account';
+export type IEvaosCustomerTargetKind = 'customer' | 'customer_vm' | 'customer_account';
 
 export interface IEvaosCustomerTargetView {
   customerId: string;

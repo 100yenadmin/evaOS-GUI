@@ -35,11 +35,14 @@ export type EvaosNativeAgentAvailability = {
 };
 
 const NATIVE_DEPENDENT_AGENT_KEYS = new Set(['openclaw', 'openclaw-gateway', 'hermes']);
-const READY_NATIVE_STATUSES = new Set(['ready', 'paired', 'usable', 'healthy']);
+const READY_NATIVE_STATUSES = new Set(['agent_paired', 'paired', 'usable', 'healthy']);
 const REPAIR_NATIVE_STATUSES = new Set([
   'not_installed',
   'not_paired',
   'pairing_required',
+  'ready_for_agent_pairing',
+  'pairing_prompt_created',
+  'proof_failed',
   'device_identity_changed',
   'permission_needed',
   'tcc_required',
@@ -97,7 +100,10 @@ export function applyEvaosNativeCompanionStatusToAgent<T extends EvaosNativeAgen
     return agent;
   }
 
-  const status = nativeStatus.readiness === 'ready' ? 'ready' : 'repair_required';
+  const status =
+    nativeStatus.readiness === 'ready' && nativeStatus.agentPairingStatus === 'agent_paired'
+      ? 'agent_paired'
+      : (nativeStatus.agentPairingStatus ?? 'repair_required');
   const handshake = agent.handshake && typeof agent.handshake === 'object' ? agent.handshake : {};
   return {
     ...agent,

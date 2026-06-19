@@ -13,6 +13,7 @@ import {
   runNativeCompanionAction,
   type EvaosNativeCompanionStatusDeps,
 } from '@/process/services/evaosNativeCompanionStatus';
+import { EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
 
 const json = (payload: unknown) => JSON.stringify(payload);
 const deviceName = hostname() || 'Customer Mac';
@@ -337,6 +338,50 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('does not treat local-ready control status as agent pairing proof', async () => {
+    const deps = depsWithResponses({
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: true,
+          mode: 'full-access',
+          kill_switch: false,
+          agent_pairing_status: 'local-ready',
+        },
+      },
+      'audit-tail --json --limit 12': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-control' }],
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'setup_check' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'succeeded',
+      agentPairingStatus: 'ready_for_agent_pairing',
+    });
+  });
+
   it('creates a renderer-safe pairing prompt without exposing connector private material', async () => {
     const deps = depsWithResponses(
       {
@@ -378,6 +423,44 @@ describe('evaosNativeCompanionStatus', () => {
       /Bearer|desktop_session|provider_grant|access_token|refresh_token|connectorUrl|secret-token/i
     );
   });
+
+  it.each([401, 403])(
+    'maps broker %s enrollment denial to reconnect without completing enrollment',
+    async (statusCode) => {
+      const deps = depsWithResponses(
+        {
+          'connector-service status --json': {
+            ok: true,
+            running: true,
+            health: { reachable: true },
+            tailnet_ip: '100.64.0.10',
+          },
+        },
+        {
+          createCustomerMacEnrollment: vi.fn(async () => {
+            throw new EvaosBrokerSessionError(
+              'broker_http_error',
+              'The evaOS broker denied this desktop session. Sign in again.',
+              statusCode
+            );
+          }),
+        }
+      );
+
+      const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+      expect(result).toMatchObject({
+        action: 'create_pairing_prompt',
+        status: 'repair_required',
+        sourcePointer: 'native-companion:pairing-broker-session-required',
+        agentPairingStatus: 'ready_for_agent_pairing',
+      });
+      expect(result.message).toContain('Sign in again');
+      expect(result.pairing).toBeUndefined();
+      expect(deps.execFile).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(deps.execFile).mock.calls[0]?.[1]).toEqual(['connector-service', 'status', '--json']);
+    }
+  );
 
   it('opens only the released Workbench fallback path', async () => {
     const openPath = vi.fn(async () => '');

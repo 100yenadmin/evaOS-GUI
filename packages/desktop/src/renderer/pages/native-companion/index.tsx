@@ -54,11 +54,13 @@ const NativeCompanionPage: React.FC = () => {
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
   const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
   const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
+  const brokerSessionRequired = isPairingBrokerSessionRequired(actionResult);
   const guidedAction = getGuidedAction(
     status,
     viewModel.state,
     Boolean(customerContext.selectedCustomerId),
-    agentPairingStatus
+    agentPairingStatus,
+    brokerSessionRequired
   );
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
@@ -270,7 +272,7 @@ const NativeCompanionPage: React.FC = () => {
                 </Button>
                 <Button
                   type='secondary'
-                  disabled={!customerContext.selectedCustomerId}
+                  disabled={!customerContext.selectedCustomerId || brokerSessionRequired}
                   loading={actionInFlight === 'create_pairing_prompt'}
                   onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
                 >
@@ -721,7 +723,8 @@ function getGuidedAction(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   state: ReturnType<typeof getNativeCompanionRepairViewModel>['state'],
   hasCustomer: boolean,
-  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus
+  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus,
+  brokerSessionRequired = false
 ): GuidedAction {
   if (state === 'ready' && agentPairingStatus === 'agent_paired') {
     return {
@@ -732,6 +735,17 @@ function getGuidedAction(
       title: 'Agent pairing proven',
       detail: 'Agent proof is present. Run setup check again before live release proof if the connector state changed.',
       step: 5,
+    };
+  }
+
+  if (state === 'ready' && brokerSessionRequired) {
+    return {
+      kind: 'refresh',
+      label: 'Refresh after sign-in',
+      title: 'Reconnect Workbench session',
+      detail:
+        'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can create a pairing code. Sign in again from the footer or Open Workbench, then refresh this page.',
+      step: 3,
     };
   }
 
@@ -879,6 +893,10 @@ function effectiveAgentPairingStatus(
 
 function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): boolean {
   return status === 'pairing_prompt_created' || status === 'agent_paired' || status === 'proof_failed';
+}
+
+function isPairingBrokerSessionRequired(actionResult: IEvaosNativeCompanionActionResult | null): boolean {
+  return actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required';
 }
 
 function agentProofLabel(status: IEvaosNativeCompanionAgentPairingStatus): {

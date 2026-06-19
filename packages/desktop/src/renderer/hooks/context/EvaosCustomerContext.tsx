@@ -127,7 +127,7 @@ function safeAccountPolicyRole(value: unknown): IEvaosAccountPolicyRole | undefi
 
 function safeCustomerTargetKind(value: unknown, accountOnly?: boolean): IEvaosCustomerTargetKind | undefined {
   const kind = safeOptionalUiText(value);
-  if (kind === 'customer' || kind === 'customer_account') {
+  if (kind === 'customer' || kind === 'customer_vm' || kind === 'customer_account') {
     return kind;
   }
   return accountOnly === true ? 'customer_account' : undefined;

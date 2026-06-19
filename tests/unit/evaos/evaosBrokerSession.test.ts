@@ -1195,6 +1195,59 @@ describe('EvaosBrokerSessionClient', () => {
     );
   });
 
+  it('honors broker default_customer_id golden and preserves customer_vm target kind', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+          email: 'operator@example.test',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          roles: ['admin'],
+          is_operator: true,
+          default_customer_id: 'golden',
+          customers: [
+            {
+              customer_id: 'david-poku',
+              target_kind: 'customer_vm',
+              display_name: 'David Poku',
+              status: 'active',
+              health_status: 'ready',
+              is_default: false,
+            },
+            {
+              customer_id: 'golden',
+              target_kind: 'customer_vm',
+              display_name: 'Golden Test VM',
+              status: 'active',
+              health_status: 'ready',
+              is_default: true,
+            },
+          ],
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const targets = await client.customerTargets();
+
+    expect(targets.defaultCustomerId).toBe('golden');
+    expect(targets.selectedCustomerId).toBe('golden');
+    expect(targets.customers[1]).toMatchObject({
+      customerId: 'golden',
+      targetKind: 'customer_vm',
+      isDefault: true,
+    });
+  });
+
   it('fails closed when runtime_status is malformed', async () => {
     const fetchImpl = fetchMock();
     fetchImpl
