@@ -7,7 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
 import AionModal from '@/renderer/components/base/AionModal';
-import { useAgents } from '@/renderer/hooks/agent/useAgents';
+import { useManagedAgents } from '@/renderer/hooks/agent/useAgents';
 import { Button, Typography } from '@arco-design/web-react';
 import { Home, Plus } from '@icon-park/react';
 import React, { useCallback, useState } from 'react';
@@ -30,8 +30,9 @@ const LocalAgents: React.FC = () => {
   const [hubModalVisible, setHubModalVisible] = useState(false);
   const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus();
 
-  // Single fetch for all agents; both detected and custom lists are derived from it.
-  const { agents: allAgents, revalidate: mutateAgents } = useAgents();
+  // Settings management view includes disabled custom agents so they remain
+  // visible and can be re-enabled; chat/team pickers still use useAgents().
+  const { agents: allAgents, revalidate: mutateAgents } = useManagedAgents();
 
   const detectedAgents = allAgents
     .filter((a) => a.agent_type !== 'remote' && a.agent_source !== 'custom')
