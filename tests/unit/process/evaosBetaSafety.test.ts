@@ -28,7 +28,7 @@ describe('evaosBetaSafety', () => {
     expect(shouldAllowRemoteWebUI(env)).toBe(true);
   });
 
-  it('fails closed for public beta without explicit beta update feed or telemetry opt-ins', () => {
+  it('fails closed for unpackaged public beta without telemetry opt-ins', () => {
     const env = {
       AIONUI_EVAOS_BETA: '1',
       SENTRY_DSN: 'https://example@sentry.invalid/1',
@@ -41,6 +41,16 @@ describe('evaosBetaSafety', () => {
     expect(shouldAttachSentryDeviceId(env)).toBe(false);
     expect(shouldSendStartupLogReport(env)).toBe(false);
     expect(shouldAllowRemoteWebUI(env)).toBe(false);
+  });
+
+  it('enables packaged beta updates from the evaOS-owned feed by default', () => {
+    const env = {
+      AIONUI_EVAOS_BETA: '1',
+    };
+
+    expect(getEvaosBetaUpdateRepo(env, { isPackaged: true })).toBe('100yenadmin/evaOS-GUI');
+    expect(shouldDisableAutoUpdate(env, { isPackaged: true })).toBe(false);
+    expect(shouldDisableAutoUpdate(env, { isPackaged: false })).toBe(true);
   });
 
   it('forces bundled backend GitHub access to the evaOS-owned repo in beta mode', () => {
@@ -74,32 +84,71 @@ describe('evaosBetaSafety', () => {
     expect(shouldAllowRemoteWebUI(env)).toBe(false);
   });
 
-  it('requires a beta-owned repo before beta auto-update can be enabled', () => {
+  it('requires a beta-owned repo and packaged runtime before beta auto-update can be enabled', () => {
     expect(
-      shouldDisableAutoUpdate({
-        AIONUI_EVAOS_BETA: '1',
-        AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
-      })
+      shouldDisableAutoUpdate(
+        {
+          AIONUI_EVAOS_BETA: '1',
+          AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
+        },
+        { isPackaged: true }
+      )
+    ).toBe(false);
+
+    expect(
+      shouldDisableAutoUpdate(
+        {
+          AIONUI_EVAOS_BETA: '1',
+          AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
+        },
+        { isPackaged: false }
+      )
     ).toBe(true);
 
     expect(
-      shouldDisableAutoUpdate({
-        AIONUI_EVAOS_BETA: '1',
-        AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
-        AIONUI_EVAOS_BETA_UPDATE_REPO: 'iOfficeAI/AionUi',
-      })
+      shouldDisableAutoUpdate(
+        {
+          AIONUI_EVAOS_BETA: '1',
+          AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
+          AIONUI_EVAOS_BETA_UPDATE_REPO: 'iOfficeAI/AionUi',
+        },
+        { isPackaged: true }
+      )
     ).toBe(true);
 
     expect(isAllowedEvaosBetaUpdateRepo('iOfficeAI/AionUi')).toBe(false);
     expect(isAllowedEvaosBetaUpdateRepo('100yenadmin/evaOS-GUI')).toBe(true);
 
     expect(
-      shouldDisableAutoUpdate({
-        AIONUI_EVAOS_BETA: '1',
-        AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
-        AIONUI_EVAOS_BETA_UPDATE_REPO: '100yenadmin/evaOS-GUI',
-      })
+      shouldDisableAutoUpdate(
+        {
+          AIONUI_EVAOS_BETA: '1',
+          AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '1',
+          AIONUI_EVAOS_BETA_UPDATE_REPO: '100yenadmin/evaOS-GUI',
+        },
+        { isPackaged: true }
+      )
     ).toBe(false);
+
+    expect(
+      shouldDisableAutoUpdate(
+        {
+          AIONUI_EVAOS_BETA: '1',
+          AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE: '0',
+        },
+        { isPackaged: true }
+      )
+    ).toBe(true);
+
+    expect(
+      shouldDisableAutoUpdate(
+        {
+          AIONUI_EVAOS_BETA: '1',
+          AIONUI_DISABLE_AUTO_UPDATE: '1',
+        },
+        { isPackaged: true }
+      )
+    ).toBe(true);
   });
 
   it('locks the expected evaOS beta identity constants', () => {

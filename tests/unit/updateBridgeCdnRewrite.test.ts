@@ -6,6 +6,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const electronAppMock = vi.hoisted(() => ({
+  getVersion: vi.fn(() => '1.0.0'),
+  getPath: vi.fn(() => '/test/path'),
+  exit: vi.fn(),
+  isPackaged: true,
+}));
+
 vi.mock('@office-ai/platform', () => ({
   bridge: {
     buildProvider: vi.fn(() => {
@@ -35,12 +42,7 @@ vi.mock('@office-ai/platform', () => ({
 }));
 
 vi.mock('electron', () => ({
-  app: {
-    getVersion: vi.fn(() => '1.0.0'),
-    getPath: vi.fn(() => '/test/path'),
-    exit: vi.fn(),
-    isPackaged: true,
-  },
+  app: electronAppMock,
 }));
 
 vi.mock('electron-updater', () => ({
@@ -174,6 +176,7 @@ const makeDeferred = () => {
 describe('updateBridge CDN URL rewriting', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    electronAppMock.isPackaged = true;
     process.env.AIONUI_EVAOS_BETA = '0';
   });
 
@@ -231,6 +234,7 @@ describe('updateBridge CDN URL rewriting', () => {
 
 describe('updateBridge allowlist includes CDN host', () => {
   beforeEach(() => {
+    electronAppMock.isPackaged = true;
     process.env.AIONUI_EVAOS_BETA = '0';
   });
 
@@ -361,6 +365,73 @@ describe('updateBridge allowlist includes CDN host', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('uses the default evaOS GitHub feed for packaged beta checks without env overrides', async () => {
+    vi.clearAllMocks();
+    electronAppMock.isPackaged = true;
+    process.env.AIONUI_EVAOS_BETA = '1';
+    delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
+    delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => makeBetaGitHubReleaseResponse(),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const handler = await getCheckHandler();
+      const result = await handler({ includePrerelease: true });
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://api.github.com/repos/100yenadmin/evaOS-GUI/releases',
+        expect.any(Object)
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps unpackaged beta checks disabled', async () => {
+    vi.clearAllMocks();
+    electronAppMock.isPackaged = false;
+    process.env.AIONUI_EVAOS_BETA = '1';
+    delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
+    delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const handler = await getCheckHandler();
+      const result = await handler({ includePrerelease: true });
+
+      expect(result.success).toBe(false);
+      expect(result.msg).toContain('Updates are disabled');
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('configures electron-updater with the default evaOS beta feed for packaged builds', async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    electronAppMock.isPackaged = true;
+    process.env.AIONUI_EVAOS_BETA = '1';
+    delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
+    delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+
+    await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    expect(autoUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: '100yenadmin',
+      repo: 'evaOS-GUI',
+    });
+  });
 });
 
 describe('autoUpdate quitAndInstall lifecycle', () => {
@@ -368,6 +439,7 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.useFakeTimers();
+    electronAppMock.isPackaged = true;
     process.env.AIONUI_EVAOS_BETA = '1';
     process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
     process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';

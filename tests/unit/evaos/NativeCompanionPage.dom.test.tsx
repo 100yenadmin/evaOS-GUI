@@ -510,6 +510,87 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByText(/broker-owned plugin/i)).toBeInTheDocument();
   });
 
+  it('shows reconnect step when broker denies pairing enrollment', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge-ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac-ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'ready',
+          auditId: 'audit-control-ready',
+          active: false,
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready'],
+        },
+      },
+    });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'create_pairing_prompt',
+        status: 'repair_required',
+        message:
+          'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can create a pairing code. Sign in again, then retry.',
+        sourcePointer: 'native-companion:pairing-broker-session-required',
+        auditIds: [],
+        refreshRecommended: false,
+        agentPairingStatus: 'ready_for_agent_pairing',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    await user.click(await screen.findByRole('button', { name: 'Create Pairing Prompt' }));
+
+    expect(await screen.findByText('Reconnect Workbench session')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh after sign-in' })).toBeInTheDocument();
+    expect(screen.queryByText('Agent setup prompt')).not.toBeInTheDocument();
+    expect(screen.queryByText('PAIR-1234')).not.toBeInTheDocument();
+    expect(screen.queryByText('Test with evaOS / OpenClaw')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeDisabled();
+  });
+
   it('marks agent proof cards proven only when status carries agent pairing proof', async () => {
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,

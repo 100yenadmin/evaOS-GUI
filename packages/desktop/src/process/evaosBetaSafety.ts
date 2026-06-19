@@ -9,6 +9,9 @@ import { EVAOS_BETA_IDENTITY } from '../common/evaos/betaIdentity';
 export { EVAOS_BETA_IDENTITY } from '../common/evaos/betaIdentity';
 
 type Env = NodeJS.ProcessEnv;
+export type EvaosBetaRuntimeContext = {
+  isPackaged?: boolean;
+};
 
 export const EVAOS_BETA_ENV = 'AIONUI_EVAOS_BETA';
 export const EVAOS_BETA_UPDATE_REPO_ENV = 'AIONUI_EVAOS_BETA_UPDATE_REPO';
@@ -36,9 +39,13 @@ export function isEvaosBetaBuild(env: Env = process.env): boolean {
   return isTruthyEnv(env[EVAOS_BETA_ENV]);
 }
 
-export function getEvaosBetaUpdateRepo(env: Env = process.env): string | undefined {
+export function getEvaosBetaUpdateRepo(
+  env: Env = process.env,
+  runtime: EvaosBetaRuntimeContext = {}
+): string | undefined {
   const repo = env[EVAOS_BETA_UPDATE_REPO_ENV]?.trim();
-  return repo || undefined;
+  if (repo) return repo;
+  return isEvaosBetaBuild(env) && runtime.isPackaged === true ? EVAOS_BETA_DEFAULT_GITHUB_REPO : undefined;
 }
 
 export function isAllowedEvaosBetaUpdateRepo(repo: string | undefined): boolean {
@@ -47,17 +54,20 @@ export function isAllowedEvaosBetaUpdateRepo(repo: string | undefined): boolean 
 
 export function getEvaosBetaBackendGithubRepo(env: Env = process.env): string | undefined {
   if (!isEvaosBetaBuild(env)) return undefined;
-  const configuredRepo = getEvaosBetaUpdateRepo(env);
+  const configuredRepo = env[EVAOS_BETA_UPDATE_REPO_ENV]?.trim();
   return isAllowedEvaosBetaUpdateRepo(configuredRepo) ? configuredRepo : EVAOS_BETA_DEFAULT_GITHUB_REPO;
 }
 
-export function shouldDisableAutoUpdate(env: Env = process.env): boolean {
+export function shouldDisableAutoUpdate(env: Env = process.env, runtime: EvaosBetaRuntimeContext = {}): boolean {
   if (!isEvaosBetaBuild(env)) {
     return isTruthyEnv(env.AIONUI_DISABLE_AUTO_UPDATE);
   }
-  return (
-    !isTruthyEnv(env[EVAOS_BETA_ALLOW_AUTO_UPDATE_ENV]) || !isAllowedEvaosBetaUpdateRepo(getEvaosBetaUpdateRepo(env))
-  );
+  if (runtime.isPackaged !== true) return true;
+  if (isTruthyEnv(env.AIONUI_DISABLE_AUTO_UPDATE)) return true;
+  if (env[EVAOS_BETA_ALLOW_AUTO_UPDATE_ENV] !== undefined && !isTruthyEnv(env[EVAOS_BETA_ALLOW_AUTO_UPDATE_ENV])) {
+    return true;
+  }
+  return !isAllowedEvaosBetaUpdateRepo(getEvaosBetaUpdateRepo(env, runtime));
 }
 
 export function shouldDisableSentry(env: Env = process.env): boolean {

@@ -67,14 +67,14 @@ describe('evaosNativeAgentAvailability', () => {
     expect(availability.reasonParams).toEqual({ status: 'repair_required' });
   });
 
-  it('allows native-dependent agents only when native readiness is explicitly provided', () => {
+  it('allows native-dependent agents only when agent pairing proof is explicitly provided', () => {
     const availability = getEvaosNativeAgentAvailability({
       agent_type: 'acp',
       backend: 'hermes',
       name: 'Hermes',
       handshake: {
         evaos_native_companion: {
-          status: 'ready',
+          status: 'agent_paired',
         },
       },
     });
@@ -84,8 +84,25 @@ describe('evaosNativeAgentAvailability', () => {
       displayName: 'Hermes',
       status: 'usable',
       statusLabelKey: 'settings.agentManagement.nativePaired',
-      sourceStatus: 'ready',
+      sourceStatus: 'agent_paired',
     });
+  });
+
+  it('does not treat local-ready as usable agent pairing proof', () => {
+    const availability = getEvaosNativeAgentAvailability({
+      agent_type: 'acp',
+      backend: 'hermes',
+      name: 'Hermes',
+      handshake: {
+        native_companion: {
+          status: 'local-ready',
+        },
+      },
+    });
+
+    expect(availability.status).toBe('repair_required');
+    expect(availability.reasonKey).toBe('settings.agentManagement.nativeStatusNotUsableReason');
+    expect(availability.sourceStatus).toBe('local-ready');
   });
 
   it('does not gate Claude, Codex, or Custom behind native pairing', () => {
@@ -108,7 +125,7 @@ describe('evaosNativeAgentAvailability', () => {
       name: 'Hermes',
       handshake: {
         native_companion: {
-          status: 'ready',
+          status: 'agent_paired',
         },
       },
     };
@@ -124,6 +141,7 @@ describe('evaosNativeAgentAvailability', () => {
       schemaVersion: 'evaos.native_companion_status.v1' as const,
       generatedAt: '2026-06-07T03:45:00.000Z',
       readiness: 'ready' as const,
+      agentPairingStatus: 'agent_paired' as const,
       summaryText: 'Native bridge ready.',
       sourcePointer: 'native-companion:read-only-bridge',
       canOpenReleasedWorkbench: true,
@@ -150,5 +168,31 @@ describe('evaosNativeAgentAvailability', () => {
     expect(getEvaosNativeAgentAvailability(evaos).status).toBe('usable');
     expect(getEvaosNativeAgentAvailability(hermes).status).toBe('usable');
     expect(claude).not.toHaveProperty('native_companion_status');
+  });
+
+  it('does not apply local connector readiness as usable native agent proof', () => {
+    const nativeStatus = {
+      schemaVersion: 'evaos.native_companion_status.v1' as const,
+      generatedAt: '2026-06-07T03:45:00.000Z',
+      readiness: 'ready' as const,
+      agentPairingStatus: 'ready_for_agent_pairing' as const,
+      summaryText: 'Native bridge ready.',
+      sourcePointer: 'native-companion:read-only-bridge',
+      canOpenReleasedWorkbench: true,
+      releasedWorkbench: { installed: true, path: '/Applications/evaOS.app' },
+      bridgeCli: { installed: true, status: 'ready' as const, readOnly: true, auditId: 'audit-bridge' },
+      customerMac: { status: 'ready' as const, auditId: 'audit-mac' },
+      iPhone: { status: 'available' as const, auditId: 'audit-iphone' },
+      audit: { status: 'ready' as const, auditIds: ['audit-mac'] },
+    };
+
+    const evaos = applyEvaosNativeCompanionStatusToAgent(
+      { agent_type: 'openclaw-gateway', backend: 'openclaw-gateway', name: 'OpenClaw' },
+      nativeStatus
+    );
+
+    const availability = getEvaosNativeAgentAvailability(evaos);
+    expect(availability.status).toBe('repair_required');
+    expect(availability.sourceStatus).toBe('ready_for_agent_pairing');
   });
 });

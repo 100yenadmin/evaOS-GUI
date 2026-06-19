@@ -10,6 +10,9 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Sider from '@/renderer/components/layout/Sider';
+import packageJson from '../../../package.json';
+
+const expectedBetaVersionLabel = `v${packageJson.version}`;
 
 const authMock = vi.hoisted(() => ({
   status: 'authenticated' as 'checking' | 'authenticated' | 'unauthenticated',
@@ -499,7 +502,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
-    expect(screen.getByText(/v2\.1\.18-evaos-beta\.0/i)).toBeInTheDocument();
+    expect(screen.getByText(expectedBetaVersionLabel)).toBeInTheDocument();
 
     const customerSelect = screen.getByLabelText('Selected customer');
     expect(customerSelect).toHaveValue('david-poku');
@@ -751,7 +754,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('Viewing')).toBeInTheDocument();
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
     expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
-    expect(screen.getByText(/v2\.1\.18-evaos-beta\.0/i)).toBeInTheDocument();
+    expect(screen.getByText(expectedBetaVersionLabel)).toBeInTheDocument();
     expect(screen.getByLabelText('Selected customer')).toHaveValue('david-poku');
     expect(screen.getByText('evaOS')).toBeInTheDocument();
     expect(screen.getByText('Hermes')).toBeInTheDocument();

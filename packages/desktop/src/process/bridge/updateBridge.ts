@@ -21,6 +21,7 @@ import semver from 'semver';
 import { autoUpdaterService } from '../services/autoUpdaterService';
 import {
   EVAOS_BETA_UPDATE_DISABLED_MESSAGE,
+  type EvaosBetaRuntimeContext,
   getEvaosBetaUpdateRepo,
   isAllowedEvaosBetaUpdateRepo,
   isEvaosBetaBuild,
@@ -74,6 +75,10 @@ const ALLOWED_DOWNLOAD_HOSTS = new Set<string>([
   'release-assets.githubusercontent.com',
 ]);
 const MAX_REDIRECTS = 8;
+
+function updaterRuntime(): EvaosBetaRuntimeContext {
+  return { isPackaged: app.isPackaged === true };
+}
 
 const isAllowedAssetName = (name: string) => {
   const ext = path.extname(name);
@@ -202,7 +207,7 @@ export const pickRecommendedAsset = (
 
 const resolveRepo = (requestRepo?: string): string => {
   if (isEvaosBetaBuild()) {
-    return getEvaosBetaUpdateRepo() ?? '';
+    return getEvaosBetaUpdateRepo(process.env, updaterRuntime()) ?? '';
   }
 
   const envRepo = process.env.AIONUI_GITHUB_REPO?.trim();
@@ -245,7 +250,7 @@ const assertAllowedDownloadRequestUrl = async (rawUrl: string) => {
 
   if (!isEvaosBetaBuild()) return;
 
-  const betaRepo = getEvaosBetaUpdateRepo();
+  const betaRepo = getEvaosBetaUpdateRepo(process.env, updaterRuntime());
   const requestRepo = extractGitHubReleaseRepo(rawUrl);
   if (!isAllowedEvaosBetaUpdateRepo(betaRepo) || requestRepo !== betaRepo) {
     throw new Error('Update download URL is not from the configured evaOS beta update feed.');
@@ -560,7 +565,7 @@ export function initUpdateBridge(): void {
   ipcBridge.update.check.provider(
     async (params): Promise<{ success: boolean; data?: UpdateCheckResult; msg?: string }> => {
       try {
-        if (shouldDisableAutoUpdate()) {
+        if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
           return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
         }
 
@@ -621,7 +626,7 @@ export function initUpdateBridge(): void {
   ipcBridge.update.download.provider(
     async (params: UpdateDownloadRequest): Promise<{ success: boolean; data?: UpdateDownloadResult; msg?: string }> => {
       try {
-        if (shouldDisableAutoUpdate()) {
+        if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
           return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
         }
 
@@ -668,7 +673,7 @@ export function initUpdateBridge(): void {
       msg?: string;
     }> => {
       try {
-        if (shouldDisableAutoUpdate()) {
+        if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
           return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
         }
 
@@ -701,7 +706,7 @@ export function initUpdateBridge(): void {
 
   ipcBridge.autoUpdate.download.provider(async (): Promise<{ success: boolean; msg?: string }> => {
     try {
-      if (shouldDisableAutoUpdate()) {
+      if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
         return { success: false, msg: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
       }
 
@@ -714,7 +719,7 @@ export function initUpdateBridge(): void {
 
   ipcBridge.autoUpdate.quitAndInstall.provider(async (): Promise<void> => {
     try {
-      if (shouldDisableAutoUpdate()) {
+      if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
         console.warn(`[updateBridge] ${EVAOS_BETA_UPDATE_DISABLED_MESSAGE}`);
         return;
       }
