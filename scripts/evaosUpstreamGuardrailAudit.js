@@ -9,11 +9,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const EVAOS_UPSTREAM_ALIGNMENT_TARGET = Object.freeze({
-  targetTag: 'v2.1.18',
-  targetSha: 'ddd20d3',
-  defaultImportRange: 'v2.1.12..v2.1.18',
-  optionalMainCommit: '57aa0d0',
-  optionalMainCommitScope: 'voice-stt-only',
+  targetTag: 'v2.1.21',
+  targetSha: 'af6b1b4d',
+  defaultImportRange: 'v2.1.12..v2.1.21',
+  refreshRange: 'v2.1.18..v2.1.21',
+  importStrategy: 'selective-lanes-only',
 });
 
 const EVAOS_UPSTREAM_IMPORT_SEAMS = Object.freeze([
@@ -153,6 +153,32 @@ const EVAOS_UPSTREAM_CANARY_BUCKETS = Object.freeze([
       'scripts/evaosBetaReleaseGate.js',
       'scripts/prepare-release-assets.sh',
       'scripts/verify-release-assets.sh',
+    ],
+  },
+  {
+    id: 'update-diagnostics',
+    requiredProof: 'update modal/card state, install diagnostics, evaOS support routing, no upstream CDN',
+    pathGlobs: [
+      'packages/desktop/src/common/update/**',
+      'packages/desktop/src/process/bridge/updateBridge.ts',
+      'packages/desktop/src/process/services/autoUpdaterService.ts',
+      'packages/desktop/src/process/services/autoUpdateDiagnostics.ts',
+      'packages/desktop/src/process/bridge/feedbackBridge.ts',
+      'packages/desktop/src/process/feedback/**',
+      'packages/desktop/src/renderer/components/settings/UpdateModal.tsx',
+      'packages/desktop/src/renderer/components/settings/SettingsModal/contents/FeedbackReportModal.tsx',
+      'packages/desktop/src/renderer/components/settings/SettingsModal/contents/AboutModalContent.tsx',
+    ],
+  },
+  {
+    id: 'preview-workspace-boundary',
+    requiredProof: 'workspace-safe preview/download handling plus Design Workspace and Creative Studio smoke',
+    pathGlobs: [
+      'packages/desktop/src/renderer/components/media/FilePreview.tsx',
+      'packages/desktop/src/renderer/hooks/file/**',
+      'packages/desktop/src/renderer/pages/conversation/Preview/**',
+      'packages/desktop/src/renderer/pages/conversation/Workspace/**',
+      'packages/desktop/src/renderer/utils/previewError.ts',
     ],
   },
   {

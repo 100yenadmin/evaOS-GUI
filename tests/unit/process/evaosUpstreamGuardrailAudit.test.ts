@@ -8,8 +8,8 @@ const upstreamGuardrailAudit = require('../../../scripts/evaosUpstreamGuardrailA
     targetTag: string;
     targetSha: string;
     defaultImportRange: string;
-    optionalMainCommit: string;
-    optionalMainCommitScope: string;
+    refreshRange: string;
+    importStrategy: string;
   };
   EVAOS_UPSTREAM_IMPORT_SEAMS: Array<{
     id: string;
@@ -34,13 +34,13 @@ const upstreamGuardrailAudit = require('../../../scripts/evaosUpstreamGuardrailA
 const repoRoot = path.resolve(__dirname, '../../..');
 
 describe('evaOS upstream import guardrail audit', () => {
-  it('pins the Milestone 2 upstream target without opting into live main', () => {
+  it('pins the Milestone 2 upstream target to v2.1.21 without opting into direct imports', () => {
     expect(upstreamGuardrailAudit.EVAOS_UPSTREAM_ALIGNMENT_TARGET).toEqual({
-      targetTag: 'v2.1.18',
-      targetSha: 'ddd20d3',
-      defaultImportRange: 'v2.1.12..v2.1.18',
-      optionalMainCommit: '57aa0d0',
-      optionalMainCommitScope: 'voice-stt-only',
+      targetTag: 'v2.1.21',
+      targetSha: 'af6b1b4d',
+      defaultImportRange: 'v2.1.12..v2.1.21',
+      refreshRange: 'v2.1.18..v2.1.21',
+      importStrategy: 'selective-lanes-only',
     });
   });
 
@@ -80,6 +80,8 @@ describe('evaOS upstream import guardrail audit', () => {
       'packages/desktop/src/renderer/pages/settings/AssistantSettings/index.tsx',
       './packages/desktop/src/common/evaos/nativeCompanionBoundary.ts',
       'packages/desktop/src/process/evaosBetaSafety.ts',
+      'packages/desktop/src/process/services/autoUpdaterService.ts',
+      'packages/desktop/src/renderer/pages/conversation/Preview/components/viewers/ImageViewer.tsx',
       'packages/shared-scripts/src/prepare-aioncore.js',
       '.github/workflows/release-distribute.yml',
     ]);
@@ -90,8 +92,10 @@ describe('evaOS upstream import guardrail audit', () => {
       'broker-ipc',
       'native-connector',
       'native-voice',
+      'preview-workspace-boundary',
       'release-identity',
       'runtime-team',
+      'update-diagnostics',
     ]);
     expect(classifications.find((classification) => classification.id === 'native-connector')?.matchedPaths).toEqual([
       'packages/desktop/src/common/evaos/nativeCompanionBoundary.ts',
