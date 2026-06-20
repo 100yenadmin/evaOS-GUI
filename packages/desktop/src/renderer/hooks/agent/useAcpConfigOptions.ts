@@ -197,8 +197,9 @@ export function useAcpConfigOptions({
           option_id: optionId,
           value,
         });
+        const confirmation = response.confirmation;
         if (!hasObservedValue(response, optionId, value)) {
-          throw new Error(response.confirmation === 'command_ack' ? 'command_ack' : 'config_not_observed');
+          throw new Error(confirmation === 'command_ack' ? 'command_ack' : 'config_not_observed');
         }
         replaceSnapshot(response.config_options);
         return response.config_options;
