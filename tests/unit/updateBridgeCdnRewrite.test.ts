@@ -59,12 +59,14 @@ vi.mock('electron-updater', () => ({
     downloadUpdate: vi.fn(),
     quitAndInstall: vi.fn(),
     checkForUpdatesAndNotify: vi.fn(),
+    currentVersion: { version: '1.0.0' },
   },
 }));
 
 vi.mock('electron-log', () => ({
   default: {
     transports: { file: { level: 'info' } },
+    debug: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
@@ -149,6 +151,26 @@ const getDownloadHandler = async () => {
   const lastCall = provider.mock.calls.at(-1);
   if (!lastCall) throw new Error('update.download handler not registered');
   return lastCall[0];
+};
+
+const getDownloadHandlers = async () => {
+  vi.resetModules();
+  const { initUpdateBridge } = await import('@process/bridge/updateBridge');
+  const { ipcBridge } = await import('@/common');
+
+  initUpdateBridge();
+
+  const downloadProvider = vi.mocked(ipcBridge.update.download.provider);
+  const cancelProvider = vi.mocked(ipcBridge.update.cancelDownload.provider);
+  const downloadCall = downloadProvider.mock.calls.at(-1);
+  const cancelCall = cancelProvider.mock.calls.at(-1);
+  if (!downloadCall) throw new Error('update.download handler not registered');
+  if (!cancelCall) throw new Error('update.download.cancel handler not registered');
+  return {
+    download: downloadCall[0],
+    cancel: cancelCall[0],
+    ipcBridge,
+  };
 };
 
 const getAutoUpdateQuitAndInstallHandler = async () => {
@@ -434,6 +456,96 @@ describe('updateBridge allowlist includes CDN host', () => {
   });
 });
 
+describe('updateBridge manual download reliability', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    electronAppMock.isPackaged = true;
+    process.env.AIONUI_EVAOS_BETA = '0';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
+    vi.unstubAllGlobals();
+  });
+
+  it('reuses the active manual download for the same URL, fallback URL, and file name', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+
+    const handler = await getDownloadHandler();
+    const request = {
+      url: 'https://static.aionui.com/releases/2.2.0/AionUi-2.2.0-mac-arm64.dmg',
+      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v2.2.0/AionUi-2.2.0-mac-arm64.dmg',
+      file_name: 'AionUi-2.2.0-mac-arm64.dmg',
+    };
+
+    const first = await handler({
+      ...request,
+      downloadId: 'first-download',
+    });
+    const second = await handler({
+      ...request,
+      downloadId: 'second-download',
+    });
+
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    expect(second.data).toEqual(first.data);
+    expect(first.data?.downloadId).toBe('first-download');
+  });
+
+  it('cancels an active manual download by id and clears its dedupe slot', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        const signal = init?.signal;
+        return new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException('aborted', 'AbortError'));
+            return;
+          }
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        });
+      })
+    );
+
+    const { download, cancel, ipcBridge } = await getDownloadHandlers();
+    const request = {
+      url: 'https://static.aionui.com/releases/2.2.0/AionUi-2.2.0-mac-arm64.dmg',
+      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v2.2.0/AionUi-2.2.0-mac-arm64.dmg',
+      file_name: 'AionUi-2.2.0-mac-arm64.dmg',
+    };
+
+    const first = await download({
+      ...request,
+      downloadId: 'first-download',
+    });
+    const cancelResult = await cancel({ downloadId: 'first-download' });
+
+    expect(first.success).toBe(true);
+    expect(cancelResult).toEqual({ success: true });
+    expect(vi.mocked(ipcBridge.update.downloadProgress.emit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        downloadId: 'first-download',
+        status: 'cancelled',
+      })
+    );
+
+    const second = await download({
+      ...request,
+      downloadId: 'second-download',
+    });
+
+    expect(second.success).toBe(true);
+    expect(second.data?.downloadId).toBe('second-download');
+  });
+});
+
 describe('autoUpdate quitAndInstall lifecycle', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -522,5 +634,61 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
 
     await expect(handler()).rejects.toThrow('backend did not stop');
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+});
+
+describe('autoUpdate download reliability', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    electronAppMock.isPackaged = true;
+    process.env.AIONUI_EVAOS_BETA = '1';
+    process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';
+  });
+
+  afterEach(() => {
+    delete process.env.AIONUI_EVAOS_BETA;
+    delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
+    delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+  });
+
+  it('dedupes concurrent electron-updater downloads', async () => {
+    const cleanup = makeDeferred();
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+    vi.mocked(autoUpdater.downloadUpdate).mockReturnValue(
+      cleanup.promise as ReturnType<typeof autoUpdater.downloadUpdate>
+    );
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.initialize();
+
+    const first = autoUpdaterService.downloadUpdate();
+    const second = autoUpdaterService.downloadUpdate();
+    expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+
+    cleanup.resolve();
+    await expect(first).resolves.toEqual({ success: true });
+    await expect(second).resolves.toEqual({ success: true });
+  });
+
+  it('cancels an active electron-updater download and broadcasts cancelled status', async () => {
+    const cleanup = makeDeferred();
+    const statuses: unknown[] = [];
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+    vi.mocked(autoUpdater.downloadUpdate).mockReturnValue(
+      cleanup.promise as ReturnType<typeof autoUpdater.downloadUpdate>
+    );
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.initialize((status) => statuses.push(status));
+    void autoUpdaterService.downloadUpdate();
+
+    const result = await autoUpdaterService.cancelDownload();
+
+    expect(result).toEqual({ success: true });
+    expect(statuses).toContainEqual({ status: 'cancelled' });
   });
 });

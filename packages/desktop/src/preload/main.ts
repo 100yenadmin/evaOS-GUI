@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   collectFeedbackLogs: () => ipcRenderer.invoke('feedback:collect-logs'),
   // Feedback: capture a screenshot of the current window
   captureFeedbackScreenshot: () => ipcRenderer.invoke('feedback:capture-screenshot'),
+  // Feedback: forward diagnostics logs to the main process console
+  logFeedbackEvent: (payload: { details?: unknown; level?: 'info' | 'warn' | 'error'; message: string }) =>
+    ipcRenderer.send('feedback:renderer-log', payload),
 });
 
 // Synchronously fetch the aioncore port and expose it to the renderer
