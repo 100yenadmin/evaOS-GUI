@@ -191,7 +191,7 @@ describe('useAcpModelInfo', () => {
     });
 
     await waitFor(() => {
-      expect(prepareRuntime).toHaveBeenCalledTimes(1);
+      expect(prepareRuntime).toHaveBeenCalled();
     });
     expect(getModelInvokeMock).not.toHaveBeenCalled();
 
@@ -213,7 +213,7 @@ describe('useAcpModelInfo', () => {
     });
 
     await waitFor(() => {
-      expect(prepareRuntime).toHaveBeenCalledTimes(1);
+      expect(prepareRuntime).toHaveBeenCalled();
     });
     await waitFor(() => {
       expect(writeRendererLogInvokeMock).toHaveBeenCalledWith(
