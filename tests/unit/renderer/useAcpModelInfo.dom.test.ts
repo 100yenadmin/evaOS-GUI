@@ -9,10 +9,13 @@ import { createElement, type PropsWithChildren } from 'react';
 import { SWRConfig } from 'swr';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
+import { BackendHttpError } from '@/common/adapter/httpBridge';
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
 import { useAcpModelInfo } from '@/renderer/hooks/agent/useAcpModelInfo';
 
 const {
+  getConfigOptionsInvokeMock,
+  setConfigOptionInvokeMock,
   getModelInvokeMock,
   setModelInvokeMock,
   conversationUpdateInvokeMock,
@@ -21,6 +24,8 @@ const {
   fetchDetectedAgentsMock,
   responseStreamHandlerRef,
 } = vi.hoisted(() => ({
+  getConfigOptionsInvokeMock: vi.fn(),
+  setConfigOptionInvokeMock: vi.fn(),
   getModelInvokeMock: vi.fn(),
   setModelInvokeMock: vi.fn(),
   conversationUpdateInvokeMock: vi.fn(),
@@ -35,6 +40,8 @@ const {
 vi.mock('@/common', () => ({
   ipcBridge: {
     acpConversation: {
+      getConfigOptions: { invoke: getConfigOptionsInvokeMock },
+      setConfigOption: { invoke: setConfigOptionInvokeMock },
       getModel: { invoke: getModelInvokeMock },
       setModel: { invoke: setModelInvokeMock },
       responseStream: {
@@ -111,11 +118,22 @@ describe('useAcpModelInfo', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     responseStreamHandlerRef.current = undefined;
+    getConfigOptionsInvokeMock.mockReset();
+    setConfigOptionInvokeMock.mockReset();
     getModelInvokeMock.mockReset();
     setModelInvokeMock.mockReset();
     conversationUpdateInvokeMock.mockReset();
     writeRendererLogInvokeMock.mockReset();
     configServiceSetMock.mockReset();
+    getConfigOptionsInvokeMock.mockRejectedValue(
+      new BackendHttpError({
+        method: 'GET',
+        path: '/api/conversations/conv-1/config-options',
+        status: 404,
+        body: { success: false, code: 'NOT_FOUND', error: 'no active config options' },
+      })
+    );
+    setConfigOptionInvokeMock.mockResolvedValue({ confirmation: 'observed', config_options: [] });
     setModelInvokeMock.mockResolvedValue({ model_info: buildModelInfo() });
     conversationUpdateInvokeMock.mockResolvedValue(true);
     writeRendererLogInvokeMock.mockResolvedValue(undefined);
@@ -173,7 +191,7 @@ describe('useAcpModelInfo', () => {
     });
 
     await waitFor(() => {
-      expect(prepareRuntime).toHaveBeenCalledTimes(1);
+      expect(prepareRuntime).toHaveBeenCalled();
     });
     expect(getModelInvokeMock).not.toHaveBeenCalled();
 
@@ -195,7 +213,7 @@ describe('useAcpModelInfo', () => {
     });
 
     await waitFor(() => {
-      expect(prepareRuntime).toHaveBeenCalledTimes(1);
+      expect(prepareRuntime).toHaveBeenCalled();
     });
     await waitFor(() => {
       expect(writeRendererLogInvokeMock).toHaveBeenCalledWith(
@@ -313,6 +331,112 @@ describe('useAcpModelInfo', () => {
 
     expect(configServiceSetMock).not.toHaveBeenCalled();
     expect(conversationUpdateInvokeMock).not.toHaveBeenCalled();
+  });
+
+  it('uses runtime-observed config options before legacy model info', async () => {
+    getConfigOptionsInvokeMock.mockResolvedValue({
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          type: 'select',
+          current_value: 'gpt-5.2',
+          options: [
+            { value: 'gpt-5.2', label: 'GPT-5.2' },
+            { value: 'gpt-5.2-mini', label: 'GPT-5.2 Mini' },
+          ],
+        },
+        {
+          id: 'reasoning_effort',
+          category: 'thought_level',
+          type: 'select',
+          current_value: 'high',
+          options: [
+            { value: 'low', label: 'Low' },
+            { value: 'high', label: 'High' },
+          ],
+        },
+      ],
+    });
+    getModelInvokeMock.mockResolvedValue({ model_info: buildModelInfo({ current_model_id: 'opus-4' }) });
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'claude',
+      initialModelId: 'opus-4',
+    });
+
+    await waitFor(() => {
+      expect(result.current.model_info?.current_model_id).toBe('gpt-5.2');
+    });
+    expect(result.current.model_info?.available_models).toEqual([
+      { id: 'gpt-5.2', label: 'GPT-5.2' },
+      { id: 'gpt-5.2-mini', label: 'GPT-5.2 Mini' },
+    ]);
+    expect(result.current.thoughtLevel?.currentValue).toBe('high');
+    expect(result.current.canSwitch).toBe(true);
+  });
+
+  it('sets runtime-observed model through config options without global persistence when disabled', async () => {
+    getConfigOptionsInvokeMock.mockResolvedValue({
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          type: 'select',
+          current_value: 'gpt-5.2',
+          options: [
+            { value: 'gpt-5.2', label: 'GPT-5.2' },
+            { value: 'gpt-5.2-mini', label: 'GPT-5.2 Mini' },
+          ],
+        },
+      ],
+    });
+    setConfigOptionInvokeMock.mockResolvedValue({
+      confirmation: 'observed',
+      config_options: [
+        {
+          id: 'model',
+          category: 'model',
+          type: 'select',
+          current_value: 'gpt-5.2-mini',
+          options: [
+            { value: 'gpt-5.2', label: 'GPT-5.2' },
+            { value: 'gpt-5.2-mini', label: 'GPT-5.2 Mini' },
+          ],
+        },
+      ],
+    });
+    const onSelectModelSuccess = vi.fn();
+
+    const { result } = renderUseAcpModelInfo({
+      conversation_id: 'conv-1',
+      backend: 'claude',
+      persistGlobalPreference: false,
+      onSelectModelSuccess,
+    });
+
+    await waitFor(() => {
+      expect(result.current.canSwitch).toBe(true);
+    });
+
+    act(() => {
+      result.current.selectModel('gpt-5.2-mini');
+    });
+
+    await waitFor(() => {
+      expect(setConfigOptionInvokeMock).toHaveBeenCalledWith({
+        conversation_id: 'conv-1',
+        option_id: 'model',
+        value: 'gpt-5.2-mini',
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.model_info?.current_model_id).toBe('gpt-5.2-mini');
+    });
+    expect(setModelInvokeMock).not.toHaveBeenCalled();
+    expect(configServiceSetMock).not.toHaveBeenCalled();
+    expect(onSelectModelSuccess).toHaveBeenCalledWith('gpt-5.2-mini');
   });
 
   it('rolls back to backend model info and does not persist when selectModel fails', async () => {

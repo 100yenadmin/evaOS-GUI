@@ -111,6 +111,7 @@ const AgentChatSlot: React.FC<{
                 conversation_id={agent.conversation_id}
                 backend={agent.agent_type}
                 initialModelId={initialModelId}
+                persistGlobalPreference={false}
               />
             </div>
           )}

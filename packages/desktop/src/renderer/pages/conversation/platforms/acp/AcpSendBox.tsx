@@ -146,6 +146,8 @@ const AcpSendBox: React.FC<{
     model_info,
     canSwitch: canSwitchModel,
     selectModel,
+    thoughtLevel,
+    setConfigOption,
   } = useAcpModelInfo({
     conversation_id,
     backend,
@@ -471,6 +473,10 @@ Please check your local CLI tool authentication status`,
 
     const currentModelLabel =
       model_info?.current_model_label || model_info?.current_model_id || t('conversation.welcome.useCliModel');
+    const currentThoughtLevelLabel =
+      thoughtLevel?.options.find((item) => item.value === thoughtLevel.currentValue)?.label ||
+      thoughtLevel?.currentValue ||
+      '';
     const currentModeLabel =
       modeOptions.find((opt) => opt.active)?.label ?? t('agentMode.default', { defaultValue: 'Default' });
 
@@ -488,6 +494,29 @@ Please check your local CLI tool authentication status`,
           title: t('common.model', { defaultValue: 'Model' }),
           options: modelOptions,
           onSelect: (id) => selectModel(id),
+        },
+      });
+    }
+
+    if (thoughtLevel) {
+      entries.push({
+        key: 'thought-level',
+        icon: <Brain theme='outline' size='16' />,
+        label: t('agent.thoughtLevel.label'),
+        meta: currentThoughtLevelLabel,
+        submenu: {
+          title: t('agent.thoughtLevel.label'),
+          options: thoughtLevel.options.map((item) => ({
+            key: item.value,
+            label: item.label,
+            description: item.description ?? undefined,
+            active: thoughtLevel.currentValue === item.value,
+          })),
+          onSelect: (value) => {
+            void setConfigOption(thoughtLevel.id, value)
+              .then(() => Message.success(t('agent.thoughtLevel.switchSuccess')))
+              .catch(() => Message.error(t('agent.config.failed')));
+          },
         },
       });
     }
@@ -571,8 +600,10 @@ Please check your local CLI tool authentication status`,
     loadedSkills,
     model_info,
     selectModel,
+    setConfigOption,
     setContent,
     t,
+    thoughtLevel,
   ]);
 
   useAddEventListener('acp.selected.file', setAtPath);

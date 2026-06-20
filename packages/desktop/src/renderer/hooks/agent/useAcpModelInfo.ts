@@ -7,9 +7,10 @@
 import { ipcBridge } from '@/common';
 import { isBackendHttpError } from '@/common/adapter/httpBridge';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
-import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
+import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
 import { savePreferredModelId } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents, type AgentMetadata } from '@/renderer/utils/model/agentTypes';
+import { type AcpConfigSetStatus, type AcpDerivedOption, useAcpConfigOptions } from './useAcpConfigOptions';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import useSWR from 'swr';
 
@@ -85,8 +86,16 @@ export interface UseAcpModelInfoResult {
   model_info: AcpModelInfo | null;
   /** True when the agent exposes a switchable model list */
   canSwitch: boolean;
+  /** True while the runtime is applying an observed config-option change. */
+  isSetting: boolean;
   /** Switch the active model and persist via IPC */
   selectModel: (model_id: string) => void;
+  /** Optional runtime-advertised thinking/reasoning option. */
+  thoughtLevel: AcpDerivedOption | null;
+  /** Shared config-option status for this conversation. */
+  setStatus: AcpConfigSetStatus;
+  /** Sets an observed runtime config option for the active conversation. */
+  setConfigOption: (optionId: string, value: string) => Promise<AcpConfigOptionDto[]>;
 }
 
 /**
@@ -120,13 +129,26 @@ export const useAcpModelInfo = ({
   const modelInfoRef = useRef<AcpModelInfo | null>(null);
   const handshakeModelInfoRef = useRef<AcpModelInfo | null>(null);
   const scheduledReloadTimersRef = useRef<number[]>([]);
+  const runtimeConfig = useAcpConfigOptions({ conversation_id, prepareRuntime, enabled });
+  const runtimeModel = runtimeConfig.model;
+  const runtimeThoughtLevel = runtimeConfig.thoughtLevel;
   const modelInfoKey = useMemo(() => getAcpModelInfoKey(conversation_id), [conversation_id]);
   const {
     data: cachedModelInfo,
     isLoading: isModelInfoLoading,
     mutate: mutateModelInfo,
   } = useSWR<AcpModelInfo | null>(enabled ? modelInfoKey : null, fetchAcpModelInfo, { revalidateOnMount: false });
-  const model_info = enabled ? (cachedModelInfo ?? null) : null;
+  const runtimeModelInfo = useMemo<AcpModelInfo | null>(() => {
+    if (!runtimeModel) return null;
+    const currentModelId = runtimeModel.currentValue || initialModelId || null;
+    return {
+      current_model_id: currentModelId,
+      current_model_label:
+        runtimeModel.options.find((item) => item.value === currentModelId)?.label || currentModelId || null,
+      available_models: runtimeModel.options.map((item) => ({ id: item.value, label: item.label })),
+    };
+  }, [initialModelId, runtimeModel]);
+  const model_info = enabled ? (runtimeModelInfo ?? cachedModelInfo ?? null) : null;
 
   useEffect(() => {
     modelInfoRef.current = model_info;
@@ -384,6 +406,7 @@ export const useAcpModelInfo = ({
         conversation_id,
         backend,
         requested_model_id: model_id,
+        config_option_id: runtimeModel?.id,
         previous_model_info: summarizeModelInfo(previousModelInfo),
       });
 
@@ -391,10 +414,23 @@ export const useAcpModelInfo = ({
         let confirmedModelInfo: AcpModelInfo | null = null;
         try {
           await prepareRuntime?.();
-          const confirmed = await ipcBridge.acpConversation.setModel.invoke({ conversation_id, model_id });
-          confirmedModelInfo = confirmed.model_info ?? null;
-          if (confirmedModelInfo) {
-            updateModelInfo(confirmedModelInfo);
+          if (runtimeModel) {
+            const configOptions = await runtimeConfig.setConfigOption(runtimeModel.id, model_id);
+            const confirmedModel = configOptions.find((option) => option.id === runtimeModel.id);
+            confirmedModelInfo = {
+              current_model_id: confirmedModel?.current_value ?? confirmedModel?.selected_value ?? model_id,
+              current_model_label:
+                confirmedModel?.options?.find((option) => option.value === model_id)?.label ||
+                confirmedModel?.options?.find((option) => option.value === model_id)?.name ||
+                model_id,
+              available_models: runtimeModel.options.map((item) => ({ id: item.value, label: item.label })),
+            };
+          } else {
+            const confirmed = await ipcBridge.acpConversation.setModel.invoke({ conversation_id, model_id });
+            confirmedModelInfo = confirmed.model_info ?? null;
+            if (confirmedModelInfo) {
+              updateModelInfo(confirmedModelInfo);
+            }
           }
         } catch (error) {
           hasUserChangedModel.current = false;
@@ -458,11 +494,21 @@ export const useAcpModelInfo = ({
       prepareRuntime,
       persistGlobalPreference,
       reloadModelInfo,
+      runtimeConfig,
+      runtimeModel,
       updateModelInfo,
     ]
   );
 
   const canSwitch = enabled && Boolean(model_info && model_info.available_models.length > 0);
 
-  return { model_info, canSwitch, selectModel };
+  return {
+    model_info,
+    canSwitch,
+    isSetting: runtimeConfig.setStatus.state === 'setting' && runtimeConfig.setStatus.optionId === runtimeModel?.id,
+    selectModel,
+    thoughtLevel: runtimeThoughtLevel,
+    setStatus: runtimeConfig.setStatus,
+    setConfigOption: runtimeConfig.setConfigOption,
+  };
 };

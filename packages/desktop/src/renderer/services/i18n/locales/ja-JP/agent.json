@@ -30,5 +30,15 @@
   "model": {
     "switchSuccess": "モデルを切り替えました",
     "switchFailed": "モデルの切り替えに失敗しました"
+  },
+  "config": {
+    "commandAck": "Runtime accepted the request, but did not confirm the new setting yet.",
+    "timeout": "Runtime did not confirm the new setting in time.",
+    "busy": "Runtime setting update is already in progress.",
+    "failed": "Failed to update runtime setting"
+  },
+  "thoughtLevel": {
+    "label": "Thinking",
+    "switchSuccess": "Thinking level updated"
   }
 }
