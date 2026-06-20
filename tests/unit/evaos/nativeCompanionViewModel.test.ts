@@ -132,19 +132,14 @@ describe('nativeCompanionViewModel', () => {
       }),
       loading: false,
       error: null,
+      hasSelectedCustomer: true,
     });
 
     expect(viewModel.state).toBe('not_paired');
     expect(viewModel.primaryAction.kind).toBe('refresh');
     expect(viewModel.primaryAction.label).toBe('Check again');
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).not.toMatch(/AionUi|Aion CLI/i);
-    expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).toContain(
-      'evaOS Workbench presents status and opens repair actions.'
-    );
-    expect(viewModel.readinessStrip.find((item) => item.label === 'iPhone')).toMatchObject({
-      value: 'Deferred',
-      tone: 'neutral',
-    });
+    expect(viewModel.readinessStrip.map((item) => item.label)).toEqual(['Connector', 'Pairing', 'Permissions']);
     expect(viewModel.repairSteps.join(' ')).not.toMatch(
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );
@@ -161,11 +156,19 @@ describe('nativeCompanionViewModel', () => {
       }),
       loading: false,
       error: null,
+      hasSelectedCustomer: true,
     });
     const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
 
     expect(viewModel.summary).toContain('Pair evaOS/OpenClaw or Hermes with a scoped prompt');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      step: 3,
+      disabled: false,
+    });
     expect(pairing).toMatchObject({
       value: 'Ready to pair',
       tone: 'attention',
@@ -185,6 +188,7 @@ describe('nativeCompanionViewModel', () => {
       }),
       loading: false,
       error: null,
+      hasSelectedCustomer: true,
     });
     const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
@@ -197,5 +201,117 @@ describe('nativeCompanionViewModel', () => {
       state: 'ready',
     });
     expect(viewModel.summary).toContain('Agent pairing proof is present');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'control_start',
+      mode: 'full-access',
+      label: 'Start Full Access',
+      disabled: false,
+    });
+  });
+
+  it('prioritizes one next action through the Mac pairing flow', () => {
+    const readyStatus = baseStatus({
+      readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      summaryText: 'Workbench connector ready.',
+      bridgeCli: {
+        installed: true,
+        status: 'ready',
+        readOnly: true,
+        permissions: { accessibility: 'granted', screenRecording: 'granted' },
+      },
+      connectorService: { status: 'ready', running: true, reachable: true },
+      customerMac: {
+        status: 'ready',
+        permissions: { accessibility: 'granted', screenRecording: 'granted' },
+      },
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
+        hasSelectedCustomer: false,
+      }).nextAction
+    ).toMatchObject({
+      kind: 'none',
+      label: 'Select customer',
+      disabled: true,
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
+        hasSelectedCustomer: true,
+        actionResult: {
+          action: 'create_pairing_prompt',
+          status: 'repair_required',
+          message: 'Sign in again.',
+          sourcePointer: 'native-companion:pairing-broker-session-required',
+          auditIds: [],
+          refreshRecommended: false,
+        },
+      }).nextAction
+    ).toMatchObject({
+      kind: 'refresh',
+      label: 'Refresh after sign-in',
+      title: 'Reconnect Workbench session',
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
+        hasSelectedCustomer: true,
+        actionResult: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: [],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'golden',
+            pairingCode: 'PAIR-1234',
+            setupPrompt: 'Pairing code: PAIR-1234',
+          },
+        },
+      }).nextAction
+    ).toMatchObject({
+      kind: 'copy',
+      label: 'Copy Pairing Prompt',
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
+        hasSelectedCustomer: true,
+        actionResult: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: [],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'golden',
+            pairingCode: 'PAIR-1234',
+            setupPrompt: 'Pairing code: PAIR-1234',
+          },
+        },
+        pairingPromptCopied: true,
+      }).nextAction
+    ).toMatchObject({
+      kind: 'run',
+      action: 'setup_check',
+      label: 'Run Setup Check',
+    });
   });
 });

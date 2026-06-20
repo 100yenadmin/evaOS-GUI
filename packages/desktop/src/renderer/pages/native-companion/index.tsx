@@ -32,6 +32,7 @@ import {
   type NativeCompanionReadinessItem,
   type NativeCompanionRepairStep,
   type NativeCompanionTone,
+  type NativeCompanionNextAction,
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
@@ -50,29 +51,23 @@ const NativeCompanionPage: React.FC = () => {
   const [actionResult, setActionResult] = React.useState<IEvaosNativeCompanionActionResult | null>(null);
   const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
-  const viewModel = getNativeCompanionRepairViewModel({ status, loading, error });
+  const viewModel = getNativeCompanionRepairViewModel({
+    status,
+    loading,
+    error,
+    hasSelectedCustomer: Boolean(customerContext.selectedCustomerId),
+    actionResult,
+    pairingPromptCopied: Boolean(copyMessage),
+  });
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
   const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
   const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(actionResult);
-  const guidedAction = getGuidedAction(
-    status,
-    viewModel.state,
-    Boolean(customerContext.selectedCustomerId),
-    agentPairingStatus,
-    brokerSessionRequired
-  );
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
     setHandoffMessage(result.message);
   }, [openReleasedWorkbench]);
-
-  const handlePrimaryAction = React.useCallback(async () => {
-    if (viewModel.primaryAction.kind === 'refresh') {
-      await refresh();
-    }
-  }, [refresh, viewModel.primaryAction.kind]);
 
   const handleOpenRepairAction = React.useCallback(
     async (action: IEvaosNativeCompanionRepairAction) => {
@@ -110,6 +105,31 @@ const NativeCompanionPage: React.FC = () => {
     await navigator.clipboard.writeText(prompt);
     setCopyMessage('Pairing prompt copied.');
   }, [actionResult?.pairing?.setupPrompt]);
+
+  const handleNextAction = React.useCallback(
+    async (nextAction: NativeCompanionNextAction) => {
+      if (nextAction.disabled || nextAction.kind === 'none') return;
+      if (nextAction.kind === 'refresh') {
+        await refresh();
+        return;
+      }
+      if (nextAction.kind === 'repair' && nextAction.repairAction) {
+        await handleOpenRepairAction(nextAction.repairAction);
+        return;
+      }
+      if (nextAction.kind === 'copy') {
+        await handleCopyPairingPrompt();
+        return;
+      }
+      if (nextAction.kind === 'run' && nextAction.action) {
+        await handleRunAction({
+          action: nextAction.action,
+          mode: nextAction.mode,
+        });
+      }
+    },
+    [handleCopyPairingPrompt, handleOpenRepairAction, handleRunAction, refresh]
+  );
 
   const handleOpenSupportReport = React.useCallback(async () => {
     try {
@@ -152,7 +172,7 @@ const NativeCompanionPage: React.FC = () => {
           </div>
         </header>
 
-        <section className='grid grid-cols-1 gap-10px md:grid-cols-5' aria-label='Mac control readiness'>
+        <section className='grid grid-cols-1 gap-10px md:grid-cols-3' aria-label='Mac control readiness'>
           {viewModel.readinessStrip.map((item) => (
             <ReadinessTile key={item.label} item={item} />
           ))}
@@ -174,20 +194,9 @@ const NativeCompanionPage: React.FC = () => {
               )}
               {handoffMessage && <p className='m-0 mt-6px text-12px leading-18px text-t-secondary'>{handoffMessage}</p>}
             </div>
-            <Button
-              type='primary'
-              loading={loading}
-              disabled={viewModel.primaryAction.disabled}
-              onClick={() => void handlePrimaryAction()}
-            >
-              <span className='inline-flex items-center gap-6px'>
-                <Computer theme='outline' size='16' />
-                {viewModel.primaryAction.label}
-              </span>
-            </Button>
           </div>
 
-          <div className='mt-16px grid grid-cols-1 gap-10px md:grid-cols-5'>
+          <div className='mt-16px grid grid-cols-1 gap-10px md:grid-cols-4'>
             {viewModel.repairSteps.map((step, index) => (
               <RepairStep key={step.title} step={step} index={index + 1} />
             ))}
@@ -209,22 +218,25 @@ const NativeCompanionPage: React.FC = () => {
 
             <div className='mt-12px rounded-8px bg-fill-1 p-12px'>
               <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>
-                Step {guidedAction.step} of 5
+                Step {viewModel.nextAction.step} of {viewModel.nextAction.totalSteps}
               </p>
               <div className='mt-6px flex flex-wrap items-start justify-between gap-10px'>
                 <div className='min-w-0'>
-                  <h4 className='m-0 text-16px font-semibold leading-22px text-t-primary'>{guidedAction.title}</h4>
+                  <h4 className='m-0 text-16px font-semibold leading-22px text-t-primary'>
+                    {viewModel.nextAction.title}
+                  </h4>
                   <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
-                    {guidedAction.detail}
+                    {viewModel.nextAction.detail}
                   </p>
                 </div>
                 <Button
+                  data-testid='native-companion-next-action'
                   type='primary'
-                  disabled={guidedAction.disabled}
-                  loading={guidedAction.loadingAction ? actionInFlight === guidedAction.loadingAction : loading}
-                  onClick={() => void runGuidedAction(guidedAction, handleRunAction, handleOpenRepairAction, refresh)}
+                  disabled={viewModel.nextAction.disabled}
+                  loading={viewModel.nextAction.action ? actionInFlight === viewModel.nextAction.action : loading}
+                  onClick={() => void handleNextAction(viewModel.nextAction)}
                 >
-                  {guidedAction.label}
+                  {viewModel.nextAction.label}
                 </Button>
               </div>
             </div>
@@ -339,12 +351,9 @@ const NativeCompanionPage: React.FC = () => {
                 ) : null}
                 {actionResult.pairing ? (
                   <div className='mt-10px'>
-                    <div className='mb-6px flex flex-wrap items-center justify-between gap-8px'>
-                      <span className='text-12px font-semibold leading-18px text-t-primary'>Agent setup prompt</span>
-                      <Button size='small' type='secondary' onClick={() => void handleCopyPairingPrompt()}>
-                        Copy prompt
-                      </Button>
-                    </div>
+                    <span className='mb-6px block text-12px font-semibold leading-18px text-t-primary'>
+                      Agent setup prompt
+                    </span>
                     <pre className='m-0 max-h-220px overflow-auto rounded-8px bg-fill-3 p-10px text-11px leading-16px text-t-secondary'>
                       {actionResult.pairing.setupPrompt}
                     </pre>
@@ -362,17 +371,8 @@ const NativeCompanionPage: React.FC = () => {
             ) : null}
           </div>
 
-          <div className='mt-14px flex flex-wrap gap-8px' aria-label='Mac repair actions'>
-            <Button type='secondary' onClick={() => void handleOpenRepairAction('accessibility')}>
-              Open Accessibility
-            </Button>
-            <Button type='secondary' onClick={() => void handleOpenRepairAction('screen_recording')}>
-              Open Screen Recording
-            </Button>
-            <Button type='secondary' loading={loading} onClick={() => void refresh()}>
-              Refresh status
-            </Button>
-            {viewModel.statusTone !== 'ready' ? (
+          {viewModel.statusTone !== 'ready' ? (
+            <div className='mt-14px flex flex-wrap gap-8px' aria-label='Mac repair support'>
               <Button
                 type='secondary'
                 icon={<Comment theme='outline' size='16' />}
@@ -380,8 +380,8 @@ const NativeCompanionPage: React.FC = () => {
               >
                 Report to support
               </Button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <div className='mt-14px rounded-8px bg-fill-2 px-14px py-12px text-12px leading-18px text-t-secondary'>
             {viewModel.supportText}
@@ -686,179 +686,6 @@ function capabilityDisplayName(id: string): string {
     return 'broker session handoff';
   }
   return id;
-}
-
-type GuidedAction =
-  | {
-      kind: 'run';
-      action: IEvaosNativeCompanionActionRequest['action'];
-      label: string;
-      title: string;
-      detail: string;
-      step: number;
-      disabled?: boolean;
-      loadingAction: IEvaosNativeCompanionActionRequest['action'];
-    }
-  | {
-      kind: 'repair';
-      repairAction: IEvaosNativeCompanionRepairAction;
-      label: string;
-      title: string;
-      detail: string;
-      step: number;
-      disabled?: boolean;
-      loadingAction?: undefined;
-    }
-  | {
-      kind: 'refresh';
-      label: string;
-      title: string;
-      detail: string;
-      step: number;
-      disabled?: boolean;
-      loadingAction?: undefined;
-    };
-
-function getGuidedAction(
-  status: IEvaosNativeCompanionStatusView | null | undefined,
-  state: ReturnType<typeof getNativeCompanionRepairViewModel>['state'],
-  hasCustomer: boolean,
-  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus,
-  brokerSessionRequired = false
-): GuidedAction {
-  if (state === 'ready' && agentPairingStatus === 'agent_paired') {
-    return {
-      kind: 'run',
-      action: 'setup_check',
-      loadingAction: 'setup_check',
-      label: 'Run setup check',
-      title: 'Agent pairing proven',
-      detail: 'Agent proof is present. Run setup check again before live release proof if the connector state changed.',
-      step: 5,
-    };
-  }
-
-  if (state === 'ready' && brokerSessionRequired) {
-    return {
-      kind: 'refresh',
-      label: 'Refresh after sign-in',
-      title: 'Reconnect Workbench session',
-      detail:
-        'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can create a pairing code. Sign in again from the footer or Open Workbench, then refresh this page.',
-      step: 3,
-    };
-  }
-
-  if (state === 'ready' && agentPairingStatus !== 'pairing_prompt_created' && agentPairingStatus !== 'proof_failed') {
-    return {
-      kind: 'run',
-      action: 'create_pairing_prompt',
-      loadingAction: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
-      title: 'Pair evaOS/OpenClaw or Hermes',
-      detail:
-        'Local Mac control is ready. Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin, not public ports.',
-      step: 3,
-      disabled: !hasCustomer,
-    };
-  }
-
-  if (state === 'ready') {
-    return {
-      kind: 'run',
-      action: 'setup_check',
-      loadingAction: 'setup_check',
-      label: 'Run setup check',
-      title: agentPairingStatus === 'proof_failed' ? 'Retry agent proof' : 'Run final setup check',
-      detail:
-        'After the agent reports pairing complete, run the setup check and then prove evaOS/OpenClaw and Hermes through the shared connector.',
-      step: 5,
-    };
-  }
-
-  if (!connectorReady(status)) {
-    return {
-      kind: 'run',
-      action: 'connector_start',
-      loadingAction: 'connector_start',
-      label: 'Turn On Mac Access',
-      title: 'Turn on Mac Access',
-      detail:
-        'Start the secure Workbench connector first. This is the local bridge evaOS and Hermes use after pairing.',
-      step: 1,
-    };
-  }
-
-  if (!permissionsReady(status)) {
-    const repairAction =
-      status?.bridgeCli.permissions?.accessibility === 'granted' &&
-      status?.customerMac.permissions?.accessibility === 'granted'
-        ? 'screen_recording'
-        : 'accessibility';
-    return {
-      kind: 'repair',
-      repairAction,
-      label: repairAction === 'screen_recording' ? 'Open Screen Recording' : 'Open Accessibility',
-      title: 'Allow screen and control',
-      detail:
-        'macOS must allow Workbench connector control before approved agent actions can run. After granting permission, return here and refresh.',
-      step: 2,
-    };
-  }
-
-  if (state === 'not_paired' || status?.readiness !== 'ready') {
-    return {
-      kind: 'run',
-      action: 'create_pairing_prompt',
-      loadingAction: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
-      title: 'Pair evaOS/OpenClaw or Hermes',
-      detail:
-        'Create a scoped pairing prompt for the selected customer, then paste it into the agent so the VM-side connector is configured without open ports.',
-      step: 3,
-      disabled: !hasCustomer,
-    };
-  }
-
-  return {
-    kind: 'refresh',
-    label: 'Refresh status',
-    title: 'Refresh Mac control status',
-    detail: 'Refresh the local status before continuing.',
-    step: 1,
-  };
-}
-
-async function runGuidedAction(
-  guidedAction: GuidedAction,
-  runAction: (request: IEvaosNativeCompanionActionRequest) => Promise<void>,
-  openRepairAction: (action: IEvaosNativeCompanionRepairAction) => Promise<void>,
-  refresh: () => Promise<void>
-) {
-  if (guidedAction.kind === 'run') {
-    await runAction({ action: guidedAction.action });
-    return;
-  }
-  if (guidedAction.kind === 'repair') {
-    await openRepairAction(guidedAction.repairAction);
-    return;
-  }
-  await refresh();
-}
-
-function connectorReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
-  return status?.connectorService?.running === true || status?.connectorService?.reachable === true;
-}
-
-function permissionsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
-  const bridge = status?.bridgeCli.permissions;
-  const mac = status?.customerMac.permissions;
-  return (
-    bridge?.accessibility === 'granted' &&
-    bridge.screenRecording === 'granted' &&
-    mac?.accessibility === 'granted' &&
-    mac.screenRecording === 'granted'
-  );
 }
 
 function AgentProofCard({

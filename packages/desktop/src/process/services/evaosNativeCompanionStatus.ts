@@ -456,6 +456,21 @@ async function createPairingPromptAction(
     );
   }
 
+  const customerMac = await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps);
+  const permissions = permissionView(customerMac.data?.permissions);
+  if (permissions && !hasGrantedCorePermissions(permissions)) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Mac Access needs Accessibility and Screen Recording before Workbench can create an agent pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-mac-permission-required',
+        auditId: customerMac.auditId,
+        auditIds: compactStrings([customerMac.auditId]),
+      }
+    );
+  }
+
   const createEnrollment =
     deps.createCustomerMacEnrollment ??
     ((input) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(input));
