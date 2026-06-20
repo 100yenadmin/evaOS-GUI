@@ -5,10 +5,16 @@
  */
 
 import { autoUpdater } from 'electron-updater';
-import type { ProgressInfo, UpdateInfo } from 'electron-updater';
+import type { ProgressInfo, ResolvedUpdateFileInfo, UpdateInfo } from 'electron-updater';
+import type { UpdateInfoAndProvider } from 'electron-updater/out/AppUpdater';
+import type { DownloadedUpdateHelper } from 'electron-updater/out/DownloadedUpdateHelper';
+import { findFile } from 'electron-updater/out/providers/Provider';
+import { CancellationError, CancellationToken } from 'builder-util-runtime';
+import type { AutoUpdateReadyResult } from '@/common/update/updateTypes';
 import { app } from 'electron';
 import log from 'electron-log';
 import { EventEmitter } from 'events';
+import * as path from 'path';
 import { recordAutoUpdateQuitAndInstall, recordAutoUpdateStatus } from './autoUpdateDiagnostics';
 import {
   EVAOS_BETA_UPDATE_DISABLED_MESSAGE,
@@ -55,6 +61,7 @@ export function getUpdateChannel(): string | undefined {
 export interface AutoUpdateStatus {
   status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'cancelled';
   version?: string;
+  currentVersion?: string;
   releaseDate?: string;
   releaseNotes?: string;
   progress?: {
@@ -70,6 +77,12 @@ export interface AutoUpdateStatus {
 export type StatusBroadcastCallback = (status: AutoUpdateStatus) => void;
 export type BeforeQuitAndInstallCallback = () => void | Promise<void>;
 
+type AutoUpdaterCacheAccess = {
+  updateInfoAndProvider?: UpdateInfoAndProvider | null;
+  getOrCreateDownloadHelper?: () => Promise<DownloadedUpdateHelper>;
+  constructor?: { name?: string };
+};
+
 /** Events emitted by AutoUpdaterService */
 export interface AutoUpdaterEvents {
   'update-status': (status: AutoUpdateStatus) => void;
@@ -81,6 +94,9 @@ class AutoUpdaterService extends EventEmitter {
   private _allowPrerelease = false;
   private _statusBroadcastCallback: StatusBroadcastCallback | null = null;
   private _beforeQuitAndInstallCallback: BeforeQuitAndInstallCallback | null = null;
+  private _activeDownloadPromise: Promise<{ success: boolean; error?: string }> | null = null;
+  private _activeDownloadCancellationToken: CancellationToken | null = null;
+  private _ignoreActiveDownloadEvents = false;
   /** Stores registered autoUpdater event handlers for cleanup and test access */
   private readonly _autoUpdaterHandlers = new Map<string, (...args: unknown[]) => void>();
 
@@ -164,6 +180,9 @@ class AutoUpdaterService extends EventEmitter {
     this._allowPrerelease = false;
     this._statusBroadcastCallback = null;
     this._beforeQuitAndInstallCallback = null;
+    this._activeDownloadPromise = null;
+    this._activeDownloadCancellationToken = null;
+    this._ignoreActiveDownloadEvents = false;
   }
 
   /**
@@ -176,6 +195,9 @@ class AutoUpdaterService extends EventEmitter {
     this._allowPrerelease = false;
     this._statusBroadcastCallback = null;
     this._beforeQuitAndInstallCallback = null;
+    this._activeDownloadPromise = null;
+    this._activeDownloadCancellationToken = null;
+    this._ignoreActiveDownloadEvents = false;
     // Remove listeners from this EventEmitter instance
     this.removeAllListeners();
     // Remove each registered handler from autoUpdater to prevent
@@ -241,6 +263,7 @@ class AutoUpdaterService extends EventEmitter {
       this.broadcastStatus({
         status: 'available',
         version: info.version,
+        currentVersion: autoUpdater.currentVersion?.version,
         releaseDate: info.releaseDate,
         releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
       });
@@ -252,6 +275,10 @@ class AutoUpdaterService extends EventEmitter {
     });
 
     register('download-progress', (progress: ProgressInfo) => {
+      if (this._ignoreActiveDownloadEvents) {
+        log.debug('[auto-update] Ignoring download-progress after cancellation');
+        return;
+      }
       log.info(`Download progress: ${progress.percent.toFixed(2)}%`);
       this.broadcastStatus({
         status: 'downloading',
@@ -265,15 +292,36 @@ class AutoUpdaterService extends EventEmitter {
     });
 
     register('update-downloaded', (info: UpdateInfo) => {
+      if (this._ignoreActiveDownloadEvents) {
+        log.debug('[auto-update] Ignoring update-downloaded after cancellation');
+        return;
+      }
       log.info('Update downloaded');
+      this._activeDownloadPromise = null;
+      this._activeDownloadCancellationToken = null;
       this.broadcastStatus({
         status: 'downloaded',
         version: info.version,
+        currentVersion: autoUpdater.currentVersion?.version,
       });
     });
 
+    register('update-cancelled', () => {
+      log.info('Update download cancelled');
+      this._activeDownloadPromise = null;
+      this._activeDownloadCancellationToken = null;
+      this._ignoreActiveDownloadEvents = false;
+      this.broadcastStatus({ status: 'cancelled' });
+    });
+
     register('error', (error: Error) => {
+      if (this._ignoreActiveDownloadEvents) {
+        log.debug('[auto-update] Ignoring error after cancellation');
+        return;
+      }
       log.error('Auto-updater error:', error);
+      this._activeDownloadPromise = null;
+      this._activeDownloadCancellationToken = null;
       this.broadcastStatus({
         status: 'error',
         error: error.message,
@@ -334,26 +382,192 @@ class AutoUpdaterService extends EventEmitter {
     }
   }
 
-  async downloadUpdate(): Promise<{ success: boolean; error?: string }> {
+  async restoreDownloadedUpdateIfAvailable(): Promise<{
+    success: boolean;
+    data: AutoUpdateReadyResult;
+    error?: string;
+  }> {
     try {
       if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
-        return { success: false, error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+        return {
+          success: false,
+          data: { ready: false },
+          error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE,
+        };
       }
 
       if (!this._isInitialized) {
         throw new Error('AutoUpdaterService not initialized');
       }
 
-      await autoUpdater.downloadUpdate();
-      return { success: true };
+      const checkResult = await this.checkForUpdates();
+      if (!checkResult.success || !checkResult.updateInfo) {
+        return {
+          success: checkResult.success,
+          data: { ready: false },
+          error: checkResult.error,
+        };
+      }
+
+      const cachedUpdate = await this.getValidCachedDownloadedUpdate();
+      if (!cachedUpdate) {
+        return { success: true, data: { ready: false } };
+      }
+
+      const downloadResult = await this.downloadUpdate();
+      if (!downloadResult.success) {
+        return {
+          success: false,
+          data: { ready: false },
+          error: downloadResult.error,
+        };
+      }
+
+      const data: AutoUpdateReadyResult = {
+        ready: true,
+        version: checkResult.updateInfo.version,
+        currentVersion: autoUpdater.currentVersion?.version,
+        filePath: cachedUpdate.filePath,
+      };
+      if (typeof checkResult.updateInfo.releaseNotes === 'string') {
+        data.releaseNotes = checkResult.updateInfo.releaseNotes;
+      }
+      if (typeof cachedUpdate.fileInfo.info.size === 'number') {
+        data.size = cachedUpdate.fileInfo.info.size;
+      }
+
+      return {
+        success: true,
+        data,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      log.error('Download update failed:', message);
+      log.error('[auto-update] Restore downloaded update failed:', message);
       return {
         success: false,
+        data: { ready: false },
         error: message,
       };
     }
+  }
+
+  private async getValidCachedDownloadedUpdate(): Promise<{
+    filePath: string;
+    fileInfo: ResolvedUpdateFileInfo;
+  } | null> {
+    const updater = autoUpdater as unknown as AutoUpdaterCacheAccess;
+    const updateInfoAndProvider = updater.updateInfoAndProvider;
+    if (!updateInfoAndProvider || !updater.getOrCreateDownloadHelper) {
+      return null;
+    }
+
+    const fileInfo = this.selectAutoUpdateFile(updateInfoAndProvider.provider.resolveFiles(updateInfoAndProvider.info));
+    if (!fileInfo) {
+      log.warn('[auto-update] No platform update file found for cached update restore');
+      return null;
+    }
+
+    const downloadedUpdateHelper = await updater.getOrCreateDownloadHelper();
+    const updateFileName = this.getCacheUpdateFileName(fileInfo);
+    const updateFile = path.join(downloadedUpdateHelper.cacheDirForPendingUpdate, updateFileName);
+    const filePath = await downloadedUpdateHelper.validateDownloadedPath(
+      updateFile,
+      updateInfoAndProvider.info,
+      fileInfo,
+      log
+    );
+
+    return filePath ? { filePath, fileInfo } : null;
+  }
+
+  private selectAutoUpdateFile(files: ResolvedUpdateFileInfo[]): ResolvedUpdateFileInfo | null {
+    const updaterName = (autoUpdater as unknown as AutoUpdaterCacheAccess).constructor?.name;
+    if (updaterName === 'MacUpdater' || process.platform === 'darwin') {
+      return findFile(files, 'zip', ['pkg', 'dmg']) ?? null;
+    }
+    if (updaterName === 'NsisUpdater' || process.platform === 'win32') {
+      return findFile(files, 'exe') ?? null;
+    }
+    if (updaterName === 'DebUpdater') {
+      return findFile(files, 'deb', ['AppImage', 'rpm', 'pacman']) ?? null;
+    }
+    if (updaterName === 'RpmUpdater') {
+      return findFile(files, 'rpm', ['AppImage', 'deb', 'pacman']) ?? null;
+    }
+    if (updaterName === 'PacmanUpdater') {
+      return findFile(files, 'pacman', ['AppImage', 'deb', 'rpm']) ?? null;
+    }
+    return findFile(files, 'AppImage', ['rpm', 'deb', 'pacman']) ?? null;
+  }
+
+  private getCacheUpdateFileName(fileInfo: ResolvedUpdateFileInfo): string {
+    const urlPath = decodeURIComponent(fileInfo.url.pathname);
+    const extension = path.extname(urlPath);
+    if (extension && urlPath.toLowerCase().endsWith(extension.toLowerCase())) {
+      return path.basename(urlPath);
+    }
+    return fileInfo.info.url;
+  }
+
+  async downloadUpdate(): Promise<{ success: boolean; error?: string }> {
+    if (this._activeDownloadPromise) {
+      log.debug('[auto-update] downloadUpdate reused active download');
+      return this._activeDownloadPromise;
+    }
+
+    const cancellationToken = new CancellationToken();
+    this._activeDownloadCancellationToken = cancellationToken;
+
+    const runDownload = async (): Promise<{ success: boolean; error?: string }> => {
+      try {
+        if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
+          return { success: false, error: EVAOS_BETA_UPDATE_DISABLED_MESSAGE };
+        }
+
+        if (!this._isInitialized) {
+          throw new Error('AutoUpdaterService not initialized');
+        }
+
+        this._ignoreActiveDownloadEvents = false;
+        await autoUpdater.downloadUpdate(cancellationToken);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof CancellationError || (error instanceof Error && error.message === 'cancelled')) {
+          log.info('[auto-update] downloadUpdate cancelled');
+          return { success: true };
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        log.error('Download update failed:', message);
+        return {
+          success: false,
+          error: message,
+        };
+      }
+    };
+
+    const downloadPromise = runDownload().finally(() => {
+      if (this._activeDownloadPromise === downloadPromise) {
+        this._activeDownloadPromise = null;
+        this._activeDownloadCancellationToken = null;
+      }
+    });
+    this._activeDownloadPromise = downloadPromise;
+    return downloadPromise;
+  }
+
+  async cancelDownload(): Promise<{ success: boolean; error?: string }> {
+    if (!this._activeDownloadPromise) {
+      this.broadcastStatus({ status: 'cancelled' });
+      return { success: true };
+    }
+
+    log.info('[auto-update] Cancelling active auto-update download');
+    this._activeDownloadCancellationToken?.cancel();
+    this._activeDownloadCancellationToken = null;
+    this._activeDownloadPromise = null;
+    this._ignoreActiveDownloadEvents = true;
+    this.broadcastStatus({ status: 'cancelled' });
+    return { success: true };
   }
 
   async quitAndInstall(): Promise<void> {

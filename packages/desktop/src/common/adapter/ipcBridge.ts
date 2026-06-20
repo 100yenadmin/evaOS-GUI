@@ -68,9 +68,11 @@ import type {
   TeamAgent,
 } from '../types/team/teamTypes';
 import type {
+  AutoUpdateReadyResult,
   AutoUpdateStatus,
   UpdateCheckRequest,
   UpdateCheckResult,
+  UpdateDownloadCancelRequest,
   UpdateDownloadProgressEvent,
   UpdateDownloadRequest,
   UpdateDownloadResult,
@@ -745,6 +747,7 @@ export const update = {
   open: bridge.buildEmitter<{ source?: 'menu' | 'about' }>('update.open'),
   check: bridge.buildProvider<IBridgeResponse<UpdateCheckResult>, UpdateCheckRequest>('update.check'),
   download: bridge.buildProvider<IBridgeResponse<UpdateDownloadResult>, UpdateDownloadRequest>('update.download'),
+  cancelDownload: bridge.buildProvider<IBridgeResponse, UpdateDownloadCancelRequest>('update.download.cancel'),
   downloadProgress: bridge.buildEmitter<UpdateDownloadProgressEvent>('update.download.progress'),
 };
 
@@ -754,6 +757,10 @@ export const autoUpdate = {
     { includePrerelease?: boolean }
   >('auto-update.check'),
   download: bridge.buildProvider<IBridgeResponse, void>('auto-update.download'),
+  restoreDownloaded: bridge.buildProvider<IBridgeResponse<AutoUpdateReadyResult>, void>(
+    'auto-update.restore-downloaded'
+  ),
+  cancelDownload: bridge.buildProvider<IBridgeResponse, void>('auto-update.cancel-download'),
   quitAndInstall: bridge.buildProvider<void, void>('auto-update.quit-and-install'),
   status: bridge.buildEmitter<AutoUpdateStatus>('auto-update.status'),
 };

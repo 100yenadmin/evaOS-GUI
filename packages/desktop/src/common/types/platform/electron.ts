@@ -19,6 +19,8 @@ export interface ElectronBridgeAPI {
   collectFeedbackLogs?: () => Promise<{ filename: string; data: number[] } | null>;
   // Feedback screenshot capture / 反馈截图
   captureFeedbackScreenshot?: () => Promise<{ filename: string; data: number[] } | null>;
+  // Feedback diagnostics event forwarding / 反馈诊断事件转发
+  logFeedbackEvent?: (payload: { details?: unknown; level?: 'info' | 'warn' | 'error'; message: string }) => void;
 }
 
 export type BackendStartupFailureReason =
