@@ -25,7 +25,7 @@ const ScheduledTasksPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { jobs, loading, pauseJob, resumeJob } = useAllCronJobs();
-  const { cliAgents } = useConversationAgents();
+  const { cliAgents, presetAssistants } = useConversationAgents();
   const [createDialogVisible, setCreateDialogVisible] = useState(false);
   const [keepAwake, setKeepAwake] = useState(false);
 
@@ -141,7 +141,7 @@ const ScheduledTasksPage: React.FC = () => {
             )}
           >
             {jobs.map((job) => {
-              const agentMeta = getJobAgentMeta(job, cliAgents);
+              const agentMeta = getJobAgentMeta(job, cliAgents, presetAssistants);
               const isManualOnly = job.schedule.kind === 'cron' && !job.schedule.expr;
               const executionModeLabel =
                 job.target.execution_mode === 'new_conversation'
@@ -199,6 +199,10 @@ const ScheduledTasksPage: React.FC = () => {
                                 alt={agentMeta.name}
                                 className='h-16px w-16px shrink-0 rounded-50%'
                               />
+                            ) : agentMeta.emoji ? (
+                              <span className='flex h-16px w-16px items-center justify-center text-12px'>
+                                {agentMeta.emoji}
+                              </span>
                             ) : (
                               <span className='flex h-16px w-16px items-center justify-center rounded-50% text-10px font-medium text-t-secondary'>
                                 {agentMeta.name.slice(0, 1)}
