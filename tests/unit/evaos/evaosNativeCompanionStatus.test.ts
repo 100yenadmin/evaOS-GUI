@@ -391,6 +391,16 @@ describe('evaosNativeCompanionStatus', () => {
           health: { reachable: true },
           tailnet_ip: '100.64.0.10',
         },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
         [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
           {
             ok: true,
@@ -435,6 +445,16 @@ describe('evaosNativeCompanionStatus', () => {
             health: { reachable: true },
             tailnet_ip: '100.64.0.10',
           },
+          'customer-mac status --json': {
+            ok: true,
+            audit_id: 'audit-mac',
+            data: {
+              permissions: {
+                accessibility: { status: 'granted' },
+                screen_recording: { status: 'granted' },
+              },
+            },
+          },
         },
         {
           createCustomerMacEnrollment: vi.fn(async () => {
@@ -457,10 +477,49 @@ describe('evaosNativeCompanionStatus', () => {
       });
       expect(result.message).toContain('Sign in again');
       expect(result.pairing).toBeUndefined();
-      expect(deps.execFile).toHaveBeenCalledTimes(1);
+      expect(deps.execFile).toHaveBeenCalledTimes(2);
       expect(vi.mocked(deps.execFile).mock.calls[0]?.[1]).toEqual(['connector-service', 'status', '--json']);
+      expect(vi.mocked(deps.execFile).mock.calls[1]?.[1]).toEqual(['customer-mac', 'status', '--json']);
     }
   );
+
+  it('does not create a pairing enrollment until Mac permissions are granted', async () => {
+    const createCustomerMacEnrollment = vi.fn(async () => ({
+      customerId: 'golden',
+      pairingCode: 'PAIR-1234',
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac-permission',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'missing' },
+            },
+          },
+        },
+      },
+      { createCustomerMacEnrollment }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:pairing-mac-permission-required',
+      auditId: 'audit-mac-permission',
+    });
+    expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
+  });
 
   it('opens only the released Workbench fallback path', async () => {
     const openPath = vi.fn(async () => '');

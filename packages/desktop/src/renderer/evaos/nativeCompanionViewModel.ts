@@ -5,8 +5,11 @@
  */
 
 import type {
+  IEvaosNativeCompanionAction,
+  IEvaosNativeCompanionActionResult,
   IEvaosNativeCompanionAgentPairingStatus,
   IEvaosNativeCompanionPermissionView,
+  IEvaosNativeCompanionRepairAction,
   IEvaosNativeCompanionStatusView,
 } from '@/common/evaos/bridgeTypes';
 
@@ -21,6 +24,7 @@ export type NativeCompanionUserState =
 export type NativeCompanionTone = 'ready' | 'attention' | 'offline' | 'neutral';
 
 export type NativeCompanionPrimaryActionKind = 'refresh' | 'none';
+export type NativeCompanionNextActionKind = 'run' | 'repair' | 'refresh' | 'copy' | 'none';
 
 export interface NativeCompanionReadinessItem {
   label: string;
@@ -42,6 +46,19 @@ export interface NativeCompanionPrimaryAction {
   detail: string;
 }
 
+export interface NativeCompanionNextAction {
+  kind: NativeCompanionNextActionKind;
+  label: string;
+  title: string;
+  detail: string;
+  step: number;
+  totalSteps: number;
+  disabled: boolean;
+  action?: IEvaosNativeCompanionAction;
+  repairAction?: IEvaosNativeCompanionRepairAction;
+  mode?: 'full-access' | 'ask-permission';
+}
+
 export interface NativeCompanionRepairViewModel {
   state: NativeCompanionUserState;
   title: string;
@@ -51,6 +68,7 @@ export interface NativeCompanionRepairViewModel {
   readinessStrip: NativeCompanionReadinessItem[];
   repairSteps: NativeCompanionRepairStep[];
   primaryAction: NativeCompanionPrimaryAction;
+  nextAction: NativeCompanionNextAction;
   supportText: string;
   reportedSummary?: string;
 }
@@ -59,6 +77,9 @@ export interface NativeCompanionRepairViewModelInput {
   status: IEvaosNativeCompanionStatusView | null | undefined;
   loading: boolean;
   error: string | null | undefined;
+  hasSelectedCustomer?: boolean;
+  actionResult?: IEvaosNativeCompanionActionResult | null;
+  pairingPromptCopied?: boolean;
 }
 
 const PAIRING_PATTERN = /\b(?:not[_ -]?paired|pairing[_ -]?required|pairing required|device identity changed)\b/i;
@@ -81,6 +102,7 @@ export function getNativeCompanionRepairViewModel(
     readinessStrip: readinessStripForState(input.status, state, input.loading),
     repairSteps: repairStepsForState(input.status, state),
     primaryAction: primaryActionForState(state, input.loading),
+    nextAction: nextActionForState(input, state),
     supportText:
       'Need help? Use Report to support. Support diagnostics can reveal audit IDs and canary status without exposing secrets.',
     reportedSummary,
@@ -173,18 +195,6 @@ function readinessStripForState(
       tone: permissionsTone(status, state, loading),
       help: 'Accessibility and Screen Recording readiness for approved local-control actions.',
     },
-    {
-      label: 'iPhone',
-      value: 'Deferred',
-      tone: 'neutral',
-      help: 'iPhone Mirroring is deferred for this controlled RC.',
-    },
-    {
-      label: 'Trust authority',
-      value: 'Workbench connector',
-      tone: 'neutral',
-      help: 'evaOS Workbench presents status and opens repair actions.',
-    },
   ];
 }
 
@@ -207,11 +217,6 @@ function repairStepsForState(
       title: 'Pair the agent to this Mac',
       detail: pairingStepDetail(status, state),
       state: state === 'ready' || state === 'not_paired' ? pairingTone(status, state) : 'neutral',
-    },
-    {
-      title: 'iPhone Mirroring',
-      detail: 'Deferred for this controlled RC; Mac connector readiness is the release requirement.',
-      state: 'neutral',
     },
     {
       title: 'Run a setup check',
@@ -246,6 +251,178 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
     label: 'Check again',
     disabled: false,
     detail: 'Refresh Mac control status after repairing macOS permissions or pairing.',
+  };
+}
+
+function nextActionForState(
+  input: NativeCompanionRepairViewModelInput,
+  state: NativeCompanionUserState
+): NativeCompanionNextAction {
+  const totalSteps = 4;
+  const status = input.status;
+  const actionResult = input.actionResult ?? null;
+  const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
+
+  if (input.loading) {
+    return {
+      kind: 'none',
+      label: 'Checking...',
+      title: 'Checking Mac control',
+      detail: 'Workbench is reading connector, permission, and pairing status.',
+      step: 1,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (!status || state === 'offline') {
+    return {
+      kind: 'refresh',
+      label: 'Refresh status',
+      title: 'Reconnect Mac control',
+      detail: 'Workbench cannot read current Mac control status. Refresh before pairing or agent control.',
+      step: 1,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (state === 'unsupported' || !status.bridgeCli.installed) {
+    return {
+      kind: 'refresh',
+      label: 'Check again',
+      title: 'Set up Mac control',
+      detail: 'Workbench connector tools are not available yet. Use support if this keeps happening.',
+      step: 1,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (!connectorServiceReady(status)) {
+    return {
+      kind: 'run',
+      action: 'connector_start',
+      label: 'Turn On Mac Access',
+      title: 'Turn on Mac access',
+      detail: 'Start the local Workbench connector before creating an agent pairing code.',
+      step: 1,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (!permissionsReady(status)) {
+    const repairAction = firstMissingPermissionAction(status);
+    return {
+      kind: 'repair',
+      repairAction,
+      label: repairAction === 'screen_recording' ? 'Open Screen Recording' : 'Open Accessibility',
+      title: 'Allow screen and control',
+      detail: 'Grant the missing macOS permission, then return here and refresh status.',
+      step: 2,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
+    return {
+      kind: 'refresh',
+      label: 'Refresh after sign-in',
+      title: 'Reconnect Workbench session',
+      detail: 'Sign in again from the footer, then refresh this page before creating a pairing code.',
+      step: 3,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (!input.hasSelectedCustomer) {
+    return {
+      kind: 'none',
+      label: 'Select customer',
+      title: 'Choose a customer',
+      detail: 'Select the customer this Mac should pair with before creating an agent pairing code.',
+      step: 3,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (agentPairingStatus === 'agent_paired') {
+    if (status.controlSession?.active) {
+      return {
+        kind: 'run',
+        action: 'control_stop',
+        label: 'Stop Control',
+        title: 'Agent control is active',
+        detail: 'Stop the active control session when testing is complete.',
+        step: 4,
+        totalSteps,
+        disabled: false,
+      };
+    }
+    return {
+      kind: 'run',
+      action: 'control_start',
+      mode: 'full-access',
+      label: 'Start Full Access',
+      title: 'Start approved agent control',
+      detail: 'Start a visible Full Access session so evaOS/OpenClaw or Hermes can operate this Mac.',
+      step: 4,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (actionResult?.pairing?.setupPrompt && !input.pairingPromptCopied) {
+    return {
+      kind: 'copy',
+      label: 'Copy Pairing Prompt',
+      title: 'Copy the pairing prompt',
+      detail: 'Paste the prompt into evaOS/OpenClaw or Hermes. It contains only a scoped code, not connector secrets.',
+      step: 3,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (agentPairingStatus === 'pairing_prompt_created' || input.pairingPromptCopied) {
+    return {
+      kind: 'run',
+      action: 'setup_check',
+      label: 'Run Setup Check',
+      title: 'Confirm agent pairing',
+      detail: 'After the agent reports pairing complete, run setup check to confirm broker and audit proof.',
+      step: 4,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (agentPairingStatus === 'proof_failed') {
+    return {
+      kind: 'run',
+      action: 'setup_check',
+      label: 'Run Setup Check',
+      title: 'Retry agent proof',
+      detail: 'Retry setup check after the agent finishes pairing or after support repairs the VM-side connector.',
+      step: 4,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  return {
+    kind: 'run',
+    action: 'create_pairing_prompt',
+    label: 'Create Pairing Prompt',
+    title: 'Pair evaOS/OpenClaw or Hermes',
+    detail: 'Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin.',
+    step: 3,
+    totalSteps,
+    disabled: state !== 'ready',
   };
 }
 
@@ -366,6 +543,39 @@ function normalizeAgentPairingStatus(
   status: IEvaosNativeCompanionAgentPairingStatus | undefined
 ): IEvaosNativeCompanionAgentPairingStatus {
   return status ?? 'ready_for_agent_pairing';
+}
+
+function effectiveAgentPairingStatus(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  actionResult: IEvaosNativeCompanionActionResult | null
+): IEvaosNativeCompanionAgentPairingStatus {
+  if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
+  if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
+  return normalizeAgentPairingStatus(status?.agentPairingStatus);
+}
+
+function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  if (!status) return false;
+  return (
+    status.connectorService?.status === 'ready' ||
+    status.connectorService?.running === true ||
+    status.bridgeCli.status === 'ready'
+  );
+}
+
+function permissionsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  if (!status) return false;
+  return !permissionsNeedRepair(status.bridgeCli.permissions) && !permissionsNeedRepair(status.customerMac.permissions);
+}
+
+function firstMissingPermissionAction(status: IEvaosNativeCompanionStatusView): IEvaosNativeCompanionRepairAction {
+  if (
+    status.bridgeCli.permissions?.accessibility === 'granted' &&
+    status.customerMac.permissions?.accessibility === 'granted'
+  ) {
+    return 'screen_recording';
+  }
+  return 'accessibility';
 }
 
 function permissionsNeedRepair(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {

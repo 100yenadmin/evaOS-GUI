@@ -164,7 +164,7 @@ describe('NativeCompanionPage', () => {
         schemaVersion: 'evaos.native_companion_status.v1',
         generatedAt: '2026-06-07T03:45:00.000Z',
         readiness: 'repair_required',
-        summaryText: 'NOT_PAIRED: pairing required before evaOS or Hermes can use Mac control.',
+        summaryText: 'Screen Recording permission is required before evaOS or Hermes can use Mac control.',
         sourcePointer: 'native-companion:read-only-bridge',
         canOpenReleasedWorkbench: true,
         releasedWorkbench: {
@@ -175,13 +175,18 @@ describe('NativeCompanionPage', () => {
         },
         bridgeCli: {
           installed: true,
-          status: 'repair_required',
+          status: 'ready',
           auditId: 'audit-bridge',
           readOnly: true,
           permissions: {
             accessibility: 'granted',
-            screenRecording: 'granted',
+            screenRecording: 'missing',
           },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
         },
         customerMac: {
           status: 'repair_required',
@@ -189,7 +194,7 @@ describe('NativeCompanionPage', () => {
           deviceLabel: 'EVAs-Mac-mini.local',
           permissions: {
             accessibility: 'granted',
-            screenRecording: 'granted',
+            screenRecording: 'missing',
           },
         },
         iPhone: {
@@ -215,7 +220,7 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByRole('button', { name: 'Check again' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Open Screen Recording' })).toBeInTheDocument();
     expect(screen.getByText('Mac control repair')).toBeInTheDocument();
     expect(screen.queryByText('Mac control status matrix')).not.toBeInTheDocument();
     expect(screen.queryByText('RC native canary contract')).not.toBeInTheDocument();
@@ -225,14 +230,12 @@ describe('NativeCompanionPage', () => {
     expect(document.body.textContent).not.toMatch(/Native companion|released Workbench|\/Applications\/evaOS\.app/i);
 
     const repairCard = screen.getByTestId('native-companion-repair-card');
-    expect(within(repairCard).getByRole('button', { name: 'Open Accessibility' })).toBeInTheDocument();
-    expect(within(repairCard).getByRole('button', { name: 'Open Screen Recording' })).toBeInTheDocument();
+    expect(within(repairCard).getByTestId('native-companion-next-action')).toHaveTextContent('Open Screen Recording');
+    expect(within(repairCard).queryByRole('button', { name: 'Open Accessibility' })).not.toBeInTheDocument();
 
-    await user.click(within(repairCard).getByRole('button', { name: 'Open Accessibility' }));
     await user.click(within(repairCard).getByRole('button', { name: 'Open Screen Recording' }));
 
-    await waitFor(() => expect(bridgeMocks.openRepairAction).toHaveBeenCalledTimes(2));
-    expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'accessibility' });
+    await waitFor(() => expect(bridgeMocks.openRepairAction).toHaveBeenCalledTimes(1));
     expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'screen_recording' });
     expect(bridgeMocks.openReleasedWorkbench).not.toHaveBeenCalled();
   });
@@ -310,14 +313,14 @@ describe('NativeCompanionPage', () => {
       data: {
         schemaVersion: 'evaos.native_companion_status.v1',
         generatedAt: '2026-06-07T03:45:00.000Z',
-        readiness: 'repair_required',
+        readiness: 'ready',
         summaryText: 'Mac control setup needs repair.',
         sourcePointer: 'native-companion:read-only-bridge',
         canOpenReleasedWorkbench: false,
         releasedWorkbench: { installed: false },
         bridgeCli: {
           installed: true,
-          status: 'repair_required',
+          status: 'ready',
           auditId: 'audit-bridge',
           readOnly: true,
           permissions: {
@@ -332,7 +335,7 @@ describe('NativeCompanionPage', () => {
           tailnetIp: '100.64.0.10',
         },
         customerMac: {
-          status: 'repair_required',
+          status: 'ready',
           auditId: 'audit-mac',
           permissions: {
             accessibility: 'granted',
@@ -398,6 +401,7 @@ describe('NativeCompanionPage', () => {
 
     expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Run Setup Check' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('native-companion-next-action')).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Run Setup Check' }));
@@ -412,6 +416,7 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getAllByRole('button', { name: 'Create Pairing Prompt' })[0]);
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
+    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Copy Pairing Prompt');
     expect(document.body.textContent).not.toMatch(
       /Bearer|desktop_session|provider_grant|access_token|refresh_token|connector_url|100\.64\.0\.10|8765|secret-token/i
     );
@@ -501,8 +506,8 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
 
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
-    expect(screen.getByText('Run final setup check')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Run setup check' })).toBeInTheDocument();
+    expect(screen.getByText('Copy the pairing prompt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy Pairing Prompt' })).toBeInTheDocument();
     expect(screen.getByText('Test with evaOS / OpenClaw')).toBeInTheDocument();
     expect(screen.getByText('Test with Hermes')).toBeInTheDocument();
     expect(screen.getAllByText('Pending')).toHaveLength(2);
@@ -750,12 +755,19 @@ describe('NativeCompanionPage', () => {
       });
 
     const user = userEvent.setup();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn(async () => undefined),
+      },
+    });
     renderNativeCompanion();
 
     expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
     expect(await screen.findAllByText('Pending')).toHaveLength(2);
-    await user.click(screen.getByRole('button', { name: 'Run setup check' }));
+    await user.click(screen.getByRole('button', { name: 'Copy Pairing Prompt' }));
+    await user.click(screen.getByRole('button', { name: /Run Setup Check/i }));
 
     await waitFor(() => expect(bridgeMocks.runAction).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
