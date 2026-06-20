@@ -161,4 +161,60 @@ describe('useGuidSend', () => {
     expect(payload.extra.selected_mcp_server_ids).toEqual(['mcp-user']);
     expect(payload.extra.selected_session_mcp_servers).toEqual([expect.objectContaining({ id: 'builtin-mcp' })]);
   });
+
+  it('sends selected skills to non-preset ACP runtime extra without assistant overrides', async () => {
+    const deps = createDeps();
+    deps.selectedAgent = 'claude';
+    deps.selectedAgentKey = 'claude';
+    deps.selectedAgentInfo = {
+      id: 'claude-code',
+      key: 'claude',
+      name: 'Claude Code',
+      agent_type: 'acp',
+      backend: 'claude',
+      isExtension: false,
+    } as never;
+    deps.is_presetAgent = false;
+    deps.guidEnabledSkills = ['custom-skill'];
+    deps.guidDisabledBuiltinSkills = ['builtin-web-search'];
+    deps.resolveEnabledSkills = vi.fn(() => ['default-skill']);
+    deps.resolveDisabledBuiltinSkills = vi.fn(() => ['default-disabled']);
+    deps.getEffectiveAgentType = vi.fn(() => ({
+      agent_type: 'acp',
+      isAvailable: true,
+    }));
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.assistant).toBeUndefined();
+    expect(payload.extra.enabled_skills).toEqual(['custom-skill']);
+    expect(payload.extra.exclude_builtin_skills).toEqual(['builtin-web-search']);
+    expect(payload.extra.preset_enabled_skills).toBeUndefined();
+    expect(payload.extra.exclude_auto_inject_skills).toBeUndefined();
+  });
+
+  it('does not duplicate preset assistant skills into non-preset runtime extra', async () => {
+    const deps = createDeps();
+    deps.guidEnabledSkills = ['preset-skill'];
+    deps.guidDisabledBuiltinSkills = ['preset-disabled'];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.assistant?.conversation_overrides?.skill_ids).toEqual(['preset-skill']);
+    expect(payload.assistant?.conversation_overrides?.disabled_builtin_skill_ids).toEqual(['preset-disabled']);
+    expect(payload.extra.enabled_skills).toBeUndefined();
+    expect(payload.extra.exclude_builtin_skills).toBeUndefined();
+    expect(payload.extra.preset_enabled_skills).toBeUndefined();
+    expect(payload.extra.exclude_auto_inject_skills).toBeUndefined();
+  });
 });

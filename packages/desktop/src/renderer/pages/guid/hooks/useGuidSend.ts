@@ -185,6 +185,10 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       disabled_builtin_skill_ids: excludeBuiltinSkills,
       mcp_ids: assistantOverrideMcpIds,
     };
+    const nonPresetSkillExtra = {
+      ...(!is_preset && enabled_skills_to_send?.length ? { enabled_skills: enabled_skills_to_send } : {}),
+      ...(!is_preset && excludeBuiltinSkills?.length ? { exclude_builtin_skills: excludeBuiltinSkills } : {}),
+    };
 
     // OpenClaw Gateway path
     if (selectedAgent === 'openclaw-gateway') {
@@ -209,6 +213,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
             expected_model: current_model?.use_model,
             switched_at: Date.now(),
           },
+          ...nonPresetSkillExtra,
           preset_enabled_skills: enabled_skills_to_send,
           exclude_auto_inject_skills: excludeBuiltinSkills,
         },
@@ -256,6 +261,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         custom_workspace: isCustomWorkspace,
         extra: {
           default_files: files,
+          ...nonPresetSkillExtra,
           preset_enabled_skills: enabled_skills_to_send,
           exclude_auto_inject_skills: excludeBuiltinSkills,
         },
@@ -310,6 +316,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
               : undefined,
           extra: {
             default_files: files,
+            ...nonPresetSkillExtra,
             workspace: finalWorkspace,
             custom_workspace: isCustomWorkspace,
             preset_assistant_id,
@@ -394,6 +401,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         assistant_conversation_overrides: assistantOverrides,
         extra: {
           default_files: files,
+          ...nonPresetSkillExtra,
           selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
           selected_session_mcp_servers:
             selectedMcpServerIds !== undefined ? selectedSessionMcpServers : selectedSessionMcpServersToSend,
