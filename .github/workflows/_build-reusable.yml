@@ -409,6 +409,7 @@ jobs:
             # Create temporary keychain
             security create-keychain -p "$KEYCHAIN_PASSWORD" "$BUILD_KEYCHAIN_PATH"
             security default-keychain -s "$BUILD_KEYCHAIN_PATH"
+            security list-keychains -d user -s "$BUILD_KEYCHAIN_PATH"
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$BUILD_KEYCHAIN_PATH"
 
             # Import certificate
@@ -421,7 +422,9 @@ jobs:
               exit 1
             fi
             echo "EVAOS_DMG_CODESIGN_IDENTITY=$DMG_CODESIGN_IDENTITY" >> "$GITHUB_ENV"
-            echo "EVAOS_DMG_CODESIGN_KEYCHAIN=$BUILD_KEYCHAIN_PATH" >> "$GITHUB_ENV"
+            # Keep the CI build keychain as the default/search keychain for raw DMG
+            # codesign. Passing the temporary keychain path directly has repeatedly
+            # stalled on GitHub-hosted runners even after app signing succeeds.
 
             # Clean up certificate file
             rm certificate.p12
