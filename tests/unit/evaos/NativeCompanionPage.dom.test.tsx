@@ -32,7 +32,12 @@ const customerContextMock = vi.hoisted(() => ({
   refreshBrokerSession: vi.fn(),
   customerContext: {
     selectedCustomerId: 'benjamin-kennedy' as string | undefined,
-    selectedTarget: { displayName: 'Benjamin Kennedy' },
+    selectedTarget: {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm',
+      displayName: 'Benjamin Kennedy',
+      isDefault: true,
+    },
     loading: false,
     loaded: true,
     refreshTargets: vi.fn(),
@@ -97,6 +102,12 @@ describe('NativeCompanionPage', () => {
     customerContextMock.brokerSessionLoading = false;
     customerContextMock.refreshBrokerSession.mockResolvedValue(undefined);
     customerContextMock.customerContext.selectedCustomerId = 'benjamin-kennedy';
+    customerContextMock.customerContext.selectedTarget = {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm',
+      displayName: 'Benjamin Kennedy',
+      isDefault: true,
+    };
     customerContextMock.customerContext.refreshTargets.mockResolvedValue(undefined);
     brokerMocks.beginDesktopAuth.mockResolvedValue({
       success: true,
@@ -646,6 +657,72 @@ describe('NativeCompanionPage', () => {
     for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
       expect(button).toBeEnabled();
     }
+  });
+
+  it('does not create a Mac pairing prompt for account-only customer targets', async () => {
+    customerContextMock.customerContext.selectedCustomerId = 'admin@100yen.org';
+    customerContextMock.customerContext.selectedTarget = {
+      customerId: 'admin@100yen.org',
+      customerAccountId: 'acct_admin',
+      targetKind: 'customer_account',
+      accountOnly: true,
+      displayName: 'admin@100yen.org',
+      isDefault: true,
+    };
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-21T03:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready'],
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Choose a Mac-control customer')).toBeInTheDocument();
+    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Choose Mac target');
+    expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeDisabled();
+    expect(bridgeMocks.runAction).not.toHaveBeenCalled();
   });
 
   it('starts Workbench sign-in instead of showing a locked pairing button when signed out', async () => {

@@ -177,6 +177,31 @@ describe('nativeCompanionViewModel', () => {
     expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
   });
 
+  it('does not enable pairing for account-only customer targets', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready.',
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: false,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'none',
+      label: 'Choose Mac target',
+      title: 'Choose a Mac-control customer',
+      step: 3,
+      disabled: true,
+    });
+    expect(viewModel.nextAction.detail).toContain('not a VM-backed Mac-control target');
+  });
+
   it('distinguishes a proven paired agent from local connector readiness', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
