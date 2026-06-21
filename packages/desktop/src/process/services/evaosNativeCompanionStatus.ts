@@ -822,7 +822,7 @@ function hasGrantedCorePermissions(permissions: IEvaosNativeCompanionPermissionV
 }
 
 function connectorServiceIsRunning(input: unknown): boolean {
-  return readBoolean(input, 'running') === true || readNestedBoolean(input, ['health', 'reachable']) === true;
+  return readBoolean(input, 'running') === true && readNestedBoolean(input, ['health', 'reachable']) === true;
 }
 
 function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {

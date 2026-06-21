@@ -219,6 +219,76 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
   });
 
+  it('does not mark Mac control ready when the connector service is not reachable', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: {
+            read_only: true,
+          },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: {
+          reachable: false,
+        },
+        tailnet_ip: '100.64.0.10',
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: {
+          installed: true,
+          running: false,
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: false,
+          kill_switch: false,
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        audit_id: 'audit-tail',
+        data: { records: [] },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      connectorService: {
+        status: 'repair_required',
+        running: true,
+        reachable: false,
+      },
+    });
+    expect(status.summaryText).toContain('repair is required');
+  });
+
   it('fails closed when the bridge CLI is missing', async () => {
     const deps = depsWithResponses(
       {},

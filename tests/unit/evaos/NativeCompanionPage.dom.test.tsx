@@ -154,6 +154,11 @@ describe('NativeCompanionPage', () => {
             screenRecording: 'granted',
           },
         },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
         customerMac: {
           status: 'ready',
           auditId: 'audit-mac',
