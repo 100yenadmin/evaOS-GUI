@@ -38,12 +38,15 @@ import {
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { openEvaosSupportEmail } from '@/renderer/utils/platform';
+import { evaosBroker } from '@/common/adapter/ipcBridge';
 
 const NativeCompanionPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const violations = getEvaosNativeCompanionBoundaryViolations();
-  const { customerContext } = useEvaosBrokeredCustomerContext();
+  const { customerContext, brokerAuthenticated, brokerSessionLoading, refreshBrokerSession } =
+    useEvaosBrokeredCustomerContext();
+  const { selectedCustomerId, refreshTargets } = customerContext;
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
     useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
@@ -51,12 +54,15 @@ const NativeCompanionPage: React.FC = () => {
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);
   const [actionResult, setActionResult] = React.useState<IEvaosNativeCompanionActionResult | null>(null);
   const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
+  const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const viewModel = getNativeCompanionRepairViewModel({
     status,
     loading,
     error,
-    hasSelectedCustomer: Boolean(customerContext.selectedCustomerId),
+    hasSelectedCustomer: Boolean(selectedCustomerId),
+    brokerAuthenticated,
+    brokerSessionLoading,
     actionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
@@ -68,7 +74,9 @@ const NativeCompanionPage: React.FC = () => {
     status,
     loading,
     error,
-    hasSelectedCustomer: Boolean(customerContext.selectedCustomerId),
+    hasSelectedCustomer: Boolean(selectedCustomerId),
+    brokerAuthenticated,
+    brokerSessionLoading,
     actionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
@@ -93,7 +101,7 @@ const NativeCompanionPage: React.FC = () => {
       try {
         const result = await runAction({
           ...request,
-          customerId: request.customerId ?? customerContext.selectedCustomerId,
+          customerId: request.customerId ?? selectedCustomerId,
           agentLabel: request.agentLabel ?? 'evaOS Workbench',
         });
         setActionResult(result);
@@ -105,7 +113,7 @@ const NativeCompanionPage: React.FC = () => {
         setActionInFlight(null);
       }
     },
-    [customerContext.selectedCustomerId, refresh, runAction]
+    [refresh, runAction, selectedCustomerId]
   );
 
   const handleCopyPairingPrompt = React.useCallback(async () => {
@@ -115,11 +123,36 @@ const NativeCompanionPage: React.FC = () => {
     setCopyMessage('Pairing prompt copied.');
   }, [actionResult?.pairing?.setupPrompt]);
 
+  const handleReconnectWorkbench = React.useCallback(async () => {
+    setAuthInFlight(true);
+    setHandoffMessage(null);
+    setActionResult(null);
+    setCopyMessage(null);
+    try {
+      const response = await evaosBroker.beginDesktopAuth.invoke();
+      if (!response.success || !response.data) {
+        setHandoffMessage(response.msg || 'evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
+        return;
+      }
+      setHandoffMessage(response.data.message || 'Continue sign-in in the browser, then return here.');
+      await refreshBrokerSession();
+      await refreshTargets();
+    } catch {
+      setHandoffMessage('evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
+    } finally {
+      setAuthInFlight(false);
+    }
+  }, [refreshBrokerSession, refreshTargets]);
+
   const handleNextAction = React.useCallback(
     async (nextAction: NativeCompanionNextAction) => {
       if (nextAction.disabled || nextAction.kind === 'none') return;
       if (nextAction.kind === 'refresh') {
         await refresh();
+        return;
+      }
+      if (nextAction.kind === 'reconnect') {
+        await handleReconnectWorkbench();
         return;
       }
       if (nextAction.kind === 'repair' && nextAction.repairAction) {
@@ -137,7 +170,7 @@ const NativeCompanionPage: React.FC = () => {
         });
       }
     },
-    [handleCopyPairingPrompt, handleOpenRepairAction, handleRunAction, refresh]
+    [handleCopyPairingPrompt, handleOpenRepairAction, handleReconnectWorkbench, handleRunAction, refresh]
   );
 
   const handleOpenSupportReport = React.useCallback(async () => {
@@ -242,7 +275,13 @@ const NativeCompanionPage: React.FC = () => {
                   data-testid='native-companion-next-action'
                   type='primary'
                   disabled={viewModel.nextAction.disabled}
-                  loading={viewModel.nextAction.action ? actionInFlight === viewModel.nextAction.action : loading}
+                  loading={
+                    viewModel.nextAction.kind === 'reconnect'
+                      ? authInFlight
+                      : viewModel.nextAction.action
+                        ? actionInFlight === viewModel.nextAction.action
+                        : loading
+                  }
                   onClick={() => void handleNextAction(viewModel.nextAction)}
                 >
                   {viewModel.nextAction.label}
@@ -293,7 +332,7 @@ const NativeCompanionPage: React.FC = () => {
                 </Button>
                 <Button
                   type='secondary'
-                  disabled={!canCreatePairingPrompt || brokerSessionRequired}
+                  disabled={!canCreatePairingPrompt || brokerSessionRequired || brokerAuthenticated === false}
                   loading={actionInFlight === 'create_pairing_prompt'}
                   onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
                 >

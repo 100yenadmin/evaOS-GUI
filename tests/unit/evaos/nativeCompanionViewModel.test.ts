@@ -233,6 +233,20 @@ describe('nativeCompanionViewModel', () => {
         status: readyStatus,
         loading: false,
         error: null,
+        brokerAuthenticated: false,
+        hasSelectedCustomer: false,
+      }).nextAction
+    ).toMatchObject({
+      kind: 'reconnect',
+      label: 'Reconnect Workbench',
+      disabled: false,
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
         hasSelectedCustomer: false,
       }).nextAction
     ).toMatchObject({
@@ -257,7 +271,7 @@ describe('nativeCompanionViewModel', () => {
         },
       }).nextAction
     ).toMatchObject({
-      kind: 'refresh',
+      kind: 'reconnect',
       label: 'Reconnect Workbench',
       title: 'Reconnect Workbench session',
     });
