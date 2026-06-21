@@ -78,6 +78,7 @@ export interface NativeCompanionRepairViewModelInput {
   loading: boolean;
   error: string | null | undefined;
   hasSelectedCustomer?: boolean;
+  hasPairableCustomer?: boolean;
   brokerAuthenticated?: boolean;
   brokerSessionLoading?: boolean;
   actionResult?: IEvaosNativeCompanionActionResult | null;
@@ -384,6 +385,19 @@ function nextActionForState(
     };
   }
 
+  if (input.hasPairableCustomer === false) {
+    return {
+      kind: 'none',
+      label: 'Choose Mac target',
+      title: 'Choose a Mac-control customer',
+      detail:
+        'The selected account is not a VM-backed Mac-control target. Choose a customer target before creating an agent pairing code.',
+      step: 3,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
   if (agentPairingStatus === 'agent_paired') {
     if (status.controlSession?.active) {
       return {
@@ -611,6 +625,7 @@ function canCreatePairingPrompt(
   status: IEvaosNativeCompanionStatusView | null | undefined
 ): boolean {
   if (!status || input.loading || !input.hasSelectedCustomer) return false;
+  if (input.hasPairableCustomer === false) return false;
   if (input.brokerSessionLoading || input.brokerAuthenticated === false) return false;
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
   if (!status.bridgeCli.installed) return false;

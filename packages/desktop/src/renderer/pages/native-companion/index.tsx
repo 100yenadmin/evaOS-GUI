@@ -19,6 +19,7 @@ import {
   type EvaosNativeCompanionStatusSeverity,
 } from '@/common/evaos/nativeCompanionBoundary';
 import type {
+  IEvaosCustomerTargetView,
   IEvaosNativeCompanionActionRequest,
   IEvaosNativeCompanionActionResult,
   IEvaosNativeCompanionAgentPairingStatus,
@@ -46,7 +47,9 @@ const NativeCompanionPage: React.FC = () => {
   const violations = getEvaosNativeCompanionBoundaryViolations();
   const { customerContext, brokerAuthenticated, brokerSessionLoading, refreshBrokerSession } =
     useEvaosBrokeredCustomerContext();
-  const { selectedCustomerId, refreshTargets } = customerContext;
+  const { selectedCustomerId, selectedTarget, refreshTargets } = customerContext;
+  const selectedPairingCustomerId =
+    selectedCustomerId && selectedTarget && isPairableMacControlTarget(selectedTarget) ? selectedCustomerId : undefined;
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
     useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
@@ -61,6 +64,7 @@ const NativeCompanionPage: React.FC = () => {
     loading,
     error,
     hasSelectedCustomer: Boolean(selectedCustomerId),
+    hasPairableCustomer: selectedCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult,
@@ -75,6 +79,7 @@ const NativeCompanionPage: React.FC = () => {
     loading,
     error,
     hasSelectedCustomer: Boolean(selectedCustomerId),
+    hasPairableCustomer: selectedCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult,
@@ -101,7 +106,9 @@ const NativeCompanionPage: React.FC = () => {
       try {
         const result = await runAction({
           ...request,
-          customerId: request.customerId ?? selectedCustomerId,
+          customerId:
+            request.customerId ??
+            (request.action === 'create_pairing_prompt' ? selectedPairingCustomerId : selectedCustomerId),
           agentLabel: request.agentLabel ?? 'evaOS Workbench',
         });
         setActionResult(result);
@@ -113,7 +120,7 @@ const NativeCompanionPage: React.FC = () => {
         setActionInFlight(null);
       }
     },
-    [refresh, runAction, selectedCustomerId]
+    [refresh, runAction, selectedCustomerId, selectedPairingCustomerId]
   );
 
   const handleCopyPairingPrompt = React.useCallback(async () => {
@@ -772,6 +779,14 @@ function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): b
 
 function isPairingBrokerSessionRequired(actionResult: IEvaosNativeCompanionActionResult | null): boolean {
   return actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required';
+}
+
+function isPairableMacControlTarget(target: IEvaosCustomerTargetView): boolean {
+  if (!target.customerId) return false;
+  if (target.accountOnly === true) return false;
+  if (target.targetKind === 'customer_account') return false;
+  if (target.customerId.includes('@')) return false;
+  return true;
 }
 
 function agentProofLabel(status: IEvaosNativeCompanionAgentPairingStatus): {
