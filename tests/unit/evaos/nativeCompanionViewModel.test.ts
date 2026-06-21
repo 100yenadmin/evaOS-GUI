@@ -28,6 +28,11 @@ const baseStatus = (overrides: Partial<IEvaosNativeCompanionStatusView> = {}): I
       screenRecording: 'granted',
     },
   },
+  connectorService: {
+    status: 'repair_required',
+    running: false,
+    reachable: false,
+  },
   customerMac: {
     status: 'repair_required',
     permissions: {
@@ -56,6 +61,7 @@ describe('nativeCompanionViewModel', () => {
           readiness: 'ready',
           summaryText: 'Native companion ready.',
           bridgeCli: { installed: true, status: 'ready', readOnly: true },
+          connectorService: { status: 'ready', running: true, reachable: true },
           customerMac: { status: 'ready' },
         }),
         'ready',
@@ -152,6 +158,7 @@ describe('nativeCompanionViewModel', () => {
         agentPairingStatus: 'ready_for_agent_pairing',
         summaryText: 'Workbench connector ready.',
         bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
         customerMac: { status: 'ready' },
       }),
       loading: false,
@@ -184,6 +191,7 @@ describe('nativeCompanionViewModel', () => {
         agentPairingStatus: 'ready_for_agent_pairing',
         summaryText: 'Workbench connector ready.',
         bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
         customerMac: { status: 'ready' },
       }),
       loading: false,
@@ -202,6 +210,43 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.nextAction.detail).toContain('not a VM-backed Mac-control target');
   });
 
+  it('does not overclaim ready when the connector service is offline', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready.',
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'repair_required', running: false, reachable: false },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+    });
+    const connector = viewModel.readinessStrip.find((item) => item.label === 'Connector');
+
+    expect(viewModel.state).toBe('repair_required');
+    expect(connector).toMatchObject({
+      value: 'Repair needed',
+      tone: 'attention',
+    });
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'connector_start',
+      label: 'Turn On Mac Access',
+      disabled: false,
+    });
+  });
+
   it('distinguishes a proven paired agent from local connector readiness', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
@@ -209,6 +254,7 @@ describe('nativeCompanionViewModel', () => {
         agentPairingStatus: 'agent_paired',
         summaryText: 'Workbench connector ready with agent proof.',
         bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
         customerMac: { status: 'ready' },
       }),
       loading: false,

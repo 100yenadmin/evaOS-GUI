@@ -117,7 +117,7 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   if (!status) return 'offline';
   const haystack = statusText(status, error);
 
-  if (status.readiness === 'ready') return 'ready';
+  if (status.readiness === 'ready' && connectorServiceReady(status) && permissionsReady(status)) return 'ready';
   if (!status.releasedWorkbench.installed && !status.bridgeCli.installed) return 'unsupported';
   if (PAIRING_PATTERN.test(haystack)) return 'not_paired';
   if (permissionsNeedRepair(status.bridgeCli.permissions) || permissionsNeedRepair(status.customerMac.permissions)) {
@@ -486,8 +486,15 @@ function connectorValue(
   if (loading) return 'Checking';
   if (!status) return 'Offline';
   if (!status.bridgeCli.installed) return state === 'unsupported' ? 'Unavailable' : 'Repair needed';
-  if (status.bridgeCli.status === 'ready') return 'Ready';
-  if (status.bridgeCli.status === 'error' || status.bridgeCli.status === 'unavailable') return 'Offline';
+  if (connectorServiceReady(status)) return 'Ready';
+  if (
+    status.bridgeCli.status === 'error' ||
+    status.bridgeCli.status === 'unavailable' ||
+    status.connectorService?.status === 'error' ||
+    status.connectorService?.status === 'unavailable'
+  ) {
+    return 'Offline';
+  }
   return 'Repair needed';
 }
 
@@ -498,7 +505,7 @@ function connectorTone(
 ): NativeCompanionTone {
   if (loading) return 'neutral';
   if (!status || state === 'offline' || state === 'unsupported') return 'offline';
-  return status.bridgeCli.status === 'ready' ? 'ready' : 'attention';
+  return connectorServiceReady(status) ? 'ready' : 'attention';
 }
 
 function permissionsValue(
@@ -530,6 +537,9 @@ function connectorStepDetail(
 ): string {
   if (state === 'ready') return 'Workbench connector is reporting ready locally.';
   if (!status?.bridgeCli.installed) return 'Set up Mac control so the connector can report status.';
+  if (!connectorServiceReady(status)) {
+    return 'Turn on Mac access so the Workbench connector is running and reachable.';
+  }
   return 'Use the repair workflow to restart or repair the secure local connector.';
 }
 
@@ -609,9 +619,9 @@ function effectiveAgentPairingStatus(
 function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
   if (!status) return false;
   return (
-    status.connectorService?.status === 'ready' ||
-    status.connectorService?.running === true ||
-    status.bridgeCli.status === 'ready'
+    status.connectorService?.status === 'ready' &&
+    status.connectorService?.running === true &&
+    status.connectorService?.reachable === true
   );
 }
 
