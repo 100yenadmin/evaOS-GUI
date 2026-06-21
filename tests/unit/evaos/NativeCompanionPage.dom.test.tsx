@@ -8,7 +8,7 @@ import React from 'react';
 import { ConfigProvider } from '@arco-design/web-react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NativeCompanionPage from '@/renderer/pages/native-companion';
 
 const bridgeMocks = vi.hoisted(() => ({
@@ -20,6 +20,23 @@ const bridgeMocks = vi.hoisted(() => ({
 
 const supportEmailMock = vi.hoisted(() => ({
   openEvaosSupportEmail: vi.fn(),
+}));
+
+const brokerMocks = vi.hoisted(() => ({
+  beginDesktopAuth: vi.fn(),
+}));
+
+const customerContextMock = vi.hoisted(() => ({
+  brokerAuthenticated: true as boolean | undefined,
+  brokerSessionLoading: false,
+  refreshBrokerSession: vi.fn(),
+  customerContext: {
+    selectedCustomerId: 'benjamin-kennedy' as string | undefined,
+    selectedTarget: { displayName: 'Benjamin Kennedy' },
+    loading: false,
+    loaded: true,
+    refreshTargets: vi.fn(),
+  },
 }));
 
 vi.mock('@/common', () => ({
@@ -41,14 +58,20 @@ vi.mock('@/common', () => ({
   },
 }));
 
+vi.mock('@/common/adapter/ipcBridge', () => ({
+  evaosBroker: {
+    beginDesktopAuth: {
+      invoke: brokerMocks.beginDesktopAuth,
+    },
+  },
+}));
+
 vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   useEvaosBrokeredCustomerContext: () => ({
-    customerContext: {
-      selectedCustomerId: 'benjamin-kennedy',
-      selectedTarget: { displayName: 'Benjamin Kennedy' },
-      loading: false,
-      loaded: true,
-    },
+    brokerAuthenticated: customerContextMock.brokerAuthenticated,
+    brokerSessionLoading: customerContextMock.brokerSessionLoading,
+    refreshBrokerSession: customerContextMock.refreshBrokerSession,
+    customerContext: customerContextMock.customerContext,
   }),
 }));
 
@@ -69,6 +92,23 @@ function renderNativeCompanion() {
 }
 
 describe('NativeCompanionPage', () => {
+  beforeEach(() => {
+    customerContextMock.brokerAuthenticated = true;
+    customerContextMock.brokerSessionLoading = false;
+    customerContextMock.refreshBrokerSession.mockResolvedValue(undefined);
+    customerContextMock.customerContext.selectedCustomerId = 'benjamin-kennedy';
+    customerContextMock.customerContext.refreshTargets.mockResolvedValue(undefined);
+    brokerMocks.beginDesktopAuth.mockResolvedValue({
+      success: true,
+      data: {
+        authUrl: 'https://www.electricsheephq.com/login',
+        callbackUrl: 'evaos-workbench-beta://auth/callback',
+        fallbackDeviceCode: 'SAFE-CODE',
+        message: 'Continue sign-in in the browser.',
+      },
+    });
+  });
+
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -594,6 +634,83 @@ describe('NativeCompanionPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Reconnect Workbench' }));
+
+    await waitFor(() => expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1));
+    expect(customerContextMock.refreshBrokerSession).toHaveBeenCalledTimes(1);
+    expect(customerContextMock.customerContext.refreshTargets).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt')
+    );
+    for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
+      expect(button).toBeEnabled();
+    }
+  });
+
+  it('starts Workbench sign-in instead of showing a locked pairing button when signed out', async () => {
+    customerContextMock.brokerAuthenticated = false;
+    customerContextMock.customerContext.selectedCustomerId = undefined;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-21T03:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge-ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac-ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready'],
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Reconnect Workbench session')).toBeInTheDocument();
+    const reconnect = screen.getByTestId('native-companion-next-action');
+    expect(reconnect).toHaveTextContent('Reconnect Workbench');
+    expect(reconnect).toBeEnabled();
+    expect(screen.queryByTestId('native-companion-next-action')).not.toHaveTextContent('Create Pairing Prompt');
+
+    await user.click(reconnect);
+
+    await waitFor(() => expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1));
+    expect(customerContextMock.refreshBrokerSession).toHaveBeenCalledTimes(1);
+    expect(customerContextMock.customerContext.refreshTargets).toHaveBeenCalledTimes(1);
   });
 
   it('does not lock pairing after a previous agent-control start failure', async () => {

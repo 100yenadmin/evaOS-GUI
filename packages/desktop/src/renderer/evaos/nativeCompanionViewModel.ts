@@ -24,7 +24,7 @@ export type NativeCompanionUserState =
 export type NativeCompanionTone = 'ready' | 'attention' | 'offline' | 'neutral';
 
 export type NativeCompanionPrimaryActionKind = 'refresh' | 'none';
-export type NativeCompanionNextActionKind = 'run' | 'repair' | 'refresh' | 'copy' | 'none';
+export type NativeCompanionNextActionKind = 'run' | 'repair' | 'refresh' | 'reconnect' | 'copy' | 'none';
 
 export interface NativeCompanionReadinessItem {
   label: string;
@@ -78,6 +78,8 @@ export interface NativeCompanionRepairViewModelInput {
   loading: boolean;
   error: string | null | undefined;
   hasSelectedCustomer?: boolean;
+  brokerAuthenticated?: boolean;
+  brokerSessionLoading?: boolean;
   actionResult?: IEvaosNativeCompanionActionResult | null;
   pairingPromptCopied?: boolean;
 }
@@ -336,10 +338,34 @@ function nextActionForState(
 
   if (actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
     return {
-      kind: 'refresh',
+      kind: 'reconnect',
       label: 'Reconnect Workbench',
       title: 'Reconnect Workbench session',
-      detail: 'Sign in again from the footer, then refresh this page before creating a pairing code.',
+      detail: 'Sign in to evaOS again so Workbench can create a scoped agent pairing code for the selected customer.',
+      step: 3,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (input.brokerSessionLoading) {
+    return {
+      kind: 'none',
+      label: 'Checking session',
+      title: 'Checking Workbench session',
+      detail: 'Workbench is checking the evaOS broker session before agent pairing.',
+      step: 3,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (input.brokerAuthenticated === false) {
+    return {
+      kind: 'reconnect',
+      label: 'Reconnect Workbench',
+      title: 'Reconnect Workbench session',
+      detail: 'Sign in to evaOS so Workbench can create a scoped agent pairing code for this Mac.',
       step: 3,
       totalSteps,
       disabled: false,
@@ -585,6 +611,7 @@ function canCreatePairingPrompt(
   status: IEvaosNativeCompanionStatusView | null | undefined
 ): boolean {
   if (!status || input.loading || !input.hasSelectedCustomer) return false;
+  if (input.brokerSessionLoading || input.brokerAuthenticated === false) return false;
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
   if (!status.bridgeCli.installed) return false;
   return connectorServiceReady(status) && permissionsReady(status);
