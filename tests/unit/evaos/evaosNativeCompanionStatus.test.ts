@@ -557,11 +557,11 @@ describe('evaosNativeCompanionStatus', () => {
 
     expect(accessibility).toMatchObject({
       opened: true,
-      target: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+      target: 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility',
     });
     expect(screenRecording).toMatchObject({
       opened: true,
-      target: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+      target: 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture',
     });
     expect(openExternal).toHaveBeenCalledTimes(2);
     expect(openPath).not.toHaveBeenCalled();

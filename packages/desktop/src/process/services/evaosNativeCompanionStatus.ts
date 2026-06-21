@@ -778,10 +778,10 @@ async function defaultOpenExternal(url: string): Promise<void> {
 
 function systemSettingsUrlForRepairAction(action: IEvaosNativeCompanionRepairActionRequest['action']): string {
   if (action === 'accessibility') {
-    return 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
+    return 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility';
   }
   if (action === 'screen_recording') {
-    return 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+    return 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture';
   }
   throw new Error('Unsupported native companion repair action.');
 }

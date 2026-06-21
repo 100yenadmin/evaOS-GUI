@@ -28,6 +28,7 @@ import type {
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
 import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
 import {
+  canCreateNativeCompanionPairingPrompt,
   getNativeCompanionRepairViewModel,
   type NativeCompanionReadinessItem,
   type NativeCompanionRepairStep,
@@ -63,6 +64,14 @@ const NativeCompanionPage: React.FC = () => {
   const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
   const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(actionResult);
+  const canCreatePairingPrompt = canCreateNativeCompanionPairingPrompt({
+    status,
+    loading,
+    error,
+    hasSelectedCustomer: Boolean(customerContext.selectedCustomerId),
+    actionResult,
+    pairingPromptCopied: Boolean(copyMessage),
+  });
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
@@ -134,7 +143,7 @@ const NativeCompanionPage: React.FC = () => {
   const handleOpenSupportReport = React.useCallback(async () => {
     try {
       await openEvaosSupportEmail({
-        subject: 'evaOS Workbench Beta support: Mac control',
+        subject: 'evaOS Workbench support: Mac control',
         body: [
           'Route: /native-companion',
           `State: ${status?.readiness ?? viewModel.statusLabel}`,
@@ -161,7 +170,7 @@ const NativeCompanionPage: React.FC = () => {
           <div className='min-w-0'>
             <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Mac &amp; iPhone</h1>
             <p className='m-0 mt-4px max-w-760px text-14px leading-22px text-t-secondary'>
-              Check Mac control readiness for evaOS and Hermes. iPhone Mirroring is deferred for this controlled RC.
+              Check Mac control readiness for evaOS and Hermes. iPhone Mirroring is deferred for this Mac release.
             </p>
           </div>
           <div className='flex flex-wrap items-center gap-8px'>
@@ -284,7 +293,7 @@ const NativeCompanionPage: React.FC = () => {
                 </Button>
                 <Button
                   type='secondary'
-                  disabled={!customerContext.selectedCustomerId || brokerSessionRequired}
+                  disabled={!canCreatePairingPrompt || brokerSessionRequired}
                   loading={actionInFlight === 'create_pairing_prompt'}
                   onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
                 >
