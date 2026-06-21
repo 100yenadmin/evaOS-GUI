@@ -219,10 +219,17 @@ function repairStepsForState(
       state: state === 'ready' || state === 'not_paired' ? pairingTone(status, state) : 'neutral',
     },
     {
-      title: 'Run a setup check',
-      detail:
-        'Refresh this page after Mac control repair completes. evaOS and Hermes stay blocked until readiness is ready.',
-      state: state === 'ready' ? 'ready' : 'neutral',
+      title: 'Test Mac control',
+      detail: 'Run a setup check and one approved low-impact action from evaOS/OpenClaw and Hermes.',
+      state:
+        state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired'
+          ? 'ready'
+          : 'neutral',
+    },
+    {
+      title: 'Stop or revoke access',
+      detail: 'Stop active control after testing, or use the kill switch if agent control should fail closed.',
+      state: status?.controlSession?.active ? 'attention' : state === 'ready' ? 'ready' : 'neutral',
     },
   ];
 }
@@ -258,10 +265,11 @@ function nextActionForState(
   input: NativeCompanionRepairViewModelInput,
   state: NativeCompanionUserState
 ): NativeCompanionNextAction {
-  const totalSteps = 4;
+  const totalSteps = 5;
   const status = input.status;
   const actionResult = input.actionResult ?? null;
   const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
+  const pairingReady = canCreatePairingPrompt(input, status);
 
   if (input.loading) {
     return {
@@ -329,7 +337,7 @@ function nextActionForState(
   if (actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
     return {
       kind: 'refresh',
-      label: 'Refresh after sign-in',
+      label: 'Reconnect Workbench',
       title: 'Reconnect Workbench session',
       detail: 'Sign in again from the footer, then refresh this page before creating a pairing code.',
       step: 3,
@@ -422,8 +430,12 @@ function nextActionForState(
     detail: 'Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin.',
     step: 3,
     totalSteps,
-    disabled: state !== 'ready',
+    disabled: !pairingReady,
   };
+}
+
+export function canCreateNativeCompanionPairingPrompt(input: NativeCompanionRepairViewModelInput): boolean {
+  return canCreatePairingPrompt(input, input.status);
 }
 
 function connectorValue(
@@ -568,6 +580,16 @@ function permissionsReady(status: IEvaosNativeCompanionStatusView | null | undef
   return !permissionsNeedRepair(status.bridgeCli.permissions) && !permissionsNeedRepair(status.customerMac.permissions);
 }
 
+function canCreatePairingPrompt(
+  input: NativeCompanionRepairViewModelInput,
+  status: IEvaosNativeCompanionStatusView | null | undefined
+): boolean {
+  if (!status || input.loading || !input.hasSelectedCustomer) return false;
+  if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
+  if (!status.bridgeCli.installed) return false;
+  return connectorServiceReady(status) && permissionsReady(status);
+}
+
 function firstMissingPermissionAction(status: IEvaosNativeCompanionStatusView): IEvaosNativeCompanionRepairAction {
   if (
     status.bridgeCli.permissions?.accessibility === 'granted' &&
@@ -606,7 +628,6 @@ function statusText(status: IEvaosNativeCompanionStatusView, error: string | nul
     status.sourcePointer,
     status.bridgeCli.status,
     status.customerMac.status,
-    status.iPhone.status,
     status.audit.status,
     status.bridgeCli.permissions?.accessibility,
     status.bridgeCli.permissions?.screenRecording,

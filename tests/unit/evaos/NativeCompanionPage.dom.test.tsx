@@ -298,7 +298,7 @@ describe('NativeCompanionPage', () => {
 
     await waitFor(() => expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledTimes(1));
     expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledWith({
-      subject: 'evaOS Workbench Beta support: Mac control',
+      subject: 'evaOS Workbench support: Mac control',
       body: expect.stringContaining('Route: /native-companion'),
     });
     const payload = supportEmailMock.openEvaosSupportEmail.mock.calls[0][0];
@@ -587,13 +587,115 @@ describe('NativeCompanionPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Create Pairing Prompt' }));
 
     expect(await screen.findByText('Reconnect Workbench session')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Refresh after sign-in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reconnect Workbench' })).toBeInTheDocument();
     expect(screen.queryByText('Agent setup prompt')).not.toBeInTheDocument();
     expect(screen.queryByText('PAIR-1234')).not.toBeInTheDocument();
     expect(screen.queryByText('Test with evaOS / OpenClaw')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeDisabled();
+  });
+
+  it('does not lock pairing after a previous agent-control start failure', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-21T03:45:00.000Z',
+        readiness: 'repair_required',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge-ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac-ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'repair_required',
+          auditId: 'audit-control-repair',
+          active: false,
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready'],
+        },
+      },
+    });
+    bridgeMocks.runAction
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'control_start',
+          status: 'repair_required',
+          message: 'Agent control could not start.',
+          sourcePointer: 'native-companion:customer-mac-control-start',
+          auditIds: [],
+          refreshRecommended: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready. Paste it into evaOS or OpenClaw to complete the link.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: [],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'benjamin-kennedy',
+            pairingCode: 'PAIR-1234',
+            setupPrompt: 'Pairing code: PAIR-1234',
+          },
+        },
+      });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Full Access' }));
+
+    expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent(
+      'Agent control could not start.'
+    );
+    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt');
+    expect(screen.getByTestId('native-companion-next-action')).toBeEnabled();
+
+    const createPairingButtons = screen.getAllByRole('button', { name: 'Create Pairing Prompt' });
+    expect(createPairingButtons.every((button) => !button.hasAttribute('disabled'))).toBe(true);
+
+    await user.click(screen.getByTestId('native-companion-next-action'));
+    expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
+    expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
   });
 
   it('marks agent proof cards proven only when status carries agent pairing proof', async () => {

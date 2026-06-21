@@ -258,7 +258,7 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'refresh',
-      label: 'Refresh after sign-in',
+      label: 'Reconnect Workbench',
       title: 'Reconnect Workbench session',
     });
 
@@ -312,6 +312,50 @@ describe('nativeCompanionViewModel', () => {
       kind: 'run',
       action: 'setup_check',
       label: 'Run Setup Check',
+    });
+  });
+
+  it('keeps pairing available after a failed control start when connector prerequisites are ready', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'repair_required',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        controlSession: {
+          status: 'repair_required',
+          active: false,
+          killSwitch: false,
+        },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+      actionResult: {
+        action: 'control_start',
+        status: 'repair_required',
+        message: 'Agent control could not start.',
+        sourcePointer: 'native-companion:customer-mac-control-start',
+        auditIds: [],
+        refreshRecommended: false,
+      },
+    });
+
+    expect(viewModel.state).toBe('repair_required');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      disabled: false,
     });
   });
 });
