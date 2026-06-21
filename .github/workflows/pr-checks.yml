@@ -827,6 +827,13 @@ jobs:
             exit 1
           fi
 
+          rm -rf build-artifacts-macos-arm64-flat release-assets-macos-arm64-flat
+          mkdir -p build-artifacts-macos-arm64-flat
+          cp build-artifacts-macos-arm64/macos-build-arm64/* build-artifacts-macos-arm64-flat/
+          rm -f build-artifacts-macos-arm64-flat/latest-mac.yml
+          bash scripts/prepare-release-assets.sh build-artifacts-macos-arm64-flat release-assets-macos-arm64-flat
+          bash scripts/verify-release-assets.sh release-assets-macos-arm64-flat
+
       - name: Validate Windows-only release profile
         shell: bash
         env:
