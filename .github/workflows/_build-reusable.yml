@@ -411,6 +411,7 @@ jobs:
             security default-keychain -s "$BUILD_KEYCHAIN_PATH"
             security list-keychains -d user -s "$BUILD_KEYCHAIN_PATH"
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$BUILD_KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$BUILD_KEYCHAIN_PATH"
 
             # Import certificate
             security import certificate.p12 -k "$BUILD_KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign
@@ -425,6 +426,8 @@ jobs:
             # Keep the CI build keychain as the default/search keychain for raw DMG
             # codesign. Passing the temporary keychain path directly has repeatedly
             # stalled on GitHub-hosted runners even after app signing succeeds.
+            # Keep the keychain unlocked across app notarization so the later DMG
+            # codesign cannot fall into a hidden UI prompt.
 
             # Clean up certificate file
             rm certificate.p12
@@ -652,7 +655,7 @@ jobs:
             if grep -qiE "codesign .*timed out|timed out after .*codesign|codesign .* timed out after" "${RUNNER_TEMP}/build.log"; then
               echo "❌ DMG created but CI DMG codesign timed out"
               echo "notarization_status=dmg_codesign_timeout" >> $GITHUB_OUTPUT
-              echo "::error title=DMG codesign timeout::DMG exists, but GitHub-hosted DMG codesign timed out. Use local DMG finalization for this RC."
+              echo "::error title=DMG codesign timeout::DMG exists, but GitHub-hosted DMG codesign timed out. The signing keychain may have locked or prompted before final DMG signing."
               exit 1
             fi
             if grep -qiE "primary-signature|rejected|source=no usable signature" "${RUNNER_TEMP}/build.log"; then
