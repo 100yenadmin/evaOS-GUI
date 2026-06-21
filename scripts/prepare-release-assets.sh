@@ -48,7 +48,14 @@ case "$RELEASE_TARGET_PLATFORMS" in
     while IFS= read -r file; do
       DISTRIBUTABLES+=("$file")
     done < <(find "$ARTIFACTS_DIR" -type f \( \
-      \( -path "*/macos-build-x64/*" -o -path "*/macos-build-arm64/*" \) -a \
+      \( \
+        -path "*/macos-build-x64/*" -o \
+        -path "*/macos-build-arm64/*" -o \
+        -name "*-mac-x64.dmg" -o \
+        -name "*-mac-x64.zip" -o \
+        -name "*-mac-arm64.dmg" -o \
+        -name "*-mac-arm64.zip" \
+      \) -a \
       \( -name "*.dmg" -o -name "*.zip" \) \
     \) | sort)
     ;;
@@ -56,7 +63,11 @@ case "$RELEASE_TARGET_PLATFORMS" in
     while IFS= read -r file; do
       DISTRIBUTABLES+=("$file")
     done < <(find "$ARTIFACTS_DIR" -type f \( \
-      -path "*/macos-build-arm64/*" -a \
+      \( \
+        -path "*/macos-build-arm64/*" -o \
+        -name "*-mac-arm64.dmg" -o \
+        -name "*-mac-arm64.zip" \
+      \) -a \
       \( -name "*.dmg" -o -name "*.zip" \) \
     \) | sort)
     ;;
@@ -244,7 +255,10 @@ write_macos_dmg_metadata() {
   local output_name="$2"
   local dmg
 
-  dmg=$(find "$ARTIFACTS_DIR" -type f -path "*/macos-build-$arch/*" -name "*.dmg" | sort | head -n 1 || true)
+  dmg=$(find "$ARTIFACTS_DIR" -type f \( \
+    -path "*/macos-build-$arch/*" -o \
+    -name "*-mac-$arch.dmg" \
+  \) -name "*.dmg" | sort | head -n 1 || true)
   if [ -z "$dmg" ]; then
     return
   fi
