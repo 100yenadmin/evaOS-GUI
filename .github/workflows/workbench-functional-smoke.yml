@@ -109,9 +109,21 @@ jobs:
           node scripts/evaosBetaReleaseGate.js audit-config
           node scripts/evaosUpstreamGuardrailAudit.js
 
+      - name: Verify bridge source access
+        shell: bash
+        env:
+          BRIDGE_SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BRIDGE_SOURCE_TOKEN:-}" ]; then
+            echo "::error::GH_TOKEN secret is required to fetch electricsheephq/evaos-desktop-bridge for functional smoke."
+            exit 1
+          fi
+
       - name: Build unpacked app only
         shell: bash
         env:
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: |
           set -euo pipefail
