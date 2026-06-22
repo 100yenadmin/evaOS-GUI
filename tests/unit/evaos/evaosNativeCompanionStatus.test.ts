@@ -239,6 +239,7 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           running: true,
           health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
         },
         'customer-mac status --json': {
           ok: true,
@@ -350,6 +351,78 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(status.summaryText).toContain('repair is required');
+  });
+
+  it('does not report pairing capable when the connector only exposes loopback', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: {
+            read_only: true,
+          },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: {
+          reachable: true,
+          host: '127.0.0.1',
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: {
+          installed: true,
+          running: false,
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: false,
+          kill_switch: false,
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        audit_id: 'audit-tail',
+        data: { records: [] },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      agentPairingStatus: 'not_ready',
+      pairingCapable: false,
+      pairingBlockedReason: 'secure_network_link_required',
+      connectorService: {
+        status: 'ready',
+        running: true,
+        reachable: true,
+      },
+    });
+    expect(status.summaryText).toContain('secure tailnet/private connector host');
   });
 
   it('fails closed when the bridge CLI is missing', async () => {
@@ -834,6 +907,7 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           running: true,
           health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
         },
         'customer-mac status --json': {
           ok: true,
@@ -858,6 +932,40 @@ describe('evaosNativeCompanionStatus', () => {
       auditId: 'audit-mac-permission',
     });
     expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
+  });
+
+  it('blocks pairing enrollment when local registration has no secure connector host', async () => {
+    const createCustomerMacEnrollment = vi.fn(async () => ({
+      customerId: 'golden',
+      pairingCode: 'PAIR-1234',
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: {
+            reachable: true,
+            host: 'localhost',
+          },
+        },
+      },
+      { createCustomerMacEnrollment }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:pairing-secure-network-required',
+      agentPairingStatus: 'ready_for_agent_pairing',
+    });
+    expect(result.message).toContain('secure tailnet/private connector host');
+    expect(result.pairing).toBeUndefined();
+    expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
+    expect(deps.execFile).toHaveBeenCalledTimes(1);
   });
 
   it('opens only the released Workbench fallback path', async () => {

@@ -171,6 +171,8 @@ export interface IEvaosNativeCompanionStatusView {
   generatedAt: string;
   readiness: IEvaosNativeCompanionReadiness;
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
+  pairingCapable?: boolean;
+  pairingBlockedReason?: string;
   summaryText: string;
   sourcePointer: string;
   canOpenReleasedWorkbench: boolean;

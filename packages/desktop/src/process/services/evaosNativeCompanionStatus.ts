@@ -6,6 +6,7 @@
 
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
+import { isIP } from 'node:net';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -100,6 +101,8 @@ export async function getEvaosNativeCompanionStatus(
       generatedAt,
       readiness: 'repair_required',
       agentPairingStatus: 'not_ready',
+      pairingCapable: false,
+      pairingBlockedReason: 'bundled_bridge_required',
       summaryText: 'Workbench connector tools are not installed. Use setup or support to repair Mac control.',
       sourcePointer: 'native-companion:bridge-cli-missing',
       canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -136,18 +139,30 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady = customerMac.ok && hasGrantedCorePermissions(customerMacPermissions);
   const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
-  const agentPairingStatus = agentPairingStatusFromStatus(readiness, controlSession.data);
+  const pairingCapable =
+    isPairingCapableBridgePath(bridgePath, deps.env) &&
+    connectorServiceHasSecureRegistrationHost(connectorService.data);
+  const agentPairingStatus = pairingCapable
+    ? agentPairingStatusFromStatus(readiness, controlSession.data)
+    : 'not_ready';
+  const pairingBlockedReason = pairingCapable
+    ? undefined
+    : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
 
   return {
     schemaVersion: 'evaos.native_companion_status.v1',
     generatedAt,
     readiness,
     agentPairingStatus,
+    pairingCapable,
+    pairingBlockedReason,
     summaryText:
       readiness === 'ready'
-        ? agentPairingStatus === 'agent_paired'
-          ? 'Workbench connector ready with agent pairing proof.'
-          : 'Workbench connector ready for code-only agent pairing.'
+        ? !pairingCapable
+          ? 'Workbench connector is locally ready, but agent pairing needs the bundled connector and a secure tailnet/private connector host.'
+          : agentPairingStatus === 'agent_paired'
+            ? 'Workbench connector ready with agent pairing proof.'
+            : 'Workbench connector ready for code-only agent pairing.'
         : 'Workbench connector repair is required before evaOS or Hermes can use Mac control.',
     sourcePointer: 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -521,6 +536,18 @@ async function createPairingPromptAction(
       }
     );
   }
+  if (!connectorServiceHasSecureRegistrationHost(connector.data)) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Mac Access is running locally, but Workbench needs a secure tailnet/private connector host before creating an agent pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-secure-network-required',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        refreshRecommended: false,
+      }
+    );
+  }
 
   const customerMac = await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps);
   const permissions = permissionView(customerMac.data?.permissions);
@@ -818,6 +845,47 @@ function isPairingCapableBridgePath(bridgePath: string, env: NodeJS.ProcessEnv =
   );
 }
 
+function pairingBlockedReasonForStatus(input: {
+  bridgePath: string;
+  connectorService: BridgeCommandResult;
+  env?: NodeJS.ProcessEnv;
+}): string {
+  if (!isPairingCapableBridgePath(input.bridgePath, input.env)) return 'bundled_bridge_required';
+  if (!input.connectorService.ok || !connectorServiceIsRunning(input.connectorService.data))
+    return 'connector_service_not_ready';
+  if (!connectorServiceHasSecureRegistrationHost(input.connectorService.data)) return 'secure_network_link_required';
+  return 'pairing_not_ready';
+}
+
+function connectorServiceHasSecureRegistrationHost(input: unknown): boolean {
+  const tailnetIp = readString(input, 'tailnet_ip');
+  if (isSafeConnectorRegistrationHost(tailnetIp)) return true;
+  if (readNestedBoolean(input, ['health', 'reachable']) !== true) return false;
+  return isSafeConnectorRegistrationHost(readNestedString(input, ['health', 'host']));
+}
+
+function isSafeConnectorRegistrationHost(value: string | undefined): boolean {
+  const host = normalizeConnectorHost(value);
+  if (!host) return false;
+  const lowered = host.toLowerCase();
+  if (lowered === 'localhost' || lowered === 'localhost.localdomain') return false;
+  if (lowered.endsWith('.local')) return true;
+  if (isIP(host) !== 4) return false;
+  const parts = host.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  if (parts[0] === 127 || parts[0] === 0 || parts[0] >= 224) return false;
+  if (parts[0] === 100) return true;
+  if (parts[0] === 10) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  return parts[0] === 192 && parts[1] === 168;
+}
+
+function normalizeConnectorHost(value: string | undefined): string | undefined {
+  const host = value?.trim().replace(/^\[/, '').replace(/\]$/, '');
+  if (!host || /[/?#@:]/.test(host)) return undefined;
+  return host;
+}
+
 function enabledEnvFlag(value: string | undefined): boolean {
   const normalized = value?.trim().toLowerCase();
   return normalized === '1' || normalized === 'true';
@@ -1101,9 +1169,10 @@ function pairingPromptText(input: { customerId: string; pairingCode: string }): 
     '',
     'Use customer_mac_complete_pairing with this code, then run:',
     '1. customer_mac_status',
-    '2. desktop_control_status',
-    '3. desktop_see',
-    '4. desktop_bridge_audit_tail',
+    '2. customer_mac_capabilities',
+    '3. desktop_control_status',
+    '4. desktop_see',
+    '5. desktop_bridge_audit_tail',
     '',
     'Tool input:',
     JSON.stringify(
