@@ -482,6 +482,21 @@ describe('updateBridge allowlist includes CDN host', () => {
       repo: 'evaOS-GUI',
     });
   });
+
+  it('skips electron-updater background checks for packaged evaOS beta prereleases', async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    electronAppMock.isPackaged = true;
+    process.env.AIONUI_EVAOS_BETA = '1';
+    process.env.AIONUI_EVAOS_BETA_UPDATE_REPO = '100yenadmin/evaOS-GUI';
+
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    await autoUpdaterService.checkForUpdatesAndNotify();
+
+    expect(autoUpdater.checkForUpdatesAndNotify).not.toHaveBeenCalled();
+  });
 });
 
 describe('updateBridge manual download reliability', () => {

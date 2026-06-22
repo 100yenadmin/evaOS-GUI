@@ -607,6 +607,17 @@ class AutoUpdaterService extends EventEmitter {
         return;
       }
 
+      if (isEvaosBetaBuild()) {
+        // The evaOS beta updater is intentionally owned by the manual GitHub
+        // release check in updateBridge. electron-updater's background
+        // GitHubProvider path does not understand our prerelease tag/channel
+        // shape and logs false "No published versions on GitHub" failures.
+        log.info(
+          'Skipping electron-updater background check for evaOS beta; manual update bridge owns prerelease checks.'
+        );
+        return;
+      }
+
       // Ensure clean state: prevent stale allowDowngrade=true from prior setAllowPrerelease(true) calls
       autoUpdater.allowDowngrade = false;
       await autoUpdater.checkForUpdatesAndNotify();
