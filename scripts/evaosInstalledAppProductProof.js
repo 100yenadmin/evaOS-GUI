@@ -7,10 +7,10 @@ const { execFileSync } = require('child_process');
 const { GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST } = require('./evaosInstalledProofManifest.js');
 const { SETTLED_SHELL_SCREENSHOT_PLAN } = require('./evaosSettledShellSmokePlan.js');
 
-const DEFAULT_APP_PATH = '/Applications/evaOS Workbench Beta.app';
-const DEFAULT_EXECUTABLE_NAME = 'evaOS Workbench Beta';
-const DEFAULT_BUNDLE_ID = 'com.evaos.workbench.beta';
-const DEFAULT_PROTOCOL_SCHEME = 'evaos-workbench-beta';
+const DEFAULT_APP_PATH = '/Applications/evaOS Workbench.app';
+const DEFAULT_EXECUTABLE_NAME = 'evaOS Workbench';
+const DEFAULT_BUNDLE_ID = 'com.evaos.workbench';
+const DEFAULT_PROTOCOL_SCHEME = 'evaos-workbench';
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ARTIFACT_BASE = '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/67-real-admin-product-reality-pass';
 const REPORT_SCHEMA = 'evaos-installed-app-product-proof/v1';
@@ -702,7 +702,7 @@ function helpText() {
   return [
     'Usage: node scripts/evaosInstalledAppProductProof.js [--dry-run] [--app <path>] [--expected-head <sha>]',
     '',
-    'Captures settled screenshots from /Applications/evaOS Workbench Beta.app and fails if the About page',
+    'Captures settled screenshots from /Applications/evaOS Workbench.app and fails if the About page',
     'does not show the expected current commit.',
   ].join('\n');
 }

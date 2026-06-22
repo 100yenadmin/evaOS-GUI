@@ -53,8 +53,8 @@ describe('beginEvaosDesktopAuth', () => {
     expect(authUrl.searchParams.get('desktop_app')).toBe('1');
     expect(authUrl.searchParams.get('fresh')).toBe(handoff.fallbackDeviceCode);
     expect(authUrl.searchParams.get('desktop_callback')).toBe(handoff.callbackUrl);
-    expect(authUrl.searchParams.get('app_id')).toBe('com.evaos.workbench.beta');
-    expect(authUrl.searchParams.get('callback_scheme')).toBe('evaos-workbench-beta');
+    expect(authUrl.searchParams.get('app_id')).toBe('com.evaos.workbench');
+    expect(authUrl.searchParams.get('callback_scheme')).toBe('evaos-workbench');
     expect(authUrl.searchParams.get('switch_account')).toBe('1');
     expect(authUrl.searchParams.get('prompt')).toBe('select_account');
     const callbackState = authUrl.searchParams.get('desktop_auth_state');
@@ -72,7 +72,7 @@ describe('beginEvaosDesktopAuth', () => {
     expect(await response.text()).toContain('connected');
     expect(importCallback).toHaveBeenCalledTimes(1);
     const importedUrl = new URL(importCallback.mock.calls[0][0]);
-    expect(importedUrl.pathname).toBe('/auth/evaos-workbench-beta/callback');
+    expect(importedUrl.pathname).toBe('/auth/evaos-workbench/callback');
     expect(importedUrl.searchParams.get('desktop_auth_state')).toBe(callbackState);
     expect(importedUrl.searchParams.get('desktop_session')).toBe('eds_loopback_session_secret_for_test');
   });

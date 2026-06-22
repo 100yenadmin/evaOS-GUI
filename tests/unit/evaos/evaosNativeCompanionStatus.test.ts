@@ -17,7 +17,7 @@ import { EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
 
 const json = (payload: unknown) => JSON.stringify(payload);
 const deviceName = hostname() || 'Customer Mac';
-const bundledBridgePath = '/Applications/evaOS Workbench Beta.app/Contents/Resources/Bridge/evaos-desktop-bridge';
+const bundledBridgePath = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge';
 
 function depsWithResponses(
   responses: Record<string, unknown>,
@@ -219,7 +219,7 @@ describe('evaosNativeCompanionStatus', () => {
   });
 
   it('prefers the packaged Workbench bridge before Homebrew fallback paths', async () => {
-    const bundledBridge = '/Applications/evaOS Workbench Beta.app/Contents/Resources/Bridge/evaos-desktop-bridge';
+    const bundledBridge = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge';
     const homebrewBridge = '/opt/homebrew/bin/evaos-desktop-bridge';
     const deps = depsWithResponses(
       {

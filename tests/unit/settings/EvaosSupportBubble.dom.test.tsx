@@ -45,14 +45,14 @@ describe('EvaosSupportBubble', () => {
         extra: expect.objectContaining({
           app_version: expect.any(String),
           audit_ids: [],
-          bundle_id: 'com.evaos.workbench.beta',
+          bundle_id: 'com.evaos.workbench',
           customer: expect.objectContaining({
             roles: [],
             scopes: [],
             summary: 'Use the route-level report action when customer or broker audit context is visible.',
           }),
-          product: 'evaOS Workbench Beta',
-          protocol_scheme: 'evaos-workbench-beta',
+          product: 'evaOS Workbench',
+          protocol_scheme: 'evaos-workbench',
           route: '/terminal',
           screenshot: {
             auto_capture_requested: true,

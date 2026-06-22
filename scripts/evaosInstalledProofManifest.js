@@ -8,7 +8,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '00-new-chat-landing.png',
     artifactName: 'screenshots/00-new-chat-landing.png',
     closeoutState: 'waived',
-    settledMarkers: ['New Chat', 'evaOS Workbench Beta'],
+    settledMarkers: ['New Chat', 'evaOS Workbench'],
   },
   {
     manifestRowId: 'approvals',
@@ -125,7 +125,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '01-sidebar-footer.png',
     artifactName: 'screenshots/01-sidebar-footer.png',
     closeoutState: 'loaded',
-    settledMarkers: ['evaOS Workbench Beta', 'New Chat', 'Settings'],
+    settledMarkers: ['evaOS Workbench', 'New Chat', 'Settings'],
   },
   {
     manifestRowId: 'branding',
@@ -134,7 +134,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '05-settings-about.png',
     artifactName: 'screenshots/05-settings-about.png',
     closeoutState: 'loaded',
-    settledMarkers: ['evaOS Workbench Beta', 'Build identity', 'controlled beta'],
+    settledMarkers: ['evaOS Workbench', 'Build identity', 'Mac release', 'com.evaos.workbench', 'evaos-workbench'],
   },
 ];
 

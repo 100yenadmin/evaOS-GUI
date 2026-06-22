@@ -16,6 +16,11 @@ on:
         required: false
         default: true
         type: boolean
+      bridge_ref:
+        description: evaos-desktop-bridge ref to bundle
+        required: false
+        default: d58e543084ae4d103a4a60f2858b5fdb18a209f8
+        type: string
 
 concurrency:
   group: workbench-functional-smoke-${{ github.event.inputs.ref }}
@@ -25,11 +30,13 @@ env:
   BUN_INSTALL_REGISTRY: https://registry.npmjs.org/
   CI: true
   CSC_IDENTITY_AUTO_DISCOVERY: false
-  EVAOS_BETA_PUBLIC_RELEASE: "false"
-  EVAOS_BETA_REQUIRE_SIGNING: "false"
-  EVAOS_FINALIZE_MAC_DMG: "false"
-  EVAOS_DMG_CODESIGN: "false"
-  ELECTRON_BUILDER_COMPRESSION_LEVEL: "1"
+  EVAOS_BETA_PUBLIC_RELEASE: 'false'
+  EVAOS_BETA_REQUIRE_SIGNING: 'false'
+  EVAOS_FINALIZE_MAC_DMG: 'false'
+  EVAOS_DMG_CODESIGN: 'false'
+  ELECTRON_BUILDER_COMPRESSION_LEVEL: '1'
+  WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref }}
+  WORKBENCH_SMOKE_REF: ${{ inputs.ref }}
 
 jobs:
   macos-arm64-app:
@@ -42,6 +49,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
+          persist-credentials: false
 
       - name: Commit info
         id: commit
@@ -55,7 +63,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
@@ -65,7 +73,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Cache Electron artifacts
         uses: actions/cache@v4
@@ -108,6 +116,9 @@ jobs:
 
       - name: Build unpacked app only
         shell: bash
+        env:
+          EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES: '1'
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ env.WORKBENCH_SMOKE_BRIDGE_REF }}
         run: |
           set -euo pipefail
           node scripts/build-with-builder.js arm64 --mac dir --arm64
@@ -115,6 +126,8 @@ jobs:
       - name: Verify functional-smoke artifact shape
         id: verify
         shell: bash
+        env:
+          WORKBENCH_SMOKE_SHA: ${{ steps.commit.outputs.sha }}
         run: |
           set -euo pipefail
           APP_PATH="$(find out -type d -name '*.app' -print -quit)"
@@ -136,7 +149,12 @@ jobs:
 
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          BRIDGE_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.version || m.commit || 'unknown')" "$BRIDGE_MANIFEST")"
+          BRIDGE_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.sourceCommit || m.commit || m.version || 'unknown')" "$BRIDGE_MANIFEST")"
+
+          if [ "$BRIDGE_VERSION" != "$WORKBENCH_SMOKE_BRIDGE_REF" ]; then
+            echo "::error::Bundled bridge manifest ($BRIDGE_VERSION) does not match requested bridge ref ($WORKBENCH_SMOKE_BRIDGE_REF)"
+            exit 1
+          fi
 
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_OUTPUT"
@@ -146,12 +164,13 @@ jobs:
           {
             echo "## Workbench Functional Smoke"
             echo
-            echo "- Ref: \`${{ inputs.ref }}\`"
-            echo "- SHA: \`${{ steps.commit.outputs.sha }}\`"
+            echo "- Ref: \`$WORKBENCH_SMOKE_REF\`"
+            echo "- SHA: \`$WORKBENCH_SMOKE_SHA\`"
             echo "- App path: \`$APP_PATH\`"
             echo "- Version: \`$VERSION\`"
             echo "- Bundle ID: \`$BUNDLE_ID\`"
             echo "- Bridge manifest: \`$BRIDGE_VERSION\`"
+            echo "- Requested bridge ref: \`$WORKBENCH_SMOKE_BRIDGE_REF\`"
             echo
             echo "This artifact is intentionally unsigned/unnotarized and contains no DMG or release metadata."
             echo "Use it for functional proof only. Public release still requires the normal signed/notarized gate."
@@ -164,10 +183,13 @@ jobs:
 
       - name: Archive unpacked app
         shell: bash
+        env:
+          WORKBENCH_APP_PATH: ${{ steps.verify.outputs.app_path }}
+          WORKBENCH_SHORT_SHA: ${{ steps.commit.outputs.short }}
         run: |
           set -euo pipefail
-          APP_PATH="${{ steps.verify.outputs.app_path }}"
-          ARTIFACT="workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip"
+          APP_PATH="$WORKBENCH_APP_PATH"
+          ARTIFACT="workbench-functional-smoke-$WORKBENCH_SHORT_SHA-mac-arm64.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARTIFACT"
           shasum -a 256 "$ARTIFACT" | tee "$ARTIFACT.sha256"
 

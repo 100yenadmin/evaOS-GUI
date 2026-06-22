@@ -60,11 +60,11 @@
   "historyBack": "Back",
   "more": "More",
   "refresh": "Refresh",
-  "tray.showWindow": "Show evaOS Workbench Beta",
+  "tray.showWindow": "Show evaOS Workbench",
   "readOnly": "Read only",
   "tray.newChat": "New Chat",
   "tray.closeToTray": "Hide to Tray",
-  "tray.about": "About evaOS Workbench Beta",
+  "tray.about": "About evaOS Workbench",
   "tray.restart": "Restart App",
   "tray.quit": "Quit",
   "tray.runningTasks": "Running Tasks",
@@ -75,18 +75,18 @@
   "backendStartup": {
     "incompatibleRuntime": {
       "title": "This system is not supported by the bundled backend",
-      "description": "evaOS Workbench Beta opened, but the local managed runtime backend cannot run on this Linux version. Please upgrade to a supported Linux distribution and restart evaOS Workbench Beta.",
+      "description": "evaOS Workbench opened, but the local managed runtime backend cannot run on this Linux version. Please upgrade to a supported Linux distribution and restart evaOS Workbench.",
       "requiredVersions": "Required runtime symbols: {{versions}}"
     },
     "incompleteInstallation": {
-      "title": "evaOS Workbench Beta installation is incomplete",
-      "description": "This installation is missing required local resources, so managed runtime cannot start. Please download and reinstall the latest evaOS Workbench Beta. If the issue returns after reinstalling, check whether security or antivirus software quarantined managed runtime.",
+      "title": "evaOS Workbench installation is incomplete",
+      "description": "This installation is missing required local resources, so managed runtime cannot start. Please download and reinstall the latest evaOS Workbench. If the issue returns after reinstalling, check whether security or antivirus software quarantined managed runtime.",
       "downloadLatest": "Download latest",
       "sendDiagnostics": "Send diagnostics"
     },
     "packageArchitectureMismatch": {
-      "title": "evaOS Workbench Beta package architecture mismatch",
-      "description": "This evaOS Workbench Beta package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     }
   },
   "fileAttach.addFiles": "Add files",

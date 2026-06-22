@@ -133,7 +133,7 @@ export const EVAOS_NATIVE_COMPANION_STATUS_MATRIX = [
       label: 'Open native pairing handoff',
       owner: 'evaos-native-companion',
       enabled: false,
-      target: 'evaos-workbench-beta://native-companion/pair',
+      target: 'evaos-workbench://native-companion/pair',
     },
   },
   {
@@ -148,7 +148,7 @@ export const EVAOS_NATIVE_COMPANION_STATUS_MATRIX = [
       label: 'Open native permission handoff',
       owner: 'evaos-native-companion',
       enabled: false,
-      target: 'evaos-workbench-beta://native-companion/permissions',
+      target: 'evaos-workbench://native-companion/permissions',
     },
   },
   {
@@ -163,7 +163,7 @@ export const EVAOS_NATIVE_COMPANION_STATUS_MATRIX = [
       label: 'Open native companion',
       owner: 'evaos-native-companion',
       enabled: true,
-      target: 'evaos-workbench-beta://native-companion/status',
+      target: 'evaos-workbench://native-companion/status',
     },
   },
   {
@@ -194,7 +194,7 @@ export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
       'render broker-provided status and proof metadata',
       'request native-companion actions through evaOS broker contracts',
       'show native-companion unavailable, denied, pending, and failed states',
-      'launch evaOS beta deep links after main-process validation',
+      'launch evaOS Workbench deep links after main-process validation',
     ],
   },
   brokerCapabilities: [
@@ -245,7 +245,7 @@ export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
     {
       id: 'secure-callback-exchange',
       owner: 'evaos-native-companion',
-      shellMay: ['parse the evaOS beta protocol scheme', 'hand callback params to broker-owned claim flows'],
+      shellMay: ['parse the evaOS Workbench protocol scheme', 'hand callback params to broker-owned claim flows'],
       shellMustNot: [
         'accept callback secrets in renderer',
         'complete OAuth/provider grants locally',
@@ -278,7 +278,7 @@ export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
   rcCanaries: EVAOS_NATIVE_COMPANION_CANARIES,
   releasedWorkbenchFallback: {
     owner: 'released-workbench-fallback',
-    requiredUntil: 'exact RC candidate passes native adapter, release, rollback, and support gates',
+    requiredUntil: 'exact stable candidate passes native adapter, release, rollback, and support gates',
   },
   callbackPolicy: {
     acceptedProtocolScheme: EVAOS_BETA_IDENTITY.protocolScheme,
@@ -287,7 +287,7 @@ export const EVAOS_NATIVE_COMPANION_BOUNDARY = {
     sessionCacheOwner: 'evaos-broker',
   },
   betaReleaseNote:
-    'evaOS Workbench Beta is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback until exact-candidate native canaries pass.',
+    'evaOS Workbench is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback until exact-candidate native canaries pass.',
 } as const;
 
 export function canEvaosShellPerformLocalTrustAction(actionId: string): EvaosLocalActionBoundaryDecision {
@@ -342,7 +342,7 @@ export function getEvaosNativeCompanionBoundaryViolations(): string[] {
   }
 
   if (EVAOS_NATIVE_COMPANION_BOUNDARY.callbackPolicy.acceptedProtocolScheme !== EVAOS_BETA_IDENTITY.protocolScheme) {
-    violations.push('Callback protocol scheme is not aligned with evaOS beta identity.');
+    violations.push('Callback protocol scheme is not aligned with evaOS Workbench identity.');
   }
 
   return violations;

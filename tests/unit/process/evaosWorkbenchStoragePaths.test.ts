@@ -17,10 +17,10 @@ const makePlatformServices = (paths: { userData: string; home: string; temp: str
     getTempDir: () => paths.temp,
     getHomeDir: () => paths.home,
     getLogsDir: () => path.join(paths.userData, 'logs'),
-    getAppPath: () => '/Applications/evaOS Workbench Beta.app',
+    getAppPath: () => '/Applications/evaOS Workbench.app',
     isPackaged: () => true,
     getSystemPath: () => null,
-    getName: () => 'evaOS Workbench Beta',
+    getName: () => 'evaOS Workbench',
     getVersion: () => '0.6.28',
     needsCliSafeSymlinks: () => true,
   },
@@ -43,7 +43,7 @@ describe('evaOS Workbench storage path defaults', () => {
     tempRoot = mkdtempSync(path.join(scratchRoot, 'evaos-workbench-storage-'));
     registerPlatformServices(
       makePlatformServices({
-        userData: path.join(tempRoot, 'Application Support', 'evaOS Workbench Beta'),
+        userData: path.join(tempRoot, 'Application Support', 'evaOS Workbench'),
         home: path.join(tempRoot, 'home'),
         temp: path.join(tempRoot, 'tmp'),
       })

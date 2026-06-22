@@ -329,7 +329,7 @@ describe('RuntimeDashboardPage', () => {
 
     await waitFor(() => expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledTimes(1));
     expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledWith({
-      subject: 'evaOS Workbench Beta support: Terminal',
+      subject: 'evaOS Workbench support: Terminal',
       body: expect.stringContaining('Route: runtime:terminal'),
     });
     const payload = supportEmailMock.openEvaosSupportEmail.mock.calls[0][0];

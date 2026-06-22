@@ -25,7 +25,7 @@ const cleanEvidence = {
     localStorage: {},
     sessionStorage: {},
     console: ['Mission Control loaded runtime evidence for customer cus_123.'],
-    urls: ['evaos-workbench-beta://mission-control?customer_id=cus_123'],
+    urls: ['evaos-workbench://mission-control?customer_id=cus_123'],
   },
   ipc: {
     payloads: [
@@ -83,7 +83,7 @@ describe('evaOS shell secret evidence audit', () => {
         },
         sessionStorage: {},
         console: [`Authorization Bearer ${rawSession}`],
-        urls: [`evaos-workbench-beta://mission-control?desktop_session=${rawSession}`],
+        urls: [`evaos-workbench://mission-control?desktop_session=${rawSession}`],
       },
       ipc: {
         payloads: [

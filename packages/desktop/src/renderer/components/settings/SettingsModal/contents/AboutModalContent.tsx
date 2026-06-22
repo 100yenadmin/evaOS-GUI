@@ -28,7 +28,7 @@ type LinkItem =
   | { title: string; onClick: () => void; icon: React.ReactNode; url?: never };
 
 export const EVAOS_BETA_ABOUT_LINKS = {
-  appName: 'evaOS Workbench Beta',
+  appName: 'evaOS Workbench',
   website: 'https://www.electricsheephq.com/dashboard/',
   support: 'mailto:support@electricsheephq.com',
 } as const;
@@ -37,19 +37,19 @@ export const EVAOS_BETA_ABOUT_LINKS = {
 export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/evaOS-GUI';
 
 export const EVAOS_BETA_SUPPORT_NOTICE = {
-  title: 'Beta support',
-  body: 'Use Report Issue or email support for this controlled RC. The app will include route, version, and screenshot context when you send a report.',
+  title: 'Support',
+  body: 'Use Report Issue or email support. The app will include route, version, and screenshot context when you send a report.',
   supportRoute: 'Email support@electricsheephq.com',
   diagnostics: 'Diagnostics stay hidden unless support mode is enabled; reports never include desktop-session secrets.',
 } as const;
 
 export const EVAOS_BETA_BUILD_METADATA = [
-  { label: 'Channel', value: 'controlled beta' },
+  { label: 'Channel', value: 'Mac release' },
   { label: 'Version', value: `v${APP_VERSION}` },
   { label: 'Commit', value: APP_COMMIT },
   { label: 'Bundle ID', value: EVAOS_BETA_IDENTITY.appId },
   { label: 'Protocol', value: EVAOS_BETA_IDENTITY.protocolScheme },
-  { label: 'Updater', value: 'controlled beta feed' },
+  { label: 'Updater', value: 'evaOS release feed' },
 ] as const;
 
 const checkUpdate = () => {

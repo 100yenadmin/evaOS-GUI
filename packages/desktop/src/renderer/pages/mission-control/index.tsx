@@ -88,7 +88,7 @@ const RUNTIME_TARGETS: RuntimeTarget[] = [
 const PUBLIC_BETA_GATE_ITEMS: BetaGateItem[] = [
   {
     label: 'RC parity proof',
-    detail: 'Prove every evaOS Workbench feature against the exact evaOS Workbench Beta candidate.',
+    detail: 'Prove every evaOS Workbench feature against the exact evaOS Workbench candidate.',
   },
   {
     label: 'Native adapter canaries',
@@ -520,7 +520,7 @@ const MissionControlPage: React.FC = () => {
             <div className='min-w-0'>
               <h1 className='m-0 text-28px leading-34px font-bold text-t-primary max-sm:text-24px'>Beta Readiness</h1>
               <p className='m-0 mt-4px max-w-720px text-14px leading-22px text-t-secondary'>
-                Internal release-gate status for the controlled evaOS Workbench Beta candidate.
+                Internal release-gate status for the controlled evaOS Workbench candidate.
               </p>
             </div>
             <Button
@@ -544,7 +544,7 @@ const MissionControlPage: React.FC = () => {
                   <Tag color='orange'>Parity audit active</Tag>
                 </div>
                 <p className='m-0 mt-4px max-w-760px text-13px leading-20px text-t-secondary'>
-                  evaOS Workbench Beta is the beta shell candidate. Start evaOS Workbench Beta locally for RC proof, but
+                  evaOS Workbench is the Mac shell candidate. Start evaOS Workbench locally for release proof, but
                   user-testing distribution stays blocked until the parity, upstream-regression, native-adapter,
                   branding, and exact-candidate gates below pass.
                 </p>

@@ -118,7 +118,7 @@ const makeGitHubReleaseResponse = () => [
 const makeBetaGitHubReleaseResponse = () => [
   {
     tag_name: 'evaos-beta-v2.1.11-evaos-beta.0',
-    name: 'evaOS Workbench Beta 2.1.11',
+    name: 'evaOS Workbench 2.1.11',
     body: 'beta release notes',
     html_url: 'https://github.com/100yenadmin/evaOS-GUI/releases/tag/evaos-beta-v2.1.11-evaos-beta.0',
     published_at: '2026-06-04T00:00:00Z',
@@ -126,7 +126,7 @@ const makeBetaGitHubReleaseResponse = () => [
     draft: false,
     assets: [
       {
-        name: 'evaOS Workbench Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
+        name: 'evaOS Workbench-2.1.11-evaos-beta.0-mac-arm64.dmg',
         browser_download_url:
           'https://github.com/100yenadmin/evaOS-GUI/releases/download/evaos-beta-v2.1.11-evaos-beta.0/evaOS%20Workbench%20Beta-2.1.11-evaos-beta.0-mac-arm64.dmg',
         size: 123,
@@ -380,7 +380,7 @@ describe('updateBridge allowlist includes CDN host', () => {
         url: 'https://github.com/100yenadmin/evaOS-GUI/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
         fallbackUrl:
           'https://github.com/100yenadmin/evaOS-GUI/releases/download/evaos-beta-v2.1.10-evaos-beta/evaOS%20Workbench%20Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
-        file_name: 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg',
+        file_name: 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg',
       });
 
       expect(result.success).toBe(true);
@@ -592,7 +592,7 @@ describe('updateBridge manual download reliability', () => {
 
   it('opens and reveals downloaded installers only through update-scoped Downloads IPC', async () => {
     const downloadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-update-downloads-'));
-    const installerPath = path.join(downloadsDir, 'evaOS Workbench Beta-2.1.21-evaos-beta.4-mac-arm64.dmg');
+    const installerPath = path.join(downloadsDir, 'evaOS Workbench-2.1.21-evaos-beta.4-mac-arm64.dmg');
     fs.writeFileSync(installerPath, '');
     electronAppMock.getPath.mockImplementation((name: string) => (name === 'downloads' ? downloadsDir : '/test/path'));
     electronShellMock.openPath.mockResolvedValue('');
@@ -613,7 +613,7 @@ describe('updateBridge manual download reliability', () => {
   it('rejects update installer open requests outside Downloads', async () => {
     const downloadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-update-downloads-'));
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-update-outside-'));
-    const installerPath = path.join(outsideDir, 'evaOS Workbench Beta-2.1.21-evaos-beta.4-mac-arm64.dmg');
+    const installerPath = path.join(outsideDir, 'evaOS Workbench-2.1.21-evaos-beta.4-mac-arm64.dmg');
     fs.writeFileSync(installerPath, '');
     electronAppMock.getPath.mockImplementation((name: string) => (name === 'downloads' ? downloadsDir : '/test/path'));
 

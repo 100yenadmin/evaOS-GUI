@@ -172,7 +172,7 @@ async function startLoopbackReceiver(
       parsedCallback = new URL(callbackUrl);
     } catch {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('evaOS Workbench Beta callback route not found.');
+      response.end('evaOS Workbench callback route not found.');
       return;
     }
 
@@ -180,13 +180,13 @@ async function startLoopbackReceiver(
       parsedCallback.pathname === AUTH_LOOPBACK_PATH || parsedCallback.pathname === DASHBOARD_COMPAT_LOOPBACK_PATH;
     if (!acceptedLoopbackPath) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('evaOS Workbench Beta callback route not found.');
+      response.end('evaOS Workbench callback route not found.');
       return;
     }
 
     if (parsedCallback.searchParams.get(AUTH_LOOPBACK_STATE_PARAM) !== desktopAuthState) {
       response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('Invalid evaOS Workbench Beta callback.');
+      response.end('Invalid evaOS Workbench callback.');
       return;
     }
 
@@ -195,11 +195,11 @@ async function startLoopbackReceiver(
       client.importDesktopSessionFromCallbackUrl(normalizedImportUrl);
       notifyEvaosDesktopSessionImported('loopback');
       response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('evaOS Workbench Beta is connected. You can return to the app.');
+      response.end('evaOS Workbench is connected. You can return to the app.');
       stopActiveLoopback(server);
     } catch {
       response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('Invalid evaOS Workbench Beta callback.');
+      response.end('Invalid evaOS Workbench callback.');
     }
   });
 

@@ -1,7 +1,7 @@
 {
-  "name": "evaOS Workbench Beta",
-  "short_name": "evaOS Beta",
-  "description": "evaOS Workbench Beta shell for business agent operations.",
+  "name": "evaOS Workbench",
+  "short_name": "evaOS",
+  "description": "evaOS Workbench shell for business agent operations.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

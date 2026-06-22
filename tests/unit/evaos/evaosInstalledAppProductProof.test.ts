@@ -139,12 +139,12 @@ describe('evaOS installed app product proof', () => {
   });
 
   it('pins the installed macOS beta app identity and executable path', () => {
-    expect(installedAppProof.DEFAULT_APP_PATH).toBe('/Applications/evaOS Workbench Beta.app');
-    expect(installedAppProof.DEFAULT_EXECUTABLE_NAME).toBe('evaOS Workbench Beta');
-    expect(installedAppProof.DEFAULT_BUNDLE_ID).toBe('com.evaos.workbench.beta');
-    expect(installedAppProof.DEFAULT_PROTOCOL_SCHEME).toBe('evaos-workbench-beta');
+    expect(installedAppProof.DEFAULT_APP_PATH).toBe('/Applications/evaOS Workbench.app');
+    expect(installedAppProof.DEFAULT_EXECUTABLE_NAME).toBe('evaOS Workbench');
+    expect(installedAppProof.DEFAULT_BUNDLE_ID).toBe('com.evaos.workbench');
+    expect(installedAppProof.DEFAULT_PROTOCOL_SCHEME).toBe('evaos-workbench');
     expect(installedAppProof.installedExecutablePath()).toBe(
-      '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta'
+      '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench'
     );
   });
 
@@ -192,12 +192,12 @@ describe('evaOS installed app product proof', () => {
         id: 'home',
         route: '/home',
         screenshot: '00-home.png',
-        waitSelectors: ['body:text("evaOS Workbench Beta")', 'body:has-text("Home")', '[data-testid="ready"]'],
+        waitSelectors: ['body:text("evaOS Workbench")', 'body:has-text("Home")', '[data-testid="ready"]'],
       },
     ]);
 
     expect(proofPlan[0].waitSelectors).toEqual([
-      'body:has-text("evaOS Workbench Beta")',
+      'body:has-text("evaOS Workbench")',
       'body:has-text("Home")',
       '[data-testid="ready"]',
     ]);
@@ -318,24 +318,22 @@ describe('evaOS installed app product proof', () => {
     const fakeExec = (_command: string, args: string[]) => {
       calls.push(args);
       const key = args[1];
-      if (key === 'Print:CFBundleIdentifier') return 'com.evaos.workbench.beta\n';
-      if (key === 'Print:CFBundleName') return 'evaOS Workbench Beta\n';
+      if (key === 'Print:CFBundleIdentifier') return 'com.evaos.workbench\n';
+      if (key === 'Print:CFBundleName') return 'evaOS Workbench\n';
       if (key === 'Print:CFBundleVersion') return '2.1.18-evaos-beta.0\n';
       if (key === 'Print:CFBundleShortVersionString') return '2.1.18-evaos-beta.0\n';
-      if (key === 'Print:CFBundleURLTypes:0:CFBundleURLSchemes') return 'Array {\n    evaos-workbench-beta\n}\n';
+      if (key === 'Print:CFBundleURLTypes:0:CFBundleURLSchemes') return 'Array {\n    evaos-workbench\n}\n';
       throw new Error(`unexpected key ${key}`);
     };
 
-    expect(installedAppProof.readInfoPlist('/Applications/evaOS Workbench Beta.app', fakeExec)).toEqual({
-      bundleId: 'com.evaos.workbench.beta',
-      bundleName: 'evaOS Workbench Beta',
+    expect(installedAppProof.readInfoPlist('/Applications/evaOS Workbench.app', fakeExec)).toEqual({
+      bundleId: 'com.evaos.workbench',
+      bundleName: 'evaOS Workbench',
       bundleVersion: '2.1.18-evaos-beta.0',
       shortVersion: '2.1.18-evaos-beta.0',
-      protocolSchemes: ['evaos-workbench-beta'],
+      protocolSchemes: ['evaos-workbench'],
     });
-    expect(calls.every((args) => args.at(-1) === '/Applications/evaOS Workbench Beta.app/Contents/Info.plist')).toBe(
-      true
-    );
+    expect(calls.every((args) => args.at(-1) === '/Applications/evaOS Workbench.app/Contents/Info.plist')).toBe(true);
   });
 
   it('parses LaunchServices protocol handler ownership for the beta scheme', () => {
@@ -344,16 +342,16 @@ describe('evaOS installed app product proof', () => {
       'handlerpref id:             tg (0x1c)',
       'all roles:                  ru.keepcoder.telegram',
       '---------------------------------------------------------------------------------',
-      'handlerpref id:             evaos-workbench-beta (0x20)',
-      'unknown:                    evaos-workbench-beta',
-      'all roles:                  com.evaos.workbench.beta',
+      'handlerpref id:             evaos-workbench (0x20)',
+      'unknown:                    evaos-workbench',
+      'all roles:                  com.evaos.workbench',
       '---------------------------------------------------------------------------------',
     ].join('\n');
 
     expect(installedAppProof.parseLaunchServicesProtocolHandler(dump)).toEqual({
-      scheme: 'evaos-workbench-beta',
-      bundleId: 'com.evaos.workbench.beta',
-      evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+      scheme: 'evaos-workbench',
+      bundleId: 'com.evaos.workbench',
+      evidence: 'handlerpref id: evaos-workbench; all roles: com.evaos.workbench',
     });
   });
 
@@ -363,14 +361,14 @@ describe('evaOS installed app product proof', () => {
       calls.push({ args, maxBuffer: options.maxBuffer });
       return [
         '---------------------------------------------------------------------------------',
-        'handlerpref id:             evaos-workbench-beta (0x20)',
-        'all roles:                  com.evaos.workbench.beta',
+        'handlerpref id:             evaos-workbench (0x20)',
+        'all roles:                  com.evaos.workbench',
         '---------------------------------------------------------------------------------',
       ].join('\n');
     };
 
-    expect(installedAppProof.readLaunchServicesProtocolHandler('evaos-workbench-beta', fakeExec)).toMatchObject({
-      bundleId: 'com.evaos.workbench.beta',
+    expect(installedAppProof.readLaunchServicesProtocolHandler('evaos-workbench', fakeExec)).toMatchObject({
+      bundleId: 'com.evaos.workbench',
     });
     expect(calls).toEqual([
       {
@@ -384,18 +382,18 @@ describe('evaOS installed app product proof', () => {
   it('fails installed proof when LaunchServices maps the beta scheme to raw Electron', () => {
     expect(() =>
       installedAppProof.assertExpectedProtocolHandler({
-        scheme: 'evaos-workbench-beta',
+        scheme: 'evaos-workbench',
         bundleId: 'com.github.Electron',
         evidence:
-          'handlerpref id: evaos-workbench-beta; all roles: com.github.Electron; path: /Volumes/LEXAR/repos/AionUi/node_modules/.bun/electron@37.10.3/node_modules/electron/dist/Electron.app',
+          'handlerpref id: evaos-workbench; all roles: com.github.Electron; path: /Volumes/LEXAR/repos/AionUi/node_modules/.bun/electron@37.10.3/node_modules/electron/dist/Electron.app',
       })
     ).toThrow(/raw Electron/);
 
     expect(() =>
       installedAppProof.assertExpectedProtocolHandler({
-        scheme: 'evaos-workbench-beta',
-        bundleId: 'com.evaos.workbench.beta',
-        evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+        scheme: 'evaos-workbench',
+        bundleId: 'com.evaos.workbench',
+        evidence: 'handlerpref id: evaos-workbench; all roles: com.evaos.workbench',
       })
     ).not.toThrow();
   });
@@ -412,23 +410,23 @@ describe('evaOS installed app product proof', () => {
   it('writes dry-run proof files without secrets for a rerunnable handoff', () => {
     const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-installed-proof-'));
     const bundleInfo = {
-      bundleId: 'com.evaos.workbench.beta',
-      bundleName: 'evaOS Workbench Beta',
+      bundleId: 'com.evaos.workbench',
+      bundleName: 'evaOS Workbench',
       bundleVersion: '2.1.18-evaos-beta.0',
       shortVersion: '2.1.18-evaos-beta.0',
-      protocolSchemes: ['evaos-workbench-beta'],
+      protocolSchemes: ['evaos-workbench'],
     };
     const files = installedAppProof.writeDryRunProofFiles({
       artifactRoot,
       repoHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
       expectedHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
-      appPath: '/Applications/evaOS Workbench Beta.app',
-      executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+      appPath: '/Applications/evaOS Workbench.app',
+      executablePath: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
       bundleInfo,
       protocolHandler: {
-        scheme: 'evaos-workbench-beta',
-        bundleId: 'com.evaos.workbench.beta',
-        evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+        scheme: 'evaos-workbench',
+        bundleId: 'com.evaos.workbench',
+        evidence: 'handlerpref id: evaos-workbench; all roles: com.evaos.workbench',
         status: 'passed',
       },
       plan: [
@@ -470,14 +468,14 @@ describe('evaOS installed app product proof', () => {
       }),
     ]);
     expect(report.protocolHandler).toEqual({
-      scheme: 'evaos-workbench-beta',
-      bundleId: 'com.evaos.workbench.beta',
-      evidence: 'handlerpref id: evaos-workbench-beta; all roles: com.evaos.workbench.beta',
+      scheme: 'evaos-workbench',
+      bundleId: 'com.evaos.workbench',
+      evidence: 'handlerpref id: evaos-workbench; all roles: com.evaos.workbench',
       status: 'passed',
     });
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('Expected commit: `2fb812c12ddf`');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Protocol Handler');
-    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('- Handler bundle: `com.evaos.workbench.beta`');
+    expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('- Handler bundle: `com.evaos.workbench`');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Exact Candidate Preflight');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Parity Assertions');
     expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Run from `/Volumes/LEXAR/repos');
@@ -487,24 +485,24 @@ describe('evaOS installed app product proof', () => {
   it('writes an explicit failure packet when the installed app cannot launch', () => {
     const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-installed-proof-launch-failure-'));
     const bundleInfo = {
-      bundleId: 'com.evaos.workbench.beta',
-      bundleName: 'evaOS Workbench Beta',
+      bundleId: 'com.evaos.workbench',
+      bundleName: 'evaOS Workbench',
       bundleVersion: '2.1.18-evaos-beta.0',
       shortVersion: '2.1.18-evaos-beta.0',
-      protocolSchemes: ['evaos-workbench-beta'],
+      protocolSchemes: ['evaos-workbench'],
     };
     const files = installedAppProof.writeDryRunProofFiles({
       artifactRoot,
       repoHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
       expectedHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
-      appPath: '/Applications/evaOS Workbench Beta.app',
-      executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+      appPath: '/Applications/evaOS Workbench.app',
+      executablePath: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
       bundleInfo,
       protocolHandler: {
-        scheme: 'evaos-workbench-beta',
+        scheme: 'evaos-workbench',
         bundleId: 'com.github.Electron',
         evidence:
-          'handlerpref id: evaos-workbench-beta; all roles: com.github.Electron; path: /Volumes/LEXAR/repos/AionUi/node_modules/.bun/electron@37.10.3/node_modules/electron/dist/Electron.app',
+          'handlerpref id: evaos-workbench; all roles: com.github.Electron; path: /Volumes/LEXAR/repos/AionUi/node_modules/.bun/electron@37.10.3/node_modules/electron/dist/Electron.app',
         status: 'failed',
       },
       plan: [],

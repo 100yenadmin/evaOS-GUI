@@ -501,7 +501,7 @@ describe('Sider runtime route visibility', () => {
     renderSider();
 
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
-    expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mac release/i)).toBeInTheDocument();
     expect(screen.getByText(expectedBetaVersionLabel)).toBeInTheDocument();
 
     const customerSelect = screen.getByLabelText('Selected customer');
@@ -753,7 +753,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('Viewing')).toBeInTheDocument();
     expect(screen.getByText('admin@100yen.org')).toBeInTheDocument();
-    expect(screen.getByText(/controlled beta/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mac release/i)).toBeInTheDocument();
     expect(screen.getByText(expectedBetaVersionLabel)).toBeInTheDocument();
     expect(screen.getByLabelText('Selected customer')).toHaveValue('david-poku');
     expect(screen.getByText('evaOS')).toBeInTheDocument();

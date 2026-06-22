@@ -151,15 +151,15 @@ describe('evaosBetaSafety', () => {
     ).toBe(true);
   });
 
-  it('locks the expected evaOS beta identity constants', () => {
+  it('locks the expected evaOS Workbench identity constants', () => {
     expect(EVAOS_BETA_IDENTITY).toEqual({
-      productName: 'evaOS Workbench Beta',
-      macAppBundleName: 'evaOS Workbench Beta.app',
-      macExecutableName: 'evaOS Workbench Beta',
-      executableName: 'EvaOSWorkbenchBeta',
-      appId: 'com.evaos.workbench.beta',
-      protocolScheme: 'evaos-workbench-beta',
-      loopbackCallbackPath: '/auth/evaos-workbench-beta/callback',
+      productName: 'evaOS Workbench',
+      macAppBundleName: 'evaOS Workbench.app',
+      macExecutableName: 'evaOS Workbench',
+      executableName: 'EvaOSWorkbench',
+      appId: 'com.evaos.workbench',
+      protocolScheme: 'evaos-workbench',
+      loopbackCallbackPath: '/auth/evaos-workbench/callback',
     });
   });
 

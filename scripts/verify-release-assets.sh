@@ -5,7 +5,7 @@ set -euo pipefail
 OUTPUT_DIR="${1:-release-assets}"
 INCLUDE_WEB_CLI_ASSETS="${INCLUDE_WEB_CLI_ASSETS:-0}"
 MOCK_VERSION="${MOCK_VERSION:-1.0.0}"
-MOCK_PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench Beta}"
+MOCK_PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench}"
 MOCK_PRODUCT_ASSET_NAME="${MOCK_PRODUCT_NAME// /.}"
 RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 ERRORS=0
@@ -35,7 +35,7 @@ assert_evaos_beta_asset_identity() {
   esac
 
   case "$base" in
-    *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+    *"evaOS Workbench"*|*"evaOS.Workbench"*|*"EvaOSWorkbench"*|*"evaos-workbench"*)
       ;;
     *)
       echo "FAIL: beta asset lacks evaOS identity marker: $base"

@@ -1,11 +1,11 @@
-appId: com.evaos.workbench.beta
-productName: evaOS Workbench Beta
+appId: com.evaos.workbench
+productName: evaOS Workbench
 copyright: Copyright © 2026 evaOS
 
 protocols:
-  - name: evaOS Workbench Beta Protocol
+  - name: evaOS Workbench Protocol
     schemes:
-      - evaos-workbench-beta
+      - evaos-workbench
 
 asar:
   smartUnpack: true
@@ -117,7 +117,7 @@ extraResources:
   - from: resources/Bridge
     to: Bridge
 win:
-  executableName: EvaOSWorkbenchBeta
+  executableName: EvaOSWorkbench
   target:
     - nsis
     #    - msi
@@ -148,7 +148,7 @@ mac:
   entitlements: entitlements.plist
   entitlementsInherit: entitlements.plist
   extendInfo:
-    NSMicrophoneUsageDescription: evaOS Workbench Beta uses the microphone only when you record voice input to transcribe it into chat text.
+    NSMicrophoneUsageDescription: evaOS Workbench uses the microphone only when you record voice input to transcribe it into chat text.
 
 dmg:
   # Use UDZO format which is more reliable on CI
@@ -173,7 +173,7 @@ afterPack: scripts/afterPack.js
 afterSign: scripts/afterSign.js
 
 linux:
-  executableName: EvaOSWorkbenchBeta
+  executableName: EvaOSWorkbench
   target:
     - deb
   icon: resources/evaos-beta/app.png
@@ -185,11 +185,11 @@ linux:
   description: ${description}
   desktop:
     entry:
-      Name: evaOS Workbench Beta
+      Name: evaOS Workbench
       Comment: ${description}
       Icon: app
       Categories: Office;Utility;
-      MimeType: x-scheme-handler/evaos-workbench-beta;
+      MimeType: x-scheme-handler/evaos-workbench;
 
 npmRebuild: false
 buildDependenciesFromSource: false

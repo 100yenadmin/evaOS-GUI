@@ -74,21 +74,21 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
 const repoRoot = path.resolve(__dirname, '../../..');
 
 function writeArm64TrustEvidence(proofDir: string) {
-  fs.writeFileSync(path.join(proofDir, 'codesign-dmg-macos-arm64.txt'), 'evaOS Workbench Beta.dmg: valid on disk\n');
+  fs.writeFileSync(path.join(proofDir, 'codesign-dmg-macos-arm64.txt'), 'evaOS Workbench.dmg: valid on disk\n');
   fs.writeFileSync(
     path.join(proofDir, 'stapler-dmg-macos-arm64.txt'),
-    'Processing: evaOS Workbench Beta.dmg\nThe validate action worked!\n'
+    'Processing: evaOS Workbench.dmg\nThe validate action worked!\n'
   );
-  fs.writeFileSync(path.join(proofDir, 'spctl-dmg-macos-arm64.txt'), 'evaOS Workbench Beta.dmg: accepted\n');
+  fs.writeFileSync(path.join(proofDir, 'spctl-dmg-macos-arm64.txt'), 'evaOS Workbench.dmg: accepted\n');
   fs.writeFileSync(
     path.join(proofDir, 'codesign-macos-arm64.txt'),
-    '/Applications/evaOS Workbench Beta.app: valid on disk\n/Applications/evaOS Workbench Beta.app: satisfies its Designated Requirement\n'
+    '/Applications/evaOS Workbench.app: valid on disk\n/Applications/evaOS Workbench.app: satisfies its Designated Requirement\n'
   );
   fs.writeFileSync(
     path.join(proofDir, 'stapler-macos-arm64.txt'),
-    'Processing: /Applications/evaOS Workbench Beta.app\nThe validate action worked!\n'
+    'Processing: /Applications/evaOS Workbench.app\nThe validate action worked!\n'
   );
-  fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench Beta.app: accepted\n');
+  fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench.app: accepted\n');
 }
 
 function writeMacosBridgeZip(zipPath: string) {
@@ -115,11 +115,11 @@ function writeProofReleaseAssetsReference(
   const version = '2.1.10-evaos-beta.0';
 
   fs.mkdirSync(proofReleaseAssetsDir, { recursive: true });
-  fs.writeFileSync(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.dmg`), 'mac');
-  writeMacosBridgeZip(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.zip`));
+  fs.writeFileSync(path.join(sourceReleaseAssetsDir, `evaOS Workbench-${version}-mac-arm64.dmg`), 'mac');
+  writeMacosBridgeZip(path.join(sourceReleaseAssetsDir, `evaOS Workbench-${version}-mac-arm64.zip`));
   fs.writeFileSync(
     path.join(sourceReleaseAssetsDir, 'latest-arm64-mac.yml'),
-    `path: evaOS Workbench Beta-${version}-mac-arm64.zip\n`
+    `path: evaOS Workbench-${version}-mac-arm64.zip\n`
   );
 
   releaseGate.createReleaseManifest(sourceReleaseAssetsDir, tag, {
@@ -254,8 +254,8 @@ describe('evaOS beta release gate', () => {
   it('builds afterSign notarization options for Apple ID, API-key, and keychain credential paths', () => {
     const baseOptions = {
       tool: 'notarytool',
-      appBundleId: 'com.evaos.workbench.beta',
-      appPath: '/Applications/evaOS Workbench Beta.app',
+      appBundleId: 'com.evaos.workbench',
+      appPath: '/Applications/evaOS Workbench.app',
     };
 
     expect(
@@ -525,24 +525,24 @@ describe('evaOS beta release gate', () => {
   it('staples, validates, and Gatekeeper-assesses the notarized app bundle', () => {
     const calls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
 
-    afterSign.stapleAndValidateApp('/release/evaOS Workbench Beta.app', (command, args, options) => {
+    afterSign.stapleAndValidateApp('/release/evaOS Workbench.app', (command, args, options) => {
       calls.push({ command, args, options });
     });
 
     expect(calls).toEqual([
       {
         command: 'xcrun',
-        args: ['stapler', 'staple', '/release/evaOS Workbench Beta.app'],
+        args: ['stapler', 'staple', '/release/evaOS Workbench.app'],
         options: { stdio: 'inherit', timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' },
       },
       {
         command: 'xcrun',
-        args: ['stapler', 'validate', '/release/evaOS Workbench Beta.app'],
+        args: ['stapler', 'validate', '/release/evaOS Workbench.app'],
         options: { stdio: 'inherit', timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' },
       },
       {
         command: 'spctl',
-        args: ['--assess', '--type', 'execute', '--verbose', '/release/evaOS Workbench Beta.app'],
+        args: ['--assess', '--type', 'execute', '--verbose', '/release/evaOS Workbench.app'],
         options: { stdio: 'inherit', timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' },
       },
     ]);
@@ -714,8 +714,8 @@ describe('evaOS beta release gate', () => {
     };
 
     expect(builder).not.toMatch(/^executableName:/m);
-    expect(section('win')).toContain('executableName: EvaOSWorkbenchBeta');
-    expect(section('linux')).toContain('executableName: EvaOSWorkbenchBeta');
+    expect(section('win')).toContain('executableName: EvaOSWorkbench');
+    expect(section('linux')).toContain('executableName: EvaOSWorkbench');
     expect(section('mac')).not.toContain('executableName:');
 
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
@@ -737,11 +737,11 @@ describe('evaOS beta release gate', () => {
   it('writes and verifies release manifests with exact asset checksums', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-'));
     try {
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'));
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -765,7 +765,7 @@ describe('evaOS beta release gate', () => {
         })
       ).toBe(true);
 
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'tampered');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'tampered');
       expect(() =>
         releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
           GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
@@ -782,10 +782,10 @@ describe('evaOS beta release gate', () => {
   it('rejects DMG-only macOS updater metadata because Electron auto-update requires ZIP metadata', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-dmg-only-'));
     try {
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
+        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -815,12 +815,12 @@ describe('evaOS beta release gate', () => {
   it('verifies release manifests for Windows-only release assets', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-windows-'));
     try {
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-win-x64.exe'), 'win-x64');
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-win-arm64.exe'), 'win-arm64');
-      fs.writeFileSync(path.join(dir, 'latest.yml'), 'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-win-x64.exe\n');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-win-x64.exe'), 'win-x64');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-win-arm64.exe'), 'win-arm64');
+      fs.writeFileSync(path.join(dir, 'latest.yml'), 'path: evaOS Workbench-2.1.10-evaos-beta.0-win-x64.exe\n');
       fs.writeFileSync(
         path.join(dir, 'latest-win-arm64.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-win-arm64.exe\n'
+        'path: evaOS Workbench-2.1.10-evaos-beta.0-win-arm64.exe\n'
       );
 
       const manifest = releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -853,18 +853,15 @@ describe('evaOS beta release gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-local-dmg-'));
     const sourceSha = 'a'.repeat(40);
     try {
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac-arm64');
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.dmg'), 'mac-x64');
-      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'));
-      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.zip'));
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac-arm64');
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.dmg'), 'mac-x64');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'));
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
       );
-      fs.writeFileSync(
-        path.join(dir, 'latest-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.zip\n'
-      );
+      fs.writeFileSync(path.join(dir, 'latest-mac.yml'), 'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip\n');
 
       const manifest = releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
         GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
@@ -921,11 +918,11 @@ describe('evaOS beta release gate', () => {
   it('binds distribution verification to the trusted workflow manifest artifact', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-trusted-release-'));
     try {
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'));
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -989,19 +986,16 @@ describe('evaOS beta release gate', () => {
       writeArm64TrustEvidence(proofDir);
       fs.writeFileSync(
         path.join(proofDir, 'codesign-macos-arm64.txt'),
-        '/Applications/evaOS Workbench Beta.app: valid on disk\n/Applications/evaOS Workbench Beta.app: satisfies its Designated Requirement\n'
+        '/Applications/evaOS Workbench.app: valid on disk\n/Applications/evaOS Workbench.app: satisfies its Designated Requirement\n'
       );
-      fs.writeFileSync(
-        path.join(proofDir, 'spctl-macos-arm64.txt'),
-        '/Applications/evaOS Workbench Beta.app: accepted\n'
-      );
+      fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench.app: accepted\n');
       fs.writeFileSync(
         path.join(proofDir, 'install-smoke.md'),
-        'PASS: DMG copied to /Applications/evaOS Workbench Beta.app without replacing the released fallback app.\n'
+        'PASS: DMG copied to /Applications/evaOS Workbench.app without replacing the released fallback app.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'launch-smoke.md'),
-        'PASS: evaOS Workbench Beta launched with beta identity and no upstream AionUi feed.\n'
+        'PASS: evaOS Workbench launched with beta identity and no upstream AionUi feed.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),
@@ -1062,7 +1056,7 @@ describe('evaOS beta release gate', () => {
     try {
       cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
       releaseGate.writeRcProofTemplate(proofDir, tag);
-      fs.writeFileSync(path.join(proofDir, 'release-assets', 'evaOS Workbench Beta-embedded-mac-arm64.dmg'), 'mac');
+      fs.writeFileSync(path.join(proofDir, 'release-assets', 'evaOS Workbench-embedded-mac-arm64.dmg'), 'mac');
 
       expect(() =>
         releaseGate.verifyRcProof(proofDir, tag, {
@@ -1124,19 +1118,16 @@ describe('evaOS beta release gate', () => {
       writeArm64TrustEvidence(proofDir);
       fs.writeFileSync(
         path.join(proofDir, 'codesign-macos-arm64.txt'),
-        '/Applications/evaOS Workbench Beta.app: valid on disk\n/Applications/evaOS Workbench Beta.app: satisfies its Designated Requirement\n'
+        '/Applications/evaOS Workbench.app: valid on disk\n/Applications/evaOS Workbench.app: satisfies its Designated Requirement\n'
       );
-      fs.writeFileSync(
-        path.join(proofDir, 'spctl-macos-arm64.txt'),
-        '/Applications/evaOS Workbench Beta.app: accepted\n'
-      );
+      fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench.app: accepted\n');
       fs.writeFileSync(
         path.join(proofDir, 'install-smoke.md'),
-        'PASS: DMG copied to /Applications/evaOS Workbench Beta.app without replacing the released fallback app.\n'
+        'PASS: DMG copied to /Applications/evaOS Workbench.app without replacing the released fallback app.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'launch-smoke.md'),
-        'PASS: evaOS Workbench Beta launched with beta identity and no upstream AionUi feed.\n'
+        'PASS: evaOS Workbench launched with beta identity and no upstream AionUi feed.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),

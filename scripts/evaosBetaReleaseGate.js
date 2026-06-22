@@ -118,12 +118,12 @@ const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'install-smoke',
     evidence: 'install-smoke.md',
-    requiredText: ['PASS', '/Applications/evaOS Workbench Beta.app', 'released fallback app'],
+    requiredText: ['PASS', '/Applications/evaOS Workbench.app', 'released fallback app'],
   },
   {
     id: 'launch-smoke',
     evidence: 'launch-smoke.md',
-    requiredText: ['PASS', 'evaOS Workbench Beta', 'no upstream AionUi feed'],
+    requiredText: ['PASS', 'evaOS Workbench', 'no upstream AionUi feed'],
   },
   {
     id: 'updater-feed-audit',
@@ -307,6 +307,12 @@ function requireText(text, needle, relativePath, issues, reason) {
   }
 }
 
+function rejectText(text, needle, relativePath, issues, reason) {
+  if (text.includes(needle)) {
+    issues.push(`${relativePath}: forbidden ${reason || needle}`);
+  }
+}
+
 function getTopLevelYamlSection(text, sectionName) {
   const lines = String(text || '').split(/\r?\n/);
   const start = lines.findIndex((line) => line === `${sectionName}:`);
@@ -367,23 +373,26 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   const settingsEn = readText(rootDir, 'packages/desktop/src/renderer/services/i18n/locales/en-US/settings.json');
 
-  if (!String(packageJson.version || '').includes('evaos-beta')) {
-    issues.push('package.json: version must contain evaos-beta');
+  if (String(packageJson.version || '').includes('evaos-beta')) {
+    issues.push('package.json: stable Mac release version must not contain evaos-beta');
   }
-  if (packageJson.productName !== 'evaOS Workbench Beta') {
-    issues.push('package.json: productName must be evaOS Workbench Beta');
+  if (packageJson.productName !== 'evaOS Workbench') {
+    issues.push('package.json: productName must be evaOS Workbench');
   }
 
-  requireText(builder, 'appId: com.evaos.workbench.beta', 'packages/desktop/electron-builder.yml', issues);
-  requireText(builder, 'productName: evaOS Workbench Beta', 'packages/desktop/electron-builder.yml', issues);
+  requireText(builder, 'appId: com.evaos.workbench', 'packages/desktop/electron-builder.yml', issues);
+  requireText(builder, 'productName: evaOS Workbench', 'packages/desktop/electron-builder.yml', issues);
+  rejectText(builder, 'appId: com.evaos.workbench.beta', 'packages/desktop/electron-builder.yml', issues);
+  rejectText(builder, 'productName: evaOS Workbench Beta', 'packages/desktop/electron-builder.yml', issues);
+  rejectText(builder, 'evaos-workbench-beta', 'packages/desktop/electron-builder.yml', issues);
   if (/^executableName:/m.test(builder)) {
     issues.push(
-      'packages/desktop/electron-builder.yml: top-level executableName must be omitted so macOS bundle filename stays evaOS Workbench Beta.app'
+      'packages/desktop/electron-builder.yml: top-level executableName must be omitted so macOS bundle filename stays evaOS Workbench.app'
     );
   }
   if (/^\s+executableName:/m.test(macBuilder)) {
     issues.push(
-      'packages/desktop/electron-builder.yml: mac.executableName must be omitted so macOS bundle filename stays evaOS Workbench Beta.app'
+      'packages/desktop/electron-builder.yml: mac.executableName must be omitted so macOS bundle filename stays evaOS Workbench.app'
     );
   }
   requireText(
@@ -395,19 +404,19 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     winBuilder,
-    'executableName: EvaOSWorkbenchBeta',
+    'executableName: EvaOSWorkbench',
     'packages/desktop/electron-builder.yml',
     issues,
-    'win executableName EvaOSWorkbenchBeta'
+    'win executableName EvaOSWorkbench'
   );
   requireText(
     linuxBuilder,
-    'executableName: EvaOSWorkbenchBeta',
+    'executableName: EvaOSWorkbench',
     'packages/desktop/electron-builder.yml',
     issues,
-    'linux executableName EvaOSWorkbenchBeta'
+    'linux executableName EvaOSWorkbench'
   );
-  requireText(builder, 'evaos-workbench-beta', 'packages/desktop/electron-builder.yml', issues);
+  requireText(builder, 'evaos-workbench', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'owner: 100yenadmin', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'repo: evaOS-GUI', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'publishAutoUpdate: false', 'packages/desktop/electron-builder.yml', issues);
@@ -714,40 +723,42 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     issues
   );
 
-  requireText(rollbackDoc, 'com.evaos.workbench.beta', 'docs/evaos/public-beta-packaging-rollback.md', issues);
+  requireText(rollbackDoc, 'com.evaos.workbench', 'docs/evaos/public-beta-packaging-rollback.md', issues);
   requireText(rollbackDoc, 'Rollback', 'docs/evaos/public-beta-packaging-rollback.md', issues);
   requireText(rollbackDoc, 'Support', 'docs/evaos/public-beta-packaging-rollback.md', issues);
   requireText(rollbackDoc, 'Operator rollback proof commands', 'docs/evaos/public-beta-packaging-rollback.md', issues);
   requireText(rollbackDoc, 'lsregister -dump', 'docs/evaos/public-beta-packaging-rollback.md', issues);
 
-  requireText(changelog, 'Public Beta Packaging', 'CHANGELOG.md', issues);
+  requireText(changelog, 'Stable Packaging', 'CHANGELOG.md', issues);
   requireText(changelog, 'real macOS signing/notarization', 'CHANGELOG.md', issues);
   requireText(changelog, 'validates release provenance', 'CHANGELOG.md', issues);
 
-  requireText(webManifest, '"name": "evaOS Workbench Beta"', 'public/manifest.webmanifest', issues);
-  requireText(webManifest, '"short_name": "evaOS Beta"', 'public/manifest.webmanifest', issues);
-  requireText(rendererHtml, 'content="evaOS Workbench Beta"', 'packages/desktop/src/renderer/index.html', issues);
-  requireText(rendererHtml, '<title>evaOS Workbench Beta</title>', 'packages/desktop/src/renderer/index.html', issues);
-  requireText(titlebar, "const appTitle = useMemo(() => 'evaOS Workbench Beta', []);", 'Titlebar/index.tsx', issues);
-  requireText(layout, '>evaOS Workbench Beta</div>', 'Layout.tsx', issues);
-  requireText(missionControl, 'Start evaOS Workbench Beta locally', 'mission-control/index.tsx', issues);
-  requireText(missionControl, 'evaOS Workbench Beta is the beta shell candidate', 'mission-control/index.tsx', issues);
+  requireText(webManifest, '"name": "evaOS Workbench"', 'public/manifest.webmanifest', issues);
+  requireText(webManifest, '"short_name": "evaOS"', 'public/manifest.webmanifest', issues);
+  requireText(rendererHtml, 'content="evaOS Workbench"', 'packages/desktop/src/renderer/index.html', issues);
+  requireText(rendererHtml, '<title>evaOS Workbench</title>', 'packages/desktop/src/renderer/index.html', issues);
+  requireText(titlebar, "const appTitle = useMemo(() => 'evaOS Workbench', []);", 'Titlebar/index.tsx', issues);
+  requireText(layout, '>evaOS Workbench</div>', 'Layout.tsx', issues);
+  rejectText(titlebar, 'evaOS Workbench Beta', 'Titlebar/index.tsx', issues);
+  rejectText(layout, 'evaOS Workbench Beta', 'Layout.tsx', issues);
+  requireText(missionControl, 'Start evaOS Workbench locally', 'mission-control/index.tsx', issues);
+  requireText(missionControl, 'evaOS Workbench is the Mac shell candidate', 'mission-control/index.tsx', issues);
   if (missionControl.includes('AionUi is the evaOS beta shell candidate')) {
     issues.push('mission-control/index.tsx: public beta gate still exposes upstream AionUi shell copy');
   }
-  requireText(channelModal, 'Chat with evaOS Workbench Beta assistant via Telegram', 'ChannelModalContent.tsx', issues);
-  requireText(channelModal, 'interact with evaOS Workbench Beta from IM apps', 'ChannelModalContent.tsx', issues);
-  requireText(tray, "tray.setToolTip('evaOS Workbench Beta');", 'tray.ts', issues);
-  requireText(commonEn, 'Show evaOS Workbench Beta', 'en-US/common.json', issues);
-  requireText(commonEn, 'About evaOS Workbench Beta', 'en-US/common.json', issues);
-  requireText(commonEn, 'evaOS Workbench Beta installation is incomplete', 'en-US/common.json', issues);
-  requireText(loginEn, 'evaOS Workbench Beta - Sign In', 'en-US/login.json', issues);
-  requireText(loginEn, '"brand": "evaOS Workbench Beta"', 'en-US/login.json', issues);
-  requireText(conversationEn, 'What can evaOS Workbench Beta do?', 'en-US/conversation.json', issues);
-  requireText(settingsEn, 'Launch evaOS Workbench Beta automatically', 'en-US/settings.json', issues);
-  requireText(settingsEn, 'Beta Repository', 'en-US/settings.json', issues);
+  requireText(channelModal, 'Chat with evaOS Workbench assistant via Telegram', 'ChannelModalContent.tsx', issues);
+  requireText(channelModal, 'interact with evaOS Workbench from IM apps', 'ChannelModalContent.tsx', issues);
+  requireText(tray, "tray.setToolTip('evaOS Workbench');", 'tray.ts', issues);
+  requireText(commonEn, 'Show evaOS Workbench', 'en-US/common.json', issues);
+  requireText(commonEn, 'About evaOS Workbench', 'en-US/common.json', issues);
+  requireText(commonEn, 'evaOS Workbench installation is incomplete', 'en-US/common.json', issues);
+  requireText(loginEn, 'evaOS Workbench - Sign In', 'en-US/login.json', issues);
+  requireText(loginEn, '"brand": "evaOS Workbench"', 'en-US/login.json', issues);
+  requireText(conversationEn, 'What can evaOS Workbench do?', 'en-US/conversation.json', issues);
+  requireText(settingsEn, 'Launch evaOS Workbench automatically', 'en-US/settings.json', issues);
+  requireText(settingsEn, 'Repository', 'en-US/settings.json', issues);
 
-  requireText(about, 'evaOS Workbench Beta', 'AboutModalContent.tsx', issues);
+  requireText(about, 'evaOS Workbench', 'AboutModalContent.tsx', issues);
   requireText(about, 'https://github.com/100yenadmin/evaOS-GUI', 'AboutModalContent.tsx', issues);
   if (about.includes('https://github.com/iOfficeAI/AionUi') || about.includes('https://www.aionui.com')) {
     issues.push('AboutModalContent.tsx: upstream AionUi support or website link is not allowed in beta About screen');
