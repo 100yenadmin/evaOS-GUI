@@ -312,7 +312,7 @@ const REQUIRED_MARKERS = Object.freeze([
     markers: [
       { label: 'customer selector remains accessible', text: "aria-label='Selected customer'" },
       { label: 'customer selector keeps change callback', text: 'onCustomerChange' },
-      { label: 'footer retains controlled beta version label', text: "const EVAOS_CHANNEL_LABEL = 'controlled beta'" },
+      { label: 'footer retains Mac release version label', text: "const EVAOS_CHANNEL_LABEL = 'Mac release'" },
     ],
   },
   {
@@ -321,7 +321,7 @@ const REQUIRED_MARKERS = Object.freeze([
     markers: [
       {
         label: 'titlebar keeps evaOS beta identity',
-        text: "const appTitle = useMemo(() => 'evaOS Workbench Beta', []);",
+        text: "const appTitle = useMemo(() => 'evaOS Workbench', []);",
       },
       {
         label: 'team titlebar affordance remains controlled by shell constant',
@@ -419,8 +419,8 @@ const REQUIRED_MARKERS = Object.freeze([
     seamId: 'release-identity',
     filePath: 'package.json',
     markers: [
-      { label: 'package name remains evaOS beta', text: '"name": "evaos-workbench-beta"' },
-      { label: 'product name remains evaOS Workbench Beta', text: '"productName": "evaOS Workbench Beta"' },
+      { label: 'package name remains evaOS Workbench', text: '"name": "evaos-workbench"' },
+      { label: 'product name remains evaOS Workbench', text: '"productName": "evaOS Workbench"' },
       { label: 'author remains Electric Sheep', text: '"name": "Electric Sheep"' },
       { label: 'evaOS guardrail script remains registered', text: '"evaos:upstream-guardrails"' },
     ],
@@ -464,19 +464,29 @@ const REQUIRED_MARKERS = Object.freeze([
     seamId: 'release-identity',
     filePath: 'packages/desktop/src/common/evaos/betaIdentity.ts',
     markers: [
-      { label: 'product name remains evaOS Workbench Beta', text: "productName: 'evaOS Workbench Beta'" },
-      { label: 'bundle id remains beta isolated', text: "appId: 'com.evaos.workbench.beta'" },
-      { label: 'protocol scheme remains beta isolated', text: "protocolScheme: 'evaos-workbench-beta'" },
+      { label: 'product name remains evaOS Workbench', text: "productName: 'evaOS Workbench'" },
+      { label: 'bundle id remains stable isolated', text: "appId: 'com.evaos.workbench'" },
+      { label: 'protocol scheme remains stable isolated', text: "protocolScheme: 'evaos-workbench'" },
+    ],
+    forbiddenMarkers: [
+      { label: 'beta product name', text: 'evaOS Workbench Beta' },
+      { label: 'beta bundle id', text: 'com.evaos.workbench.beta' },
+      { label: 'beta protocol scheme', text: 'evaos-workbench-beta' },
     ],
   },
   {
     seamId: 'release-identity',
     filePath: 'packages/desktop/electron-builder.yml',
     markers: [
-      { label: 'electron bundle id remains beta isolated', text: 'appId: com.evaos.workbench.beta' },
-      { label: 'electron product name remains evaOS Workbench Beta', text: 'productName: evaOS Workbench Beta' },
-      { label: 'electron protocol remains beta isolated', text: 'evaos-workbench-beta' },
+      { label: 'electron bundle id remains stable isolated', text: 'appId: com.evaos.workbench' },
+      { label: 'electron product name remains evaOS Workbench', text: 'productName: evaOS Workbench' },
+      { label: 'electron protocol remains stable isolated', text: 'evaos-workbench' },
       { label: 'built-in notarization stays disabled for custom release owner', text: 'notarize: false' },
+    ],
+    forbiddenMarkers: [
+      { label: 'beta app id', text: 'appId: com.evaos.workbench.beta' },
+      { label: 'beta product name', text: 'productName: evaOS Workbench Beta' },
+      { label: 'beta protocol scheme', text: 'evaos-workbench-beta' },
     ],
   },
   {
@@ -496,7 +506,7 @@ const REQUIRED_MARKERS = Object.freeze([
   {
     seamId: 'release-identity',
     filePath: 'scripts/verify-release-assets.sh',
-    markers: [{ label: 'verify assets keeps evaOS beta package checks', text: 'evaOS Workbench Beta' }],
+    markers: [{ label: 'verify assets keeps evaOS package checks', text: 'evaOS Workbench' }],
   },
   {
     seamId: 'voice-native-boundary',
@@ -571,6 +581,13 @@ function collectEvaosUpstreamGuardrailIssuesFromFiles(files) {
       if (!content.includes(marker.text)) {
         issues.push(
           `${requirement.seamId}: ${requirement.filePath} is missing ${marker.label} marker (${marker.text})`
+        );
+      }
+    }
+    for (const marker of requirement.forbiddenMarkers || []) {
+      if (content.includes(marker.text)) {
+        issues.push(
+          `${requirement.seamId}: ${requirement.filePath} contains forbidden ${marker.label} marker (${marker.text})`
         );
       }
     }

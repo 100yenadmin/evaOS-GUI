@@ -86,10 +86,10 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
   };
 
   if (platform === 'win32') {
-    // out/win-unpacked/EvaOSWorkbenchBeta.exe, or upstream AionUi.exe.
+    // out/win-unpacked/EvaOSWorkbench.exe, or upstream AionUi.exe.
     for (const dir of ['win-unpacked', 'win-x64-unpacked', 'win-arm64-unpacked']) {
       const dirPath = path.join(outDir, dir);
-      const exe = resolveExecutable(dirPath, ['EvaOSWorkbenchBeta.exe', 'AionUi.exe']);
+      const exe = resolveExecutable(dirPath, ['EvaOSWorkbench.exe', 'AionUi.exe']);
       if (exe) return { executablePath: exe, cwd: dirPath };
     }
   } else if (platform === 'darwin') {
@@ -100,7 +100,7 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
       const appBundle = fs.readdirSync(macDir).find((f) => f.endsWith('.app'));
       if (appBundle) {
         const executableDir = path.join(macDir, appBundle, 'Contents', 'MacOS');
-        const exe = resolveExecutable(executableDir, ['evaOS Workbench Beta', 'EvaOSWorkbenchBeta', 'AionUi']);
+        const exe = resolveExecutable(executableDir, ['evaOS Workbench', 'EvaOSWorkbench', 'AionUi']);
         if (exe) return { executablePath: exe, cwd: macDir };
       }
     }
@@ -109,8 +109,8 @@ function resolvePackagedApp(): { executablePath: string; cwd: string } | null {
     for (const dir of ['linux-unpacked', 'linux-x64-unpacked', 'linux-arm64-unpacked']) {
       const dirPath = path.join(outDir, dir);
       const exe = resolveExecutable(dirPath, [
-        'EvaOSWorkbenchBeta',
-        'evaos-workbench-beta',
+        'EvaOSWorkbench',
+        'evaos-workbench',
         'evaosworkbenchbeta',
         'aionui',
         'AionUi',

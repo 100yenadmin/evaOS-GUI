@@ -334,7 +334,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const openSupportReport = useCallback(async () => {
     try {
       await openEvaosSupportEmail({
-        subject: `evaOS Workbench Beta support: ${title}`,
+        subject: `evaOS Workbench support: ${title}`,
         body: [
           `Route: runtime:${runtimeKey}`,
           `State: ${runtimeSurface ? 'loaded' : settledState}`,

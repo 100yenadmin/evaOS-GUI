@@ -132,7 +132,7 @@ describe('NativeCompanionPage', () => {
       success: true,
       data: {
         authUrl: 'https://www.electricsheephq.com/login',
-        callbackUrl: 'evaos-workbench-beta://auth/callback',
+        callbackUrl: 'evaos-workbench://auth/callback',
         fallbackDeviceCode: 'SAFE-CODE',
         message: 'Continue sign-in in the browser.',
       },

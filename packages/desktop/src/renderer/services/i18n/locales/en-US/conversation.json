@@ -12,10 +12,10 @@
     "clearWorkspace": "Remove project",
     "openFolder": "Open Folder",
     "none": "None",
-    "quickActionsTitle": "What can evaOS Workbench Beta do?",
+    "quickActionsTitle": "What can evaOS Workbench do?",
     "quickActionFeedback": "Report Issue",
     "quickActionStar": "Visit ElectricSheep",
-    "skillsMarket": "evaOS Workbench Beta Skills Market",
+    "skillsMarket": "evaOS Workbench Skills Market",
     "skillsMarketDesc": "Search and activate community Skills on demand. Configure once, available for all agents.",
     "skillsMarketDetails": "Contact Support"
   },
@@ -264,8 +264,8 @@
       },
       "WORKSPACE_PATH_RUNTIME_UNAVAILABLE": {
         "title": "The current Agent failed to run in this workspace path",
-        "body": "Make sure the current workspace path exists and can be used by evaOS Workbench Beta.",
-        "bodyWithPath": "The current Agent failed to run in the workspace path \"{{workspacePath}}\". Make sure the path exists and can be used by evaOS Workbench Beta."
+        "body": "Make sure the current workspace path exists and can be used by evaOS Workbench.",
+        "bodyWithPath": "The current Agent failed to run in the workspace path \"{{workspacePath}}\". Make sure the path exists and can be used by evaOS Workbench."
       },
       "UNKNOWN_UPSTREAM_ERROR": {
         "title": "The upstream agent or provider failed",

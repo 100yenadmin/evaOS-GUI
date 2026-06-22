@@ -16,7 +16,7 @@ import packageJson from '../../../../../../../package.json';
 
 declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
-const EVAOS_CHANNEL_LABEL = 'controlled beta';
+const EVAOS_CHANNEL_LABEL = 'Mac release';
 
 type FooterAction = 'settings' | 'support' | 'sign-in' | 'sign-out' | 'theme';
 type FooterActionHandlers = Partial<Record<FooterAction, () => void>>;

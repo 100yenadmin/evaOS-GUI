@@ -18,7 +18,7 @@ describe('evaOS beta deep links', () => {
 
   it('strips secret-bearing query params before renderer delivery', () => {
     const payload = parseDeepLinkUrl(
-      'evaos-workbench-beta://add-provider?base_url=https%3A%2F%2Fprovider.example&api_key=sk-live&key=raw-key&desktop_session=eds_callback_session_secret_for_test&name=Provider&platform=new-api'
+      'evaos-workbench://add-provider?base_url=https%3A%2F%2Fprovider.example&api_key=sk-live&key=raw-key&desktop_session=eds_callback_session_secret_for_test&name=Provider&platform=new-api'
     );
 
     expect(payload).toEqual({
@@ -41,7 +41,7 @@ describe('evaOS beta deep links', () => {
       code: 'oauth-code',
     });
 
-    const payload = parseDeepLinkUrl(`evaos-workbench-beta://provider/add?data=${encodeURIComponent(data)}`);
+    const payload = parseDeepLinkUrl(`evaos-workbench://provider/add?data=${encodeURIComponent(data)}`);
 
     expect(payload).toEqual({
       action: 'provider/add',
@@ -58,7 +58,7 @@ describe('evaOS beta deep links', () => {
     clearPendingDeepLinkPayload();
 
     handleDeepLinkUrl(
-      'evaos-workbench-beta://auth/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=2026-06-03T16%3A00%3A00.000Z&email=admin%40100yen.org'
+      'evaos-workbench://auth/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=2026-06-03T16%3A00%3A00.000Z&email=admin%40100yen.org'
     );
 
     expect(importer).toHaveBeenCalledTimes(1);
@@ -73,7 +73,7 @@ describe('evaOS beta deep links', () => {
   it('queues only sanitized payloads before the window is ready', () => {
     clearPendingDeepLinkPayload();
 
-    handleDeepLinkUrl('evaos-workbench-beta://add-provider?base_url=https%3A%2F%2Fprovider.example&api_key=sk-live');
+    handleDeepLinkUrl('evaos-workbench://add-provider?base_url=https%3A%2F%2Fprovider.example&api_key=sk-live');
 
     expect(getPendingDeepLinkPayload()).toEqual({
       action: 'add-provider',

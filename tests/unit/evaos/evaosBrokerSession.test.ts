@@ -10,9 +10,7 @@ const electronMock = vi.hoisted(() => ({
   app: {
     isReady: vi.fn(() => false),
     getPath: vi.fn((name: string) =>
-      name === 'exe'
-        ? '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta'
-        : '/tmp/evaos-workbench-beta-test'
+      name === 'exe' ? '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench' : '/tmp/evaos-workbench-test'
     ),
     isPackaged: true,
   },
@@ -93,9 +91,7 @@ describe('EvaosBrokerSessionClient', () => {
     delete process.env.AIONUI_EVAOS_DISABLE_BETA_SAFE_STORAGE;
     electronMock.app.isReady.mockReturnValue(false);
     electronMock.app.getPath.mockImplementation((name: string) =>
-      name === 'exe'
-        ? '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta'
-        : '/tmp/evaos-workbench-beta-test'
+      name === 'exe' ? '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench' : '/tmp/evaos-workbench-test'
     );
     electronMock.app.isPackaged = true;
     electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(false);
@@ -257,7 +253,7 @@ describe('EvaosBrokerSessionClient', () => {
     });
 
     client.importDesktopSessionFromCallbackUrl(
-      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_loopback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_loopback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
         FUTURE
       )}&email=admin%40100yen.org`
     );
@@ -388,12 +384,12 @@ describe('EvaosBrokerSessionClient', () => {
     });
 
     const firstStatus = client.importDesktopSessionFromCallbackUrl(
-      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_first_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_first_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
         FUTURE
       )}&email=admin%40100yen.org`
     );
     const secondStatus = client.importDesktopSessionFromCallbackUrl(
-      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_second_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_second_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
         FUTURE
       )}&email=admin%40100yen.org`
     );
@@ -434,7 +430,7 @@ describe('EvaosBrokerSessionClient', () => {
     });
 
     const status = client.importDesktopSessionFromCallbackUrl(
-      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
         FUTURE
       )}&email=admin%40100yen.org`
     );
@@ -474,7 +470,7 @@ describe('EvaosBrokerSessionClient', () => {
     });
 
     client.importDesktopSessionFromCallbackUrl(
-      `http://127.0.0.1:49201/auth/evaos-workbench-beta/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
         FUTURE
       )}&email=admin%40100yen.org`
     );
@@ -1555,7 +1551,7 @@ describe('shouldSkipDefaultBetaSafeStorageForMacApp', () => {
     expect(
       shouldSkipDefaultBetaSafeStorageForMacApp({
         env: {},
-        executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        executablePath: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
         isPackaged: true,
         platform: 'darwin',
         inspectSignature: () => ({ adhoc: true, teamIdentifier: null }),
@@ -1567,7 +1563,7 @@ describe('shouldSkipDefaultBetaSafeStorageForMacApp', () => {
     expect(
       shouldSkipDefaultBetaSafeStorageForMacApp({
         env: {},
-        executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        executablePath: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
         isPackaged: true,
         platform: 'darwin',
         inspectSignature: () => ({ adhoc: false, teamIdentifier: 'TEAM123456' }),
@@ -1579,7 +1575,7 @@ describe('shouldSkipDefaultBetaSafeStorageForMacApp', () => {
     expect(
       shouldSkipDefaultBetaSafeStorageForMacApp({
         env: { AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE: '1' },
-        executablePath: '/Applications/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        executablePath: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
         isPackaged: true,
         platform: 'darwin',
         inspectSignature: () => ({ adhoc: true, teamIdentifier: null }),

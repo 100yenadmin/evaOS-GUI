@@ -570,7 +570,7 @@ describe('evaOS local shell smoke', () => {
           'Native companion status matrix',
           'Native companion boundary',
           'Open native companion',
-          'Deep-link scheme: evaos-workbench-beta',
+          'Deep-link scheme: evaos-workbench',
           'Renderer receives callback secrets: false',
         ]),
       })
@@ -606,7 +606,7 @@ describe('evaOS local shell smoke', () => {
         name: 'mission-control-member-denied-fixture',
         hash: '/mission-control',
         proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
-        expected: ['evaOS Workbench Beta'],
+        expected: ['evaOS Workbench'],
         forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'evaOS', 'Hermes']),
       }),
     ]);
@@ -622,14 +622,14 @@ describe('evaOS local shell smoke', () => {
         name: 'mission-control-employee-denied-fixture',
         hash: '/mission-control',
         proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
-        expected: ['evaOS Workbench Beta'],
+        expected: ['evaOS Workbench'],
         forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'evaOS', 'Hermes']),
       }),
       expect.objectContaining({
         name: 'creative-studio-employee-denied-fixture',
         hash: '/creative-studio',
         proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
-        expected: ['evaOS Workbench Beta'],
+        expected: ['evaOS Workbench'],
         forbidden: expect.arrayContaining(['Creative Studio', 'Design Workspace', 'Shared Browser']),
       }),
       expect.objectContaining({
@@ -664,7 +664,7 @@ describe('evaOS local shell smoke', () => {
 
   it('keeps broker-required evaOS routes in guarded redirect proof for default shell smoke', () => {
     for (const route of localShellSmoke.BROKER_GUARDED_ROUTE_CHECKS) {
-      expect(route.expected).toContain('evaOS Workbench Beta');
+      expect(route.expected).toContain('evaOS Workbench');
       expect(route.forbidden).toEqual(expect.arrayContaining(['desktop_session', 'Bearer', 'provider_grant']));
     }
   });

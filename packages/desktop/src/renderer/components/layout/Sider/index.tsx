@@ -143,7 +143,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   };
 
   const handleSupportClick = useCallback(() => {
-    void openEvaosSupportEmail({ subject: 'evaOS Workbench Beta support' }).catch((error) => {
+    void openEvaosSupportEmail({ subject: 'evaOS Workbench support' }).catch((error) => {
       console.error('evaOS support link failed:', error);
       void copyText(EVAOS_SUPPORT_MAILBOX).catch((copyError) => {
         console.error('evaOS support mailbox copy failed:', copyError);

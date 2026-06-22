@@ -1,16 +1,16 @@
 # Changelog
 
-## evaOS Workbench Beta R&D (unreleased)
+## evaOS Workbench Stable R&D (unreleased)
 
 ### Native Companion Boundary
 
-- evaOS Workbench Beta is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback until exact-candidate native canaries pass.
-- Beta builds block legacy shell-launch, Office preview watch, and local filesystem mutation/upload/watch actions by default unless an explicit diagnostic override is set.
+- evaOS Workbench is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback until exact-candidate native canaries pass.
+- Stable builds block legacy shell-launch, Office preview watch, and local filesystem mutation/upload/watch actions by default unless an explicit diagnostic override is set.
 
-### Public Beta Packaging
+### Stable Packaging
 
-- Public beta release builds and distribution now fail closed unless the release path keeps the evaOS beta app identity, blocks upstream-branded assets, validates release provenance, and requires real macOS signing/notarization when publishing is enabled.
-- Added rollback and support notes for the evaOS Workbench Beta artifact while the released macOS app remains the fallback.
+- Stable release builds and distribution now fail closed unless the release path keeps the evaOS app identity, blocks upstream-branded assets, validates release provenance, and requires real macOS signing/notarization when publishing is enabled.
+- Added rollback and support notes for the evaOS Workbench artifact while the release pairing proof lane remains blocked.
 
 ## [2.1.12](https://github.com/iOfficeAI/AionUi/compare/v2.1.11...v2.1.12) (2026-06-05)
 

@@ -477,7 +477,7 @@ const Layout: React.FC<{
                 >
                   <img src={evaosAppIcon} alt='' className='block size-full object-cover' />
                 </div>
-                <div className='text-16px text-t-primary collapsed-hidden font-semibold'>evaOS Workbench Beta</div>
+                <div className='text-16px text-t-primary collapsed-hidden font-semibold'>evaOS Workbench</div>
                 {isMobile && !collapsed && (
                   <button
                     type='button'

@@ -30,9 +30,9 @@ function getEvaosBetaVisiblePath(value: string | undefined): string {
     .replace(/(^|\/)\.aionui-dev-2(?=$|\/)/g, '$1.evaos-workbench-dev-2')
     .replace(/(^|\/)\.aionui-dev(?=$|\/)/g, '$1.evaos-workbench-dev')
     .replace(/(^|\/)\.aionui(?=$|\/)/g, '$1.evaos-workbench')
-    .replace(/(^|\/)AionUi-Dev-2(?=$|\/)/g, '$1evaOS Workbench Beta Dev 2')
-    .replace(/(^|\/)AionUi-Dev(?=$|\/)/g, '$1evaOS Workbench Beta Dev')
-    .replace(/(^|\/)AionUi(?=$|\/)/g, '$1evaOS Workbench Beta');
+    .replace(/(^|\/)AionUi-Dev-2(?=$|\/)/g, '$1evaOS Workbench Dev 2')
+    .replace(/(^|\/)AionUi-Dev(?=$|\/)/g, '$1evaOS Workbench Dev')
+    .replace(/(^|\/)AionUi(?=$|\/)/g, '$1evaOS Workbench');
 }
 
 /**

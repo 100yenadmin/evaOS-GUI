@@ -24,7 +24,7 @@ export const EVAOS_BETA_DEFAULT_GITHUB_REPO = '100yenadmin/evaOS-GUI';
 const EVAOS_BETA_ALLOWED_UPDATE_REPOS = new Set([EVAOS_BETA_DEFAULT_GITHUB_REPO]);
 
 export const EVAOS_BETA_UPDATE_DISABLED_MESSAGE =
-  'Updates are disabled for evaOS Workbench Beta until an evaOS-owned beta update feed is configured.';
+  'Updates are disabled for evaOS Workbench until an evaOS-owned update feed is configured.';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 

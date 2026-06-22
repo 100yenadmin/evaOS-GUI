@@ -350,7 +350,7 @@ assert_evaos_beta_asset_identity() {
   esac
 
   case "$base" in
-    *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+    *"evaOS Workbench"*|*"evaOS.Workbench"*|*"EvaOSWorkbench"*|*"evaos-workbench"*)
       ;;
     *)
       echo "::error::Refusing beta asset without evaOS beta identity marker: $base"

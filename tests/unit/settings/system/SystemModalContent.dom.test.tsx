@@ -171,7 +171,7 @@ describe('SystemModalContent evaOS directory settings', () => {
     const { container } = renderSystemModalContent();
 
     expect(await screen.findByText('/Users/lume/.evaos-workbench')).toBeInTheDocument();
-    expect(await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench Beta')).toBeInTheDocument();
+    expect(await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench')).toBeInTheDocument();
 
     await waitFor(() => expect(container.textContent).not.toContain('/Users/lume/.aionui'));
     expect(container.textContent).not.toContain('/Users/lume/Library/Logs/AionUi');
@@ -179,10 +179,10 @@ describe('SystemModalContent evaOS directory settings', () => {
 
   it('persists a selected log directory without rewriting the masked work directory', async () => {
     const user = userEvent.setup();
-    showOpenMock.mockResolvedValueOnce(['/Users/lume/Library/Logs/evaOS Workbench Beta Custom']);
+    showOpenMock.mockResolvedValueOnce(['/Users/lume/Library/Logs/evaOS Workbench Custom']);
     renderSystemModalContent();
 
-    await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench Beta');
+    await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench');
     const logDirItem = screen.getByText('Log directory').closest('.arco-form-item');
     expect(logDirItem).not.toBeNull();
 
@@ -192,7 +192,7 @@ describe('SystemModalContent evaOS directory settings', () => {
       expect(updateSystemInfoMock).toHaveBeenCalledWith({
         cacheDir: '/Users/lume/.aionui-config',
         workDir: '/Users/lume/.aionui',
-        logDir: '/Users/lume/Library/Logs/evaOS Workbench Beta Custom',
+        logDir: '/Users/lume/Library/Logs/evaOS Workbench Custom',
       });
     });
     expect(restartMock).toHaveBeenCalledTimes(1);
@@ -232,17 +232,17 @@ describe('SystemModalContent evaOS directory settings', () => {
 
     await screen.findByText('permission denied');
     expect(container.textContent).toContain('/Users/lume/.evaos-workbench');
-    expect(container.textContent).toContain('/Users/lume/Library/Logs/evaOS Workbench Beta');
+    expect(container.textContent).toContain('/Users/lume/Library/Logs/evaOS Workbench');
     expect(restartMock).not.toHaveBeenCalled();
   });
 
   it('tells the user to restart manually when dev mode cannot relaunch automatically', async () => {
     const user = userEvent.setup();
     restartMock.mockResolvedValueOnce({ restarted: false, manualRestartRequired: true, reason: 'dev-mode' });
-    showOpenMock.mockResolvedValueOnce(['/Users/lume/Library/Logs/evaOS Workbench Beta Custom']);
+    showOpenMock.mockResolvedValueOnce(['/Users/lume/Library/Logs/evaOS Workbench Custom']);
     renderSystemModalContent();
 
-    await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench Beta');
+    await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench');
     const logDirItem = screen.getByText('Log directory').closest('.arco-form-item');
     expect(logDirItem).not.toBeNull();
 
@@ -252,7 +252,7 @@ describe('SystemModalContent evaOS directory settings', () => {
       expect(updateSystemInfoMock).toHaveBeenCalledWith({
         cacheDir: '/Users/lume/.aionui-config',
         workDir: '/Users/lume/.aionui',
-        logDir: '/Users/lume/Library/Logs/evaOS Workbench Beta Custom',
+        logDir: '/Users/lume/Library/Logs/evaOS Workbench Custom',
       });
     });
     expect(restartMock).toHaveBeenCalledTimes(1);

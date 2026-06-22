@@ -90,7 +90,7 @@ describe('evaosNativeCompanionBoundary', () => {
       label: 'Open native companion',
       owner: 'evaos-native-companion',
       enabled: true,
-      target: 'evaos-workbench-beta://native-companion/status',
+      target: 'evaos-workbench://native-companion/status',
     });
 
     for (const scenario of EVAOS_NATIVE_COMPANION_STATUS_MATRIX.filter((entry) => entry.key !== 'ready')) {

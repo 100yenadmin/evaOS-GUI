@@ -7,7 +7,7 @@ const DEFAULT_PLAN_PATH =
   process.env.AIONUI_SETTLED_SHELL_SMOKE_PLAN_PATH ||
   '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/shell-smoke-plan.md';
 
-const COMMON_WAIT_SELECTORS = ['[data-testid="evaos-sidebar-support"]', 'body:text("evaOS Workbench Beta")'];
+const COMMON_WAIT_SELECTORS = ['[data-testid="evaos-sidebar-support"]', 'body:text("evaOS Workbench")'];
 
 const SETTLED_SHELL_SCREENSHOT_PLAN = [
   {
@@ -16,7 +16,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     screenshot: '00-new-chat-landing.png',
     target: 'New Chat landing with streamlined RC navigation',
     waitSelectors: [
-      'body:text("evaOS Workbench Beta")',
+      'body:text("evaOS Workbench")',
       'body:text("New Chat")',
       'body:text("evaOS")',
       'body:text("Hermes")',
@@ -32,12 +32,7 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     route: '/guid',
     screenshot: '01-sidebar-footer.png',
     target: 'Sidebar brand, route order, footer controls, account/version/support affordances',
-    waitSelectors: [
-      'body:text("evaOS Workbench Beta")',
-      'body:text("New Chat")',
-      'body:text("Settings")',
-      '.sider-footer',
-    ],
+    waitSelectors: ['body:text("evaOS Workbench")', 'body:text("New Chat")', 'body:text("Settings")', '.sider-footer'],
     notes: [
       'Capture the full app frame at 1440x1000 with the sidebar expanded.',
       'Footer proof should include auth/customer/version/support state without exposing session or provider secrets.',
@@ -83,10 +78,10 @@ const SETTLED_SHELL_SCREENSHOT_PLAN = [
     screenshot: '05-settings-about.png',
     target: 'Settings About page with beta identity, channel, bundle ID, protocol, and support path',
     waitSelectors: [
-      'body:text("evaOS Workbench Beta")',
+      'body:text("evaOS Workbench")',
       'body:text("Build identity")',
-      'body:text("com.evaos.workbench.beta")',
-      'body:text("evaos-workbench-beta")',
+      'body:text("com.evaos.workbench")',
+      'body:text("evaos-workbench")',
     ],
     notes: ['Verify old AionUi/iOfficeAI/aionui.com identity strings are absent in the final proof.'],
   },
