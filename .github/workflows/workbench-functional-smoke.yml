@@ -111,6 +111,8 @@ jobs:
 
       - name: Build unpacked app only
         shell: bash
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
         run: |
           set -euo pipefail
           node scripts/build-with-builder.js arm64 --mac dir --arm64
