@@ -593,6 +593,30 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
+  it('rejects account-row customer ids before creating a pairing enrollment', async () => {
+    const createCustomerMacEnrollment = vi.fn(async () => ({
+      customerId: 'admin@100yen.org',
+      pairingCode: 'PAIR-1234',
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const deps = depsWithResponses({}, { createCustomerMacEnrollment });
+
+    const result = await runNativeCompanionAction(
+      { action: 'create_pairing_prompt', customerId: 'admin@100yen.org' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:pairing-invalid-customer',
+      agentPairingStatus: 'ready_for_agent_pairing',
+    });
+    expect(result.message).toContain('VM-backed Mac-control customer');
+    expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
+    expect(deps.execFile).not.toHaveBeenCalled();
+  });
+
   it('does not expose a dead pairing prompt when local connector registration fails', async () => {
     const deps = depsWithResponses(
       {

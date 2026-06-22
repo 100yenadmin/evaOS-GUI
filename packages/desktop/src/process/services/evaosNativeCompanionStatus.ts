@@ -484,6 +484,17 @@ async function createPairingPromptAction(
       }
     );
   }
+  if (isAccountLikeCustomerId(customerId)) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Choose a VM-backed Mac-control customer before creating a pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-invalid-customer',
+        agentPairingStatus: 'ready_for_agent_pairing',
+      }
+    );
+  }
 
   const connector = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
   if (!connector.ok || !connectorServiceIsRunning(connector.data)) {
@@ -870,6 +881,10 @@ function safeBridgeErrorText(value: string | undefined): string | undefined {
     .replace(secretWordPattern, '[redacted-secret]')
     .trim();
   return redacted ? redacted.slice(0, 260) : undefined;
+}
+
+function isAccountLikeCustomerId(customerId: string): boolean {
+  return customerId.includes('@');
 }
 
 async function defaultExecFile(file: string, args: string[], options: { timeout: number }): Promise<ExecFileResult> {

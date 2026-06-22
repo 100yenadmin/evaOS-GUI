@@ -117,7 +117,7 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   if (!status) return 'offline';
   const haystack = statusText(status, error);
 
-  if (hasBlockingActionResult(input.actionResult) || hasBlockingStatusError(status)) return 'repair_required';
+  if (hasBlockingReadinessActionResult(input.actionResult) || hasBlockingStatusError(status)) return 'repair_required';
   if (status.readiness === 'ready' && connectorServiceReady(status) && permissionsReady(status)) return 'ready';
   if (!status.releasedWorkbench.installed && !status.bridgeCli.installed) return 'unsupported';
   if (PAIRING_PATTERN.test(haystack)) return 'not_paired';
@@ -463,7 +463,7 @@ function nextActionForState(
     };
   }
 
-  if (hasBlockingActionResult(actionResult)) {
+  if (hasBlockingReadinessActionResult(actionResult)) {
     return {
       kind: 'run',
       action: 'setup_check',
@@ -657,7 +657,7 @@ function canCreatePairingPrompt(
   if (input.hasPairableCustomer === false) return false;
   if (input.brokerSessionLoading || input.brokerAuthenticated === false) return false;
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
-  if (hasBlockingActionResult(input.actionResult)) return false;
+  if (hasBlockingReadinessActionResult(input.actionResult)) return false;
   if (!status.bridgeCli.installed) return false;
   return connectorServiceReady(status) && permissionsReady(status);
 }
@@ -672,11 +672,12 @@ function hasBlockingStatusError(status: IEvaosNativeCompanionStatusView): boolea
   );
 }
 
-function hasBlockingActionResult(
+function hasBlockingReadinessActionResult(
   actionResult: IEvaosNativeCompanionActionResult | null | undefined
 ): actionResult is IEvaosNativeCompanionActionResult {
   if (!actionResult || actionResult.status === 'succeeded') return false;
   if (actionResult.action === 'control_start') return false;
+  if (actionResult.action === 'create_pairing_prompt') return false;
   return true;
 }
 
@@ -698,7 +699,7 @@ function disabledPairingPromptReason(
   if (input.hasPairableCustomer === false) {
     return 'Choose a VM-backed Mac-control customer before creating a pairing prompt.';
   }
-  if (hasBlockingActionResult(input.actionResult)) {
+  if (hasBlockingReadinessActionResult(input.actionResult)) {
     return safeActionDetail(input.actionResult.message, 'Run setup check before creating another pairing prompt.');
   }
   return 'Create a scoped prompt/code after Workbench confirms local connector, permissions, session, and customer.';

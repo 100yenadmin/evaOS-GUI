@@ -273,20 +273,36 @@ const UpdateModal: React.FC = () => {
 
   const openFile = () => {
     if (!downloadPath) return;
-    void ipcBridge.shell.openFile.invoke(downloadPath).catch((error) => {
-      console.error('Failed to open file:', error);
-      void copyDownloadPath();
-      Message.error(`Could not open the installer from Workbench. The path was copied: ${downloadPath}`);
-    });
+    void ipcBridge.update.openDownloadedFile
+      .invoke(downloadPath)
+      .then((response) => {
+        if (response.success) return;
+        void copyDownloadPath();
+        Message.error(
+          response.msg || `Could not open the installer from Workbench. The path was copied: ${downloadPath}`
+        );
+      })
+      .catch((error) => {
+        console.error('Failed to open file:', error);
+        void copyDownloadPath();
+        Message.error(`Could not open the installer from Workbench. The path was copied: ${downloadPath}`);
+      });
   };
 
   const showInFolder = () => {
     if (!downloadPath) return;
-    void ipcBridge.shell.showItemInFolder.invoke(downloadPath).catch((error) => {
-      console.error('Failed to show item in folder:', error);
-      void copyDownloadPath();
-      Message.error(`Could not show the installer in Finder. The path was copied: ${downloadPath}`);
-    });
+    void ipcBridge.update.showDownloadedInFolder
+      .invoke(downloadPath)
+      .then((response) => {
+        if (response.success) return;
+        void copyDownloadPath();
+        Message.error(response.msg || `Could not show the installer in Finder. The path was copied: ${downloadPath}`);
+      })
+      .catch((error) => {
+        console.error('Failed to show item in folder:', error);
+        void copyDownloadPath();
+        Message.error(`Could not show the installer in Finder. The path was copied: ${downloadPath}`);
+      });
   };
 
   const copyDownloadPath = async () => {

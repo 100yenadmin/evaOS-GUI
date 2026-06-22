@@ -753,6 +753,8 @@ export const update = {
   check: bridge.buildProvider<IBridgeResponse<UpdateCheckResult>, UpdateCheckRequest>('update.check'),
   download: bridge.buildProvider<IBridgeResponse<UpdateDownloadResult>, UpdateDownloadRequest>('update.download'),
   cancelDownload: bridge.buildProvider<IBridgeResponse, UpdateDownloadCancelRequest>('update.download.cancel'),
+  openDownloadedFile: bridge.buildProvider<IBridgeResponse, string>('update.download.open-file'),
+  showDownloadedInFolder: bridge.buildProvider<IBridgeResponse, string>('update.download.show-in-folder'),
   downloadProgress: bridge.buildEmitter<UpdateDownloadProgressEvent>('update.download.progress'),
 };
 
