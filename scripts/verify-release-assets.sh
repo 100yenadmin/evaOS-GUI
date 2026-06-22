@@ -167,6 +167,69 @@ assert_required_glob() {
   done
 }
 
+zip_contains_entry_matching() {
+  local zip_path="$1"
+  local pattern="$2"
+  python3 - "$zip_path" "$pattern" <<'PY'
+import re
+import sys
+import zipfile
+
+zip_path, pattern = sys.argv[1], sys.argv[2]
+regex = re.compile(pattern)
+try:
+    with zipfile.ZipFile(zip_path) as archive:
+        if any(regex.search(name) for name in archive.namelist()):
+            sys.exit(0)
+except zipfile.BadZipFile:
+    pass
+sys.exit(1)
+PY
+}
+
+assert_macos_zip_bridge_payload() {
+  local matches=()
+
+  case "$RELEASE_TARGET_PLATFORMS" in
+    all|macos)
+      while IFS= read -r match; do
+        matches+=("$match")
+      done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*-mac-*.zip" | sort)
+      ;;
+    macos-arm64)
+      while IFS= read -r match; do
+        matches+=("$match")
+      done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*-mac-arm64.zip" | sort)
+      ;;
+    windows)
+      return
+      ;;
+  esac
+
+  if [ "${#matches[@]}" -eq 0 ]; then
+    echo "FAIL: missing macOS ZIP payload required for Electron auto-update and bundled bridge verification"
+    ERRORS=$((ERRORS + 1))
+    return
+  fi
+
+  local zip_path
+  for zip_path in "${matches[@]}"; do
+    if ! zip_contains_entry_matching "$zip_path" '(^|/)[^/]+\.app/Contents/Resources/Bridge/evaos-desktop-bridge$'; then
+      echo "FAIL: $(basename "$zip_path") is missing bundled evaOS desktop bridge executable"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $(basename "$zip_path") contains bundled evaOS desktop bridge executable"
+    fi
+
+    if ! zip_contains_entry_matching "$zip_path" '(^|/)[^/]+\.app/Contents/Resources/Bridge/manifest\.json$'; then
+      echo "FAIL: $(basename "$zip_path") is missing bundled evaOS desktop bridge manifest"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $(basename "$zip_path") contains bundled evaOS desktop bridge manifest"
+    fi
+  done
+}
+
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   assert_required_glob "macOS x64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-x64.dmg"
   assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
@@ -250,6 +313,8 @@ if [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
     ERRORS=$((ERRORS + 1))
   done
 fi
+
+assert_macos_zip_bridge_payload
 
 for f in "$OUTPUT_DIR"/*.{exe,msi,dmg,deb,zip}; do
   [ -e "$f" ] || continue

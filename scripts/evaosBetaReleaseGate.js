@@ -1167,6 +1167,57 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
   }
 }
 
+function zipEntries(zipPath) {
+  const script = [
+    'import json',
+    'import pathlib',
+    'import sys',
+    'import zipfile',
+    'path = pathlib.Path(sys.argv[1])',
+    'with zipfile.ZipFile(path) as archive:',
+    '    print(json.dumps(archive.namelist()))',
+  ].join('\n');
+  try {
+    return JSON.parse(execFileSync('python3', ['-c', script, zipPath], { encoding: 'utf8' }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unable to inspect macOS ZIP payload ${path.basename(zipPath)}: ${message}`);
+  }
+}
+
+function assertZipContains(entries, pattern, zipName, label) {
+  if (!entries.some((entry) => pattern.test(entry))) {
+    throw new Error(`${zipName} is missing bundled evaOS desktop bridge ${label}.`);
+  }
+}
+
+function macosZipAssetNames(outputDir, releaseTargetPlatforms) {
+  if (releaseTargetPlatforms === 'windows') return [];
+  const names = listReleaseAssetFiles(outputDir).filter((name) => name.endsWith('.zip'));
+  if (releaseTargetPlatforms === 'macos-arm64') {
+    return names.filter((name) => /mac-arm64|darwin-arm64|arm64/.test(name));
+  }
+  return names.filter((name) => /-mac-|darwin-|arm64|x64/.test(name));
+}
+
+function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
+  const zipNames = macosZipAssetNames(outputDir, releaseTargetPlatforms);
+  if (releaseTargetPlatforms !== 'windows' && zipNames.length === 0) {
+    throw new Error('Release manifest verification requires a macOS ZIP payload for Electron auto-update.');
+  }
+
+  for (const zipName of zipNames) {
+    const entries = zipEntries(path.join(outputDir, zipName));
+    assertZipContains(
+      entries,
+      /(^|\/)[^/]+\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge$/,
+      zipName,
+      'executable'
+    );
+    assertZipContains(entries, /(^|\/)[^/]+\.app\/Contents\/Resources\/Bridge\/manifest\.json$/, zipName, 'manifest');
+  }
+}
+
 function verifyReleaseManifest(outputDir, tag, env = process.env) {
   assertPublicDistributionTag(tag);
 
@@ -1208,6 +1259,7 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
   }
 
   assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms);
+  assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms);
   verifyReleaseProvenance(manifest, env);
   return true;
 }

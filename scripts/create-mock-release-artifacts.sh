@@ -34,6 +34,30 @@ if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   mkdir -p "$ARTIFACTS_DIR/linux-build-arm64"
 fi
 
+create_mock_macos_zip() {
+  local output_path="$1"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge"
+  printf '#!/usr/bin/env bash\nprintf "{}\\n"\n' > "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
+  chmod +x "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
+  cat > "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/manifest.json" <<'EOF'
+{"placeholder":false,"source":"mock-release-asset"}
+EOF
+  python3 - "$tmp_dir" "$output_path" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+root = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    for path in sorted(root.rglob("*")):
+        archive.write(path, path.relative_to(root))
+PY
+  rm -rf "$tmp_dir"
+}
+
 # Windows x64
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   touch "$ARTIFACTS_DIR/windows-build-x64/${PRODUCT_NAME}-${VERSION}-win-x64.exe"
@@ -68,7 +92,7 @@ fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.dmg"
   if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
-    touch "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
+    create_mock_macos_zip "$ARTIFACTS_DIR/macos-build-x64/${PRODUCT_NAME}-${VERSION}-mac-x64.zip"
     cat > "$ARTIFACTS_DIR/macos-build-x64/latest-mac.yml" <<EOF
 version: ${VERSION}
 files:
@@ -83,7 +107,7 @@ fi
 if [ "$RELEASE_TARGET_PLATFORMS" != "windows" ]; then
   touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.dmg"
   if [ "$MOCK_MACOS_DMG_ONLY" != "1" ]; then
-    touch "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.zip"
+    create_mock_macos_zip "$ARTIFACTS_DIR/macos-build-arm64/${PRODUCT_NAME}-${VERSION}-mac-arm64.zip"
     cat > "$ARTIFACTS_DIR/macos-build-arm64/latest-mac.yml" <<EOF
 version: ${VERSION}
 files:
