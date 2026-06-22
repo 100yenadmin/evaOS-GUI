@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 function parseArgs(argv) {
   const flags = new Set(argv.filter((x) => x.startsWith('--')));
@@ -12,6 +12,18 @@ function parseArgs(argv) {
 
 function isWindows() {
   return process.platform === 'win32';
+}
+
+function readMacBundleExecutable(appPath) {
+  const infoPlist = path.join(appPath, 'Contents', 'Info.plist');
+  try {
+    return execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', infoPlist], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
 }
 
 function killProcessByName(name) {
@@ -39,7 +51,9 @@ function resolvePackagedApp(projectRoot) {
       if (!fs.existsSync(macDir)) continue;
       const appBundle = fs.readdirSync(macDir).find((f) => f.endsWith('.app'));
       if (!appBundle) continue;
-      const exe = path.join(macDir, appBundle, 'Contents', 'MacOS', 'AionUi');
+      const appPath = path.join(macDir, appBundle);
+      const executable = readMacBundleExecutable(appPath) || path.basename(appBundle, '.app');
+      const exe = path.join(appPath, 'Contents', 'MacOS', executable);
       if (fs.existsSync(exe)) return { executablePath: exe, cwd: macDir };
     }
   } else {
