@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       upload_installers_only:
-        description: 'Only upload primary installers (exe/msi/dmg/deb), skip zip/yml/blockmap'
+        description: 'Only upload primary installers and macOS updater payloads (skip aux blockmaps/debug files)'
         type: boolean
         default: false
       macos_dmg_finalization:
@@ -887,7 +887,12 @@ jobs:
         shell: bash
         run: |
           echo "Removing non-installer files from out/ ..."
-          rm -f out/*.blockmap out/*.zip out/*.yml out/builder-debug.yml 2>/dev/null || true
+          rm -f out/*.blockmap out/builder-debug.yml 2>/dev/null || true
+          if [[ "${{ matrix.platform }}" == macos* ]]; then
+            echo "Preserving macOS ZIP update payloads and latest*.yml metadata for Electron updater proof."
+          else
+            rm -f out/*.zip out/*.yml 2>/dev/null || true
+          fi
           echo "Remaining artifacts:"
           ls -lh out/ || true
 
