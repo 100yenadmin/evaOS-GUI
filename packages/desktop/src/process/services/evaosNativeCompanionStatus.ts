@@ -6,7 +6,7 @@
 
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
-import { homedir, hostname } from 'node:os';
+import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -28,6 +28,7 @@ const execFileAsync = promisify(execFileCallback);
 const HOMEBREW_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
 const DEFAULT_RELEASED_WORKBENCH_PATH = '/Applications/evaOS.app';
 const COMMAND_TIMEOUT_MS = 8000;
+const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const NATIVE_COMPANION_FIXTURE_STATES = [
   'ready',
   'repair_required',
@@ -56,20 +57,6 @@ export type EvaosNativeCompanionStatusDeps = {
     customerId: string;
     deviceName?: string;
   }) => Promise<{ customerId: string; pairingCode: string; expiresAt?: string }>;
-  completeCustomerMacEnrollment?: (request: {
-    pairingCode: string;
-    connectorUrl: string;
-    connectorToken: string;
-    deviceName?: string;
-    deviceIdentifier?: string;
-  }) => Promise<{
-    ok: boolean;
-    auditId?: string;
-    deviceId?: string;
-    grantId?: string;
-    connectorTokenLast4?: string;
-  }>;
-  readTextFile?: (path: string) => string;
 };
 
 type BridgePayload = {
@@ -563,8 +550,8 @@ async function createPairingPromptAction(
     throw error;
   }
   const registration = await completeLocalConnectorEnrollment({
+    bridgePath,
     enrollment,
-    connectorStatus: connector,
     deviceName,
     deps,
   });
@@ -610,69 +597,27 @@ async function createPairingPromptAction(
 }
 
 async function completeLocalConnectorEnrollment(input: {
+  bridgePath: string;
   enrollment: { customerId: string; pairingCode: string; expiresAt?: string };
-  connectorStatus: BridgeCommandResult;
   deviceName: string;
   deps: EvaosNativeCompanionStatusDeps;
 }): Promise<BridgeCommandResult> {
-  const connectorUrl = connectorUrlFromStatus(input.connectorStatus.data);
-  if (!connectorUrl) {
-    return {
-      ok: false,
-      errorCode: 'connector_url_unavailable',
-      errorMessage: 'The local connector did not report a usable tailnet address.',
-    };
-  }
-  const tokenPath = connectorTokenPathFromStatus(input.connectorStatus.data);
-  const connectorToken = readConnectorToken(tokenPath, input.deps);
-  if (!connectorToken) {
-    return {
-      ok: false,
-      errorCode: 'connector_token_unavailable',
-      errorMessage: 'The local connector token is unavailable.',
-    };
-  }
-
-  const completeEnrollment =
-    input.deps.completeCustomerMacEnrollment ??
-    ((request) => getDefaultEvaosBrokerSessionClient().completeCustomerMacEnrollment(request));
-  try {
-    const result = await completeEnrollment({
-      pairingCode: input.enrollment.pairingCode,
-      connectorUrl,
-      connectorToken,
-      deviceName: input.deviceName,
-      deviceIdentifier: hostname() || input.deviceName,
-    });
-    return {
-      ok: result.ok,
-      auditId: result.auditId,
-      data: {
-        action: 'complete-enrollment',
-        connector_registered: result.ok,
-        customer_id: input.enrollment.customerId,
-        device_id: result.deviceId,
-        grant_id: result.grantId,
-        connector_token_last4: result.connectorTokenLast4,
-        raw_secrets_returned: false,
-      },
-      errorCode: result.ok ? undefined : 'broker_complete_enrollment_failed',
-      errorMessage: result.ok ? undefined : 'The evaOS broker did not confirm local connector registration.',
-    };
-  } catch (error) {
-    if (isBrokerSessionReconnectRequired(error)) {
-      return {
-        ok: false,
-        errorCode: 'broker_session_required',
-        errorMessage: 'The evaOS broker denied this desktop session. Sign in again.',
-      };
-    }
-    return {
-      ok: false,
-      errorCode: 'broker_complete_enrollment_failed',
-      errorMessage: error instanceof Error ? error.message : 'The evaOS broker could not register this connector.',
-    };
-  }
+  return runBridgeCommand(
+    input.bridgePath,
+    [
+      'connector-service',
+      'complete-enrollment',
+      '--json',
+      '--enrollment-code',
+      input.enrollment.pairingCode,
+      '--customer-id',
+      input.enrollment.customerId,
+      '--device-name',
+      input.deviceName,
+    ],
+    input.deps,
+    PAIRING_COMMAND_TIMEOUT_MS
+  );
 }
 
 function isBrokerSessionReconnectRequired(error: unknown): boolean {
@@ -852,11 +797,12 @@ function resolveBridgeExecutable(paths: string[], existsSync: (path: string) => 
 async function runBridgeCommand(
   bridgePath: string,
   args: string[],
-  deps: EvaosNativeCompanionStatusDeps
+  deps: EvaosNativeCompanionStatusDeps,
+  timeoutMs = COMMAND_TIMEOUT_MS
 ): Promise<BridgeCommandResult> {
   const execFile = deps.execFile ?? defaultExecFile;
   try {
-    const completed = await execFile(bridgePath, args, { timeout: COMMAND_TIMEOUT_MS });
+    const completed = await execFile(bridgePath, args, { timeout: timeoutMs });
     return parseBridgeCommandPayload(completed.stdout);
   } catch (error) {
     const stdout = readErrorStdout(error);
@@ -940,16 +886,16 @@ function bridgeFailureDetail(result: BridgeCommandResult, fallback: string): str
 function safeBridgeErrorText(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const secretFieldPattern =
-    /["']?\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|token|secret)\b["']?\s*[:=]\s*["']?[^"'\s,.;)}]+["']?/gi;
+    /["']?\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|token|secret)\b["']?\s*[:=]\s*["']?[^"'\s,)}]+["']?/gi;
   const secretWordPattern =
-    /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|bearer|secret)\b[^\s,.;)]*/gi;
+    /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|bearer|secret)\b[^\s,.;)]*/gi;
   const redacted = value
+    .replace(secretFieldPattern, '[redacted-secret]')
+    .replace(secretWordPattern, '[redacted-secret]')
     .replace(/https?:\/\/[^\s"')]+/gi, '[redacted-url]')
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
     .replace(/\b(?:100|10|172|192)\.[0-9.]+(?::\d+)?\b/g, '[redacted-ip]')
     .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted-secret]')
-    .replace(secretFieldPattern, '[redacted-secret]')
-    .replace(secretWordPattern, '[redacted-secret]')
     .trim();
   return redacted ? redacted.slice(0, 260) : undefined;
 }
@@ -1026,47 +972,6 @@ function hasGrantedCorePermissions(permissions: IEvaosNativeCompanionPermissionV
 
 function connectorServiceIsRunning(input: unknown): boolean {
   return readBoolean(input, 'running') === true && readNestedBoolean(input, ['health', 'reachable']) === true;
-}
-
-function connectorUrlFromStatus(input: unknown): string | undefined {
-  const rawHost = readNestedString(input, ['health', 'host']) ?? readString(input, 'tailnet_ip');
-  if (!rawHost) return undefined;
-  const host = rawHost
-    .replace(/^https?:\/\//i, '')
-    .split('/')[0]
-    ?.trim();
-  if (!host || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return undefined;
-  const port = readNestedNumber(input, ['health', 'port']) ?? 8765;
-  if (host.includes(':')) {
-    return `http://${host}`;
-  }
-  return `http://${host}:${port}`;
-}
-
-function connectorTokenPathFromStatus(input: unknown): string {
-  const reported = readString(input, 'token_path');
-  if (reported) {
-    return expandHomePath(reported);
-  }
-  return join(homedir(), 'Library', 'Application Support', 'evaos-desktop-bridge', 'connector.token');
-}
-
-function readConnectorToken(tokenPath: string, deps: EvaosNativeCompanionStatusDeps): string | undefined {
-  try {
-    const readTextFile = deps.readTextFile ?? ((filePath: string) => fs.readFileSync(filePath, 'utf8'));
-    const token = readTextFile(tokenPath).trim();
-    return token || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function expandHomePath(input: string): string {
-  if (input === '~') return homedir();
-  if (input.startsWith('~/')) {
-    return join(homedir(), input.slice(2));
-  }
-  return input;
 }
 
 function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {
@@ -1207,15 +1112,6 @@ function readNestedBoolean(input: unknown, path: string[]): boolean | undefined 
     current = (current as Record<string, unknown>)[key];
   }
   return typeof current === 'boolean' ? current : undefined;
-}
-
-function readNestedNumber(input: unknown, path: string[]): number | undefined {
-  let current = input;
-  for (const key of path) {
-    if (!current || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return typeof current === 'number' && Number.isFinite(current) ? current : undefined;
 }
 
 function readString(input: unknown, key: string): string | undefined {

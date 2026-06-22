@@ -13,7 +13,7 @@ import {
   runNativeCompanionAction,
   type EvaosNativeCompanionStatusDeps,
 } from '@/process/services/evaosNativeCompanionStatus';
-import { EvaosBrokerSessionClient, EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
+import { EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
 
 const json = (payload: unknown) => JSON.stringify(payload);
 const deviceName = hostname() || 'Customer Mac';
@@ -561,6 +561,20 @@ describe('evaosNativeCompanionStatus', () => {
             },
           },
         },
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+          {
+            ok: true,
+            audit_id: 'audit-pairing',
+            data: {
+              action: 'complete-enrollment',
+              connector_registered: true,
+              customer_id: 'golden',
+              device_id: 'device-golden',
+              grant_id: 'grant-golden',
+              connector_token_last4: '7890',
+              raw_secrets_returned: false,
+            },
+          },
       },
       {
         createCustomerMacEnrollment: vi.fn(async () => ({
@@ -568,14 +582,6 @@ describe('evaosNativeCompanionStatus', () => {
           pairingCode: 'PAIR-1234',
           expiresAt: '2026-06-07T04:00:00.000Z',
         })),
-        completeCustomerMacEnrollment: vi.fn(async () => ({
-          ok: true,
-          auditId: 'audit-pairing',
-          deviceId: 'device-golden',
-          grantId: 'grant-golden',
-          connectorTokenLast4: '7890',
-        })),
-        readTextFile: vi.fn(() => 'secret-token-abcdef1234567890'),
       }
     );
 
@@ -594,17 +600,14 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(result)).not.toMatch(
       /Bearer|desktop_session|provider_grant|access_token|refresh_token|connectorUrl|secret-token/i
     );
-    expect(deps.completeCustomerMacEnrollment).toHaveBeenCalledWith({
-      pairingCode: 'PAIR-1234',
-      connectorUrl: 'http://100.64.0.10:8765',
-      connectorToken: 'secret-token-abcdef1234567890',
-      deviceName,
-      deviceIdentifier: deviceName,
-    });
     const execFile = deps.execFile as ReturnType<typeof vi.fn>;
-    expect(execFile.mock.calls.map((call) => call[1].join(' '))).not.toContain(
+    const completeCall = execFile.mock.calls.find(
+      (call) => call[1][0] === 'connector-service' && call[1][1] === 'complete-enrollment'
+    );
+    expect(completeCall?.[1].join(' ')).toBe(
       `connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`
     );
+    expect(completeCall?.[2]).toEqual({ timeout: 30000 });
   });
 
   it('rejects account-row customer ids before creating a pairing enrollment', async () => {
@@ -651,6 +654,17 @@ describe('evaosNativeCompanionStatus', () => {
             },
           },
         },
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+          {
+            ok: false,
+            errors: [
+              {
+                code: 'broker_complete_enrollment_failed',
+                message:
+                  'connector_url=http://100.64.0.10:8765 token=secret-token Bearer live-secret access_token=abc api_key=raw password=hunter2 client_secret=client service_role=role grant_handle=grant credential=cred',
+              },
+            ],
+          },
       },
       {
         createCustomerMacEnrollment: vi.fn(async () => ({
@@ -658,12 +672,6 @@ describe('evaosNativeCompanionStatus', () => {
           pairingCode: 'PAIR-1234',
           expiresAt: '2026-06-07T04:00:00.000Z',
         })),
-        completeCustomerMacEnrollment: vi.fn(async () => {
-          throw new Error(
-            'connector_url=http://100.64.0.10:8765 token=secret-token Bearer live-secret access_token=abc api_key=raw password=hunter2 client_secret=client service_role=role grant_handle=grant credential=cred'
-          );
-        }),
-        readTextFile: vi.fn(() => 'secret-token-abcdef1234567890'),
       }
     );
 
@@ -682,21 +690,7 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
-  it('redacts broker HTTP error bodies before surfacing local connector registration failures', async () => {
-    const fetchImpl = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          error:
-            'connector_url=http://100.64.0.10:8765 connector_token=secret-token Bearer live-secret access_token=abc api_key=raw password=hunter2 client_secret=client service_role=role grant_handle=grant credential=cred',
-        }),
-        { status: 422, headers: { 'Content-Type': 'application/json' } }
-      );
-    });
-    const client = new EvaosBrokerSessionClient({
-      fetchImpl,
-      env: {},
-      now: () => new Date('2026-06-07T03:45:00.000Z'),
-    });
+  it('redacts bridge enrollment error bodies before surfacing local connector registration failures', async () => {
     const deps = depsWithResponses(
       {
         'connector-service status --json': {
@@ -716,6 +710,15 @@ describe('evaosNativeCompanionStatus', () => {
             },
           },
         },
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+          {
+            ok: false,
+            error: {
+              code: 'broker_complete_enrollment_failed',
+              message:
+                'connector_url=http://100.64.0.10:8765 connector_token=secret-token Bearer live-secret access_token=abc api_key=raw password=hunter2 client_secret=client service_role=role grant_handle=grant credential=cred',
+            },
+          },
       },
       {
         createCustomerMacEnrollment: vi.fn(async () => ({
@@ -723,14 +726,11 @@ describe('evaosNativeCompanionStatus', () => {
           pairingCode: 'PAIR-1234',
           expiresAt: '2026-06-07T04:00:00.000Z',
         })),
-        completeCustomerMacEnrollment: (request) => client.completeCustomerMacEnrollment(request),
-        readTextFile: vi.fn(() => 'secret-token-abcdef1234567890'),
       }
     );
 
     const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       action: 'create_pairing_prompt',
       status: 'repair_required',
@@ -739,7 +739,6 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(result.pairing).toBeUndefined();
     expect(result.message).toContain('Bridge error broker_complete_enrollment_failed');
-    expect(result.message).toContain('The evaOS broker rejected the request.');
     expect(result.message).not.toMatch(
       /100\.64\.0\.10|8765|secret-token|live-secret|access_token|api_key|password|hunter2|client_secret|service_role|grant_handle|credential|Bearer|connector_url|connector_token/i
     );
