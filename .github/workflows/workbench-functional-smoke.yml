@@ -124,6 +124,7 @@ jobs:
         shell: bash
         env:
           EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: |
           set -euo pipefail
