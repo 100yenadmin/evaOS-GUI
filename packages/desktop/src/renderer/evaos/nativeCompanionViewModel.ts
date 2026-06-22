@@ -118,7 +118,14 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   const haystack = statusText(status, error);
 
   if (hasBlockingReadinessActionResult(input.actionResult) || hasBlockingStatusError(status)) return 'repair_required';
-  if (status.readiness === 'ready' && connectorServiceReady(status) && permissionsReady(status)) return 'ready';
+  if (
+    status.readiness === 'ready' &&
+    connectorServiceReady(status) &&
+    permissionsReady(status) &&
+    status.pairingCapable !== false
+  ) {
+    return 'ready';
+  }
   if (!status.releasedWorkbench.installed && !status.bridgeCli.installed) return 'unsupported';
   if (PAIRING_PATTERN.test(haystack)) return 'not_paired';
   if (permissionsNeedRepair(status.bridgeCli.permissions) || permissionsNeedRepair(status.customerMac.permissions)) {
@@ -583,6 +590,9 @@ function pairingStepDetail(
   if (state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'pairing_prompt_created') {
     return 'Prompt created. Paste it into evaOS/OpenClaw or Hermes, then run the setup check to confirm agent proof.';
   }
+  if (status?.pairingCapable === false) {
+    return disabledPairingCapabilityReason(status);
+  }
   if (state === 'ready') {
     return 'Create a scoped pairing prompt for evaOS/OpenClaw or Hermes; do not expose public Mac, VNC, SSH, or browser debug ports.';
   }
@@ -597,6 +607,7 @@ function pairingValue(
   state: NativeCompanionUserState
 ): string {
   if (state === 'not_paired') return 'Pair this Mac';
+  if (status?.pairingCapable === false) return 'Setup needed';
   if (state !== 'ready') return state === 'offline' || state === 'unsupported' ? 'Unavailable' : 'Repair needed';
   switch (normalizeAgentPairingStatus(status?.agentPairingStatus)) {
     case 'agent_paired':
@@ -655,6 +666,7 @@ function canCreatePairingPrompt(
 ): boolean {
   if (!status || input.loading || !input.hasSelectedCustomer) return false;
   if (input.hasPairableCustomer === false) return false;
+  if (status.pairingCapable === false) return false;
   if (input.brokerSessionLoading || input.brokerAuthenticated === false) return false;
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
   if (hasBlockingReadinessActionResult(input.actionResult)) return false;
@@ -690,6 +702,7 @@ function disabledPairingPromptReason(
   if (!status.bridgeCli.installed) return 'Workbench connector tools are not installed.';
   if (!connectorServiceReady(status)) return 'Turn on Mac Access before creating a pairing prompt.';
   if (!permissionsReady(status)) return 'Grant Accessibility and Screen Recording before creating a pairing prompt.';
+  if (status.pairingCapable === false) return disabledPairingCapabilityReason(status);
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
     return 'Reconnect Workbench before creating a pairing prompt.';
   }
@@ -703,6 +716,19 @@ function disabledPairingPromptReason(
     return safeActionDetail(input.actionResult.message, 'Run setup check before creating another pairing prompt.');
   }
   return 'Create a scoped prompt/code after Workbench confirms local connector, permissions, session, and customer.';
+}
+
+function disabledPairingCapabilityReason(status: IEvaosNativeCompanionStatusView): string {
+  switch (status.pairingBlockedReason) {
+    case 'bundled_bridge_required':
+      return 'Install the current Workbench build with the bundled Mac connector before creating a pairing prompt.';
+    case 'secure_network_link_required':
+      return 'Connect this Mac to the secure tailnet/private connector link before creating a pairing prompt.';
+    case 'connector_service_not_ready':
+      return 'Turn on Mac Access before creating a pairing prompt.';
+    default:
+      return 'Workbench needs a bundled connector and secure network link before creating a pairing prompt.';
+  }
 }
 
 function safeActionDetail(message: string | undefined, fallback: string): string {

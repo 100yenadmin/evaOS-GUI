@@ -184,6 +184,44 @@ describe('nativeCompanionViewModel', () => {
     expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
   });
 
+  it('does not call a loopback-only connector ready for agent pairing', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'not_ready',
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        summaryText:
+          'Workbench connector is locally ready, but agent pairing needs the bundled connector and a secure tailnet/private connector host.',
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+    });
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
+    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
+
+    expect(viewModel.state).toBe('repair_required');
+    expect(pairing).toMatchObject({
+      value: 'Setup needed',
+      tone: 'attention',
+    });
+    expect(pairingStep).toMatchObject({
+      detail: expect.stringContaining('secure tailnet/private connector link'),
+      state: 'neutral',
+    });
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      disabled: true,
+      detail: expect.stringContaining('secure tailnet/private connector link'),
+    });
+  });
+
   it('does not enable pairing for account-only customer targets', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
