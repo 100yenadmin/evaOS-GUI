@@ -21,8 +21,11 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
   }
 
   if (typeof value === 'string') {
-    if (isSafePairingSetupPrompt(path, value)) {
-      return;
+    if (path === '$.pairing.setupPrompt') {
+      if (isSafePairingSetupPrompt(value)) {
+        return;
+      }
+      throwRendererSecretError(path);
     }
     if (containsEvaosSecretMaterial(value)) {
       throwRendererSecretError(path);
@@ -56,10 +59,7 @@ function isSafeSecretMetadata(key: string, value: unknown): boolean {
   return SAFE_SECRET_METADATA_KEYS.has(key) && typeof value === 'boolean';
 }
 
-function isSafePairingSetupPrompt(path: string, value: string): boolean {
-  if (path !== '$.pairing.setupPrompt') {
-    return false;
-  }
+function isSafePairingSetupPrompt(value: string): boolean {
   if (
     !value.includes('customer_mac_complete_pairing') ||
     !/\bPairing code:\s*[A-Za-z0-9-]+\b/i.test(value) ||
