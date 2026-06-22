@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -90,6 +91,20 @@ function writeArm64TrustEvidence(proofDir: string) {
   fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench Beta.app: accepted\n');
 }
 
+function writeMacosBridgeZip(zipPath: string) {
+  const script = [
+    'import pathlib',
+    'import sys',
+    'import zipfile',
+    'zip_path = pathlib.Path(sys.argv[1])',
+    'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
+    'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", "{\\"placeholder\\":false}\\n")',
+  ].join('\n');
+  execFileSync('python3', ['-c', script, zipPath]);
+}
+
 function writeProofReleaseAssetsReference(
   proofDir: string,
   tag: string,
@@ -101,7 +116,7 @@ function writeProofReleaseAssetsReference(
 
   fs.mkdirSync(proofReleaseAssetsDir, { recursive: true });
   fs.writeFileSync(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.dmg`), 'mac');
-  fs.writeFileSync(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.zip`), 'zip');
+  writeMacosBridgeZip(path.join(sourceReleaseAssetsDir, `evaOS Workbench Beta-${version}-mac-arm64.zip`));
   fs.writeFileSync(
     path.join(sourceReleaseAssetsDir, 'latest-arm64-mac.yml'),
     `path: evaOS Workbench Beta-${version}-mac-arm64.zip\n`
@@ -723,7 +738,7 @@ describe('evaOS beta release gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-'));
     try {
       fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
         'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip\n'
@@ -840,8 +855,8 @@ describe('evaOS beta release gate', () => {
     try {
       fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac-arm64');
       fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.dmg'), 'mac-x64');
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip-arm64');
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.zip'), 'zip-x64');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'));
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-x64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
         'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip\n'
@@ -907,7 +922,7 @@ describe('evaOS beta release gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-trusted-release-'));
     try {
       fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
-      fs.writeFileSync(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'), 'zip');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
         'path: evaOS Workbench Beta-2.1.10-evaos-beta.0-mac-arm64.zip\n'

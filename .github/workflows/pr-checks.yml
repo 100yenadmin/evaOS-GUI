@@ -836,6 +836,22 @@ jobs:
           bash scripts/prepare-release-assets.sh build-artifacts-macos-arm64-flat release-assets-macos-arm64-flat
           bash scripts/verify-release-assets.sh release-assets-macos-arm64-flat
 
+          rm -rf build-artifacts-macos-arm64-missing-bridge release-assets-macos-arm64-missing-bridge
+          cp -R build-artifacts-macos-arm64 build-artifacts-macos-arm64-missing-bridge
+          python3 - <<'PY'
+          import pathlib
+          import zipfile
+
+          zip_path = next(pathlib.Path("build-artifacts-macos-arm64-missing-bridge").glob("macos-build-arm64/*-mac-arm64.zip"))
+          with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+              archive.writestr("evaOS Workbench Beta.app/Contents/Resources/app.asar", "")
+          PY
+          bash scripts/prepare-release-assets.sh build-artifacts-macos-arm64-missing-bridge release-assets-macos-arm64-missing-bridge
+          if bash scripts/verify-release-assets.sh release-assets-macos-arm64-missing-bridge; then
+            echo "::error::macOS ZIP without bundled evaOS desktop bridge must fail release verification."
+            exit 1
+          fi
+
       - name: Validate Windows-only release profile
         shell: bash
         env:
