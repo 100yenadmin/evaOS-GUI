@@ -59,6 +59,17 @@ const NativeCompanionPage: React.FC = () => {
   const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
+  const selectedPairingCustomerRef = React.useRef<string | undefined>(selectedPairingCustomerId);
+  React.useEffect(() => {
+    selectedPairingCustomerRef.current = selectedPairingCustomerId;
+    setActionResult(null);
+    setCopyMessage(null);
+    setHandoffMessage(null);
+  }, [selectedPairingCustomerId]);
+  const currentActionResult = React.useMemo(
+    () => actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId),
+    [actionResult, selectedPairingCustomerId]
+  );
   const viewModel = getNativeCompanionRepairViewModel({
     status,
     loading,
@@ -67,13 +78,13 @@ const NativeCompanionPage: React.FC = () => {
     hasPairableCustomer: selectedCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
-    actionResult,
+    actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
   const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
-  const agentPairingStatus = effectiveAgentPairingStatus(status, actionResult);
+  const agentPairingStatus = effectiveAgentPairingStatus(status, currentActionResult);
   const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
-  const brokerSessionRequired = isPairingBrokerSessionRequired(actionResult);
+  const brokerSessionRequired = isPairingBrokerSessionRequired(currentActionResult);
   const canCreatePairingPrompt = canCreateNativeCompanionPairingPrompt({
     status,
     loading,
@@ -82,7 +93,7 @@ const NativeCompanionPage: React.FC = () => {
     hasPairableCustomer: selectedCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
-    actionResult,
+    actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
 
@@ -103,14 +114,18 @@ const NativeCompanionPage: React.FC = () => {
     async (request: IEvaosNativeCompanionActionRequest) => {
       setActionInFlight(request.action);
       setCopyMessage(null);
+      const requestCustomerId =
+        request.customerId ??
+        (request.action === 'create_pairing_prompt' ? selectedPairingCustomerId : selectedCustomerId);
       try {
         const result = await runAction({
           ...request,
-          customerId:
-            request.customerId ??
-            (request.action === 'create_pairing_prompt' ? selectedPairingCustomerId : selectedCustomerId),
+          customerId: requestCustomerId,
           agentLabel: request.agentLabel ?? 'evaOS Workbench',
         });
+        if (request.action === 'create_pairing_prompt' && requestCustomerId !== selectedPairingCustomerRef.current) {
+          return;
+        }
         setActionResult(result);
         setHandoffMessage(result.message);
         if (result.refreshRecommended) {
@@ -124,11 +139,11 @@ const NativeCompanionPage: React.FC = () => {
   );
 
   const handleCopyPairingPrompt = React.useCallback(async () => {
-    const prompt = actionResult?.pairing?.setupPrompt;
+    const prompt = currentActionResult?.pairing?.setupPrompt;
     if (!prompt) return;
     await navigator.clipboard.writeText(prompt);
     setCopyMessage('Pairing prompt copied.');
-  }, [actionResult?.pairing?.setupPrompt]);
+  }, [currentActionResult?.pairing?.setupPrompt]);
 
   const handleReconnectWorkbench = React.useCallback(async () => {
     setAuthInFlight(true);
@@ -324,7 +339,7 @@ const NativeCompanionPage: React.FC = () => {
             {connectorActionsOpen ? (
               <div className='mt-12px flex flex-wrap gap-8px' aria-label='Advanced Workbench connector actions'>
                 <Button
-                  type='primary'
+                  type='secondary'
                   loading={actionInFlight === 'connector_start'}
                   onClick={() => void handleRunAction({ action: 'connector_start' })}
                 >
@@ -345,13 +360,15 @@ const NativeCompanionPage: React.FC = () => {
                 >
                   Create Pairing Prompt
                 </Button>
-                <Button
-                  type='secondary'
-                  loading={actionInFlight === 'control_start'}
-                  onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
-                >
-                  Full Access
-                </Button>
+                {agentPairingStatus === 'agent_paired' ? (
+                  <Button
+                    type='secondary'
+                    loading={actionInFlight === 'control_start'}
+                    onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
+                  >
+                    Full Access
+                  </Button>
+                ) : null}
                 <Button
                   type='secondary'
                   loading={actionInFlight === 'control_start'}
@@ -390,34 +407,40 @@ const NativeCompanionPage: React.FC = () => {
               </div>
             ) : null}
 
-            {actionResult ? (
+            {currentActionResult ? (
               <div data-testid='native-companion-action-result' className='mt-12px rounded-8px bg-fill-1 p-12px'>
                 <div className='flex flex-wrap items-center gap-8px'>
-                  <Tag color={tagColorForActionStatus(actionResult.status)}>{actionResult.status}</Tag>
-                  <span className='text-12px leading-18px text-t-secondary'>{actionResult.message}</span>
+                  <Tag color={tagColorForActionStatus(currentActionResult.status)}>{currentActionResult.status}</Tag>
+                  <span className='text-12px leading-18px text-t-secondary'>{currentActionResult.message}</span>
                 </div>
-                {actionResult.setup ? (
+                {currentActionResult.setup ? (
                   <div className='mt-8px grid grid-cols-1 gap-6px text-12px leading-18px text-t-secondary md:grid-cols-4'>
-                    <EvidenceRow label='Connector' value={actionResult.setup.connectorReady ? 'ready' : 'repair'} />
-                    <EvidenceRow label='Mac control' value={actionResult.setup.macReady ? 'ready' : 'repair'} />
-                    <EvidenceRow label='Agent control' value={actionResult.setup.controlReady ? 'ready' : 'repair'} />
+                    <EvidenceRow
+                      label='Connector'
+                      value={currentActionResult.setup.connectorReady ? 'ready' : 'repair'}
+                    />
+                    <EvidenceRow label='Mac control' value={currentActionResult.setup.macReady ? 'ready' : 'repair'} />
+                    <EvidenceRow
+                      label='Agent control'
+                      value={currentActionResult.setup.controlReady ? 'ready' : 'repair'}
+                    />
                     <EvidenceRow label='iPhone' value='deferred' />
                   </div>
                 ) : null}
-                {actionResult.pairing ? (
+                {currentActionResult.pairing ? (
                   <div className='mt-10px'>
                     <span className='mb-6px block text-12px font-semibold leading-18px text-t-primary'>
                       Agent setup prompt
                     </span>
                     <pre className='m-0 max-h-220px overflow-auto rounded-8px bg-fill-3 p-10px text-11px leading-16px text-t-secondary'>
-                      {actionResult.pairing.setupPrompt}
+                      {currentActionResult.pairing.setupPrompt}
                     </pre>
                     {copyMessage ? <p className='m-0 mt-6px text-12px text-t-secondary'>{copyMessage}</p> : null}
                   </div>
                 ) : null}
-                {actionResult.events?.length ? (
+                {currentActionResult.events?.length ? (
                   <div className='mt-10px grid grid-cols-1 gap-6px text-12px leading-18px text-t-secondary md:grid-cols-2'>
-                    {actionResult.events.slice(0, 6).map((event) => (
+                    {currentActionResult.events.slice(0, 6).map((event) => (
                       <EvidenceRow key={event.id} label={event.action} value={`${event.outcome}: ${event.id}`} />
                     ))}
                   </div>
@@ -771,6 +794,14 @@ function effectiveAgentPairingStatus(
   if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
   if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
   return status?.agentPairingStatus ?? (status?.readiness === 'ready' ? 'ready_for_agent_pairing' : 'not_ready');
+}
+
+function actionResultForCurrentPairingCustomer(
+  actionResult: IEvaosNativeCompanionActionResult | null,
+  selectedPairingCustomerId: string | undefined
+): IEvaosNativeCompanionActionResult | null {
+  if (!actionResult?.pairing) return actionResult;
+  return actionResult.pairing.customerId === selectedPairingCustomerId ? actionResult : null;
 }
 
 function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): boolean {

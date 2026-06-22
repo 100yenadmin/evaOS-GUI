@@ -64,6 +64,42 @@ function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformNam
   }
 }
 
+function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
+  if (electronPlatformName !== 'darwin') return;
+
+  const bridgePath = path.join(resourcesDir, 'Bridge', 'evaos-desktop-bridge');
+  const manifestPath = path.join(resourcesDir, 'Bridge', 'manifest.json');
+  const missing = [];
+  if (!fs.existsSync(bridgePath)) {
+    missing.push(path.join('Bridge', 'evaos-desktop-bridge'));
+  } else {
+    try {
+      fs.accessSync(bridgePath, fs.constants.X_OK);
+    } catch {
+      throw new Error(`Packaged evaOS desktop bridge is not executable: ${bridgePath}`);
+    }
+  }
+  if (!fs.existsSync(manifestPath)) {
+    missing.push(path.join('Bridge', 'manifest.json'));
+  }
+  if (missing.length > 0) {
+    throw new Error(`Packaged app is missing required evaOS desktop bridge resource(s): ${missing.join(', ')}`);
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const strictReleaseBridge =
+    process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL === '1' ||
+    process.env.EVAOS_BETA_PUBLIC_RELEASE === 'true' ||
+    process.env.EVAOS_BETA_PUBLIC_RELEASE === '1' ||
+    process.env.EVAOS_BETA_REQUIRE_SIGNING === 'true' ||
+    process.env.EVAOS_BETA_REQUIRE_SIGNING === '1';
+  if (strictReleaseBridge && manifest.placeholder === true) {
+    throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
+  }
+
+  console.log('   ✓ evaOS desktop bridge resource verified');
+}
+
 function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) {
   const runtimeKey = `${electronPlatformName}-${targetArch}`;
   const missing = [];
@@ -120,6 +156,7 @@ module.exports = async function afterPack(context) {
     }
 
     verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName);
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }

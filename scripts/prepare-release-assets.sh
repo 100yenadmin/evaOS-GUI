@@ -250,17 +250,17 @@ path.write_text("\n".join(rewritten) + "\n")
 PY
 }
 
-write_macos_dmg_metadata() {
+write_macos_zip_metadata() {
   local arch="$1"
   local output_name="$2"
-  local dmg
+  local zip
 
-  dmg=$(find "$ARTIFACTS_DIR" -type f \( \
+  zip=$(find "$ARTIFACTS_DIR" -type f \( \
     -path "*/macos-build-$arch/*" -o \
-    -name "*-mac-$arch.dmg" \
-  \) -name "*.dmg" | sort | head -n 1 || true)
-  if [ -z "$dmg" ]; then
-    return
+    -name "*-mac-$arch.zip" \
+  \) -name "*.zip" | sort | head -n 1 || true)
+  if [ -z "$zip" ]; then
+    return 1
   fi
 
   local base
@@ -269,10 +269,10 @@ write_macos_dmg_metadata() {
   local size
   local release_date
 
-  base="$(github_release_asset_name "$(basename "$dmg")")"
+  base="$(github_release_asset_name "$(basename "$zip")")"
   version="$(metadata_version)"
-  sha512="$(sha512_base64 "$dmg")"
-  size="$(file_size_bytes "$dmg")"
+  sha512="$(sha512_base64 "$zip")"
+  size="$(file_size_bytes "$zip")"
   release_date="$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
 
   cat > "$OUTPUT_DIR/$output_name" <<EOF
@@ -285,7 +285,7 @@ path: ${base}
 sha512: ${sha512}
 releaseDate: '${release_date}'
 EOF
-  echo "Generated $output_name from DMG-only macOS artifact: $base"
+  echo "Generated $output_name from macOS ZIP auto-update artifact: $base"
 }
 
 # ---------------------------------------------------------------------------
@@ -295,12 +295,7 @@ EOF
 echo "==> Writing canonical updater metadata ..."
 
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-  if [ -n "$MAC_X64_LATEST" ]; then
-    cp -f "$MAC_X64_LATEST" "$OUTPUT_DIR/latest-mac.yml"
-    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-mac.yml"
-  else
-    write_macos_dmg_metadata "x64" "latest-mac.yml"
-  fi
+  write_macos_zip_metadata "x64" "latest-mac.yml" || true
 fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   if [ -n "$WIN_X64_LATEST" ]; then
@@ -334,12 +329,7 @@ fi
 # electron-updater on macOS constructs the yml filename as "${channel}-mac.yml".
 # For arm64, channel is "latest-arm64", so it looks for "latest-arm64-mac.yml".
 if [ "$RELEASE_TARGET_PLATFORMS" != "windows" ]; then
-  if [ -n "$MAC_ARM64_LATEST" ]; then
-    cp -f "$MAC_ARM64_LATEST" "$OUTPUT_DIR/latest-arm64-mac.yml"
-    sanitize_updater_metadata_asset_refs "$OUTPUT_DIR/latest-arm64-mac.yml"
-  else
-    write_macos_dmg_metadata "arm64" "latest-arm64-mac.yml"
-  fi
+  write_macos_zip_metadata "arm64" "latest-arm64-mac.yml" || true
 fi
 
 # ---------------------------------------------------------------------------

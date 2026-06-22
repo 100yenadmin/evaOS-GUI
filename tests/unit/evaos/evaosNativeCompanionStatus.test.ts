@@ -219,6 +219,70 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
   });
 
+  it('prefers the packaged Workbench bridge before Homebrew fallback paths', async () => {
+    const bundledBridge = '/Applications/evaOS Workbench Beta.app/Contents/Resources/Bridge/evaos-desktop-bridge';
+    const homebrewBridge = '/opt/homebrew/bin/evaos-desktop-bridge';
+    const deps = depsWithResponses(
+      {
+        'status --json': {
+          ok: true,
+          audit_id: 'audit-bridge',
+          data: {
+            version: '0.6.29',
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+            safety: { read_only: true },
+          },
+        },
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'customer-mac iphone-mirroring status --json': {
+          ok: true,
+          audit_id: 'audit-iphone',
+          data: { installed: true, running: false },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control',
+          data: { active: false, kill_switch: false },
+        },
+        'audit-tail --json --limit 5': {
+          ok: true,
+          data: { records: [] },
+        },
+      },
+      {
+        bridgePaths: [bundledBridge, homebrewBridge],
+        existsSync: vi.fn(
+          (candidate: string) =>
+            candidate === bundledBridge || candidate === homebrewBridge || candidate === '/Applications/evaOS.app'
+        ),
+      }
+    );
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    const execFile = deps.execFile as ReturnType<typeof vi.fn>;
+    expect(status.bridgeCli.path).toBe(bundledBridge);
+    expect(status.bridgeCli.version).toBe('0.6.29');
+    expect(execFile.mock.calls.every(([file]) => file === bundledBridge)).toBe(true);
+  });
+
   it('does not mark Mac control ready when the connector service is not reachable', async () => {
     const deps = depsWithResponses({
       'status --json': {
@@ -357,6 +421,31 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+  });
+
+  it('reconciles Mac Access start when the connector is reachable after a failed start response', async () => {
+    const deps = depsWithResponses({
+      'connector-service start --json': {
+        ok: false,
+        errors: [{ code: 'already_running', message: 'launchd reported an old transient start failure' }],
+      },
+      'connector-service status --json': {
+        ok: true,
+        audit_id: 'audit-connector',
+        running: true,
+        health: { reachable: true },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:connector-service-start',
+      auditId: 'audit-connector',
+    });
+    expect(result.message).toContain('already running and reachable');
   });
 
   it('marks setup check as agent paired only when control status carries explicit proof', async () => {
@@ -504,6 +593,63 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
+  it('does not expose a dead pairing prompt when local connector registration fails', async () => {
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+          {
+            ok: false,
+            audit_id: 'audit-register-failed',
+            errors: [
+              {
+                code: 'registration_denied',
+                message:
+                  'connector_url=http://100.64.0.10:8765 token=secret-token Bearer live-secret access_token=abc api_key=raw password=hunter2 client_secret=client service_role=role grant_handle=grant credential=cred',
+              },
+            ],
+          },
+      },
+      {
+        createCustomerMacEnrollment: vi.fn(async () => ({
+          customerId: 'golden',
+          pairingCode: 'PAIR-1234',
+          expiresAt: '2026-06-07T04:00:00.000Z',
+        })),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:pairing-registration-failed',
+      agentPairingStatus: 'proof_failed',
+      auditId: 'audit-register-failed',
+    });
+    expect(result.pairing).toBeUndefined();
+    expect(result.message).toContain('Bridge error registration_denied');
+    expect(result.message).not.toMatch(
+      /100\.64\.0\.10|8765|secret-token|live-secret|access_token|api_key|password|hunter2|client_secret|service_role|grant_handle|credential|Bearer/i
+    );
+  });
+
   it.each([401, 403])(
     'maps broker %s enrollment denial to reconnect without completing enrollment',
     async (statusCode) => {
@@ -547,9 +693,10 @@ describe('evaosNativeCompanionStatus', () => {
       });
       expect(result.message).toContain('Sign in again');
       expect(result.pairing).toBeUndefined();
-      expect(deps.execFile).toHaveBeenCalledTimes(2);
-      expect(vi.mocked(deps.execFile).mock.calls[0]?.[1]).toEqual(['connector-service', 'status', '--json']);
-      expect(vi.mocked(deps.execFile).mock.calls[1]?.[1]).toEqual(['customer-mac', 'status', '--json']);
+      const execFile = deps.execFile as ReturnType<typeof vi.fn>;
+      expect(execFile).toHaveBeenCalledTimes(2);
+      expect(execFile.mock.calls[0]?.[1]).toEqual(['connector-service', 'status', '--json']);
+      expect(execFile.mock.calls[1]?.[1]).toEqual(['customer-mac', 'status', '--json']);
     }
   );
 

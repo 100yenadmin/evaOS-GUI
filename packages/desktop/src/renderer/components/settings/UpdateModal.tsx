@@ -120,11 +120,16 @@ const UpdateModal: React.FC = () => {
     if (!updateInfo && !autoUpdateAvailable) return;
     setStatus('downloading');
     try {
-      // Prefer the manual path so the URL is the CDN-rewritten asset.url.
-      // Fall back to electron-updater (GitHub) only when the GitHub API manual check failed
-      // but the yml-based auto-update check succeeded — a rare edge case.
-      // 优先走手动路径（URL 是重写后的 CDN 地址）。仅当 GitHub API 失败但 electron-updater 检查成功时，
-      // 回退到 electron-updater 的下载（走 GitHub），保证用户能升级。
+      // macOS auto-update installs from the ZIP metadata managed by electron-updater.
+      // The DMG remains a manual installer fallback only.
+      if (autoUpdateAvailable) {
+        const res = await ipcBridge.autoUpdate.download.invoke();
+        if (!res?.success) {
+          throw new Error(res?.msg || t('update.downloadStartFailed'));
+        }
+        return;
+      }
+
       if (updateInfo?.recommendedAsset) {
         const asset = updateInfo.recommendedAsset;
         const res = await ipcBridge.update.download.invoke({
@@ -137,14 +142,6 @@ const UpdateModal: React.FC = () => {
         }
         setDownloadId(res.data.downloadId);
         setDownloadPath(res.data.file_path);
-        return;
-      }
-
-      if (autoUpdateAvailable) {
-        const res = await ipcBridge.autoUpdate.download.invoke();
-        if (!res?.success) {
-          throw new Error(res?.msg || t('update.downloadStartFailed'));
-        }
         return;
       }
 
@@ -278,6 +275,8 @@ const UpdateModal: React.FC = () => {
     if (!downloadPath) return;
     void ipcBridge.shell.openFile.invoke(downloadPath).catch((error) => {
       console.error('Failed to open file:', error);
+      void copyDownloadPath();
+      Message.error(`Could not open the installer from Workbench. The path was copied: ${downloadPath}`);
     });
   };
 
@@ -285,7 +284,18 @@ const UpdateModal: React.FC = () => {
     if (!downloadPath) return;
     void ipcBridge.shell.showItemInFolder.invoke(downloadPath).catch((error) => {
       console.error('Failed to show item in folder:', error);
+      void copyDownloadPath();
+      Message.error(`Could not show the installer in Finder. The path was copied: ${downloadPath}`);
     });
+  };
+
+  const copyDownloadPath = async () => {
+    if (!downloadPath) return;
+    try {
+      await navigator.clipboard.writeText(downloadPath);
+    } catch (error) {
+      console.error('Failed to copy update path:', error);
+    }
   };
 
   const renderContent = () => {
