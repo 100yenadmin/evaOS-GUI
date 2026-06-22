@@ -521,8 +521,8 @@ jobs:
             echo "3. Submit each signed DMG to Apple notarization."
             echo "4. Staple each DMG."
             echo "5. Validate each DMG with stapler and Gatekeeper primary-signature checks."
-            echo "6. Regenerate latest-arm64-mac.yml from the finalized arm64 DMG, and latest-mac.yml only when x64 is included."
-            echo "7. Create/update the GitHub prerelease with the finalized DMGs and run the local signed DMG manifest registration workflow."
+            echo "6. Preserve the staged ZIP-derived updater metadata; do not regenerate Electron macOS updater metadata from DMGs."
+            echo "7. Create/update the GitHub prerelease with the finalized DMGs, ZIP assets, staged updater metadata, and run the local signed DMG manifest registration workflow."
           } >> "$GITHUB_STEP_SUMMARY"
 
   register-local-signed-dmg-manifest:

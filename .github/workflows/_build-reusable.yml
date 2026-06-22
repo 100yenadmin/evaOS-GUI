@@ -598,8 +598,6 @@ jobs:
           CI: true
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
-          EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: ${{ startsWith(matrix.platform, 'macos') && '1' || '' }}
-          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
 
       # Clean up any stale disk images before DMG creation (macOS only)
       # 清理可能残留的磁盘镜像，避免 hdiutil "Device not configured" 错误
@@ -715,8 +713,11 @@ jobs:
           SENTRY_ORG: ''
           SENTRY_PROJECT: ''
           CI: true
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
+          EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: '1'
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
 
       - name: Validate macOS app staple inside DMG
         if: startsWith(matrix.platform, 'macos')

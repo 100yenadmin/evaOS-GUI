@@ -483,6 +483,96 @@ describe('NativeCompanionPage', () => {
     });
   });
 
+  it('clears a customer-scoped pairing prompt when the selected customer changes', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        readiness: 'ready',
+        summaryText: 'Mac control is ready.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+          tailnetIp: '100.64.0.10',
+        },
+        customerMac: {
+          status: 'ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'ready',
+          active: false,
+          mode: 'ask-permission',
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac', 'audit-control'],
+        },
+      },
+    });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'create_pairing_prompt',
+        status: 'succeeded',
+        message: 'Pairing prompt is ready. Paste it into evaOS or OpenClaw to complete the link.',
+        sourcePointer: 'native-companion:pairing-prompt',
+        auditIds: [],
+        refreshRecommended: false,
+        pairing: {
+          customerId: 'benjamin-kennedy',
+          pairingCode: 'PAIR-1234',
+          setupPrompt: 'Customer: benjamin-kennedy\nPairing code: PAIR-1234',
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    const view = renderNativeCompanion();
+
+    await user.click(await screen.findByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
+    expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
+
+    customerContextMock.customerContext.selectedCustomerId = 'matt-calderon';
+    customerContextMock.customerContext.selectedTarget = {
+      customerId: 'matt-calderon',
+      targetKind: 'customer_vm',
+      displayName: 'Matt Calderon',
+      isDefault: false,
+    };
+    view.rerender(
+      <ConfigProvider>
+        <NativeCompanionPage />
+      </ConfigProvider>
+    );
+
+    await waitFor(() => expect(screen.queryByText('Agent setup prompt')).not.toBeInTheDocument());
+    expect(screen.queryByText(/Pairing code: PAIR-1234/)).not.toBeInTheDocument();
+  });
+
   it('advances ready local connector users from pairing prompt to agent proof checklist', async () => {
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,

@@ -521,7 +521,7 @@ jobs:
           APP_BIN="$APP_PATH/Contents/MacOS/$APP_BIN_NAME"
 
           test -x "$APP_BIN"
-          "$APP_BIN" --version || true
+          "$APP_BIN" --version
 
       - name: Skip executable smoke for macOS x64 cross build
         if: matrix.platform == 'macos-x64'

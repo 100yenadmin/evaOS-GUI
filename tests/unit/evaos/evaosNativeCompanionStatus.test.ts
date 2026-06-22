@@ -619,7 +619,8 @@ describe('evaosNativeCompanionStatus', () => {
             errors: [
               {
                 code: 'registration_denied',
-                message: 'connector_url=http://100.64.0.10:8765 token=secret-token Bearer live-secret access_token=abc',
+                message:
+                  'connector_url=http://100.64.0.10:8765 token=secret-token Bearer live-secret access_token=abc api_key=raw password=hunter2 client_secret=client service_role=role grant_handle=grant credential=cred',
               },
             ],
           },
@@ -644,7 +645,9 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(result.pairing).toBeUndefined();
     expect(result.message).toContain('Bridge error registration_denied');
-    expect(result.message).not.toMatch(/100\.64\.0\.10|8765|secret-token|live-secret|access_token|Bearer/i);
+    expect(result.message).not.toMatch(
+      /100\.64\.0\.10|8765|secret-token|live-secret|access_token|api_key|password|hunter2|client_secret|service_role|grant_handle|credential|Bearer/i
+    );
   });
 
   it.each([401, 403])(

@@ -110,7 +110,7 @@ GitHub RC canary workflow:
 3. Set `tag` to the existing non-dev `evaos-beta-*` release tag.
 4. Set `fallback_release_repo`, `fallback_release_tag`, `fallback_asset_pattern`, and `fallback_app_name` to the currently released macOS fallback app.
 5. Set `broker_session_proof_ref` to a non-secret issue, packet, or canary reference proving broker login/session state for the fallback.
-6. Before manifest registration for locally finalized DMGs, regenerate `latest-arm64-mac.yml` from the finalized arm64 DMG, and regenerate `latest-mac.yml` only when x64 is included. Do not reuse updater metadata from the unsigned staged DMGs.
+6. Before manifest registration for locally finalized DMGs, preserve the staged ZIP-derived `latest-arm64-mac.yml` / `latest-mac.yml` metadata. Do not regenerate Electron macOS updater metadata from DMGs; DMGs are manual installer fallbacks.
 7. For locally finalized DMGs, set `trusted_manifest_run_id` to the successful manifest-registration workflow run id and set `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
 8. Download the uploaded artifact named `evaos-beta-rc-proof-<tag>`.
 9. Pass the successful canary workflow run id to `Distribute evaOS Beta Release Assets` as `rc_proof_run_id`.

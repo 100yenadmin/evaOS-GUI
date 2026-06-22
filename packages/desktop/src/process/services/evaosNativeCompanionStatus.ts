@@ -857,19 +857,17 @@ function bridgeFailureDetail(result: BridgeCommandResult, fallback: string): str
 
 function safeBridgeErrorText(value: string | undefined): string | undefined {
   if (!value) return undefined;
+  const secretFieldPattern =
+    /["']?\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|token|secret)\b["']?\s*[:=]\s*["']?[^"'\s,.;)}]+["']?/gi;
+  const secretWordPattern =
+    /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|bearer|secret)\b[^\s,.;)]*/gi;
   const redacted = value
     .replace(/https?:\/\/[^\s"')]+/gi, '[redacted-url]')
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
     .replace(/\b(?:100|10|172|192)\.[0-9.]+(?::\d+)?\b/g, '[redacted-ip]')
     .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted-secret]')
-    .replace(
-      /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|token|secret)\b\s*[:=]\s*[^\s,.;)]*/gi,
-      '[redacted-secret]'
-    )
-    .replace(
-      /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|bearer|secret)\b[^\s,.;)]*/gi,
-      '[redacted-secret]'
-    )
+    .replace(secretFieldPattern, '[redacted-secret]')
+    .replace(secretWordPattern, '[redacted-secret]')
     .trim();
   return redacted ? redacted.slice(0, 260) : undefined;
 }

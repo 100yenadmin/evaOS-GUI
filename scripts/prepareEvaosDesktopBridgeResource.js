@@ -33,6 +33,17 @@ function shouldRequireRealBridge() {
   );
 }
 
+function selectedBridgeSourceRef() {
+  return process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef;
+}
+
+function isMutableBridgeSourceRef(ref) {
+  const normalized = String(ref || '')
+    .trim()
+    .toLowerCase();
+  return !normalized || normalized === 'main' || normalized === 'master' || normalized === 'head';
+}
+
 function sourceCandidates() {
   if (process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES === '1') {
     return [process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR].filter(Boolean);
@@ -56,7 +67,15 @@ function resolveBridgeSourceDir() {
 
 function prepareBridgeSourceCheckout() {
   const repo = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REPO || defaultBridgeSourceRepo;
-  const ref = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef;
+  const ref = selectedBridgeSourceRef();
+  if (shouldRequireRealBridge() && isMutableBridgeSourceRef(ref)) {
+    throw new Error(
+      [
+        'Release builds require a pinned evaos-desktop-bridge source ref.',
+        'Set EVAOS_DESKTOP_BRIDGE_SOURCE_REF to an approved tag or commit SHA, not main/master/HEAD.',
+      ].join(' ')
+    );
+  }
   const cloneRepo = repoWithToken(repo);
   console.log(`evaos-desktop-bridge source was not found locally; fetching ${sanitizeRepoForLog(repo)}#${ref}`);
   fs.rmSync(bridgeSourceCacheDir, { recursive: true, force: true });

@@ -27,7 +27,7 @@ That placeholder is never release proof. Any public or signed release build must
 - `EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN` with read access to `electricsheephq/evaos-desktop-bridge`
 - `EVAOS_DESKTOP_BRIDGE_SOURCE_REPO` / `EVAOS_DESKTOP_BRIDGE_SOURCE_REF` for an approved, reachable bridge source
 
-If those inputs are missing or inaccessible, the release build must fail before a public artifact is created.
+For CI release builds, `EVAOS_DESKTOP_BRIDGE_SOURCE_REF` must be a pinned tag or commit SHA, not `main`, `master`, or `HEAD`. If those inputs are missing, mutable, or inaccessible, the release build must fail before a public artifact is created.
 
 ## Functional Acceptance
 

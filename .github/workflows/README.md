@@ -30,8 +30,8 @@ For the current controlled RC, use one lane at a time:
 1. Product or polish PR: focused tests plus PR macOS smoke. Do not run full signing/notarization/canary/distribution for copy or layout changes.
 2. Staged RC artifact: dispatch `Build and Release` with `beta_release_ack=evaos-beta`, `release_target_platforms=macos-arm64`, and `macos_dmg_finalization=local` for the controlled Apple-Silicon RC. Use `macos` only when intentionally building both x64 and arm64 macOS artifacts.
 3. Local DMG finalization: download the exact staged DMGs for the selected profile, Developer ID sign the DMG containers, submit them to Apple, staple them, and verify `xcrun stapler validate <dmg>` plus `spctl --assess --type open --context context:primary-signature <dmg>`.
-4. Updater metadata: regenerate `latest-arm64-mac.yml` from the finalized arm64 DMG, and regenerate `latest-mac.yml` only when the selected profile includes x64, because DMG signing/stapling changes the bytes and checksums.
-5. Trusted manifest: attach the finalized DMGs/updater metadata to the GitHub prerelease, then run `Register evaOS Beta Local-Signed DMG Manifest` with `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
+4. Updater metadata: preserve the `latest-arm64-mac.yml` / `latest-mac.yml` files generated from the ZIP auto-update assets in the staged build. Do not regenerate macOS Electron updater metadata from DMGs; DMGs are manual installer fallbacks.
+5. Trusted manifest: attach the finalized DMGs plus the staged ZIP updater metadata to the GitHub prerelease, then run `Register evaOS Beta Local-Signed DMG Manifest` with `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
 6. Canary and distribution: run `evaOS Beta RC Canary` and `Distribute evaOS Beta Release Assets` with the manifest registration `trusted_manifest_run_id`; distribution remains GitHub-release based, not S3/AWS.
 
 ### Agent operating rule
