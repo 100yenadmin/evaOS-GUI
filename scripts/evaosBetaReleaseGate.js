@@ -1101,6 +1101,72 @@ function assertReleaseManifestAssetList(manifest, env = process.env) {
   }
 }
 
+function metadataAssetRefs(outputDir, metadataName) {
+  const metadataPath = path.join(outputDir, metadataName);
+  if (!fs.existsSync(metadataPath)) {
+    throw new Error(`Release manifest verification is missing updater metadata: ${metadataName}.`);
+  }
+  const refs = [];
+  const text = fs.readFileSync(metadataPath, 'utf8');
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:-\s*)?(?:path|url):\s*(.+?)\s*$/);
+    if (!match) continue;
+    let ref = match[1].trim().replace(/^['"]|['"]$/g, '');
+    if (/^https?:\/\//i.test(ref)) {
+      try {
+        ref = path.basename(new URL(ref).pathname);
+      } catch {
+        throw new Error(`${metadataName} has an invalid updater URL: ${ref}`);
+      }
+    }
+    if (ref) refs.push(ref);
+  }
+  if (refs.length === 0) {
+    throw new Error(`${metadataName} has no path/url updater asset reference.`);
+  }
+  return refs;
+}
+
+function assertUpdaterMetadataRefs(outputDir, metadataName, options = {}) {
+  const refs = metadataAssetRefs(outputDir, metadataName);
+  for (const ref of refs) {
+    if (options.requiredExtension && !ref.endsWith(options.requiredExtension)) {
+      throw new Error(
+        `${metadataName} must reference ${options.requiredExtension} for Electron auto-update; got ${ref}.`
+      );
+    }
+    if (options.namePattern && !options.namePattern.test(ref)) {
+      throw new Error(`${metadataName} points to an unexpected updater asset: ${ref}.`);
+    }
+    const filePath = path.join(outputDir, ref);
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      throw new Error(`${metadataName} references a missing updater asset: ${ref}.`);
+    }
+  }
+}
+
+function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
+  if (releaseTargetPlatforms === 'windows') return;
+
+  if (releaseTargetPlatforms === 'all' || releaseTargetPlatforms === 'macos') {
+    assertUpdaterMetadataRefs(outputDir, 'latest-mac.yml', {
+      requiredExtension: '.zip',
+      namePattern: /(mac-x64|darwin-x64|x64)/,
+    });
+  }
+
+  if (
+    releaseTargetPlatforms === 'all' ||
+    releaseTargetPlatforms === 'macos' ||
+    releaseTargetPlatforms === 'macos-arm64'
+  ) {
+    assertUpdaterMetadataRefs(outputDir, 'latest-arm64-mac.yml', {
+      requiredExtension: '.zip',
+      namePattern: /(mac-arm64|darwin-arm64|arm64)/,
+    });
+  }
+}
+
 function verifyReleaseManifest(outputDir, tag, env = process.env) {
   assertPublicDistributionTag(tag);
 
@@ -1141,6 +1207,7 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
     }
   }
 
+  assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms);
   verifyReleaseProvenance(manifest, env);
   return true;
 }
@@ -1470,6 +1537,7 @@ module.exports = {
   isLocalSignedDmgFallbackManifest,
   isStrictPublicBetaReleaseEnv,
   LOCAL_SIGNED_DMG_FALLBACK_ACK,
+  metadataAssetRefs,
   releaseProvenanceFromEnv,
   RELEASE_PROVENANCE_GITHUB_WORKFLOW,
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK,

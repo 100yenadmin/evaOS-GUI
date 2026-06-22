@@ -79,6 +79,7 @@ extract_ref_file() {
 assert_metadata_points_to_existing_file() {
   local metadata_name="$1"
   local expected_pattern="$2"
+  local required_extension="${3:-}"
   local metadata_path="$OUTPUT_DIR/$metadata_name"
 
   local ref_file
@@ -96,6 +97,12 @@ assert_metadata_points_to_existing_file() {
     return
   fi
 
+  if [ -n "$required_extension" ] && [[ "$ref_file" != *"$required_extension" ]]; then
+    echo "FAIL: $metadata_name must reference $required_extension for auto-update, got: $ref_file"
+    ERRORS=$((ERRORS + 1))
+    return
+  fi
+
   if [ ! -f "$OUTPUT_DIR/$ref_file" ]; then
     echo "FAIL: $metadata_name references missing file: $ref_file"
     ERRORS=$((ERRORS + 1))
@@ -106,7 +113,7 @@ assert_metadata_points_to_existing_file() {
 }
 
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
-  assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
+  assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)" ".zip"
 fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ] || [ "$RELEASE_TARGET_PLATFORMS" = "windows" ]; then
   assert_metadata_points_to_existing_file "latest.yml" "(win-x64|win32-x64|x64)"
@@ -133,7 +140,7 @@ for f in "${ARCH_METADATA[@]}"; do
 done
 
 if [ -f "$OUTPUT_DIR/latest-arm64-mac.yml" ]; then
-  assert_metadata_points_to_existing_file "latest-arm64-mac.yml" "(mac-arm64|darwin-arm64|arm64)"
+  assert_metadata_points_to_existing_file "latest-arm64-mac.yml" "(mac-arm64|darwin-arm64|arm64)" ".zip"
 fi
 if [ -f "$OUTPUT_DIR/latest-win-arm64.yml" ]; then
   assert_metadata_points_to_existing_file "latest-win-arm64.yml" "(win-arm64|win32-arm64|arm64)"

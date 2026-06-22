@@ -469,7 +469,13 @@ try {
   // 6. Prepare hub resources (index.json + extension zips for offline fallback)
   execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });
 
-  // 6. 运行 electron-builder 生成分发包（DMG/ZIP/EXE等）
+  // 7. Prepare the bundled evaOS desktop bridge for macOS Workbench pairing/control parity.
+  // The packaged app must resolve Contents/Resources/Bridge/evaos-desktop-bridge before Homebrew.
+  if (builderArgs.includes('--mac') || builderArgs.includes('--all')) {
+    execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env });
+  }
+
+  // 8. 运行 electron-builder 生成分发包（DMG/ZIP/EXE等）
   // Run electron-builder to create distributables (DMG/ZIP/EXE, etc.)
   // Always disable auto-publish to avoid electron-builder's implicit tag-based publishing
   // Publishing is handled by a separate release job in CI

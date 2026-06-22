@@ -476,6 +476,8 @@ jobs:
           npm_config_disturl: https://electronjs.org/headers
           CI: true
           GH_TOKEN: ${{ github.token }}
+          EVAOS_DESKTOP_BRIDGE_ALLOW_PLACEHOLDER: '1'
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || github.token }}
 
       - name: Verify build artifacts exist
         shell: bash
@@ -869,7 +871,7 @@ jobs:
             exit 1
           fi
 
-      - name: Validate macOS-only DMG-only release profile
+      - name: Validate macOS-only DMG-only release profile is rejected for auto-update
         shell: bash
         env:
           GITHUB_REPOSITORY: 100yenadmin/evaOS-GUI
@@ -888,7 +890,7 @@ jobs:
           MOCK_VERSION: '1.0.0'
         run: |
           bash scripts/create-mock-release-artifacts.sh build-artifacts-macos-dmg-only
-          bash scripts/prepare-release-assets.sh build-artifacts-macos-dmg-only release-assets-macos-dmg-only
-          node scripts/evaosBetaReleaseGate.js write-manifest release-assets-macos-dmg-only evaos-beta-v1.0.0-evaos-beta.0
-          node scripts/evaosBetaReleaseGate.js verify-manifest release-assets-macos-dmg-only evaos-beta-v1.0.0-evaos-beta.0
-          bash scripts/verify-release-assets.sh release-assets-macos-dmg-only
+          if bash scripts/prepare-release-assets.sh build-artifacts-macos-dmg-only release-assets-macos-dmg-only; then
+            echo "::error::DMG-only macOS assets must fail preparation because Electron auto-update requires ZIP metadata."
+            exit 1
+          fi

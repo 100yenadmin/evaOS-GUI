@@ -117,6 +117,7 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   if (!status) return 'offline';
   const haystack = statusText(status, error);
 
+  if (hasBlockingActionResult(input.actionResult) || hasBlockingStatusError(status)) return 'repair_required';
   if (status.readiness === 'ready' && connectorServiceReady(status) && permissionsReady(status)) return 'ready';
   if (!status.releasedWorkbench.installed && !status.bridgeCli.installed) return 'unsupported';
   if (PAIRING_PATTERN.test(haystack)) return 'not_paired';
@@ -462,12 +463,30 @@ function nextActionForState(
     };
   }
 
+  if (hasBlockingActionResult(actionResult)) {
+    return {
+      kind: 'run',
+      action: 'setup_check',
+      label: 'Run Setup Check',
+      title: 'Repair pairing proof',
+      detail: safeActionDetail(
+        actionResult?.message,
+        'Workbench could not finish the previous Mac control step. Run setup check before creating another pairing prompt.'
+      ),
+      step: 3,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
   return {
     kind: 'run',
     action: 'create_pairing_prompt',
     label: 'Create Pairing Prompt',
     title: 'Pair evaOS/OpenClaw or Hermes',
-    detail: 'Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin.',
+    detail: pairingReady
+      ? 'Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin.'
+      : disabledPairingPromptReason(input, status),
     step: 3,
     totalSteps,
     disabled: !pairingReady,
@@ -638,8 +657,63 @@ function canCreatePairingPrompt(
   if (input.hasPairableCustomer === false) return false;
   if (input.brokerSessionLoading || input.brokerAuthenticated === false) return false;
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
+  if (hasBlockingActionResult(input.actionResult)) return false;
   if (!status.bridgeCli.installed) return false;
   return connectorServiceReady(status) && permissionsReady(status);
+}
+
+function hasBlockingStatusError(status: IEvaosNativeCompanionStatusView): boolean {
+  return (
+    status.bridgeCli.status === 'error' ||
+    status.connectorService?.status === 'error' ||
+    status.customerMac.status === 'error' ||
+    status.controlSession?.status === 'error' ||
+    status.audit.status === 'error'
+  );
+}
+
+function hasBlockingActionResult(
+  actionResult: IEvaosNativeCompanionActionResult | null | undefined
+): actionResult is IEvaosNativeCompanionActionResult {
+  if (!actionResult || actionResult.status === 'succeeded') return false;
+  if (actionResult.action === 'control_start') return false;
+  return true;
+}
+
+function disabledPairingPromptReason(
+  input: NativeCompanionRepairViewModelInput,
+  status: IEvaosNativeCompanionStatusView | null | undefined
+): string {
+  if (input.loading) return 'Workbench is still checking Mac control status.';
+  if (!status) return 'Refresh Mac control status before creating a pairing prompt.';
+  if (!status.bridgeCli.installed) return 'Workbench connector tools are not installed.';
+  if (!connectorServiceReady(status)) return 'Turn on Mac Access before creating a pairing prompt.';
+  if (!permissionsReady(status)) return 'Grant Accessibility and Screen Recording before creating a pairing prompt.';
+  if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
+    return 'Reconnect Workbench before creating a pairing prompt.';
+  }
+  if (input.brokerSessionLoading) return 'Workbench is checking the broker session.';
+  if (input.brokerAuthenticated === false) return 'Reconnect Workbench before creating a pairing prompt.';
+  if (!input.hasSelectedCustomer) return 'Choose a customer before creating a pairing prompt.';
+  if (input.hasPairableCustomer === false) {
+    return 'Choose a VM-backed Mac-control customer before creating a pairing prompt.';
+  }
+  if (hasBlockingActionResult(input.actionResult)) {
+    return safeActionDetail(input.actionResult.message, 'Run setup check before creating another pairing prompt.');
+  }
+  return 'Create a scoped prompt/code after Workbench confirms local connector, permissions, session, and customer.';
+}
+
+function safeActionDetail(message: string | undefined, fallback: string): string {
+  const cleaned = (message ?? '')
+    .replace(/https?:\/\/[^\s"')]+/gi, '[redacted-url]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
+    .replace(
+      /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|bearer|secret)\b[^\s,.;)]*/gi,
+      '[redacted-secret]'
+    )
+    .trim();
+  return cleaned || fallback;
 }
 
 function firstMissingPermissionAction(status: IEvaosNativeCompanionStatusView): IEvaosNativeCompanionRepairAction {

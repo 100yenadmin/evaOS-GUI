@@ -324,7 +324,7 @@ const NativeCompanionPage: React.FC = () => {
             {connectorActionsOpen ? (
               <div className='mt-12px flex flex-wrap gap-8px' aria-label='Advanced Workbench connector actions'>
                 <Button
-                  type='primary'
+                  type='secondary'
                   loading={actionInFlight === 'connector_start'}
                   onClick={() => void handleRunAction({ action: 'connector_start' })}
                 >
@@ -345,13 +345,15 @@ const NativeCompanionPage: React.FC = () => {
                 >
                   Create Pairing Prompt
                 </Button>
-                <Button
-                  type='secondary'
-                  loading={actionInFlight === 'control_start'}
-                  onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
-                >
-                  Full Access
-                </Button>
+                {agentPairingStatus === 'agent_paired' ? (
+                  <Button
+                    type='secondary'
+                    loading={actionInFlight === 'control_start'}
+                    onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
+                  >
+                    Full Access
+                  </Button>
+                ) : null}
                 <Button
                   type='secondary'
                   loading={actionInFlight === 'control_start'}

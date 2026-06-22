@@ -7,6 +7,7 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
 import { hostname } from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import type {
   IEvaosNativeCompanionActionRequest,
@@ -24,7 +25,7 @@ import { getDefaultEvaosBrokerSessionClient, isEvaosBrokerSessionError } from '.
 
 const execFileAsync = promisify(execFileCallback);
 
-const DEFAULT_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
+const HOMEBREW_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
 const DEFAULT_RELEASED_WORKBENCH_PATH = '/Applications/evaOS.app';
 const COMMAND_TIMEOUT_MS = 8000;
 const NATIVE_COMPANION_FIXTURE_STATES = [
@@ -62,6 +63,10 @@ type BridgePayload = {
   audit_id?: string;
   data?: Record<string, unknown>;
   errors?: Array<Record<string, unknown>>;
+  code?: string;
+  error_code?: string;
+  message?: string;
+  error?: string | Record<string, unknown>;
 };
 
 type BridgeCommandResult = {
@@ -69,6 +74,8 @@ type BridgeCommandResult = {
   auditId?: string;
   data?: Record<string, unknown>;
   errors?: Array<Record<string, unknown>>;
+  errorCode?: string;
+  errorMessage?: string;
 };
 
 export async function getEvaosNativeCompanionStatus(
@@ -82,7 +89,7 @@ export async function getEvaosNativeCompanionStatus(
   }
 
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? DEFAULT_BRIDGE_PATHS, existsSync);
+  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
   const releasedWorkbenchPath = deps.releasedWorkbenchPath ?? DEFAULT_RELEASED_WORKBENCH_PATH;
   const releasedWorkbenchInstalled = existsSync(releasedWorkbenchPath);
 
@@ -151,6 +158,7 @@ export async function getEvaosNativeCompanionStatus(
       installed: true,
       status: bridgeReady ? 'ready' : bridge.ok ? 'repair_required' : 'error',
       path: bridgePath,
+      version: readString(bridge.data, 'version') ?? readString(bridge.data, 'bridge_version'),
       auditId: bridge.auditId,
       permissions: bridgePermissions,
       readOnly: readBoolean(bridge.data?.safety, 'read_only') !== false,
@@ -229,7 +237,7 @@ function nativeCompanionFixtureStatus(
     bridgeCli: {
       installed: true,
       status: 'repair_required',
-      path: DEFAULT_BRIDGE_PATHS[0],
+      path: defaultBridgePaths()[0],
       auditId: auditIds[1],
       permissions: {
         accessibility: 'granted',
@@ -367,6 +375,39 @@ async function runCommandAction(
       control: options.includeControl ? controlSummaryFromPayload(result.data) : undefined,
     }
   );
+}
+
+async function runConnectorStartAction(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  const started = await runBridgeCommand(bridgePath, ['connector-service', 'start', '--json'], deps);
+  const status = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  const ready = status.ok && connectorServiceIsRunning(status.data);
+  if (ready) {
+    return nativeActionResult(
+      'connector_start',
+      'succeeded',
+      started.ok
+        ? 'Mac Access connector is running and reachable.'
+        : 'Mac Access connector was already running and reachable after start reconciliation.',
+      {
+        sourcePointer: 'native-companion:connector-service-start',
+        auditId: status.auditId ?? started.auditId,
+        auditIds: compactStrings([status.auditId, started.auditId]),
+      }
+    );
+  }
+
+  const detail = bridgeFailureDetail(
+    started.ok ? status : started,
+    'The connector did not report a reachable local service after start.'
+  );
+  return nativeActionResult('connector_start', 'repair_required', `Mac Access connector could not start. ${detail}`, {
+    sourcePointer: 'native-companion:connector-service-start',
+    auditId: status.auditId ?? started.auditId,
+    auditIds: compactStrings([status.auditId, started.auditId]),
+  });
 }
 
 async function runSetupCheckAction(
@@ -512,13 +553,19 @@ async function createPairingPromptAction(
     deps
   );
   if (!registration.ok) {
+    const detail = bridgeFailureDetail(
+      registration,
+      'The local connector could not register with evaOS. Run setup check, then reconnect Workbench if this repeats.'
+    );
     return nativeActionResult(
       'create_pairing_prompt',
       'repair_required',
-      'Workbench created a pairing code, but the local connector could not register it with evaOS.',
+      `Workbench created a pairing code, but the local connector could not register it with evaOS. ${detail}`,
       {
         sourcePointer: 'native-companion:pairing-registration-failed',
         auditId: registration.auditId,
+        auditIds: compactStrings([registration.auditId]),
+        agentPairingStatus: 'proof_failed',
       }
     );
   }
@@ -557,7 +604,7 @@ async function primeRepairPermission(
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<void> {
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? DEFAULT_BRIDGE_PATHS, existsSync);
+  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
   if (!bridgePath) return;
   if (action === 'accessibility') {
     await runBridgeCommand(bridgePath, ['permissions', 'prime', '--json', '--permission', 'accessibility'], deps);
@@ -601,7 +648,7 @@ export async function runNativeCompanionAction(
   deps: EvaosNativeCompanionStatusDeps = {}
 ): Promise<IEvaosNativeCompanionActionResult> {
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? DEFAULT_BRIDGE_PATHS, existsSync);
+  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
   if (!bridgePath) {
     return nativeActionResult(request.action, 'repair_required', 'Workbench connector tools are not installed.', {
       sourcePointer: 'native-companion:bridge-cli-missing',
@@ -610,10 +657,7 @@ export async function runNativeCompanionAction(
 
   switch (request.action) {
     case 'connector_start':
-      return runCommandAction(request.action, bridgePath, ['connector-service', 'start', '--json'], deps, {
-        successMessage: 'Mac Access connector started. Run setup check to confirm readiness.',
-        failureMessage: 'Mac Access connector could not start.',
-      });
+      return runConnectorStartAction(bridgePath, deps);
     case 'connector_stop':
       return runCommandAction(request.action, bridgePath, ['connector-service', 'stop', '--json'], deps, {
         successMessage: 'Mac Access connector stopped.',
@@ -703,6 +747,22 @@ export async function openNativeCompanionRepairAction(
   };
 }
 
+function defaultBridgePaths(env: NodeJS.ProcessEnv = process.env): string[] {
+  const resourcesPath = readProcessResourcesPath();
+  return compactStrings([
+    env.EVAOS_DESKTOP_BRIDGE_PATH,
+    env.EVAOS_WORKBENCH_BRIDGE_PATH,
+    resourcesPath ? path.join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined,
+    path.resolve(process.cwd(), 'resources', 'Bridge', 'evaos-desktop-bridge'),
+    ...HOMEBREW_BRIDGE_PATHS,
+  ]);
+}
+
+function readProcessResourcesPath(): string | undefined {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: unknown }).resourcesPath;
+  return typeof resourcesPath === 'string' && resourcesPath.trim() ? resourcesPath.trim() : undefined;
+}
+
 function resolveBridgeExecutable(paths: string[], existsSync: (path: string) => boolean): string | undefined {
   return paths.find((path) => existsSync(path));
 }
@@ -721,7 +781,10 @@ async function runBridgeCommand(
     if (stdout) {
       return parseBridgeCommandPayload(stdout);
     }
-    return { ok: false };
+    return {
+      ok: false,
+      errorMessage: readErrorStderr(error) ?? (error instanceof Error ? error.message : undefined),
+    };
   }
 }
 
@@ -729,15 +792,36 @@ function parseBridgeCommandPayload(stdout: string): BridgeCommandResult {
   try {
     const payload = JSON.parse(stdout || '{}') as BridgePayload & Record<string, unknown>;
     const data = payload.data && typeof payload.data === 'object' ? payload.data : payloadDataFromTopLevel(payload);
+    const error = firstBridgeError(payload);
     return {
       ok: payload.ok === true,
       auditId: typeof payload.audit_id === 'string' ? payload.audit_id : undefined,
       data,
       errors: Array.isArray(payload.errors) ? payload.errors : undefined,
+      errorCode: error.code,
+      errorMessage: error.message,
     };
   } catch {
-    return { ok: false };
+    return { ok: false, errorMessage: 'Bridge returned non-JSON output.' };
   }
+}
+
+function firstBridgeError(payload: BridgePayload & Record<string, unknown>): { code?: string; message?: string } {
+  const first = Array.isArray(payload.errors) ? payload.errors[0] : undefined;
+  const nestedError = payload.error && typeof payload.error === 'object' ? payload.error : undefined;
+  const source = first ?? nestedError ?? payload;
+  return {
+    code:
+      readString(source, 'code') ??
+      readString(source, 'error_code') ??
+      readString(source, 'errorCode') ??
+      readString(payload, 'code') ??
+      readString(payload, 'error_code'),
+    message:
+      readString(source, 'message') ??
+      (typeof payload.error === 'string' ? payload.error : undefined) ??
+      readString(payload, 'message'),
+  };
 }
 
 function payloadDataFromTopLevel(payload: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -753,6 +837,41 @@ function readErrorStdout(error: unknown): string | undefined {
   if (typeof stdout === 'string') return stdout;
   if (Buffer.isBuffer(stdout)) return stdout.toString('utf8');
   return undefined;
+}
+
+function readErrorStderr(error: unknown): string | undefined {
+  const stderr = error && typeof error === 'object' ? (error as { stderr?: unknown }).stderr : undefined;
+  if (typeof stderr === 'string') return stderr;
+  if (Buffer.isBuffer(stderr)) return stderr.toString('utf8');
+  return undefined;
+}
+
+function bridgeFailureDetail(result: BridgeCommandResult, fallback: string): string {
+  const code = safeBridgeErrorText(result.errorCode);
+  const message = safeBridgeErrorText(result.errorMessage);
+  if (code && message) return `Bridge error ${code}: ${message}`;
+  if (message) return message;
+  if (code) return `Bridge error ${code}.`;
+  return fallback;
+}
+
+function safeBridgeErrorText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const redacted = value
+    .replace(/https?:\/\/[^\s"')]+/gi, '[redacted-url]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
+    .replace(/\b(?:100|10|172|192)\.[0-9.]+(?::\d+)?\b/g, '[redacted-ip]')
+    .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted-secret]')
+    .replace(
+      /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|token|secret)\b\s*[:=]\s*[^\s,.;)]*/gi,
+      '[redacted-secret]'
+    )
+    .replace(
+      /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|bearer|secret)\b[^\s,.;)]*/gi,
+      '[redacted-secret]'
+    )
+    .trim();
+  return redacted ? redacted.slice(0, 260) : undefined;
 }
 
 async function defaultExecFile(file: string, args: string[], options: { timeout: number }): Promise<ExecFileResult> {

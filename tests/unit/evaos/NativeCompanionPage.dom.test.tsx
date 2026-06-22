@@ -421,14 +421,14 @@ describe('NativeCompanionPage', () => {
         success: true,
         data: {
           action: 'setup_check',
-          status: 'repair_required',
-          message: 'Mac control setup needs repair before evaOS or Hermes can use this Workbench connector.',
+          status: 'succeeded',
+          message: 'Mac control setup check passed. Create a pairing prompt before agent control.',
           sourcePointer: 'native-companion:setup-check',
           auditIds: ['audit-mac', 'audit-control'],
           refreshRecommended: false,
           setup: {
             connectorReady: true,
-            macReady: false,
+            macReady: true,
             controlReady: true,
             iPhoneDeferred: true,
           },
@@ -461,7 +461,7 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Run Setup Check' }));
-    expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent('repair_required');
+    expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent('succeeded');
     expect(screen.getByText('Connector:')).toBeInTheDocument();
     expect(bridgeMocks.runAction).toHaveBeenCalledWith({
       action: 'setup_check',
@@ -881,7 +881,7 @@ describe('NativeCompanionPage', () => {
 
     expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
-    await user.click(screen.getByRole('button', { name: 'Full Access' }));
+    await user.click(screen.getByRole('button', { name: 'Ask Permission' }));
 
     expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent(
       'Agent control could not start.'
@@ -1066,7 +1066,7 @@ describe('NativeCompanionPage', () => {
 
     expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
-    expect(await screen.findAllByText('Pending')).toHaveLength(2);
+    await waitFor(() => expect(screen.getAllByText('Pending')).toHaveLength(2));
     await user.click(screen.getByRole('button', { name: 'Copy Pairing Prompt' }));
     await user.click(screen.getByRole('button', { name: /Run Setup Check/i }));
 

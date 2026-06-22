@@ -186,6 +186,7 @@ export interface IEvaosNativeCompanionStatusView {
     installed: boolean;
     status: IEvaosNativeCompanionStatusValue;
     path?: string;
+    version?: string;
     auditId?: string;
     permissions?: IEvaosNativeCompanionPermissionView;
     readOnly: boolean;

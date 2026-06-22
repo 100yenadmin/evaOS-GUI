@@ -355,6 +355,29 @@ describe('nativeCompanionViewModel', () => {
         hasSelectedCustomer: true,
         actionResult: {
           action: 'create_pairing_prompt',
+          status: 'repair_required',
+          message: 'Workbench created a pairing code, but the local connector could not register it with evaOS.',
+          sourcePointer: 'native-companion:pairing-registration-failed',
+          agentPairingStatus: 'proof_failed',
+          auditIds: [],
+          refreshRecommended: false,
+        },
+      }).nextAction
+    ).toMatchObject({
+      kind: 'run',
+      action: 'setup_check',
+      label: 'Run Setup Check',
+      disabled: false,
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
+        hasSelectedCustomer: true,
+        actionResult: {
+          action: 'create_pairing_prompt',
           status: 'succeeded',
           message: 'Pairing prompt is ready.',
           sourcePointer: 'native-companion:pairing-prompt',
