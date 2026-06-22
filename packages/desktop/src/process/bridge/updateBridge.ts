@@ -16,7 +16,7 @@ import type {
   GitHubReleaseAsset,
 } from '@/common/update/updateTypes';
 import { uuid } from '@/common/utils';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import semver from 'semver';
@@ -85,6 +85,26 @@ function updaterRuntime(): EvaosBetaRuntimeContext {
 const isAllowedAssetName = (name: string) => {
   const ext = path.extname(name);
   return ALLOWED_ASSET_EXTS.has(ext);
+};
+
+const isPathInside = (candidate: string, parent: string): boolean => {
+  const relative = path.relative(parent, candidate);
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+const resolveDownloadedInstallerPath = (filePath: string): string => {
+  const resolved = path.resolve(filePath);
+  const downloadsDir = path.resolve(app.getPath('downloads'));
+  if (!isPathInside(resolved, downloadsDir)) {
+    throw new Error('Update installer path is outside the Downloads folder.');
+  }
+  if (!ALLOWED_ASSET_EXTS.has(path.extname(resolved))) {
+    throw new Error('Update installer file type is not allowed.');
+  }
+  if (!fs.existsSync(resolved)) {
+    throw new Error('Downloaded update installer no longer exists.');
+  }
+  return resolved;
 };
 
 const normalizeTagToSemver = (tag: string): string | null => {
@@ -728,6 +748,27 @@ export function initUpdateBridge(): void {
       }
     }
   );
+
+  ipcBridge.update.openDownloadedFile.provider(async (filePath): Promise<{ success: boolean; msg?: string }> => {
+    try {
+      const resolved = resolveDownloadedInstallerPath(filePath);
+      const message = await shell.openPath(resolved);
+      if (message) return { success: false, msg: message };
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, msg: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcBridge.update.showDownloadedInFolder.provider(async (filePath): Promise<{ success: boolean; msg?: string }> => {
+    try {
+      const resolved = resolveDownloadedInstallerPath(filePath);
+      shell.showItemInFolder(resolved);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, msg: err instanceof Error ? err.message : String(err) };
+    }
+  });
 
   // Auto-updater IPC handlers (electron-updater)
   ipcBridge.autoUpdate.check.provider(

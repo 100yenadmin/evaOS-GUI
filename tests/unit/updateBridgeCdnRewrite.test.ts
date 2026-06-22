@@ -5,12 +5,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 const electronAppMock = vi.hoisted(() => ({
   getVersion: vi.fn(() => '1.0.0'),
   getPath: vi.fn(() => '/test/path'),
   exit: vi.fn(),
   isPackaged: true,
+}));
+
+const electronShellMock = vi.hoisted(() => ({
+  openPath: vi.fn(async () => ''),
+  showItemInFolder: vi.fn(),
 }));
 
 vi.mock('@office-ai/platform', () => ({
@@ -43,6 +51,7 @@ vi.mock('@office-ai/platform', () => ({
 
 vi.mock('electron', () => ({
   app: electronAppMock,
+  shell: electronShellMock,
 }));
 
 vi.mock('electron-updater', () => ({
@@ -170,6 +179,25 @@ const getDownloadHandlers = async () => {
     download: downloadCall[0],
     cancel: cancelCall[0],
     ipcBridge,
+  };
+};
+
+const getDownloadedInstallerHandlers = async () => {
+  vi.resetModules();
+  const { initUpdateBridge } = await import('@process/bridge/updateBridge');
+  const { ipcBridge } = await import('@/common');
+
+  initUpdateBridge();
+
+  const openProvider = vi.mocked(ipcBridge.update.openDownloadedFile.provider);
+  const showProvider = vi.mocked(ipcBridge.update.showDownloadedInFolder.provider);
+  const openCall = openProvider.mock.calls.at(-1);
+  const showCall = showProvider.mock.calls.at(-1);
+  if (!openCall) throw new Error('update.download.open-file handler not registered');
+  if (!showCall) throw new Error('update.download.show-in-folder handler not registered');
+  return {
+    openDownloadedFile: openCall[0],
+    showDownloadedInFolder: showCall[0],
   };
 };
 
@@ -461,6 +489,8 @@ describe('updateBridge manual download reliability', () => {
     vi.resetModules();
     vi.clearAllMocks();
     electronAppMock.isPackaged = true;
+    electronAppMock.getPath.mockImplementation(() => '/test/path');
+    electronShellMock.openPath.mockResolvedValue('');
     process.env.AIONUI_EVAOS_BETA = '0';
   });
 
@@ -543,6 +573,47 @@ describe('updateBridge manual download reliability', () => {
 
     expect(second.success).toBe(true);
     expect(second.data?.downloadId).toBe('second-download');
+  });
+
+  it('opens and reveals downloaded installers only through update-scoped Downloads IPC', async () => {
+    const downloadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-update-downloads-'));
+    const installerPath = path.join(downloadsDir, 'evaOS Workbench Beta-2.1.21-evaos-beta.4-mac-arm64.dmg');
+    fs.writeFileSync(installerPath, '');
+    electronAppMock.getPath.mockImplementation((name: string) => (name === 'downloads' ? downloadsDir : '/test/path'));
+    electronShellMock.openPath.mockResolvedValue('');
+    electronShellMock.showItemInFolder.mockClear();
+
+    try {
+      const { openDownloadedFile, showDownloadedInFolder } = await getDownloadedInstallerHandlers();
+
+      await expect(openDownloadedFile(installerPath)).resolves.toEqual({ success: true });
+      await expect(showDownloadedInFolder(installerPath)).resolves.toEqual({ success: true });
+      expect(electronShellMock.openPath).toHaveBeenCalledWith(installerPath);
+      expect(electronShellMock.showItemInFolder).toHaveBeenCalledWith(installerPath);
+    } finally {
+      fs.rmSync(downloadsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects update installer open requests outside Downloads', async () => {
+    const downloadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-update-downloads-'));
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-update-outside-'));
+    const installerPath = path.join(outsideDir, 'evaOS Workbench Beta-2.1.21-evaos-beta.4-mac-arm64.dmg');
+    fs.writeFileSync(installerPath, '');
+    electronAppMock.getPath.mockImplementation((name: string) => (name === 'downloads' ? downloadsDir : '/test/path'));
+
+    try {
+      const { openDownloadedFile } = await getDownloadedInstallerHandlers();
+
+      await expect(openDownloadedFile(installerPath)).resolves.toMatchObject({
+        success: false,
+        msg: expect.stringContaining('outside the Downloads folder'),
+      });
+      expect(electronShellMock.openPath).not.toHaveBeenCalledWith(installerPath);
+    } finally {
+      fs.rmSync(downloadsDir, { recursive: true, force: true });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });
 

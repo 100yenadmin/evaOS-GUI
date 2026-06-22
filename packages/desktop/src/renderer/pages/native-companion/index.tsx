@@ -47,9 +47,18 @@ const NativeCompanionPage: React.FC = () => {
   const violations = getEvaosNativeCompanionBoundaryViolations();
   const { customerContext, brokerAuthenticated, brokerSessionLoading, refreshBrokerSession } =
     useEvaosBrokeredCustomerContext();
-  const { selectedCustomerId, selectedTarget, refreshTargets } = customerContext;
-  const selectedPairingCustomerId =
-    selectedCustomerId && selectedTarget && isPairableMacControlTarget(selectedTarget) ? selectedCustomerId : undefined;
+  const { selectedCustomerId, selectedTarget, targets = [], isOperator, refreshTargets } = customerContext;
+  const selectedPairingTarget = React.useMemo(
+    () =>
+      selectMacPairingTarget({
+        targets,
+        selectedCustomerId,
+        selectedTarget,
+        isOperator,
+      }),
+    [isOperator, selectedCustomerId, selectedTarget, targets]
+  );
+  const selectedPairingCustomerId = selectedPairingTarget?.customerId;
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
     useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
@@ -74,8 +83,9 @@ const NativeCompanionPage: React.FC = () => {
     status,
     loading,
     error,
-    hasSelectedCustomer: Boolean(selectedCustomerId),
-    hasPairableCustomer: selectedCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
+    hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
+    hasPairableCustomer:
+      selectedCustomerId || selectedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult: currentActionResult,
@@ -89,8 +99,9 @@ const NativeCompanionPage: React.FC = () => {
     status,
     loading,
     error,
-    hasSelectedCustomer: Boolean(selectedCustomerId),
-    hasPairableCustomer: selectedCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
+    hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
+    hasPairableCustomer:
+      selectedCustomerId || selectedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult: currentActionResult,
@@ -274,6 +285,11 @@ const NativeCompanionPage: React.FC = () => {
                   Workbench starts the local connector, then creates a scoped pairing prompt for the agent. The VM must
                   connect through the broker-owned OpenClaw/Hermes plugin path.
                 </p>
+                {selectedPairingTarget ? (
+                  <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>
+                    Pairing target: {selectedPairingTarget.displayName || selectedPairingTarget.customerId}
+                  </p>
+                ) : null}
               </div>
               <Tag color={status?.readiness === 'ready' ? 'green' : 'orange'}>
                 {status?.readiness === 'ready' ? 'Ready' : 'Setup needed'}
@@ -810,6 +826,26 @@ function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): b
 
 function isPairingBrokerSessionRequired(actionResult: IEvaosNativeCompanionActionResult | null): boolean {
   return actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required';
+}
+
+function selectMacPairingTarget(input: {
+  targets: IEvaosCustomerTargetView[];
+  selectedCustomerId: string | undefined;
+  selectedTarget: IEvaosCustomerTargetView | undefined;
+  isOperator?: boolean;
+}): IEvaosCustomerTargetView | undefined {
+  const pairableTargets = input.targets.filter(isPairableMacControlTarget);
+  const selectedTargetFromList = input.selectedCustomerId
+    ? pairableTargets.find((target) => target.customerId === input.selectedCustomerId)
+    : undefined;
+  if (selectedTargetFromList) return selectedTargetFromList;
+  if (input.selectedTarget && isPairableMacControlTarget(input.selectedTarget)) return input.selectedTarget;
+
+  return (
+    pairableTargets.find((target) => target.isDefault) ??
+    (input.isOperator ? pairableTargets.find((target) => target.customerId === 'golden') : undefined) ??
+    pairableTargets[0]
+  );
 }
 
 function isPairableMacControlTarget(target: IEvaosCustomerTargetView): boolean {
