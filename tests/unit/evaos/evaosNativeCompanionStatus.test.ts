@@ -589,7 +589,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(result.pairing?.setupPrompt).toContain('customer_mac_complete_pairing');
     expect(result.pairing?.setupPrompt).not.toMatch(
-      /connector_url|100\.64\.0\.10|8765|Bearer|secret-token|access_token|refresh_token/i
+      /connector[_\s-]?url|connector[_\s-]?token|100\.64\.0\.10|8765|Bearer|secret-token|access_token|refresh_token|ssh|vnc|cdp|browser\s+debug/i
     );
     expect(JSON.stringify(result)).not.toMatch(
       /Bearer|desktop_session|provider_grant|access_token|refresh_token|connectorUrl|secret-token/i

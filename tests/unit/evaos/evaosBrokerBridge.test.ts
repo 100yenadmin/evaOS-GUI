@@ -106,6 +106,35 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     ).toThrow(/renderer-visible secret material/);
   });
 
+  it('allows code-only Mac pairing prompts but rejects connector material inside them', async () => {
+    const { assertEvaosRendererSafePayload } = await loadBrokerBridge();
+
+    expect(() =>
+      assertEvaosRendererSafePayload({
+        pairing: {
+          customerId: 'golden',
+          pairingCode: 'PAIR-1234',
+          setupPrompt:
+            'Please pair my Mac to my evaOS/OpenClaw or Hermes agent.\n' +
+            'Customer: golden\n' +
+            'Pairing code: PAIR-1234\n' +
+            'Use customer_mac_complete_pairing with this code, then run customer_mac_status.',
+        },
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertEvaosRendererSafePayload({
+        pairing: {
+          customerId: 'golden',
+          pairingCode: 'PAIR-1234',
+          setupPrompt:
+            'Customer: golden\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with http://100.64.0.4:8765.',
+        },
+      })
+    ).toThrow(/renderer-visible secret material/);
+  });
+
   it('fails closed when a broker client accidentally returns desktop-session material through IPC', async () => {
     const { initEvaosBrokerBridge, ipcBridge } = await loadBrokerBridge();
     const client = {

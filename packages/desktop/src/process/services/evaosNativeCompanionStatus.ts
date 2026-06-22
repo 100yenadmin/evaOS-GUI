@@ -1182,7 +1182,7 @@ function pairingPromptText(input: { customerId: string; pairingCode: string }): 
       2
     ),
     '',
-    'Do not ask for connector URLs, IP addresses, ports, SSH, VNC, CDP, tokens, or secrets.',
+    'Use only the pairing code above. Do not request any other connection details.',
     '',
     'Do not perform live Mac actions until I start Agent Control in Workbench.',
   ].join('\n');

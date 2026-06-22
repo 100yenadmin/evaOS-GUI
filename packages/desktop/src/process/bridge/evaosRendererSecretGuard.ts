@@ -21,6 +21,9 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
   }
 
   if (typeof value === 'string') {
+    if (isSafePairingSetupPrompt(path, value)) {
+      return;
+    }
     if (containsEvaosSecretMaterial(value)) {
       throwRendererSecretError(path);
     }
@@ -51,6 +54,22 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
 
 function isSafeSecretMetadata(key: string, value: unknown): boolean {
   return SAFE_SECRET_METADATA_KEYS.has(key) && typeof value === 'boolean';
+}
+
+function isSafePairingSetupPrompt(path: string, value: string): boolean {
+  if (path !== '$.pairing.setupPrompt') {
+    return false;
+  }
+  if (
+    !value.includes('customer_mac_complete_pairing') ||
+    !/\bPairing code:\s*[A-Za-z0-9-]+\b/i.test(value) ||
+    !/\bCustomer:\s*[A-Za-z0-9._-]+\b/i.test(value)
+  ) {
+    return false;
+  }
+  return !/https?:\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:localhost|127\.0\.0\.1)\b|connector[_\s-]?url|connector[_\s-]?token|bearer|access[_\s-]?token|refresh[_\s-]?token|desktop[_\s-]?session|provider[_\s-]?grant|ssh|vnc|cdp|browser\s+debug/i.test(
+    value
+  );
 }
 
 function throwRendererSecretError(path: string): never {
