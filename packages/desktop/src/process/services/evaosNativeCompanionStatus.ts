@@ -474,6 +474,19 @@ async function createPairingPromptAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
+  if (!isPairingCapableBridgePath(bridgePath, deps.env)) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'This Workbench build is missing the bundled Mac connector. Install the current Workbench build before creating agent pairing prompts.',
+      {
+        sourcePointer: 'native-companion:pairing-bundled-bridge-required',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        refreshRecommended: false,
+      }
+    );
+  }
+
   const customerId = request.customerId?.trim();
   if (!customerId) {
     return nativeActionResult(
@@ -792,6 +805,22 @@ function readProcessResourcesPath(): string | undefined {
 
 function resolveBridgeExecutable(paths: string[], existsSync: (path: string) => boolean): string | undefined {
   return paths.find((path) => existsSync(path));
+}
+
+function isPairingCapableBridgePath(bridgePath: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (enabledEnvFlag(env.EVAOS_ALLOW_DIAGNOSTIC_BRIDGE_PAIRING)) {
+    return true;
+  }
+  const normalized = bridgePath.replace(/\\/g, '/');
+  return (
+    normalized.endsWith('/Contents/Resources/Bridge/evaos-desktop-bridge') ||
+    normalized.endsWith('/resources/Bridge/evaos-desktop-bridge')
+  );
+}
+
+function enabledEnvFlag(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true';
 }
 
 async function runBridgeCommand(

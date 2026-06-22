@@ -17,6 +17,7 @@ import { EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
 
 const json = (payload: unknown) => JSON.stringify(payload);
 const deviceName = hostname() || 'Customer Mac';
+const bundledBridgePath = '/Applications/evaOS Workbench Beta.app/Contents/Resources/Bridge/evaos-desktop-bridge';
 
 function depsWithResponses(
   responses: Record<string, unknown>,
@@ -24,11 +25,9 @@ function depsWithResponses(
 ): EvaosNativeCompanionStatusDeps {
   return {
     now: () => new Date('2026-06-07T03:45:00.000Z'),
-    bridgePaths: ['/opt/homebrew/bin/evaos-desktop-bridge'],
+    bridgePaths: [bundledBridgePath],
     releasedWorkbenchPath: '/Applications/evaOS.app',
-    existsSync: vi.fn(
-      (path: string) => path === '/opt/homebrew/bin/evaos-desktop-bridge' || path === '/Applications/evaOS.app'
-    ),
+    existsSync: vi.fn((path: string) => path === bundledBridgePath || path === '/Applications/evaOS.app'),
     execFile: vi.fn(async (_file, args) => {
       const key = args.join(' ');
       const payload = responses[key];
@@ -630,6 +629,35 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingStatus: 'ready_for_agent_pairing',
     });
     expect(result.message).toContain('VM-backed Mac-control customer');
+    expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
+    expect(deps.execFile).not.toHaveBeenCalled();
+  });
+
+  it('blocks pairing prompts when the packaged app fell back to a diagnostic Homebrew bridge', async () => {
+    const createCustomerMacEnrollment = vi.fn(async () => ({
+      customerId: 'golden',
+      pairingCode: 'PAIR-1234',
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const deps = depsWithResponses(
+      {},
+      {
+        bridgePaths: ['/opt/homebrew/bin/evaos-desktop-bridge'],
+        existsSync: vi.fn((path: string) => path === '/opt/homebrew/bin/evaos-desktop-bridge'),
+        createCustomerMacEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:pairing-bundled-bridge-required',
+      agentPairingStatus: 'ready_for_agent_pairing',
+    });
+    expect(result.message).toContain('bundled Mac connector');
+    expect(result.pairing).toBeUndefined();
     expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
     expect(deps.execFile).not.toHaveBeenCalled();
   });
