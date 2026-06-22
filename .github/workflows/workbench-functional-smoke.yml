@@ -1,0 +1,181 @@
+name: Workbench Functional Smoke
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: true
+        default: evaos/beta-rc-20260612
+        type: string
+      run_guardrails:
+        description: Run evaOS guardrail audits before packaging
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: workbench-functional-smoke-${{ github.event.inputs.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_INSTALL_REGISTRY: https://registry.npmjs.org/
+  CI: true
+  CSC_IDENTITY_AUTO_DISCOVERY: false
+  EVAOS_BETA_PUBLIC_RELEASE: "false"
+  EVAOS_BETA_REQUIRE_SIGNING: "false"
+  EVAOS_FINALIZE_MAC_DMG: "false"
+  EVAOS_DMG_CODESIGN: "false"
+  ELECTRON_BUILDER_COMPRESSION_LEVEL: "1"
+
+jobs:
+  macos-arm64-app:
+    name: macOS arm64 unpacked app
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Commit info
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHORT="$(git rev-parse --short HEAD)"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Electron artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/.cache/electron
+            ${{ runner.temp }}/.cache/electron-builder
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: workbench-functional-smoke-electron-arm64-${{ hashFiles('package.json', 'bun.lock') }}
+          restore-keys: |
+            workbench-functional-smoke-electron-arm64-
+
+      - name: Install dependencies
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: bun install --frozen-lockfile
+
+      - name: Run postinstall
+        run: bun run postinstall || true
+
+      - name: Rebuild native modules for Electron
+        run: bunx electron-builder install-app-deps
+        env:
+          npm_config_runtime: electron
+          npm_config_disturl: https://electronjs.org/headers
+          ELECTRON_CACHE: ${{ runner.temp }}/.cache/electron
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/.cache/electron-builder
+
+      - name: evaOS guardrail audit
+        if: ${{ inputs.run_guardrails }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/evaosBetaReleaseGate.js audit-config
+          node scripts/evaosUpstreamGuardrailAudit.js
+
+      - name: Build unpacked app only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/build-with-builder.js arm64 --mac dir --arm64
+
+      - name: Verify functional-smoke artifact shape
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find out -type d -name '*.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app produced under out/"
+            find out -maxdepth 3 -print || true
+            exit 1
+          fi
+
+          BRIDGE="$APP_PATH/Contents/Resources/Bridge/evaos-desktop-bridge"
+          BRIDGE_MANIFEST="$APP_PATH/Contents/Resources/Bridge/manifest.json"
+          AIONCORE_DIR="$APP_PATH/Contents/Resources/bundled-aioncore"
+          HUB_DIR="$APP_PATH/Contents/Resources/hub"
+
+          test -x "$BRIDGE"
+          test -f "$BRIDGE_MANIFEST"
+          test -d "$AIONCORE_DIR"
+          test -d "$HUB_DIR"
+
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          BRIDGE_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.version || m.commit || 'unknown')" "$BRIDGE_MANIFEST")"
+
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "bridge_version=$BRIDGE_VERSION" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Workbench Functional Smoke"
+            echo
+            echo "- Ref: \`${{ inputs.ref }}\`"
+            echo "- SHA: \`${{ steps.commit.outputs.sha }}\`"
+            echo "- App path: \`$APP_PATH\`"
+            echo "- Version: \`$VERSION\`"
+            echo "- Bundle ID: \`$BUNDLE_ID\`"
+            echo "- Bridge manifest: \`$BRIDGE_VERSION\`"
+            echo
+            echo "This artifact is intentionally unsigned/unnotarized and contains no DMG or release metadata."
+            echo "Use it for functional proof only. Public release still requires the normal signed/notarized gate."
+            echo
+            echo "### Size"
+            echo '```'
+            du -sh "$APP_PATH" out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Archive unpacked app
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="${{ steps.verify.outputs.app_path }}"
+          ARTIFACT="workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARTIFACT"
+          shasum -a 256 "$ARTIFACT" | tee "$ARTIFACT.sha256"
+
+      - name: Upload functional-smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-functional-smoke-macos-arm64-${{ steps.commit.outputs.short }}
+          path: |
+            workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip
+            workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip.sha256
+          retention-days: 7
