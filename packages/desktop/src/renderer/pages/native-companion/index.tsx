@@ -850,9 +850,10 @@ function selectMacPairingTarget(input: {
 
 function isPairableMacControlTarget(target: IEvaosCustomerTargetView): boolean {
   if (!target.customerId) return false;
+  if (target.targetKind !== 'customer' && target.targetKind !== 'customer_vm') return false;
   if (target.accountOnly === true) return false;
-  if (target.targetKind === 'customer_account') return false;
   if (target.customerId.includes('@')) return false;
+  if (target.displayName?.includes('@')) return false;
   return true;
 }
 
