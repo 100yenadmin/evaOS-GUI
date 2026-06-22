@@ -752,6 +752,55 @@ export class EvaosBrokerSessionClient {
     return sanitizeCustomerMacEnrollment(raw, customerId);
   }
 
+  async completeCustomerMacEnrollment(request: {
+    pairingCode: string;
+    connectorUrl: string;
+    connectorToken: string;
+    deviceName?: string;
+    deviceIdentifier?: string;
+  }): Promise<{
+    ok: boolean;
+    auditId?: string;
+    deviceId?: string;
+    grantId?: string;
+    connectorTokenLast4?: string;
+  }> {
+    const pairingCode = normalizeRequiredText(
+      request.pairingCode,
+      'invalid_customer',
+      'Create a fresh Mac pairing code before registering this connector.'
+    );
+    const connectorUrl = normalizeRequiredText(
+      request.connectorUrl,
+      'invalid_customer',
+      'The local connector URL is unavailable.'
+    );
+    const connectorToken = safeRawSecret(request.connectorToken);
+    if (!connectorToken) {
+      throw new EvaosBrokerSessionError('invalid_customer', 'The local connector token is unavailable.');
+    }
+    const raw = await this.postJsonToEndpoint(this.customerMacControlEndpoint, {
+      action: 'complete_enrollment',
+      enrollment_code: pairingCode,
+      device_name: safeText(request.deviceName) ?? 'Customer Mac',
+      device_identifier: safeText(request.deviceIdentifier),
+      connector_url: connectorUrl,
+      connector_token: connectorToken,
+      tailnet_ip: connectorHostWithoutPort(connectorUrl),
+      capabilities: {
+        connector: 'evaos-desktop-bridge',
+        openclaw_tools: 'enabled',
+        desktop_control: 'full_access_or_ask_permission',
+        iphone_mirroring: 'visible_control_surface',
+      },
+      permission_state: {
+        accessibility: 'check_required',
+        screen_recording: 'check_required',
+      },
+    });
+    return sanitizeCustomerMacEnrollmentCompletion(raw, connectorToken);
+  }
+
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
     const session = this.session;
     this.session = null;
@@ -1053,6 +1102,42 @@ function sanitizeCustomerMacEnrollment(
     pairingCode,
     expiresAt: safeIsoDate(response?.enrollment_expires_at),
   });
+}
+
+function sanitizeCustomerMacEnrollmentCompletion(
+  raw: unknown,
+  connectorToken: string
+): {
+  ok: boolean;
+  auditId?: string;
+  deviceId?: string;
+  grantId?: string;
+  connectorTokenLast4?: string;
+} {
+  const response = asRecord(raw);
+  const device = asRecord(response?.device);
+  const deviceId = safeText(response?.device_id ?? device?.id);
+  const grantId = safeText(response?.grant_id);
+  return stripUndefined({
+    ok: response?.ok === true || Boolean(deviceId),
+    auditId: safeText(response?.audit_id),
+    deviceId,
+    grantId,
+    connectorTokenLast4: safeText(response?.connector_token_last4, 12) ?? connectorToken.slice(-4),
+  });
+}
+
+function connectorHostWithoutPort(connectorUrl: string): string | undefined {
+  try {
+    const parsed = new URL(connectorUrl);
+    const host = parsed.hostname.trim();
+    if (!host || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+      return undefined;
+    }
+    return host;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeDeviceCode(value: string): string {

@@ -500,6 +500,62 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
   });
 
+  it('completes Mac pairing enrollment through the broker without returning connector secrets', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        audit_id: 'audit-complete',
+        device: { id: 'device-golden' },
+        grant_id: 'grant-golden',
+      })
+    );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    const result = await client.completeCustomerMacEnrollment({
+      pairingCode: 'PAIR-1234',
+      connectorUrl: 'http://100.64.0.10:8765',
+      connectorToken: 'secret-token-abcdef1234567890',
+      deviceName: 'Proof Mac',
+      deviceIdentifier: 'Proof-Mac.local',
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      auditId: 'audit-complete',
+      deviceId: 'device-golden',
+      grantId: 'grant-golden',
+      connectorTokenLast4: '7890',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe(EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT);
+    expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBeUndefined();
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'complete_enrollment',
+      enrollment_code: 'PAIR-1234',
+      device_name: 'Proof Mac',
+      device_identifier: 'Proof-Mac.local',
+      connector_url: 'http://100.64.0.10:8765',
+      connector_token: 'secret-token-abcdef1234567890',
+      tailnet_ip: '100.64.0.10',
+      capabilities: {
+        connector: 'evaos-desktop-bridge',
+        openclaw_tools: 'enabled',
+        desktop_control: 'full_access_or_ask_permission',
+        iphone_mirroring: 'visible_control_surface',
+      },
+      permission_state: {
+        accessibility: 'check_required',
+        screen_recording: 'check_required',
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('secret-token-abcdef1234567890');
+  });
+
   it('rejects released Workbench loopback callback paths for the evaOS beta session importer', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({

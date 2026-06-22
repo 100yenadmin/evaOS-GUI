@@ -6,8 +6,8 @@
 
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
-import { hostname } from 'node:os';
-import path from 'node:path';
+import { homedir, hostname } from 'node:os';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   IEvaosNativeCompanionActionRequest,
@@ -56,6 +56,20 @@ export type EvaosNativeCompanionStatusDeps = {
     customerId: string;
     deviceName?: string;
   }) => Promise<{ customerId: string; pairingCode: string; expiresAt?: string }>;
+  completeCustomerMacEnrollment?: (request: {
+    pairingCode: string;
+    connectorUrl: string;
+    connectorToken: string;
+    deviceName?: string;
+    deviceIdentifier?: string;
+  }) => Promise<{
+    ok: boolean;
+    auditId?: string;
+    deviceId?: string;
+    grantId?: string;
+    connectorTokenLast4?: string;
+  }>;
+  readTextFile?: (path: string) => string;
 };
 
 type BridgePayload = {
@@ -548,21 +562,12 @@ async function createPairingPromptAction(
     }
     throw error;
   }
-  const registration = await runBridgeCommand(
-    bridgePath,
-    [
-      'connector-service',
-      'complete-enrollment',
-      '--json',
-      '--enrollment-code',
-      enrollment.pairingCode,
-      '--customer-id',
-      enrollment.customerId,
-      '--device-name',
-      deviceName,
-    ],
-    deps
-  );
+  const registration = await completeLocalConnectorEnrollment({
+    enrollment,
+    connectorStatus: connector,
+    deviceName,
+    deps,
+  });
   if (!registration.ok) {
     const detail = bridgeFailureDetail(
       registration,
@@ -602,6 +607,72 @@ async function createPairingPromptAction(
       refreshRecommended: false,
     }
   );
+}
+
+async function completeLocalConnectorEnrollment(input: {
+  enrollment: { customerId: string; pairingCode: string; expiresAt?: string };
+  connectorStatus: BridgeCommandResult;
+  deviceName: string;
+  deps: EvaosNativeCompanionStatusDeps;
+}): Promise<BridgeCommandResult> {
+  const connectorUrl = connectorUrlFromStatus(input.connectorStatus.data);
+  if (!connectorUrl) {
+    return {
+      ok: false,
+      errorCode: 'connector_url_unavailable',
+      errorMessage: 'The local connector did not report a usable tailnet address.',
+    };
+  }
+  const tokenPath = connectorTokenPathFromStatus(input.connectorStatus.data);
+  const connectorToken = readConnectorToken(tokenPath, input.deps);
+  if (!connectorToken) {
+    return {
+      ok: false,
+      errorCode: 'connector_token_unavailable',
+      errorMessage: 'The local connector token is unavailable.',
+    };
+  }
+
+  const completeEnrollment =
+    input.deps.completeCustomerMacEnrollment ??
+    ((request) => getDefaultEvaosBrokerSessionClient().completeCustomerMacEnrollment(request));
+  try {
+    const result = await completeEnrollment({
+      pairingCode: input.enrollment.pairingCode,
+      connectorUrl,
+      connectorToken,
+      deviceName: input.deviceName,
+      deviceIdentifier: hostname() || input.deviceName,
+    });
+    return {
+      ok: result.ok,
+      auditId: result.auditId,
+      data: {
+        action: 'complete-enrollment',
+        connector_registered: result.ok,
+        customer_id: input.enrollment.customerId,
+        device_id: result.deviceId,
+        grant_id: result.grantId,
+        connector_token_last4: result.connectorTokenLast4,
+        raw_secrets_returned: false,
+      },
+      errorCode: result.ok ? undefined : 'broker_complete_enrollment_failed',
+      errorMessage: result.ok ? undefined : 'The evaOS broker did not confirm local connector registration.',
+    };
+  } catch (error) {
+    if (isBrokerSessionReconnectRequired(error)) {
+      return {
+        ok: false,
+        errorCode: 'broker_session_required',
+        errorMessage: 'The evaOS broker denied this desktop session. Sign in again.',
+      };
+    }
+    return {
+      ok: false,
+      errorCode: 'broker_complete_enrollment_failed',
+      errorMessage: error instanceof Error ? error.message : 'The evaOS broker could not register this connector.',
+    };
+  }
 }
 
 function isBrokerSessionReconnectRequired(error: unknown): boolean {
@@ -763,8 +834,8 @@ function defaultBridgePaths(env: NodeJS.ProcessEnv = process.env): string[] {
   return compactStrings([
     env.EVAOS_DESKTOP_BRIDGE_PATH,
     env.EVAOS_WORKBENCH_BRIDGE_PATH,
-    resourcesPath ? path.join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined,
-    path.resolve(process.cwd(), 'resources', 'Bridge', 'evaos-desktop-bridge'),
+    resourcesPath ? join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined,
+    resolve(process.cwd(), 'resources', 'Bridge', 'evaos-desktop-bridge'),
     ...HOMEBREW_BRIDGE_PATHS,
   ]);
 }
@@ -957,6 +1028,47 @@ function connectorServiceIsRunning(input: unknown): boolean {
   return readBoolean(input, 'running') === true && readNestedBoolean(input, ['health', 'reachable']) === true;
 }
 
+function connectorUrlFromStatus(input: unknown): string | undefined {
+  const rawHost = readNestedString(input, ['health', 'host']) ?? readString(input, 'tailnet_ip');
+  if (!rawHost) return undefined;
+  const host = rawHost
+    .replace(/^https?:\/\//i, '')
+    .split('/')[0]
+    ?.trim();
+  if (!host || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return undefined;
+  const port = readNestedNumber(input, ['health', 'port']) ?? 8765;
+  if (host.includes(':')) {
+    return `http://${host}`;
+  }
+  return `http://${host}:${port}`;
+}
+
+function connectorTokenPathFromStatus(input: unknown): string {
+  const reported = readString(input, 'token_path');
+  if (reported) {
+    return expandHomePath(reported);
+  }
+  return join(homedir(), 'Library', 'Application Support', 'evaos-desktop-bridge', 'connector.token');
+}
+
+function readConnectorToken(tokenPath: string, deps: EvaosNativeCompanionStatusDeps): string | undefined {
+  try {
+    const readTextFile = deps.readTextFile ?? ((filePath: string) => fs.readFileSync(filePath, 'utf8'));
+    const token = readTextFile(tokenPath).trim();
+    return token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function expandHomePath(input: string): string {
+  if (input === '~') return homedir();
+  if (input.startsWith('~/')) {
+    return join(homedir(), input.slice(2));
+  }
+  return input;
+}
+
 function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {
   return mode === 'ask-permission' ? 'ask-permission' : 'full-access';
 }
@@ -1070,7 +1182,7 @@ function pairingPromptText(input: { customerId: string; pairingCode: string }): 
       2
     ),
     '',
-    'Do not ask for connector URLs, IP addresses, ports, SSH, VNC, CDP, tokens, or secrets.',
+    'Use only the pairing code above. Do not request any other connection details.',
     '',
     'Do not perform live Mac actions until I start Agent Control in Workbench.',
   ].join('\n');
@@ -1095,6 +1207,15 @@ function readNestedBoolean(input: unknown, path: string[]): boolean | undefined 
     current = (current as Record<string, unknown>)[key];
   }
   return typeof current === 'boolean' ? current : undefined;
+}
+
+function readNestedNumber(input: unknown, path: string[]): number | undefined {
+  let current = input;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'number' && Number.isFinite(current) ? current : undefined;
 }
 
 function readString(input: unknown, key: string): string | undefined {
