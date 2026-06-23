@@ -66,7 +66,7 @@ import type {
 import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { EVAOS_BETA_IDENTITY } from '../evaosBetaSafety';
 import {
   EVAOS_PIPEDREAM_PROVIDER_KEYS,
@@ -87,6 +87,8 @@ const PROVIDER_CONNECTION_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 type EvaosBusinessBrowserActionKind = 'runtime_launch' | 'browser_open_url' | 'browser_stop';
 const RELEASED_WORKBENCH_KEYCHAIN_SERVICE = 'com.electricsheephq.EvaDesktop.session';
 const RELEASED_WORKBENCH_KEYCHAIN_ACCOUNT = 'desktop-session';
+const EVAOS_DESKTOP_SESSION_FILE = 'evaos-desktop-session.v1.enc';
+const LEGACY_BETA_USER_DATA_DIR_NAME = 'evaOS Workbench Beta';
 
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
@@ -1402,6 +1404,8 @@ type ElectronAppApi = {
   isPackaged?: boolean;
 };
 
+type ElectronSessionStorageApis = { app: ElectronAppApi; safeStorage: ElectronSafeStorageApi };
+
 type MacCodeSignatureInfo = {
   adhoc: boolean;
   teamIdentifier: string | null;
@@ -1410,6 +1414,13 @@ type MacCodeSignatureInfo = {
 type MacCodeSignatureInspector = (executablePath: string) => MacCodeSignatureInfo | null;
 
 let defaultBetaSafeStorageSkipCache: { executablePath: string; skip: boolean } | null = null;
+let electronSessionStorageApiLoaderForTest: (() => ElectronSessionStorageApis | null) | null = null;
+
+export function setEvaosElectronSessionStorageApiLoaderForTest(
+  loader: (() => ElectronSessionStorageApis | null) | null
+): void {
+  electronSessionStorageApiLoaderForTest = loader;
+}
 
 function createDefaultBetaSessionStore(
   enabled: boolean,
@@ -1460,8 +1471,10 @@ function withDefaultBetaSessionStore<T>(
     return null;
   }
 
-  const sessionPath = join(electron.app.getPath('userData'), 'evaos-desktop-session.v1.enc');
-  return operation(createEncryptedFileSessionStore(sessionPath, electron.safeStorage));
+  const userDataPath = electron.app.getPath('userData');
+  const sessionPath = join(userDataPath, EVAOS_DESKTOP_SESSION_FILE);
+  const legacyBetaSessionPath = legacyBetaSessionFilePath(userDataPath);
+  return operation(createMigratingEncryptedFileSessionStore(sessionPath, legacyBetaSessionPath, electron.safeStorage));
 }
 
 function shouldSkipDefaultBetaSafeStorageForElectronApp(
@@ -1558,7 +1571,11 @@ function inspectMacCodeSignature(executablePath: string): MacCodeSignatureInfo |
   };
 }
 
-function loadElectronSessionStorageApis(): { app: ElectronAppApi; safeStorage: ElectronSafeStorageApi } | null {
+function loadElectronSessionStorageApis(): ElectronSessionStorageApis | null {
+  if (electronSessionStorageApiLoaderForTest) {
+    return electronSessionStorageApiLoaderForTest();
+  }
+
   try {
     // Keep this lazy so unit tests can instantiate the broker client outside Electron.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -1601,6 +1618,63 @@ function createEncryptedFileSessionStore(
       }
     },
   };
+}
+
+function createMigratingEncryptedFileSessionStore(
+  primaryPath: string,
+  legacyBetaPath: string | null,
+  safeStorage: ElectronSafeStorageApi
+): EvaosDesktopSessionStore {
+  const primaryStore = createEncryptedFileSessionStore(primaryPath, safeStorage);
+  const legacyBetaStore =
+    legacyBetaPath && legacyBetaPath !== primaryPath
+      ? createEncryptedFileSessionStore(legacyBetaPath, safeStorage)
+      : null;
+
+  return {
+    load: () => {
+      const primary = loadEncryptedSessionStoreSafely(primaryStore);
+      if (normalizeLegacyWorkbenchSession(primary)) {
+        return primary;
+      }
+
+      const legacyBeta = legacyBetaStore ? loadEncryptedSessionStoreSafely(legacyBetaStore) : null;
+      const normalizedLegacyBeta = normalizeLegacyWorkbenchSession(legacyBeta);
+      if (!normalizedLegacyBeta) {
+        return null;
+      }
+
+      try {
+        primaryStore.save(normalizedLegacyBeta);
+      } catch {
+        // The session can still be used in memory for this run; persistence will retry on the next save.
+      }
+      return legacyBeta;
+    },
+    save: (session: EvaosDesktopSession) => {
+      primaryStore.save(session);
+    },
+    clear: () => {
+      primaryStore.clear();
+      legacyBetaStore?.clear();
+    },
+  };
+}
+
+function loadEncryptedSessionStoreSafely(store: EvaosDesktopSessionStore): unknown {
+  try {
+    return store.load();
+  } catch {
+    return null;
+  }
+}
+
+function legacyBetaSessionFilePath(userDataPath: string): string | null {
+  const currentDir = basename(userDataPath);
+  if (!currentDir || currentDir === LEGACY_BETA_USER_DATA_DIR_NAME) {
+    return null;
+  }
+  return join(dirname(userDataPath), LEGACY_BETA_USER_DATA_DIR_NAME, EVAOS_DESKTOP_SESSION_FILE);
 }
 
 function normalizeLegacyWorkbenchSession(value: unknown): EvaosDesktopSession | null {
