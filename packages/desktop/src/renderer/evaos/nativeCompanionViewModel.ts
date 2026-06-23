@@ -117,15 +117,8 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   if (!status) return 'offline';
   const haystack = statusText(status, error);
 
+  if (macPairingPrerequisitesReady(status)) return 'ready';
   if (hasBlockingReadinessActionResult(input.actionResult) || hasBlockingStatusError(status)) return 'repair_required';
-  if (
-    status.readiness === 'ready' &&
-    connectorServiceReady(status) &&
-    permissionsReady(status) &&
-    status.pairingCapable !== false
-  ) {
-    return 'ready';
-  }
   if (!status.releasedWorkbench.installed && !status.bridgeCli.installed) return 'unsupported';
   if (PAIRING_PATTERN.test(haystack)) return 'not_paired';
   if (permissionsNeedRepair(status.bridgeCli.permissions) || permissionsNeedRepair(status.customerMac.permissions)) {
@@ -470,7 +463,7 @@ function nextActionForState(
     };
   }
 
-  if (hasBlockingReadinessActionResult(actionResult)) {
+  if (hasBlockingReadinessActionResult(actionResult) && !macPairingPrerequisitesReady(status)) {
     return {
       kind: 'run',
       action: 'setup_check',
@@ -669,9 +662,18 @@ function canCreatePairingPrompt(
   if (status.pairingCapable === false) return false;
   if (input.brokerSessionLoading || input.brokerAuthenticated === false) return false;
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') return false;
-  if (hasBlockingReadinessActionResult(input.actionResult)) return false;
+  if (hasBlockingReadinessActionResult(input.actionResult) && !macPairingPrerequisitesReady(status)) return false;
   if (!status.bridgeCli.installed) return false;
   return connectorServiceReady(status) && permissionsReady(status);
+}
+
+function macPairingPrerequisitesReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  return (
+    status?.readiness === 'ready' &&
+    connectorServiceReady(status) &&
+    permissionsReady(status) &&
+    status.pairingCapable !== false
+  );
 }
 
 function hasBlockingStatusError(status: IEvaosNativeCompanionStatusView): boolean {

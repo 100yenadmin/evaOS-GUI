@@ -504,4 +504,48 @@ describe('nativeCompanionViewModel', () => {
       disabled: false,
     });
   });
+
+  it('does not let a stale failed repair action override current ready permission proof', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+      actionResult: {
+        action: 'setup_check',
+        status: 'repair_required',
+        message: 'Mac control setup needs repair before evaOS or Hermes can use this Workbench connector.',
+        sourcePointer: 'native-companion:setup-check',
+        auditIds: [],
+        refreshRecommended: false,
+      },
+    });
+
+    expect(viewModel.state).toBe('ready');
+    expect(viewModel.readinessStrip.find((item) => item.label === 'Permissions')).toMatchObject({
+      value: 'Granted',
+      tone: 'ready',
+    });
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      disabled: false,
+    });
+  });
 });
