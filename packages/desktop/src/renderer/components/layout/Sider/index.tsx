@@ -59,6 +59,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { jobs: cronJobs } = useAllCronJobs();
   const evaosSidebarState = useEvaosSidebarState();
   const [brokerSignInError, setBrokerSignInError] = useState<string | null>(null);
+  const [brokerSignInMessage, setBrokerSignInMessage] = useState<string | null>(null);
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/evaos');
@@ -156,11 +157,16 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     cleanupSiderTooltips();
     blurActiveElement();
     setBrokerSignInError(null);
+    setBrokerSignInMessage(null);
     try {
       const response = await evaosBroker.beginDesktopAuth.invoke();
       if (!response.success) {
         setBrokerSignInError(response.msg || 'evaOS sign-in could not start. Check the desktop broker connection.');
+        return;
       }
+      setBrokerSignInMessage(
+        response.data?.message || 'Sign-in opened in your browser. Finish sign-in, then return here.'
+      );
     } catch (error) {
       setBrokerSignInError(getEvaosBrokerSignInError(error));
       console.error('evaOS broker sign-in failed:', error);
@@ -172,6 +178,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     blurActiveElement();
     closePreview();
     setBrokerSignInError(null);
+    setBrokerSignInMessage(null);
     try {
       const response = await evaosBroker.revokeSession.invoke();
       if (!response.success) {
@@ -412,6 +419,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         showSignIn={showBrokerSignIn}
         onSignInClick={handleBeginDesktopAuth}
         signInError={brokerSignInError}
+        signInMessage={brokerSignInMessage}
       />
     </div>
   );

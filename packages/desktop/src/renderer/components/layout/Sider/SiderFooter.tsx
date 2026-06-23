@@ -116,6 +116,7 @@ interface SiderFooterProps {
   showSignIn?: boolean;
   onSignInClick?: () => void;
   signInError?: string | null;
+  signInMessage?: string | null;
 }
 
 const SiderFooter: React.FC<SiderFooterProps> = ({
@@ -138,6 +139,7 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   showSignIn = false,
   onSignInClick,
   signInError,
+  signInMessage,
 }) => {
   const { t } = useTranslation();
   const footerRef = useRef<HTMLDivElement | null>(null);
@@ -324,6 +326,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             </Tooltip>
             {!collapsed && signInError ? (
               <div className='collapsed-hidden px-8px text-10px leading-14px text-warning-6'>{signInError}</div>
+            ) : null}
+            {!collapsed && !signInError && signInMessage ? (
+              <div className='collapsed-hidden px-8px text-10px leading-14px text-t-secondary'>{signInMessage}</div>
             ) : null}
           </div>
         )}

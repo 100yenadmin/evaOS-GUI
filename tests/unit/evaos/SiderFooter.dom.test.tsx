@@ -58,6 +58,14 @@ describe('SiderFooter auth controls', () => {
     expect(onSignInClick).toHaveBeenCalledTimes(1);
   });
 
+  it('shows successful broker sign-in handoff feedback', () => {
+    render(
+      <SiderFooter {...baseProps} showSignIn onSignInClick={vi.fn()} signInMessage='Sign-in opened in your browser.' />
+    );
+
+    expect(screen.getByText('Sign-in opened in your browser.')).toBeInTheDocument();
+  });
+
   it('starts broker sign-out from the rendered footer button', async () => {
     const user = userEvent.setup();
     const onLogoutClick = vi.fn();

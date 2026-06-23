@@ -5,6 +5,9 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 const electronMock = vi.hoisted(() => ({
   app: {
@@ -28,6 +31,7 @@ import {
   EVAOS_DESKTOP_RUNTIME_SESSION_ENDPOINT,
   EvaosBrokerSessionClient,
   EvaosBrokerSessionError,
+  setEvaosElectronSessionStorageApiLoaderForTest,
   shouldSkipDefaultBetaSafeStorageForMacApp,
   type EvaosBrokerFetch,
   type EvaosDesktopSessionStore,
@@ -97,6 +101,7 @@ describe('EvaosBrokerSessionClient', () => {
     electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(false);
     electronMock.safeStorage.encryptString.mockImplementation((plainText: string) => Buffer.from(plainText));
     electronMock.safeStorage.decryptString.mockImplementation((encrypted: Buffer) => encrypted.toString('utf8'));
+    setEvaosElectronSessionStorageApiLoaderForTest(null);
   });
 
   it('fails closed without calling the broker when no desktop session exists', async () => {
@@ -373,6 +378,67 @@ describe('EvaosBrokerSessionClient', () => {
 
     expect(client.getSessionStatus()).toMatchObject({ state: 'missing', source: 'none' });
     expect(store.cleared).toBe(1);
+  });
+
+  it('adopts the beta encrypted desktop session after the stable Workbench identity rename', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evaos-stable-session-'));
+    const stableUserData = join(root, 'evaOS Workbench');
+    const betaUserData = join(root, 'evaOS Workbench Beta');
+    const betaSessionPath = join(betaUserData, 'evaos-desktop-session.v1.enc');
+    const stableSessionPath = join(stableUserData, 'evaos-desktop-session.v1.enc');
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    try {
+      mkdirSync(betaUserData, { recursive: true });
+      writeFileSync(
+        betaSessionPath,
+        Buffer.from(
+          JSON.stringify({
+            accessToken: 'eds_beta_identity_session_secret_for_test',
+            userEmail: 'admin@100yen.org',
+            expiresAt: FUTURE,
+          })
+        ),
+        { mode: 0o600 }
+      );
+
+      process.env.AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE = '1';
+      electronMock.app.isReady.mockReturnValue(true);
+      electronMock.app.getPath.mockImplementation((name: string) =>
+        name === 'exe' ? '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench' : stableUserData
+      );
+      electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(true);
+      setEvaosElectronSessionStorageApiLoaderForTest(() => ({
+        app: electronMock.app,
+        safeStorage: electronMock.safeStorage,
+      }));
+
+      const client = new EvaosBrokerSessionClient({
+        fetchImpl,
+        now: () => NOW,
+      });
+
+      expect(client.getSessionStatus()).toMatchObject({
+        state: 'authenticated',
+        source: 'beta-storage',
+        userEmail: 'admin@100yen.org',
+      });
+      expect(JSON.stringify(client.getSessionStatus())).not.toContain('eds_beta_identity_session_secret_for_test');
+      expect(existsSync(stableSessionPath)).toBe(true);
+      expect(readFileSync(stableSessionPath, 'utf8')).toContain('eds_beta_identity_session_secret_for_test');
+      expect(existsSync(betaSessionPath)).toBe(true);
+
+      await client.revokeSession();
+
+      expect(existsSync(stableSessionPath)).toBe(false);
+      expect(existsSync(betaSessionPath)).toBe(false);
+      expect(requestBody(fetchImpl.mock.calls[0])).toEqual({ action: 'revoke_desktop_session' });
+    } finally {
+      delete process.env.AIONUI_EVAOS_ALLOW_ADHOC_SAFE_STORAGE;
+      setEvaosElectronSessionStorageApiLoaderForTest(null);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('rotates a renderer-safe session key for same-account desktop session handoffs', async () => {
