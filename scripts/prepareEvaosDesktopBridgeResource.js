@@ -45,14 +45,18 @@ function isMutableBridgeSourceRef(ref) {
 }
 
 function sourceCandidates() {
-  if (process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES === '1') {
-    return [process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR].filter(Boolean);
+  if (process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR) {
+    return [process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR];
   }
-  return [
-    process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR,
-    path.resolve(projectRoot, '..', 'evaos-desktop-bridge'),
-    '/Volumes/LEXAR/repos/evaos-desktop-bridge',
-  ].filter(Boolean);
+  if (process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES === '1') {
+    return [];
+  }
+  if (process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF) {
+    return [];
+  }
+  return [path.resolve(projectRoot, '..', 'evaos-desktop-bridge'), '/Volumes/LEXAR/repos/evaos-desktop-bridge'].filter(
+    Boolean
+  );
 }
 
 function resolveBridgeSourceDir() {
@@ -224,11 +228,8 @@ function findOnPath(command) {
   }
 }
 
-function writeWrapper() {
-  const wrapperPath = path.join(bridgeResourceDir, 'evaos-desktop-bridge');
-  fs.writeFileSync(
-    wrapperPath,
-    `#!/bin/sh
+function bridgeWrapperScript() {
+  return `#!/bin/sh
 set -eu
 
 BRIDGE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -250,12 +251,19 @@ if [ -z "$PYTHON_BIN" ]; then
   exit 127
 fi
 
-export PYTHONPATH="$BRIDGE_DIR/src\${PYTHONPATH:+:$PYTHONPATH}"
+unset PYTHONHOME
+unset PYTHONUSERBASE
+export PYTHONNOUSERSITE=1
+export PYTHONPATH="$BRIDGE_DIR/src"
 export PATH="$BRIDGE_DIR/bin:$PATH"
 export PYTHONDONTWRITEBYTECODE=1
-exec "$PYTHON_BIN" -m evaos_desktop_bridge.cli "$@"
-`
-  );
+exec "$PYTHON_BIN" -S -m evaos_desktop_bridge.cli "$@"
+`;
+}
+
+function writeWrapper() {
+  const wrapperPath = path.join(bridgeResourceDir, 'evaos-desktop-bridge');
+  fs.writeFileSync(wrapperPath, bridgeWrapperScript());
   fs.chmodSync(wrapperPath, 0o755);
 }
 
@@ -368,5 +376,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  bridgeWrapperScript,
   resolveBridgeSourceDir,
+  sourceCandidates,
 };
