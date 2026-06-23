@@ -195,6 +195,27 @@ exit 127
   return helperPath;
 }
 
+function writePeekabooFallbackWrapper(targetDir) {
+  const peekabooPath = path.join(targetDir, 'peekaboo');
+  fs.writeFileSync(
+    peekabooPath,
+    `#!/bin/sh
+set -eu
+
+for candidate in /opt/homebrew/bin/peekaboo /usr/local/bin/peekaboo; do
+  if [ -x "$candidate" ]; then
+    exec "$candidate" "$@"
+  fi
+done
+
+echo "peekaboo: bundled helper binary was not found. Rebuild evaOS Workbench with Bridge/bin/peekaboo or install the Workbench connector package." >&2
+exit 127
+`
+  );
+  fs.chmodSync(peekabooPath, 0o755);
+  return peekabooPath;
+}
+
 function findOnPath(command) {
   try {
     return execFileSync('which', [command], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -323,7 +344,9 @@ function main() {
   copyDirectory(bridgePackageSource, bridgePackageTarget);
   removePycache(bridgeResourceDir);
   writeWrapper();
-  copyOptionalBinary('peekaboo', bridgeBinDir);
+  if (!copyOptionalBinary('peekaboo', bridgeBinDir)) {
+    writePeekabooFallbackWrapper(bridgeBinDir);
+  }
   writeConnectorHelperWrapper(bridgeBinDir);
 
   const manifest = {

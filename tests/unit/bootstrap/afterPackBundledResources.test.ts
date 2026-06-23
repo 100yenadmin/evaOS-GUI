@@ -35,8 +35,11 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean } 
   const bridgeDir = join(resourcesDir, 'Bridge');
   mkdirSync(join(bridgeDir, 'bin'), { recursive: true });
   const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
+  const peekabooPath = join(bridgeDir, 'bin', 'peekaboo');
   writeFileSync(bridgePath, '#!/bin/sh\nexit 0\n');
   chmodSync(bridgePath, 0o755);
+  writeFileSync(peekabooPath, '#!/bin/sh\nexit 0\n');
+  chmodSync(peekabooPath, 0o755);
   writeFileSync(join(bridgeDir, 'manifest.json'), '{"placeholder":false}\n');
   if (options.helper) {
     const helperPath = join(bridgeDir, 'bin', 'evaos-connector-helper');
@@ -99,5 +102,13 @@ describe('afterPack bundled resource verification', () => {
     writeBridgeFixture(resourcesDir, { helper: true });
 
     expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
+  });
+
+  it('requires the evaOS connector binary in macOS bridge resources', () => {
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true });
+    rmSync(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'), { force: true });
+
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(/Bridge\/bin\/peekaboo/);
   });
 });

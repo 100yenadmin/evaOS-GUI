@@ -19,7 +19,7 @@ on:
       bridge_ref:
         description: evaos-desktop-bridge ref to bundle
         required: false
-        default: d58e543084ae4d103a4a60f2858b5fdb18a209f8
+        default: 67660d5f223267e1f6f32c4d56829f0028e61c06
         type: string
 
 concurrency:
@@ -141,12 +141,14 @@ jobs:
           fi
 
           BRIDGE="$APP_PATH/Contents/Resources/Bridge/evaos-desktop-bridge"
+          BRIDGE_PEEKABOO="$APP_PATH/Contents/Resources/Bridge/bin/peekaboo"
           BRIDGE_HELPER="$APP_PATH/Contents/Resources/Bridge/bin/evaos-connector-helper"
           BRIDGE_MANIFEST="$APP_PATH/Contents/Resources/Bridge/manifest.json"
           AIONCORE_DIR="$APP_PATH/Contents/Resources/bundled-aioncore"
           HUB_DIR="$APP_PATH/Contents/Resources/hub"
 
           test -x "$BRIDGE"
+          test -x "$BRIDGE_PEEKABOO"
           test -x "$BRIDGE_HELPER"
           test -f "$BRIDGE_MANIFEST"
           test -d "$AIONCORE_DIR"
