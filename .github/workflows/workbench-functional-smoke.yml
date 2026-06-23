@@ -120,6 +120,7 @@ jobs:
         env:
           EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES: '1'
           EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ env.WORKBENCH_SMOKE_BRIDGE_REF }}
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
         run: |
           set -euo pipefail
           echo "NODE_OPTIONS=${NODE_OPTIONS:-}"
