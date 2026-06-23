@@ -834,6 +834,7 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
 
     expect(await screen.findByText('Choose a Mac-control customer')).toBeInTheDocument();
+    expect(screen.getByText('Setup needed')).toBeInTheDocument();
     expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Choose Mac target');
     expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
 

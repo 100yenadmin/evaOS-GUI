@@ -107,6 +107,8 @@ const NativeCompanionPage: React.FC = () => {
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
+  const guidedSetupReady =
+    canCreatePairingPrompt || agentPairingStatus === 'pairing_prompt_created' || agentPairingStatus === 'agent_paired';
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
@@ -291,9 +293,7 @@ const NativeCompanionPage: React.FC = () => {
                   </p>
                 ) : null}
               </div>
-              <Tag color={status?.readiness === 'ready' ? 'green' : 'orange'}>
-                {status?.readiness === 'ready' ? 'Ready' : 'Setup needed'}
-              </Tag>
+              <Tag color={guidedSetupReady ? 'green' : 'orange'}>{guidedSetupReady ? 'Ready' : 'Setup needed'}</Tag>
             </div>
 
             <div className='mt-12px rounded-8px bg-fill-1 p-12px'>

@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const afterPack = require('../../../scripts/afterPack.js') as {
   verifyBundledResources: (resourcesDir: string, electronPlatformName: string, targetArch: string) => void;
+  verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string) => void;
 };
 
 const tempDirs: string[] = [];
@@ -28,6 +29,23 @@ function writeRuntimeFixture(resourcesDir: string, runtimeKey: string, options: 
     writeFileSync(nodePath, '');
   }
   return runtimeDir;
+}
+
+function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean } = {}): void {
+  const bridgeDir = join(resourcesDir, 'Bridge');
+  mkdirSync(join(bridgeDir, 'bin'), { recursive: true });
+  const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
+  const peekabooPath = join(bridgeDir, 'bin', 'peekaboo');
+  writeFileSync(bridgePath, '#!/bin/sh\nexit 0\n');
+  chmodSync(bridgePath, 0o755);
+  writeFileSync(peekabooPath, '#!/bin/sh\nexit 0\n');
+  chmodSync(peekabooPath, 0o755);
+  writeFileSync(join(bridgeDir, 'manifest.json'), '{"placeholder":false}\n');
+  if (options.helper) {
+    const helperPath = join(bridgeDir, 'bin', 'evaos-connector-helper');
+    writeFileSync(helperPath, '#!/bin/sh\nexit 0\n');
+    chmodSync(helperPath, 0o755);
+  }
 }
 
 afterEach(() => {
@@ -68,5 +86,29 @@ describe('afterPack bundled resource verification', () => {
     });
 
     expect(() => afterPack.verifyBundledResources(resourcesDir, 'win32', 'x64')).not.toThrow();
+  });
+
+  it('requires the evaOS connector helper in macOS bridge resources', () => {
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir);
+
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
+      /Bridge\/bin\/evaos-connector-helper/
+    );
+  });
+
+  it('accepts macOS bridge resources that include the connector helper', () => {
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true });
+
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
+  });
+
+  it('requires the evaOS connector binary in macOS bridge resources', () => {
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true });
+    rmSync(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'), { force: true });
+
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(/Bridge\/bin\/peekaboo/);
   });
 });

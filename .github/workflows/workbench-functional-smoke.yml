@@ -19,7 +19,7 @@ on:
       bridge_ref:
         description: evaos-desktop-bridge ref to bundle
         required: false
-        default: d58e543084ae4d103a4a60f2858b5fdb18a209f8
+        default: 8cdc02cee0f1e5d53ae430a942848c721762b00a
         type: string
 
 concurrency:
@@ -141,11 +141,15 @@ jobs:
           fi
 
           BRIDGE="$APP_PATH/Contents/Resources/Bridge/evaos-desktop-bridge"
+          BRIDGE_PEEKABOO="$APP_PATH/Contents/Resources/Bridge/bin/peekaboo"
+          BRIDGE_HELPER="$APP_PATH/Contents/Resources/Bridge/bin/evaos-connector-helper"
           BRIDGE_MANIFEST="$APP_PATH/Contents/Resources/Bridge/manifest.json"
           AIONCORE_DIR="$APP_PATH/Contents/Resources/bundled-aioncore"
           HUB_DIR="$APP_PATH/Contents/Resources/hub"
 
           test -x "$BRIDGE"
+          test -x "$BRIDGE_PEEKABOO"
+          test -x "$BRIDGE_HELPER"
           test -f "$BRIDGE_MANIFEST"
           test -d "$AIONCORE_DIR"
           test -d "$HUB_DIR"
@@ -204,3 +208,6 @@ jobs:
             workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip
             workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip.sha256
           retention-days: 7
+
+          # Keep this file ending with a real newline; PR Code Quality checks
+          # run against GitHub's generated merge ref.

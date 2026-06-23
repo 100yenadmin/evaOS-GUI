@@ -85,6 +85,16 @@ describe('SiderFooter auth controls', () => {
     expect(onSignInClick).toHaveBeenCalledTimes(1);
   });
 
+  it('starts broker sign-in from a footer mouse event when the event target is the button', () => {
+    const onSignInClick = vi.fn();
+
+    render(<SiderFooter {...baseProps} showSignIn onSignInClick={onSignInClick} />);
+
+    fireEvent.mouseUp(screen.getByRole('button', { name: 'Sign In' }), { clientX: 160, clientY: 746 });
+
+    expect(onSignInClick).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the neighboring footer settings action clickable from the same capture path', () => {
     const onSettingsClick = vi.fn();
 

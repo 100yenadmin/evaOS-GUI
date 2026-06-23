@@ -68,6 +68,8 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
   if (electronPlatformName !== 'darwin') return;
 
   const bridgePath = path.join(resourcesDir, 'Bridge', 'evaos-desktop-bridge');
+  const peekabooPath = path.join(resourcesDir, 'Bridge', 'bin', 'peekaboo');
+  const helperPath = path.join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper');
   const manifestPath = path.join(resourcesDir, 'Bridge', 'manifest.json');
   const missing = [];
   if (!fs.existsSync(bridgePath)) {
@@ -77,6 +79,24 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
       fs.accessSync(bridgePath, fs.constants.X_OK);
     } catch {
       throw new Error(`Packaged evaOS desktop bridge is not executable: ${bridgePath}`);
+    }
+  }
+  if (!fs.existsSync(peekabooPath)) {
+    missing.push(path.join('Bridge', 'bin', 'peekaboo'));
+  } else {
+    try {
+      fs.accessSync(peekabooPath, fs.constants.X_OK);
+    } catch {
+      throw new Error(`Packaged evaOS connector binary is not executable: ${peekabooPath}`);
+    }
+  }
+  if (!fs.existsSync(helperPath)) {
+    missing.push(path.join('Bridge', 'bin', 'evaos-connector-helper'));
+  } else {
+    try {
+      fs.accessSync(helperPath, fs.constants.X_OK);
+    } catch {
+      throw new Error(`Packaged evaOS connector helper is not executable: ${helperPath}`);
     }
   }
   if (!fs.existsSync(manifestPath)) {
@@ -310,3 +330,4 @@ module.exports = async function afterPack(context) {
 };
 
 module.exports.verifyBundledResources = verifyBundledResources;
+module.exports.verifyEvaosDesktopBridgeResource = verifyEvaosDesktopBridgeResource;
