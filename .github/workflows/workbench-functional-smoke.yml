@@ -208,3 +208,6 @@ jobs:
             workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip
             workbench-functional-smoke-${{ steps.commit.outputs.short }}-mac-arm64.zip.sha256
           retention-days: 7
+
+          # Keep this file ending with a real newline; PR Code Quality checks
+          # run against GitHub's generated merge ref.
