@@ -214,6 +214,20 @@ function formatExecError(error) {
   return [error?.message, error?.stdout?.toString?.(), error?.stderr?.toString?.()].filter(Boolean).join('\n').trim();
 }
 
+function withNodeHeapOptions(extraEnv = {}) {
+  const requestedHeap = process.env.EVAOS_ELECTRON_VITE_NODE_OPTIONS || '--max-old-space-size=8192';
+  const currentNodeOptions = process.env.NODE_OPTIONS || '';
+  const nodeOptions = /--max-old-space-size=/.test(currentNodeOptions)
+    ? currentNodeOptions
+    : [currentNodeOptions, requestedHeap].filter(Boolean).join(' ');
+
+  return {
+    ...process.env,
+    NODE_OPTIONS: nodeOptions,
+    ...extraEnv,
+  };
+}
+
 // Create DMG using electron-builder --prepackaged with .app path
 // This preserves DMG styling from electron-builder.yml (window size, icon positions, background)
 function createDmgWithPrepackaged(appDir, targetArch) {
@@ -404,13 +418,12 @@ try {
   if (!skipViteBuild) {
     // Run electron-vite to build all bundles (main + preload + renderer)
     console.log(`📦 Building ${targetArch}...`);
+    const viteEnv = withNodeHeapOptions({ ELECTRON_BUILDER_ARCH: targetArch });
+    console.log(`🧠 electron-vite NODE_OPTIONS: ${viteEnv.NODE_OPTIONS || '(unset)'}`);
     execSync(`bunx electron-vite build --config packages/desktop/electron.vite.config.ts`, {
       stdio: 'inherit',
       shell: process.platform === 'win32',
-      env: {
-        ...process.env,
-        ELECTRON_BUILDER_ARCH: targetArch,
-      },
+      env: viteEnv,
     });
 
     // Save hash after successful build

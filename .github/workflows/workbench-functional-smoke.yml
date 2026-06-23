@@ -35,6 +35,7 @@ env:
   EVAOS_FINALIZE_MAC_DMG: 'false'
   EVAOS_DMG_CODESIGN: 'false'
   ELECTRON_BUILDER_COMPRESSION_LEVEL: '1'
+  NODE_OPTIONS: '--max-old-space-size=8192'
   WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref }}
   WORKBENCH_SMOKE_REF: ${{ inputs.ref }}
 
@@ -121,6 +122,7 @@ jobs:
           EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ env.WORKBENCH_SMOKE_BRIDGE_REF }}
         run: |
           set -euo pipefail
+          echo "NODE_OPTIONS=${NODE_OPTIONS:-}"
           node scripts/build-with-builder.js arm64 --mac dir --arm64
 
       - name: Verify functional-smoke artifact shape
