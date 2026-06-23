@@ -10,7 +10,7 @@ import { clearEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomer
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
-import { EVAOS_SUPPORT_MAILBOX, openEvaosSupportEmail } from '@renderer/utils/platform';
+import { EVAOS_SUPPORT_MAILBOX, openEvaosSupportEmail, openExternalUrl } from '@renderer/utils/platform';
 import { copyText } from '@renderer/utils/ui/clipboard';
 import {
   EVAOS_CUSTOMER_CONTEXT_CHANGED_EVENT,
@@ -60,6 +60,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const evaosSidebarState = useEvaosSidebarState();
   const [brokerSignInError, setBrokerSignInError] = useState<string | null>(null);
   const [brokerSignInMessage, setBrokerSignInMessage] = useState<string | null>(null);
+  const [brokerSignInUrl, setBrokerSignInUrl] = useState<string | null>(null);
   useTeamCreatedRedirect();
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/evaos');
@@ -158,12 +159,14 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     blurActiveElement();
     setBrokerSignInError(null);
     setBrokerSignInMessage(null);
+    setBrokerSignInUrl(null);
     try {
       const response = await evaosBroker.beginDesktopAuth.invoke();
       if (!response.success) {
         setBrokerSignInError(response.msg || 'evaOS sign-in could not start. Check the desktop broker connection.');
         return;
       }
+      setBrokerSignInUrl(response.data?.authUrl ?? null);
       setBrokerSignInMessage(
         response.data?.message || 'Sign-in opened in your browser. Finish sign-in, then return here.'
       );
@@ -173,12 +176,30 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     }
   }, []);
 
+  const handleOpenBrokerSignInUrl = useCallback(async () => {
+    if (!brokerSignInUrl) return;
+    try {
+      await openExternalUrl(brokerSignInUrl);
+    } catch (error) {
+      console.error('evaOS broker sign-in link open failed:', error);
+      await copyText(brokerSignInUrl);
+      Message.warning('Copied the sign-in link. Paste it into your browser to continue.');
+    }
+  }, [brokerSignInUrl]);
+
+  const handleCopyBrokerSignInUrl = useCallback(async () => {
+    if (!brokerSignInUrl) return;
+    await copyText(brokerSignInUrl);
+    Message.success('Copied the sign-in link.');
+  }, [brokerSignInUrl]);
+
   const handleLogout = useCallback(async () => {
     cleanupSiderTooltips();
     blurActiveElement();
     closePreview();
     setBrokerSignInError(null);
     setBrokerSignInMessage(null);
+    setBrokerSignInUrl(null);
     try {
       const response = await evaosBroker.revokeSession.invoke();
       if (!response.success) {
@@ -420,6 +441,9 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
         onSignInClick={handleBeginDesktopAuth}
         signInError={brokerSignInError}
         signInMessage={brokerSignInMessage}
+        signInUrl={brokerSignInUrl}
+        onOpenSignInUrl={handleOpenBrokerSignInUrl}
+        onCopySignInUrl={handleCopyBrokerSignInUrl}
       />
     </div>
   );

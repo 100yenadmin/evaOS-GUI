@@ -18,7 +18,7 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ === 'undefined' ? packageJson.version : __APP_VERSION__;
 const EVAOS_CHANNEL_LABEL = 'Mac release';
 
-type FooterAction = 'settings' | 'support' | 'sign-in' | 'sign-out' | 'theme';
+type FooterAction = 'settings' | 'support' | 'sign-in' | 'sign-in-open' | 'sign-in-copy' | 'sign-out' | 'theme';
 type FooterActionHandlers = Partial<Record<FooterAction, () => void>>;
 
 const FOOTER_ACTION_ATTRIBUTE = 'data-evaos-footer-action';
@@ -117,6 +117,9 @@ interface SiderFooterProps {
   onSignInClick?: () => void;
   signInError?: string | null;
   signInMessage?: string | null;
+  signInUrl?: string | null;
+  onOpenSignInUrl?: () => void;
+  onCopySignInUrl?: () => void;
 }
 
 const SiderFooter: React.FC<SiderFooterProps> = ({
@@ -140,6 +143,9 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   onSignInClick,
   signInError,
   signInMessage,
+  signInUrl,
+  onOpenSignInUrl,
+  onCopySignInUrl,
 }) => {
   const { t } = useTranslation();
   const footerRef = useRef<HTMLDivElement | null>(null);
@@ -171,6 +177,8 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
     settings: onSettingsClick,
     ...(onSupportClick ? { support: onSupportClick } : {}),
     ...(showSignIn && onSignInClick ? { 'sign-in': onSignInClick } : {}),
+    ...(showSignIn && signInUrl && onOpenSignInUrl ? { 'sign-in-open': onOpenSignInUrl } : {}),
+    ...(showSignIn && signInUrl && onCopySignInUrl ? { 'sign-in-copy': onCopySignInUrl } : {}),
     ...(showLogout && onLogoutClick ? { 'sign-out': onLogoutClick } : {}),
     ...(showThemeToggle ? { theme: onThemeToggle } : {}),
   };
@@ -329,6 +337,26 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             ) : null}
             {!collapsed && !signInError && signInMessage ? (
               <div className='collapsed-hidden px-8px text-10px leading-14px text-t-secondary'>{signInMessage}</div>
+            ) : null}
+            {!collapsed && !signInError && signInUrl ? (
+              <div className='collapsed-hidden flex gap-4px px-8px'>
+                <button
+                  type='button'
+                  data-evaos-footer-action='sign-in-open'
+                  onClick={onOpenSignInUrl}
+                  className='border-0 bg-transparent p-0 text-left text-10px leading-14px text-primary-6 underline cursor-pointer'
+                >
+                  Open sign-in page
+                </button>
+                <button
+                  type='button'
+                  data-evaos-footer-action='sign-in-copy'
+                  onClick={onCopySignInUrl}
+                  className='border-0 bg-transparent p-0 text-left text-10px leading-14px text-primary-6 underline cursor-pointer'
+                >
+                  Copy link
+                </button>
+              </div>
             ) : null}
           </div>
         )}

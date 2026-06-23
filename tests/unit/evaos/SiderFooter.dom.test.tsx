@@ -66,6 +66,30 @@ describe('SiderFooter auth controls', () => {
     expect(screen.getByText('Sign-in opened in your browser.')).toBeInTheDocument();
   });
 
+  it('shows broker sign-in link recovery controls when browser handoff may be blocked', async () => {
+    const user = userEvent.setup();
+    const onOpenSignInUrl = vi.fn();
+    const onCopySignInUrl = vi.fn();
+
+    render(
+      <SiderFooter
+        {...baseProps}
+        showSignIn
+        onSignInClick={vi.fn()}
+        signInMessage='Sign-in opened in your browser.'
+        signInUrl='https://www.electricsheephq.com/desktop-auth'
+        onOpenSignInUrl={onOpenSignInUrl}
+        onCopySignInUrl={onCopySignInUrl}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open sign-in page' }));
+    await user.click(screen.getByRole('button', { name: 'Copy link' }));
+
+    expect(onOpenSignInUrl).toHaveBeenCalledTimes(1);
+    expect(onCopySignInUrl).toHaveBeenCalledTimes(1);
+  });
+
   it('starts broker sign-out from the rendered footer button', async () => {
     const user = userEvent.setup();
     const onLogoutClick = vi.fn();

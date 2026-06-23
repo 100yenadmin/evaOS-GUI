@@ -6,7 +6,7 @@
 
 import React from 'react';
 import classNames from 'classnames';
-import { Button, Tag } from '@arco-design/web-react';
+import { Button, Message, Tag } from '@arco-design/web-react';
 import { Comment, Computer, Link, Shield } from '@icon-park/react';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import {
@@ -38,7 +38,7 @@ import {
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
-import { openEvaosSupportEmail } from '@/renderer/utils/platform';
+import { openEvaosSupportEmail, openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
 const NativeCompanionPage: React.FC = () => {
@@ -68,12 +68,14 @@ const NativeCompanionPage: React.FC = () => {
   const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
+  const [authUrl, setAuthUrl] = React.useState<string | null>(null);
   const selectedPairingCustomerRef = React.useRef<string | undefined>(selectedPairingCustomerId);
   React.useEffect(() => {
     selectedPairingCustomerRef.current = selectedPairingCustomerId;
     setActionResult(null);
     setCopyMessage(null);
     setHandoffMessage(null);
+    setAuthUrl(null);
   }, [selectedPairingCustomerId]);
   const currentActionResult = React.useMemo(
     () => actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId),
@@ -163,12 +165,14 @@ const NativeCompanionPage: React.FC = () => {
     setHandoffMessage(null);
     setActionResult(null);
     setCopyMessage(null);
+    setAuthUrl(null);
     try {
       const response = await evaosBroker.beginDesktopAuth.invoke();
       if (!response.success || !response.data) {
         setHandoffMessage(response.msg || 'evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
         return;
       }
+      setAuthUrl(response.data.authUrl ?? null);
       setHandoffMessage(response.data.message || 'Continue sign-in in the browser, then return here.');
       await refreshBrokerSession();
       await refreshTargets();
@@ -178,6 +182,23 @@ const NativeCompanionPage: React.FC = () => {
       setAuthInFlight(false);
     }
   }, [refreshBrokerSession, refreshTargets]);
+
+  const handleOpenAuthUrl = React.useCallback(async () => {
+    if (!authUrl) return;
+    try {
+      await openExternalUrl(authUrl);
+    } catch (openError) {
+      console.error('evaOS sign-in link open failed:', openError);
+      await navigator.clipboard.writeText(authUrl);
+      Message.warning('Copied the sign-in link. Paste it into your browser to continue.');
+    }
+  }, [authUrl]);
+
+  const handleCopyAuthUrl = React.useCallback(async () => {
+    if (!authUrl) return;
+    await navigator.clipboard.writeText(authUrl);
+    Message.success('Copied the sign-in link.');
+  }, [authUrl]);
 
   const handleNextAction = React.useCallback(
     async (nextAction: NativeCompanionNextAction) => {
@@ -270,6 +291,16 @@ const NativeCompanionPage: React.FC = () => {
                 </p>
               )}
               {handoffMessage && <p className='m-0 mt-6px text-12px leading-18px text-t-secondary'>{handoffMessage}</p>}
+              {authUrl && (
+                <div className='mt-8px flex flex-wrap gap-8px'>
+                  <Button size='mini' onClick={handleOpenAuthUrl}>
+                    Open sign-in page
+                  </Button>
+                  <Button size='mini' onClick={handleCopyAuthUrl}>
+                    Copy sign-in link
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
