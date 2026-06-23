@@ -21,6 +21,7 @@ const bridgeMocks = vi.hoisted(() => ({
 
 const supportEmailMock = vi.hoisted(() => ({
   openEvaosSupportEmail: vi.fn(),
+  openExternalUrl: vi.fn(),
 }));
 
 const brokerMocks = vi.hoisted(() => ({
@@ -96,6 +97,7 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 
 vi.mock('@/renderer/utils/platform', () => ({
   openEvaosSupportEmail: supportEmailMock.openEvaosSupportEmail,
+  openExternalUrl: supportEmailMock.openExternalUrl,
 }));
 
 function renderNativeCompanion() {
@@ -763,6 +765,10 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getByRole('button', { name: 'Reconnect Workbench' }));
 
     await waitFor(() => expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('button', { name: 'Open sign-in page' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy sign-in link' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open sign-in page' }));
+    expect(supportEmailMock.openExternalUrl).toHaveBeenCalledWith('https://www.electricsheephq.com/login');
     expect(customerContextMock.refreshBrokerSession).toHaveBeenCalledTimes(1);
     expect(customerContextMock.customerContext.refreshTargets).toHaveBeenCalledTimes(1);
     await waitFor(() =>
@@ -1092,6 +1098,8 @@ describe('NativeCompanionPage', () => {
     await user.click(reconnect);
 
     await waitFor(() => expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('button', { name: 'Open sign-in page' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy sign-in link' })).toBeInTheDocument();
     expect(customerContextMock.refreshBrokerSession).toHaveBeenCalledTimes(1);
     expect(customerContextMock.customerContext.refreshTargets).toHaveBeenCalledTimes(1);
   });
