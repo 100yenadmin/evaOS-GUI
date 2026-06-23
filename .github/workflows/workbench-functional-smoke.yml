@@ -19,7 +19,7 @@ on:
       bridge_ref:
         description: evaos-desktop-bridge ref to bundle
         required: false
-        default: 6381b32243691dc5cc91d6cfde7aeb6bf2c831a6
+        default: 8cdc02cee0f1e5d53ae430a942848c721762b00a
         type: string
 
 concurrency:
