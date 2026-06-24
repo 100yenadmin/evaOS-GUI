@@ -36,7 +36,7 @@ on:
       source_artifact_names:
         description: 'Comma-separated source artifact names from the staged run. Use macos-build-arm64 for macos-arm64 releases.'
         required: true
-        default: macos-build-arm64,macos-build-x64
+        default: macos-build-arm64
         type: string
       fallback_reason:
         description: 'Concrete reason for local DMG finalization.'
@@ -52,26 +52,34 @@ on:
         required: true
         type: string
       release_target_platforms:
-        description: 'Release target platforms for asset verification.'
+        description: 'Release target platforms for asset verification. Use macos-arm64 on beta RC refs that include arm64-only verification support.'
         required: false
-        default: macos
+        default: macos-arm64
         type: choice
         options:
           - macos
           - macos-arm64
           - all
 
+concurrency:
+  group: evaos-beta-local-signed-dmg-manifest-${{ github.event.inputs.tag || github.run_id }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
   actions: read
+  contents: read
 
 env:
-  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || 'macos' }}
+  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || 'macos-arm64' }}
 
 jobs:
   register-manifest:
     name: Register trusted local-signed DMG manifest
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      # Required only for attaching the trusted manifest back to the GitHub prerelease.
+      contents: write
     steps:
       - name: Validate inputs
         env:
@@ -88,6 +96,10 @@ jobs:
             echo "::error::Refusing non-evaOS beta tag: $TAG"
             exit 1
           fi
+          if [[ ! "$TAG" =~ ^evaos-beta-[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Release tag contains unsupported characters: $TAG"
+            exit 1
+          fi
           if [[ "$TAG" == *"-dev" || "$TAG" == *"-dev-"* || "$TAG" == *"-dev."* ]]; then
             echo "::error::Refusing development beta tag: $TAG"
             exit 1
@@ -101,10 +113,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download finalized release assets
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
@@ -141,7 +155,7 @@ jobs:
               ;;
           esac
           gh release download "$TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "$REPOSITORY" \
             --dir release-assets \
             "${patterns[@]}"
           rm -f release-assets/evaos-beta-release-manifest.json
@@ -150,11 +164,11 @@ jobs:
       - name: Verify finalized release assets
         env:
           INCLUDE_WEB_CLI_ASSETS: '0'
-          MOCK_VERSION: ${{ github.event.inputs.tag }}
-          EVAOS_RELEASE_TARGET_PLATFORMS: ${{ env.EVAOS_RELEASE_TARGET_PLATFORMS }}
+          MOCK_PRODUCT_NAME: evaOS Workbench
+          TAG_NAME: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
-          VERSION="${MOCK_VERSION#evaos-beta-}"
+          VERSION="${TAG_NAME#evaos-beta-}"
           VERSION="${VERSION#v}"
           INCLUDE_WEB_CLI_ASSETS=0 MOCK_VERSION="$VERSION" bash scripts/verify-release-assets.sh release-assets
 
@@ -184,7 +198,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           EXPECTED_RELEASE_COMMIT: ${{ github.event.inputs.source_ci_head_sha }}
           EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
-        run: node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "${{ github.event.inputs.tag }}"
+          TAG_NAME: ${{ github.event.inputs.tag }}
+        run: node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "$TAG_NAME"
 
       - name: Upload trusted manifest artifact
         uses: actions/upload-artifact@v4
@@ -197,15 +212,17 @@ jobs:
       - name: Attach manifest to GitHub prerelease
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
           gh release upload "$TAG" release-assets/evaos-beta-release-manifest.json \
-            --repo "${{ github.repository }}" \
+            --repo "$REPOSITORY" \
             --clobber
 
       - name: Summary
         env:
+          RUN_ID: ${{ github.run_id }}
           TAG: ${{ github.event.inputs.tag }}
         run: |
           {
@@ -213,5 +230,5 @@ jobs:
             echo ""
             echo "- Tag: \`$TAG\`"
             echo "- Manifest artifact: \`evaos-beta-release-manifest-$TAG\`"
-            echo "- Next: run evaOS Beta RC Canary with \`trusted_manifest_run_id=${{ github.run_id }}\` and \`local_signed_dmg_fallback_ack=evaos-local-signed-dmg\`."
+            echo "- Next: run evaOS Beta RC Canary with \`trusted_manifest_run_id=$RUN_ID\` and \`local_signed_dmg_fallback_ack=evaos-local-signed-dmg\`."
           } >> "$GITHUB_STEP_SUMMARY"
