@@ -12,11 +12,11 @@ ERRORS=0
 shopt -s nullglob
 
 case "$RELEASE_TARGET_PLATFORMS" in
-  all|macos)
+  all|macos|macos-arm64)
     ;;
   *)
     echo "FAIL: unsupported EVAOS_RELEASE_TARGET_PLATFORMS: $RELEASE_TARGET_PLATFORMS"
-    echo "FAIL: supported values: all, macos"
+    echo "FAIL: supported values: all, macos, macos-arm64"
     exit 1
     ;;
 esac
@@ -25,6 +25,13 @@ echo "Release target platforms: $RELEASE_TARGET_PLATFORMS"
 
 assert_evaos_beta_asset_identity() {
   local base="$1"
+  local base_lc expected_name expected_asset expected_compact expected_slug
+
+  base_lc="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+  expected_name="$(printf '%s' "$MOCK_PRODUCT_NAME" | tr '[:upper:]' '[:lower:]')"
+  expected_asset="$(printf '%s' "$MOCK_PRODUCT_ASSET_NAME" | tr '[:upper:]' '[:lower:]')"
+  expected_compact="${expected_name// /}"
+  expected_slug="${expected_name// /-}"
 
   case "$base" in
     *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
@@ -34,11 +41,11 @@ assert_evaos_beta_asset_identity() {
       ;;
   esac
 
-  case "$base" in
-    *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+  case "$base_lc" in
+    *"$expected_name"*|*"$expected_asset"*|*"$expected_compact"*|*"$expected_slug"*)
       ;;
     *)
-      echo "FAIL: beta asset lacks evaOS identity marker: $base"
+      echo "FAIL: beta asset lacks expected evaOS identity marker ($MOCK_PRODUCT_NAME): $base"
       ERRORS=$((ERRORS + 1))
       ;;
   esac
@@ -47,6 +54,8 @@ assert_evaos_beta_asset_identity() {
 REQUIRED_METADATA=(latest-mac.yml)
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   REQUIRED_METADATA=(latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml)
+elif [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
+  REQUIRED_METADATA=(latest-arm64-mac.yml)
 fi
 
 for f in "${REQUIRED_METADATA[@]}"; do
@@ -95,7 +104,9 @@ assert_metadata_points_to_existing_file() {
   echo "PASS: $metadata_name -> $ref_file"
 }
 
-assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
+if [ "$RELEASE_TARGET_PLATFORMS" != "macos-arm64" ]; then
+  assert_metadata_points_to_existing_file "latest-mac.yml" "(mac-x64|darwin-x64|x64)"
+fi
 if [ "$RELEASE_TARGET_PLATFORMS" = "all" ]; then
   assert_metadata_points_to_existing_file "latest.yml" "(win-x64|win32-x64|x64)"
   assert_metadata_points_to_existing_file "latest-linux.yml" "(linux|AppImage|deb)"
@@ -144,6 +155,8 @@ assert_required_glob() {
 if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
   assert_required_glob "macOS x64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-x64.dmg"
   assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
+elif [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
+  assert_required_glob "macOS arm64 DMG" "${MOCK_PRODUCT_ASSET_NAME}-*-mac-arm64.dmg"
 else
   REQUIRED_DISTRIBUTABLES=(
     "${MOCK_PRODUCT_ASSET_NAME}-${MOCK_VERSION}-win-x64.exe"
@@ -164,7 +177,7 @@ else
   done
 fi
 
-if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
+if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ] || [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
   DEFERRED_PLATFORM_FILES=(
     "$OUTPUT_DIR"/*.exe
     "$OUTPUT_DIR"/*.msi
@@ -173,6 +186,9 @@ if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
     "$OUTPUT_DIR"/latest-win-arm64.yml
     "$OUTPUT_DIR"/latest-linux*.yml
   )
+  if [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
+    DEFERRED_PLATFORM_FILES+=("$OUTPUT_DIR"/latest-mac.yml)
+  fi
   for f in "${DEFERRED_PLATFORM_FILES[@]}"; do
     [ -e "$f" ] || continue
     echo "FAIL: macOS release profile contains deferred Windows/Linux asset or metadata: $(basename "$f")"
@@ -189,6 +205,8 @@ if [ "$INCLUDE_WEB_CLI_ASSETS" = "1" ]; then
   # Web-CLI tarballs + checksums
   if [ "$RELEASE_TARGET_PLATFORMS" = "macos" ]; then
     WEB_PLATFORMS=(darwin-arm64 darwin-x86_64)
+  elif [ "$RELEASE_TARGET_PLATFORMS" = "macos-arm64" ]; then
+    WEB_PLATFORMS=(darwin-arm64)
   else
     WEB_PLATFORMS=(darwin-arm64 darwin-x86_64 linux-arm64 linux-x86_64 win-x86_64)
   fi
