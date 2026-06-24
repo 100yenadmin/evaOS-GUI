@@ -123,7 +123,12 @@ const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'launch-smoke',
     evidence: 'launch-smoke.md',
-    requiredText: ['PASS', 'evaOS Workbench', 'no upstream AionUi feed'],
+    requiredText: ['PASS', 'evaOS Workbench', 'evaos-workbench', 'no upstream AionUi feed'],
+  },
+  {
+    id: 'protocol-identity',
+    evidence: 'protocol-identity.md',
+    requiredText: ['PASS', 'evaos-workbench', 'com.evaos.workbench'],
   },
   {
     id: 'updater-feed-audit',
@@ -135,10 +140,12 @@ const REQUIRED_RC_PROOF_CHECKS = [
     evidence: 'rollback-smoke.md',
     requiredText: [
       'PASS',
-      'beta app absent',
+      'candidate app rolled back',
       'released fallback app launched',
       'data/cache disposition',
       'protocol handler state',
+      'evaos-workbench',
+      'com.evaos.workbench',
       'broker login/session',
     ],
   },

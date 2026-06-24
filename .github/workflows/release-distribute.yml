@@ -33,7 +33,7 @@ on:
       release_target_platforms:
         description: 'Release target platforms for verification: all keeps Windows/macOS/Linux; macos distributes x64+arm64 macOS; macos-arm64 distributes only Apple Silicon macOS.'
         required: false
-        default: all
+        default: macos-arm64
         type: choice
         options:
           - all
@@ -45,7 +45,7 @@ permissions:
   actions: read
 
 env:
-  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
+  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'macos-arm64' }}
 
 jobs:
   distribute:
@@ -226,10 +226,10 @@ jobs:
             esac
 
             case "$base" in
-              *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*)
+              *"evaOS Workbench"*|*"evaOS.Workbench"*|*"EvaOSWorkbench"*|*"evaos-workbench"*)
                 ;;
               *)
-                echo "::error::Refusing to distribute asset without evaOS beta identity marker: $base"
+                echo "::error::Refusing to distribute asset without evaOS Workbench identity marker: $base"
                 exit 1
                 ;;
             esac
