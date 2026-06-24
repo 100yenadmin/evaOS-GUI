@@ -1,7 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync, execSync } = require('child_process');
+const { execFileSync, execSync, spawnSync } = require('child_process');
 const {
   assertPublicBetaNotarizationEnv,
   getEnvValue,
@@ -22,6 +22,12 @@ const DEFAULT_APP_NOTARY_PROCESS_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
 const DEFAULT_APP_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
 const DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_EXPECTED_TEAM_ID = 'TC6MS3T6NN';
+const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+const MAC_CONTROL_HELPER_RELATIVE_PATHS = [
+  path.join('Contents', 'Resources', 'Bridge', 'bin', 'peekaboo'),
+  path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-connector-helper'),
+];
 
 function getAppleIdNotarizationOptions(env) {
   const appleId = getEnvValue(env, { aliases: ['appleId', 'APPLE_ID'] });
@@ -151,6 +157,72 @@ function getAppNotaryPollIntervalMs(env = process.env) {
 
 function getAppTrustProcessTimeoutMs(env = process.env) {
   return getPositiveProcessTimeoutMs(env, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS);
+}
+
+function isMachOExecutable(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
+    return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function expectedMacControlHelperTeamId(env = process.env) {
+  return (
+    getEnvValue(env, {
+      aliases: ['EVAOS_MAC_CONTROL_HELPER_TEAM_ID', 'EVAOS_BETA_EXPECTED_TEAM_ID', 'TEAM_ID', 'teamId'],
+    }) || DEFAULT_EXPECTED_TEAM_ID
+  );
+}
+
+function expectedMacControlHelperAuthority(env = process.env) {
+  return getEnvValue(env, {
+    aliases: ['EVAOS_MAC_CONTROL_HELPER_AUTHORITY', 'EVAOS_BETA_EXPECTED_DEVELOPER_ID_AUTHORITY'],
+  });
+}
+
+function codeSignatureDetails(filePath, runProcess = spawnSync) {
+  const result = runProcess('codesign', ['-dv', '--verbose=4', filePath], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const output = `${result.stdout || ''}${result.stderr || ''}`;
+  if (result.status !== 0) {
+    throw new Error(`codesign identity inspection failed for ${filePath}: ${output.trim() || `exit ${result.status}`}`);
+  }
+  return output;
+}
+
+function assertMacControlHelperSignature(filePath, env = process.env, runProcess = spawnSync) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Strict evaOS beta release is missing bundled Mac-control helper: ${filePath}`);
+  }
+  if (!isMachOExecutable(filePath)) {
+    throw new Error(
+      `Strict evaOS beta release requires bundled Mac-control helper to be a native Mach-O executable: ${filePath}`
+    );
+  }
+
+  const details = codeSignatureDetails(filePath, runProcess);
+  const expectedTeamId = expectedMacControlHelperTeamId(env);
+  const expectedAuthority = expectedMacControlHelperAuthority(env);
+  if (!details.includes(`TeamIdentifier=${expectedTeamId}`)) {
+    throw new Error(`Strict evaOS beta release requires ${filePath} to be signed by TeamIdentifier=${expectedTeamId}.`);
+  }
+  if (expectedAuthority && !details.includes(`Authority=${expectedAuthority}`)) {
+    throw new Error(
+      `Strict evaOS beta release requires ${filePath} to include signing authority "${expectedAuthority}".`
+    );
+  }
+}
+
+function assertMacControlHelperSignatures(appPath, env = process.env, runProcess = spawnSync) {
+  for (const relativePath of MAC_CONTROL_HELPER_RELATIVE_PATHS) {
+    assertMacControlHelperSignature(path.join(appPath, relativePath), env, runProcess);
+  }
 }
 
 function isProcessTimeoutError(error) {
@@ -428,6 +500,10 @@ async function afterSign(context) {
     return;
   }
 
+  if (strictPublicBetaRelease) {
+    assertMacControlHelperSignatures(appPath, process.env);
+  }
+
   const notarizationOptions = getNotarizationOptions(process.env, {
     tool: 'notarytool',
     appBundleId,
@@ -462,6 +538,8 @@ async function afterSign(context) {
 
 module.exports = afterSign;
 module.exports.default = afterSign;
+module.exports.assertMacControlHelperSignature = assertMacControlHelperSignature;
+module.exports.assertMacControlHelperSignatures = assertMacControlHelperSignatures;
 module.exports.buildAppNotarytoolInfoArgs = buildAppNotarytoolInfoArgs;
 module.exports.buildAppNotarytoolSubmitArgs = buildAppNotarytoolSubmitArgs;
 module.exports.getAppNotaryCommandProcessTimeoutMs = getAppNotaryCommandProcessTimeoutMs;
@@ -469,6 +547,7 @@ module.exports.getAppNotaryPollIntervalMs = getAppNotaryPollIntervalMs;
 module.exports.getAppNotaryProcessTimeoutMs = getAppNotaryProcessTimeoutMs;
 module.exports.getAppTrustProcessTimeoutMs = getAppTrustProcessTimeoutMs;
 module.exports.getNotarizationOptions = getNotarizationOptions;
+module.exports.isMachOExecutable = isMachOExecutable;
 module.exports.runAppNotarytoolSubmit = runAppNotarytoolSubmit;
 module.exports.notarizeAndStapleApp = notarizeAndStapleApp;
 module.exports.stapleAndValidateApp = stapleAndValidateApp;

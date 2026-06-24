@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const afterPack = require('../../../scripts/afterPack.js') as {
+  isMachOExecutable: (filePath: string) => boolean;
   verifyBundledResources: (resourcesDir: string, electronPlatformName: string, targetArch: string) => void;
   verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string) => void;
 };
@@ -31,20 +32,35 @@ function writeRuntimeFixture(resourcesDir: string, runtimeKey: string, options: 
   return runtimeDir;
 }
 
-function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean } = {}): void {
+function writeExecutableScript(path: string): void {
+  writeFileSync(path, '#!/bin/sh\nexit 0\n');
+  chmodSync(path, 0o755);
+}
+
+function writeMachOFixture(path: string): void {
+  writeFileSync(path, Buffer.from('cffaedfe00000000', 'hex'));
+  chmodSync(path, 0o755);
+}
+
+function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; nativeHelpers?: boolean } = {}): void {
   const bridgeDir = join(resourcesDir, 'Bridge');
   mkdirSync(join(bridgeDir, 'bin'), { recursive: true });
   const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
   const peekabooPath = join(bridgeDir, 'bin', 'peekaboo');
-  writeFileSync(bridgePath, '#!/bin/sh\nexit 0\n');
-  chmodSync(bridgePath, 0o755);
-  writeFileSync(peekabooPath, '#!/bin/sh\nexit 0\n');
-  chmodSync(peekabooPath, 0o755);
+  writeExecutableScript(bridgePath);
+  if (options.nativeHelpers) {
+    writeMachOFixture(peekabooPath);
+  } else {
+    writeExecutableScript(peekabooPath);
+  }
   writeFileSync(join(bridgeDir, 'manifest.json'), '{"placeholder":false}\n');
   if (options.helper) {
     const helperPath = join(bridgeDir, 'bin', 'evaos-connector-helper');
-    writeFileSync(helperPath, '#!/bin/sh\nexit 0\n');
-    chmodSync(helperPath, 0o755);
+    if (options.nativeHelpers) {
+      writeMachOFixture(helperPath);
+    } else {
+      writeExecutableScript(helperPath);
+    }
   }
 }
 
@@ -104,6 +120,39 @@ describe('afterPack bundled resource verification', () => {
     expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
   });
 
+  it('rejects script control helper resources for release-mode macOS builds', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true });
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
+        /native Mach-O executable/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('accepts native control helper resources for release-mode macOS builds', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+
+      expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'evaos-desktop-bridge'))).toBe(false);
+      expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
+      expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
   it('requires the evaOS connector binary in macOS bridge resources', () => {
     const resourcesDir = makeTempResources();
     writeBridgeFixture(resourcesDir, { helper: true });
@@ -112,3 +161,11 @@ describe('afterPack bundled resource verification', () => {
     expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(/Bridge\/bin\/peekaboo/);
   });
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}

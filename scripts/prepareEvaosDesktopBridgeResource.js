@@ -12,6 +12,7 @@ const defaultBridgeSourceRef = 'main';
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
+const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
 
 function truthy(value) {
   return TRUE_VALUES.has(
@@ -173,6 +174,24 @@ function copyOptionalBinary(name, targetDir) {
   return undefined;
 }
 
+function isMachOExecutable(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
+    return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function requireMachOReleaseBinary(filePath, description) {
+  if (isMachOExecutable(filePath)) return;
+  throw new Error(
+    `Release builds require ${description} to be a native Mach-O executable, not a shell/Python fallback: ${filePath}`
+  );
+}
+
 function writeConnectorHelperWrapper(targetDir) {
   const helperPath = path.join(targetDir, 'evaos-connector-helper');
   fs.writeFileSync(
@@ -267,6 +286,12 @@ function writeWrapper() {
   fs.chmodSync(wrapperPath, 0o755);
 }
 
+function writeBridgeExecutable() {
+  const wrapperPath = path.join(bridgeResourceDir, 'evaos-desktop-bridge');
+  writeWrapper();
+  return wrapperPath;
+}
+
 function writePlaceholderWrapper(reason) {
   const wrapperPath = path.join(bridgeResourceDir, 'evaos-desktop-bridge');
   fs.writeFileSync(
@@ -351,11 +376,26 @@ function main() {
   fs.mkdirSync(bridgeBinDir, { recursive: true });
   copyDirectory(bridgePackageSource, bridgePackageTarget);
   removePycache(bridgeResourceDir);
-  writeWrapper();
-  if (!copyOptionalBinary('peekaboo', bridgeBinDir)) {
+  const bridgeExecutable = writeBridgeExecutable();
+  const peekabooBinary = copyOptionalBinary('peekaboo', bridgeBinDir);
+  const helperPath = path.join(bridgeBinDir, 'evaos-connector-helper');
+  if (peekabooBinary && shouldRequireRealBridge()) {
+    requireMachOReleaseBinary(peekabooBinary, 'bundled Peekaboo helper');
+    fs.copyFileSync(peekabooBinary, helperPath);
+    fs.chmodSync(helperPath, 0o755);
+  } else if (!peekabooBinary) {
+    if (shouldRequireRealBridge()) {
+      throw new Error('Release builds require EVAOS_PEEKABOO_BIN or a PATH-resolved native Mach-O Peekaboo binary.');
+    }
     writePeekabooFallbackWrapper(bridgeBinDir);
+    writeConnectorHelperWrapper(bridgeBinDir);
+  } else {
+    writeConnectorHelperWrapper(bridgeBinDir);
   }
-  writeConnectorHelperWrapper(bridgeBinDir);
+  if (shouldRequireRealBridge()) {
+    requireMachOReleaseBinary(path.join(bridgeBinDir, 'peekaboo'), 'bundled Peekaboo helper');
+    requireMachOReleaseBinary(helperPath, 'bundled evaOS connector helper');
+  }
 
   const manifest = {
     schema: 'evaos-desktop-bridge-resource/v1',
@@ -377,6 +417,7 @@ if (require.main === module) {
 
 module.exports = {
   bridgeWrapperScript,
+  isMachOExecutable,
   resolveBridgeSourceDir,
   sourceCandidates,
 };

@@ -674,6 +674,20 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(afterSign, 'appleApiKey', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'EVAOS_BETA_REQUIRE_SIGNING', 'scripts/afterSign.js', issues);
   requireText(afterSign, 'Ad-hoc signing is not allowed', 'scripts/afterSign.js', issues);
+  requireText(
+    afterSign,
+    'assertMacControlHelperSignatures',
+    'scripts/afterSign.js',
+    issues,
+    'strict beta release validates bundled Mac-control helper code identity'
+  );
+  requireText(
+    afterSign,
+    'TeamIdentifier=',
+    'scripts/afterSign.js',
+    issues,
+    'strict beta release rejects bundled Mac-control helpers signed by the wrong team'
+  );
   requireText(dmgFinalizer, 'buildDmgCodesignArgs', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(dmgFinalizer, 'shouldCodesignDmg', 'scripts/evaosFinalizeMacDmg.js', issues);
   requireText(dmgFinalizer, 'EVAOS_DMG_CODESIGN', 'scripts/evaosFinalizeMacDmg.js', issues);
@@ -704,6 +718,20 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(reusableBuild, 'dmg_codesign_timeout', '.github/workflows/_build-reusable.yml', issues);
   requireText(reusableBuild, 'dmg_primary_signature_missing', '.github/workflows/_build-reusable.yml', issues);
+  requireText(
+    reusableBuild,
+    'Install evaOS Mac-control helper',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'macOS release build must provide a native bundled control helper'
+  );
+  requireText(
+    reusableBuild,
+    'EVAOS_PEEKABOO_BIN',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'macOS release build exports the native Peekaboo helper for packaging'
+  );
   requireText(distribute, 'local_signed_dmg_fallback_ack', '.github/workflows/release-distribute.yml', issues);
   requireText(rcCanary, 'local_signed_dmg_fallback_ack', '.github/workflows/evaos-beta-rc-canary.yml', issues);
   const dmgSigningKeychainSection = dmgFinalizer.split('const NOTARY_KEYCHAIN_ENV')[0] || '';

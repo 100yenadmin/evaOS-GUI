@@ -1,7 +1,11 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   bridgeWrapperScript: () => string;
+  isMachOExecutable: (filePath: string) => boolean;
   sourceCandidates: () => string[];
 };
 
@@ -16,6 +20,23 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(wrapper).toContain('exec "$PYTHON_BIN" -S -m evaos_desktop_bridge.cli "$@"');
     expect(wrapper).not.toContain('${PYTHONPATH:+:$PYTHONPATH}');
     expect(wrapper).not.toContain('site-packages');
+  });
+
+  it('detects native Mach-O executables before release packaging trusts a control helper', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-mach-o-'));
+    const machO = join(dir, 'peekaboo');
+    const script = join(dir, 'peekaboo.sh');
+    try {
+      writeFileSync(machO, Buffer.from('cffaedfe00000000', 'hex'));
+      chmodSync(machO, 0o755);
+      writeFileSync(script, '#!/bin/sh\nexit 0\n');
+      chmodSync(script, 0o755);
+
+      expect(bridgeResource.isMachOExecutable(machO)).toBe(true);
+      expect(bridgeResource.isMachOExecutable(script)).toBe(false);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 
   it('does not use local mutable bridge checkouts when a source ref is pinned', () => {
