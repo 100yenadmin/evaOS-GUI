@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
 import { useSettingsViewMode } from '../../settingsViewContext';
+import BrowserNotificationGrant from './BrowserNotificationGrant';
 import DevSettings from './DevSettings';
 import DirInputItem from './DirInputItem';
 import PreferenceRow from './PreferenceRow';
@@ -440,6 +441,11 @@ const SystemModalContent: React.FC = () => {
                 }
               >
                 <div className='pl-12px'>
+                  {!isDesktop && (
+                    <PreferenceRow label={t('settings.browserNotification.enable')}>
+                      <BrowserNotificationGrant />
+                    </PreferenceRow>
+                  )}
                   <PreferenceRow label={t('settings.cronNotificationEnabled')}>
                     <Switch
                       checked={cronNotificationEnabled}

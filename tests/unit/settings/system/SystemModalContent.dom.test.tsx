@@ -172,6 +172,7 @@ describe('SystemModalContent evaOS directory settings', () => {
 
     expect(await screen.findByText('/Users/lume/.evaos-workbench')).toBeInTheDocument();
     expect(await screen.findByText('/Users/lume/Library/Logs/evaOS Workbench')).toBeInTheDocument();
+    expect(screen.queryByText('settings.browserNotification.enable')).not.toBeInTheDocument();
 
     await waitFor(() => expect(container.textContent).not.toContain('/Users/lume/.aionui'));
     expect(container.textContent).not.toContain('/Users/lume/Library/Logs/AionUi');
