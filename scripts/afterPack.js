@@ -14,6 +14,16 @@ const {
  * Rebuilds native modules for cross-architecture builds
  */
 
+const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+
+function isTruthy(value) {
+  return ['1', 'true', 'yes', 'on', 'evaos-beta'].includes(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
 function resolveResourcesDir(electronPlatformName, appOutDir, packager) {
   if (electronPlatformName !== 'darwin') return path.join(appOutDir, 'resources');
 
@@ -40,6 +50,24 @@ function requirePackagedResource(resourcesDir, relativePath, missing) {
   if (!fs.existsSync(absolutePath)) {
     missing.push(relativePath);
   }
+}
+
+function isMachOExecutable(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
+    return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function requireMachOExecutable(filePath, relativePath) {
+  if (isMachOExecutable(filePath)) return;
+  throw new Error(
+    `Release macOS bridge resource must be a native Mach-O executable, not a script/fallback wrapper: ${relativePath}`
+  );
 }
 
 function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformName, missing) {
@@ -108,13 +136,15 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const strictReleaseBridge =
-    process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL === '1' ||
-    process.env.EVAOS_BETA_PUBLIC_RELEASE === 'true' ||
-    process.env.EVAOS_BETA_PUBLIC_RELEASE === '1' ||
-    process.env.EVAOS_BETA_REQUIRE_SIGNING === 'true' ||
-    process.env.EVAOS_BETA_REQUIRE_SIGNING === '1';
+    isTruthy(process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL) ||
+    isTruthy(process.env.EVAOS_BETA_PUBLIC_RELEASE) ||
+    isTruthy(process.env.EVAOS_BETA_REQUIRE_SIGNING);
   if (strictReleaseBridge && manifest.placeholder === true) {
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
+  }
+  if (strictReleaseBridge) {
+    requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
+    requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));
   }
 
   console.log('   ✓ evaOS desktop bridge resource verified');
@@ -331,3 +361,4 @@ module.exports = async function afterPack(context) {
 
 module.exports.verifyBundledResources = verifyBundledResources;
 module.exports.verifyEvaosDesktopBridgeResource = verifyEvaosDesktopBridgeResource;
+module.exports.isMachOExecutable = isMachOExecutable;

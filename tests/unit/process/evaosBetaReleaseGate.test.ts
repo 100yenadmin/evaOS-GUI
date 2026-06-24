@@ -26,6 +26,15 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
   default: (context: unknown) => Promise<void>;
+  assertMacControlHelperSignatures: (
+    appPath: string,
+    env?: Record<string, string | undefined>,
+    runProcess?: (
+      command: string,
+      args: string[],
+      options: Record<string, unknown>
+    ) => { status: number | null; stdout?: string; stderr?: string }
+  ) => void;
   buildAppNotarytoolInfoArgs: (submissionId: string, notarizationOptions: Record<string, string>) => string[];
   buildAppNotarytoolSubmitArgs: (archivePath: string, notarizationOptions: Record<string, string>) => string[];
   getAppNotaryCommandProcessTimeoutMs: (env: Record<string, string | undefined>) => number;
@@ -36,6 +45,7 @@ const afterSign = require('../../../scripts/afterSign.js') as {
     env: Record<string, string | undefined>,
     baseOptions: Record<string, string>
   ) => Record<string, string> | undefined;
+  isMachOExecutable: (filePath: string) => boolean;
   stapleAndValidateApp: (
     appPath: string,
     runCommand?: (command: string, args: string[], options: Record<string, unknown>) => void
@@ -89,6 +99,18 @@ function writeArm64TrustEvidence(proofDir: string) {
     'Processing: /Applications/evaOS Workbench.app\nThe validate action worked!\n'
   );
   fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench.app: accepted\n');
+}
+
+function writeMachOFixture(filePath: string) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, Buffer.from('cffaedfe00000000', 'hex'));
+  fs.chmodSync(filePath, 0o755);
+}
+
+function writeScriptFixture(filePath: string) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, '#!/bin/sh\nexit 0\n');
+  fs.chmodSync(filePath, 0o755);
 }
 
 function writeMacosBridgeZip(zipPath: string, options: { extraEntryCount?: number } = {}) {
@@ -190,6 +212,61 @@ describe('evaOS beta release gate', () => {
   it('exports the electron-builder afterSign hook as a callable CommonJS module', () => {
     expect(typeof afterSign).toBe('function');
     expect(afterSign.default).toBe(afterSign);
+  });
+
+  it('requires bundled Mac-control helpers to be native and signed by the expected team', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-after-sign-helpers-'));
+    const appPath = path.join(dir, 'evaOS Workbench.app');
+    const helperDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin');
+    const peekabooPath = path.join(helperDir, 'peekaboo');
+    const connectorHelperPath = path.join(helperDir, 'evaos-connector-helper');
+    const signedByExpectedTeam = {
+      status: 0,
+      stdout: '',
+      stderr:
+        'Executable=/tmp/helper\nIdentifier=com.evaos.helper\nAuthority=Developer ID Application: Andrew Ryan (TC6MS3T6NN)\nTeamIdentifier=TC6MS3T6NN\n',
+    };
+    const signedByWrongTeam = {
+      status: 0,
+      stdout: '',
+      stderr:
+        'Executable=/tmp/helper\nIdentifier=com.example.helper\nAuthority=Developer ID Application: Other Team (ABCDE12345)\nTeamIdentifier=ABCDE12345\n',
+    };
+
+    try {
+      writeMachOFixture(peekabooPath);
+      writeMachOFixture(connectorHelperPath);
+
+      expect(() =>
+        afterSign.assertMacControlHelperSignatures(
+          appPath,
+          {
+            EVAOS_MAC_CONTROL_HELPER_TEAM_ID: 'TC6MS3T6NN',
+            EVAOS_MAC_CONTROL_HELPER_AUTHORITY: 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)',
+          },
+          () => signedByExpectedTeam
+        )
+      ).not.toThrow();
+
+      expect(() =>
+        afterSign.assertMacControlHelperSignatures(
+          appPath,
+          { EVAOS_MAC_CONTROL_HELPER_TEAM_ID: 'TC6MS3T6NN' },
+          () => signedByWrongTeam
+        )
+      ).toThrow(/TeamIdentifier=TC6MS3T6NN/);
+
+      writeScriptFixture(connectorHelperPath);
+      expect(() =>
+        afterSign.assertMacControlHelperSignatures(
+          appPath,
+          { EVAOS_MAC_CONTROL_HELPER_TEAM_ID: 'TC6MS3T6NN' },
+          () => signedByExpectedTeam
+        )
+      ).toThrow(/native Mach-O executable/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('fails closed when public beta signing inputs are missing', () => {

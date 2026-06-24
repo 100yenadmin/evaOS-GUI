@@ -614,6 +614,22 @@ jobs:
           rm -f /tmp/*.dmg 2>/dev/null || true
           echo "Cleanup complete"
 
+      - name: Install evaOS Mac-control helper (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          set -euo pipefail
+          brew install steipete/tap/peekaboo
+          PEEKABOO_BIN="$(command -v peekaboo)"
+          if [ -z "$PEEKABOO_BIN" ] || [ ! -x "$PEEKABOO_BIN" ]; then
+            echo "::error::Peekaboo helper was not installed as an executable binary."
+            exit 1
+          fi
+          file "$PEEKABOO_BIN"
+          echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN" >> "$GITHUB_ENV"
+
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only
       # macOS: 构建并公证 - DMG 失败 = CI 失败，公证失败 = 仅警告
       - name: Build with electron-builder (macOS)
