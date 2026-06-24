@@ -218,6 +218,82 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
   });
 
+  it('uses control-status permission proof when customer-mac status is stale', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+        tailnet_ip: '100.64.0.10',
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: { installed: true, running: false },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-current',
+        data: {
+          active: false,
+          mode: 'ask-permission',
+          kill_switch: false,
+          ready: true,
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-control-current' }, { audit_id: 'audit-mac-stale' }],
+        },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      pairingCapable: true,
+      agentPairingStatus: 'ready_for_agent_pairing',
+      customerMac: {
+        status: 'ready',
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'granted',
+        },
+      },
+      controlSession: {
+        status: 'ready',
+        auditId: 'audit-control-current',
+      },
+    });
+  });
+
   it('prefers the packaged Workbench bridge before Homebrew fallback paths', async () => {
     const bundledBridge = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge';
     const homebrewBridge = '/opt/homebrew/bin/evaos-desktop-bridge';
@@ -569,6 +645,60 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('marks setup check ready when control-status permission proof supersedes stale customer status', async () => {
+    const deps = depsWithResponses({
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-current',
+        data: {
+          ready: true,
+          active: false,
+          mode: 'ask-permission',
+          kill_switch: false,
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'audit-tail --json --limit 12': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-control-current' }, { audit_id: 'audit-mac-stale' }],
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'setup_check' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'succeeded',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      setup: {
+        connectorReady: true,
+        macReady: true,
+        controlReady: true,
+      },
+    });
+    expect(result.auditIds).toEqual(['audit-mac-stale', 'audit-control-current']);
+  });
+
   it('does not treat local-ready control status as agent pairing proof', async () => {
     const deps = depsWithResponses({
       'connector-service status --json': {
@@ -680,6 +810,82 @@ describe('evaosNativeCompanionStatus', () => {
       `connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`
     );
     expect(completeCall?.[2]).toEqual({ timeout: 30000 });
+  });
+
+  it('creates a pairing prompt when control-status permission proof supersedes stale customer status', async () => {
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+          token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac-stale',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'missing' },
+            },
+          },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control-current',
+          data: {
+            ready: true,
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+          {
+            ok: true,
+            audit_id: 'audit-pairing',
+            data: {
+              action: 'complete-enrollment',
+              connector_registered: true,
+              customer_id: 'golden',
+              device_id: 'device-golden',
+              grant_id: 'grant-golden',
+              connector_token_last4: '7890',
+              raw_secrets_returned: false,
+            },
+          },
+      },
+      {
+        createCustomerMacEnrollment: vi.fn(async () => ({
+          customerId: 'golden',
+          pairingCode: 'PAIR-1234',
+          expiresAt: '2026-06-07T04:00:00.000Z',
+        })),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:pairing-prompt',
+      agentPairingStatus: 'pairing_prompt_created',
+      pairing: {
+        customerId: 'golden',
+        pairingCode: 'PAIR-1234',
+      },
+    });
+    expect(result.pairing?.setupPrompt).toContain('customer_mac_complete_pairing');
+    expect(result.pairing?.setupPrompt).not.toMatch(
+      /connector[_\s-]?url|connector[_\s-]?token|100\.64\.0\.10|8765|Bearer|secret-token|access_token|refresh_token|ssh|vnc|cdp|browser\s+debug/i
+    );
   });
 
   it('rejects account-row customer ids before creating a pairing enrollment', async () => {

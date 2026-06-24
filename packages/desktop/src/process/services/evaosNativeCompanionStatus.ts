@@ -133,10 +133,13 @@ export async function getEvaosNativeCompanionStatus(
   ]);
 
   const bridgePermissions = permissionView(bridge.data?.permissions);
-  const customerMacPermissions = permissionView(customerMac.data?.permissions);
+  const customerMacStatusPermissions = permissionView(customerMac.data?.permissions);
+  const customerMacPermissions = effectiveCustomerMacPermissions(customerMacStatusPermissions, controlSession);
   const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgePermissions);
   const connectorServiceReady = connectorService.ok && connectorServiceIsRunning(connectorService.data);
-  const customerMacReady = customerMac.ok && hasGrantedCorePermissions(customerMacPermissions);
+  const customerMacReady =
+    (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
+    controlSessionHasPermissionProof(controlSession);
   const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
@@ -436,10 +439,11 @@ async function runSetupCheckAction(
     runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '12'], deps),
   ]);
-  const permissions = permissionView(customerMac.data?.permissions);
+  const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
   const setup = {
     connectorReady: connectorService.ok && connectorServiceIsRunning(connectorService.data),
-    macReady: customerMac.ok && hasGrantedCorePermissions(permissions),
+    macReady:
+      (customerMac.ok && hasGrantedCorePermissions(permissions)) || controlSessionHasPermissionProof(controlSession),
     controlReady: controlSession.ok,
     iPhoneDeferred: true,
   };
@@ -551,7 +555,11 @@ async function createPairingPromptAction(
 
   const customerMac = await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps);
   const permissions = permissionView(customerMac.data?.permissions);
-  if (permissions && !hasGrantedCorePermissions(permissions)) {
+  if (!hasGrantedCorePermissions(permissions)) {
+    const controlSession = await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps);
+    if (controlSessionHasPermissionProof(controlSession)) {
+      return createPairingPromptWithReadyMac({ bridgePath, customerId, deps });
+    }
     return nativeActionResult(
       'create_pairing_prompt',
       'repair_required',
@@ -564,6 +572,15 @@ async function createPairingPromptAction(
     );
   }
 
+  return createPairingPromptWithReadyMac({ bridgePath, customerId, deps });
+}
+
+async function createPairingPromptWithReadyMac(input: {
+  bridgePath: string;
+  customerId: string;
+  deps: EvaosNativeCompanionStatusDeps;
+}): Promise<IEvaosNativeCompanionActionResult> {
+  const { bridgePath, customerId, deps } = input;
   const createEnrollment =
     deps.createCustomerMacEnrollment ??
     ((input) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(input));
@@ -1065,6 +1082,24 @@ function nativeActionResult(
 
 function hasGrantedCorePermissions(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {
   return permissions?.accessibility === 'granted' && permissions.screenRecording === 'granted';
+}
+
+function effectiveCustomerMacPermissions(
+  customerMacPermissions: IEvaosNativeCompanionPermissionView | undefined,
+  controlSession: BridgeCommandResult
+): IEvaosNativeCompanionPermissionView | undefined {
+  if (hasGrantedCorePermissions(customerMacPermissions)) return customerMacPermissions;
+  return controlSessionHasPermissionProof(controlSession)
+    ? permissionView(controlSession.data?.permissions)
+    : customerMacPermissions;
+}
+
+function controlSessionHasPermissionProof(controlSession: BridgeCommandResult): boolean {
+  return (
+    controlSession.ok &&
+    readBoolean(controlSession.data, 'ready') === true &&
+    hasGrantedCorePermissions(permissionView(controlSession.data?.permissions))
+  );
 }
 
 function connectorServiceIsRunning(input: unknown): boolean {
