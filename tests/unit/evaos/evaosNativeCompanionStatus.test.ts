@@ -498,7 +498,72 @@ describe('evaosNativeCompanionStatus', () => {
         reachable: true,
       },
     });
-    expect(status.summaryText).toContain('secure tailnet/private connector host');
+    expect(status.summaryText).toContain('private connector link');
+  });
+
+  it('accepts private connector hosts when the bridge reports a URL or port', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: {
+            read_only: true,
+          },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: {
+          reachable: true,
+          host: 'http://100.64.0.4:8765',
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: {
+          installed: true,
+          running: false,
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: false,
+          kill_switch: false,
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        audit_id: 'audit-tail',
+        data: { records: [] },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      pairingCapable: true,
+    });
   });
 
   it('fails closed when the bridge CLI is missing', async () => {
@@ -594,6 +659,74 @@ describe('evaosNativeCompanionStatus', () => {
       auditId: 'audit-connector',
     });
     expect(result.message).toContain('already running and reachable');
+  });
+
+  it('reconciles control start when current control status is ready after a failed start response', async () => {
+    const deps = depsWithResponses({
+      'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench': {
+        ok: false,
+        errors: [{ code: 'already_active', message: 'transient launchd start failure' }],
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-current',
+        data: {
+          active: true,
+          ready: true,
+          mode: 'ask-permission',
+          kill_switch: false,
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'control_start', mode: 'ask-permission' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'control_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:customer-mac-control-start-reconciled',
+      auditId: 'audit-control-current',
+      control: {
+        active: true,
+        mode: 'ask-permission',
+        killSwitch: false,
+      },
+    });
+    expect(result.message).toContain('already active and ready');
+  });
+
+  it('does not reconcile control start as ready when the kill switch is enabled', async () => {
+    const deps = depsWithResponses({
+      'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench': {
+        ok: false,
+        errors: [{ code: 'already_active', message: 'transient launchd start failure' }],
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-current',
+        data: {
+          active: true,
+          ready: true,
+          mode: 'ask-permission',
+          kill_switch: true,
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'control_start', mode: 'ask-permission' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'control_start',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:customer-mac-control-start',
+      auditId: 'audit-control-current',
+      control: {
+        active: true,
+        mode: 'ask-permission',
+        killSwitch: true,
+      },
+    });
+    expect(result.message).toContain('Agent control could not start');
   });
 
   it('marks setup check as agent paired only when control status carries explicit proof', async () => {
@@ -1168,7 +1301,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:pairing-secure-network-required',
       agentPairingStatus: 'ready_for_agent_pairing',
     });
-    expect(result.message).toContain('secure tailnet/private connector host');
+    expect(result.message).toContain('private connector link');
     expect(result.pairing).toBeUndefined();
     expect(createCustomerMacEnrollment).not.toHaveBeenCalled();
     expect(deps.execFile).toHaveBeenCalledTimes(1);

@@ -18,6 +18,7 @@ import type {
   IEvaosNativeCompanionControlMode,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
+  IEvaosNativeCompanionReadiness,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
@@ -151,6 +152,12 @@ export async function getEvaosNativeCompanionStatus(
   const pairingBlockedReason = pairingCapable
     ? undefined
     : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
+  const summaryText = nativeCompanionSummaryText({
+    readiness,
+    pairingCapable,
+    pairingBlockedReason,
+    agentPairingStatus,
+  });
 
   return {
     schemaVersion: 'evaos.native_companion_status.v1',
@@ -159,14 +166,7 @@ export async function getEvaosNativeCompanionStatus(
     agentPairingStatus,
     pairingCapable,
     pairingBlockedReason,
-    summaryText:
-      readiness === 'ready'
-        ? !pairingCapable
-          ? 'Workbench connector is locally ready, but agent pairing needs the bundled connector and a secure tailnet/private connector host.'
-          : agentPairingStatus === 'agent_paired'
-            ? 'Workbench connector ready with agent pairing proof.'
-            : 'Workbench connector ready for code-only agent pairing.'
-        : 'Workbench connector repair is required before evaOS or Hermes can use Mac control.',
+    summaryText,
     sourcePointer: 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
     releasedWorkbench: {
@@ -429,6 +429,58 @@ async function runConnectorStartAction(
   });
 }
 
+async function runControlStartAction(
+  bridgePath: string,
+  mode: IEvaosNativeCompanionControlMode,
+  request: IEvaosNativeCompanionActionRequest,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  const started = await runBridgeCommand(
+    bridgePath,
+    ['customer-mac', 'control', 'start', '--json', '--mode', mode, '--agent-label', safeAgentLabel(request.agentLabel)],
+    deps
+  );
+  if (started.ok) {
+    return nativeActionResult(
+      request.action,
+      'succeeded',
+      mode === 'ask-permission' ? 'Ask Permission agent control is active.' : 'Full Access agent control is active.',
+      {
+        sourcePointer: 'native-companion:customer-mac-control-start',
+        auditId: started.auditId,
+        auditIds: compactStrings([started.auditId]),
+        control: controlSummaryFromPayload(started.data),
+      }
+    );
+  }
+
+  const status = await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps);
+  if (controlSessionIsReady(status)) {
+    return nativeActionResult(
+      request.action,
+      'succeeded',
+      'Agent control was already active and ready after start reconciliation.',
+      {
+        sourcePointer: 'native-companion:customer-mac-control-start-reconciled',
+        auditId: status.auditId ?? started.auditId,
+        auditIds: compactStrings([status.auditId, started.auditId]),
+        control: controlSummaryFromPayload(status.data),
+      }
+    );
+  }
+
+  const detail = bridgeFailureDetail(
+    started,
+    'The control session did not report ready after Workbench retried current status.'
+  );
+  return nativeActionResult(request.action, 'repair_required', `Agent control could not start. ${detail}`, {
+    sourcePointer: 'native-companion:customer-mac-control-start',
+    auditId: status.auditId ?? started.auditId,
+    auditIds: compactStrings([status.auditId, started.auditId]),
+    control: controlSummaryFromPayload(status.data),
+  });
+}
+
 async function runSetupCheckAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
@@ -544,7 +596,7 @@ async function createPairingPromptAction(
     return nativeActionResult(
       'create_pairing_prompt',
       'repair_required',
-      'Mac Access is running locally, but Workbench needs a secure tailnet/private connector host before creating an agent pairing prompt.',
+      'Mac Access is running locally, but this Mac still needs the broker-owned private connector link before Workbench can create an agent pairing prompt.',
       {
         sourcePointer: 'native-companion:pairing-secure-network-required',
         agentPairingStatus: 'ready_for_agent_pairing',
@@ -757,29 +809,7 @@ export async function runNativeCompanionAction(
       });
     case 'control_start': {
       const mode = normalizeControlMode(request.mode);
-      return runCommandAction(
-        request.action,
-        bridgePath,
-        [
-          'customer-mac',
-          'control',
-          'start',
-          '--json',
-          '--mode',
-          mode,
-          '--agent-label',
-          safeAgentLabel(request.agentLabel),
-        ],
-        deps,
-        {
-          successMessage:
-            mode === 'ask-permission'
-              ? 'Ask Permission agent control is active.'
-              : 'Full Access agent control is active.',
-          failureMessage: 'Agent control could not start.',
-          includeControl: true,
-        }
-      );
+      return runControlStartAction(bridgePath, mode, request, deps);
     }
     case 'control_stop':
       return runCommandAction(request.action, bridgePath, ['customer-mac', 'control', 'stop', '--json'], deps, {
@@ -898,9 +928,30 @@ function isSafeConnectorRegistrationHost(value: string | undefined): boolean {
 }
 
 function normalizeConnectorHost(value: string | undefined): string | undefined {
-  const host = value?.trim().replace(/^\[/, '').replace(/\]$/, '');
-  if (!host || /[/?#@:]/.test(host)) return undefined;
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  const parsed = parseConnectorHostFromUrl(raw);
+  const hostWithMaybePort = parsed ?? raw.replace(/^\[/, '').replace(/\]$/, '');
+  if (/[/?#@]/.test(hostWithMaybePort)) return undefined;
+  const host = stripConnectorHostPort(hostWithMaybePort);
+  if (!host || host.includes(':')) return undefined;
   return host;
+}
+
+function parseConnectorHostFromUrl(value: string): string | undefined {
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return undefined;
+  try {
+    return new URL(value).hostname.replace(/^\[/, '').replace(/\]$/, '');
+  } catch {
+    return undefined;
+  }
+}
+
+function stripConnectorHostPort(value: string): string | undefined {
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(value);
+  if (bracketed) return bracketed[1];
+  const match = /^([^:]+)(?::\d+)?$/.exec(value);
+  return match?.[1];
 }
 
 function enabledEnvFlag(value: string | undefined): boolean {
@@ -1104,6 +1155,33 @@ function controlSessionHasPermissionProof(controlSession: BridgeCommandResult): 
 
 function connectorServiceIsRunning(input: unknown): boolean {
   return readBoolean(input, 'running') === true && readNestedBoolean(input, ['health', 'reachable']) === true;
+}
+
+function controlSessionIsReady(controlSession: BridgeCommandResult): boolean {
+  if (!controlSession.ok) return false;
+  if (readBoolean(controlSession.data, 'kill_switch') === true) return false;
+  if (readBoolean(controlSession.data, 'active') === true) return true;
+  return readBoolean(controlSession.data, 'ready') === true;
+}
+
+function nativeCompanionSummaryText(input: {
+  readiness: IEvaosNativeCompanionReadiness;
+  pairingCapable: boolean;
+  pairingBlockedReason?: string;
+  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus;
+}): string {
+  if (input.readiness !== 'ready') {
+    return 'Workbench connector repair is required before evaOS or Hermes can use Mac control.';
+  }
+  if (input.pairingCapable) {
+    return input.agentPairingStatus === 'agent_paired'
+      ? 'Workbench connector ready with agent pairing proof.'
+      : 'Workbench connector ready for code-only agent pairing.';
+  }
+  if (input.pairingBlockedReason === 'secure_network_link_required') {
+    return 'Workbench connector is locally ready, but this Mac needs the broker-owned private connector link before agent pairing can start.';
+  }
+  return 'Workbench connector is locally ready, but agent pairing needs the bundled connector and secure private connector link.';
 }
 
 function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {

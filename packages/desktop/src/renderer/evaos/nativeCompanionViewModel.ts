@@ -98,8 +98,8 @@ export function getNativeCompanionRepairViewModel(
 
   return {
     state,
-    title: titleForState(state, input.loading),
-    summary: summaryForState(state, input.loading),
+    title: titleForState(state, input.loading, input.status),
+    summary: summaryForState(state, input.loading, input.status),
     statusLabel: labelForState(state, input.loading),
     statusTone,
     readinessStrip: readinessStripForState(input.status, state, input.loading),
@@ -129,8 +129,13 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   return 'repair_required';
 }
 
-function titleForState(state: NativeCompanionUserState, loading: boolean): string {
+function titleForState(
+  state: NativeCompanionUserState,
+  loading: boolean,
+  status: IEvaosNativeCompanionStatusView | null | undefined
+): string {
   if (loading) return 'Checking Mac control';
+  if (secureConnectorLinkRequired(status)) return 'Connect secure Mac link';
   switch (state) {
     case 'ready':
       return 'Mac control is ready';
@@ -147,8 +152,15 @@ function titleForState(state: NativeCompanionUserState, loading: boolean): strin
   }
 }
 
-function summaryForState(state: NativeCompanionUserState, loading: boolean): string {
+function summaryForState(
+  state: NativeCompanionUserState,
+  loading: boolean,
+  status: IEvaosNativeCompanionStatusView | null | undefined
+): string {
   if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
+  if (secureConnectorLinkRequired(status)) {
+    return 'Local Mac permissions and connector status are ready, but this Mac still needs the broker-owned private connector link before Workbench can create an agent pairing prompt.';
+  }
   switch (state) {
     case 'ready':
       return 'Local Workbench connector proof is ready. Pair evaOS/OpenClaw or Hermes with a scoped prompt before an agent uses Mac control. Agent pairing proof is present only after setup/audit evidence confirms it.';
@@ -612,6 +624,7 @@ function pairingValue(
   state: NativeCompanionUserState
 ): string {
   if (state === 'not_paired') return 'Pair this Mac';
+  if (secureConnectorLinkRequired(status)) return 'Secure link needed';
   if (status?.pairingCapable === false) return 'Setup needed';
   if (state !== 'ready') return state === 'offline' || state === 'unsupported' ? 'Unavailable' : 'Repair needed';
   switch (normalizeAgentPairingStatus(status?.agentPairingStatus)) {
@@ -737,12 +750,16 @@ function disabledPairingCapabilityReason(status: IEvaosNativeCompanionStatusView
     case 'bundled_bridge_required':
       return 'Install the current Workbench build with the bundled Mac connector before creating a pairing prompt.';
     case 'secure_network_link_required':
-      return 'Connect this Mac to the secure tailnet/private connector link before creating a pairing prompt.';
+      return 'Connect this Mac to the broker-owned private connector link before creating a pairing prompt.';
     case 'connector_service_not_ready':
       return 'Turn on Mac Access before creating a pairing prompt.';
     default:
       return 'Workbench needs a bundled connector and secure network link before creating a pairing prompt.';
   }
+}
+
+function secureConnectorLinkRequired(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  return status?.pairingCapable === false && status.pairingBlockedReason === 'secure_network_link_required';
 }
 
 function safeActionDetail(message: string | undefined, fallback: string): string {

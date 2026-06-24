@@ -192,7 +192,7 @@ describe('nativeCompanionViewModel', () => {
         pairingCapable: false,
         pairingBlockedReason: 'secure_network_link_required',
         summaryText:
-          'Workbench connector is locally ready, but agent pairing needs the bundled connector and a secure tailnet/private connector host.',
+          'Workbench connector is locally ready, but this Mac needs the broker-owned private connector link before agent pairing can start.',
         bridgeCli: { installed: true, status: 'ready', readOnly: true },
         connectorService: { status: 'ready', running: true, reachable: true },
         customerMac: { status: 'ready' },
@@ -205,12 +205,14 @@ describe('nativeCompanionViewModel', () => {
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
 
     expect(viewModel.state).toBe('repair_required');
+    expect(viewModel.title).toBe('Connect secure Mac link');
+    expect(viewModel.summary).toContain('broker-owned private connector link');
     expect(pairing).toMatchObject({
-      value: 'Setup needed',
+      value: 'Secure link needed',
       tone: 'attention',
     });
     expect(pairingStep).toMatchObject({
-      detail: expect.stringContaining('secure tailnet/private connector link'),
+      detail: expect.stringContaining('broker-owned private connector link'),
       state: 'neutral',
     });
     expect(viewModel.nextAction).toMatchObject({
@@ -218,7 +220,7 @@ describe('nativeCompanionViewModel', () => {
       action: 'create_pairing_prompt',
       label: 'Create Pairing Prompt',
       disabled: true,
-      detail: expect.stringContaining('secure tailnet/private connector link'),
+      detail: expect.stringContaining('broker-owned private connector link'),
     });
   });
 
