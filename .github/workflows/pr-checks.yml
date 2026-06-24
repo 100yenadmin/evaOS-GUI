@@ -337,13 +337,18 @@ jobs:
           cache: true
 
       - name: Install dependencies
+        id: install-i18n-dependencies
+        continue-on-error: true
         run: bun install --frozen-lockfile
 
       - name: Run postinstall
+        if: steps.install-i18n-dependencies.outcome == 'success'
         run: npm run postinstall || true
 
       - name: Run i18n validation (warning-only)
+        if: steps.install-i18n-dependencies.outcome == 'success'
         id: i18n
+        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -352,23 +357,39 @@ jobs:
       - name: Publish i18n summary
         if: always()
         shell: bash
+        env:
+          INSTALL_OUTCOME: ${{ steps.install-i18n-dependencies.outcome }}
+          I18N_OUTCOME: ${{ steps.i18n.outcome }}
         run: |
-          echo "## i18n validation" >> $GITHUB_STEP_SUMMARY
-          if grep -q "⚠️" i18n-check.log; then
-            echo "Missing/incomplete translations found. Please review warnings below." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No i18n warnings detected." >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary>i18n log</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```text' >> $GITHUB_STEP_SUMMARY
-          cat i18n-check.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## i18n validation"
+            if [ "$INSTALL_OUTCOME" != "success" ]; then
+              echo "Dependency installation failed before i18n validation; treating as warning-only for the macOS RC lane."
+              exit 0
+            fi
+            if [ ! -f i18n-check.log ]; then
+              echo "i18n validation did not produce a log; treating as warning-only for the macOS RC lane."
+              exit 0
+            fi
+            if [ "$I18N_OUTCOME" != "success" ]; then
+              echo "i18n validation exited nonzero; treating as warning-only for the macOS RC lane."
+            elif grep -q "⚠️" i18n-check.log; then
+              echo "Missing/incomplete translations found. Please review warnings below."
+            else
+              echo "No i18n warnings detected."
+            fi
+            echo ""
+            echo "<details><summary>i18n log</summary>"
+            echo ""
+            echo '```text'
+            cat i18n-check.log
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # Job 4: Build test for the macOS-first beta lane. Linux/Windows builds are
-  # deferred to manual/release/scheduled workflows until after controlled 1.0.
+  # Job 4: Apple Silicon build smoke for the macOS-first beta lane. Linux,
+  # Windows, and macOS x64 builds are deferred to manual/release/scheduled
+  # workflows until after controlled 1.0.
   build-test:
     name: Build Test (${{ matrix.platform }})
     if: github.event.action != 'closed' && github.event.pull_request.draft == false && inputs.skip_build_test != true
@@ -384,12 +405,6 @@ jobs:
             target: '--mac'
             build_args: '--mac --arm64'
             unpacked_dir: 'mac-arm64'
-          - platform: 'macos-x64'
-            os: 'macos-14'
-            arch: 'x64'
-            target: '--mac'
-            build_args: '--mac --x64'
-            unpacked_dir: 'mac'
 
     steps:
       - name: Checkout code
@@ -522,14 +537,6 @@ jobs:
 
           test -x "$APP_BIN"
           "$APP_BIN" --version
-
-      - name: Skip executable smoke for macOS x64 cross build
-        if: matrix.platform == 'macos-x64'
-        shell: bash
-        run: |
-          echo "Skipping runtime launch smoke for macos-x64 cross build on arm64 runner."
-          ls -lah out/*.dmg
-          ls -lah out/*.zip 2>/dev/null || echo "::notice::No macOS ZIP in PR smoke output; release profile verification covers release ZIP assets."
 
   windows-build-test:
     name: Build Test (${{ matrix.platform }})

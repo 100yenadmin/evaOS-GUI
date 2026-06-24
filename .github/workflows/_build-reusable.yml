@@ -905,6 +905,8 @@ jobs:
             out/*.deb
             out/evaOS Workbench Beta-*-win-*.zip
             out/evaOS Workbench Beta-*-mac-*.zip
+            out/evaOS Workbench-*-win-*.zip
+            out/evaOS Workbench-*-mac-*.zip
             out/*.yml
           if-no-files-found: warn
           retention-days: 7
