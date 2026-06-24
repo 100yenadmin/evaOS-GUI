@@ -6,7 +6,7 @@
 
 During the evaOS Workbench controlled 1.0 finish-line sprint, PR checks are macOS-first:
 
-- Blocking PR checks are code quality, coverage, release-script safety, macOS unit tests, and macOS build/install smoke.
+- Blocking PR checks are code quality, coverage, release-script safety, macOS unit tests, and Apple Silicon macOS build/install smoke.
 - Windows and Linux/Ubuntu compatibility builds are explicitly deferred until after the controlled macOS 1.0 release.
 - Windows checks only run from `PR Checks` when `workflow_dispatch.run_windows_checks` is explicitly set for post-release hardening or a Windows-touching change.
 - Linux and Windows release artifacts remain covered by release/manual workflows, not routine parity PRs, and skipped cross-platform jobs are not blockers for the macOS RC.
@@ -17,7 +17,8 @@ This keeps day-to-day parity work focused on the platform used by the beta audie
 
 Manual release workflows accept `release_target_platforms` and the scripts honor `EVAOS_RELEASE_TARGET_PLATFORMS`.
 
-- `all` is the default and preserves the existing Windows, macOS, and Linux release contract.
+- `macos-arm64` is the default controlled Apple-Silicon RC profile.
+- `all` intentionally preserves the existing Windows, macOS, and Linux release contract when an operator explicitly selects it.
 - `macos` is the universal macOS profile. It builds, prepares, verifies, canaries, and distributes only macOS x64/arm64 desktop assets plus macOS updater metadata.
 - `macos-arm64` is the controlled Apple-Silicon RC profile. It builds, prepares, verifies, canaries, and distributes only macOS arm64 desktop assets plus `latest-arm64-mac.yml`.
 - `windows` is the post-RC Windows restoration profile. It builds, prepares, and verifies only Windows x64/arm64 desktop assets plus `latest.yml` and `latest-win-arm64.yml`; it does not run macOS DMG/notary gates or Linux packaging.
@@ -31,7 +32,7 @@ For the current controlled RC, use one lane at a time:
 2. Staged RC artifact: dispatch `Build and Release` with `beta_release_ack=evaos-beta`, `release_target_platforms=macos-arm64`, and `macos_dmg_finalization=local` for the controlled Apple-Silicon RC. Use `macos` only when intentionally building both x64 and arm64 macOS artifacts.
 3. Local DMG finalization: download the exact staged DMGs for the selected profile, Developer ID sign the DMG containers, submit them to Apple, staple them, and verify `xcrun stapler validate <dmg>` plus `spctl --assess --type open --context context:primary-signature <dmg>`.
 4. Updater metadata: preserve the `latest-arm64-mac.yml` / `latest-mac.yml` files generated from the ZIP auto-update assets in the staged build. Do not regenerate macOS Electron updater metadata from DMGs; DMGs are manual installer fallbacks.
-5. Trusted manifest: attach the finalized DMGs plus the staged ZIP updater metadata to the GitHub prerelease, then run `Register evaOS Beta Local-Signed DMG Manifest` with `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
+5. Trusted manifest: attach the finalized DMGs plus the staged ZIP updater metadata to the GitHub prerelease, then run `Register evaOS Beta Local-Signed DMG Manifest` with `manifest_release_target_platforms=macos-arm64` and `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
 6. Canary and distribution: run `evaOS Beta RC Canary` and `Distribute evaOS Beta Release Assets` with the manifest registration `trusted_manifest_run_id`; distribution remains GitHub-release based, not S3/AWS.
 
 ### Agent operating rule
