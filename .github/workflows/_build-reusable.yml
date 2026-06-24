@@ -872,6 +872,61 @@ jobs:
           printf 'Found Windows ZIP artifact(s):\n'
           printf '  %s\n' "${zips[@]}"
 
+      - name: Verify macOS ZIP artifact
+        if: >-
+          success() &&
+          startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          shopt -s nullglob
+          zips=(
+            out/evaOS\ Workbench-*-mac-*.zip
+            out/evaOS\ Workbench\ Beta-*-mac-*.zip
+          )
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "::error::Missing macOS ZIP artifact required for updater metadata and bundled bridge verification."
+            ls -lh out || true
+            exit 1
+          fi
+          printf 'Found macOS ZIP artifact(s):\n'
+          printf '  %s\n' "${zips[@]}"
+
+      - name: Write macOS arm64 updater metadata
+        if: >-
+          success() &&
+          matrix.platform == 'macos-arm64' &&
+          inputs.macos_dmg_finalization == 'local' &&
+          steps.macos-build.outputs.notarization_status == 'dmg_staged_for_local_finalization'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(out/*-mac-arm64.zip)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS arm64 ZIP for latest-arm64-mac.yml, found ${#zips[@]}."
+            ls -lh out || true
+            exit 1
+          fi
+
+          zip="${zips[0]}"
+          base="$(basename "$zip")"
+          version="$(node -p "require('./package.json').version")"
+          sha512="$(openssl dgst -sha512 -binary "$zip" | openssl base64 -A)"
+          size="$(wc -c < "$zip" | tr -d '[:space:]')"
+          release_date="$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
+
+          cat > out/latest-arm64-mac.yml <<EOF
+          version: ${version}
+          files:
+            - url: ${base}
+              sha512: ${sha512}
+              size: ${size}
+          path: ${base}
+          sha512: ${sha512}
+          releaseDate: '${release_date}'
+          EOF
+          echo "Generated latest-arm64-mac.yml from macOS arm64 ZIP: ${base}"
+
       # Upload artifacts when:
       # - Build succeeded (all platforms)
       # - macOS: notarization timeout but artifacts exist (handled in build step)
@@ -907,7 +962,7 @@ jobs:
             out/evaOS Workbench Beta-*-mac-*.zip
             out/evaOS Workbench-*-win-*.zip
             out/evaOS Workbench-*-mac-*.zip
-            out/*.yml
+            out/latest*.yml
           if-no-files-found: warn
           retention-days: 7
 
