@@ -346,6 +346,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const winBuilder = getTopLevelYamlSection(builder, 'win');
   const linuxBuilder = getTopLevelYamlSection(builder, 'linux');
   const buildRelease = readText(rootDir, '.github/workflows/build-and-release.yml');
+  const buildManual = readText(rootDir, '.github/workflows/build-manual.yml');
   const prChecks = readText(rootDir, '.github/workflows/pr-checks.yml');
   const distribute = readText(rootDir, '.github/workflows/release-distribute.yml');
   const rcCanary = readText(rootDir, '.github/workflows/evaos-beta-rc-canary.yml');
@@ -473,6 +474,20 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/build-and-release.yml',
     issues,
     'Apple-Silicon-only release target profile'
+  );
+  requireText(
+    buildRelease,
+    '"os":"macos-15"',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'macOS release packaging must use a Sequoia runner for the native control helper'
+  );
+  requireText(
+    buildManual,
+    '"os":"macos-15"',
+    '.github/workflows/build-manual.yml',
+    issues,
+    'manual macOS packaging must use a Sequoia runner for the native control helper'
   );
   requireText(
     buildRelease,
