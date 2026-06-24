@@ -234,6 +234,79 @@ describe('NativeCompanionPage', () => {
     await waitFor(() => expect(bridgeMocks.openReleasedWorkbench).toHaveBeenCalledTimes(1));
   });
 
+  it('shows a support-required secure-link blocker before enabling agent pairing', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-24T15:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'not_ready',
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        summaryText:
+          'Workbench connector is locally ready, but this Mac needs the broker-owned private connector link before agent pairing can start.',
+        sourcePointer: 'native-companion:customer-mac-status',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true, running: true, path: '/Applications/evaOS Workbench.app' },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac',
+          deviceLabel: 'Davids-MacBook-Pro.local',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        controlSession: {
+          status: 'ready',
+          auditId: 'audit-control-ready',
+          active: false,
+          killSwitch: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac', 'audit-control-ready'],
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Connect secure Mac link')).toBeInTheDocument();
+    expect(screen.getByText('Secure link needed')).toBeInTheDocument();
+    expect(screen.getAllByText(/broker-owned private connector link/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt');
+    expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
+      expect(button).toBeDisabled();
+    }
+    expect(bridgeMocks.runAction).not.toHaveBeenCalled();
+  });
+
   it('defaults repair-required users to one repair action and hides diagnostics until disclosure', async () => {
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
