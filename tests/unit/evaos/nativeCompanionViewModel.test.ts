@@ -396,15 +396,16 @@ describe('nativeCompanionViewModel', () => {
           status: 'repair_required',
           message: 'Workbench created a pairing code, but the local connector could not register it with evaOS.',
           sourcePointer: 'native-companion:pairing-registration-failed',
-          agentPairingStatus: 'proof_failed',
+          agentPairingStatus: 'ready_for_agent_pairing',
           auditIds: [],
           refreshRecommended: false,
         },
       }).nextAction
     ).toMatchObject({
       kind: 'run',
-      action: 'setup_check',
-      label: 'Run Setup Check',
+      action: 'create_pairing_prompt',
+      label: 'Retry Pairing Prompt',
+      title: 'Retry connector registration',
       disabled: false,
     });
 

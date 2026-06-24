@@ -988,7 +988,7 @@ describe('evaosNativeCompanionStatus', () => {
       action: 'create_pairing_prompt',
       status: 'repair_required',
       sourcePointer: 'native-companion:pairing-registration-failed',
-      agentPairingStatus: 'proof_failed',
+      agentPairingStatus: 'ready_for_agent_pairing',
     });
     expect(result.pairing).toBeUndefined();
     expect(result.message).toContain('Bridge error broker_complete_enrollment_failed');
@@ -1042,7 +1042,7 @@ describe('evaosNativeCompanionStatus', () => {
       action: 'create_pairing_prompt',
       status: 'repair_required',
       sourcePointer: 'native-companion:pairing-registration-failed',
-      agentPairingStatus: 'proof_failed',
+      agentPairingStatus: 'ready_for_agent_pairing',
     });
     expect(result.pairing).toBeUndefined();
     expect(result.message).toContain('Bridge error broker_complete_enrollment_failed');

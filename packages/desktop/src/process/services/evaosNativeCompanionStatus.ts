@@ -625,7 +625,7 @@ async function createPairingPromptWithReadyMac(input: {
         sourcePointer: 'native-companion:pairing-registration-failed',
         auditId: registration.auditId,
         auditIds: compactStrings([registration.auditId]),
-        agentPairingStatus: 'proof_failed',
+        agentPairingStatus: 'ready_for_agent_pairing',
       }
     );
   }
