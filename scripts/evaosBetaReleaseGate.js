@@ -1185,26 +1185,41 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
   }
 }
 
-function zipEntries(zipPath) {
+function inspectMacosZipBridgePayload(zipPath) {
   const script = [
     'import json',
     'import pathlib',
     'import sys',
     'import zipfile',
     'path = pathlib.Path(sys.argv[1])',
+    'def has_bridge_entry(name, suffix):',
+    '    parts = name.split("/")',
+    '    expected = ["Contents", "Resources", "Bridge", suffix]',
+    '    for index, part in enumerate(parts):',
+    '        if part.endswith(".app") and parts[index + 1:index + 5] == expected and index + 5 == len(parts):',
+    '            return True',
+    '    return False',
+    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False}',
     'with zipfile.ZipFile(path) as archive:',
-    '    print(json.dumps(archive.namelist()))',
+    '    for name in archive.namelist():',
+    '        if not result["hasBridgeExecutable"] and has_bridge_entry(name, "evaos-desktop-bridge"):',
+    '            result["hasBridgeExecutable"] = True',
+    '        if not result["hasBridgeManifest"] and has_bridge_entry(name, "manifest.json"):',
+    '            result["hasBridgeManifest"] = True',
+    '        if result["hasBridgeExecutable"] and result["hasBridgeManifest"]:',
+    '            break',
+    'print(json.dumps(result))',
   ].join('\n');
   try {
-    return JSON.parse(execFileSync('python3', ['-c', script, zipPath], { encoding: 'utf8' }));
+    return JSON.parse(execFileSync('python3', ['-c', script, zipPath], { encoding: 'utf8', maxBuffer: 1024 * 1024 }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Unable to inspect macOS ZIP payload ${path.basename(zipPath)}: ${message}`);
   }
 }
 
-function assertZipContains(entries, pattern, zipName, label) {
-  if (!entries.some((entry) => pattern.test(entry))) {
+function assertZipBridgeProbe(probe, key, zipName, label) {
+  if (!probe[key]) {
     throw new Error(`${zipName} is missing bundled evaOS desktop bridge ${label}.`);
   }
 }
@@ -1225,14 +1240,9 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
   }
 
   for (const zipName of zipNames) {
-    const entries = zipEntries(path.join(outputDir, zipName));
-    assertZipContains(
-      entries,
-      /(^|\/)[^/]+\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge$/,
-      zipName,
-      'executable'
-    );
-    assertZipContains(entries, /(^|\/)[^/]+\.app\/Contents\/Resources\/Bridge\/manifest\.json$/, zipName, 'manifest');
+    const probe = inspectMacosZipBridgePayload(path.join(outputDir, zipName));
+    assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
+    assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
   }
 }
 

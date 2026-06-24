@@ -91,18 +91,21 @@ function writeArm64TrustEvidence(proofDir: string) {
   fs.writeFileSync(path.join(proofDir, 'spctl-macos-arm64.txt'), '/Applications/evaOS Workbench.app: accepted\n');
 }
 
-function writeMacosBridgeZip(zipPath: string) {
+function writeMacosBridgeZip(zipPath: string, options: { extraEntryCount?: number } = {}) {
   const script = [
     'import pathlib',
     'import sys',
     'import zipfile',
     'zip_path = pathlib.Path(sys.argv[1])',
+    'extra_entry_count = int(sys.argv[2]) if len(sys.argv) > 2 else 0',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", "{\\"placeholder\\":false}\\n")',
+    '    for index in range(extra_entry_count):',
+    '        archive.writestr(f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", "x\\n")',
   ].join('\n');
-  execFileSync('python3', ['-c', script, zipPath]);
+  execFileSync('python3', ['-c', script, zipPath, String(options.extraEntryCount || 0)]);
 }
 
 function writeProofReleaseAssetsReference(
@@ -774,6 +777,43 @@ describe('evaOS beta release gate', () => {
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
         })
       ).toThrow(/checksum/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('verifies release manifests without buffering the full macOS ZIP entry list', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-large-zip-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'), {
+        extraEntryCount: 20000,
+      });
+      fs.writeFileSync(
+        path.join(dir, 'latest-arm64-mac.yml'),
+        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+      );
+
+      releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+        GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+        GITHUB_WORKFLOW: 'PR Checks',
+        EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
+        GITHUB_RUN_ID: '12345',
+        GITHUB_RUN_ATTEMPT: '1',
+        EVAOS_BETA_RELEASE_COMMIT: 'abc123',
+        EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
+        EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+        EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+      });
+
+      expect(
+        releaseGate.verifyReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+        })
+      ).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
