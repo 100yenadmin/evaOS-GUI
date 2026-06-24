@@ -44,7 +44,7 @@ on:
       release_target_platforms:
         description: 'Release target platforms for asset verification: all keeps Windows/macOS/Linux; macos verifies x64+arm64 macOS; macos-arm64 verifies only Apple Silicon macOS.'
         required: false
-        default: all
+        default: macos-arm64
         type: choice
         options:
           - all
@@ -56,7 +56,7 @@ permissions:
   actions: read
 
 env:
-  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all' }}
+  EVAOS_RELEASE_TARGET_PLATFORMS: ${{ inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'macos-arm64' }}
 
 jobs:
   rc-canary:
@@ -64,7 +64,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     env:
-      BETA_APP_NAME: evaOS Workbench Beta.app
+      BETA_APP_NAME: evaOS Workbench.app
       PROOF_DIR: rc-proof
     steps:
       - name: Validate canary inputs
@@ -366,6 +366,12 @@ jobs:
 
           install_fallback_app "$FALLBACK_ASSET" "$FALLBACK_APP_NAME"
 
+          SAME_APP_UPGRADE=false
+          if [ "$FALLBACK_APP_NAME" = "$BETA_APP_NAME" ]; then
+            SAME_APP_UPGRADE=true
+          fi
+          echo "SAME_APP_UPGRADE=$SAME_APP_UPGRADE" >> "$GITHUB_ENV"
+
           BETA_DMG=$(find release-assets \( -name "*mac-arm64*.dmg" -o -name "*arm64*.dmg" \) -type f | sort | head -n 1)
           if [ -z "$BETA_DMG" ]; then
             echo "::error::Release assets do not include a macOS arm64 DMG."
@@ -373,7 +379,7 @@ jobs:
           fi
           install_app_from_dmg "$BETA_DMG" "$BETA_APP_NAME" "$RUNNER_TEMP/beta-dmg"
 
-          if [ ! -d "/Applications/$FALLBACK_APP_NAME" ]; then
+          if [ "$SAME_APP_UPGRADE" != "true" ] && [ ! -d "/Applications/$FALLBACK_APP_NAME" ]; then
             echo "::error::Installing beta removed the released fallback app."
             exit 1
           fi
@@ -383,11 +389,16 @@ jobs:
           fi
 
           {
-            echo "PASS: beta DMG copied to /Applications/$BETA_APP_NAME without replacing the released fallback app."
+            if [ "$SAME_APP_UPGRADE" = "true" ]; then
+              echo "PASS: beta DMG copied to /Applications/$BETA_APP_NAME as a same-app upgrade over the released fallback app."
+            else
+              echo "PASS: beta DMG copied to /Applications/$BETA_APP_NAME without replacing the released fallback app."
+            fi
             echo "Fallback app: /Applications/$FALLBACK_APP_NAME"
             echo "Fallback asset: $FALLBACK_ASSET"
             echo "Fallback asset kind: ${FALLBACK_ASSET_KIND:-unknown}"
             echo "Beta app: /Applications/$BETA_APP_NAME"
+            echo "Same-app upgrade: $SAME_APP_UPGRADE"
           } > "$PROOF_DIR/install-smoke.md"
 
       - name: Verify signing and Gatekeeper
@@ -414,12 +425,35 @@ jobs:
           BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BETA_PLIST")
           PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$BETA_PLIST")
 
-          if [ "$BUNDLE_ID" != "com.evaos.workbench.beta" ]; then
+          if [ "$BUNDLE_ID" != "com.evaos.workbench" ]; then
             echo "::error::Unexpected beta bundle id: $BUNDLE_ID"
             exit 1
           fi
-          if [ "$PRODUCT_NAME" != "evaOS Workbench Beta" ]; then
+          if [ "$PRODUCT_NAME" != "evaOS Workbench" ]; then
             echo "::error::Unexpected beta product name: $PRODUCT_NAME"
+            exit 1
+          fi
+
+          URL_SCHEMES=$(node - "$BETA_PLIST" <<'NODE'
+          const { execFileSync } = require('child_process');
+          const plistPath = process.argv[2];
+          const raw = execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleURLTypes', 'json', '-o', '-', plistPath], {
+            encoding: 'utf8',
+          });
+          const urlTypes = JSON.parse(raw);
+          const schemes = urlTypes.flatMap((entry) =>
+            Array.isArray(entry.CFBundleURLSchemes) ? entry.CFBundleURLSchemes : []
+          );
+          process.stdout.write(schemes.join('\n'));
+          NODE
+          )
+          if ! printf '%s\n' "$URL_SCHEMES" | grep -Fx 'evaos-workbench' >/dev/null; then
+            echo "::error::Installed app does not declare evaos-workbench protocol scheme."
+            printf '%s\n' "$URL_SCHEMES"
+            exit 1
+          fi
+          if printf '%s\n' "$URL_SCHEMES" | grep -Fx 'evaos-workbench-beta' >/dev/null; then
+            echo "::error::Installed app still declares stale evaos-workbench-beta protocol scheme."
             exit 1
           fi
 
@@ -457,17 +491,26 @@ jobs:
 
           open -n "$BETA_APP"
           sleep 8
-          if ! pgrep -f "EvaOSWorkbenchBeta|evaOS Workbench Beta" > /dev/null; then
+          if ! pgrep -f "EvaOSWorkbench|evaOS Workbench" > /dev/null; then
             echo "::error::Beta app did not launch a detectable process."
             exit 1
           fi
-          pkill -f "EvaOSWorkbenchBeta|evaOS Workbench Beta" || true
+          pkill -f "EvaOSWorkbench|evaOS Workbench" || true
 
           {
-            echo "PASS: evaOS Workbench Beta launched with beta identity and no upstream AionUi feed."
+            echo "PASS: evaOS Workbench launched with stable Workbench identity and no upstream AionUi feed."
             echo "Bundle id: $BUNDLE_ID"
             echo "Product name: $PRODUCT_NAME"
+            echo "Protocol scheme: evaos-workbench"
           } > "$PROOF_DIR/launch-smoke.md"
+
+          {
+            echo "PASS: protocol scheme evaos-workbench is declared by com.evaos.workbench."
+            echo "Bundle id: $BUNDLE_ID"
+            echo "Protocol scheme: evaos-workbench"
+            echo "Declared schemes:"
+            printf '%s\n' "$URL_SCHEMES"
+          } > "$PROOF_DIR/protocol-identity.md"
 
           {
             echo "PASS: update repo is 100yenadmin/evaOS-GUI and iOfficeAI/AionUi blocked for beta assets."
@@ -483,9 +526,67 @@ jobs:
           FALLBACK_APP="/Applications/$FALLBACK_APP_NAME"
           BETA_APP="/Applications/$BETA_APP_NAME"
 
+          install_app_from_dmg() {
+            local dmg="$1"
+            local app_name="$2"
+            local mount_dir="$3"
+
+            rm -rf "$mount_dir"
+            mkdir -p "$mount_dir"
+            hdiutil attach "$dmg" -nobrowse -quiet -mountpoint "$mount_dir"
+            local app_path
+            app_path=$(find "$mount_dir" -maxdepth 2 -type d -name "$app_name" | head -n 1)
+            if [ -z "$app_path" ]; then
+              echo "::error::Fallback DMG $dmg did not contain $app_name."
+              hdiutil detach "$mount_dir" -quiet || true
+              exit 1
+            fi
+            rm -rf "/Applications/$app_name"
+            ditto "$app_path" "/Applications/$app_name"
+            hdiutil detach "$mount_dir" -quiet
+          }
+
+          install_app_from_zip() {
+            local zip="$1"
+            local app_name="$2"
+            local extract_dir="$3"
+
+            rm -rf "$extract_dir"
+            mkdir -p "$extract_dir"
+            ditto -x -k "$zip" "$extract_dir"
+            local app_path
+            app_path=$(find "$extract_dir" -maxdepth 4 -type d -name "$app_name" | head -n 1)
+            if [ -z "$app_path" ]; then
+              echo "::error::Fallback ZIP $zip did not contain $app_name."
+              exit 1
+            fi
+            rm -rf "/Applications/$app_name"
+            ditto "$app_path" "/Applications/$app_name"
+          }
+
           rm -rf "$BETA_APP"
-          if [ -d "$BETA_APP" ]; then
-            echo "::error::Beta app is still present after rollback removal."
+          if [ "${SAME_APP_UPGRADE:-false}" = "true" ]; then
+            case "${FALLBACK_ASSET:-}" in
+              *.dmg)
+                install_app_from_dmg "$FALLBACK_ASSET" "$FALLBACK_APP_NAME" "$RUNNER_TEMP/rollback-fallback-dmg"
+                ;;
+              *.zip)
+                install_app_from_zip "$FALLBACK_ASSET" "$FALLBACK_APP_NAME" "$RUNNER_TEMP/rollback-fallback-zip"
+                ;;
+              *)
+                echo "::error::Unsupported fallback asset for rollback reinstall: ${FALLBACK_ASSET:-missing}"
+                exit 1
+                ;;
+            esac
+          else
+            if [ -d "$BETA_APP" ]; then
+              echo "::error::Beta app is still present after rollback removal."
+              exit 1
+            fi
+          fi
+
+          if [ ! -d "$FALLBACK_APP" ]; then
+            echo "::error::Released fallback app is missing after rollback."
             exit 1
           fi
 
@@ -502,11 +603,12 @@ jobs:
             > "$PROOF_DIR/launchservices-protocol-state.txt" || true
 
           {
-            echo "PASS: beta app absent after removal; released fallback app launched; data/cache disposition recorded; protocol handler state inspected; broker login/session proof reference: $BROKER_SESSION_PROOF_REF."
-            echo "Beta app absent: /Applications/$BETA_APP_NAME"
+            echo "PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state inspected; broker login/session proof reference: $BROKER_SESSION_PROOF_REF."
+            echo "Candidate app rolled back: /Applications/$BETA_APP_NAME"
+            echo "Same-app upgrade: ${SAME_APP_UPGRADE:-false}"
             echo "Fallback app launched: $FALLBACK_APP"
             echo "data/cache disposition: GitHub runner is ephemeral; no user data migrated or deleted beyond beta app bundle removal."
-            echo "protocol handler state: see launchservices-protocol-state.txt"
+            echo "protocol handler state: evaos-workbench / com.evaos.workbench; see launchservices-protocol-state.txt"
             echo "broker login/session: $BROKER_SESSION_PROOF_REF"
           } > "$PROOF_DIR/rollback-smoke.md"
 

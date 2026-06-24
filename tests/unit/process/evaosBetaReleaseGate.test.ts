@@ -995,7 +995,11 @@ describe('evaOS beta release gate', () => {
       );
       fs.writeFileSync(
         path.join(proofDir, 'launch-smoke.md'),
-        'PASS: evaOS Workbench launched with beta identity and no upstream AionUi feed.\n'
+        'PASS: evaOS Workbench launched with stable Workbench identity, protocol scheme evaos-workbench, and no upstream AionUi feed.\n'
+      );
+      fs.writeFileSync(
+        path.join(proofDir, 'protocol-identity.md'),
+        'PASS: protocol scheme evaos-workbench is declared by com.evaos.workbench.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),
@@ -1003,7 +1007,7 @@ describe('evaOS beta release gate', () => {
       );
       fs.writeFileSync(
         path.join(proofDir, 'rollback-smoke.md'),
-        'PASS: beta app absent after removal; released fallback app launched; data/cache disposition recorded; protocol handler state inspected; broker login/session state remained usable.\n'
+        'PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state evaos-workbench / com.evaos.workbench inspected; broker login/session state remained usable.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'support-notes.md'),
@@ -1127,7 +1131,11 @@ describe('evaOS beta release gate', () => {
       );
       fs.writeFileSync(
         path.join(proofDir, 'launch-smoke.md'),
-        'PASS: evaOS Workbench launched with beta identity and no upstream AionUi feed.\n'
+        'PASS: evaOS Workbench launched with stable Workbench identity, protocol scheme evaos-workbench, and no upstream AionUi feed.\n'
+      );
+      fs.writeFileSync(
+        path.join(proofDir, 'protocol-identity.md'),
+        'PASS: protocol scheme evaos-workbench is declared by com.evaos.workbench.\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),

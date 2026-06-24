@@ -1,16 +1,16 @@
-# evaOS Workbench Beta Packaging And Rollback
+# evaOS Workbench Beta Channel Packaging And Rollback
 
-This document is the issue #12 release gate for the AionUi-based evaOS public beta shell. It defines the beta identity, release workflow, updater/feed boundary, smoke proof, rollback path, and support route.
+This document is the issue #12 release gate for the AionUi-based evaOS public beta channel. It defines the Workbench app identity, release workflow, updater/feed boundary, smoke proof, rollback path, and support route.
 
-## Beta Identity
+## Workbench Release Identity
 
-- App name: `evaOS Workbench Beta`
-- macOS bundle id: `com.evaos.workbench.beta`
-- Executable name: `EvaOSWorkbenchBeta`
-- Protocol scheme: `evaos-workbench-beta`
+- App name: `evaOS Workbench`
+- macOS bundle id: `com.evaos.workbench`
+- Executable name: `EvaOSWorkbench`
+- Protocol scheme: `evaos-workbench`
 - GitHub release repo: `100yenadmin/evaOS-GUI`
 - Release tag prefix: `evaos-beta-`
-- Artifact identity marker: `evaOS Workbench Beta`, `EvaOSWorkbenchBeta`, or `evaos-workbench-beta`
+- Artifact identity marker: `evaOS Workbench`, `EvaOSWorkbench`, or `evaos-workbench`
 
 The public beta must not ship as upstream `AionUi`, use the upstream `iOfficeAI/AionUi` release feed, or publish assets whose installer names contain upstream AionUi branding.
 
@@ -22,7 +22,7 @@ The beta release path is manual-only:
 2. Keep `EVAOS_BETA_RELEASE_PUBLISH_ENABLED` disabled for internal smoke builds.
 3. Enable `EVAOS_BETA_RELEASE_PUBLISH_ENABLED=true` only after the #13 decision packet says `ship public beta`.
 4. Set `EVAOS_BETA_RELEASE_BRANCH` to the audited release branch before enabling public beta tag creation.
-5. Distribute assets only with `Distribute evaOS Beta Release Assets`, `beta_distribution_ack=evaos-beta`, and a tag that starts with `evaos-beta-`.
+5. Distribute assets only with `Distribute evaOS Beta Release Assets`, `beta_distribution_ack=evaos-beta`, `release_target_platforms=macos-arm64` for the controlled Apple Silicon lane, and a tag that starts with `evaos-beta-`.
 6. Run `evaOS Beta RC Canary` for the same non-dev tag and keep the successful workflow run id.
 7. Do not distribute `-dev-` beta tags. Public distribution requires a non-dev `evaos-beta-` tag that is reachable from `EVAOS_BETA_RELEASE_BRANCH`.
 8. Distribution must validate `evaos-beta-release-manifest.json`, matching asset checksums, the tag commit, the trusted manifest artifact, and the successful `evaOS Beta RC Canary` proof run before GitHub prerelease promotion/distribution.
@@ -85,10 +85,11 @@ Before sharing a public beta link, attach proof to issue #12:
 - `codesign --verify --deep --strict --verbose=2 <app>` passes.
 - `xcrun stapler validate <app>` passes.
 - `spctl --assess --type execute --verbose <app>` passes or the exact notarization/Gatekeeper blocker is recorded.
-- Install smoke: DMG opens and app copies to `/Applications` without replacing the old released app identity.
-- Launch smoke: app starts, shows beta identity, and does not require upstream AionUi update/feed state.
+- Install smoke: DMG opens and app copies to `/Applications/evaOS Workbench.app`; when the candidate uses the same app identity as the released fallback, rollback proof must reinstall the fallback asset.
+- Launch smoke: app starts, shows stable evaOS Workbench identity, declares `evaos-workbench`, and does not require upstream AionUi update/feed state.
+- Protocol identity: the installed app declares `evaos-workbench` for `com.evaos.workbench`; stale `evaos-workbench-beta` protocol state is rejected.
 - Updater/feed audit: no public beta artifact can auto-update from upstream channels.
-- Rollback smoke: old released macOS app still installs and launches independently.
+- Rollback smoke: released fallback macOS app can be reinstalled and launched after candidate removal.
 
 Create a machine-checkable release-candidate proof packet before asking for the
 final #13 public beta decision:
@@ -121,40 +122,40 @@ The proof packet must include:
 - `trusted-manifest/evaos-beta-release-manifest.json` downloaded from the release workflow artifact, not copied from the mutable GitHub Release assets.
 - `codesign-dmg-macos-arm64.txt`, `stapler-dmg-macos-arm64.txt`, and `spctl-dmg-macos-arm64.txt`.
 - `codesign-macos-arm64.txt`, `stapler-macos-arm64.txt`, and `spctl-macos-arm64.txt`.
-- `install-smoke.md`, `launch-smoke.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
+- `install-smoke.md`, `launch-smoke.md`, `protocol-identity.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
 - macOS x64 signing/Gatekeeper proof, or a concrete `macosX64.status=blocked` reason in `evaos-beta-rc-proof.json`.
 
-`rollback-smoke.md` must explicitly record beta app absence, released fallback launch, beta data/cache disposition, protocol handler state, and broker login/session proof.
+`rollback-smoke.md` must explicitly record candidate rollback, released fallback launch, beta data/cache disposition, protocol handler state, and broker login/session proof.
 
 ## Rollback
 
 The fallback remains the current released macOS app until #13 ships the public beta. Rollback procedure:
 
-1. Quit `evaOS Workbench Beta`.
-2. Remove `/Applications/evaOS Workbench Beta.app`.
-3. Keep the old released macOS app installed under its existing app identity.
-4. Launch the released app and confirm broker login/session state still works.
-5. If the beta changed local data during a test, preserve logs and restore from the last known-good customer account or VM/browser session state before inviting more users.
+1. Quit `evaOS Workbench`.
+2. Remove the candidate `/Applications/evaOS Workbench.app`.
+3. Reinstall the released fallback macOS asset under its existing app identity.
+4. Launch the released fallback app and confirm broker login/session state still works.
+5. If the candidate changed local data during a test, preserve logs and restore from the last known-good customer account or VM/browser session state before inviting more users.
 
-Rollback must not require deleting the old released app, changing its bundle id, or moving users to an upstream AionUi update channel.
+Rollback must preserve a reinstallable released fallback asset, must not change the Workbench bundle id, and must not move users to an upstream AionUi update channel.
 
 ## Protocol Handler Repair
 
-If a browser `Open Workbench` action opens the raw Electron default screen that says `path-to-app`, the macOS beta protocol handler is stale or incorrectly registered. The handler must resolve `evaos-workbench-beta` to `com.evaos.workbench.beta`, never to `com.github.Electron` or a repo-local `node_modules/.bun/electron.../Electron.app`.
+If a browser `Open Workbench` action opens the raw Electron default screen that says `path-to-app`, the macOS Workbench protocol handler is stale or incorrectly registered. The handler must resolve `evaos-workbench` to `com.evaos.workbench`, never to `com.github.Electron` or a repo-local `node_modules/.bun/electron.../Electron.app`.
 
 Operator repair proof commands:
 
 ```bash
-# Re-register the installed beta app with LaunchServices.
+# Re-register the installed Workbench app with LaunchServices.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f "/Applications/evaOS Workbench Beta.app"
+  -f "/Applications/evaOS Workbench.app"
 
-# Launch the beta app by bundle id so the packaged app can reclaim the beta scheme.
-open -b com.evaos.workbench.beta "evaos-workbench-beta://diagnostics/protocol-check"
+# Launch the Workbench app by bundle id so the packaged app can reclaim the scheme.
+open -b com.evaos.workbench "evaos-workbench://diagnostics/protocol-check"
 
-# Verify the beta protocol is no longer owned by raw Electron.
+# Verify the Workbench protocol is no longer owned by raw Electron.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
-  | grep -A4 -B2 "handlerpref id:             evaos-workbench-beta"
+  | grep -A4 -B2 "handlerpref id:             evaos-workbench"
 ```
 
 The installed-app proof gate also checks this state and fails before screenshots when LaunchServices maps the beta scheme to raw Electron.
@@ -162,30 +163,31 @@ The installed-app proof gate also checks this state and fails before screenshots
 Operator rollback proof commands:
 
 ```bash
-osascript -e 'quit app "evaOS Workbench Beta"' || true
-test ! -d "/Applications/evaOS Workbench Beta.app" || rm -rf "/Applications/evaOS Workbench Beta.app"
+osascript -e 'quit app "evaOS Workbench"' || true
+test ! -d "/Applications/evaOS Workbench.app" || rm -rf "/Applications/evaOS Workbench.app"
 
-# Confirm the old released app still exists independently.
-ls -ld "/Applications/evaOS Workbench.app" "/Applications/OpenClaw Workbench.app" 2>/dev/null || true
+# Reinstall and confirm the released fallback app from the approved fallback asset.
+echo "Reinstall the approved fallback DMG/ZIP before inviting users again."
+ls -ld "/Applications/evaOS Workbench.app" 2>/dev/null || true
 
-# Inspect beta-only local state without deleting evidence.
-ls -la "$HOME/Library/Application Support/evaOS Workbench Beta" 2>/dev/null || true
-ls -la "$HOME/Library/Logs/evaOS Workbench Beta" 2>/dev/null || true
-ls -la "$HOME/Library/Caches/evaOS Workbench Beta" 2>/dev/null || true
+# Inspect local state without deleting evidence.
+ls -la "$HOME/Library/Application Support/evaOS Workbench" 2>/dev/null || true
+ls -la "$HOME/Library/Logs/evaOS Workbench" 2>/dev/null || true
+ls -la "$HOME/Library/Caches/evaOS Workbench" 2>/dev/null || true
 
-# Confirm Launch Services sees the released fallback app and the beta app is absent after removal.
+# Confirm Launch Services sees the released fallback app after rollback.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
-  | grep -E "evaOS Workbench Beta|evaOS Workbench|OpenClaw Workbench" || true
+  | grep -E "evaOS Workbench|OpenClaw Workbench" || true
 
-# Confirm the beta protocol handler is not the only route left for users.
+# Confirm the Workbench protocol handler remains owned by the released app.
 plutil -extract CFBundleURLTypes raw -o - "/Applications/evaOS Workbench.app/Contents/Info.plist" 2>/dev/null || true
 ```
 
 Rollback verification must capture:
 
-- whether `/Applications/evaOS Workbench Beta.app` is absent after rollback;
+- whether the candidate app was removed and the released fallback was reinstalled;
 - whether the released fallback app still launches;
-- whether beta user-data, logs, and caches were preserved or intentionally removed;
+- whether user data, logs, and caches were preserved or intentionally removed;
 - whether protocol handler state still leaves the released app usable;
 - whether broker login/session state works in the released fallback app.
 
