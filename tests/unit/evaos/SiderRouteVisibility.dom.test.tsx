@@ -319,7 +319,7 @@ describe('Sider runtime route visibility', () => {
 
     expect(screen.getByText('- People & Access')).toBeInTheDocument();
     expect(screen.getByText('- Connected Apps')).toBeInTheDocument();
-    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
+    expect(screen.getByText('- Company Brain')).toBeInTheDocument();
 
     unmount();
     renderSider('/design-workspace');
@@ -598,7 +598,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('- Connected Apps')).toBeInTheDocument();
     expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
     expect(screen.queryByText('Approvals')).not.toBeInTheDocument();
-    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
+    expect(screen.getByText('- Company Brain')).toBeInTheDocument();
 
     adminView.unmount();
     renderSider('/design-workspace');
