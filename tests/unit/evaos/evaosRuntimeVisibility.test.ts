@@ -194,11 +194,7 @@ describe('evaosRuntimeVisibility', () => {
       fallbackPath: '/guid',
       reason: 'scope_required',
     });
-    expect(evaosRuntimeRouteDecision('/company-brain', context)).toEqual({
-      allowed: false,
-      fallbackPath: '/guid',
-      reason: 'scope_required',
-    });
+    expect(evaosRuntimeRouteDecision('/company-brain', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 
   it('shows admin technical runtimes and keeps team chat deferred until enabled', () => {
@@ -333,7 +329,7 @@ describe('evaosRuntimeVisibility', () => {
         scopes: ['view_company_brain'],
         userEmail: 'analyst@example.test',
       })
-    ).toEqual({ allowed: false, fallbackPath: '/guid', reason: 'scope_required' });
+    ).toEqual({ allowed: true, fallbackPath: '/guid' });
 
     expect(
       evaosRuntimeRouteDecision('/company-brain', {
