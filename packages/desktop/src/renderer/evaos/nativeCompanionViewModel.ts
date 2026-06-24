@@ -425,6 +425,18 @@ function nextActionForState(
     };
   }
 
+  if (actionResult?.sourcePointer === 'native-companion:pairing-registration-failed') {
+    const createPromptStatus = { ...status, agentPairingStatus: 'ready_for_agent_pairing' as const };
+    const createPromptAction = nextActionForState(
+      { ...input, status: createPromptStatus, actionResult: null, pairingPromptCopied: false },
+      state
+    );
+    return {
+      ...createPromptAction,
+      detail: safeActionDetail(actionResult.message, createPromptAction.detail),
+    };
+  }
+
   if (actionResult?.pairing?.setupPrompt && !input.pairingPromptCopied) {
     return {
       kind: 'copy',

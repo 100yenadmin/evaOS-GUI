@@ -366,7 +366,10 @@ describe('nativeCompanionViewModel', () => {
 
     expect(
       getNativeCompanionRepairViewModel({
-        status: readyStatus,
+        status: {
+          ...readyStatus,
+          agentPairingStatus: 'pairing_prompt_created',
+        },
         loading: false,
         error: null,
         hasSelectedCustomer: true,
@@ -396,15 +399,17 @@ describe('nativeCompanionViewModel', () => {
           status: 'repair_required',
           message: 'Workbench created a pairing code, but the local connector could not register it with evaOS.',
           sourcePointer: 'native-companion:pairing-registration-failed',
-          agentPairingStatus: 'proof_failed',
+          agentPairingStatus: 'ready_for_agent_pairing',
           auditIds: [],
           refreshRecommended: false,
         },
       }).nextAction
     ).toMatchObject({
       kind: 'run',
-      action: 'setup_check',
-      label: 'Run Setup Check',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      title: 'Pair evaOS/OpenClaw or Hermes',
+      detail: expect.stringContaining('local connector could not register'),
       disabled: false,
     });
 
@@ -431,6 +436,34 @@ describe('nativeCompanionViewModel', () => {
     ).toMatchObject({
       kind: 'copy',
       label: 'Copy Pairing Prompt',
+    });
+
+    expect(
+      getNativeCompanionRepairViewModel({
+        status: readyStatus,
+        loading: false,
+        error: null,
+        hasSelectedCustomer: true,
+        actionResult: {
+          action: 'create_pairing_prompt',
+          status: 'repair_required',
+          message: 'Workbench created a pairing code, but the local connector could not register it with evaOS.',
+          sourcePointer: 'native-companion:pairing-registration-failed',
+          agentPairingStatus: 'ready_for_agent_pairing',
+          auditIds: [],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'golden',
+            pairingCode: 'PAIR-1234',
+            setupPrompt: 'Pairing code: PAIR-1234',
+          },
+        },
+      }).nextAction
+    ).toMatchObject({
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      detail: expect.stringContaining('local connector could not register'),
     });
 
     expect(
