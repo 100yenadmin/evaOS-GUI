@@ -25,6 +25,13 @@ echo "Release target platforms: $RELEASE_TARGET_PLATFORMS"
 
 assert_evaos_beta_asset_identity() {
   local base="$1"
+  local base_lc expected_name expected_asset expected_compact expected_slug
+
+  base_lc="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+  expected_name="$(printf '%s' "$MOCK_PRODUCT_NAME" | tr '[:upper:]' '[:lower:]')"
+  expected_asset="$(printf '%s' "$MOCK_PRODUCT_ASSET_NAME" | tr '[:upper:]' '[:lower:]')"
+  expected_compact="${expected_name// /}"
+  expected_slug="${expected_name// /-}"
 
   case "$base" in
     *"AionUi"*|*"AionUI"*|*"Aion-UI"*|*"aion-ui"*|*"aionui"*)
@@ -34,11 +41,11 @@ assert_evaos_beta_asset_identity() {
       ;;
   esac
 
-  case "$base" in
-    *"evaOS Workbench Beta"*|*"evaOS.Workbench.Beta"*|*"EvaOSWorkbenchBeta"*|*"evaos-workbench-beta"*|*"evaOS Workbench"*|*"evaOS.Workbench"*|*"EvaOSWorkbench"*|*"evaos-workbench"*)
+  case "$base_lc" in
+    *"$expected_name"*|*"$expected_asset"*|*"$expected_compact"*|*"$expected_slug"*)
       ;;
     *)
-      echo "FAIL: beta asset lacks evaOS identity marker: $base"
+      echo "FAIL: beta asset lacks expected evaOS identity marker ($MOCK_PRODUCT_NAME): $base"
       ERRORS=$((ERRORS + 1))
       ;;
   esac
