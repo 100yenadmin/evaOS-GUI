@@ -583,7 +583,7 @@ async function createPairingPromptWithReadyMac(input: {
   const { bridgePath, customerId, deps } = input;
   const createEnrollment =
     deps.createCustomerMacEnrollment ??
-    ((input) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(input));
+    ((enrollmentInput) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(enrollmentInput));
   const deviceName = hostname() || 'Customer Mac';
   let enrollment: { customerId: string; pairingCode: string; expiresAt?: string };
   try {

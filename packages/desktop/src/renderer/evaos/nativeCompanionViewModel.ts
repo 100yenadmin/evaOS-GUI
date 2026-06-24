@@ -425,6 +425,18 @@ function nextActionForState(
     };
   }
 
+  if (actionResult?.sourcePointer === 'native-companion:pairing-registration-failed') {
+    const createPromptStatus = { ...status, agentPairingStatus: 'ready_for_agent_pairing' as const };
+    const createPromptAction = nextActionForState(
+      { ...input, status: createPromptStatus, actionResult: null, pairingPromptCopied: false },
+      state
+    );
+    return {
+      ...createPromptAction,
+      detail: safeActionDetail(actionResult.message, createPromptAction.detail),
+    };
+  }
+
   if (actionResult?.pairing?.setupPrompt && !input.pairingPromptCopied) {
     return {
       kind: 'copy',
@@ -447,20 +459,6 @@ function nextActionForState(
       step: 4,
       totalSteps,
       disabled: false,
-    };
-  }
-
-  if (actionResult?.sourcePointer === 'native-companion:pairing-registration-failed') {
-    return {
-      kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Retry Pairing Prompt',
-      title: 'Retry connector registration',
-      detail:
-        'Workbench created a pairing code, but the local connector could not register it with evaOS. Retry after the registration path is repaired.',
-      step: 3,
-      totalSteps,
-      disabled: !pairingReady,
     };
   }
 
