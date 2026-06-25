@@ -141,6 +141,35 @@ describe('EvaosBrokerSessionClient', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('does not clear desktop session storage for non-pairing broker authorization failures', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse({ error: 'forbidden' }, { status: 403 }));
+    const store = memorySessionStore({
+      accessToken: 'eds_authorized_session_secret_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+    });
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    await expect(client.customerTargets()).rejects.toMatchObject({
+      code: 'broker_http_error',
+      status: 403,
+    });
+
+    expect(store.cleared).toBe(0);
+    expect(client.getSessionStatus()).toMatchObject({
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      source: 'beta-storage',
+    });
+  });
+
   it('fails closed without calling the broker when the desktop session is expired', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
@@ -560,6 +589,43 @@ describe('EvaosBrokerSessionClient', () => {
       screen_sharing_opt_in: false,
     });
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+  });
+
+  it('clears stale desktop session state when Mac pairing enrollment auth is rejected', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse({ error: 'desktop_session_expired' }, { status: 401 }));
+    const store = memorySessionStore({
+      accessToken: 'eds_stale_pairing_session_secret_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+    });
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    await expect(
+      client.createCustomerMacEnrollment({
+        customerId: 'golden',
+        deviceName: 'Proof Mac',
+      })
+    ).rejects.toMatchObject({
+      code: 'broker_http_error',
+      status: 401,
+    });
+
+    expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBe(
+      'Bearer eds_stale_pairing_session_secret_for_test'
+    );
+    expect(store.cleared).toBe(1);
+    expect(client.getSessionStatus()).toMatchObject({
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+    });
   });
 
   it('completes Mac pairing enrollment through the broker without returning connector secrets', async () => {

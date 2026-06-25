@@ -8,6 +8,7 @@ import React from 'react';
 import classNames from 'classnames';
 import { Button, Message, Tag } from '@arco-design/web-react';
 import { Comment, Computer, Link, Shield } from '@icon-park/react';
+import { useTranslation } from 'react-i18next';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import {
   EVAOS_NATIVE_COMPANION_BOUNDARY,
@@ -38,16 +39,18 @@ import {
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { evaosBrokerSessionKey } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { openEvaosSupportEmail, openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
 const NativeCompanionPage: React.FC = () => {
+  const { t } = useTranslation();
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const violations = getEvaosNativeCompanionBoundaryViolations();
-  const { customerContext, brokerAuthenticated, brokerSessionLoading, refreshBrokerSession } =
+  const { customerContext, brokerSession, brokerAuthenticated, brokerSessionLoading } =
     useEvaosBrokeredCustomerContext();
-  const { selectedCustomerId, selectedTarget, targets = [], isOperator, refreshTargets } = customerContext;
+  const { selectedCustomerId, selectedTarget, targets = [], isOperator } = customerContext;
   const selectedPairingTarget = React.useMemo(
     () =>
       selectMacPairingTarget({
@@ -69,7 +72,23 @@ const NativeCompanionPage: React.FC = () => {
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const [authUrl, setAuthUrl] = React.useState<string | null>(null);
+  const brokerSessionKey = evaosBrokerSessionKey(brokerSession);
+  const lastBrokerSessionKeyRef = React.useRef<string | undefined>(brokerSessionKey);
   const selectedPairingCustomerRef = React.useRef<string | undefined>(selectedPairingCustomerId);
+  React.useEffect(() => {
+    const previousSessionKey = lastBrokerSessionKeyRef.current;
+    lastBrokerSessionKeyRef.current = brokerSessionKey;
+    if (!brokerSessionKey || brokerSessionKey === previousSessionKey) {
+      return;
+    }
+
+    setActionResult((current) =>
+      current?.sourcePointer === 'native-companion:pairing-broker-session-required' ? null : current
+    );
+    setCopyMessage(null);
+    setHandoffMessage(null);
+    setAuthUrl(null);
+  }, [brokerSessionKey]);
   React.useEffect(() => {
     selectedPairingCustomerRef.current = selectedPairingCustomerId;
     setActionResult(null);
@@ -163,25 +182,22 @@ const NativeCompanionPage: React.FC = () => {
   const handleReconnectWorkbench = React.useCallback(async () => {
     setAuthInFlight(true);
     setHandoffMessage(null);
-    setActionResult(null);
     setCopyMessage(null);
     setAuthUrl(null);
     try {
       const response = await evaosBroker.beginDesktopAuth.invoke();
       if (!response.success || !response.data) {
-        setHandoffMessage(response.msg || 'evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
+        setHandoffMessage(response.msg || t('evaos.nativeCompanion.desktopAuthStartFailed'));
         return;
       }
       setAuthUrl(response.data.authUrl ?? null);
-      setHandoffMessage(response.data.message || 'Continue sign-in in the browser, then return here.');
-      await refreshBrokerSession();
-      await refreshTargets();
+      setHandoffMessage(response.data.message || t('evaos.nativeCompanion.desktopAuthContinue'));
     } catch {
-      setHandoffMessage('evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
+      setHandoffMessage(t('evaos.nativeCompanion.desktopAuthStartFailed'));
     } finally {
       setAuthInFlight(false);
     }
-  }, [refreshBrokerSession, refreshTargets]);
+  }, [t]);
 
   const handleOpenAuthUrl = React.useCallback(async () => {
     if (!authUrl) return;

@@ -102,5 +102,9 @@
     "title": "ユーザーとアクセス",
     "unlimited": "無制限",
     "yourRole": "あなたのロール"
+  },
+  "nativeCompanion": {
+    "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
+    "desktopAuthContinue": "Continue sign-in in the browser, then return here."
   }
 }
