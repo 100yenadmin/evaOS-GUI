@@ -188,8 +188,9 @@ describe('evaOS installed app product proof', () => {
     expect(() => installedAppProof.assertCanonicalProofAppPath('com.evaos.workbench.beta')).toThrow(
       /absolute \.app path/
     );
-    expect(() => installedAppProof.assertCanonicalProofAppPath('/Volumes/LEXAR/Codex/old/evaOS Workbench Beta.app'))
-      .toThrow(/Release proof must target \/Applications\/evaOS Workbench\.app/);
+    expect(() =>
+      installedAppProof.assertCanonicalProofAppPath('/Volumes/LEXAR/Codex/old/evaOS Workbench Beta.app')
+    ).toThrow(/Release proof must target \/Applications\/evaOS Workbench\.app/);
     expect(() => installedAppProof.assertCanonicalProofAppPath('/Applications/evaOS Workbench.app')).not.toThrow();
     expect(() =>
       installedAppProof.assertCanonicalProofAppPath('/Applications/evaOS Workbench Beta.app', {
@@ -390,9 +391,9 @@ describe('evaOS installed app product proof', () => {
     expect(() => installedAppProof.assertMacVersionString('2.1.23', 'CFBundleShortVersionString')).not.toThrow();
     expect(() => installedAppProof.assertMacBuildVersion('28121317549', 'CFBundleVersion')).not.toThrow();
     expect(() => installedAppProof.assertMacBuildVersion('20260625.1', 'CFBundleVersion')).not.toThrow();
-    expect(() =>
-      installedAppProof.assertMacVersionString('2.1.23-evaos-beta.0', 'CFBundleShortVersionString')
-    ).toThrow(/three period-separated integers/);
+    expect(() => installedAppProof.assertMacVersionString('2.1.23-evaos-beta.0', 'CFBundleShortVersionString')).toThrow(
+      /three period-separated integers/
+    );
     expect(() => installedAppProof.assertMacBuildVersion('2.1.23-evaos-beta.0', 'CFBundleVersion')).toThrow(
       /numeric components/
     );
@@ -449,8 +450,7 @@ describe('evaOS installed app product proof', () => {
     ).toEqual([
       {
         pid: '6195',
-        command:
-          '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        command: '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
       },
       {
         pid: '6201',
@@ -501,8 +501,7 @@ describe('evaOS installed app product proof', () => {
         staleRunningProcesses: [
           {
             pid: '6195',
-            command:
-              '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+            command: '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
           },
         ],
         launchAgent: {
@@ -566,8 +565,7 @@ describe('evaOS installed app product proof', () => {
     expect(state.staleRunningProcesses).toEqual([
       {
         pid: '6195',
-        command:
-          '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+        command: '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
       },
     ]);
     expect(state.staleLaunchAgent).toBe(false);
