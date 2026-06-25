@@ -918,7 +918,7 @@ async function completeLocalConnectorEnrollment(input: {
 function isBrokerSessionReconnectRequired(error: unknown): boolean {
   if (!isEvaosBrokerSessionError(error)) return false;
   if (error.code === 'missing_session' || error.code === 'expired_session') return true;
-  return error.code === 'broker_http_error' && (error.status === 401 || error.status === 403);
+  return error.code === 'broker_http_error' && error.status === 401;
 }
 
 async function primeRepairPermission(
