@@ -14,7 +14,7 @@ import {
 } from '@/renderer/evaos/evaosNativeAgentAvailability';
 
 describe('evaosNativeAgentAvailability', () => {
-  it('marks evaOS/OpenClaw as repair-required when native pairing proof is missing', () => {
+  it('allows evaOS/OpenClaw chat when Mac control pairing proof is missing', () => {
     const availability = getEvaosNativeAgentAvailability({
       agent_type: 'openclaw-gateway',
       backend: 'openclaw-gateway',
@@ -24,16 +24,16 @@ describe('evaosNativeAgentAvailability', () => {
     expect(availability).toMatchObject({
       isNativeDependent: true,
       displayName: 'evaOS',
-      status: 'repair_required',
-      statusLabelKey: 'settings.agentManagement.nativeRepairRequired',
+      status: 'usable',
+      statusLabelKey: 'settings.agentManagement.detected',
       repairRoute: '/native-companion',
-      repairActionLabelKey: 'settings.agentManagement.nativeRepairAction',
+      repairActionLabelKey: 'settings.agentManagement.goToChat',
       reasonKey: 'settings.agentManagement.nativePairingProofMissing',
     });
-    expect(isEvaosNativeAgentRepairRequired({ agent_type: 'openclaw-gateway' })).toBe(true);
+    expect(isEvaosNativeAgentRepairRequired({ agent_type: 'openclaw-gateway' })).toBe(false);
   });
 
-  it('marks Hermes as repair-required when native reports not paired', () => {
+  it('allows Hermes chat when Mac control reports not paired', () => {
     const availability = getEvaosNativeAgentAvailability({
       agent_type: 'acp',
       backend: 'hermes',
@@ -45,12 +45,12 @@ describe('evaosNativeAgentAvailability', () => {
       },
     });
 
-    expect(availability.status).toBe('repair_required');
+    expect(availability.status).toBe('usable');
     expect(availability.reasonKey).toBe('settings.agentManagement.nativeStatusReason');
     expect(availability.reasonParams).toEqual({ status: 'not_paired' });
   });
 
-  it('treats repair_required as Mac control repair copy instead of an unusable backend error', () => {
+  it('treats repair_required as non-blocking Mac control repair copy instead of a chat blocker', () => {
     const availability = getEvaosNativeAgentAvailability({
       agent_type: 'openclaw-gateway',
       backend: 'openclaw-gateway',
@@ -62,7 +62,7 @@ describe('evaosNativeAgentAvailability', () => {
       },
     });
 
-    expect(availability.status).toBe('repair_required');
+    expect(availability.status).toBe('usable');
     expect(availability.reasonKey).toBe('settings.agentManagement.nativeStatusReason');
     expect(availability.reasonParams).toEqual({ status: 'repair_required' });
   });
@@ -88,7 +88,7 @@ describe('evaosNativeAgentAvailability', () => {
     });
   });
 
-  it('does not treat local-ready as usable agent pairing proof', () => {
+  it('keeps chat usable when Mac control reports an unknown local-ready status', () => {
     const availability = getEvaosNativeAgentAvailability({
       agent_type: 'acp',
       backend: 'hermes',
@@ -100,7 +100,7 @@ describe('evaosNativeAgentAvailability', () => {
       },
     });
 
-    expect(availability.status).toBe('repair_required');
+    expect(availability.status).toBe('usable');
     expect(availability.reasonKey).toBe('settings.agentManagement.nativeStatusNotUsableReason');
     expect(availability.sourceStatus).toBe('local-ready');
   });
@@ -170,7 +170,7 @@ describe('evaosNativeAgentAvailability', () => {
     expect(claude).not.toHaveProperty('native_companion_status');
   });
 
-  it('does not apply local connector readiness as usable native agent proof', () => {
+  it('does not block chat when local connector is ready but Mac control is not agent-paired yet', () => {
     const nativeStatus = {
       schemaVersion: 'evaos.native_companion_status.v1' as const,
       generatedAt: '2026-06-07T03:45:00.000Z',
@@ -192,7 +192,7 @@ describe('evaosNativeAgentAvailability', () => {
     );
 
     const availability = getEvaosNativeAgentAvailability(evaos);
-    expect(availability.status).toBe('repair_required');
+    expect(availability.status).toBe('usable');
     expect(availability.sourceStatus).toBe('ready_for_agent_pairing');
   });
 });

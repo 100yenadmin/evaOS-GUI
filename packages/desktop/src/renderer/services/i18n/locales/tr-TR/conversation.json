@@ -458,7 +458,7 @@
     "pathVariants": {
       "WORKSPACE_PATH_UNAVAILABLE": "Seçilen çalışma alanı yolu kullanılamıyor. Çalışma alanı yolu \"{{workspacePath}}\" gerçekten var ve erişilebilir olduğundan emin olun."
     },
-    "EVAOS_NATIVE_PAIRING_REQUIRED": "Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes."
+    "EVAOS_NATIVE_PAIRING_REQUIRED": "Mac control pairing is required before this conversation can use local Mac or iPhone control."
   },
   "thinking": {
     "complete": "Düşünme tamamlandı",

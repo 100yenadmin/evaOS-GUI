@@ -72,6 +72,7 @@ const EMPTY_STATE: EvaosCustomerContextState = {
 let state: EvaosCustomerContextState = EMPTY_STATE;
 let requestEpoch = 0;
 let activeSessionKey: string | undefined;
+let preferredSelectedCustomerId: string | undefined;
 const listeners = new Set<() => void>();
 
 function emit(next: EvaosCustomerContextState): void {
@@ -153,8 +154,9 @@ function safeCustomerTarget(target: IEvaosCustomerTargetView): IEvaosCustomerTar
   };
 }
 
-function chooseSelectedCustomer(view: IEvaosCustomerTargetsView): string | undefined {
+function chooseSelectedCustomer(view: IEvaosCustomerTargetsView, preferredCustomerId?: string): string | undefined {
   return (
+    view.customers.find((target) => target.customerId === preferredCustomerId)?.customerId ??
     view.customers.find((target) => target.customerId === view.selectedCustomerId)?.customerId ??
     view.customers.find((target) => target.customerId === view.defaultCustomerId)?.customerId ??
     view.customers.find((target) => target.isDefault)?.customerId ??
@@ -164,6 +166,7 @@ function chooseSelectedCustomer(view: IEvaosCustomerTargetsView): string | undef
 
 export function clearEvaosCustomerContext(): void {
   activeSessionKey = undefined;
+  preferredSelectedCustomerId = undefined;
   requestEpoch += 1;
   emit(EMPTY_STATE);
 }
@@ -176,6 +179,7 @@ function resetEvaosCustomerContextForSession(sessionKey: string): void {
 
 export function selectEvaosCustomer(customerId: string): void {
   const selectedCustomerId = state.targets.find((target) => target.customerId === customerId)?.customerId;
+  preferredSelectedCustomerId = selectedCustomerId;
   emit({
     ...state,
     selectedCustomerId,
@@ -217,12 +221,15 @@ export async function refreshEvaosCustomerTargets(): Promise<void> {
       summaryText: safeUiText(response.data.summaryText, customerTargetsSummary(customers.length)),
     };
 
+    const selectedCustomerId = chooseSelectedCustomer(sanitizedView, preferredSelectedCustomerId);
+    preferredSelectedCustomerId = selectedCustomerId;
+
     emit({
       targets: sanitizedView.customers,
       roles: safeRoleList(sanitizedView.roles),
       scopes: safeScopeList(sanitizedView.scopes),
       isOperator: sanitizedView.isOperator === true,
-      selectedCustomerId: chooseSelectedCustomer(sanitizedView),
+      selectedCustomerId,
       summaryText: sanitizedView.summaryText,
       loaded: true,
       loading: false,

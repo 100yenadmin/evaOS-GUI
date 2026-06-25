@@ -7,7 +7,7 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
 import { isIP } from 'node:net';
-import { hostname } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -15,6 +15,7 @@ import type {
   IEvaosNativeCompanionActionResult,
   IEvaosNativeCompanionAgentPairingStatus,
   IEvaosNativeCompanionAuditEvent,
+  IEvaosNativeCompanionConnectorGrant,
   IEvaosNativeCompanionControlMode,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
@@ -59,6 +60,16 @@ export type EvaosNativeCompanionStatusDeps = {
     customerId: string;
     deviceName?: string;
   }) => Promise<{ customerId: string; pairingCode: string; expiresAt?: string }>;
+  ensureCustomerMacConnectorGrant?: (request: {
+    customerId: string;
+    connectorUrl: string;
+    connectorToken: string;
+    deviceName?: string;
+    deviceIdentifier?: string;
+    permissionState?: Record<string, unknown>;
+    screenSharingOptIn?: boolean;
+  }) => Promise<IEvaosNativeCompanionConnectorGrant>;
+  readTextFile?: (path: string) => string;
 };
 
 type BridgePayload = {
@@ -487,6 +498,7 @@ async function runControlStartAction(
 }
 
 async function runSetupCheckAction(
+  request: IEvaosNativeCompanionActionRequest,
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
@@ -507,6 +519,17 @@ async function runSetupCheckAction(
   const ready = setup.connectorReady && setup.macReady && setup.controlReady;
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
   const agentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession.data) : 'not_ready';
+
+  if (ready && request.customerId?.trim()) {
+    return ensureCustomerMacConnectorGrantAction(request, bridgePath, deps, {
+      connectorService,
+      customerMac,
+      controlSession,
+      auditIds,
+      setup,
+    });
+  }
+
   return nativeActionResult(
     'setup_check',
     ready ? 'succeeded' : 'repair_required',
@@ -520,6 +543,164 @@ async function runSetupCheckAction(
       setup,
       control: controlSummaryFromPayload(controlSession.data),
       agentPairingStatus,
+    }
+  );
+}
+
+async function ensureCustomerMacConnectorGrantAction(
+  request: IEvaosNativeCompanionActionRequest,
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps,
+  prepared?: {
+    connectorService: BridgeCommandResult;
+    customerMac: BridgeCommandResult;
+    controlSession: BridgeCommandResult;
+    auditIds: string[];
+    setup: {
+      connectorReady: boolean;
+      macReady: boolean;
+      controlReady: boolean;
+      iPhoneDeferred: boolean;
+    };
+  }
+): Promise<IEvaosNativeCompanionActionResult> {
+  const action = request.action;
+  const resultAction = action === 'setup_check' ? 'setup_check' : 'ensure_customer_mac_connector_grant';
+  if (!isPairingCapableBridgePath(bridgePath, deps.env)) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'This Workbench build is missing the bundled Mac connector. Install the current Workbench build before connecting Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-bundled-bridge-required',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        refreshRecommended: false,
+      }
+    );
+  }
+
+  const customerId = request.customerId?.trim();
+  if (!customerId) {
+    return nativeActionResult(resultAction, 'repair_required', 'Choose a customer before connecting Mac control.', {
+      sourcePointer: 'native-companion:connector-grant-missing-customer',
+    });
+  }
+  if (isAccountLikeCustomerId(customerId)) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Choose a VM-backed Mac-control customer before connecting Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-invalid-customer',
+        agentPairingStatus: 'ready_for_agent_pairing',
+      }
+    );
+  }
+
+  const connectorService =
+    prepared?.connectorService ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
+  if (!connectorServiceIsReady(connectorService)) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Start Mac Access and confirm the secure connector is reachable before connecting Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-connector-not-ready',
+      }
+    );
+  }
+  if (!connectorServiceHasSecureRegistrationHost(connectorService.data)) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Mac Access is running locally, but this Mac still needs the broker-owned private connector link before Workbench can connect Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-secure-network-required',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        refreshRecommended: false,
+      }
+    );
+  }
+
+  const customerMac =
+    prepared?.customerMac ?? (await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps));
+  const controlSession =
+    prepared?.controlSession ??
+    (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
+  const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
+  if (!hasGrantedCorePermissions(permissions)) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Mac Access needs Accessibility and Screen Recording before Workbench can connect Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-mac-permission-required',
+        auditId: customerMac.auditId,
+        auditIds: compactStrings([customerMac.auditId]),
+      }
+    );
+  }
+
+  const connectorUrl = connectorUrlFromStatus(connectorService.data);
+  const connectorToken = connectorTokenFromStatus(connectorService.data, deps);
+  if (!connectorUrl || !connectorToken) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Mac control is ready locally, but Workbench could not read the secure connector registration material.',
+      {
+        sourcePointer: 'native-companion:connector-grant-local-secret-unavailable',
+        agentPairingStatus: 'ready_for_agent_pairing',
+      }
+    );
+  }
+
+  const ensureGrant =
+    deps.ensureCustomerMacConnectorGrant ??
+    ((grantInput) => getDefaultEvaosBrokerSessionClient().ensureCustomerMacConnectorGrant(grantInput));
+  let grant: IEvaosNativeCompanionConnectorGrant;
+  try {
+    grant = await ensureGrant({
+      customerId,
+      deviceName: hostname() || 'Customer Mac',
+      deviceIdentifier: connectorDeviceIdentifier(customerMac.data),
+      connectorUrl,
+      connectorToken,
+      permissionState: permissionStateForGrant(permissions),
+      screenSharingOptIn: false,
+    });
+  } catch (error) {
+    if (isBrokerSessionReconnectRequired(error)) {
+      return nativeActionResult(
+        resultAction,
+        'repair_required',
+        'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can connect Mac control. Sign in again, then retry.',
+        {
+          sourcePointer: 'native-companion:connector-grant-broker-session-required',
+          agentPairingStatus: 'ready_for_agent_pairing',
+          refreshRecommended: false,
+        }
+      );
+    }
+    throw error;
+  }
+
+  const auditIds = compactStrings([
+    grant.auditId,
+    ...(prepared?.auditIds ?? [customerMac.auditId, controlSession.auditId]),
+  ]);
+  return nativeActionResult(
+    resultAction,
+    'succeeded',
+    'Mac control is connected for this evaOS Workbench session. evaOS/OpenClaw and Hermes can discover the active connector grant.',
+    {
+      sourcePointer: 'native-companion:connector-grant-ready',
+      auditId: auditIds[0],
+      auditIds,
+      setup: prepared?.setup,
+      control: controlSummaryFromPayload(controlSession.data),
+      connectorGrant: grant,
+      agentPairingStatus: grant.agentPairingStatus ?? 'ready_for_agent_pairing',
     }
   );
 }
@@ -805,7 +986,9 @@ export async function runNativeCompanionAction(
         failureMessage: 'Mac Access connector could not stop.',
       });
     case 'setup_check':
-      return runSetupCheckAction(bridgePath, deps);
+      return runSetupCheckAction(request, bridgePath, deps);
+    case 'ensure_customer_mac_connector_grant':
+      return ensureCustomerMacConnectorGrantAction(request, bridgePath, deps);
     case 'control_status':
       return runCommandAction(request.action, bridgePath, ['customer-mac', 'control', 'status', '--json'], deps, {
         successMessage: 'Agent control status refreshed.',
@@ -913,6 +1096,58 @@ function connectorServiceHasSecureRegistrationHost(input: unknown): boolean {
   if (isSafeConnectorRegistrationHost(tailnetIp)) return true;
   if (readNestedBoolean(input, ['health', 'reachable']) !== true) return false;
   return isSafeConnectorRegistrationHost(readNestedString(input, ['health', 'host']));
+}
+
+function connectorUrlFromStatus(input: unknown): string | undefined {
+  const host =
+    normalizeConnectorHost(readString(input, 'tailnet_ip')) ??
+    normalizeConnectorHost(readNestedString(input, ['health', 'host']));
+  if (!isSafeConnectorRegistrationHost(host)) return undefined;
+  return `http://${host}:8765`;
+}
+
+function connectorTokenFromStatus(input: unknown, deps: EvaosNativeCompanionStatusDeps): string | undefined {
+  const tokenPath = connectorTokenPathFromStatus(input);
+  if (!tokenPath) return undefined;
+  const readTextFile = deps.readTextFile ?? ((path: string) => fs.readFileSync(path, 'utf8'));
+  try {
+    const token = readTextFile(expandHomePath(tokenPath)).trim();
+    return token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function connectorTokenPathFromStatus(input: unknown): string | undefined {
+  return (
+    readString(input, 'token_path') ??
+    readNestedString(input, ['token', 'path']) ??
+    readNestedString(input, ['connector', 'token_path'])
+  );
+}
+
+function expandHomePath(path: string): string {
+  if (path === '~') return homedir();
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2));
+  return path;
+}
+
+function connectorDeviceIdentifier(customerMacData: unknown): string | undefined {
+  return (
+    readNestedString(customerMacData, ['device', 'hardware_uuid']) ??
+    readNestedString(customerMacData, ['device', 'id']) ??
+    readNestedString(customerMacData, ['device', 'hostname']) ??
+    hostname()
+  );
+}
+
+function permissionStateForGrant(
+  permissions: IEvaosNativeCompanionPermissionView | undefined
+): Record<string, unknown> {
+  return {
+    accessibility: permissions?.accessibility ?? 'unknown',
+    screen_recording: permissions?.screenRecording ?? 'unknown',
+  };
 }
 
 function isSafeConnectorRegistrationHost(value: string | undefined): boolean {
@@ -1129,6 +1364,7 @@ function nativeActionResult(
     refreshRecommended: options.refreshRecommended ?? true,
     setup: options.setup,
     control: options.control,
+    connectorGrant: options.connectorGrant,
     pairing: options.pairing,
     agentPairingStatus: options.agentPairingStatus,
     events: options.events,
@@ -1213,13 +1449,13 @@ function nativeCompanionSummaryText(input: {
   }
   if (input.pairingCapable) {
     return input.agentPairingStatus === 'agent_paired'
-      ? 'Workbench connector ready with agent pairing proof.'
-      : 'Workbench connector ready for code-only agent pairing.';
+      ? 'Workbench connector ready with account-scoped agent grant proof.'
+      : 'Workbench connector ready for first-party account-scoped Mac control.';
   }
   if (input.pairingBlockedReason === 'secure_network_link_required') {
-    return 'Workbench connector is locally ready, but this Mac needs the broker-owned private connector link before agent pairing can start.';
+    return 'Workbench connector is locally ready, but this Mac needs the broker-owned private connector link before Mac control can connect.';
   }
-  return 'Workbench connector is locally ready, but agent pairing needs the bundled connector and secure private connector link.';
+  return 'Workbench connector is locally ready, but Mac control needs the bundled connector and secure private connector link.';
 }
 
 function normalizeControlMode(mode: IEvaosNativeCompanionControlMode | undefined): IEvaosNativeCompanionControlMode {

@@ -193,13 +193,13 @@ export function getEvaosNativeAgentAvailability(agent: EvaosNativeAgentIdentity)
     isNativeDependent: true,
     key,
     displayName,
-    status: 'repair_required',
-    statusLabelKey: 'settings.agentManagement.nativeRepairRequired',
+    status: 'usable',
+    statusLabelKey: 'settings.agentManagement.detected',
     summaryKey: 'settings.agentManagement.nativeRepairSummary',
     reasonKey,
     reasonParams: sourceStatus ? { status: sourceStatus } : undefined,
     repairRoute: '/native-companion',
-    repairActionLabelKey: 'settings.agentManagement.nativeRepairAction',
+    repairActionLabelKey: 'settings.agentManagement.goToChat',
     sourceStatus,
   };
 }

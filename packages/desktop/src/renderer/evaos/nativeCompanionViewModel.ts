@@ -159,13 +159,13 @@ function summaryForState(
 ): string {
   if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
   if (secureConnectorLinkRequired(status)) {
-    return 'Local Mac permissions and connector status are ready, but this Mac still needs the broker-owned private connector link before Workbench can create an agent pairing prompt.';
+    return 'Local Mac permissions and connector status are ready, but this Mac still needs the broker-owned private connector link before Workbench can connect Mac control.';
   }
   switch (state) {
     case 'ready':
-      return 'Local Workbench connector proof is ready. Pair evaOS/OpenClaw or Hermes with a scoped prompt before an agent uses Mac control. Agent pairing proof is present only after setup/audit evidence confirms it.';
+      return 'Local Workbench connector proof is ready. Connect this signed-in Workbench session to the selected evaOS/OpenClaw and Hermes context before Mac-control tools run.';
     case 'not_paired':
-      return 'This Mac must be paired again before evaOS or Hermes chat can use Mac control.';
+      return 'This Mac needs a fresh Workbench connector grant before evaOS or Hermes chat can use Mac control.';
     case 'permission_needed':
       return 'macOS Accessibility or Screen Recording needs attention before approved local-control actions can run.';
     case 'offline':
@@ -200,10 +200,10 @@ function readinessStripForState(
       help: 'Secure local connector status reported by Workbench.',
     },
     {
-      label: 'Pairing',
+      label: 'Agent access',
       value: pairingValue(status, state),
       tone: pairingTone(status, state),
-      help: 'Workbench creates a scoped prompt/code for the agent; the VM must connect through the broker-owned plugin.',
+      help: 'Workbench registers an account-scoped connector grant for first-party evaOS/OpenClaw and Hermes agents.',
     },
     {
       label: 'Permissions',
@@ -230,7 +230,7 @@ function repairStepsForState(
       state: permissionsTone(status, state, false),
     },
     {
-      title: 'Pair the agent to this Mac',
+      title: 'Connect Mac control',
       detail: pairingStepDetail(status, state),
       state: state === 'ready' || state === 'not_paired' ? pairingTone(status, state) : 'neutral',
     },
@@ -329,7 +329,7 @@ function nextActionForState(
       action: 'connector_start',
       label: 'Turn On Mac Access',
       title: 'Turn on Mac access',
-      detail: 'Start the local Workbench connector before creating an agent pairing code.',
+      detail: 'Start the local Workbench connector before connecting Mac control.',
       step: 1,
       totalSteps,
       disabled: false,
@@ -350,12 +350,15 @@ function nextActionForState(
     };
   }
 
-  if (actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
+  if (
+    actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required'
+  ) {
     return {
       kind: 'reconnect',
-      label: 'Reconnect Workbench',
-      title: 'Reconnect Workbench session',
-      detail: 'Sign in to evaOS again so Workbench can create a scoped agent pairing code for the selected customer.',
+      label: 'Refresh Workbench Session',
+      title: 'Refresh Workbench session',
+      detail: 'Refresh the evaOS broker session so Workbench can connect Mac control for the selected customer.',
       step: 3,
       totalSteps,
       disabled: false,
@@ -367,7 +370,7 @@ function nextActionForState(
       kind: 'none',
       label: 'Checking session',
       title: 'Checking Workbench session',
-      detail: 'Workbench is checking the evaOS broker session before agent pairing.',
+      detail: 'Workbench is checking the evaOS broker session before connecting Mac control.',
       step: 3,
       totalSteps,
       disabled: true,
@@ -377,9 +380,9 @@ function nextActionForState(
   if (input.brokerAuthenticated === false) {
     return {
       kind: 'reconnect',
-      label: 'Reconnect Workbench',
-      title: 'Reconnect Workbench session',
-      detail: 'Sign in to evaOS so Workbench can create a scoped agent pairing code for this Mac.',
+      label: 'Sign In To Workbench',
+      title: 'Sign in to Workbench',
+      detail: 'Sign in to evaOS so Workbench can connect Mac control for the selected customer.',
       step: 3,
       totalSteps,
       disabled: false,
@@ -391,7 +394,7 @@ function nextActionForState(
       kind: 'none',
       label: 'Select customer',
       title: 'Choose a customer',
-      detail: 'Select the customer this Mac should pair with before creating an agent pairing code.',
+      detail: 'Select the customer this Mac should connect to before enabling first-party Mac control.',
       step: 3,
       totalSteps,
       disabled: true,
@@ -404,7 +407,7 @@ function nextActionForState(
       label: 'Choose Mac target',
       title: 'Choose a Mac-control customer',
       detail:
-        'The selected account is not a VM-backed Mac-control target. Choose a customer target before creating an agent pairing code.',
+        'The selected account is not a VM-backed Mac-control target. Choose a customer target before connecting Mac control.',
       step: 3,
       totalSteps,
       disabled: true,
@@ -495,7 +498,7 @@ function nextActionForState(
       title: 'Repair pairing proof',
       detail: safeActionDetail(
         actionResult?.message,
-        'Workbench could not finish the previous Mac control step. Run setup check before creating another pairing prompt.'
+        'Workbench could not finish the previous Mac control step. Run setup check before connecting Mac control.'
       ),
       step: 3,
       totalSteps,
@@ -505,11 +508,11 @@ function nextActionForState(
 
   return {
     kind: 'run',
-    action: 'create_pairing_prompt',
-    label: 'Create Pairing Prompt',
-    title: 'Pair evaOS/OpenClaw or Hermes',
+    action: 'ensure_customer_mac_connector_grant',
+    label: 'Connect Mac Control',
+    title: 'Connect Mac control',
     detail: pairingReady
-      ? 'Create a scoped prompt/code and give it to the agent so the VM connects through the broker-owned plugin.'
+      ? 'Connect this signed-in Workbench session to the selected evaOS/OpenClaw and Hermes agent context.'
       : disabledPairingPromptReason(input, status),
     step: 3,
     totalSteps,
@@ -600,7 +603,7 @@ function pairingStepDetail(
   state: NativeCompanionUserState
 ): string {
   if (state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired') {
-    return 'Agent pairing proof is present. Continue with evaOS/OpenClaw and Hermes live proof through the shared Workbench connector.';
+    return 'Account-scoped connector grant is active. Continue with evaOS/OpenClaw and Hermes live proof through the shared Workbench connector.';
   }
   if (state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'pairing_prompt_created') {
     return 'Prompt created. Paste it into evaOS/OpenClaw or Hermes, then run the setup check to confirm agent proof.';
@@ -609,19 +612,19 @@ function pairingStepDetail(
     return disabledPairingCapabilityReason(status);
   }
   if (state === 'ready') {
-    return 'Create a scoped pairing prompt for evaOS/OpenClaw or Hermes; do not expose public Mac, VNC, SSH, or browser debug ports.';
+    return 'Connect Mac control through the account-scoped broker grant; do not expose public Mac, VNC, SSH, or browser debug ports.';
   }
   if (state === 'not_paired') {
-    return 'Pairing and trust claims stay inside Workbench. The agent must use the broker-owned connector plugin with the prompt/code.';
+    return 'Connector trust stays inside Workbench. First-party agents must use the broker-owned connector grant.';
   }
-  return 'After connector and permission repair, create a scoped agent pairing prompt.';
+  return 'After connector and permission repair, connect Mac control for the selected customer.';
 }
 
 function pairingValue(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   state: NativeCompanionUserState
 ): string {
-  if (state === 'not_paired') return 'Pair this Mac';
+  if (state === 'not_paired') return 'Connect this Mac';
   if (secureConnectorLinkRequired(status)) return 'Secure link needed';
   if (status?.pairingCapable === false) return 'Setup needed';
   if (state !== 'ready') return state === 'offline' || state === 'unsupported' ? 'Unavailable' : 'Repair needed';
@@ -634,7 +637,7 @@ function pairingValue(
       return 'Proof failed';
     case 'ready_for_agent_pairing':
     case 'not_ready':
-      return 'Ready to pair';
+      return 'Ready to connect';
   }
 }
 
@@ -724,36 +727,36 @@ function disabledPairingPromptReason(
   status: IEvaosNativeCompanionStatusView | null | undefined
 ): string {
   if (input.loading) return 'Workbench is still checking Mac control status.';
-  if (!status) return 'Refresh Mac control status before creating a pairing prompt.';
+  if (!status) return 'Refresh Mac control status before connecting Mac control.';
   if (!status.bridgeCli.installed) return 'Workbench connector tools are not installed.';
-  if (!connectorServiceReady(status)) return 'Turn on Mac Access before creating a pairing prompt.';
-  if (!permissionsReady(status)) return 'Grant Accessibility and Screen Recording before creating a pairing prompt.';
+  if (!connectorServiceReady(status)) return 'Turn on Mac Access before connecting Mac control.';
+  if (!permissionsReady(status)) return 'Grant Accessibility and Screen Recording before connecting Mac control.';
   if (status.pairingCapable === false) return disabledPairingCapabilityReason(status);
   if (input.actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required') {
-    return 'Reconnect Workbench before creating a pairing prompt.';
+    return 'Refresh the Workbench session before connecting Mac control.';
   }
   if (input.brokerSessionLoading) return 'Workbench is checking the broker session.';
-  if (input.brokerAuthenticated === false) return 'Reconnect Workbench before creating a pairing prompt.';
-  if (!input.hasSelectedCustomer) return 'Choose a customer before creating a pairing prompt.';
+  if (input.brokerAuthenticated === false) return 'Sign in to Workbench before connecting Mac control.';
+  if (!input.hasSelectedCustomer) return 'Choose a customer before connecting Mac control.';
   if (input.hasPairableCustomer === false) {
-    return 'Choose a VM-backed Mac-control customer before creating a pairing prompt.';
+    return 'Choose a VM-backed Mac-control customer before connecting Mac control.';
   }
   if (hasBlockingReadinessActionResult(input.actionResult)) {
-    return safeActionDetail(input.actionResult.message, 'Run setup check before creating another pairing prompt.');
+    return safeActionDetail(input.actionResult.message, 'Run setup check before connecting Mac control.');
   }
-  return 'Create a scoped prompt/code after Workbench confirms local connector, permissions, session, and customer.';
+  return 'Connect after Workbench confirms local connector, permissions, session, and customer.';
 }
 
 function disabledPairingCapabilityReason(status: IEvaosNativeCompanionStatusView): string {
   switch (status.pairingBlockedReason) {
     case 'bundled_bridge_required':
-      return 'Install the current Workbench build with the bundled Mac connector before creating a pairing prompt.';
+      return 'Install the current Workbench build with the bundled Mac connector before connecting Mac control.';
     case 'secure_network_link_required':
-      return 'Connect this Mac to the broker-owned private connector link before creating a pairing prompt.';
+      return 'Connect this Mac to the broker-owned private connector link before connecting Mac control.';
     case 'connector_service_not_ready':
-      return 'Turn on Mac Access before creating a pairing prompt.';
+      return 'Turn on Mac Access before connecting Mac control.';
     default:
-      return 'Workbench needs a bundled connector and secure network link before creating a pairing prompt.';
+      return 'Workbench needs a bundled connector and secure network link before connecting Mac control.';
   }
 }
 

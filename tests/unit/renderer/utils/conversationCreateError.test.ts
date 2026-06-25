@@ -33,7 +33,7 @@ const t = (key: string, options?: { defaultValue?: string; workspacePath?: strin
     'conversation.agentError.codes.WORKSPACE_PATH_RUNTIME_UNAVAILABLE.bodyWithPath':
       'The current Agent failed to run in the workspace path "{{workspacePath}}". Make sure the workspace path exists.',
     'conversation.createError.EVAOS_NATIVE_PAIRING_REQUIRED':
-      'Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes.',
+      'Mac control pairing is required before this conversation can use local Mac or iPhone control.',
   };
 
   if (
@@ -122,7 +122,7 @@ describe('conversationCreateError', () => {
 
     expect(normalizeEvaosNativePairingErrorCode(error)).toBe('EVAOS_NATIVE_PAIRING_REQUIRED');
     expect(getConversationCreateErrorMessage(error, t)).toBe(
-      'Native pairing is required. Open Mac & iPhone to re-approve this Mac before using evaOS or Hermes.'
+      'Mac control pairing is required before this conversation can use local Mac or iPhone control.'
     );
   });
 

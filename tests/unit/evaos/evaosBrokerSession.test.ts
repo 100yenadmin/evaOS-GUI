@@ -684,6 +684,79 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toContain('secret-token-abcdef1234567890');
   });
 
+  it('ensures a first-party Mac connector grant with desktop session auth and safe proof only', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'golden',
+        device_id: 'device-golden',
+        grant_id: 'grant-golden',
+        grant_state: 'active',
+        agent_pairing_status: 'agent_paired',
+        audit_id: 'audit-grant',
+        connector_url: 'http://100.64.0.10:8765',
+        connector_token: 'secret-token-abcdef1234567890',
+      })
+    );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}&email=admin%40100yen.org`
+    );
+    const result = await client.ensureCustomerMacConnectorGrant({
+      customerId: 'golden',
+      connectorUrl: 'http://100.64.0.10:8765',
+      connectorToken: 'secret-token-abcdef1234567890',
+      deviceName: 'Proof Mac',
+      deviceIdentifier: 'Proof-Mac.local',
+      permissionState: {
+        accessibility: 'granted',
+        screen_recording: 'granted',
+      },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      customerId: 'golden',
+      deviceId: 'device-golden',
+      grantId: 'grant-golden',
+      grantState: 'active',
+      agentPairingStatus: 'agent_paired',
+      auditId: 'audit-grant',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe(EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT);
+    expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBe('Bearer eds_callback_session_secret_for_test');
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'ensure_connector_grant',
+      customer_id: 'golden',
+      device_name: 'Proof Mac',
+      device_identifier: 'Proof-Mac.local',
+      connector_url: 'http://100.64.0.10:8765',
+      connector_token: 'secret-token-abcdef1234567890',
+      tailnet_ip: '100.64.0.10',
+      capabilities: {
+        connector: 'evaos-desktop-bridge',
+        openclaw_tools: 'enabled',
+        desktop_control: 'full_access_or_ask_permission',
+        iphone_mirroring: 'visible_control_surface',
+      },
+      permission_state: {
+        accessibility: 'granted',
+        screen_recording: 'granted',
+      },
+      screen_sharing_opt_in: false,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/secret-token|connector_url|connector_token|100\.64\.0\.10|8765/i);
+  });
+
   it('rejects released Workbench loopback callback paths for the evaOS beta session importer', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({

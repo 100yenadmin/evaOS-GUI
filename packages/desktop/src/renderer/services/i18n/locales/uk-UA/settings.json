@@ -902,10 +902,10 @@
     "nativeStatusNotUsableReason": "Native companion status is not usable: {{status}}",
     "nativePairingProofMissing": "Native companion pairing proof is missing.",
     "nativeRepairRequired": "Repair required",
-    "nativeRepairSummary": "{{displayName}} is installed, but Mac pairing must be repaired before chat can start.",
+    "nativeRepairSummary": "{{displayName}} chat is available. Mac control tools need pairing before this agent can use this Mac.",
     "nativeRepairAction": "Repair in Mac & iPhone",
     "nativeRepairBadge": "Repair",
-    "nativeRepairTitle": "{{displayName}} needs Mac pairing"
+    "nativeRepairTitle": "{{displayName}} Mac control needs pairing"
   },
   "remoteAgent": {
     "title": "Віддалені агенти",
