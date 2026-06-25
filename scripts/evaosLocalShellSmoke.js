@@ -837,25 +837,19 @@ const LOCAL_PRODUCT_EMPLOYEE_ROUTE_NAMES = new Set([
 ]);
 
 function employeeFixtureRouteName(name) {
-  return name.replace('-loaded-fixture', '-employee-loaded-fixture').replace('-boundary-fixture', '-employee-boundary-fixture');
+  return name
+    .replace('-loaded-fixture', '-employee-loaded-fixture')
+    .replace('-boundary-fixture', '-employee-boundary-fixture');
 }
 
 const LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS = [
-  ...LOCAL_PRODUCT_ROUTE_CHECKS
-    .filter((route) => LOCAL_PRODUCT_EMPLOYEE_ROUTE_NAMES.has(route.name))
-    .map((route) => ({
-      ...route,
-      name: employeeFixtureRouteName(route.name),
-      forbidden: Array.from(
-        new Set([
-          ...(route.forbidden || []),
-          'People & Access',
-          'Company Brain',
-          'Approval Center',
-          'Selected customer',
-        ])
-      ),
-    })),
+  ...LOCAL_PRODUCT_ROUTE_CHECKS.filter((route) => LOCAL_PRODUCT_EMPLOYEE_ROUTE_NAMES.has(route.name)).map((route) => ({
+    ...route,
+    name: employeeFixtureRouteName(route.name),
+    forbidden: Array.from(
+      new Set([...(route.forbidden || []), 'People & Access', 'Company Brain', 'Approval Center', 'Selected customer'])
+    ),
+  })),
   {
     name: 'people-access-employee-denied-fixture',
     hash: '/people-access',
