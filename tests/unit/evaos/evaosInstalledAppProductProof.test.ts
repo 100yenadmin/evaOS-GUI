@@ -20,6 +20,26 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
   DEFAULT_EXECUTABLE_NAME: string;
   DEFAULT_BUNDLE_ID: string;
   DEFAULT_PROTOCOL_SCHEME: string;
+  assertCanonicalProofAppPath: (appPath: string, options?: { allowNonCanonicalAppPath?: boolean }) => void;
+  assertDesktopProofStateClean: (state: {
+    expectedAppPath: string;
+    expectedBridgePath: string;
+    indexedApps: Array<{ bundleId: string; path: string | null; status: string }>;
+    staleIndexedApps: Array<{ bundleId: string; path: string; status: string }>;
+    runningProcesses: Array<{ pid: string | null; command: string | null }>;
+    staleRunningProcesses: Array<{ pid: string | null; command: string }>;
+    launchAgent: { label: string; status: string; bridgePath: string | null };
+    staleLaunchAgent: boolean;
+  }) => void;
+  assertExpectedBundle: (bundleInfo: {
+    bundleId: string;
+    bundleName: string;
+    bundleVersion: string;
+    shortVersion: string;
+    protocolSchemes: string[];
+  }) => void;
+  assertMacBuildVersion: (value: string, label: string) => void;
+  assertMacVersionString: (value: string, label: string) => void;
   artifactRootForHead: (head: string, env?: Record<string, string | undefined>) => string;
   assertExpectedProtocolHandler: (handler: { scheme: string; bundleId: string | null; evidence: string }) => void;
   assertNoUnsafeProofText: (value: unknown) => void;
@@ -82,6 +102,21 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     shortVersion: string;
     protocolSchemes: string[];
   };
+  inspectDesktopProofState: (
+    appPath: string,
+    execFileSyncImpl: (command: string, args: string[], options: { encoding: 'utf8'; maxBuffer?: number }) => string
+  ) => {
+    expectedAppPath: string;
+    expectedBridgePath: string;
+    indexedApps: Array<{ bundleId: string; path: string | null; status: string }>;
+    staleIndexedApps: Array<{ bundleId: string; path: string; status: string }>;
+    runningProcesses: Array<{ pid: string | null; command: string | null }>;
+    staleRunningProcesses: Array<{ pid: string | null; command: string }>;
+    launchAgent: { label: string; status: string; bridgePath: string | null };
+    staleLaunchAgent: boolean;
+  };
+  parseAppBundlePaths: (output: string) => string[];
+  parseLaunchAgentBridgePath: (output: string) => string | null;
   runProofPlanAction: (page: unknown, action?: string) => Promise<void>;
   writeDryRunProofFiles: (options: {
     artifactRoot: string;
@@ -121,6 +156,7 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     bundleId: string | null;
     evidence: string;
   };
+  parseRunningWorkbenchProcesses: (output: string) => Array<{ pid: string | null; command: string }>;
   readLaunchServicesProtocolHandler: (
     scheme?: string,
     execFileSyncImpl?: (command: string, args: string[], options: { encoding: 'utf8'; maxBuffer?: number }) => string
@@ -146,6 +182,20 @@ describe('evaOS installed app product proof', () => {
     expect(installedAppProof.installedExecutablePath()).toBe(
       '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench'
     );
+  });
+
+  it('rejects bundle-id-only or stale beta app targets before Computer Use proof starts', () => {
+    expect(() => installedAppProof.assertCanonicalProofAppPath('com.evaos.workbench.beta')).toThrow(
+      /absolute \.app path/
+    );
+    expect(() => installedAppProof.assertCanonicalProofAppPath('/Volumes/LEXAR/Codex/old/evaOS Workbench Beta.app'))
+      .toThrow(/Release proof must target \/Applications\/evaOS Workbench\.app/);
+    expect(() => installedAppProof.assertCanonicalProofAppPath('/Applications/evaOS Workbench.app')).not.toThrow();
+    expect(() =>
+      installedAppProof.assertCanonicalProofAppPath('/Applications/evaOS Workbench Beta.app', {
+        allowNonCanonicalAppPath: true,
+      })
+    ).not.toThrow();
   });
 
   it('creates the current-head #67 artifact root on Lexar by default', () => {
@@ -334,6 +384,193 @@ describe('evaOS installed app product proof', () => {
       protocolSchemes: ['evaos-workbench'],
     });
     expect(calls.every((args) => args.at(-1) === '/Applications/evaOS Workbench.app/Contents/Info.plist')).toBe(true);
+  });
+
+  it('requires macOS plist versions to stay numeric while beta labels live in release metadata', () => {
+    expect(() => installedAppProof.assertMacVersionString('2.1.23', 'CFBundleShortVersionString')).not.toThrow();
+    expect(() => installedAppProof.assertMacBuildVersion('28121317549', 'CFBundleVersion')).not.toThrow();
+    expect(() => installedAppProof.assertMacBuildVersion('20260625.1', 'CFBundleVersion')).not.toThrow();
+    expect(() =>
+      installedAppProof.assertMacVersionString('2.1.23-evaos-beta.0', 'CFBundleShortVersionString')
+    ).toThrow(/three period-separated integers/);
+    expect(() => installedAppProof.assertMacBuildVersion('2.1.23-evaos-beta.0', 'CFBundleVersion')).toThrow(
+      /numeric components/
+    );
+  });
+
+  it('fails bundle assertions for stale beta identity or non-numeric macOS versions', () => {
+    expect(() =>
+      installedAppProof.assertExpectedBundle({
+        bundleId: 'com.evaos.workbench',
+        bundleName: 'evaOS Workbench',
+        bundleVersion: '28121317549',
+        shortVersion: '2.1.23',
+        protocolSchemes: ['evaos-workbench'],
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      installedAppProof.assertExpectedBundle({
+        bundleId: 'com.evaos.workbench.beta',
+        bundleName: 'evaOS Workbench Beta',
+        bundleVersion: '2.1.23-evaos-beta.0',
+        shortVersion: '2.1.23-evaos-beta.0',
+        protocolSchemes: ['evaos-workbench-beta'],
+      })
+    ).toThrow(/bundle id/);
+  });
+
+  it('parses indexed app bundle paths even when old backup names extend past .app', () => {
+    expect(
+      installedAppProof.parseAppBundlePaths(
+        [
+          '/Applications/evaOS Workbench.app',
+          '/Volumes/LEXAR/Codex/aionui-rd/app-backups/evaOS Workbench Beta.before-staging.20260623014850.app',
+          '/Volumes/LEXAR/Codex/evaos-rc-artifacts/backup-installed-apps/evaOS Workbench Beta.app.20260613-012540',
+          '/Volumes/LEXAR/Codex/not-an-app.txt',
+        ].join('\n')
+      )
+    ).toEqual([
+      '/Applications/evaOS Workbench.app',
+      '/Volumes/LEXAR/Codex/aionui-rd/app-backups/evaOS Workbench Beta.before-staging.20260623014850.app',
+      '/Volumes/LEXAR/Codex/evaos-rc-artifacts/backup-installed-apps/evaOS Workbench Beta.app.20260613-012540',
+    ]);
+  });
+
+  it('detects stale running extracted Workbench apps before blaming product behavior', () => {
+    expect(
+      installedAppProof.parseRunningWorkbenchProcesses(
+        [
+          '6195 /Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+          '6201 /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+          '6202 /bin/zsh -lc rg "evaOS Workbench"',
+        ].join('\n')
+      )
+    ).toEqual([
+      {
+        pid: '6195',
+        command:
+          '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+      },
+      {
+        pid: '6201',
+        command: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+      },
+    ]);
+  });
+
+  it('parses the active bridge LaunchAgent path from launchctl output', () => {
+    expect(
+      installedAppProof.parseLaunchAgentBridgePath(
+        'program = /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge\n'
+      )
+    ).toBe('/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge');
+  });
+
+  it('fails desktop proof hygiene for Spotlight duplicates, stale processes, or stale bridge paths', () => {
+    expect(() =>
+      installedAppProof.assertDesktopProofStateClean({
+        expectedAppPath: '/Applications/evaOS Workbench.app',
+        expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        indexedApps: [],
+        staleIndexedApps: [
+          {
+            bundleId: 'com.evaos.workbench.beta',
+            path: '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app',
+            status: 'indexed',
+          },
+        ],
+        runningProcesses: [],
+        staleRunningProcesses: [],
+        launchAgent: {
+          label: 'com.electricsheep.evaos-desktop-bridge',
+          status: 'loaded',
+          bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        },
+        staleLaunchAgent: false,
+      })
+    ).toThrow(/Spotlight indexes stale Workbench app bundles/);
+
+    expect(() =>
+      installedAppProof.assertDesktopProofStateClean({
+        expectedAppPath: '/Applications/evaOS Workbench.app',
+        expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        indexedApps: [],
+        staleIndexedApps: [],
+        runningProcesses: [],
+        staleRunningProcesses: [
+          {
+            pid: '6195',
+            command:
+              '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+          },
+        ],
+        launchAgent: {
+          label: 'com.electricsheep.evaos-desktop-bridge',
+          status: 'loaded',
+          bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        },
+        staleLaunchAgent: false,
+      })
+    ).toThrow(/Stale Workbench app processes/);
+
+    expect(() =>
+      installedAppProof.assertDesktopProofStateClean({
+        expectedAppPath: '/Applications/evaOS Workbench.app',
+        expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        indexedApps: [],
+        staleIndexedApps: [],
+        runningProcesses: [],
+        staleRunningProcesses: [],
+        launchAgent: {
+          label: 'com.electricsheep.evaos-desktop-bridge',
+          status: 'loaded',
+          bridgePath:
+            '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        },
+        staleLaunchAgent: true,
+      })
+    ).toThrow(/LaunchAgent points/);
+  });
+
+  it('summarizes desktop proof hygiene from macOS system inventories', () => {
+    const fakeExec = (command: string, args: string[]) => {
+      if (command === '/usr/bin/mdfind' && args[0].includes('com.evaos.workbench.beta')) {
+        return '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app\n';
+      }
+      if (command === '/usr/bin/mdfind') {
+        return '/Applications/evaOS Workbench.app\n';
+      }
+      if (command === '/bin/ps') {
+        return [
+          '6195 /Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+          '6201 /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+        ].join('\n');
+      }
+      if (command === '/usr/bin/id') return '501\n';
+      if (command === '/bin/launchctl') {
+        return 'program = /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge\n';
+      }
+      throw new Error(`unexpected command ${command}`);
+    };
+
+    const state = installedAppProof.inspectDesktopProofState('/Applications/evaOS Workbench.app', fakeExec);
+
+    expect(state.staleIndexedApps).toEqual([
+      {
+        bundleId: 'com.evaos.workbench.beta',
+        path: '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app',
+        status: 'indexed',
+      },
+    ]);
+    expect(state.staleRunningProcesses).toEqual([
+      {
+        pid: '6195',
+        command:
+          '/Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
+      },
+    ]);
+    expect(state.staleLaunchAgent).toBe(false);
   });
 
   it('parses LaunchServices protocol handler ownership for the beta scheme', () => {

@@ -35,6 +35,15 @@ For the current controlled RC, use one lane at a time:
 5. Trusted manifest: attach the finalized DMGs plus the staged ZIP updater metadata to the GitHub prerelease, then run `Register evaOS Beta Local-Signed DMG Manifest` with `manifest_release_target_platforms=macos-arm64` and `local_signed_dmg_fallback_ack=evaos-local-signed-dmg`.
 6. Canary and distribution: run `evaOS Beta RC Canary` and `Distribute evaOS Beta Release Assets` with the manifest registration `trusted_manifest_run_id`; distribution remains GitHub-release based, not S3/AWS.
 
+Before any signed installed-app product proof, install or replace exactly
+`/Applications/evaOS Workbench.app` and launch/control that exact app path. Do
+not target `com.evaos.workbench`, `com.evaos.workbench.beta`, or
+`evaOS Workbench Beta.app` by bundle id/name. The RC canary enforces numeric
+macOS plist versions and writes `installed-app-path-hygiene.md`; signed
+installed-app Computer Use proof is still required for product behavior. For
+OpenClaw runtimes, use the loaded evaos-desktop-bridge tools unless Computer Use
+is explicitly mounted and verified in that runtime.
+
 ### Agent operating rule
 
 Agents working on the finish-line sprint must treat macOS as the only active release platform. Do not open, block, or delay parity PRs for Windows or Ubuntu/Linux failures unless the PR explicitly changes Windows packaging, Linux packaging, Electron builder platform metadata, or shared runtime code that cannot be proven safely on macOS. If a cross-platform concern is found, file it as post-1.0 follow-up work and keep the macOS RC lane moving.

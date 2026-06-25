@@ -131,6 +131,19 @@ const REQUIRED_RC_PROOF_CHECKS = [
     requiredText: ['PASS', 'evaos-workbench', 'com.evaos.workbench'],
   },
   {
+    id: 'installed-app-path-hygiene',
+    evidence: 'installed-app-path-hygiene.md',
+    requiredText: [
+      'PASS',
+      'exact app path',
+      '/Applications/evaOS Workbench.app',
+      'no stale indexed Workbench apps',
+      'no stale running Workbench apps',
+      'Computer Use exact path rule',
+      'OpenClaw bridge tools',
+    ],
+  },
+  {
     id: 'updater-feed-audit',
     evidence: 'updater-feed-audit.md',
     requiredText: ['PASS', '100yenadmin/evaOS-GUI', 'iOfficeAI/AionUi blocked'],

@@ -424,13 +424,27 @@ jobs:
           BETA_PLIST="$BETA_APP/Contents/Info.plist"
           BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BETA_PLIST")
           PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$BETA_PLIST")
+          SHORT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$BETA_PLIST")
+          BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$BETA_PLIST")
 
+          if [ "$BETA_APP" != "/Applications/evaOS Workbench.app" ]; then
+            echo "::error::RC canary must install the candidate at /Applications/evaOS Workbench.app, got $BETA_APP"
+            exit 1
+          fi
           if [ "$BUNDLE_ID" != "com.evaos.workbench" ]; then
             echo "::error::Unexpected beta bundle id: $BUNDLE_ID"
             exit 1
           fi
           if [ "$PRODUCT_NAME" != "evaOS Workbench" ]; then
             echo "::error::Unexpected beta product name: $PRODUCT_NAME"
+            exit 1
+          fi
+          if [[ ! "$SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::CFBundleShortVersionString must be numeric X.Y.Z, got $SHORT_VERSION"
+            exit 1
+          fi
+          if [[ ! "$BUNDLE_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "::error::CFBundleVersion must be numeric, got $BUNDLE_VERSION"
             exit 1
           fi
 
@@ -454,6 +468,16 @@ jobs:
           fi
           if printf '%s\n' "$URL_SCHEMES" | grep -Fx 'evaos-workbench-beta' >/dev/null; then
             echo "::error::Installed app still declares stale evaos-workbench-beta protocol scheme."
+            exit 1
+          fi
+          if [ -d "/Applications/evaOS Workbench Beta.app" ]; then
+            echo "::error::Stale /Applications/evaOS Workbench Beta.app exists in RC canary."
+            exit 1
+          fi
+          STALE_INDEXED_APPS="$(mdfind 'kMDItemCFBundleIdentifier == "com.evaos.workbench.beta"' || true)"
+          if printf '%s\n' "$STALE_INDEXED_APPS" | grep -F '/Volumes/LEXAR/Codex/' >/dev/null; then
+            echo "::error::Spotlight indexes stale Workbench beta apps under /Volumes/LEXAR/Codex."
+            printf '%s\n' "$STALE_INDEXED_APPS"
             exit 1
           fi
 
@@ -495,12 +519,20 @@ jobs:
             echo "::error::Beta app did not launch a detectable process."
             exit 1
           fi
+          STALE_RUNNING_APPS="$(ps -axo pid=,command= | grep -E '/Volumes/LEXAR/Codex/.+\\.app/Contents/MacOS/(evaOS Workbench|EvaOSWorkbench)' || true)"
+          if [ -n "$STALE_RUNNING_APPS" ]; then
+            echo "::error::Stale Workbench app process is running from a Lexar proof/extract path."
+            printf '%s\n' "$STALE_RUNNING_APPS"
+            exit 1
+          fi
           pkill -f "EvaOSWorkbench|evaOS Workbench" || true
 
           {
             echo "PASS: evaOS Workbench launched with stable Workbench identity and no upstream AionUi feed."
             echo "Bundle id: $BUNDLE_ID"
             echo "Product name: $PRODUCT_NAME"
+            echo "Short version: $SHORT_VERSION"
+            echo "Bundle version: $BUNDLE_VERSION"
             echo "Protocol scheme: evaos-workbench"
           } > "$PROOF_DIR/launch-smoke.md"
 
@@ -511,6 +543,14 @@ jobs:
             echo "Declared schemes:"
             printf '%s\n' "$URL_SCHEMES"
           } > "$PROOF_DIR/protocol-identity.md"
+
+          {
+            echo "PASS: exact app path /Applications/evaOS Workbench.app used for RC canary install and launch."
+            echo "PASS: no stale indexed Workbench apps under Lexar proof trees."
+            echo "PASS: no stale running Workbench apps outside /Applications/evaOS Workbench.app."
+            echo "PASS: Computer Use exact path rule recorded; signed installed-app product proof must still target /Applications/evaOS Workbench.app."
+            echo "PASS: OpenClaw bridge tools selected unless Computer Use is explicitly mounted in that runtime."
+          } > "$PROOF_DIR/installed-app-path-hygiene.md"
 
           {
             echo "PASS: update repo is 100yenadmin/evaOS-GUI and iOfficeAI/AionUi blocked for beta assets."

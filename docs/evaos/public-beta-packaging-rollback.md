@@ -122,8 +122,16 @@ The proof packet must include:
 - `trusted-manifest/evaos-beta-release-manifest.json` downloaded from the release workflow artifact, not copied from the mutable GitHub Release assets.
 - `codesign-dmg-macos-arm64.txt`, `stapler-dmg-macos-arm64.txt`, and `spctl-dmg-macos-arm64.txt`.
 - `codesign-macos-arm64.txt`, `stapler-macos-arm64.txt`, and `spctl-macos-arm64.txt`.
-- `install-smoke.md`, `launch-smoke.md`, `protocol-identity.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
+- `install-smoke.md`, `launch-smoke.md`, `protocol-identity.md`, `installed-app-path-hygiene.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
 - macOS x64 signing/Gatekeeper proof, or a concrete `macosX64.status=blocked` reason in `evaos-beta-rc-proof.json`.
+
+`installed-app-path-hygiene.md` must record the exact installed candidate path
+(`/Applications/evaOS Workbench.app`), that no stale indexed or running
+Workbench apps under `/Volumes/LEXAR/Codex` polluted the proof, that Computer
+Use product proof must use the exact app path rather than a bundle id, and that
+OpenClaw agents use the loaded evaos-desktop-bridge tools unless Computer Use is
+explicitly mounted in that runtime. RC canary success records this rule; it does
+not replace signed installed-app Computer Use product proof.
 
 `rollback-smoke.md` must explicitly record candidate rollback, released fallback launch, beta data/cache disposition, protocol handler state, and broker login/session proof.
 
@@ -159,6 +167,27 @@ open -b com.evaos.workbench "evaos-workbench://diagnostics/protocol-check"
 ```
 
 The installed-app proof gate also checks this state and fails before screenshots when LaunchServices maps the beta scheme to raw Electron.
+
+## Local App-Copy Hygiene
+
+Before a signed installed-app proof or customer-facing beta distribution, run the
+installed-app product proof against the canonical path:
+
+```bash
+npm run evaos:installed-app-proof -- --expected-head <candidate-sha>
+```
+
+Do not pass `com.evaos.workbench`, `com.evaos.workbench.beta`, or any other
+bundle identifier as the app target. Computer Use must also target the exact app
+path (`/Applications/evaOS Workbench.app`). If the proof reports stale indexed
+or running Workbench apps under `/Volumes/LEXAR/Codex`, keep old artifacts zipped
+or under `.noindex` evidence directories before retrying. Do not reset TCC or
+delete local evidence as a substitute for recording the stale-app blocker.
+
+macOS plist versions must stay numeric: `CFBundleShortVersionString` is `X.Y.Z`
+and `CFBundleVersion` is one to three numeric components. Keep labels such as
+`evaos-beta.0`, `rc402`, and customer/proof names in GitHub tags, release
+metadata, artifact names, and proof packets instead of plist version fields.
 
 Operator rollback proof commands:
 

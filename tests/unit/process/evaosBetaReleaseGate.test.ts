@@ -1119,6 +1119,16 @@ describe('evaOS beta release gate', () => {
         'PASS: protocol scheme evaos-workbench is declared by com.evaos.workbench.\n'
       );
       fs.writeFileSync(
+        path.join(proofDir, 'installed-app-path-hygiene.md'),
+        [
+          'PASS: exact app path /Applications/evaOS Workbench.app used for signed installed-app proof.',
+          'PASS: no stale indexed Workbench apps under Lexar proof trees.',
+          'PASS: no stale running Workbench apps outside /Applications/evaOS Workbench.app.',
+          'PASS: Computer Use exact path rule recorded; no bundle-id-only launch.',
+          'PASS: OpenClaw bridge tools selected unless Computer Use is explicitly mounted in that runtime.',
+        ].join('\n')
+      );
+      fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),
         'PASS: update repo is 100yenadmin/evaOS-GUI and iOfficeAI/AionUi blocked for beta assets.\n'
       );
@@ -1253,6 +1263,16 @@ describe('evaOS beta release gate', () => {
       fs.writeFileSync(
         path.join(proofDir, 'protocol-identity.md'),
         'PASS: protocol scheme evaos-workbench is declared by com.evaos.workbench.\n'
+      );
+      fs.writeFileSync(
+        path.join(proofDir, 'installed-app-path-hygiene.md'),
+        [
+          'PASS: exact app path /Applications/evaOS Workbench.app used for signed installed-app proof.',
+          'PASS: no stale indexed Workbench apps under Lexar proof trees.',
+          'PASS: no stale running Workbench apps outside /Applications/evaOS Workbench.app.',
+          'PASS: Computer Use exact path rule recorded; no bundle-id-only launch.',
+          'PASS: OpenClaw bridge tools selected unless Computer Use is explicitly mounted in that runtime.',
+        ].join('\n')
       );
       fs.writeFileSync(
         path.join(proofDir, 'updater-feed-audit.md'),
