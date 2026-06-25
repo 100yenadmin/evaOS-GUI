@@ -136,7 +136,8 @@ export async function getEvaosNativeCompanionStatus(
   const bridgePermissions = permissionView(bridge.data?.permissions);
   const customerMacStatusPermissions = permissionView(customerMac.data?.permissions);
   const customerMacPermissions = effectiveCustomerMacPermissions(customerMacStatusPermissions, controlSession);
-  const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgePermissions);
+  const bridgeEffectivePermissions = effectiveBridgePermissions(bridgePermissions, controlSession);
+  const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgeEffectivePermissions);
   const connectorServiceReady = connectorService.ok && connectorServiceIsRunning(connectorService.data);
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
@@ -179,7 +180,7 @@ export async function getEvaosNativeCompanionStatus(
       path: bridgePath,
       version: readString(bridge.data, 'version') ?? readString(bridge.data, 'bridge_version'),
       auditId: bridge.auditId,
-      permissions: bridgePermissions,
+      permissions: bridgeEffectivePermissions,
       readOnly: readBoolean(bridge.data?.safety, 'read_only') !== false,
     },
     connectorService: {
@@ -1139,15 +1140,30 @@ function effectiveCustomerMacPermissions(
   customerMacPermissions: IEvaosNativeCompanionPermissionView | undefined,
   controlSession: BridgeCommandResult
 ): IEvaosNativeCompanionPermissionView | undefined {
-  if (hasGrantedCorePermissions(customerMacPermissions)) return customerMacPermissions;
+  return effectivePermissionProof(customerMacPermissions, controlSession);
+}
+
+function effectiveBridgePermissions(
+  bridgePermissions: IEvaosNativeCompanionPermissionView | undefined,
+  controlSession: BridgeCommandResult
+): IEvaosNativeCompanionPermissionView | undefined {
+  return effectivePermissionProof(bridgePermissions, controlSession);
+}
+
+function effectivePermissionProof(
+  permissions: IEvaosNativeCompanionPermissionView | undefined,
+  controlSession: BridgeCommandResult
+): IEvaosNativeCompanionPermissionView | undefined {
+  if (hasGrantedCorePermissions(permissions)) return permissions;
   return controlSessionHasPermissionProof(controlSession)
     ? permissionView(controlSession.data?.permissions)
-    : customerMacPermissions;
+    : permissions;
 }
 
 function controlSessionHasPermissionProof(controlSession: BridgeCommandResult): boolean {
   return (
     controlSession.ok &&
+    readBoolean(controlSession.data, 'kill_switch') !== true &&
     readBoolean(controlSession.data, 'ready') === true &&
     hasGrantedCorePermissions(permissionView(controlSession.data?.permissions))
   );
@@ -1195,6 +1211,7 @@ function safeAgentLabel(label: string | undefined): string {
 
 function controlModeFromPayload(input: unknown): IEvaosNativeCompanionControlMode | undefined {
   const mode = readString(input, 'mode');
+  if (mode === 'ask_permission') return 'ask-permission';
   return mode === 'ask-permission' || mode === 'full-access' ? mode : undefined;
 }
 

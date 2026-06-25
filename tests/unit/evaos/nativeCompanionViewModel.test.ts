@@ -576,6 +576,46 @@ describe('nativeCompanionViewModel', () => {
       value: 'Granted',
       tone: 'ready',
     });
+    expect(viewModel.repairSteps.find((step) => step.title === 'Allow screen and control')).toMatchObject({
+      detail: 'Accessibility and Screen Recording are ready.',
+      state: 'ready',
+    });
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'create_pairing_prompt',
+      label: 'Create Pairing Prompt',
+      disabled: false,
+    });
+  });
+
+  it('trusts ready process status over stale bridge permission fields', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for code-only agent pairing.',
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'missing' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+    });
+
+    expect(viewModel.state).toBe('ready');
+    expect(viewModel.readinessStrip.find((item) => item.label === 'Permissions')).toMatchObject({
+      value: 'Granted',
+      tone: 'ready',
+    });
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
       action: 'create_pairing_prompt',

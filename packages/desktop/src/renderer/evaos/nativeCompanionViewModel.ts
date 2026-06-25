@@ -558,9 +558,7 @@ function permissionsValue(
 ): string {
   if (loading) return 'Checking';
   if (!status || state === 'offline' || state === 'unsupported') return 'Unavailable';
-  if (!permissionsNeedRepair(status.bridgeCli.permissions) && !permissionsNeedRepair(status.customerMac.permissions)) {
-    return 'Granted';
-  }
+  if (permissionsReady(status)) return 'Granted';
   return 'Needs permission';
 }
 
@@ -675,6 +673,7 @@ function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | 
 
 function permissionsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
   if (!status) return false;
+  if (status.readiness === 'ready' && status.customerMac.status === 'ready') return true;
   return !permissionsNeedRepair(status.bridgeCli.permissions) && !permissionsNeedRepair(status.customerMac.permissions);
 }
 
