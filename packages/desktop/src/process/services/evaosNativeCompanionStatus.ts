@@ -32,6 +32,8 @@ const HOMEBREW_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/l
 const DEFAULT_RELEASED_WORKBENCH_PATH = '/Applications/evaOS.app';
 const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
+const CONNECTOR_START_STATUS_ATTEMPTS = 4;
+const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
 const NATIVE_COMPANION_FIXTURE_STATES = [
   'ready',
   'repair_required',
@@ -54,6 +56,7 @@ export type EvaosNativeCompanionStatusDeps = {
   releasedWorkbenchPath?: string;
   existsSync?: (path: string) => boolean;
   execFile?: (file: string, args: string[], options: { timeout: number }) => Promise<ExecFileResult>;
+  sleep?: (durationMs: number) => Promise<void>;
   openPath?: (path: string) => Promise<string>;
   openExternal?: (url: string) => Promise<void>;
   createCustomerMacEnrollment?: (request: {
@@ -417,7 +420,7 @@ async function runConnectorStartAction(
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
   const started = await runBridgeCommand(bridgePath, ['connector-service', 'start', '--json'], deps);
-  const status = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  const status = await waitForConnectorServiceReadyAfterStart(bridgePath, deps, started);
   const ready = connectorServiceIsReady(status);
   if (ready) {
     return nativeActionResult(
@@ -443,6 +446,40 @@ async function runConnectorStartAction(
     auditId: status.auditId ?? started.auditId,
     auditIds: compactStrings([status.auditId, started.auditId]),
   });
+}
+
+async function waitForConnectorServiceReadyAfterStart(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps,
+  started: BridgeCommandResult
+): Promise<BridgeCommandResult> {
+  const startedStatus = connectorServiceStatusFromStartResult(started);
+  if (startedStatus && connectorServiceIsReady(startedStatus)) return startedStatus;
+
+  let latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  if (connectorServiceIsReady(latest)) return latest;
+
+  const sleep = deps.sleep ?? defaultSleep;
+  for (let attempt = 1; attempt < CONNECTOR_START_STATUS_ATTEMPTS; attempt++) {
+    await sleep(CONNECTOR_START_STATUS_RETRY_DELAY_MS);
+    latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+    if (connectorServiceIsReady(latest)) return latest;
+  }
+
+  return latest;
+}
+
+function connectorServiceStatusFromStartResult(result: BridgeCommandResult): BridgeCommandResult | undefined {
+  const status = result.data?.status;
+  if (!status || typeof status !== 'object') return undefined;
+  return {
+    ok: result.ok || connectorServiceLooksLikeStatusPayload(status),
+    auditId: result.auditId,
+    data: status as Record<string, unknown>,
+    errors: result.errors,
+    errorCode: result.errorCode,
+    errorMessage: result.errorMessage,
+  };
 }
 
 async function runControlStartAction(
@@ -1322,6 +1359,10 @@ async function defaultExecFile(file: string, args: string[], options: { timeout:
 async function defaultOpenPath(path: string): Promise<string> {
   const { shell } = await import('electron');
   return shell.openPath(path);
+}
+
+async function defaultSleep(durationMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
 }
 
 async function defaultOpenExternal(url: string): Promise<void> {
