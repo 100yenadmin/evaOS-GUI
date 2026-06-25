@@ -4358,7 +4358,7 @@ async function brokerHttpMessageFromResponse(response: Response): Promise<string
 }
 
 function canSurfaceBrokerResponseMessage(status: number): boolean {
-  return status === 400 || status === 403 || status === 409 || status === 422;
+  return status === 400 || status === 409 || status === 422;
 }
 
 function brokerHttpMessage(status: number): string {
@@ -4366,7 +4366,7 @@ function brokerHttpMessage(status: number): string {
     return 'The evaOS broker denied this desktop session. Sign in again.';
   }
   if (status === 403) {
-    return 'The evaOS broker denied Mac control for the selected customer.';
+    return 'The evaOS broker denied this request for the selected customer.';
   }
   if (status === 404) {
     return 'The evaOS broker endpoint was not found.';

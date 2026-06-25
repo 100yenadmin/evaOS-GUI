@@ -785,7 +785,7 @@ describe('EvaosBrokerSessionClient', () => {
     ).rejects.toMatchObject({
       code: 'broker_http_error',
       status: 403,
-      message: 'manage_integrations permission required',
+      message: 'The evaOS broker denied this request for the selected customer.',
     });
     expect(store.cleared).toBe(0);
     expect(client.getSessionStatus()).toMatchObject({
