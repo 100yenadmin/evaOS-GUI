@@ -972,6 +972,54 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result.message).toContain('already running and reachable');
   });
 
+  it('waits for Mac Access connector reachability after launchd start races', async () => {
+    const execFile = vi.fn(async (_file, args) => {
+      const key = args.join(' ');
+      if (key === 'connector-service start --json') {
+        return {
+          stdout: json({
+            ok: true,
+            action: 'start',
+            status: {
+              running: true,
+              health: { reachable: false },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (key === 'connector-service status --json') {
+        const statusCalls = execFile.mock.calls.filter(([, callArgs]) => {
+          return callArgs.join(' ') === 'connector-service status --json';
+        }).length;
+        return {
+          stdout: json({
+            ok: true,
+            audit_id: statusCalls > 1 ? 'audit-connector-ready' : 'audit-connector-starting',
+            running: true,
+            health: { reachable: statusCalls > 1 },
+          }),
+          stderr: '',
+        };
+      }
+      throw new Error(`unexpected command ${key}`);
+    });
+    const sleep = vi.fn(async () => undefined);
+    const deps = depsWithResponses({}, { execFile, sleep });
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:connector-service-start',
+      auditId: 'audit-connector-ready',
+    });
+    expect(result.message).toContain('running and reachable');
+    expect(execFile).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
   it('reconciles control start when current control status is ready after a failed start response', async () => {
     const deps = depsWithResponses({
       'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench': {
