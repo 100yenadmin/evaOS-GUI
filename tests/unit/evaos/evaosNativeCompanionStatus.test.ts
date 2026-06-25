@@ -294,6 +294,174 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('uses current control permission proof when bridge status permission state is stale', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+        tailnet_ip: '100.64.0.10',
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: { installed: true, running: false },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-current',
+        data: {
+          active: true,
+          mode: 'ask_permission',
+          kill_switch: false,
+          ready: true,
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-control-current' }, { audit_id: 'audit-bridge-stale' }],
+        },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      bridgeCli: {
+        status: 'ready',
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'granted',
+        },
+      },
+      customerMac: {
+        status: 'ready',
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'granted',
+        },
+      },
+      controlSession: {
+        status: 'ready',
+        active: true,
+        mode: 'ask-permission',
+        killSwitch: false,
+      },
+    });
+  });
+
+  it('does not use control permission proof when the kill switch is active', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+        tailnet_ip: '100.64.0.10',
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: { installed: true, running: false },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-blocked',
+        data: {
+          active: true,
+          mode: 'ask_permission',
+          kill_switch: true,
+          ready: true,
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-control-blocked' }, { audit_id: 'audit-bridge-stale' }],
+        },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      bridgeCli: {
+        status: 'repair_required',
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'missing',
+        },
+      },
+      customerMac: {
+        status: 'repair_required',
+        permissions: {
+          accessibility: 'granted',
+          screenRecording: 'missing',
+        },
+      },
+      controlSession: {
+        status: 'ready',
+        active: true,
+        mode: 'ask-permission',
+        killSwitch: true,
+      },
+    });
+  });
+
   it('prefers the packaged Workbench bridge before Homebrew fallback paths', async () => {
     const bundledBridge = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge';
     const homebrewBridge = '/opt/homebrew/bin/evaos-desktop-bridge';
