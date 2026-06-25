@@ -38,6 +38,7 @@ import {
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { evaosBrokerSessionKey } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { openEvaosSupportEmail, openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
@@ -45,9 +46,9 @@ const NativeCompanionPage: React.FC = () => {
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const violations = getEvaosNativeCompanionBoundaryViolations();
-  const { customerContext, brokerAuthenticated, brokerSessionLoading, refreshBrokerSession } =
+  const { customerContext, brokerSession, brokerAuthenticated, brokerSessionLoading } =
     useEvaosBrokeredCustomerContext();
-  const { selectedCustomerId, selectedTarget, targets = [], isOperator, refreshTargets } = customerContext;
+  const { selectedCustomerId, selectedTarget, targets = [], isOperator } = customerContext;
   const selectedPairingTarget = React.useMemo(
     () =>
       selectMacPairingTarget({
@@ -69,7 +70,23 @@ const NativeCompanionPage: React.FC = () => {
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const [authUrl, setAuthUrl] = React.useState<string | null>(null);
+  const brokerSessionKey = evaosBrokerSessionKey(brokerSession);
+  const lastBrokerSessionKeyRef = React.useRef<string | undefined>(brokerSessionKey);
   const selectedPairingCustomerRef = React.useRef<string | undefined>(selectedPairingCustomerId);
+  React.useEffect(() => {
+    const previousSessionKey = lastBrokerSessionKeyRef.current;
+    lastBrokerSessionKeyRef.current = brokerSessionKey;
+    if (!brokerSessionKey || brokerSessionKey === previousSessionKey) {
+      return;
+    }
+
+    setActionResult((current) =>
+      current?.sourcePointer === 'native-companion:pairing-broker-session-required' ? null : current
+    );
+    setCopyMessage(null);
+    setHandoffMessage(null);
+    setAuthUrl(null);
+  }, [brokerSessionKey]);
   React.useEffect(() => {
     selectedPairingCustomerRef.current = selectedPairingCustomerId;
     setActionResult(null);
@@ -163,7 +180,6 @@ const NativeCompanionPage: React.FC = () => {
   const handleReconnectWorkbench = React.useCallback(async () => {
     setAuthInFlight(true);
     setHandoffMessage(null);
-    setActionResult(null);
     setCopyMessage(null);
     setAuthUrl(null);
     try {
@@ -174,14 +190,12 @@ const NativeCompanionPage: React.FC = () => {
       }
       setAuthUrl(response.data.authUrl ?? null);
       setHandoffMessage(response.data.message || 'Continue sign-in in the browser, then return here.');
-      await refreshBrokerSession();
-      await refreshTargets();
     } catch {
       setHandoffMessage('evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
     } finally {
       setAuthInFlight(false);
     }
-  }, [refreshBrokerSession, refreshTargets]);
+  }, []);
 
   const handleOpenAuthUrl = React.useCallback(async () => {
     if (!authUrl) return;

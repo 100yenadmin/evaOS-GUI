@@ -741,16 +741,24 @@ export class EvaosBrokerSessionClient {
       'Choose a customer before creating a Mac pairing prompt.'
     );
     const session = this.requireActiveSession('Sign in to evaOS before pairing this Mac.');
-    const raw = await this.postJsonToEndpoint(
-      this.customerMacControlEndpoint,
-      {
-        action: 'create_enrollment',
-        customer_id: customerId,
-        device_name: safeText(request.deviceName) ?? 'Customer Mac',
-        screen_sharing_opt_in: false,
-      },
-      session
-    );
+    let raw: unknown;
+    try {
+      raw = await this.postJsonToEndpoint(
+        this.customerMacControlEndpoint,
+        {
+          action: 'create_enrollment',
+          customer_id: customerId,
+          device_name: safeText(request.deviceName) ?? 'Customer Mac',
+          screen_sharing_opt_in: false,
+        },
+        session
+      );
+    } catch (error) {
+      if (error instanceof EvaosBrokerSessionError && (error.status === 401 || error.status === 403)) {
+        this.clearRejectedSession(session);
+      }
+      throw error;
+    }
     return sanitizeCustomerMacEnrollment(raw, customerId);
   }
 
@@ -864,6 +872,19 @@ export class EvaosBrokerSessionClient {
     } catch {
       // A failed local clear must not keep logout from revoking the broker session.
     }
+  }
+
+  private clearRejectedSession(session: EvaosDesktopSession): void {
+    const rejectedFingerprint = desktopSessionFingerprint(session);
+    if (!this.session || desktopSessionFingerprint(this.session) !== rejectedFingerprint) {
+      return;
+    }
+
+    this.session = null;
+    this.pendingSessionPersistence = null;
+    this.revokedPersistedSessionFingerprint = rejectedFingerprint;
+    this.sessionEpoch += 1;
+    this.clearPersistedSession();
   }
 
   private loadPersistedSessionIfAvailable(): void {

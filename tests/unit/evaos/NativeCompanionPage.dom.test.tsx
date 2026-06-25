@@ -10,7 +10,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NativeCompanionPage from '@/renderer/pages/native-companion';
-import type { IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
+import type { IEvaosBrokerSessionStatus, IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
 
 const bridgeMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
@@ -30,6 +30,14 @@ const brokerMocks = vi.hoisted(() => ({
 
 const customerContextMock = vi.hoisted(() => ({
   brokerAuthenticated: true as boolean | undefined,
+  brokerSession: {
+    state: 'authenticated',
+    authenticated: true,
+    expired: false,
+    sessionKey: 'evaos-session-1',
+    source: 'beta-storage',
+    userEmail: 'admin@100yen.org',
+  } as IEvaosBrokerSessionStatus | null,
   brokerSessionLoading: false,
   refreshBrokerSession: vi.fn(),
   customerContext: {
@@ -84,6 +92,7 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
 
 vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   useEvaosBrokeredCustomerContext: () => ({
+    brokerSession: customerContextMock.brokerSession,
     brokerAuthenticated: customerContextMock.brokerAuthenticated,
     brokerSessionLoading: customerContextMock.brokerSessionLoading,
     refreshBrokerSession: customerContextMock.refreshBrokerSession,
@@ -111,6 +120,14 @@ function renderNativeCompanion() {
 describe('NativeCompanionPage', () => {
   beforeEach(() => {
     customerContextMock.brokerAuthenticated = true;
+    customerContextMock.brokerSession = {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      sessionKey: 'evaos-session-1',
+      source: 'beta-storage',
+      userEmail: 'admin@100yen.org',
+    };
     customerContextMock.brokerSessionLoading = false;
     customerContextMock.refreshBrokerSession.mockResolvedValue(undefined);
     customerContextMock.customerContext.selectedCustomerId = 'benjamin-kennedy';
@@ -822,7 +839,7 @@ describe('NativeCompanionPage', () => {
     });
 
     const user = userEvent.setup();
-    renderNativeCompanion();
+    const view = renderNativeCompanion();
 
     await user.click(await screen.findByRole('button', { name: 'Create Pairing Prompt' }));
 
@@ -842,8 +859,29 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByRole('button', { name: 'Copy sign-in link' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Open sign-in page' }));
     expect(supportEmailMock.openExternalUrl).toHaveBeenCalledWith('https://www.electricsheephq.com/login');
-    expect(customerContextMock.refreshBrokerSession).toHaveBeenCalledTimes(1);
-    expect(customerContextMock.customerContext.refreshTargets).toHaveBeenCalledTimes(1);
+    expect(customerContextMock.refreshBrokerSession).not.toHaveBeenCalled();
+    expect(customerContextMock.customerContext.refreshTargets).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Reconnect Workbench')
+    );
+    for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
+      expect(button).toBeDisabled();
+    }
+
+    customerContextMock.brokerSession = {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      sessionKey: 'evaos-session-2',
+      source: 'callback',
+      userEmail: 'admin@100yen.org',
+    };
+    view.rerender(
+      <ConfigProvider>
+        <NativeCompanionPage />
+      </ConfigProvider>
+    );
+
     await waitFor(() =>
       expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt')
     );
@@ -1112,6 +1150,7 @@ describe('NativeCompanionPage', () => {
 
   it('starts Workbench sign-in instead of showing a locked pairing button when signed out', async () => {
     customerContextMock.brokerAuthenticated = false;
+    customerContextMock.brokerSession = null;
     customerContextMock.customerContext.selectedCustomerId = undefined;
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
@@ -1173,8 +1212,8 @@ describe('NativeCompanionPage', () => {
     await waitFor(() => expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('button', { name: 'Open sign-in page' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy sign-in link' })).toBeInTheDocument();
-    expect(customerContextMock.refreshBrokerSession).toHaveBeenCalledTimes(1);
-    expect(customerContextMock.customerContext.refreshTargets).toHaveBeenCalledTimes(1);
+    expect(customerContextMock.refreshBrokerSession).not.toHaveBeenCalled();
+    expect(customerContextMock.customerContext.refreshTargets).not.toHaveBeenCalled();
   });
 
   it('does not lock pairing after a previous agent-control start failure', async () => {
