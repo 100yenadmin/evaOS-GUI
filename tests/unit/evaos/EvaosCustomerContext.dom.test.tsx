@@ -314,6 +314,32 @@ describe('EvaosCustomerContext', () => {
     expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves the selected customer when a refreshed desktop session returns a different default', async () => {
+    brokerMocks.getCustomerTargets.mockResolvedValueOnce(customerTargets()).mockResolvedValueOnce(customerTargets());
+
+    const { result, rerender } = renderHook(
+      ({ authenticated, sessionKey }) => useEvaosCustomerContext(authenticated, sessionKey),
+      {
+        initialProps: { authenticated: true, sessionKey: 'admin-session-1' },
+      }
+    );
+
+    await waitFor(() => expect(result.current.selectedCustomerId).toBe('david-poku'));
+
+    act(() => {
+      result.current.selectCustomer('second-customer');
+    });
+
+    expect(result.current.selectedCustomerId).toBe('second-customer');
+
+    rerender({ authenticated: true, sessionKey: 'admin-session-2' });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.selectedCustomerId).toBe('second-customer');
+    expect(result.current.selectedTarget?.displayName).toBe('Second Customer');
+    expect(brokerMocks.getCustomerTargets).toHaveBeenCalledTimes(2);
+  });
+
   it('brokered customer context refreshes targets when the broker session identity changes', async () => {
     brokerMocks.getSessionStatus
       .mockResolvedValueOnce(brokerSession())

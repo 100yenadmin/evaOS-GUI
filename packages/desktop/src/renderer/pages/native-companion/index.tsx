@@ -40,6 +40,7 @@ import {
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey } from '@renderer/hooks/useEvaosBrokerSessionStatus';
+import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from '@renderer/hooks/system/useDeepLink';
 import { openEvaosSupportEmail, openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
@@ -51,15 +52,17 @@ const NativeCompanionPage: React.FC = () => {
   const { customerContext, brokerSession, brokerAuthenticated, brokerSessionLoading } =
     useEvaosBrokeredCustomerContext();
   const { selectedCustomerId, selectedTarget, targets = [], isOperator } = customerContext;
+  const [lockedPairingCustomerId, setLockedPairingCustomerId] = React.useState<string | undefined>();
   const selectedPairingTarget = React.useMemo(
     () =>
       selectMacPairingTarget({
         targets,
         selectedCustomerId,
         selectedTarget,
+        lockedPairingCustomerId,
         isOperator,
       }),
-    [isOperator, selectedCustomerId, selectedTarget, targets]
+    [isOperator, lockedPairingCustomerId, selectedCustomerId, selectedTarget, targets]
   );
   const selectedPairingCustomerId = selectedPairingTarget?.customerId;
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
@@ -72,6 +75,7 @@ const NativeCompanionPage: React.FC = () => {
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const [authUrl, setAuthUrl] = React.useState<string | null>(null);
+  const [actionResultCustomerId, setActionResultCustomerId] = React.useState<string | undefined>();
   const brokerSessionKey = evaosBrokerSessionKey(brokerSession);
   const lastBrokerSessionKeyRef = React.useRef<string | undefined>(brokerSessionKey);
   const selectedPairingCustomerRef = React.useRef<string | undefined>(selectedPairingCustomerId);
@@ -82,23 +86,36 @@ const NativeCompanionPage: React.FC = () => {
       return;
     }
 
-    setActionResult((current) =>
-      current?.sourcePointer === 'native-companion:pairing-broker-session-required' ? null : current
-    );
+    setActionResult((current) => (isPairingBrokerSessionRequired(current) ? null : current));
+    setActionResultCustomerId(undefined);
     setCopyMessage(null);
     setHandoffMessage(null);
     setAuthUrl(null);
   }, [brokerSessionKey]);
   React.useEffect(() => {
+    const handleDesktopSessionImported = () => {
+      setActionResult((current) => (isPairingBrokerSessionRequired(current) ? null : current));
+      setActionResultCustomerId(undefined);
+      setCopyMessage(null);
+      setHandoffMessage(null);
+      setAuthUrl(null);
+    };
+    window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+    return () => {
+      window.removeEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
+    };
+  }, []);
+  React.useEffect(() => {
     selectedPairingCustomerRef.current = selectedPairingCustomerId;
     setActionResult(null);
+    setActionResultCustomerId(undefined);
     setCopyMessage(null);
     setHandoffMessage(null);
     setAuthUrl(null);
   }, [selectedPairingCustomerId]);
   const currentActionResult = React.useMemo(
-    () => actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId),
-    [actionResult, selectedPairingCustomerId]
+    () => actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId, actionResultCustomerId),
+    [actionResult, actionResultCustomerId, selectedPairingCustomerId]
   );
   const viewModel = getNativeCompanionRepairViewModel({
     status,
@@ -128,8 +145,7 @@ const NativeCompanionPage: React.FC = () => {
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
-  const guidedSetupReady =
-    canCreatePairingPrompt || agentPairingStatus === 'pairing_prompt_created' || agentPairingStatus === 'agent_paired';
+  const guidedSetupReady = agentPairingStatus === 'agent_paired' || currentActionResult?.connectorGrant?.ok === true;
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
@@ -148,19 +164,33 @@ const NativeCompanionPage: React.FC = () => {
     async (request: IEvaosNativeCompanionActionRequest) => {
       setActionInFlight(request.action);
       setCopyMessage(null);
+      const targetsMacControlCustomer =
+        request.action === 'create_pairing_prompt' ||
+        request.action === 'ensure_customer_mac_connector_grant' ||
+        request.action === 'setup_check';
       const requestCustomerId =
-        request.customerId ??
-        (request.action === 'create_pairing_prompt' ? selectedPairingCustomerId : selectedCustomerId);
+        request.customerId ?? (targetsMacControlCustomer ? selectedPairingCustomerId : selectedCustomerId);
+      if (targetsMacControlCustomer && requestCustomerId) {
+        setLockedPairingCustomerId(requestCustomerId);
+      }
       try {
         const result = await runAction({
           ...request,
           customerId: requestCustomerId,
           agentLabel: request.agentLabel ?? 'evaOS Workbench',
         });
-        if (request.action === 'create_pairing_prompt' && requestCustomerId !== selectedPairingCustomerRef.current) {
+        if (targetsMacControlCustomer && requestCustomerId !== selectedPairingCustomerRef.current) {
           return;
         }
+        if (
+          request.action === 'create_pairing_prompt' &&
+          result.status !== 'succeeded' &&
+          result.sourcePointer !== 'native-companion:pairing-broker-session-required'
+        ) {
+          setLockedPairingCustomerId(undefined);
+        }
         setActionResult(result);
+        setActionResultCustomerId(targetsMacControlCustomer ? requestCustomerId : undefined);
         setHandoffMessage(result.message);
         if (result.refreshRecommended) {
           await refresh();
@@ -180,6 +210,9 @@ const NativeCompanionPage: React.FC = () => {
   }, [currentActionResult?.pairing?.setupPrompt]);
 
   const handleReconnectWorkbench = React.useCallback(async () => {
+    if (selectedPairingCustomerId) {
+      setLockedPairingCustomerId(selectedPairingCustomerId);
+    }
     setAuthInFlight(true);
     setHandoffMessage(null);
     setCopyMessage(null);
@@ -197,7 +230,7 @@ const NativeCompanionPage: React.FC = () => {
     } finally {
       setAuthInFlight(false);
     }
-  }, [t]);
+  }, [selectedPairingCustomerId, t]);
 
   const handleOpenAuthUrl = React.useCallback(async () => {
     if (!authUrl) return;
@@ -331,12 +364,12 @@ const NativeCompanionPage: React.FC = () => {
               <div className='min-w-0'>
                 <h3 className='m-0 text-14px font-semibold leading-20px text-t-primary'>Guided Mac control setup</h3>
                 <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
-                  Workbench starts the local connector, then creates a scoped pairing prompt for the agent. The VM must
-                  connect through the broker-owned OpenClaw/Hermes plugin path.
+                  Workbench starts the local connector, then connects Mac control to the selected account-scoped
+                  evaOS/OpenClaw and Hermes agent context.
                 </p>
                 {selectedPairingTarget ? (
                   <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>
-                    Pairing target: {selectedPairingTarget.displayName || selectedPairingTarget.customerId}
+                    Mac control target: {selectedPairingTarget.displayName || selectedPairingTarget.customerId}
                   </p>
                 ) : null}
               </div>
@@ -421,7 +454,7 @@ const NativeCompanionPage: React.FC = () => {
                   loading={actionInFlight === 'create_pairing_prompt'}
                   onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
                 >
-                  Create Pairing Prompt
+                  Export Pairing Prompt
                 </Button>
                 {agentPairingStatus === 'agent_paired' ? (
                   <Button
@@ -861,8 +894,10 @@ function effectiveAgentPairingStatus(
 
 function actionResultForCurrentPairingCustomer(
   actionResult: IEvaosNativeCompanionActionResult | null,
-  selectedPairingCustomerId: string | undefined
+  selectedPairingCustomerId: string | undefined,
+  actionResultCustomerId?: string
 ): IEvaosNativeCompanionActionResult | null {
+  if (actionResultCustomerId && actionResultCustomerId !== selectedPairingCustomerId) return null;
   if (!actionResult?.pairing) return actionResult;
   return actionResult.pairing.customerId === selectedPairingCustomerId ? actionResult : null;
 }
@@ -872,13 +907,17 @@ function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): b
 }
 
 function isPairingBrokerSessionRequired(actionResult: IEvaosNativeCompanionActionResult | null): boolean {
-  return actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required';
+  return (
+    actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required'
+  );
 }
 
 function selectMacPairingTarget(input: {
   targets: IEvaosCustomerTargetView[];
   selectedCustomerId: string | undefined;
   selectedTarget: IEvaosCustomerTargetView | undefined;
+  lockedPairingCustomerId?: string;
   isOperator?: boolean;
 }): IEvaosCustomerTargetView | undefined {
   const pairableTargets = input.targets.filter(isPairableMacControlTarget);
@@ -887,6 +926,10 @@ function selectMacPairingTarget(input: {
     : undefined;
   if (selectedTargetFromList) return selectedTargetFromList;
   if (input.selectedTarget && isPairableMacControlTarget(input.selectedTarget)) return input.selectedTarget;
+  const lockedTargetFromList = input.lockedPairingCustomerId
+    ? pairableTargets.find((target) => target.customerId === input.lockedPairingCustomerId)
+    : undefined;
+  if (lockedTargetFromList) return lockedTargetFromList;
 
   return (
     pairableTargets.find((target) => target.isDefault) ??

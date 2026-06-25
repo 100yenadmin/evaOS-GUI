@@ -134,7 +134,7 @@ describe('nativeCompanionViewModel', () => {
   it('routes NOT_PAIRED to a repair action without renderer-owned trust claims', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
-        summaryText: 'NOT_PAIRED: pairing required before chat can start.',
+        summaryText: 'NOT_PAIRED: pairing required before local Mac control can run.',
       }),
       loading: false,
       error: null,
@@ -145,7 +145,7 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.primaryAction.kind).toBe('refresh');
     expect(viewModel.primaryAction.label).toBe('Check again');
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).not.toMatch(/AionUi|Aion CLI/i);
-    expect(viewModel.readinessStrip.map((item) => item.label)).toEqual(['Connector', 'Pairing', 'Permissions']);
+    expect(viewModel.readinessStrip.map((item) => item.label)).toEqual(['Connector', 'Agent access', 'Permissions']);
     expect(viewModel.repairSteps.join(' ')).not.toMatch(
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );
@@ -165,22 +165,22 @@ describe('nativeCompanionViewModel', () => {
       error: null,
       hasSelectedCustomer: true,
     });
-    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
-    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
+    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
 
-    expect(viewModel.summary).toContain('Pair evaOS/OpenClaw or Hermes with a scoped prompt');
+    expect(viewModel.summary).toContain('Connect this signed-in Workbench session');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
       step: 3,
       disabled: false,
     });
     expect(pairing).toMatchObject({
-      value: 'Ready to pair',
+      value: 'Ready to connect',
       tone: 'attention',
     });
-    expect(pairing?.help).toContain('broker-owned plugin');
+    expect(pairing?.help).toContain('account-scoped connector grant');
     expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
   });
 
@@ -201,8 +201,8 @@ describe('nativeCompanionViewModel', () => {
       error: null,
       hasSelectedCustomer: true,
     });
-    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
-    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
+    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
 
     expect(viewModel.state).toBe('repair_required');
     expect(viewModel.title).toBe('Connect secure Mac link');
@@ -217,8 +217,8 @@ describe('nativeCompanionViewModel', () => {
     });
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
       disabled: true,
       detail: expect.stringContaining('broker-owned private connector link'),
     });
@@ -301,8 +301,8 @@ describe('nativeCompanionViewModel', () => {
       error: null,
       hasSelectedCustomer: true,
     });
-    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Pairing');
-    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Pair the agent to this Mac');
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
+    const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
 
     expect(pairing).toMatchObject({
       value: 'Agent paired',
@@ -311,7 +311,7 @@ describe('nativeCompanionViewModel', () => {
     expect(pairingStep).toMatchObject({
       state: 'ready',
     });
-    expect(viewModel.summary).toContain('Agent pairing proof is present');
+    expect(viewModel.summary).toContain('Connect this signed-in Workbench session');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
       action: 'control_start',
@@ -349,7 +349,7 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'reconnect',
-      label: 'Reconnect Workbench',
+      label: 'Sign In To Workbench',
       disabled: false,
     });
 
@@ -386,8 +386,8 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'reconnect',
-      label: 'Reconnect Workbench',
-      title: 'Reconnect Workbench session',
+      label: 'Refresh Workbench Session',
+      title: 'Refresh Workbench session',
     });
 
     expect(
@@ -408,9 +408,9 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
-      title: 'Pair evaOS/OpenClaw or Hermes',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
+      title: 'Connect Mac control',
       detail: expect.stringContaining('local connector could not register'),
       disabled: false,
     });
@@ -463,8 +463,8 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
       detail: expect.stringContaining('local connector could not register'),
     });
 
@@ -534,8 +534,8 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.state).toBe('repair_required');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
       disabled: false,
     });
   });
@@ -582,8 +582,8 @@ describe('nativeCompanionViewModel', () => {
     });
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
       disabled: false,
     });
   });
@@ -618,8 +618,8 @@ describe('nativeCompanionViewModel', () => {
     });
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
-      action: 'create_pairing_prompt',
-      label: 'Create Pairing Prompt',
+      action: 'ensure_customer_mac_connector_grant',
+      label: 'Connect Mac Control',
       disabled: false,
     });
   });

@@ -234,8 +234,9 @@ describe('NativeCompanionPage', () => {
 
     expect(await screen.findByText('Mac control is ready')).toBeInTheDocument();
     expect(screen.getByText(/Local Workbench connector proof is ready/i)).toBeInTheDocument();
-    expect(screen.getByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeInTheDocument();
+    expect(screen.getAllByText('Connect Mac control').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Connect Mac Control' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export Pairing Prompt' })).not.toBeInTheDocument();
     expect(screen.queryByText('Test with evaOS / OpenClaw')).not.toBeInTheDocument();
     expect(screen.queryByText('Test with Hermes')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Kill Switch' })).not.toBeInTheDocument();
@@ -316,11 +317,11 @@ describe('NativeCompanionPage', () => {
     expect(await screen.findByText('Connect secure Mac link')).toBeInTheDocument();
     expect(screen.getByText('Secure link needed')).toBeInTheDocument();
     expect(screen.getAllByText(/broker-owned private connector link/).length).toBeGreaterThan(0);
-    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt');
+    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Connect Mac Control');
     expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
-    for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
+    for (const button of screen.getAllByRole('button', { name: 'Export Pairing Prompt' })) {
       expect(button).toBeDisabled();
     }
     expect(bridgeMocks.runAction).not.toHaveBeenCalled();
@@ -568,7 +569,7 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
+    expect(await screen.findByText('Connect Mac control')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Run Setup Check' })).not.toBeInTheDocument();
     expect(screen.getAllByTestId('native-companion-next-action')).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
@@ -582,7 +583,7 @@ describe('NativeCompanionPage', () => {
       agentLabel: 'evaOS Workbench',
     });
 
-    await user.click(screen.getAllByRole('button', { name: 'Create Pairing Prompt' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Export Pairing Prompt' })[0]);
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
     expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Copy Pairing Prompt');
@@ -665,7 +666,8 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     const view = renderNativeCompanion();
 
-    await user.click(await screen.findByRole('button', { name: 'Create Pairing Prompt' }));
+    await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(await screen.findByRole('button', { name: 'Export Pairing Prompt' }));
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
 
@@ -759,10 +761,11 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
+    expect(await screen.findByText('Connect Mac control')).toBeInTheDocument();
     expect(screen.queryByText('Test with evaOS / OpenClaw')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
 
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText('Copy the pairing prompt')).toBeInTheDocument();
@@ -771,10 +774,34 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByText('Test with Hermes')).toBeInTheDocument();
     expect(screen.getAllByText('Pending')).toHaveLength(2);
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
-    expect(screen.getByText(/broker-owned plugin/i)).toBeInTheDocument();
+    expect(screen.getByText(/account-scoped connector grant/i)).toBeInTheDocument();
   });
 
-  it('shows reconnect step when broker denies pairing enrollment', async () => {
+  it('shows reconnect step when broker denies connector grant and preserves the Mac-control target', async () => {
+    const accountOnlyTarget = {
+      customerId: 'admin@100yen.org',
+      customerAccountId: 'acct_admin',
+      targetKind: 'customer_account' as const,
+      accountOnly: true,
+      displayName: 'admin@100yen.org',
+      isDefault: false,
+    };
+    const benjaminTarget = {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Benjamin Kennedy',
+      isDefault: true,
+    };
+    const davidTarget = {
+      customerId: 'jackie-david',
+      targetKind: 'customer_vm' as const,
+      displayName: 'David Dorman',
+      isDefault: false,
+    };
+    customerContextMock.customerContext.selectedCustomerId = 'jackie-david';
+    customerContextMock.customerContext.selectedTarget = davidTarget;
+    customerContextMock.customerContext.targets = [accountOnlyTarget, benjaminTarget, davidTarget];
+    customerContextMock.customerContext.isOperator = true;
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -826,35 +853,57 @@ describe('NativeCompanionPage', () => {
         },
       },
     });
-    bridgeMocks.runAction.mockResolvedValueOnce({
-      success: true,
-      data: {
-        action: 'create_pairing_prompt',
-        status: 'repair_required',
-        message:
-          'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can create a pairing code. Sign in again, then retry.',
-        sourcePointer: 'native-companion:pairing-broker-session-required',
-        auditIds: [],
-        refreshRecommended: false,
-        agentPairingStatus: 'ready_for_agent_pairing',
-      },
-    });
+    bridgeMocks.runAction
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'ensure_customer_mac_connector_grant',
+          status: 'repair_required',
+          message:
+            'Mac control is ready locally, but Workbench needs a fresh evaOS session before it can connect Mac control. Sign in again, then retry.',
+          sourcePointer: 'native-companion:connector-grant-broker-session-required',
+          auditIds: [],
+          refreshRecommended: false,
+          agentPairingStatus: 'ready_for_agent_pairing',
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready. Paste it into evaOS/OpenClaw or Hermes to complete the link.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: ['audit-pairing'],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'jackie-david',
+            pairingCode: 'PAIR-DAVID',
+            setupPrompt:
+              'Customer: jackie-david\nPairing code: PAIR-DAVID\nUse customer_mac_complete_pairing with this code.',
+          },
+          agentPairingStatus: 'pairing_prompt_created',
+        },
+      });
 
     const user = userEvent.setup();
     const view = renderNativeCompanion();
 
-    await user.click(await screen.findByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findByText(/Mac control target: David Dorman/)).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Connect Mac Control' }));
 
-    expect(await screen.findByText('Reconnect Workbench session')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reconnect Workbench' })).toBeInTheDocument();
+    expect(await screen.findByText('Refresh Workbench session')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh Workbench Session' })).toBeInTheDocument();
     expect(screen.queryByText('Agent setup prompt')).not.toBeInTheDocument();
     expect(screen.queryByText('PAIR-1234')).not.toBeInTheDocument();
     expect(screen.queryByText('Test with evaOS / OpenClaw')).not.toBeInTheDocument();
+    expect(bridgeMocks.runAction).toHaveBeenLastCalledWith({
+      action: 'ensure_customer_mac_connector_grant',
+      customerId: 'jackie-david',
+      agentLabel: 'evaOS Workbench',
+    });
 
-    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
-    expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeDisabled();
-
-    await user.click(screen.getByRole('button', { name: 'Reconnect Workbench' }));
+    await user.click(screen.getByRole('button', { name: 'Refresh Workbench Session' }));
 
     await waitFor(() => expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('button', { name: 'Open sign-in page' })).toBeInTheDocument();
@@ -864,12 +913,13 @@ describe('NativeCompanionPage', () => {
     expect(customerContextMock.refreshBrokerSession).not.toHaveBeenCalled();
     expect(customerContextMock.customerContext.refreshTargets).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Reconnect Workbench')
+      expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Refresh Workbench Session')
     );
-    for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
-      expect(button).toBeDisabled();
-    }
+    expect(screen.queryByRole('button', { name: 'Export Pairing Prompt' })).not.toBeInTheDocument();
 
+    customerContextMock.customerContext.selectedCustomerId = 'admin@100yen.org';
+    customerContextMock.customerContext.selectedTarget = accountOnlyTarget;
+    customerContextMock.customerContext.targets = [accountOnlyTarget, benjaminTarget, davidTarget];
     customerContextMock.brokerSession = {
       state: 'authenticated',
       authenticated: true,
@@ -886,11 +936,24 @@ describe('NativeCompanionPage', () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt')
+      expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Connect Mac Control')
     );
-    for (const button of screen.getAllByRole('button', { name: 'Create Pairing Prompt' })) {
+    expect(screen.getByText(/Mac control target: David Dorman/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    for (const button of screen.getAllByRole('button', { name: 'Export Pairing Prompt' })) {
       expect(button).toBeEnabled();
     }
+
+    await user.click(screen.getAllByRole('button', { name: 'Export Pairing Prompt' })[0]);
+
+    expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
+    expect(screen.getByText(/Pairing code: PAIR-DAVID/)).toBeInTheDocument();
+    expect(bridgeMocks.runAction).toHaveBeenLastCalledWith({
+      action: 'create_pairing_prompt',
+      customerId: 'jackie-david',
+      agentLabel: 'evaOS Workbench',
+    });
+    expect(document.body.textContent).not.toMatch(/benjamin-kennedy.*Pairing code|admin@100yen\.org.*Pairing code/s);
   });
 
   it('does not create a Mac pairing prompt for account-only customer targets', async () => {
@@ -959,7 +1022,7 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
-    expect(screen.getByRole('button', { name: 'Create Pairing Prompt' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export Pairing Prompt' })).toBeDisabled();
     expect(bridgeMocks.runAction).not.toHaveBeenCalled();
   });
 
@@ -1046,8 +1109,9 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText(/Pairing target: Golden Test VM/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findByText(/Mac control target: Golden Test VM/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
 
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(bridgeMocks.runAction).toHaveBeenCalledWith({
@@ -1139,8 +1203,9 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText(/Pairing target: Golden Test VM/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findByText(/Mac control target: Golden Test VM/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
 
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(bridgeMocks.runAction).toHaveBeenCalledWith({
@@ -1148,7 +1213,7 @@ describe('NativeCompanionPage', () => {
       customerId: 'golden',
       agentLabel: 'evaOS Workbench',
     });
-    expect(document.body.textContent).not.toMatch(/Customer: acct_admin|Pairing target: admin@100yen\.org/i);
+    expect(document.body.textContent).not.toMatch(/Customer: acct_admin|Mac control target: admin@100yen\.org/i);
   });
 
   it('starts Workbench sign-in instead of showing a locked pairing button when signed out', async () => {
@@ -1204,11 +1269,11 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText('Reconnect Workbench session')).toBeInTheDocument();
+    expect(await screen.findByText('Sign in to Workbench')).toBeInTheDocument();
     const reconnect = screen.getByTestId('native-companion-next-action');
-    expect(reconnect).toHaveTextContent('Reconnect Workbench');
+    expect(reconnect).toHaveTextContent('Sign In To Workbench');
     expect(reconnect).toBeEnabled();
-    expect(screen.queryByTestId('native-companion-next-action')).not.toHaveTextContent('Create Pairing Prompt');
+    expect(screen.queryByTestId('native-companion-next-action')).not.toHaveTextContent('Export Pairing Prompt');
 
     await user.click(reconnect);
 
@@ -1303,20 +1368,20 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
+    expect(await screen.findByText('Connect Mac control')).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Ask Permission' }));
 
     expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent(
       'Agent control could not start.'
     );
-    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Create Pairing Prompt');
+    expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Connect Mac Control');
     expect(screen.getByTestId('native-companion-next-action')).toBeEnabled();
 
-    const createPairingButtons = screen.getAllByRole('button', { name: 'Create Pairing Prompt' });
+    const createPairingButtons = screen.getAllByRole('button', { name: 'Export Pairing Prompt' });
     expect(createPairingButtons.every((button) => !button.hasAttribute('disabled'))).toBe(true);
 
-    await user.click(screen.getByTestId('native-companion-next-action'));
+    await user.click(createPairingButtons[0]);
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
   });
@@ -1488,11 +1553,12 @@ describe('NativeCompanionPage', () => {
     });
     renderNativeCompanion();
 
-    expect(await screen.findByText('Pair evaOS/OpenClaw or Hermes')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Create Pairing Prompt' }));
+    expect(await screen.findByText('Connect Mac control')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
     await waitFor(() => expect(screen.getAllByText('Pending')).toHaveLength(2));
     await user.click(screen.getByRole('button', { name: 'Copy Pairing Prompt' }));
-    await user.click(screen.getByRole('button', { name: /Run Setup Check/i }));
+    await user.click(screen.getByTestId('native-companion-next-action'));
 
     await waitFor(() => expect(bridgeMocks.runAction).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();

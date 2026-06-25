@@ -36,6 +36,8 @@ import type {
   IEvaosCompanyBrainQueryRequest,
   IEvaosCompanyBrainQueryResult,
   IEvaosCompanyBrainTimelineEntryView,
+  IEvaosNativeCompanionAgentPairingStatus,
+  IEvaosNativeCompanionConnectorGrant,
   IEvaosCustomerTargetView,
   IEvaosCustomerTargetsView,
   IEvaosPeopleAccessInviteMemberRequest,
@@ -811,6 +813,66 @@ export class EvaosBrokerSessionClient {
     return sanitizeCustomerMacEnrollmentCompletion(raw, connectorToken);
   }
 
+  async ensureCustomerMacConnectorGrant(request: {
+    customerId: string;
+    connectorUrl: string;
+    connectorToken: string;
+    deviceName?: string;
+    deviceIdentifier?: string;
+    capabilities?: Record<string, unknown>;
+    permissionState?: Record<string, unknown>;
+    screenSharingOptIn?: boolean;
+  }): Promise<IEvaosNativeCompanionConnectorGrant> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before connecting Mac control.'
+    );
+    const connectorUrl = normalizeRequiredText(
+      request.connectorUrl,
+      'invalid_customer',
+      'The local connector URL is unavailable.'
+    );
+    const connectorToken = safeRawSecret(request.connectorToken);
+    if (!connectorToken) {
+      throw new EvaosBrokerSessionError('invalid_customer', 'The local connector token is unavailable.');
+    }
+    const session = this.requireActiveSession('Sign in to evaOS before connecting Mac control.');
+    let raw: unknown;
+    try {
+      raw = await this.postJsonToEndpoint(
+        this.customerMacControlEndpoint,
+        stripUndefined({
+          action: 'ensure_connector_grant',
+          customer_id: customerId,
+          device_name: safeText(request.deviceName) ?? 'Customer Mac',
+          device_identifier: safeText(request.deviceIdentifier),
+          connector_url: connectorUrl,
+          connector_token: connectorToken,
+          tailnet_ip: connectorHostWithoutPort(connectorUrl),
+          capabilities: request.capabilities ?? {
+            connector: 'evaos-desktop-bridge',
+            openclaw_tools: 'enabled',
+            desktop_control: 'full_access_or_ask_permission',
+            iphone_mirroring: 'visible_control_surface',
+          },
+          permission_state: request.permissionState ?? {
+            accessibility: 'check_required',
+            screen_recording: 'check_required',
+          },
+          screen_sharing_opt_in: request.screenSharingOptIn === true,
+        }),
+        session
+      );
+    } catch (error) {
+      if (error instanceof EvaosBrokerSessionError && (error.status === 401 || error.status === 403)) {
+        this.clearRejectedSession(session);
+      }
+      throw error;
+    }
+    return sanitizeCustomerMacConnectorGrant(raw, customerId);
+  }
+
   async revokeSession(): Promise<IEvaosBrokerSessionStatus> {
     const session = this.session;
     this.session = null;
@@ -1148,6 +1210,43 @@ function sanitizeCustomerMacEnrollmentCompletion(
     grantId,
     connectorTokenLast4: safeText(response?.connector_token_last4, 12) ?? connectorToken.slice(-4),
   });
+}
+
+function sanitizeCustomerMacConnectorGrant(
+  raw: unknown,
+  fallbackCustomerId: string
+): IEvaosNativeCompanionConnectorGrant {
+  const response = asRecord(raw);
+  const customerId = safeText(response?.customer_id) ?? fallbackCustomerId;
+  if (response?.ok !== true) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not confirm a Mac connector grant.'
+    );
+  }
+  return stripUndefined({
+    ok: true,
+    customerId,
+    deviceId: safeText(response?.device_id),
+    grantId: safeText(response?.grant_id),
+    grantState: safeText(response?.grant_state, 80),
+    agentPairingStatus: safeAgentPairingStatus(response?.agent_pairing_status),
+    auditId: safeText(response?.audit_id),
+  });
+}
+
+function safeAgentPairingStatus(value: unknown): IEvaosNativeCompanionAgentPairingStatus | undefined {
+  const status = safeText(value, 80);
+  if (
+    status === 'not_ready' ||
+    status === 'ready_for_agent_pairing' ||
+    status === 'pairing_prompt_created' ||
+    status === 'agent_paired' ||
+    status === 'proof_failed'
+  ) {
+    return status;
+  }
+  return undefined;
 }
 
 function connectorHostWithoutPort(connectorUrl: string): string | undefined {

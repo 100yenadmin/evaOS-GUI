@@ -255,6 +255,7 @@ export type IEvaosNativeCompanionAction =
   | 'connector_start'
   | 'connector_stop'
   | 'setup_check'
+  | 'ensure_customer_mac_connector_grant'
   | 'control_status'
   | 'control_start'
   | 'control_stop'
@@ -298,6 +299,16 @@ export interface IEvaosNativeCompanionControlSummary {
   killSwitch?: boolean;
 }
 
+export interface IEvaosNativeCompanionConnectorGrant {
+  ok: boolean;
+  customerId: string;
+  deviceId?: string;
+  grantId?: string;
+  grantState?: string;
+  agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
+  auditId?: string;
+}
+
 export interface IEvaosNativeCompanionActionResult {
   action: IEvaosNativeCompanionAction;
   status: IEvaosNativeCompanionActionStatus;
@@ -308,6 +319,7 @@ export interface IEvaosNativeCompanionActionResult {
   refreshRecommended: boolean;
   setup?: IEvaosNativeCompanionSetupSummary;
   control?: IEvaosNativeCompanionControlSummary;
+  connectorGrant?: IEvaosNativeCompanionConnectorGrant;
   pairing?: IEvaosNativeCompanionPairingPrompt;
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   events?: IEvaosNativeCompanionAuditEvent[];
