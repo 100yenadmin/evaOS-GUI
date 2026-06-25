@@ -125,6 +125,38 @@ function renderGuardedRoute(routePath = '/mission-control') {
           }
         />
         <Route
+          path='/connected-apps'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/connected-apps'>
+              <p>Connected Apps loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
+          path='/business-browser'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/business-browser'>
+              <p>Shared Browser loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
+          path='/design-workspace'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/design-workspace'>
+              <p>Design Workspace loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
+          path='/creative-studio'
+          element={
+            <EvaosRuntimeRouteGuard routePath='/creative-studio'>
+              <p>Creative Studio loaded</p>
+            </EvaosRuntimeRouteGuard>
+          }
+        />
+        <Route
           path='/company-brain'
           element={
             <EvaosRuntimeRouteGuard routePath='/company-brain'>
@@ -145,6 +177,20 @@ function renderGuardedRoute(routePath = '/mission-control') {
       </Routes>
     </MemoryRouter>
   );
+}
+
+function employeeScopes() {
+  return [
+    'assign_agents',
+    'manage_integrations',
+    'open_business_browser',
+    'use_creative_studio',
+    'use_design_workspace',
+    'access_openclaw_dashboard',
+    'access_hermes_dashboard',
+    'access_terminal',
+    'access_technical_diagnostics',
+  ];
 }
 
 describe('EvaosRuntimeRouteGuard', () => {
@@ -395,6 +441,40 @@ describe('EvaosRuntimeRouteGuard', () => {
     renderGuardedRoute('/people-access');
 
     expect(screen.getByText('People Access loaded')).toBeInTheDocument();
+  });
+
+  it('allows scoped employees into Workbench tools while denying People Access and Company Brain direct routes', async () => {
+    customerContextMock.roles = ['employee'];
+    customerContextMock.scopes = employeeScopes();
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'employee@example.test',
+    };
+
+    const { unmount } = renderGuardedRoute('/evaos');
+    expect(screen.getByText('evaOS loaded')).toBeInTheDocument();
+
+    unmount();
+    const connectedApps = renderGuardedRoute('/connected-apps');
+    expect(screen.getByText('Connected Apps loaded')).toBeInTheDocument();
+
+    connectedApps.unmount();
+    const sharedBrowser = renderGuardedRoute('/business-browser');
+    expect(screen.getByText('Shared Browser loaded')).toBeInTheDocument();
+
+    sharedBrowser.unmount();
+    const terminal = renderGuardedRoute('/terminal');
+    expect(screen.getByText('Terminal loaded')).toBeInTheDocument();
+
+    terminal.unmount();
+    const peopleAccess = renderGuardedRoute('/people-access');
+    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
+    expect(screen.queryByText('People Access loaded')).not.toBeInTheDocument();
+
+    peopleAccess.unmount();
+    renderGuardedRoute('/company-brain');
+    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
+    expect(screen.queryByText('Company Brain loaded')).not.toBeInTheDocument();
   });
 
   it('allows Company Brain when account policy grants Company Brain scope', () => {

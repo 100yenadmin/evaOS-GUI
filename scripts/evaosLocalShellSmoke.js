@@ -824,36 +824,58 @@ const LOCAL_PRODUCT_MEMBER_ROUTE_CHECKS = [
   },
 ];
 
+const LOCAL_PRODUCT_EMPLOYEE_ROUTE_NAMES = new Set([
+  'evaos-dashboard-loaded-fixture',
+  'hermes-dashboard-loaded-fixture',
+  'mission-control-loaded-fixture',
+  'design-workspace-loaded-fixture',
+  'creative-studio-loaded-fixture',
+  'connected-apps-loaded-fixture',
+  'business-browser-loaded-fixture',
+  'terminal-loaded-fixture',
+  'native-companion-boundary-fixture',
+]);
+
+function employeeFixtureRouteName(name) {
+  return name.replace('-loaded-fixture', '-employee-loaded-fixture').replace('-boundary-fixture', '-employee-boundary-fixture');
+}
+
 const LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS = [
+  ...LOCAL_PRODUCT_ROUTE_CHECKS
+    .filter((route) => LOCAL_PRODUCT_EMPLOYEE_ROUTE_NAMES.has(route.name))
+    .map((route) => ({
+      ...route,
+      name: employeeFixtureRouteName(route.name),
+      forbidden: Array.from(
+        new Set([
+          ...(route.forbidden || []),
+          'People & Access',
+          'Company Brain',
+          'Approval Center',
+          'Selected customer',
+        ])
+      ),
+    })),
   {
-    name: 'mission-control-employee-denied-fixture',
-    hash: '/mission-control',
+    name: 'people-access-employee-denied-fixture',
+    hash: '/people-access',
     title: 'evaOS Workbench',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
     settledMarkers: ['evaOS Workbench'],
-    loadedStateRequiredMarkers: ['redirected #/guid route', 'admin runtime hidden from employee persona'],
+    loadedStateRequiredMarkers: ['redirected #/guid route', 'People Access hidden from employee persona'],
     expected: ['evaOS Workbench'],
-    forbidden: ['Mission Control', 'Terminal', 'evaOS', 'Hermes'],
+    forbidden: ['People Access', 'People & Access', 'member rows', 'desktop_session', 'Bearer', 'provider_grant'],
+    requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
   {
-    name: 'creative-studio-employee-denied-fixture',
-    hash: '/creative-studio',
+    name: 'company-brain-employee-denied-fixture',
+    hash: '/company-brain',
     title: 'evaOS Workbench',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
     settledMarkers: ['evaOS Workbench'],
-    loadedStateRequiredMarkers: ['redirected #/guid route', 'creative scope hidden from employee persona'],
+    loadedStateRequiredMarkers: ['redirected #/guid route', 'Company Brain hidden from employee persona'],
     expected: ['evaOS Workbench'],
-    forbidden: ['Creative Studio', 'Design Workspace', 'Shared Browser', 'Connected Apps', 'People & Access'],
-  },
-  {
-    name: 'native-companion-employee-allowed-fixture',
-    hash: '/native-companion',
-    title: 'Mac & iPhone',
-    proofStage: PROOF_STAGES.SHELL_SMOKE,
-    settledMarkers: ['Mac & iPhone', 'Workbench connector'],
-    loadedStateRequiredMarkers: ['employee setup/status route remains available'],
-    expected: ['Mac & iPhone', 'Workbench connector'],
-    forbidden: ['desktop_session', 'Bearer', 'provider_grant', 'grant_handle', 'access_token', 'refresh_token'],
+    forbidden: ['Company Brain', 'Renewal fixture brief', 'desktop_session', 'Bearer', 'provider_grant'],
     requiredSelectors: SIDEBAR_SUPPORT_ROUTE_GUARD,
   },
 ];

@@ -44,6 +44,7 @@ vi.mock('react-i18next', () => ({
         'evaos.peopleAccess.roles.admin': 'Admin',
         'evaos.peopleAccess.roles.agentOnly': 'Agent only',
         'evaos.peopleAccess.roles.billingAdmin': 'Billing admin',
+        'evaos.peopleAccess.roles.employee': 'Employee',
         'evaos.peopleAccess.roles.manager': 'Manager',
         'evaos.peopleAccess.roles.member': 'Member',
         'evaos.peopleAccess.roles.owner': 'Owner',

@@ -89,7 +89,7 @@ describe('evaOS local product fixture', () => {
     expect(stringValues({ session, customers }).join('\n')).not.toMatch(SECRET_PATTERN);
   });
 
-  it('supports an explicit employee persona for denied-by-default route proof', () => {
+  it('supports an explicit employee persona for scoped route proof', () => {
     const env = { AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA: 'employee' };
     const session = evaosLocalProductFixtureSessionStatus(env);
     const customers = evaosLocalProductFixtureCustomerTargets(env);
@@ -101,8 +101,18 @@ describe('evaOS local product fixture', () => {
       userEmail: 'employee@example.test',
       source: 'memory',
     });
-    expect(customers.roles).toEqual(['agent_only']);
-    expect(customers.scopes).toEqual([]);
+    expect(customers.roles).toEqual(['employee']);
+    expect(customers.scopes).toEqual([
+      'assign_agents',
+      'manage_integrations',
+      'open_business_browser',
+      'use_creative_studio',
+      'use_design_workspace',
+      'access_openclaw_dashboard',
+      'access_hermes_dashboard',
+      'access_terminal',
+      'access_technical_diagnostics',
+    ]);
     expect(customers.isOperator).toBe(false);
     expect(customers.summaryText).toContain('employee persona');
     expect(stringValues({ session, customers }).join('\n')).not.toMatch(SECRET_PATTERN);
