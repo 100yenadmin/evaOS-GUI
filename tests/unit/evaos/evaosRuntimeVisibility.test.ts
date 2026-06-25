@@ -16,6 +16,18 @@ import {
 } from '@/renderer/evaos/evaosRuntimeVisibility';
 
 describe('evaosRuntimeVisibility', () => {
+  const employeeScopes = [
+    'assign_agents',
+    'manage_integrations',
+    'open_business_browser',
+    'use_creative_studio',
+    'use_design_workspace',
+    'access_openclaw_dashboard',
+    'access_hermes_dashboard',
+    'access_terminal',
+    'access_technical_diagnostics',
+  ] as const;
+
   it('mirrors the released Workbench runtime catalog with evaOS presentation routes', () => {
     expect(EVAOS_RUNTIME_CATALOG.map((runtime) => runtime.key)).toEqual([
       'openclaw',
@@ -195,6 +207,48 @@ describe('evaosRuntimeVisibility', () => {
       reason: 'scope_required',
     });
     expect(evaosRuntimeRouteDecision('/company-brain', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+  });
+
+  it('pins scoped employees to Workbench tools without People Access or Company Brain', () => {
+    const context = {
+      authenticated: true,
+      roles: ['employee'],
+      scopes: [...employeeScopes],
+      userEmail: 'employee@example.test',
+    };
+
+    expect(canAccessEvaosAdminRuntimes(context)).toBe(false);
+    expect(visibleEvaosRuntimeCatalog(context).map((runtime) => runtime.key)).toEqual([
+      'openclaw',
+      'hermes',
+      'paperclip',
+      'opendesign',
+      'browser',
+      'terminal',
+      'creative_studio',
+    ]);
+    for (const routePath of [
+      '/evaos',
+      '/openclaw',
+      '/hermes',
+      '/mission-control',
+      '/terminal',
+      '/business-browser',
+      '/design-workspace',
+      '/creative-studio',
+      '/connected-apps',
+      '/team/customer-team',
+      '/native-companion',
+    ]) {
+      expect(evaosRuntimeRouteDecision(routePath, context)).toEqual({ allowed: true, fallbackPath: '/guid' });
+    }
+    for (const routePath of ['/people-access', '/approval-center', '/company-brain']) {
+      expect(evaosRuntimeRouteDecision(routePath, context)).toEqual({
+        allowed: false,
+        fallbackPath: '/guid',
+        reason: 'scope_required',
+      });
+    }
   });
 
   it('shows admin technical runtimes and keeps team chat deferred until enabled', () => {

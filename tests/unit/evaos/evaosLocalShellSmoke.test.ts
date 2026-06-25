@@ -612,33 +612,60 @@ describe('evaOS local shell smoke', () => {
     ]);
   });
 
-  it('keeps employee-persona visual proof denied by default while allowing Mac setup', () => {
+  it('keeps employee-persona visual proof scoped to allowed Workbench routes', () => {
     expect(localShellSmoke.isLocalProductEmployeePersona({})).toBe(false);
     expect(
       localShellSmoke.isLocalProductEmployeePersona({ AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE_PERSONA: 'employee' })
     ).toBe(true);
-    expect(localShellSmoke.LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS).toEqual([
-      expect.objectContaining({
-        name: 'mission-control-employee-denied-fixture',
-        hash: '/mission-control',
-        proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
-        expected: ['evaOS Workbench'],
-        forbidden: expect.arrayContaining(['Mission Control', 'Terminal', 'evaOS', 'Hermes']),
-      }),
-      expect.objectContaining({
-        name: 'creative-studio-employee-denied-fixture',
-        hash: '/creative-studio',
-        proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
-        expected: ['evaOS Workbench'],
-        forbidden: expect.arrayContaining(['Creative Studio', 'Design Workspace', 'Shared Browser']),
-      }),
-      expect.objectContaining({
-        name: 'native-companion-employee-allowed-fixture',
-        hash: '/native-companion',
-        proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
-        expected: expect.arrayContaining(['Mac & iPhone', 'Workbench connector']),
-      }),
+    expect(localShellSmoke.LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS.map((route) => route.name)).toEqual([
+      'evaos-dashboard-employee-loaded-fixture',
+      'hermes-dashboard-employee-loaded-fixture',
+      'mission-control-employee-loaded-fixture',
+      'design-workspace-employee-loaded-fixture',
+      'creative-studio-employee-loaded-fixture',
+      'connected-apps-employee-loaded-fixture',
+      'business-browser-employee-loaded-fixture',
+      'terminal-employee-loaded-fixture',
+      'native-companion-employee-boundary-fixture',
+      'people-access-employee-denied-fixture',
+      'company-brain-employee-denied-fixture',
     ]);
+    expect(localShellSmoke.LOCAL_PRODUCT_EMPLOYEE_ROUTE_CHECKS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'mission-control-employee-loaded-fixture',
+          hash: '/mission-control',
+          proofStage: localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE,
+          expected: expect.arrayContaining(['Mission Control', 'LOCAL FIXTURE - NOT LIVE BETA PROOF']),
+          forbidden: expect.arrayContaining(['People & Access', 'Company Brain']),
+        }),
+        expect.objectContaining({
+          name: 'connected-apps-employee-loaded-fixture',
+          hash: '/connected-apps',
+          expected: expect.arrayContaining(['Connected Apps', 'Open dashboard']),
+          forbidden: expect.arrayContaining(['People & Access', 'Company Brain']),
+        }),
+        expect.objectContaining({
+          name: 'native-companion-employee-boundary-fixture',
+          hash: '/native-companion',
+          expected: expect.arrayContaining(['Mac & iPhone']),
+        }),
+        expect.objectContaining({
+          name: 'people-access-employee-denied-fixture',
+          hash: '/people-access',
+          proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
+          expected: ['evaOS Workbench'],
+          forbidden: expect.arrayContaining(['People Access', 'People & Access']),
+        }),
+        expect.objectContaining({
+          name: 'company-brain-employee-denied-fixture',
+          hash: '/company-brain',
+          proofStage: localShellSmoke.PROOF_STAGES.SHELL_SMOKE,
+          expected: ['evaOS Workbench'],
+          forbidden: expect.arrayContaining(['Company Brain', 'Renewal fixture brief']),
+        }),
+      ])
+    );
   });
 
   it('keeps future loaded-state proof markers distinct from title-only waits', () => {

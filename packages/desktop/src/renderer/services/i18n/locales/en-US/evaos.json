@@ -80,6 +80,7 @@
       "admin": "Admin",
       "agentOnly": "Agent only",
       "billingAdmin": "Billing admin",
+      "employee": "Employee",
       "manager": "Manager",
       "member": "Member",
       "owner": "Owner",

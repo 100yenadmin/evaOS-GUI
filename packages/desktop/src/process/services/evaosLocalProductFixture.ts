@@ -69,7 +69,17 @@ const MEMBER_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [
   'use_creative_studio',
   'use_design_workspace',
 ];
-const EMPLOYEE_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [];
+const EMPLOYEE_FIXTURE_SCOPES: IEvaosAccountPolicyScope[] = [
+  'assign_agents',
+  'manage_integrations',
+  'open_business_browser',
+  'use_creative_studio',
+  'use_design_workspace',
+  'access_openclaw_dashboard',
+  'access_hermes_dashboard',
+  'access_terminal',
+  'access_technical_diagnostics',
+];
 
 export function isEvaosLocalProductFixtureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.AIONUI_E2E_TEST === '1' && env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE === '1';
@@ -105,7 +115,7 @@ export function evaosLocalProductFixtureCustomerTargets(
 ): IEvaosCustomerTargetsView {
   const persona = evaosLocalProductFixturePersona(env);
   return clone({
-    roles: persona === 'employee' ? ['agent_only'] : persona === 'member' ? ['member'] : ['owner'],
+    roles: persona === 'employee' ? ['employee'] : persona === 'member' ? ['member'] : ['owner'],
     scopes:
       persona === 'employee'
         ? EMPLOYEE_FIXTURE_SCOPES

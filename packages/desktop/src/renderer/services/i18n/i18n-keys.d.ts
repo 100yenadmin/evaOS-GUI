@@ -805,6 +805,7 @@ export type I18nKey =
   | 'evaos.peopleAccess.roles.admin'
   | 'evaos.peopleAccess.roles.agentOnly'
   | 'evaos.peopleAccess.roles.billingAdmin'
+  | 'evaos.peopleAccess.roles.employee'
   | 'evaos.peopleAccess.roles.manager'
   | 'evaos.peopleAccess.roles.member'
   | 'evaos.peopleAccess.roles.owner'

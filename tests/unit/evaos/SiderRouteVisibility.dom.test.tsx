@@ -151,6 +151,20 @@ function renderSider(path = '/guid', options: { collapsed?: boolean } = {}) {
   );
 }
 
+function employeeScopes() {
+  return [
+    'assign_agents',
+    'manage_integrations',
+    'open_business_browser',
+    'use_creative_studio',
+    'use_design_workspace',
+    'access_openclaw_dashboard',
+    'access_hermes_dashboard',
+    'access_terminal',
+    'access_technical_diagnostics',
+  ];
+}
+
 describe('Sider runtime route visibility', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'matchMedia', {
@@ -606,6 +620,56 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('- Design Workspace')).toBeInTheDocument();
     expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
     expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
+  });
+
+  it('shows scoped employee Workbench surfaces while hiding People Access and Company Brain', () => {
+    customerContextMock.roles = ['employee'];
+    customerContextMock.isOperator = false;
+    customerContextMock.scopes = employeeScopes();
+    customerContextMock.selectedCustomerId = 'benjamin-kennedy';
+    customerContextMock.targets = [
+      {
+        customerId: 'benjamin-kennedy',
+        displayName: 'Benjamin Kennedy',
+        status: 'active',
+        healthStatus: 'ready',
+        isDefault: true,
+      },
+    ];
+    brokerSessionMock.session = {
+      ...brokerSessionMock.session,
+      userEmail: 'employee@example.test',
+    };
+
+    const view = renderSider('/evaos');
+
+    expect(screen.getByText('evaOS')).toBeInTheDocument();
+    expect(screen.getByText('Hermes')).toBeInTheDocument();
+    expect(screen.getByText('Mission Control')).toBeInTheDocument();
+    expect(screen.getByText('Shared Browser')).toBeInTheDocument();
+    expect(screen.getByText('cron.scheduledTasks')).toBeInTheDocument();
+    expect(screen.getByText('Terminal')).toBeInTheDocument();
+    expect(screen.getByText('Support')).toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
+    expect(screen.getByText('Benjamin Kennedy')).toBeInTheDocument();
+
+    view.unmount();
+    const designView = renderSider('/design-workspace');
+
+    expect(screen.getByText('- Design Workspace')).toBeInTheDocument();
+    expect(screen.getByText('- Creative Studio')).toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
+
+    designView.unmount();
+    renderSider('/connected-apps');
+
+    expect(screen.getByText('- Connected Apps')).toBeInTheDocument();
+    expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
+    expect(screen.queryByText('- People & Access')).not.toBeInTheDocument();
+    expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
   });
 
   it('clears broker-owned customer runtime state before switching footer customers', async () => {

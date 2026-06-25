@@ -196,6 +196,54 @@ describe('EvaosBrokerSessionClient People Access policy', () => {
     ]);
   });
 
+  it('parses canonical employee memberships and invites without granting People Access authority', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...accountPayload,
+          members: [
+            {
+              membership_id: 'mem_employee',
+              email: 'employee@example.test',
+              membership_role: 'employee',
+              status: 'active',
+            },
+          ],
+          invites: [
+            {
+              invite_id: 'inv_employee',
+              email: 'new.employee@example.test',
+              role: 'employee',
+              status: 'pending',
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['manage_integrations'])));
+    const client = authenticatedClient(fetchImpl);
+
+    const policy = await client.peopleAccessPolicy({ customerId: 'david-poku' });
+
+    expect(policy.routeDenied).toBe(true);
+    expect(policy.members).toEqual([
+      {
+        memberId: 'mem_employee',
+        email: 'employee@example.test',
+        role: 'employee',
+        status: 'active',
+      },
+    ]);
+    expect(policy.invites).toEqual([
+      {
+        inviteId: 'inv_employee',
+        email: 'new.employee@example.test',
+        role: 'employee',
+        status: 'pending',
+      },
+    ]);
+  });
+
   it('fails closed without broker calls when People Access loads without a desktop session', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
@@ -263,6 +311,40 @@ describe('EvaosBrokerSessionClient People Access policy', () => {
       code: 'invalid_role',
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('lets account admins request employee invites through the broker RPC', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['manage_members'])))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'created',
+          invite_id: 'inv_employee',
+          backend_enforced: true,
+        })
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(
+      client.invitePeopleAccessMember({
+        customerId: 'david-poku',
+        email: 'employee@example.test',
+        role: 'employee',
+      })
+    ).resolves.toMatchObject({
+      status: 'created',
+      inviteId: 'inv_employee',
+      backendEnforced: true,
+    });
+    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+      action: 'invite_customer_account_member',
+      customer_id: 'david-poku',
+      customer_account_id: 'acct_123',
+      email: 'employee@example.test',
+      role: 'employee',
+    });
   });
 
   it('denies invite actions locally when policy lacks manage_members and does not call the invite RPC', async () => {

@@ -512,6 +512,7 @@ export type IEvaosAccountPolicyRole =
   | 'admin'
   | 'billing_admin'
   | 'technical_admin'
+  | 'employee'
   | 'manager'
   | 'member'
   | 'agent_only'
