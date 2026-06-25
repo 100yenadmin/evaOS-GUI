@@ -1122,6 +1122,109 @@ describe('NativeCompanionPage', () => {
     expect(document.body.textContent).not.toMatch(/admin@100yen\.org.*Pairing code/s);
   });
 
+  it('keeps a VM-backed Mac target pairable when its live display name is the admin email', async () => {
+    const accountOnlyTarget = {
+      customerId: 'admin@100yen.org',
+      customerAccountId: 'acct_admin',
+      targetKind: 'customer_account' as const,
+      accountOnly: true,
+      displayName: 'admin@100yen.org',
+      isDefault: false,
+    };
+    const benjaminTarget = {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Benjamin Kennedy',
+      isDefault: false,
+    };
+    const goldenTarget = {
+      customerId: 'golden',
+      targetKind: 'customer_vm' as const,
+      displayName: 'admin@100yen.org',
+      isDefault: true,
+    };
+    customerContextMock.customerContext.selectedCustomerId = 'admin@100yen.org';
+    customerContextMock.customerContext.selectedTarget = accountOnlyTarget;
+    customerContextMock.customerContext.targets = [accountOnlyTarget, benjaminTarget, goldenTarget];
+    customerContextMock.customerContext.isOperator = true;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-21T03:45:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for account-scoped Mac control.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: false },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'unavailable',
+          installed: false,
+          running: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac-ready'],
+        },
+      },
+    });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'create_pairing_prompt',
+        status: 'succeeded',
+        message: 'Pairing prompt is ready. Paste it into evaOS/OpenClaw or Hermes to complete the link.',
+        sourcePointer: 'native-companion:pairing-prompt',
+        auditIds: ['audit-pairing'],
+        refreshRecommended: false,
+        pairing: {
+          customerId: 'golden',
+          pairingCode: 'PAIR-1234',
+          setupPrompt: 'Customer: golden\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with this code.',
+        },
+        agentPairingStatus: 'pairing_prompt_created',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText(/Mac control target: admin@100yen\.org/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Mac control target: Benjamin Kennedy/i);
+
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
+
+    expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
+    expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+      action: 'create_pairing_prompt',
+      customerId: 'golden',
+      agentLabel: 'evaOS Workbench',
+    });
+  });
+
   it('ignores ambiguous account-looking rows when choosing a Mac pairing target', async () => {
     const ambiguousAccountTarget = {
       customerId: 'acct_admin',
