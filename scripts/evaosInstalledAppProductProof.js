@@ -11,6 +11,9 @@ const DEFAULT_APP_PATH = '/Applications/evaOS Workbench.app';
 const DEFAULT_EXECUTABLE_NAME = 'evaOS Workbench';
 const DEFAULT_BUNDLE_ID = 'com.evaos.workbench';
 const DEFAULT_PROTOCOL_SCHEME = 'evaos-workbench';
+const WORKBENCH_BUNDLE_IDS = [DEFAULT_BUNDLE_ID, 'com.evaos.workbench.beta'];
+const LEXAR_CODEX_PREFIX = '/Volumes/LEXAR/Codex/';
+const BRIDGE_LAUNCH_AGENT_LABEL = 'com.electricsheep.evaos-desktop-bridge';
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ARTIFACT_BASE = '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/67-real-admin-product-reality-pass';
 const REPORT_SCHEMA = 'evaos-installed-app-product-proof/v1';
@@ -38,6 +41,28 @@ function shortHead(head) {
 
 function installedExecutablePath(appPath = DEFAULT_APP_PATH) {
   return path.join(appPath, 'Contents', 'MacOS', DEFAULT_EXECUTABLE_NAME);
+}
+
+function assertCanonicalProofAppPath(appPath, options = {}) {
+  const candidate = String(appPath || '').trim();
+  if (!candidate) {
+    throw new Error(`Installed app proof requires an exact .app path; expected ${DEFAULT_APP_PATH}.`);
+  }
+  if (!path.isAbsolute(candidate)) {
+    throw new Error(
+      `Installed app proof app target must be an absolute .app path, not ${candidate}. Use ${DEFAULT_APP_PATH}.`
+    );
+  }
+  if (!candidate.endsWith('.app')) {
+    throw new Error(
+      `Installed app proof app target must be an exact .app path, not ${candidate}. Do not use a bundle identifier such as ${DEFAULT_BUNDLE_ID}.`
+    );
+  }
+  if (!options.allowNonCanonicalAppPath && candidate !== DEFAULT_APP_PATH) {
+    throw new Error(
+      `Release proof must target ${DEFAULT_APP_PATH}; got ${candidate}. A separate beta path requires an explicit channel policy update.`
+    );
+  }
 }
 
 function artifactRootForHead(head, env = process.env) {
@@ -88,6 +113,176 @@ function readInfoPlist(appPath, execFileSyncImpl = execFileSync) {
     shortVersion: plistPrint(appPath, 'Print:CFBundleShortVersionString', execFileSyncImpl),
     protocolSchemes: schemes,
   };
+}
+
+function assertMacVersionString(value, label) {
+  if (!/^\d+\.\d+\.\d+$/.test(String(value || ''))) {
+    throw new Error(`${label} must be three period-separated integers for macOS release proof, got ${value}.`);
+  }
+}
+
+function assertMacBuildVersion(value, label) {
+  if (!/^\d+(?:\.\d+){0,2}$/.test(String(value || ''))) {
+    throw new Error(`${label} must be one to three numeric components for macOS release proof, got ${value}.`);
+  }
+}
+
+function parseAppBundlePaths(output) {
+  return uniqueStrings(
+    String(output || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => line.includes('.app'))
+  );
+}
+
+function readIndexedWorkbenchApps(execFileSyncImpl = execFileSync) {
+  const entries = [];
+  for (const bundleId of WORKBENCH_BUNDLE_IDS) {
+    let output = '';
+    try {
+      output = execFileSyncImpl('/usr/bin/mdfind', [`kMDItemCFBundleIdentifier == "${bundleId}"`], {
+        encoding: 'utf8',
+      });
+    } catch (error) {
+      entries.push({
+        bundleId,
+        path: null,
+        status: 'unavailable',
+        error: error?.message || String(error),
+      });
+      continue;
+    }
+
+    for (const indexedPath of parseAppBundlePaths(output)) {
+      entries.push({
+        bundleId,
+        path: indexedPath,
+        status: 'indexed',
+      });
+    }
+  }
+
+  return entries;
+}
+
+function parseRunningWorkbenchProcesses(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(\d+)\s+(.+)$/);
+      return match ? { pid: match[1], command: match[2] } : { pid: null, command: line };
+    })
+    .filter((processInfo) => /\.app\/Contents\/MacOS\/(?:evaOS Workbench|EvaOSWorkbench)/.test(processInfo.command));
+}
+
+function readRunningWorkbenchProcesses(execFileSyncImpl = execFileSync) {
+  try {
+    return parseRunningWorkbenchProcesses(
+      execFileSyncImpl('/bin/ps', ['-axo', 'pid=,command='], {
+        encoding: 'utf8',
+      })
+    );
+  } catch (error) {
+    return [
+      {
+        pid: null,
+        command: null,
+        status: 'unavailable',
+        error: error?.message || String(error),
+      },
+    ];
+  }
+}
+
+function parseLaunchAgentBridgePath(output) {
+  const text = String(output || '');
+  const match = text.match(/\/[^\n"]*evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge/);
+  return match ? match[0] : null;
+}
+
+function readLaunchAgentBridgeState(execFileSyncImpl = execFileSync) {
+  let uid;
+  try {
+    uid = String(execFileSyncImpl('/usr/bin/id', ['-u'], { encoding: 'utf8' })).trim();
+  } catch (error) {
+    return {
+      label: BRIDGE_LAUNCH_AGENT_LABEL,
+      status: 'unavailable',
+      bridgePath: null,
+      error: error?.message || String(error),
+    };
+  }
+
+  try {
+    const output = execFileSyncImpl('/bin/launchctl', ['print', `gui/${uid}/${BRIDGE_LAUNCH_AGENT_LABEL}`], {
+      encoding: 'utf8',
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return {
+      label: BRIDGE_LAUNCH_AGENT_LABEL,
+      status: 'loaded',
+      bridgePath: parseLaunchAgentBridgePath(output),
+    };
+  } catch (error) {
+    return {
+      label: BRIDGE_LAUNCH_AGENT_LABEL,
+      status: 'not-loaded',
+      bridgePath: null,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+function inspectDesktopProofState(appPath = DEFAULT_APP_PATH, execFileSyncImpl = execFileSync) {
+  const expectedBridgePath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'evaos-desktop-bridge');
+  const indexedApps = readIndexedWorkbenchApps(execFileSyncImpl);
+  const runningProcesses = readRunningWorkbenchProcesses(execFileSyncImpl);
+  const launchAgent = readLaunchAgentBridgeState(execFileSyncImpl);
+  const staleIndexedApps = indexedApps.filter(
+    (entry) => entry.path && entry.path !== appPath && entry.path.startsWith(LEXAR_CODEX_PREFIX)
+  );
+  const staleRunningProcesses = runningProcesses.filter(
+    (entry) => entry.command && entry.command.includes(`${LEXAR_CODEX_PREFIX}`) && !entry.command.includes(appPath)
+  );
+  const staleLaunchAgent =
+    launchAgent.status === 'loaded' && launchAgent.bridgePath && launchAgent.bridgePath !== expectedBridgePath;
+
+  return {
+    expectedAppPath: appPath,
+    expectedBridgePath,
+    indexedApps,
+    staleIndexedApps,
+    runningProcesses,
+    staleRunningProcesses,
+    launchAgent,
+    staleLaunchAgent,
+  };
+}
+
+function assertDesktopProofStateClean(state) {
+  if (state.staleIndexedApps.length > 0) {
+    throw new Error(
+      `Spotlight indexes stale Workbench app bundles under ${LEXAR_CODEX_PREFIX}: ${state.staleIndexedApps
+        .map((entry) => `${entry.bundleId}:${entry.path}`)
+        .join(', ')}. Move proof extracts under .noindex or keep them zipped before release proof.`
+    );
+  }
+  if (state.staleRunningProcesses.length > 0) {
+    throw new Error(
+      `Stale Workbench app processes are running outside ${state.expectedAppPath}: ${state.staleRunningProcesses
+        .map((entry) => `${entry.pid || 'unknown'}:${entry.command}`)
+        .join(', ')}. Stop stale extracted apps before Computer Use proof.`
+    );
+  }
+  if (state.staleLaunchAgent) {
+    throw new Error(
+      `Workbench bridge LaunchAgent points to ${state.launchAgent.bridgePath}, expected ${state.expectedBridgePath}. Re-bootstrap the bundled bridge before Mac-control proof.`
+    );
+  }
 }
 
 function compactLaunchServicesLine(line) {
@@ -164,6 +359,11 @@ function assertExpectedBundle(bundleInfo) {
   if (bundleInfo.bundleId !== DEFAULT_BUNDLE_ID) {
     throw new Error(`Installed app bundle id ${bundleInfo.bundleId} does not match ${DEFAULT_BUNDLE_ID}.`);
   }
+  if (bundleInfo.bundleName !== DEFAULT_EXECUTABLE_NAME) {
+    throw new Error(`Installed app bundle name ${bundleInfo.bundleName} does not match ${DEFAULT_EXECUTABLE_NAME}.`);
+  }
+  assertMacVersionString(bundleInfo.shortVersion, 'CFBundleShortVersionString');
+  assertMacBuildVersion(bundleInfo.bundleVersion, 'CFBundleVersion');
   if (!bundleInfo.protocolSchemes.includes(DEFAULT_PROTOCOL_SCHEME)) {
     throw new Error(`Installed app protocol schemes do not include ${DEFAULT_PROTOCOL_SCHEME}.`);
   }
@@ -293,6 +493,7 @@ function safeReportForPlan(options) {
     appStat,
     packageVersion: options.packageVersion || 'unknown',
     bundleInfo: options.bundleInfo,
+    desktopProofState: options.desktopProofState || null,
     screenshots: plan.map((entry) => ({
       id: entry.id,
       route: entry.route,
@@ -343,6 +544,14 @@ function markdownForInstalledProof(report) {
     `- Bundle version: \`${report.bundleInfo.bundleVersion}\``,
     `- Short version: \`${report.bundleInfo.shortVersion}\``,
     `- Protocol schemes: \`${report.bundleInfo.protocolSchemes.join('`, `')}\``,
+    '',
+    '## Desktop Proof Hygiene',
+    '',
+    `- Expected app path: \`${report.desktopProofState?.expectedAppPath || report.appPath}\``,
+    `- Indexed stale Workbench apps: \`${report.desktopProofState?.staleIndexedApps?.length || 0}\``,
+    `- Stale running Workbench apps: \`${report.desktopProofState?.staleRunningProcesses?.length || 0}\``,
+    `- Bridge LaunchAgent: \`${report.desktopProofState?.launchAgent?.status || 'not checked'}\``,
+    `- Bridge path: \`${report.desktopProofState?.launchAgent?.bridgePath || 'none'}\``,
     '',
     '## Protocol Handler',
     '',
@@ -519,6 +728,7 @@ async function captureInstalledAppProof(options = {}) {
   const executablePath = options.executablePath || installedExecutablePath(appPath);
   const artifactRoot = options.artifactRoot || artifactRootForHead(expectedHead, process.env);
   const timeout = Number(options.timeout || process.env.EVAOS_INSTALLED_APP_PROOF_TIMEOUT || DEFAULT_TIMEOUT_MS);
+  assertCanonicalProofAppPath(appPath, { allowNonCanonicalAppPath: options.allowNonCanonicalAppPath });
 
   if (!fs.existsSync(appPath)) {
     throw new Error(`Installed app not found: ${appPath}`);
@@ -529,6 +739,8 @@ async function captureInstalledAppProof(options = {}) {
 
   const bundleInfo = options.bundleInfo || readInfoPlist(appPath);
   assertExpectedBundle(bundleInfo);
+  const desktopProofState = options.desktopProofState || inspectDesktopProofState(appPath);
+  assertDesktopProofStateClean(desktopProofState);
   let protocolHandler = options.protocolHandler || readLaunchServicesProtocolHandler(DEFAULT_PROTOCOL_SCHEME);
   try {
     assertExpectedProtocolHandler(protocolHandler);
@@ -552,6 +764,7 @@ async function captureInstalledAppProof(options = {}) {
       executablePath,
       packageVersion: packageVersion(repoRoot),
       bundleInfo,
+      desktopProofState,
       protocolHandler,
       plan: buildInstalledProofPlan(undefined, { expectedHead }),
       screenshotStatus: 'not-started',
@@ -602,6 +815,7 @@ async function captureInstalledAppProof(options = {}) {
       executablePath,
       packageVersion: packageVersion(repoRoot),
       bundleInfo,
+      desktopProofState,
       protocolHandler,
       plan: proofPlan,
       screenshotStatus: 'not-started',
@@ -657,6 +871,7 @@ async function captureInstalledAppProof(options = {}) {
     },
     packageVersion: packageVersion(repoRoot),
     bundleInfo,
+    desktopProofState,
     protocolHandler,
     screenshots,
     preflightAssertions,
@@ -687,6 +902,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--allow-noncanonical-app-path') options.allowNonCanonicalAppPath = true;
     else if (arg === '--app') options.appPath = argv[++index];
     else if (arg === '--artifact-root') options.artifactRoot = argv[++index];
     else if (arg === '--repo-root') options.repoRoot = argv[++index];
@@ -704,6 +920,8 @@ function helpText() {
     '',
     'Captures settled screenshots from /Applications/evaOS Workbench.app and fails if the About page',
     'does not show the expected current commit.',
+    '',
+    'Release proof must target the exact /Applications/evaOS Workbench.app path. Do not pass bundle ids.',
   ].join('\n');
 }
 
@@ -720,6 +938,7 @@ async function main() {
   const appPath = options.appPath || DEFAULT_APP_PATH;
   const executablePath = installedExecutablePath(appPath);
   const artifactRoot = options.artifactRoot || artifactRootForHead(expectedHead, process.env);
+  assertCanonicalProofAppPath(appPath, { allowNonCanonicalAppPath: options.allowNonCanonicalAppPath });
 
   if (options.dryRun) {
     const bundleInfo = fs.existsSync(appPath)
@@ -732,6 +951,8 @@ async function main() {
           protocolSchemes: [DEFAULT_PROTOCOL_SCHEME],
         };
     assertExpectedBundle(bundleInfo);
+    const desktopProofState = inspectDesktopProofState(appPath);
+    assertDesktopProofStateClean(desktopProofState);
     const plan = buildInstalledProofPlan(undefined, { expectedHead });
     const files = writeDryRunProofFiles({
       artifactRoot,
@@ -740,6 +961,7 @@ async function main() {
       appPath,
       executablePath,
       bundleInfo,
+      desktopProofState,
       protocolHandler: {
         scheme: DEFAULT_PROTOCOL_SCHEME,
         bundleId: DEFAULT_BUNDLE_ID,
@@ -776,21 +998,35 @@ module.exports = {
   DEFAULT_EXECUTABLE_NAME,
   DEFAULT_BUNDLE_ID,
   DEFAULT_PROTOCOL_SCHEME,
+  BRIDGE_LAUNCH_AGENT_LABEL,
+  LEXAR_CODEX_PREFIX,
   REPORT_SCHEMA,
   UNSAFE_PROOF_PATTERNS,
   artifactRootForHead,
+  assertCanonicalProofAppPath,
+  assertDesktopProofStateClean,
+  assertMacBuildVersion,
+  assertMacVersionString,
   assertNoUnsafeProofText,
   assertExpectedProtocolHandler,
+  assertExpectedBundle,
   buildInstalledProofPlan,
   buildInstalledProofPreflightPlan,
   captureInstalledAppProof,
   gitHead,
   installedExecutablePath,
+  inspectDesktopProofState,
   markdownForInstalledProof,
   packageVersion,
+  parseAppBundlePaths,
   parsePlistArrayOutput,
+  parseRunningWorkbenchProcesses,
+  parseLaunchAgentBridgePath,
   parseLaunchServicesProtocolHandler,
+  readIndexedWorkbenchApps,
+  readLaunchAgentBridgeState,
   readLaunchServicesProtocolHandler,
+  readRunningWorkbenchProcesses,
   readInfoPlist,
   runProofPlanAction,
   shortHead,

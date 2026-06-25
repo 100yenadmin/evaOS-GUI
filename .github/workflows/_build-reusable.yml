@@ -879,9 +879,9 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          zips=(out/evaOS\ Workbench\ Beta-*-win-*.zip)
+          zips=(out/evaOS\ Workbench-*-win-*.zip)
           if [ "${#zips[@]}" -eq 0 ]; then
-            echo "::error::Missing Windows ZIP artifact matching out/evaOS Workbench Beta-*-win-*.zip"
+            echo "::error::Missing Windows ZIP artifact matching out/evaOS Workbench-*-win-*.zip"
             ls -lh out || true
             exit 1
           fi
@@ -897,7 +897,6 @@ jobs:
           shopt -s nullglob
           zips=(
             out/evaOS\ Workbench-*-mac-*.zip
-            out/evaOS\ Workbench\ Beta-*-mac-*.zip
           )
           if [ "${#zips[@]}" -eq 0 ]; then
             echo "::error::Missing macOS ZIP artifact required for updater metadata and bundled bridge verification."
@@ -974,8 +973,6 @@ jobs:
             out/*.msi
             out/*.dmg
             out/*.deb
-            out/evaOS Workbench Beta-*-win-*.zip
-            out/evaOS Workbench Beta-*-mac-*.zip
             out/evaOS Workbench-*-win-*.zip
             out/evaOS Workbench-*-mac-*.zip
             out/latest*.yml
