@@ -371,6 +371,11 @@ jobs:
             SAME_APP_UPGRADE=true
           fi
           echo "SAME_APP_UPGRADE=$SAME_APP_UPGRADE" >> "$GITHUB_ENV"
+          FALLBACK_REINSTALL_REQUIRED=false
+          if [ "$SAME_APP_UPGRADE" != "true" ] && [ "$FALLBACK_APP_NAME" = "evaOS Workbench Beta.app" ]; then
+            FALLBACK_REINSTALL_REQUIRED=true
+          fi
+          echo "FALLBACK_REINSTALL_REQUIRED=$FALLBACK_REINSTALL_REQUIRED" >> "$GITHUB_ENV"
 
           BETA_DMG=$(find release-assets \( -name "*mac-arm64*.dmg" -o -name "*arm64*.dmg" \) -type f | sort | head -n 1)
           if [ -z "$BETA_DMG" ]; then
@@ -382,6 +387,9 @@ jobs:
           if [ "$SAME_APP_UPGRADE" != "true" ] && [ ! -d "/Applications/$FALLBACK_APP_NAME" ]; then
             echo "::error::Installing beta removed the released fallback app."
             exit 1
+          fi
+          if [ "$FALLBACK_REINSTALL_REQUIRED" = "true" ]; then
+            rm -rf "/Applications/$FALLBACK_APP_NAME"
           fi
           if [ ! -d "/Applications/$BETA_APP_NAME" ]; then
             echo "::error::Beta app did not install."
@@ -399,6 +407,7 @@ jobs:
             echo "Fallback asset kind: ${FALLBACK_ASSET_KIND:-unknown}"
             echo "Beta app: /Applications/$BETA_APP_NAME"
             echo "Same-app upgrade: $SAME_APP_UPGRADE"
+            echo "Fallback reinstall required: $FALLBACK_REINSTALL_REQUIRED"
           } > "$PROOF_DIR/install-smoke.md"
 
       - name: Verify signing and Gatekeeper
@@ -605,7 +614,7 @@ jobs:
           }
 
           rm -rf "$BETA_APP"
-          if [ "${SAME_APP_UPGRADE:-false}" = "true" ]; then
+          if [ "${SAME_APP_UPGRADE:-false}" = "true" ] || [ "${FALLBACK_REINSTALL_REQUIRED:-false}" = "true" ]; then
             case "${FALLBACK_ASSET:-}" in
               *.dmg)
                 install_app_from_dmg "$FALLBACK_ASSET" "$FALLBACK_APP_NAME" "$RUNNER_TEMP/rollback-fallback-dmg"
