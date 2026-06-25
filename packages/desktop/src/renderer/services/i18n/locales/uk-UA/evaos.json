@@ -102,5 +102,9 @@
     "title": "Користувачі й доступ",
     "unlimited": "без обмежень",
     "yourRole": "Ваша роль"
+  },
+  "nativeCompanion": {
+    "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
+    "desktopAuthContinue": "Continue sign-in in the browser, then return here."
   }
 }

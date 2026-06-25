@@ -8,6 +8,7 @@ import React from 'react';
 import classNames from 'classnames';
 import { Button, Message, Tag } from '@arco-design/web-react';
 import { Comment, Computer, Link, Shield } from '@icon-park/react';
+import { useTranslation } from 'react-i18next';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import {
   EVAOS_NATIVE_COMPANION_BOUNDARY,
@@ -43,6 +44,7 @@ import { openEvaosSupportEmail, openExternalUrl } from '@/renderer/utils/platfor
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
 const NativeCompanionPage: React.FC = () => {
+  const { t } = useTranslation();
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const violations = getEvaosNativeCompanionBoundaryViolations();
@@ -185,17 +187,17 @@ const NativeCompanionPage: React.FC = () => {
     try {
       const response = await evaosBroker.beginDesktopAuth.invoke();
       if (!response.success || !response.data) {
-        setHandoffMessage(response.msg || 'evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
+        setHandoffMessage(response.msg || t('evaos.nativeCompanion.desktopAuthStartFailed'));
         return;
       }
       setAuthUrl(response.data.authUrl ?? null);
-      setHandoffMessage(response.data.message || 'Continue sign-in in the browser, then return here.');
+      setHandoffMessage(response.data.message || t('evaos.nativeCompanion.desktopAuthContinue'));
     } catch {
-      setHandoffMessage('evaOS sign-in could not start. Use Sign In in the sidebar, then retry.');
+      setHandoffMessage(t('evaos.nativeCompanion.desktopAuthStartFailed'));
     } finally {
       setAuthInFlight(false);
     }
-  }, []);
+  }, [t]);
 
   const handleOpenAuthUrl = React.useCallback(async () => {
     if (!authUrl) return;

@@ -37,6 +37,7 @@ const customerContextMock = vi.hoisted(() => ({
     sessionKey: 'evaos-session-1',
     source: 'beta-storage',
     userEmail: 'admin@100yen.org',
+    message: 'Authenticated',
   } as IEvaosBrokerSessionStatus | null,
   brokerSessionLoading: false,
   refreshBrokerSession: vi.fn(),
@@ -127,6 +128,7 @@ describe('NativeCompanionPage', () => {
       sessionKey: 'evaos-session-1',
       source: 'beta-storage',
       userEmail: 'admin@100yen.org',
+      message: 'Authenticated',
     };
     customerContextMock.brokerSessionLoading = false;
     customerContextMock.refreshBrokerSession.mockResolvedValue(undefined);
@@ -875,6 +877,7 @@ describe('NativeCompanionPage', () => {
       sessionKey: 'evaos-session-2',
       source: 'callback',
       userEmail: 'admin@100yen.org',
+      message: 'Authenticated',
     };
     view.rerender(
       <ConfigProvider>

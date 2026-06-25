@@ -776,6 +776,8 @@ export type I18nKey =
   | 'evaos.connectedApps.status.revoked'
   | 'evaos.connectedApps.title'
   | 'evaos.connectedApps.unsafeSecretState'
+  | 'evaos.nativeCompanion.desktopAuthContinue'
+  | 'evaos.nativeCompanion.desktopAuthStartFailed'
   | 'evaos.peopleAccess.accountAccess'
   | 'evaos.peopleAccess.actionDenied'
   | 'evaos.peopleAccess.activeSeats'
