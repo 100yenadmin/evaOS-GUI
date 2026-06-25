@@ -757,6 +757,45 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/secret-token|connector_url|connector_token|100\.64\.0\.10|8765/i);
   });
 
+  it('does not clear desktop session state when Mac connector grant is forbidden', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({ error: 'manage_integrations permission required' }, { status: 403 })
+    );
+    const store = memorySessionStore({
+      accessToken: 'eds_authorized_session_secret_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+    });
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    await expect(
+      client.ensureCustomerMacConnectorGrant({
+        customerId: 'jackie-david',
+        connectorUrl: 'http://100.64.0.10:8765',
+        connectorToken: 'secret-token-abcdef1234567890',
+        deviceName: 'Proof Mac',
+        deviceIdentifier: 'Proof-Mac.local',
+      })
+    ).rejects.toMatchObject({
+      code: 'broker_http_error',
+      status: 403,
+      message: 'The evaOS broker denied this request for the selected customer.',
+    });
+    expect(store.cleared).toBe(0);
+    expect(client.getSessionStatus()).toMatchObject({
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      source: 'beta-storage',
+    });
+  });
+
   it('rejects released Workbench loopback callback paths for the evaOS beta session importer', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({

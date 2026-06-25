@@ -756,7 +756,7 @@ export class EvaosBrokerSessionClient {
         session
       );
     } catch (error) {
-      if (error instanceof EvaosBrokerSessionError && (error.status === 401 || error.status === 403)) {
+      if (error instanceof EvaosBrokerSessionError && error.status === 401) {
         this.clearRejectedSession(session);
       }
       throw error;
@@ -865,7 +865,7 @@ export class EvaosBrokerSessionClient {
         session
       );
     } catch (error) {
-      if (error instanceof EvaosBrokerSessionError && (error.status === 401 || error.status === 403)) {
+      if (error instanceof EvaosBrokerSessionError && error.status === 401) {
         this.clearRejectedSession(session);
       }
       throw error;
@@ -4362,8 +4362,11 @@ function canSurfaceBrokerResponseMessage(status: number): boolean {
 }
 
 function brokerHttpMessage(status: number): string {
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return 'The evaOS broker denied this desktop session. Sign in again.';
+  }
+  if (status === 403) {
+    return 'The evaOS broker denied this request for the selected customer.';
   }
   if (status === 404) {
     return 'The evaOS broker endpoint was not found.';

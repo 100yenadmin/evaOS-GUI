@@ -1586,55 +1586,88 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
-  it.each([401, 403])(
-    'maps broker %s enrollment denial to reconnect without completing enrollment',
-    async (statusCode) => {
-      const deps = depsWithResponses(
-        {
-          'connector-service status --json': {
-            ok: true,
-            running: true,
-            health: { reachable: true },
-            tailnet_ip: '100.64.0.10',
-          },
-          'customer-mac status --json': {
-            ok: true,
-            audit_id: 'audit-mac',
-            data: {
-              permissions: {
-                accessibility: { status: 'granted' },
-                screen_recording: { status: 'granted' },
-              },
+  it('maps broker 401 enrollment denial to reconnect without completing enrollment', async () => {
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
             },
           },
         },
-        {
-          createCustomerMacEnrollment: vi.fn(async () => {
-            throw new EvaosBrokerSessionError(
-              'broker_http_error',
-              'The evaOS broker denied this desktop session. Sign in again.',
-              statusCode
-            );
-          }),
-        }
-      );
+      },
+      {
+        createCustomerMacEnrollment: vi.fn(async () => {
+          throw new EvaosBrokerSessionError(
+            'broker_http_error',
+            'The evaOS broker denied this desktop session. Sign in again.',
+            401
+          );
+        }),
+      }
+    );
 
-      const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
+    const result = await runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps);
 
-      expect(result).toMatchObject({
-        action: 'create_pairing_prompt',
-        status: 'repair_required',
-        sourcePointer: 'native-companion:pairing-broker-session-required',
-        agentPairingStatus: 'ready_for_agent_pairing',
-      });
-      expect(result.message).toContain('Sign in again');
-      expect(result.pairing).toBeUndefined();
-      const execFile = deps.execFile as ReturnType<typeof vi.fn>;
-      expect(execFile).toHaveBeenCalledTimes(2);
-      expect(execFile.mock.calls[0]?.[1]).toEqual(['connector-service', 'status', '--json']);
-      expect(execFile.mock.calls[1]?.[1]).toEqual(['customer-mac', 'status', '--json']);
-    }
-  );
+    expect(result).toMatchObject({
+      action: 'create_pairing_prompt',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:pairing-broker-session-required',
+      agentPairingStatus: 'ready_for_agent_pairing',
+    });
+    expect(result.message).toContain('Sign in again');
+    expect(result.pairing).toBeUndefined();
+    const execFile = deps.execFile as ReturnType<typeof vi.fn>;
+    expect(execFile).toHaveBeenCalledTimes(2);
+    expect(execFile.mock.calls[0]?.[1]).toEqual(['connector-service', 'status', '--json']);
+    expect(execFile.mock.calls[1]?.[1]).toEqual(['customer-mac', 'status', '--json']);
+  });
+
+  it('surfaces broker 403 enrollment denial without reconnect copy', async () => {
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+      },
+      {
+        createCustomerMacEnrollment: vi.fn(async () => {
+          throw new EvaosBrokerSessionError('broker_http_error', 'manage_integrations permission required', 403);
+        }),
+      }
+    );
+
+    await expect(
+      runNativeCompanionAction({ action: 'create_pairing_prompt', customerId: 'golden' }, deps)
+    ).rejects.toMatchObject({
+      code: 'broker_http_error',
+      status: 403,
+      message: 'manage_integrations permission required',
+    });
+  });
 
   it('does not create a pairing enrollment until Mac permissions are granted', async () => {
     const createCustomerMacEnrollment = vi.fn(async () => ({

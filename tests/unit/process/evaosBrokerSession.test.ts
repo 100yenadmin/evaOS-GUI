@@ -57,7 +57,7 @@ describe('EvaosBrokerSessionClient broker errors', () => {
     });
   });
 
-  it('keeps generic auth-denial copy for 403 broker responses', async () => {
+  it('keeps generic selected-customer denial copy for 403 broker responses', async () => {
     const client = clientForBrokerResponse(
       {
         error: 'Internal policy failure for membership abc123',
@@ -71,7 +71,7 @@ describe('EvaosBrokerSessionClient broker errors', () => {
     expect(error).toBeInstanceOf(EvaosBrokerSessionError);
     expect(error).toMatchObject({
       code: 'broker_http_error',
-      message: 'The evaOS broker denied this desktop session. Sign in again.',
+      message: 'The evaOS broker denied this request for the selected customer.',
       status: 403,
     });
   });
