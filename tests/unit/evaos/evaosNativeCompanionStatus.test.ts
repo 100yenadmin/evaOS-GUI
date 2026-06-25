@@ -1015,7 +1015,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:connector-service-start',
       auditId: 'audit-connector-ready',
     });
-    expect(result.message).toContain('running and reachable');
+    expect(result.message).toBe('Mac Access connector is running and reachable.');
     expect(execFile).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(1);
   });
