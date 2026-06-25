@@ -138,7 +138,7 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacPermissions = effectiveCustomerMacPermissions(customerMacStatusPermissions, controlSession);
   const bridgeEffectivePermissions = effectiveBridgePermissions(bridgePermissions, controlSession);
   const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgeEffectivePermissions);
-  const connectorServiceReady = connectorService.ok && connectorServiceIsRunning(connectorService.data);
+  const connectorServiceReady = connectorServiceIsReady(connectorService);
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
@@ -184,7 +184,11 @@ export async function getEvaosNativeCompanionStatus(
       readOnly: readBoolean(bridge.data?.safety, 'read_only') !== false,
     },
     connectorService: {
-      status: connectorServiceReady ? 'ready' : connectorService.ok ? 'repair_required' : 'error',
+      status: connectorServiceReady
+        ? 'ready'
+        : connectorServiceStatusAvailable(connectorService)
+          ? 'repair_required'
+          : 'error',
       running: readBoolean(connectorService.data, 'running'),
       reachable: readNestedBoolean(connectorService.data, ['health', 'reachable']),
       managedBy: readString(connectorService.data, 'managed_by'),
@@ -403,7 +407,7 @@ async function runConnectorStartAction(
 ): Promise<IEvaosNativeCompanionActionResult> {
   const started = await runBridgeCommand(bridgePath, ['connector-service', 'start', '--json'], deps);
   const status = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  const ready = status.ok && connectorServiceIsRunning(status.data);
+  const ready = connectorServiceIsReady(status);
   if (ready) {
     return nativeActionResult(
       'connector_start',
@@ -494,7 +498,7 @@ async function runSetupCheckAction(
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
   const setup = {
-    connectorReady: connectorService.ok && connectorServiceIsRunning(connectorService.data),
+    connectorReady: connectorServiceIsReady(connectorService),
     macReady:
       (customerMac.ok && hasGrantedCorePermissions(permissions)) || controlSessionHasPermissionProof(controlSession),
     controlReady: controlSession.ok,
@@ -583,7 +587,7 @@ async function createPairingPromptAction(
   }
 
   const connector = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  if (!connector.ok || !connectorServiceIsRunning(connector.data)) {
+  if (!connectorServiceIsReady(connector)) {
     return nativeActionResult(
       'create_pairing_prompt',
       'repair_required',
@@ -899,8 +903,7 @@ function pairingBlockedReasonForStatus(input: {
   env?: NodeJS.ProcessEnv;
 }): string {
   if (!isPairingCapableBridgePath(input.bridgePath, input.env)) return 'bundled_bridge_required';
-  if (!input.connectorService.ok || !connectorServiceIsRunning(input.connectorService.data))
-    return 'connector_service_not_ready';
+  if (!connectorServiceIsReady(input.connectorService)) return 'connector_service_not_ready';
   if (!connectorServiceHasSecureRegistrationHost(input.connectorService.data)) return 'secure_network_link_required';
   return 'pairing_not_ready';
 }
@@ -1171,6 +1174,25 @@ function controlSessionHasPermissionProof(controlSession: BridgeCommandResult): 
 
 function connectorServiceIsRunning(input: unknown): boolean {
   return readBoolean(input, 'running') === true && readNestedBoolean(input, ['health', 'reachable']) === true;
+}
+
+function connectorServiceIsReady(result: BridgeCommandResult): boolean {
+  return connectorServiceStatusAvailable(result) && connectorServiceIsRunning(result.data);
+}
+
+function connectorServiceStatusAvailable(result: BridgeCommandResult): boolean {
+  return result.ok || connectorServiceLooksLikeStatusPayload(result.data);
+}
+
+function connectorServiceLooksLikeStatusPayload(input: unknown): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const record = input as Record<string, unknown>;
+  return (
+    typeof record.running === 'boolean' ||
+    typeof record.loaded === 'boolean' ||
+    typeof record.plist_installed === 'boolean' ||
+    (record.health !== null && typeof record.health === 'object')
+  );
 }
 
 function controlSessionIsReady(controlSession: BridgeCommandResult): boolean {

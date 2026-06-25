@@ -378,6 +378,87 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('treats legacy top-level connector-service status as ready when reachable', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        domain: 'gui/502',
+        label: 'com.electricsheep.evaos-desktop-bridge',
+        loaded: true,
+        running: true,
+        health: {
+          host: '100.64.0.4',
+          port: 8765,
+          reachable: true,
+          status_line: 'HTTP/1.0 200 OK',
+        },
+        tailnet_ip: '100.64.0.4',
+        token_present: true,
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        audit_id: 'audit-iphone',
+        data: { installed: true, running: false },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: {
+          active: true,
+          mode: 'ask_permission',
+          kill_switch: false,
+          ready: true,
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-control' }, { audit_id: 'audit-mac' }],
+        },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      connectorService: {
+        status: 'ready',
+        running: true,
+        reachable: true,
+        tailnetIp: '100.64.0.4',
+      },
+      customerMac: {
+        status: 'ready',
+      },
+    });
+  });
+
   it('does not use control permission proof when the kill switch is active', async () => {
     const deps = depsWithResponses({
       'status --json': {
@@ -802,6 +883,68 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+  });
+
+  it('runs setup check with legacy top-level connector-service status payloads', async () => {
+    const deps = depsWithResponses({
+      'connector-service status --json': {
+        domain: 'gui/502',
+        label: 'com.electricsheep.evaos-desktop-bridge',
+        loaded: true,
+        running: true,
+        health: {
+          host: '100.64.0.4',
+          port: 8765,
+          reachable: true,
+          status_line: 'HTTP/1.0 200 OK',
+        },
+        token_present: true,
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'missing' },
+          },
+        },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-current',
+        data: {
+          ready: true,
+          active: true,
+          mode: 'ask_permission',
+          kill_switch: false,
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'audit-tail --json --limit 12': {
+        ok: true,
+        data: {
+          records: [{ audit_id: 'audit-control-current' }, { audit_id: 'audit-mac' }],
+        },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'setup_check' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'succeeded',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      setup: {
+        connectorReady: true,
+        macReady: true,
+        controlReady: true,
+      },
+    });
+    expect(result.message).toContain('Mac control setup check passed');
   });
 
   it('reconciles Mac Access start when the connector is reachable after a failed start response', async () => {
