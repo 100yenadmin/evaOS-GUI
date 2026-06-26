@@ -14,14 +14,18 @@ import type { IEvaosBrokerSessionStatus, IEvaosCustomerTargetView } from '@/comm
 
 const bridgeMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
+  getDiagnosticPacket: vi.fn(),
   openReleasedWorkbench: vi.fn(),
   openRepairAction: vi.fn(),
   runAction: vi.fn(),
 }));
 
 const supportEmailMock = vi.hoisted(() => ({
-  openEvaosSupportEmail: vi.fn(),
   openExternalUrl: vi.fn(),
+}));
+
+const feedbackMocks = vi.hoisted(() => ({
+  openFeedback: vi.fn(),
 }));
 
 const brokerMocks = vi.hoisted(() => ({
@@ -70,6 +74,9 @@ vi.mock('@/common', () => ({
       getStatus: {
         invoke: bridgeMocks.getStatus,
       },
+      getDiagnosticPacket: {
+        invoke: bridgeMocks.getDiagnosticPacket,
+      },
       openReleasedWorkbench: {
         invoke: bridgeMocks.openReleasedWorkbench,
       },
@@ -106,8 +113,13 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
-  openEvaosSupportEmail: supportEmailMock.openEvaosSupportEmail,
   openExternalUrl: supportEmailMock.openExternalUrl,
+}));
+
+vi.mock('@renderer/hooks/context/FeedbackContext', () => ({
+  useFeedback: () => ({
+    openFeedback: feedbackMocks.openFeedback,
+  }),
 }));
 
 function renderNativeCompanion() {
@@ -149,6 +161,38 @@ describe('NativeCompanionPage', () => {
     ];
     customerContextMock.customerContext.isOperator = false;
     customerContextMock.customerContext.refreshTargets.mockResolvedValue(undefined);
+    bridgeMocks.getDiagnosticPacket.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        app: {
+          product: 'evaOS Workbench',
+          bundleId: 'com.evaos.workbench',
+          protocol: 'evaos-workbench',
+        },
+        signing: { summary: 'not_collected_by_workbench_status' },
+        selectedContext: {},
+        runtimeStatus: {},
+        brokerGrant: { auditIds: [] },
+        bridge: {
+          installed: true,
+          status: 'repair_required',
+          diagnosticsStatus: 'unavailable',
+          readyStatus: 'unavailable',
+        },
+        connector: { endpointSummary: 'unavailable' },
+        launchAgent: {},
+        tcc: {},
+        audit: { status: 'ready', auditIds: [] },
+        blockerCategory: 'permission_missing',
+        redaction: {
+          rawSecretsStoredInWorkbench: false,
+          urlsIpsPortsRedacted: true,
+          rawPromptMaterialIncluded: false,
+        },
+      },
+    });
     brokerMocks.beginDesktopAuth.mockResolvedValue({
       success: true,
       data: {
@@ -466,14 +510,34 @@ describe('NativeCompanionPage', () => {
     expect(screen.getAllByRole('button', { name: 'Report to support' })).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Report to support' }));
 
-    await waitFor(() => expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledTimes(1));
-    expect(supportEmailMock.openEvaosSupportEmail).toHaveBeenCalledWith({
-      subject: 'evaOS Workbench support: Mac control',
-      body: expect.stringContaining('Route: /native-companion'),
+    await waitFor(() => expect(feedbackMocks.openFeedback).toHaveBeenCalledTimes(1));
+    expect(bridgeMocks.getDiagnosticPacket).toHaveBeenCalledWith({
+      route: '/native-companion',
+      accountEmail: 'admin@100yen.org',
+      customerId: 'benjamin-kennedy',
+      customerLabel: 'Benjamin Kennedy',
+      vmTarget: 'Benjamin Kennedy',
+      lastAction: undefined,
     });
-    const payload = supportEmailMock.openEvaosSupportEmail.mock.calls[0][0];
-    expect(payload.body).toContain('State: permission_needed');
-    expect(payload.body).toContain('Summary: Screen Recording permission is required before repair can continue.');
+    const payload = feedbackMocks.openFeedback.mock.calls[0][0];
+    expect(payload).toMatchObject({
+      module: 'other',
+      autoScreenshot: true,
+      tags: expect.objectContaining({
+        support_surface: 'native_companion_mac_control',
+        evaos_route: '/native-companion',
+        evaos_issue: '#432',
+      }),
+      extra: expect.objectContaining({
+        support_packet_version: 'evaos.support_report.v1',
+        route: '/native-companion',
+        settled_state: 'permission_needed',
+        mac_control_diagnostic_packet: expect.objectContaining({
+          schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
+          blockerCategory: 'permission_missing',
+        }),
+      }),
+    });
     expect(JSON.stringify(payload)).not.toMatch(/desktop_session|eds_|Bearer|token=/i);
   });
 

@@ -24,13 +24,17 @@ import type {
   IEvaosNativeCompanionAuditEvent,
   IEvaosNativeCompanionConnectorGrant,
   IEvaosNativeCompanionControlMode,
+  IEvaosMacControlBlockerReason,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
   IEvaosNativeCompanionReadiness,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
+  IEvaosWorkbenchDiagnosticPacketRequest,
+  IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
+import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import { getDefaultEvaosBrokerSessionClient, isEvaosBrokerSessionError } from './evaosBrokerSession';
 
 const execFileAsync = promisify(execFileCallback);
@@ -43,6 +47,8 @@ const CONNECTOR_START_STATUS_ATTEMPTS = 4;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
 const CONNECTOR_PORT = 8765;
 const WORKBENCH_BUNDLE_ID = 'com.evaos.workbench';
+const WORKBENCH_PROTOCOL = 'evaos-workbench';
+const DIAGNOSTIC_SCHEMA_VERSION = 'evaos.workbench.diagnostic_packet.v1';
 const NATIVE_COMPANION_FIXTURE_STATES = [
   'ready',
   'repair_required',
@@ -142,6 +148,7 @@ export async function getEvaosNativeCompanionStatus(
       agentPairingStatus: 'not_ready',
       pairingCapable: false,
       pairingBlockedReason: 'bundled_bridge_required',
+      blockerReason: 'bridge_cli_missing',
       summaryText: 'Workbench connector tools are not installed. Use setup or support to repair Mac control.',
       sourcePointer: 'native-companion:bridge-cli-missing',
       canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -191,6 +198,16 @@ export async function getEvaosNativeCompanionStatus(
   const pairingBlockedReason = pairingCapable
     ? undefined
     : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
+  const blockerReason = blockerReasonForStatus({
+    bridge,
+    connectorService,
+    customerMac,
+    controlSession,
+    bridgeReady,
+    connectorServiceReady,
+    customerMacReady,
+    pairingBlockedReason,
+  });
   const summaryText = nativeCompanionSummaryText({
     readiness,
     pairingCapable,
@@ -205,6 +222,7 @@ export async function getEvaosNativeCompanionStatus(
     agentPairingStatus,
     pairingCapable,
     pairingBlockedReason,
+    blockerReason,
     summaryText,
     sourcePointer: 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -264,6 +282,118 @@ export async function getEvaosNativeCompanionStatus(
   };
 }
 
+export async function getEvaosWorkbenchDiagnosticPacket(
+  request: IEvaosWorkbenchDiagnosticPacketRequest = {},
+  deps: EvaosNativeCompanionStatusDeps = {}
+): Promise<IEvaosWorkbenchDiagnosticPacketV1> {
+  const now = deps.now ?? (() => new Date());
+  const generatedAt = now().toISOString();
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const status = await getEvaosNativeCompanionStatus({ ...deps, now });
+  const bridgeDiagnostics = bridgePath
+    ? await runOptionalBridgeDiagnostics(bridgePath, ['diagnostics', '--json'], deps)
+    : optionalBridgeDiagnosticsUnavailable('bridge-cli-missing');
+  const bridgeReady = bridgePath
+    ? await runOptionalBridgeDiagnostics(bridgePath, ['ready', '--json'], deps)
+    : optionalBridgeDiagnosticsUnavailable('bridge-cli-missing');
+  const blockerCategory =
+    request.lastAction?.blockerReason ?? status.blockerReason ?? status.pairingBlockedReason ?? 'unknown';
+
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    generatedAt,
+    app: {
+      product: EVAOS_BETA_IDENTITY.productName,
+      bundleId: EVAOS_BETA_IDENTITY.appId,
+      protocol: WORKBENCH_PROTOCOL,
+      version: safeDiagnosticText(status.releasedWorkbench.version ?? deps.env?.npm_package_version),
+      sourceSha: safeDiagnosticText(
+        deps.env?.EVAOS_APP_COMMIT ?? deps.env?.AIONUI_APP_COMMIT ?? deps.env?.GITHUB_SHA ?? deps.env?.APP_COMMIT
+      ),
+      channel: safeDiagnosticText(deps.env?.EVAOS_RELEASE_CHANNEL ?? 'Mac release'),
+      installedPath: safeDiagnosticPath(status.releasedWorkbench.path ?? workbenchAppPathFromResources()),
+      running: status.releasedWorkbench.running,
+    },
+    signing: {
+      summary: 'not_collected_by_workbench_status',
+    },
+    selectedContext: {
+      accountEmail: safeDiagnosticText(request.accountEmail),
+      customerId: safeDiagnosticText(request.customerId),
+      customerLabel: safeDiagnosticText(request.customerLabel),
+      vmTarget: safeDiagnosticText(request.vmTarget),
+      route: safeDiagnosticText(request.route),
+    },
+    runtimeStatus: {
+      evaos: safeDiagnosticText(request.runtimeStatus?.evaos),
+      openclaw: safeDiagnosticText(request.runtimeStatus?.openclaw),
+      hermes: safeDiagnosticText(request.runtimeStatus?.hermes),
+      localAcp: safeDiagnosticText(request.runtimeStatus?.localAcp),
+      lastStartupCategory: request.runtimeStatus?.lastStartupCategory,
+    },
+    brokerGrant: {
+      state: safeDiagnosticText(status.controlSession?.active ? 'control_active' : status.agentPairingStatus),
+      agentPairingStatus: status.agentPairingStatus,
+      sourcePointer: safeDiagnosticText(status.sourcePointer),
+      auditIds: safeDiagnosticAuditIds(status.audit.auditIds),
+    },
+    bridge: {
+      installed: status.bridgeCli.installed,
+      status: status.bridgeCli.status,
+      path: safeDiagnosticPath(status.bridgeCli.path),
+      version: safeDiagnosticText(status.bridgeCli.version),
+      diagnosticsStatus: bridgeDiagnostics.ok ? 'available' : 'unavailable',
+      diagnosticsSource: safeDiagnosticText(bridgeDiagnostics.source),
+      readyStatus: bridgeReady.ok ? 'ready' : bridgeReady.source === 'bridge-cli-missing' ? 'unavailable' : 'not_ready',
+      readySource: safeDiagnosticText(bridgeReady.source),
+    },
+    connector: {
+      status: status.connectorService?.status,
+      running: status.connectorService?.running,
+      reachable: status.connectorService?.reachable,
+      managedBy: safeDiagnosticText(status.connectorService?.managedBy),
+      ownerClassification: connectorOwnerClassification(status),
+      endpointSummary: status.connectorService?.reachable ? 'redacted' : 'unavailable',
+    },
+    launchAgent: {
+      label: safeDiagnosticText(readString(bridgeDiagnostics.data, 'launch_agent_label')),
+      state: safeDiagnosticText(readString(bridgeDiagnostics.data, 'launch_agent_state')),
+      programPathSummary: safeDiagnosticPath(readString(bridgeDiagnostics.data, 'launch_agent_program_path')),
+      stalePath: readBoolean(bridgeDiagnostics.data, 'launch_agent_stale'),
+    },
+    tcc: {
+      accessibility: safeDiagnosticText(
+        status.customerMac.permissions?.accessibility ?? status.bridgeCli.permissions?.accessibility
+      ),
+      screenRecording: safeDiagnosticText(
+        status.customerMac.permissions?.screenRecording ?? status.bridgeCli.permissions?.screenRecording
+      ),
+      holder: safeDiagnosticText(status.connectorService?.permissionTarget),
+    },
+    audit: {
+      status: status.audit.status,
+      auditIds: safeDiagnosticAuditIds(status.audit.auditIds),
+      latestAuditId: safeDiagnosticText(status.audit.latestAuditId),
+    },
+    lastAction: request.lastAction
+      ? {
+          action: safeDiagnosticText(request.lastAction.action) ?? 'unknown',
+          status: safeDiagnosticText(request.lastAction.status) ?? 'unknown',
+          message: safeDiagnosticText(request.lastAction.message),
+          blockerReason: request.lastAction.blockerReason,
+          auditId: safeDiagnosticText(request.lastAction.auditId),
+        }
+      : undefined,
+    blockerCategory,
+    redaction: {
+      rawSecretsStoredInWorkbench: false,
+      urlsIpsPortsRedacted: true,
+      rawPromptMaterialIncluded: false,
+    },
+  };
+}
+
 function nativeCompanionFixtureState(env: NodeJS.ProcessEnv = process.env): NativeCompanionFixtureState | undefined {
   if (env.AIONUI_E2E_TEST !== '1' || env.AIONUI_EVAOS_LOCAL_PRODUCT_FIXTURE !== '1') return undefined;
   const requested = env.AIONUI_EVAOS_NATIVE_COMPANION_STATUS_FIXTURE || 'ready';
@@ -286,6 +416,7 @@ function nativeCompanionFixtureStatus(
     generatedAt,
     readiness: 'repair_required',
     agentPairingStatus: 'not_ready',
+    blockerReason: fixtureState === 'permission_needed' ? 'permission_missing' : 'connector_service_not_ready',
     summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair state fixture.',
     sourcePointer: `local-fixture:native-companion:${fixtureState}`,
     canOpenReleasedWorkbench: true,
@@ -353,6 +484,7 @@ function nativeCompanionFixtureStatus(
       ...base,
       readiness: 'ready',
       agentPairingStatus: 'ready_for_agent_pairing',
+      blockerReason: undefined,
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
       bridgeCli: { ...base.bridgeCli, status: 'ready' },
       connectorService: { ...base.connectorService, status: 'ready', running: true, reachable: true },
@@ -394,6 +526,7 @@ function nativeCompanionFixtureStatus(
     return {
       ...base,
       readiness: 'unavailable',
+      blockerReason: 'connector_service_not_ready',
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native status source is offline or stale.',
       bridgeCli: { ...base.bridgeCli, status: 'unavailable' },
       connectorService: { ...base.connectorService, status: 'unavailable', running: false, reachable: false },
@@ -435,6 +568,7 @@ async function runCommandAction(
       auditId: result.auditId,
       auditIds: compactStrings([result.auditId]),
       control: options.includeControl ? controlSummaryFromPayload(result.data) : undefined,
+      blockerReason: result.ok ? undefined : classifyBridgeBlocker(result, 'unknown'),
     }
   );
 }
@@ -464,6 +598,7 @@ async function runConnectorStartAction(
     sourcePointer: 'native-companion:workbench-session-connector-start',
     auditId: status.auditId ?? before.auditId,
     auditIds: compactStrings([status.auditId, before.auditId]),
+    blockerReason: classifyBridgeBlocker(status, 'connector_service_not_ready'),
   });
 }
 
@@ -669,6 +804,7 @@ async function runControlStartAction(
     auditId: status.auditId ?? started.auditId,
     auditIds: compactStrings([status.auditId, started.auditId]),
     control: controlSummaryFromPayload(status.data),
+    blockerReason: classifyBridgeBlocker(started, 'connector_service_not_ready'),
   });
 }
 
@@ -720,6 +856,17 @@ async function runSetupCheckAction(
       setup,
       control: controlSummaryFromPayload(controlSession.data),
       agentPairingStatus,
+      blockerReason: ready
+        ? undefined
+        : (blockerReasonForStatus({
+            bridge: { ok: true, data: {} },
+            connectorService,
+            customerMac,
+            controlSession,
+            bridgeReady: true,
+            connectorServiceReady: setup.connectorReady,
+            customerMacReady: setup.macReady,
+          }) ?? 'unknown'),
     }
   );
 }
@@ -752,6 +899,7 @@ async function ensureCustomerMacConnectorGrantAction(
         sourcePointer: 'native-companion:connector-grant-bundled-bridge-required',
         agentPairingStatus: 'ready_for_agent_pairing',
         refreshRecommended: false,
+        blockerReason: 'bundled_bridge_required',
       }
     );
   }
@@ -760,6 +908,7 @@ async function ensureCustomerMacConnectorGrantAction(
   if (!customerId) {
     return nativeActionResult(resultAction, 'repair_required', 'Choose a customer before connecting Mac control.', {
       sourcePointer: 'native-companion:connector-grant-missing-customer',
+      blockerReason: 'runtime_not_configured',
     });
   }
   if (isAccountLikeCustomerId(customerId)) {
@@ -770,6 +919,7 @@ async function ensureCustomerMacConnectorGrantAction(
       {
         sourcePointer: 'native-companion:connector-grant-invalid-customer',
         agentPairingStatus: 'ready_for_agent_pairing',
+        blockerReason: 'runtime_not_configured',
       }
     );
   }
@@ -784,6 +934,7 @@ async function ensureCustomerMacConnectorGrantAction(
       'Start Mac Access and confirm the secure connector is reachable before connecting Mac control.',
       {
         sourcePointer: 'native-companion:connector-grant-connector-not-ready',
+        blockerReason: classifyBridgeBlocker(sessionConnector, 'connector_service_not_ready'),
       }
     );
   }
@@ -796,6 +947,7 @@ async function ensureCustomerMacConnectorGrantAction(
         sourcePointer: 'native-companion:connector-grant-secure-network-required',
         agentPairingStatus: 'ready_for_agent_pairing',
         refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
       }
     );
   }
@@ -818,6 +970,7 @@ async function ensureCustomerMacConnectorGrantAction(
           sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
           auditId: localCustomerMac?.auditId ?? controlSession.auditId,
           auditIds: compactStrings([localCustomerMac?.auditId, controlSession.auditId]),
+          blockerReason: classifyBridgeBlocker(sessionConnector, 'stale_connector_port_conflict'),
         }
       );
     }
@@ -833,6 +986,7 @@ async function ensureCustomerMacConnectorGrantAction(
       {
         sourcePointer: 'native-companion:connector-grant-local-secret-unavailable',
         agentPairingStatus: 'ready_for_agent_pairing',
+        blockerReason: 'token_missing',
       }
     );
   }
@@ -861,6 +1015,7 @@ async function ensureCustomerMacConnectorGrantAction(
             sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
             auditId: localCustomerMac.auditId,
             auditIds: compactStrings([localCustomerMac.auditId, controlSession.auditId]),
+            blockerReason: classifyBridgeBlocker(sessionConnector, 'stale_connector_port_conflict'),
           }
         );
       }
@@ -884,6 +1039,7 @@ async function ensureCustomerMacConnectorGrantAction(
         sourcePointer: 'native-companion:connector-grant-live-permission-required',
         auditId: customerMac.auditId,
         auditIds: compactStrings([customerMac.auditId]),
+        blockerReason: customerMac.ok ? 'permission_missing' : classifyBridgeBlocker(customerMac, 'permission_missing'),
       }
     );
   }
@@ -912,6 +1068,7 @@ async function ensureCustomerMacConnectorGrantAction(
           sourcePointer: 'native-companion:connector-grant-broker-session-required',
           agentPairingStatus: 'ready_for_agent_pairing',
           refreshRecommended: false,
+          blockerReason: 'broker_session_expired',
         }
       );
     }
@@ -960,6 +1117,7 @@ async function runAuditTailAction(
       auditIds,
       events,
       refreshRecommended: false,
+      blockerReason: result.ok ? undefined : classifyBridgeBlocker(result, 'bridge_diagnostics_unavailable'),
     }
   );
 }
@@ -978,6 +1136,7 @@ async function createPairingPromptAction(
         sourcePointer: 'native-companion:pairing-bundled-bridge-required',
         agentPairingStatus: 'ready_for_agent_pairing',
         refreshRecommended: false,
+        blockerReason: 'bundled_bridge_required',
       }
     );
   }
@@ -990,6 +1149,7 @@ async function createPairingPromptAction(
       'Choose a customer before creating a pairing prompt.',
       {
         sourcePointer: 'native-companion:pairing-missing-customer',
+        blockerReason: 'runtime_not_configured',
       }
     );
   }
@@ -1001,6 +1161,7 @@ async function createPairingPromptAction(
       {
         sourcePointer: 'native-companion:pairing-invalid-customer',
         agentPairingStatus: 'ready_for_agent_pairing',
+        blockerReason: 'runtime_not_configured',
       }
     );
   }
@@ -1013,6 +1174,7 @@ async function createPairingPromptAction(
       'Start Mac Access and confirm the secure connector is reachable before creating a pairing prompt.',
       {
         sourcePointer: 'native-companion:pairing-connector-not-ready',
+        blockerReason: classifyBridgeBlocker(connector, 'connector_service_not_ready'),
       }
     );
   }
@@ -1025,6 +1187,7 @@ async function createPairingPromptAction(
         sourcePointer: 'native-companion:pairing-secure-network-required',
         agentPairingStatus: 'ready_for_agent_pairing',
         refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
       }
     );
   }
@@ -1044,6 +1207,7 @@ async function createPairingPromptAction(
         sourcePointer: 'native-companion:pairing-mac-permission-required',
         auditId: customerMac.auditId,
         auditIds: compactStrings([customerMac.auditId]),
+        blockerReason: 'permission_missing',
       }
     );
   }
@@ -1077,6 +1241,7 @@ async function createPairingPromptWithReadyMac(input: {
           sourcePointer: 'native-companion:pairing-broker-session-required',
           agentPairingStatus: 'ready_for_agent_pairing',
           refreshRecommended: false,
+          blockerReason: 'broker_session_expired',
         }
       );
     }
@@ -1102,6 +1267,7 @@ async function createPairingPromptWithReadyMac(input: {
         auditId: registration.auditId,
         auditIds: compactStrings([registration.auditId]),
         agentPairingStatus: 'ready_for_agent_pairing',
+        blockerReason: classifyBridgeBlocker(registration, 'connector_service_not_ready'),
       }
     );
   }
@@ -1212,6 +1378,7 @@ export async function runNativeCompanionAction(
   if (!bridgePath) {
     return nativeActionResult(request.action, 'repair_required', 'Workbench connector tools are not installed.', {
       sourcePointer: 'native-companion:bridge-cli-missing',
+      blockerReason: 'bridge_cli_missing',
     });
   }
 
@@ -1253,6 +1420,7 @@ export async function runNativeCompanionAction(
     default:
       return nativeActionResult(request.action, 'unsupported', 'Workbench connector action is not supported.', {
         sourcePointer: 'native-companion:unsupported-action',
+        blockerReason: 'unknown',
       });
   }
 }
@@ -1319,11 +1487,80 @@ function pairingBlockedReasonForStatus(input: {
   bridgePath: string;
   connectorService: BridgeCommandResult;
   env?: NodeJS.ProcessEnv;
-}): string {
+}): IEvaosMacControlBlockerReason {
   if (!isPairingCapableBridgePath(input.bridgePath, input.env)) return 'bundled_bridge_required';
   if (!connectorServiceIsReady(input.connectorService)) return 'connector_service_not_ready';
   if (!connectorServiceHasSecureRegistrationHost(input.connectorService.data)) return 'secure_network_link_required';
   return 'pairing_not_ready';
+}
+
+function blockerReasonForStatus(input: {
+  bridge: BridgeCommandResult;
+  connectorService: BridgeCommandResult;
+  customerMac: BridgeCommandResult;
+  controlSession: BridgeCommandResult;
+  bridgeReady: boolean;
+  connectorServiceReady: boolean;
+  customerMacReady: boolean;
+  pairingBlockedReason?: IEvaosMacControlBlockerReason;
+}): IEvaosMacControlBlockerReason | undefined {
+  if (input.bridgeReady && input.connectorServiceReady && input.customerMacReady && !input.pairingBlockedReason) {
+    return undefined;
+  }
+  if (!input.bridge.ok) return classifyBridgeBlocker(input.bridge, 'bridge_diagnostics_unavailable');
+  if (!input.bridgeReady || !input.customerMacReady) {
+    const permissionReason = classifyPermissionBlocker(input.customerMac, input.controlSession);
+    if (permissionReason) return permissionReason;
+  }
+  if (!input.connectorServiceReady) {
+    return classifyBridgeBlocker(input.connectorService, 'connector_service_not_ready');
+  }
+  return input.pairingBlockedReason ?? 'unknown';
+}
+
+function classifyPermissionBlocker(
+  customerMac: BridgeCommandResult,
+  controlSession: BridgeCommandResult
+): IEvaosMacControlBlockerReason | undefined {
+  const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
+  if (permissionsNeedRepair(permissions)) return 'permission_missing';
+  return undefined;
+}
+
+function classifyBridgeBlocker(
+  result: BridgeCommandResult,
+  fallback: IEvaosMacControlBlockerReason
+): IEvaosMacControlBlockerReason {
+  const haystack = [result.errorCode, result.errorMessage, JSON.stringify(result.errors ?? [])]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+  if (/\beaddrinuse\b|address already in use|port[^a-z0-9]+in[^a-z0-9]+use|bind failed/.test(haystack)) {
+    return 'port_in_use';
+  }
+  if (/listener owner|owner mismatch|wrong owner|old app|stale listener|launch[_ -]?agent stale/.test(haystack)) {
+    return 'listener_owner_mismatch';
+  }
+  if (/token.*missing|missing.*token|token.*invalid|no token/.test(haystack)) return 'token_missing';
+  if (/not.*workbench.*managed|manual connector|managed_by|not_workbench_managed/.test(haystack)) {
+    return 'not_workbench_managed';
+  }
+  if (/secure.*network|tailnet|private connector|headscale|tailscale|secure.*link/.test(haystack)) {
+    return 'secure_network_link_required';
+  }
+  if (/accessibility|screen recording|screen[_ -]?recording|tcc|permission/.test(haystack)) {
+    return 'permission_missing';
+  }
+  if (/missing_session|expired_session|broker.*401|unauthorized|session.*expired|sign in/.test(haystack)) {
+    return 'broker_session_expired';
+  }
+  if (/codex.*config|unknown variant|service_tier|acp.*handshake|startup.*failed/.test(haystack)) {
+    return 'agent_cli_config_invalid';
+  }
+  if (/runtime.*not.*configured|not configured|hermes.*missing|openclaw.*missing/.test(haystack)) {
+    return 'runtime_not_configured';
+  }
+  return fallback;
 }
 
 function connectorServiceHasSecureRegistrationHost(input: unknown): boolean {
@@ -1365,6 +1602,56 @@ function expandHomePath(path: string): string {
   if (path === '~') return homedir();
   if (path.startsWith('~/')) return join(homedir(), path.slice(2));
   return path;
+}
+
+async function runOptionalBridgeDiagnostics(
+  bridgePath: string,
+  args: string[],
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<BridgeCommandResult & { source: string }> {
+  const result = await runBridgeCommand(bridgePath, args, deps);
+  return {
+    ...result,
+    source: args.slice(0, 2).join(' '),
+  };
+}
+
+function optionalBridgeDiagnosticsUnavailable(source: string): BridgeCommandResult & { source: string } {
+  return {
+    ok: false,
+    source,
+  };
+}
+
+function connectorOwnerClassification(
+  status: IEvaosNativeCompanionStatusView
+): IEvaosWorkbenchDiagnosticPacketV1['connector']['ownerClassification'] {
+  if (status.connectorService?.managedBy === 'workbench-session') return 'workbench_managed';
+  if (status.blockerReason === 'listener_owner_mismatch' || status.blockerReason === 'not_workbench_managed') {
+    return status.blockerReason;
+  }
+  if (status.connectorService?.managedBy && status.connectorService.managedBy !== 'workbench-session') {
+    return 'not_workbench_managed';
+  }
+  return 'unknown';
+}
+
+function safeDiagnosticAuditIds(values: string[]): string[] {
+  return compactStrings(values.map((value) => safeDiagnosticText(value))).slice(0, 12);
+}
+
+function safeDiagnosticPath(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.replace(/\\/g, '/');
+  if (/https?:\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:localhost|127\.0\.0\.1)\b/i.test(normalized)) {
+    return '[redacted-endpoint]';
+  }
+  return safeDiagnosticText(normalized, 280);
+}
+
+function safeDiagnosticText(value: string | undefined, maxLength = 220): string | undefined {
+  if (!value) return undefined;
+  return safeBridgeErrorText(value)?.slice(0, maxLength);
 }
 
 function connectorDeviceIdentifier(customerMacData: unknown): string | undefined {
@@ -1620,12 +1907,12 @@ function safeBridgeErrorText(value: string | undefined): string | undefined {
   const secretWordPattern =
     /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|bearer|secret)\b[^\s,.;)]*/gi;
   const redacted = value
-    .replace(secretFieldPattern, '[redacted-secret]')
-    .replace(secretWordPattern, '[redacted-secret]')
+    .replace(secretFieldPattern, '[redacted]')
+    .replace(secretWordPattern, '[redacted]')
     .replace(/https?:\/\/[^\s"')]+/gi, '[redacted-url]')
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
     .replace(/\b(?:100|10|172|192)\.[0-9.]+(?::\d+)?\b/g, '[redacted-ip]')
-    .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted-secret]')
+    .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted]')
     .trim();
   return redacted ? redacted.slice(0, 260) : undefined;
 }
@@ -1702,11 +1989,19 @@ function nativeActionResult(
     pairing: options.pairing,
     agentPairingStatus: options.agentPairingStatus,
     events: options.events,
+    blockerReason: options.blockerReason,
   };
 }
 
 function hasGrantedCorePermissions(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {
   return permissions?.accessibility === 'granted' && permissions.screenRecording === 'granted';
+}
+
+function permissionsNeedRepair(permissions: IEvaosNativeCompanionPermissionView | undefined): boolean {
+  if (!permissions) return false;
+  return [permissions.accessibility, permissions.screenRecording]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .some((value) => !/^(granted|ready|available|ok)$/i.test(value.trim()));
 }
 
 function effectiveCustomerMacPermissions(

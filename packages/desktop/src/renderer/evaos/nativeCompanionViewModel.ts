@@ -770,7 +770,7 @@ function safeActionDetail(message: string | undefined, fallback: string): string
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
     .replace(
       /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?token|desktop[_-]?session|provider[_-]?grant|bearer|secret)\b[^\s,.;)]*/gi,
-      '[redacted-secret]'
+      '[redacted]'
     )
     .trim();
   return cleaned || fallback;

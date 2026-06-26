@@ -161,6 +161,24 @@ export type IEvaosNativeCompanionStatusValue =
   | 'unavailable'
   | 'error';
 
+export type IEvaosMacControlBlockerReason =
+  | 'listener_owner_mismatch'
+  | 'port_in_use'
+  | 'token_missing'
+  | 'not_workbench_managed'
+  | 'secure_network_link_required'
+  | 'permission_missing'
+  | 'broker_session_expired'
+  | 'agent_cli_config_invalid'
+  | 'runtime_not_configured'
+  | 'bundled_bridge_required'
+  | 'connector_service_not_ready'
+  | 'bridge_cli_missing'
+  | 'bridge_diagnostics_unavailable'
+  | 'pairing_not_ready'
+  | 'stale_connector_port_conflict'
+  | 'unknown';
+
 export interface IEvaosNativeCompanionPermissionView {
   accessibility?: string;
   screenRecording?: string;
@@ -172,7 +190,8 @@ export interface IEvaosNativeCompanionStatusView {
   readiness: IEvaosNativeCompanionReadiness;
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   pairingCapable?: boolean;
-  pairingBlockedReason?: string;
+  pairingBlockedReason?: IEvaosMacControlBlockerReason;
+  blockerReason?: IEvaosMacControlBlockerReason;
   summaryText: string;
   sourcePointer: string;
   canOpenReleasedWorkbench: boolean;
@@ -323,6 +342,105 @@ export interface IEvaosNativeCompanionActionResult {
   pairing?: IEvaosNativeCompanionPairingPrompt;
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   events?: IEvaosNativeCompanionAuditEvent[];
+  blockerReason?: IEvaosMacControlBlockerReason;
+}
+
+export interface IEvaosWorkbenchDiagnosticPacketV1 {
+  schemaVersion: 'evaos.workbench.diagnostic_packet.v1';
+  generatedAt: string;
+  app: {
+    product: string;
+    bundleId: string;
+    protocol: string;
+    version?: string;
+    sourceSha?: string;
+    channel?: string;
+    installedPath?: string;
+    running?: boolean;
+  };
+  signing: {
+    summary: string;
+    developerIdTeam?: string;
+    notarization?: string;
+    gatekeeper?: string;
+  };
+  selectedContext: {
+    accountEmail?: string;
+    customerId?: string;
+    customerLabel?: string;
+    vmTarget?: string;
+    route?: string;
+  };
+  runtimeStatus: {
+    evaos?: string;
+    openclaw?: string;
+    hermes?: string;
+    localAcp?: string;
+    lastStartupCategory?: IEvaosMacControlBlockerReason;
+  };
+  brokerGrant: {
+    state?: string;
+    agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
+    sourcePointer?: string;
+    auditIds: string[];
+  };
+  bridge: {
+    installed: boolean;
+    status: IEvaosNativeCompanionStatusValue;
+    path?: string;
+    version?: string;
+    diagnosticsStatus: 'available' | 'unavailable';
+    diagnosticsSource?: string;
+    readyStatus?: 'ready' | 'not_ready' | 'unavailable';
+    readySource?: string;
+  };
+  connector: {
+    status?: IEvaosNativeCompanionStatusValue;
+    running?: boolean;
+    reachable?: boolean;
+    managedBy?: string;
+    ownerClassification?: IEvaosMacControlBlockerReason | 'workbench_managed' | 'unknown';
+    endpointSummary: 'redacted' | 'unavailable';
+  };
+  launchAgent: {
+    label?: string;
+    state?: string;
+    programPathSummary?: string;
+    stalePath?: boolean;
+  };
+  tcc: {
+    accessibility?: string;
+    screenRecording?: string;
+    holder?: string;
+  };
+  audit: {
+    status: IEvaosNativeCompanionStatusValue;
+    auditIds: string[];
+    latestAuditId?: string;
+  };
+  lastAction?: {
+    action: string;
+    status: string;
+    message?: string;
+    blockerReason?: IEvaosMacControlBlockerReason;
+    auditId?: string;
+  };
+  blockerCategory: IEvaosMacControlBlockerReason;
+  redaction: {
+    rawSecretsStoredInWorkbench: false;
+    urlsIpsPortsRedacted: true;
+    rawPromptMaterialIncluded: false;
+  };
+}
+
+export interface IEvaosWorkbenchDiagnosticPacketRequest {
+  route?: string;
+  accountEmail?: string;
+  customerId?: string;
+  customerLabel?: string;
+  vmTarget?: string;
+  runtimeStatus?: IEvaosWorkbenchDiagnosticPacketV1['runtimeStatus'];
+  lastAction?: IEvaosWorkbenchDiagnosticPacketV1['lastAction'];
 }
 
 export interface IEvaosExternalLinkOpenRequest {

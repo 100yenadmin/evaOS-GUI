@@ -275,6 +275,8 @@ import type {
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionActionRequest,
   IEvaosNativeCompanionActionResult,
+  IEvaosWorkbenchDiagnosticPacketRequest,
+  IEvaosWorkbenchDiagnosticPacketV1,
   IEvaosExternalLinkOpenRequest,
   IEvaosExternalLinkOpenResult,
 } from '../evaos/bridgeTypes';
@@ -347,6 +349,8 @@ export type {
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionActionRequest,
   IEvaosNativeCompanionActionResult,
+  IEvaosWorkbenchDiagnosticPacketRequest,
+  IEvaosWorkbenchDiagnosticPacketV1,
   IEvaosExternalLinkOpenRequest,
   IEvaosExternalLinkOpenResult,
 } from '../evaos/bridgeTypes';
@@ -1546,6 +1550,10 @@ export const evaosNativeCompanion = {
   getStatus: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionStatusView>, void>(
     'evaos.native-companion.status'
   ),
+  getDiagnosticPacket: buildEvaosProvider<
+    IBridgeResponse<IEvaosWorkbenchDiagnosticPacketV1>,
+    IEvaosWorkbenchDiagnosticPacketRequest
+  >('evaos.native-companion.diagnostic-packet'),
   openReleasedWorkbench: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionOpenResult>, void>(
     'evaos.native-companion.open-released-workbench'
   ),

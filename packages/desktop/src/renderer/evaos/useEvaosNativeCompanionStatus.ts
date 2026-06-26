@@ -13,6 +13,8 @@ import type {
   IEvaosNativeCompanionRepairAction,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
+  IEvaosWorkbenchDiagnosticPacketRequest,
+  IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
 
 interface EvaosNativeCompanionStatusState {
@@ -23,6 +25,9 @@ interface EvaosNativeCompanionStatusState {
   openReleasedWorkbench: () => Promise<IEvaosNativeCompanionOpenResult>;
   openRepairAction: (action: IEvaosNativeCompanionRepairAction) => Promise<IEvaosNativeCompanionRepairActionResult>;
   runAction: (request: IEvaosNativeCompanionActionRequest) => Promise<IEvaosNativeCompanionActionResult>;
+  getDiagnosticPacket: (
+    request: IEvaosWorkbenchDiagnosticPacketRequest
+  ) => Promise<IEvaosWorkbenchDiagnosticPacketV1 | null>;
 }
 
 export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompanionStatusState {
@@ -96,6 +101,21 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
     []
   );
 
+  const getDiagnosticPacket = useCallback(
+    async (request: IEvaosWorkbenchDiagnosticPacketRequest): Promise<IEvaosWorkbenchDiagnosticPacketV1 | null> => {
+      try {
+        const response = await ipcBridge.evaosNativeCompanion.getDiagnosticPacket.invoke(request);
+        if (!response.success || !response.data) {
+          return null;
+        }
+        return response.data;
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -108,5 +128,6 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
     openReleasedWorkbench,
     openRepairAction,
     runAction,
+    getDiagnosticPacket,
   };
 }

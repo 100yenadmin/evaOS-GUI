@@ -12,6 +12,8 @@ declare const __APP_COMMIT__: string;
 
 const SECRET_TEXT_PATTERN =
   /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|authorization|bearer|secret|password/i;
+const ENDPOINT_TEXT_PATTERN =
+  /https?:\/\/[^\s"')]+|\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b|\b(?:localhost|127\.0\.0\.1)\b/gi;
 const MAX_FIELD_LENGTH = 220;
 const MAX_AUDIT_IDS = 8;
 
@@ -147,5 +149,6 @@ function safeSupportText(value: unknown, fallback: string | undefined): string |
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
   if (!trimmed || SECRET_TEXT_PATTERN.test(trimmed)) return fallback;
-  return trimmed.length > MAX_FIELD_LENGTH ? `${trimmed.slice(0, MAX_FIELD_LENGTH - 3)}...` : trimmed;
+  const redacted = trimmed.replace(ENDPOINT_TEXT_PATTERN, '[redacted-endpoint]');
+  return redacted.length > MAX_FIELD_LENGTH ? `${redacted.slice(0, MAX_FIELD_LENGTH - 3)}...` : redacted;
 }

@@ -12,8 +12,11 @@ import type {
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
+  IEvaosWorkbenchDiagnosticPacketRequest,
+  IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
 import {
+  getEvaosWorkbenchDiagnosticPacket,
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
@@ -32,6 +35,13 @@ export function initEvaosNativeCompanionBridge(): void {
   ipcBridge.evaosNativeCompanion.getStatus.provider(
     async (): Promise<BridgeResponse<IEvaosNativeCompanionStatusView>> =>
       toBridgeResponse(() => getEvaosNativeCompanionStatus())
+  );
+
+  ipcBridge.evaosNativeCompanion.getDiagnosticPacket.provider(
+    async (
+      request: IEvaosWorkbenchDiagnosticPacketRequest
+    ): Promise<BridgeResponse<IEvaosWorkbenchDiagnosticPacketV1>> =>
+      toBridgeResponse(() => getEvaosWorkbenchDiagnosticPacket(request))
   );
 
   ipcBridge.evaosNativeCompanion.openReleasedWorkbench.provider(
