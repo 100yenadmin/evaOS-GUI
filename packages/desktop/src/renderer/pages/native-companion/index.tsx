@@ -26,9 +26,11 @@ import type {
   IEvaosNativeCompanionAgentPairingStatus,
   IEvaosNativeCompanionRepairAction,
   IEvaosNativeCompanionStatusView,
+  IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
 import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
+import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 import {
   canCreateNativeCompanionPairingPrompt,
   getNativeCompanionRepairViewModel,
@@ -39,9 +41,10 @@ import {
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
+import { useFeedback } from '@renderer/hooks/context/FeedbackContext';
 import { evaosBrokerSessionKey } from '@renderer/hooks/useEvaosBrokerSessionStatus';
 import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from '@renderer/hooks/system/useDeepLink';
-import { openEvaosSupportEmail, openExternalUrl } from '@/renderer/utils/platform';
+import { openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
 const NativeCompanionPage: React.FC = () => {
@@ -51,6 +54,7 @@ const NativeCompanionPage: React.FC = () => {
   const violations = getEvaosNativeCompanionBoundaryViolations();
   const { customerContext, brokerSession, brokerAuthenticated, brokerSessionLoading } =
     useEvaosBrokeredCustomerContext();
+  const { openFeedback } = useFeedback();
   const { selectedCustomerId, selectedTarget, targets = [], isOperator } = customerContext;
   const [lockedPairingCustomerId, setLockedPairingCustomerId] = React.useState<string | undefined>();
   const selectedPairingTarget = React.useMemo(
@@ -65,7 +69,7 @@ const NativeCompanionPage: React.FC = () => {
     [isOperator, lockedPairingCustomerId, selectedCustomerId, selectedTarget, targets]
   );
   const selectedPairingCustomerId = selectedPairingTarget?.customerId;
-  const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction } =
+  const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction, getDiagnosticPacket } =
     useEvaosNativeCompanionStatus();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [connectorActionsOpen, setConnectorActionsOpen] = React.useState(false);
@@ -280,21 +284,60 @@ const NativeCompanionPage: React.FC = () => {
 
   const handleOpenSupportReport = React.useCallback(async () => {
     try {
-      await openEvaosSupportEmail({
-        subject: 'evaOS Workbench support: Mac control',
-        body: [
-          'Route: /native-companion',
-          `State: ${status?.readiness ?? viewModel.statusLabel}`,
-          `Summary: ${status?.summaryText ?? viewModel.summary}`,
-          error ? `Blocker: ${error}` : null,
-        ]
-          .filter(Boolean)
-          .join('\n'),
+      const diagnosticPacket = await getDiagnosticPacket({
+        route: '/native-companion',
+        accountEmail: brokerSession?.userEmail,
+        customerId: selectedPairingCustomerId ?? selectedCustomerId,
+        customerLabel: selectedPairingTarget?.displayName ?? selectedTarget?.displayName,
+        vmTarget: selectedPairingTarget?.displayName ?? selectedTarget?.displayName,
+        lastAction: safeDiagnosticLastAction(currentActionResult),
+      });
+      const report = buildEvaosSupportReportContext({
+        surface: 'native_companion_mac_control',
+        route: '/native-companion',
+        issueRef: '#432',
+        settledState: viewModel.state,
+        status: status?.readiness ?? viewModel.statusLabel,
+        blocker: error ?? currentActionResult?.message ?? status?.blockerReason ?? status?.pairingBlockedReason,
+        sourcePointer: currentActionResult?.sourcePointer ?? status?.sourcePointer,
+        auditIds: [
+          currentActionResult?.auditId,
+          ...(currentActionResult?.auditIds ?? []),
+          ...(status?.audit.auditIds ?? []),
+        ],
+        customer: {
+          selectedCustomerId: selectedPairingCustomerId ?? selectedCustomerId,
+          selectedCustomerLabel: selectedPairingTarget?.displayName ?? selectedTarget?.displayName,
+          accountEmail: brokerSession?.userEmail,
+          summaryText: status?.summaryText ?? viewModel.summary,
+        },
+      });
+      await openFeedback({
+        ...report,
+        extra: {
+          ...report.extra,
+          mac_control_diagnostic_packet:
+            diagnosticPacket ?? diagnosticPacketCollectionFailed(status, currentActionResult),
+        },
       });
     } catch (supportError) {
       console.error('[NativeCompanionPage] Failed to open evaOS support report:', supportError);
     }
-  }, [error, status?.readiness, status?.summaryText, viewModel.statusLabel, viewModel.summary]);
+  }, [
+    brokerSession?.userEmail,
+    currentActionResult,
+    error,
+    getDiagnosticPacket,
+    openFeedback,
+    selectedCustomerId,
+    selectedPairingCustomerId,
+    selectedPairingTarget?.displayName,
+    selectedTarget?.displayName,
+    status,
+    viewModel.state,
+    viewModel.statusLabel,
+    viewModel.summary,
+  ]);
 
   return (
     <div
@@ -1006,6 +1049,55 @@ function iPhoneSummary(status: IEvaosNativeCompanionStatusView | null | undefine
     return 'unavailable';
   }
   return status.iPhone.running ? 'running' : 'available';
+}
+
+function safeDiagnosticLastAction(
+  actionResult: IEvaosNativeCompanionActionResult | null
+): IEvaosWorkbenchDiagnosticPacketV1['lastAction'] | undefined {
+  if (!actionResult) return undefined;
+  return {
+    action: actionResult.action,
+    status: actionResult.status,
+    message: safeFeedbackDiagnosticText(actionResult.message),
+    blockerReason: actionResult.blockerReason,
+    auditId: safeFeedbackDiagnosticText(actionResult.auditId),
+  };
+}
+
+function diagnosticPacketCollectionFailed(
+  status: IEvaosNativeCompanionStatusView | null,
+  actionResult: IEvaosNativeCompanionActionResult | null
+): Record<string, unknown> {
+  return {
+    schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
+    collectionStatus: 'failed',
+    fallbackBlockerCategory:
+      actionResult?.blockerReason ?? status?.blockerReason ?? status?.pairingBlockedReason ?? 'unknown',
+    sourcePointer: safeFeedbackDiagnosticText(actionResult?.sourcePointer ?? status?.sourcePointer),
+    auditIds: [...(actionResult?.auditIds ?? []), ...(status?.audit.auditIds ?? [])]
+      .map((auditId) => safeFeedbackDiagnosticText(auditId))
+      .filter(Boolean)
+      .slice(0, 12),
+    redaction: {
+      rawSecretsStoredInWorkbench: false,
+      urlsIpsPortsRedacted: true,
+      rawPromptMaterialIncluded: false,
+    },
+  };
+}
+
+function safeFeedbackDiagnosticText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value
+    .replace(/https?:\/\/[^\s"')]+/gi, '[redacted-url]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '[redacted-ip]')
+    .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted]')
+    .replace(
+      /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|secret)\b[^\s,.;)]*/gi,
+      '[redacted]'
+    )
+    .trim();
+  return cleaned ? cleaned.slice(0, 260) : undefined;
 }
 
 export default NativeCompanionPage;

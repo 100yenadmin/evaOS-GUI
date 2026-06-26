@@ -17,6 +17,13 @@ const DESCRIPTION_MAX_LENGTH = 2000;
 const MAX_SCREENSHOTS = 3;
 const ACCEPTED_IMAGE_TYPES = '.png,.jpg,.jpeg,.gif';
 const SUMMARY_PREVIEW_LENGTH = 60;
+const REDACTION = '[REDACTED]';
+const FEEDBACK_EXTRA_SECRET_PATTERN =
+  /\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}\b|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/gi;
+const FEEDBACK_EXTRA_SECRET_FIELD_PATTERN =
+  /\b([A-Za-z0-9_.-]*(?:authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret)[A-Za-z0-9_.-]*)\b(\s*[:=]\s*)(["']?)([^"'\s,&}]{4,})(\3)/gi;
+const FEEDBACK_EXTRA_ENDPOINT_PATTERN =
+  /https?:\/\/[^\s"')]+|\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b|\b(?:localhost|127\.0\.0\.1)\b/gi;
 
 type ScreenshotBuffer = {
   name: string;
@@ -36,6 +43,25 @@ const createPastedImageName = (file: File, index: number) => {
   const ext = file.type.split('/')[1] || 'png';
   return `pasted-screenshot-${timestamp}-${index + 1}.${ext}`;
 };
+
+function buildFeedbackExtraAttachment(extra: FeedbackEventExtra | undefined): {
+  filename: string;
+  data: Uint8Array;
+  contentType: 'application/json';
+} | null {
+  if (!extra || Object.keys(extra).length === 0) return null;
+  const text = JSON.stringify(extra, null, 2)
+    .replace(FEEDBACK_EXTRA_SECRET_PATTERN, REDACTION)
+    .replace(FEEDBACK_EXTRA_SECRET_FIELD_PATTERN, (_match, key, separator, quote) => {
+      return `${key}${separator}${quote}${REDACTION}${quote}`;
+    })
+    .replace(FEEDBACK_EXTRA_ENDPOINT_PATTERN, '[redacted-endpoint]');
+  return {
+    filename: 'feedback-context.json',
+    data: new TextEncoder().encode(text),
+    contentType: 'application/json',
+  };
+}
 
 export type PrefilledScreenshot = {
   filename: string;
@@ -176,6 +202,11 @@ const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({
           data: new Uint8Array(logData.data),
           contentType: 'application/gzip',
         });
+      }
+
+      const extraAttachment = buildFeedbackExtraAttachment(feedbackExtra);
+      if (extraAttachment) {
+        attachments.push(extraAttachment);
       }
 
       screenshotBuffers.forEach((screenshot, index) => {

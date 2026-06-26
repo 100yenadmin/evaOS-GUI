@@ -192,7 +192,14 @@ describe('FeedbackReportModal — prefill', () => {
           },
         },
       }),
-      expect.objectContaining({ attachments: [] })
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            contentType: 'application/json',
+            filename: 'feedback-context.json',
+          }),
+        ],
+      })
     );
     expect(onCancel).toHaveBeenCalledTimes(1);
   });

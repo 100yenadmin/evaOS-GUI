@@ -9,6 +9,7 @@ import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { hostname } from 'node:os';
 import {
+  getEvaosWorkbenchDiagnosticPacket,
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
@@ -238,6 +239,119 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(status.canOpenReleasedWorkbench).toBe(true);
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
+  });
+
+  it('builds a redacted Mac-control diagnostic packet with a typed blocker category', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          version: 'bridge-1.2.3',
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        ok: false,
+        data: {
+          running: false,
+          managed_by: 'manual',
+          tailnet_ip: '100.64.0.10',
+          permission_target: 'evaOS Workbench',
+          health: { reachable: false, host: '100.64.0.10' },
+        },
+        errors: [
+          {
+            code: 'EADDRINUSE',
+            message: 'Address already in use on http://100.64.0.10:8765 with connector_token=abc123',
+          },
+        ],
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          device: { hostname: 'Support Mac' },
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        data: { installed: false, running: false },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: { active: false, ready: true, kill_switch: false },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: { records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-control' }] },
+      },
+      'diagnostics --json': {
+        ok: true,
+        data: {
+          launch_agent_label: 'com.evaos.workbench.bridge',
+          launch_agent_state: 'loaded',
+          launch_agent_program_path: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        },
+      },
+      'ready --json': {
+        ok: false,
+        errors: [{ code: 'not_ready', message: 'http://100.64.0.10:8765 is not ready' }],
+      },
+    });
+
+    const packet = await getEvaosWorkbenchDiagnosticPacket(
+      {
+        route: '/native-companion',
+        accountEmail: 'admin@electricsheephq.com',
+        customerId: 'support-vm',
+        customerLabel: 'Support VM',
+        lastAction: {
+          action: 'connector_start',
+          status: 'repair_required',
+          message: 'Address already in use on http://100.64.0.10:8765 with Bearer deadbeef',
+          blockerReason: 'port_in_use',
+        },
+      },
+      deps
+    );
+
+    expect(packet).toMatchObject({
+      schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
+      blockerCategory: 'port_in_use',
+      selectedContext: {
+        accountEmail: 'admin@electricsheephq.com',
+        customerId: 'support-vm',
+      },
+      connector: {
+        endpointSummary: 'unavailable',
+        ownerClassification: 'not_workbench_managed',
+      },
+      bridge: {
+        diagnosticsStatus: 'available',
+        readyStatus: 'not_ready',
+      },
+      redaction: {
+        rawSecretsStoredInWorkbench: false,
+        urlsIpsPortsRedacted: true,
+        rawPromptMaterialIncluded: false,
+      },
+    });
+    const serialized = JSON.stringify(packet);
+    expect(serialized).not.toContain('100.64.0.10');
+    expect(serialized).not.toContain('8765');
+    expect(serialized).not.toContain('abc123');
+    expect(serialized).not.toMatch(/https?:\/\//i);
+    expect(serialized).not.toMatch(/Bearer\s+deadbeef/i);
   });
 
   it('uses control-status permission proof when customer-mac status is stale', async () => {
