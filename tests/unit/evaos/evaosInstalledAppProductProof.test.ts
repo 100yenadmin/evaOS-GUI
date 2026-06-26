@@ -30,6 +30,19 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     staleRunningProcesses: Array<{ pid: string | null; command: string }>;
     launchAgent: { label: string; status: string; bridgePath: string | null };
     staleLaunchAgent: boolean;
+    bridgeListener?: {
+      port: string;
+      status: string;
+      expectedBridgePath: string;
+      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
+      staleOwners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
+    };
+    staleBridgeListener?: boolean;
+  }) => void;
+  assertInstalledAppTrustStateClean: (state: {
+    codesign: { ok: boolean; stderr?: string; error?: string };
+    spctl: { ok: boolean; stderr?: string; error?: string };
+    pythonCacheFiles: string[];
   }) => void;
   assertExpectedBundle: (bundleInfo: {
     bundleId: string;
@@ -114,8 +127,25 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     staleRunningProcesses: Array<{ pid: string | null; command: string }>;
     launchAgent: { label: string; status: string; bridgePath: string | null };
     staleLaunchAgent: boolean;
+    bridgeListener: {
+      port: string;
+      status: string;
+      expectedBridgePath: string;
+      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
+      staleOwners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
+    };
+    staleBridgeListener: boolean;
+  };
+  inspectInstalledAppTrustState: (
+    appPath: string,
+    execFileSyncImpl: (command: string, args: string[], options: { encoding: 'utf8' }) => string
+  ) => {
+    codesign: { ok: boolean; command: string; output?: string; stderr?: string; error?: string };
+    spctl: { ok: boolean; command: string; output?: string; stderr?: string; error?: string };
+    pythonCacheFiles: string[];
   };
   parseAppBundlePaths: (output: string) => string[];
+  parseBridgeListenerPids: (output: string) => string[];
   parseLaunchAgentBridgePath: (output: string) => string | null;
   runProofPlanAction: (page: unknown, action?: string) => Promise<void>;
   writeDryRunProofFiles: (options: {
@@ -532,6 +562,47 @@ describe('evaOS installed app product proof', () => {
     ).toThrow(/LaunchAgent points/);
   });
 
+  it('fails desktop proof hygiene when port 8765 is owned by a non-candidate bridge process', () => {
+    expect(() =>
+      installedAppProof.assertDesktopProofStateClean({
+        expectedAppPath: '/Applications/evaOS Workbench.app',
+        expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        indexedApps: [],
+        staleIndexedApps: [],
+        runningProcesses: [],
+        staleRunningProcesses: [],
+        launchAgent: {
+          label: 'com.electricsheep.evaos-desktop-bridge',
+          status: 'loaded',
+          bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          port: '8765',
+          status: 'listening',
+          expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+          owners: [
+            {
+              pid: '17959',
+              command:
+                '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
+              matchesExpectedBridge: false,
+            },
+          ],
+          staleOwners: [
+            {
+              pid: '17959',
+              command:
+                '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
+              matchesExpectedBridge: false,
+            },
+          ],
+        },
+        staleBridgeListener: true,
+      })
+    ).toThrow(/Port 8765 is owned by a non-candidate bridge process/);
+  });
+
   it('summarizes desktop proof hygiene from macOS system inventories', () => {
     const fakeExec = (command: string, args: string[]) => {
       if (command === '/usr/bin/mdfind' && args[0].includes('com.evaos.workbench.beta')) {
@@ -541,11 +612,15 @@ describe('evaOS installed app product proof', () => {
         return '/Applications/evaOS Workbench.app\n';
       }
       if (command === '/bin/ps') {
+        if (args[0] === '-p') {
+          return '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge serve --port 8765\n';
+        }
         return [
           '6195 /Volumes/LEXAR/Codex/aionui-rd/old/evaOS Workbench Beta.app/Contents/MacOS/evaOS Workbench Beta',
           '6201 /Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
         ].join('\n');
       }
+      if (command === '/usr/sbin/lsof') return '6203\n';
       if (command === '/usr/bin/id') return '501\n';
       if (command === '/bin/launchctl') {
         return 'program = /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge\n';
@@ -569,6 +644,70 @@ describe('evaOS installed app product proof', () => {
       },
     ]);
     expect(state.staleLaunchAgent).toBe(false);
+    expect(state.bridgeListener).toMatchObject({
+      port: '8765',
+      status: 'listening',
+      staleOwners: [],
+    });
+  });
+
+  it('summarizes stale listener ownership from macOS lsof and ps output', () => {
+    const fakeExec = (command: string, args: string[]) => {
+      if (command === '/usr/bin/mdfind') return '/Applications/evaOS Workbench.app\n';
+      if (command === '/bin/ps') {
+        if (args[0] === '-p') {
+          return '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765\n';
+        }
+        return '';
+      }
+      if (command === '/usr/sbin/lsof') return '17959\nnot-a-pid\n';
+      if (command === '/usr/bin/id') return '501\n';
+      if (command === '/bin/launchctl') {
+        return 'program = /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge\n';
+      }
+      throw new Error(`unexpected command ${command}`);
+    };
+
+    const state = installedAppProof.inspectDesktopProofState('/Applications/evaOS Workbench.app', fakeExec);
+
+    expect(installedAppProof.parseBridgeListenerPids('17959\nnot-a-pid\n')).toEqual(['17959']);
+    expect(state.staleBridgeListener).toBe(true);
+    expect(state.bridgeListener.staleOwners).toEqual([
+      expect.objectContaining({
+        pid: '17959',
+        matchesExpectedBridge: false,
+      }),
+    ]);
+  });
+
+  it('fails installed-app trust when Python cache files mutate the signed bridge bundle', () => {
+    const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-app-trust-'));
+    const bridgeRoot = path.join(tempApp, 'Contents/Resources/Bridge/src/evaos_desktop_bridge/__pycache__');
+    fs.mkdirSync(bridgeRoot, { recursive: true });
+    fs.writeFileSync(path.join(bridgeRoot, 'qa_canary.cpython-314.pyc'), 'cache');
+
+    const trust = installedAppProof.inspectInstalledAppTrustState(tempApp, () => '');
+
+    expect(trust.pythonCacheFiles).toEqual([
+      'src/evaos_desktop_bridge/__pycache__/qa_canary.cpython-314.pyc',
+    ]);
+    expect(() => installedAppProof.assertInstalledAppTrustStateClean(trust)).toThrow(/Python cache files/);
+  });
+
+  it('fails installed-app trust when codesign or Gatekeeper rejects the candidate', () => {
+    const fakeExec = (command: string) => {
+      if (command === '/usr/bin/codesign') {
+        const error = new Error('codesign failed') as Error & { stderr: string };
+        error.stderr = '/Applications/evaOS Workbench.app: a sealed resource is missing or invalid';
+        throw error;
+      }
+      return '';
+    };
+
+    const trust = installedAppProof.inspectInstalledAppTrustState('/Applications/evaOS Workbench.app', fakeExec);
+
+    expect(trust.codesign.ok).toBe(false);
+    expect(() => installedAppProof.assertInstalledAppTrustStateClean(trust)).toThrow(/codesign verification failed/);
   });
 
   it('parses LaunchServices protocol handler ownership for the beta scheme', () => {

@@ -14,6 +14,7 @@ const DEFAULT_PROTOCOL_SCHEME = 'evaos-workbench';
 const WORKBENCH_BUNDLE_IDS = [DEFAULT_BUNDLE_ID, 'com.evaos.workbench.beta'];
 const LEXAR_CODEX_PREFIX = '/Volumes/LEXAR/Codex/';
 const BRIDGE_LAUNCH_AGENT_LABEL = 'com.electricsheep.evaos-desktop-bridge';
+const BRIDGE_LISTENER_PORT = '8765';
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ARTIFACT_BASE = '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/67-real-admin-product-reality-pass';
 const REPORT_SCHEMA = 'evaos-installed-app-product-proof/v1';
@@ -198,6 +199,68 @@ function readRunningWorkbenchProcesses(execFileSyncImpl = execFileSync) {
   }
 }
 
+function parseBridgeListenerPids(output) {
+  return uniqueStrings(
+    String(output || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => /^\d+$/.test(line))
+  );
+}
+
+function readProcessCommand(pid, execFileSyncImpl = execFileSync) {
+  return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })).trim();
+}
+
+function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFileSync) {
+  let pids = [];
+  try {
+    pids = parseBridgeListenerPids(
+      execFileSyncImpl(
+        '/usr/sbin/lsof',
+        ['-nP', `-iTCP:${BRIDGE_LISTENER_PORT}`, '-sTCP:LISTEN', '-t'],
+        { encoding: 'utf8' }
+      )
+    );
+  } catch (error) {
+    return {
+      port: BRIDGE_LISTENER_PORT,
+      status: 'not-listening',
+      expectedBridgePath,
+      owners: [],
+      staleOwners: [],
+      error: error?.message || String(error),
+    };
+  }
+
+  const owners = pids.map((pid) => {
+    try {
+      const command = readProcessCommand(pid, execFileSyncImpl);
+      return {
+        pid,
+        command,
+        matchesExpectedBridge: command.includes(expectedBridgePath),
+      };
+    } catch (error) {
+      return {
+        pid,
+        command: null,
+        matchesExpectedBridge: false,
+        error: error?.message || String(error),
+      };
+    }
+  });
+
+  return {
+    port: BRIDGE_LISTENER_PORT,
+    status: owners.length > 0 ? 'listening' : 'not-listening',
+    expectedBridgePath,
+    owners,
+    staleOwners: owners.filter((owner) => !owner.matchesExpectedBridge),
+  };
+}
+
 function parseLaunchAgentBridgePath(output) {
   const text = String(output || '');
   const match = text.match(/\/[^\n"]*evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge/);
@@ -237,11 +300,111 @@ function readLaunchAgentBridgeState(execFileSyncImpl = execFileSync) {
   }
 }
 
+function runTrustCommand(command, args, execFileSyncImpl = execFileSync) {
+  try {
+    const output = String(execFileSyncImpl(command, args, { encoding: 'utf8' }) || '').trim();
+    return {
+      ok: true,
+      command: [command, ...args].join(' '),
+      output,
+    };
+  } catch (error) {
+    const output = String(error?.stdout || '').trim();
+    const stderr = String(error?.stderr || '').trim();
+    return {
+      ok: false,
+      command: [command, ...args].join(' '),
+      output,
+      stderr,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+function findPythonCacheFiles(rootPath) {
+  const matches = [];
+  if (!fs.existsSync(rootPath)) return matches;
+
+  const stack = [rootPath];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '__pycache__') {
+          collectRelativeFiles(entryPath, rootPath, matches);
+        } else {
+          stack.push(entryPath);
+        }
+      } else if (entry.name.endsWith('.pyc') || entry.name.endsWith('.pyo')) {
+        matches.push(path.relative(rootPath, entryPath));
+      }
+    }
+  }
+
+  return uniqueStrings(matches).sort();
+}
+
+function collectRelativeFiles(directory, rootPath, matches) {
+  const stack = [directory];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) stack.push(entryPath);
+      else matches.push(path.relative(rootPath, entryPath));
+    }
+  }
+}
+
+function inspectInstalledAppTrustState(appPath = DEFAULT_APP_PATH, execFileSyncImpl = execFileSync) {
+  return {
+    codesign: runTrustCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], execFileSyncImpl),
+    spctl: runTrustCommand('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose', appPath], execFileSyncImpl),
+    pythonCacheFiles: findPythonCacheFiles(path.join(appPath, 'Contents', 'Resources', 'Bridge')),
+  };
+}
+
+function assertInstalledAppTrustStateClean(state) {
+  if (state.pythonCacheFiles.length > 0) {
+    throw new Error(
+      `Installed app bundle contains Python cache files that mutate the signed seal: ${state.pythonCacheFiles.join(
+        ', '
+      )}. Reinstall a fresh signed app before release proof.`
+    );
+  }
+  if (!state.codesign?.ok) {
+    throw new Error(
+      `Installed app codesign verification failed. ${state.codesign?.stderr || state.codesign?.error || ''}`.trim()
+    );
+  }
+  if (!state.spctl?.ok) {
+    throw new Error(
+      `Installed app Gatekeeper assessment failed. ${state.spctl?.stderr || state.spctl?.error || ''}`.trim()
+    );
+  }
+}
+
 function inspectDesktopProofState(appPath = DEFAULT_APP_PATH, execFileSyncImpl = execFileSync) {
   const expectedBridgePath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'evaos-desktop-bridge');
   const indexedApps = readIndexedWorkbenchApps(execFileSyncImpl);
   const runningProcesses = readRunningWorkbenchProcesses(execFileSyncImpl);
   const launchAgent = readLaunchAgentBridgeState(execFileSyncImpl);
+  const bridgeListener = readBridgeListenerState(expectedBridgePath, execFileSyncImpl);
   const staleIndexedApps = indexedApps.filter(
     (entry) => entry.path && entry.path !== appPath && entry.path.startsWith(LEXAR_CODEX_PREFIX)
   );
@@ -260,6 +423,8 @@ function inspectDesktopProofState(appPath = DEFAULT_APP_PATH, execFileSyncImpl =
     staleRunningProcesses,
     launchAgent,
     staleLaunchAgent,
+    bridgeListener,
+    staleBridgeListener: bridgeListener.staleOwners.length > 0,
   };
 }
 
@@ -281,6 +446,13 @@ function assertDesktopProofStateClean(state) {
   if (state.staleLaunchAgent) {
     throw new Error(
       `Workbench bridge LaunchAgent points to ${state.launchAgent.bridgePath}, expected ${state.expectedBridgePath}. Re-bootstrap the bundled bridge before Mac-control proof.`
+    );
+  }
+  if (state.staleBridgeListener) {
+    throw new Error(
+      `Port ${state.bridgeListener.port} is owned by a non-candidate bridge process: ${state.bridgeListener.staleOwners
+        .map((entry) => `${entry.pid || 'unknown'}:${entry.command || entry.error || 'unknown'}`)
+        .join(', ')}. Stop the stale listener or reinstall the signed candidate before Mac-control proof.`
     );
   }
 }
@@ -494,6 +666,7 @@ function safeReportForPlan(options) {
     packageVersion: options.packageVersion || 'unknown',
     bundleInfo: options.bundleInfo,
     desktopProofState: options.desktopProofState || null,
+    installedAppTrustState: options.installedAppTrustState || null,
     screenshots: plan.map((entry) => ({
       id: entry.id,
       route: entry.route,
@@ -552,6 +725,14 @@ function markdownForInstalledProof(report) {
     `- Stale running Workbench apps: \`${report.desktopProofState?.staleRunningProcesses?.length || 0}\``,
     `- Bridge LaunchAgent: \`${report.desktopProofState?.launchAgent?.status || 'not checked'}\``,
     `- Bridge path: \`${report.desktopProofState?.launchAgent?.bridgePath || 'none'}\``,
+    `- Bridge listener: \`${report.desktopProofState?.bridgeListener?.status || 'not checked'}\``,
+    `- Stale bridge listener owners: \`${report.desktopProofState?.bridgeListener?.staleOwners?.length || 0}\``,
+    '',
+    '## Installed App Trust',
+    '',
+    `- codesign verify: \`${report.installedAppTrustState?.codesign?.ok === true ? 'passed' : 'not checked'}\``,
+    `- Gatekeeper spctl: \`${report.installedAppTrustState?.spctl?.ok === true ? 'passed' : 'not checked'}\``,
+    `- Python cache files in signed bridge: \`${report.installedAppTrustState?.pythonCacheFiles?.length || 0}\``,
     '',
     '## Protocol Handler',
     '',
@@ -739,6 +920,8 @@ async function captureInstalledAppProof(options = {}) {
 
   const bundleInfo = options.bundleInfo || readInfoPlist(appPath);
   assertExpectedBundle(bundleInfo);
+  const installedAppTrustState = options.installedAppTrustState || inspectInstalledAppTrustState(appPath);
+  assertInstalledAppTrustStateClean(installedAppTrustState);
   const desktopProofState = options.desktopProofState || inspectDesktopProofState(appPath);
   assertDesktopProofStateClean(desktopProofState);
   let protocolHandler = options.protocolHandler || readLaunchServicesProtocolHandler(DEFAULT_PROTOCOL_SCHEME);
@@ -764,6 +947,7 @@ async function captureInstalledAppProof(options = {}) {
       executablePath,
       packageVersion: packageVersion(repoRoot),
       bundleInfo,
+      installedAppTrustState,
       desktopProofState,
       protocolHandler,
       plan: buildInstalledProofPlan(undefined, { expectedHead }),
@@ -815,6 +999,7 @@ async function captureInstalledAppProof(options = {}) {
       executablePath,
       packageVersion: packageVersion(repoRoot),
       bundleInfo,
+      installedAppTrustState,
       desktopProofState,
       protocolHandler,
       plan: proofPlan,
@@ -871,6 +1056,7 @@ async function captureInstalledAppProof(options = {}) {
     },
     packageVersion: packageVersion(repoRoot),
     bundleInfo,
+    installedAppTrustState,
     desktopProofState,
     protocolHandler,
     screenshots,
@@ -953,6 +1139,14 @@ async function main() {
     assertExpectedBundle(bundleInfo);
     const desktopProofState = inspectDesktopProofState(appPath);
     assertDesktopProofStateClean(desktopProofState);
+    const installedAppTrustState = fs.existsSync(appPath)
+      ? inspectInstalledAppTrustState(appPath)
+      : {
+          codesign: { ok: true, command: 'not checked', output: '' },
+          spctl: { ok: true, command: 'not checked', output: '' },
+          pythonCacheFiles: [],
+        };
+    assertInstalledAppTrustStateClean(installedAppTrustState);
     const plan = buildInstalledProofPlan(undefined, { expectedHead });
     const files = writeDryRunProofFiles({
       artifactRoot,
@@ -961,6 +1155,7 @@ async function main() {
       appPath,
       executablePath,
       bundleInfo,
+      installedAppTrustState,
       desktopProofState,
       protocolHandler: {
         scheme: DEFAULT_PROTOCOL_SCHEME,
@@ -1005,6 +1200,7 @@ module.exports = {
   artifactRootForHead,
   assertCanonicalProofAppPath,
   assertDesktopProofStateClean,
+  assertInstalledAppTrustStateClean,
   assertMacBuildVersion,
   assertMacVersionString,
   assertNoUnsafeProofText,
@@ -1016,11 +1212,13 @@ module.exports = {
   gitHead,
   installedExecutablePath,
   inspectDesktopProofState,
+  inspectInstalledAppTrustState,
   markdownForInstalledProof,
   packageVersion,
   parseAppBundlePaths,
   parsePlistArrayOutput,
   parseRunningWorkbenchProcesses,
+  parseBridgeListenerPids,
   parseLaunchAgentBridgePath,
   parseLaunchServicesProtocolHandler,
   readIndexedWorkbenchApps,
