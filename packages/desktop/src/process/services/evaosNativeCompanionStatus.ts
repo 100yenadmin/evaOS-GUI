@@ -445,7 +445,7 @@ async function runConnectorStartAction(
 ): Promise<IEvaosNativeCompanionActionResult> {
   const before = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
   const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before);
-  const ready = connectorServiceIsReady(status);
+  const ready = workbenchManagedConnectorIsReady(bridgePath, status);
   if (ready) {
     return nativeActionResult(
       'connector_start',
@@ -536,6 +536,10 @@ function workbenchManagedConnectorMatchesStatus(bridgePath: string, status: unkn
   );
 }
 
+function workbenchManagedConnectorIsReady(bridgePath: string, result: BridgeCommandResult): boolean {
+  return connectorServiceIsReady(result) && workbenchManagedConnectorMatchesStatus(bridgePath, result.data);
+}
+
 function workbenchManagedConnectorEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const appPath = workbenchAppPathFromResources();
   return {
@@ -580,16 +584,16 @@ async function waitForConnectorServiceReadyAfterStart(
   started: BridgeCommandResult
 ): Promise<BridgeCommandResult> {
   const startedStatus = connectorServiceStatusFromStartResult(started);
-  if (startedStatus && connectorServiceIsReady(startedStatus)) return startedStatus;
+  if (startedStatus && workbenchManagedConnectorIsReady(bridgePath, startedStatus)) return startedStatus;
 
   let latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  if (connectorServiceIsReady(latest)) return latest;
+  if (workbenchManagedConnectorIsReady(bridgePath, latest)) return latest;
 
   const sleep = deps.sleep ?? defaultSleep;
   for (let attempt = 1; attempt < CONNECTOR_START_STATUS_ATTEMPTS; attempt++) {
     await sleep(CONNECTOR_START_STATUS_RETRY_DELAY_MS);
     latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-    if (connectorServiceIsReady(latest)) return latest;
+    if (workbenchManagedConnectorIsReady(bridgePath, latest)) return latest;
   }
 
   return latest;
@@ -786,6 +790,29 @@ async function ensureCustomerMacConnectorGrantAction(
     );
   }
 
+  const controlSession =
+    prepared?.controlSession ??
+    (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
+  let localCustomerMac = prepared?.customerMac;
+  let localPermissions = localCustomerMac
+    ? effectiveCustomerMacPermissions(permissionView(localCustomerMac.data?.permissions), controlSession)
+    : undefined;
+  if (!workbenchManagedConnectorIsReady(bridgePath, sessionConnector)) {
+    sessionConnector = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, sessionConnector);
+    if (!workbenchManagedConnectorIsReady(bridgePath, sessionConnector)) {
+      return nativeActionResult(
+        resultAction,
+        'repair_required',
+        'Mac control is ready locally, but Workbench could not replace the stale connector with this signed app session. Stop Mac access, then reconnect Mac control.',
+        {
+          sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
+          auditId: localCustomerMac?.auditId ?? controlSession.auditId,
+          auditIds: compactStrings([localCustomerMac?.auditId, controlSession.auditId]),
+        }
+      );
+    }
+  }
+
   let connectorUrl = connectorUrlFromStatus(sessionConnector.data);
   let connectorToken = connectorTokenFromStatus(sessionConnector.data, deps);
   if (!connectorUrl || !connectorToken) {
@@ -801,19 +828,32 @@ async function ensureCustomerMacConnectorGrantAction(
   }
 
   let customerMac = await runConnectorCustomerMacStatus({ connectorUrl, connectorToken, deps });
-  const controlSession =
-    prepared?.controlSession ??
-    (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
   let permissions = permissionView(customerMac.data?.permissions);
   if (!customerMac.ok || !hasGrantedCorePermissions(permissions)) {
-    const localCustomerMac =
-      prepared?.customerMac ?? (await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps));
-    const localPermissions = effectiveCustomerMacPermissions(
+    localCustomerMac =
+      localCustomerMac ?? (await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps));
+    localPermissions = effectiveCustomerMacPermissions(
       permissionView(localCustomerMac.data?.permissions),
       controlSession
     );
-    if (localCustomerMac.ok && hasGrantedCorePermissions(localPermissions)) {
+    if (
+      localCustomerMac.ok &&
+      hasGrantedCorePermissions(localPermissions) &&
+      !workbenchManagedConnectorIsReady(bridgePath, sessionConnector)
+    ) {
       sessionConnector = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, sessionConnector);
+      if (!workbenchManagedConnectorIsReady(bridgePath, sessionConnector)) {
+        return nativeActionResult(
+          resultAction,
+          'repair_required',
+          'Mac control is ready locally, but Workbench could not replace the stale connector with this signed app session. Stop Mac access, then reconnect Mac control.',
+          {
+            sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
+            auditId: localCustomerMac.auditId,
+            auditIds: compactStrings([localCustomerMac.auditId, controlSession.auditId]),
+          }
+        );
+      }
       connectorUrl = connectorUrlFromStatus(sessionConnector.data);
       connectorToken = connectorTokenFromStatus(sessionConnector.data, deps);
       if (connectorUrl && connectorToken) {

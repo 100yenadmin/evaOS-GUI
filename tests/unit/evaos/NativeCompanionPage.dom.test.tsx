@@ -1190,29 +1190,62 @@ describe('NativeCompanionPage', () => {
         },
       },
     });
-    bridgeMocks.runAction.mockResolvedValueOnce({
-      success: true,
-      data: {
-        action: 'create_pairing_prompt',
-        status: 'succeeded',
-        message: 'Pairing prompt is ready. Paste it into evaOS/OpenClaw or Hermes to complete the link.',
-        sourcePointer: 'native-companion:pairing-prompt',
-        auditIds: ['audit-pairing'],
-        refreshRecommended: false,
-        pairing: {
-          customerId: 'golden',
-          pairingCode: 'PAIR-1234',
-          setupPrompt: 'Customer: golden\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with this code.',
+    bridgeMocks.runAction
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'ensure_customer_mac_connector_grant',
+          status: 'succeeded',
+          message: 'Mac control is connected for this evaOS Workbench session.',
+          sourcePointer: 'native-companion:connector-grant-ready',
+          auditIds: ['audit-grant'],
+          refreshRecommended: false,
+          connectorGrant: {
+            ok: true,
+            customerId: 'golden',
+            deviceId: 'device-golden',
+            grantId: 'grant-golden',
+            grantState: 'active',
+            auditId: 'audit-grant',
+          },
+          agentPairingStatus: 'ready_for_agent_pairing',
         },
-        agentPairingStatus: 'pairing_prompt_created',
-      },
-    });
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'create_pairing_prompt',
+          status: 'succeeded',
+          message: 'Pairing prompt is ready. Paste it into evaOS/OpenClaw or Hermes to complete the link.',
+          sourcePointer: 'native-companion:pairing-prompt',
+          auditIds: ['audit-pairing'],
+          refreshRecommended: false,
+          pairing: {
+            customerId: 'golden',
+            pairingCode: 'PAIR-1234',
+            setupPrompt: 'Customer: golden\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with this code.',
+          },
+          agentPairingStatus: 'pairing_prompt_created',
+        },
+      });
 
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText(/Mac control target: admin@100yen\.org/)).toBeInTheDocument();
+    expect(await screen.findByText(/Mac control target: Golden VM \(admin@100yen\.org\)/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/Mac control target: Benjamin Kennedy/i);
+
+    await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
+    await waitFor(() =>
+      expect(screen.getAllByText('Mac control is connected for this evaOS Workbench session.').length).toBeGreaterThan(
+        0
+      )
+    );
+    expect(bridgeMocks.runAction).toHaveBeenLastCalledWith({
+      action: 'ensure_customer_mac_connector_grant',
+      customerId: 'golden',
+      agentLabel: 'evaOS Workbench',
+    });
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));

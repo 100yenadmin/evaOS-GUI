@@ -369,7 +369,7 @@ const NativeCompanionPage: React.FC = () => {
                 </p>
                 {selectedPairingTarget ? (
                   <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>
-                    Mac control target: {selectedPairingTarget.displayName || selectedPairingTarget.customerId}
+                    Mac control target: {macPairingTargetLabel(selectedPairingTarget)}
                   </p>
                 ) : null}
               </div>
@@ -936,6 +936,14 @@ function selectMacPairingTarget(input: {
     (input.isOperator ? pairableTargets.find((target) => target.customerId === 'golden') : undefined) ??
     pairableTargets[0]
   );
+}
+
+function macPairingTargetLabel(target: IEvaosCustomerTargetView): string {
+  const displayName = target.displayName?.trim();
+  if (!displayName || displayName === target.customerId) return target.customerId;
+  if (target.customerId === 'golden' && displayName.includes('@')) return `Golden VM (${displayName})`;
+  if (displayName.includes('@')) return `${target.customerId} (${displayName})`;
+  return displayName;
 }
 
 function isPairableMacControlTarget(target: IEvaosCustomerTargetView): boolean {
