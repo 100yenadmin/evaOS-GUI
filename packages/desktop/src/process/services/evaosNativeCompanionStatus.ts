@@ -444,25 +444,7 @@ async function runConnectorStartAction(
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
   const before = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  if (connectorServiceIsReady(before) && workbenchManagedConnectorMatchesStatus(bridgePath, before.data)) {
-    return nativeActionResult(
-      'connector_start',
-      'succeeded',
-      'Mac Access connector is running from this Workbench session.',
-      {
-        sourcePointer: 'native-companion:workbench-session-connector-start',
-        auditId: before.auditId,
-        auditIds: compactStrings([before.auditId]),
-      }
-    );
-  }
-
-  await runBridgeCommand(bridgePath, ['connector-service', 'stop', '--json'], deps);
-  stopWorkbenchManagedConnector();
-
-  const host = connectorSessionHostFromStatus(before.data) ?? '127.0.0.1';
-  startWorkbenchManagedConnector(bridgePath, host, deps);
-  const status = await waitForConnectorServiceReadyAfterStart(bridgePath, deps, before);
+  const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before);
   const ready = connectorServiceIsReady(status);
   if (ready) {
     return nativeActionResult(
@@ -483,6 +465,24 @@ async function runConnectorStartAction(
     auditId: status.auditId ?? before.auditId,
     auditIds: compactStrings([status.auditId, before.auditId]),
   });
+}
+
+async function ensureWorkbenchManagedConnectorReady(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps,
+  before?: BridgeCommandResult
+): Promise<BridgeCommandResult> {
+  const current = before ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
+  if (connectorServiceIsReady(current) && workbenchManagedConnectorMatchesStatus(bridgePath, current.data)) {
+    return current;
+  }
+
+  await runBridgeCommand(bridgePath, ['connector-service', 'stop', '--json'], deps);
+  stopWorkbenchManagedConnector();
+
+  const host = connectorSessionHostFromStatus(current.data) ?? '127.0.0.1';
+  startWorkbenchManagedConnector(bridgePath, host, deps);
+  return waitForConnectorServiceReadyAfterStart(bridgePath, deps, current);
 }
 
 function startWorkbenchManagedConnector(bridgePath: string, host: string, deps: EvaosNativeCompanionStatusDeps): void {
@@ -762,7 +762,8 @@ async function ensureCustomerMacConnectorGrantAction(
 
   const connectorService =
     prepared?.connectorService ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
-  if (!connectorServiceIsReady(connectorService)) {
+  let sessionConnector = connectorService;
+  if (!connectorServiceIsReady(sessionConnector)) {
     return nativeActionResult(
       resultAction,
       'repair_required',
@@ -772,7 +773,7 @@ async function ensureCustomerMacConnectorGrantAction(
       }
     );
   }
-  if (!connectorServiceHasSecureRegistrationHost(connectorService.data)) {
+  if (!connectorServiceHasSecureRegistrationHost(sessionConnector.data)) {
     return nativeActionResult(
       resultAction,
       'repair_required',
@@ -785,8 +786,8 @@ async function ensureCustomerMacConnectorGrantAction(
     );
   }
 
-  const connectorUrl = connectorUrlFromStatus(connectorService.data);
-  const connectorToken = connectorTokenFromStatus(connectorService.data, deps);
+  let connectorUrl = connectorUrlFromStatus(sessionConnector.data);
+  let connectorToken = connectorTokenFromStatus(sessionConnector.data, deps);
   if (!connectorUrl || !connectorToken) {
     return nativeActionResult(
       resultAction,
@@ -799,11 +800,28 @@ async function ensureCustomerMacConnectorGrantAction(
     );
   }
 
-  const customerMac = await runConnectorCustomerMacStatus({ connectorUrl, connectorToken, deps });
+  let customerMac = await runConnectorCustomerMacStatus({ connectorUrl, connectorToken, deps });
   const controlSession =
     prepared?.controlSession ??
     (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
-  const permissions = permissionView(customerMac.data?.permissions);
+  let permissions = permissionView(customerMac.data?.permissions);
+  if (!customerMac.ok || !hasGrantedCorePermissions(permissions)) {
+    const localCustomerMac =
+      prepared?.customerMac ?? (await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps));
+    const localPermissions = effectiveCustomerMacPermissions(
+      permissionView(localCustomerMac.data?.permissions),
+      controlSession
+    );
+    if (localCustomerMac.ok && hasGrantedCorePermissions(localPermissions)) {
+      sessionConnector = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, sessionConnector);
+      connectorUrl = connectorUrlFromStatus(sessionConnector.data);
+      connectorToken = connectorTokenFromStatus(sessionConnector.data, deps);
+      if (connectorUrl && connectorToken) {
+        customerMac = await runConnectorCustomerMacStatus({ connectorUrl, connectorToken, deps });
+        permissions = permissionView(customerMac.data?.permissions);
+      }
+    }
+  }
   if (!customerMac.ok || !hasGrantedCorePermissions(permissions)) {
     const detail = customerMac.ok
       ? 'The brokered connector endpoint reports missing Accessibility or Screen Recording.'

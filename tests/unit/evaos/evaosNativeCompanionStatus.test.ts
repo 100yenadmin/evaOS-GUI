@@ -1419,8 +1419,13 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           running: true,
           health: { reachable: true },
+          managed_by: 'launchagent',
           tailnet_ip: '100.64.0.10',
           token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
+        },
+        'connector-service stop --json': {
+          ok: true,
+          action: 'stop',
         },
         'customer-mac status --json': {
           ok: true,
@@ -1458,6 +1463,7 @@ describe('evaosNativeCompanionStatus', () => {
       },
       {
         ensureCustomerMacConnectorGrant,
+        spawnConnectorProcess: vi.fn(() => mockChildProcess()),
         runConnectorCommand: vi.fn(async () => ({
           ok: true,
           auditId: 'audit-live-connector',
@@ -1482,6 +1488,129 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(result.message).toContain('live connector endpoint');
     expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
+    expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect(deps.runConnectorCommand).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(result)).not.toMatch(/secret-token|100\.64\.0\.10|8765|token_path/i);
+  });
+
+  it('restarts a stale live connector before registering the first-party grant when local permission proof is green', async () => {
+    const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
+      ok: true,
+      customerId: 'golden',
+      deviceId: 'device-golden',
+      grantId: 'grant-golden',
+      grantState: 'active',
+      auditId: 'audit-grant',
+    }));
+    const runConnectorCommand = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        auditId: 'audit-live-stale',
+        data: {
+          permissions: {
+            accessibility: { status: 'missing' },
+            screen_recording: { status: 'missing' },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        auditId: 'audit-live-ready',
+        data: {
+          device: {
+            hostname: 'Proof-Mac.local',
+          },
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      });
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true, host: '100.64.0.10' },
+          managed_by: 'launchagent',
+          tailnet_ip: '100.64.0.10',
+          token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
+        },
+        'connector-service stop --json': {
+          ok: true,
+          action: 'stop',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-local-mac',
+          data: {
+            device: {
+              hostname: 'Proof-Mac.local',
+            },
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            ready: true,
+            active: true,
+            mode: 'ask-permission',
+            kill_switch: false,
+          },
+        },
+        'audit-tail --json --limit 12': {
+          ok: true,
+          data: {
+            records: [{ audit_id: 'audit-local-mac' }, { audit_id: 'audit-control' }],
+          },
+        },
+      },
+      {
+        ensureCustomerMacConnectorGrant,
+        runConnectorCommand,
+        readTextFile: vi.fn(() => 'secret-token-abcdef1234567890\n'),
+        spawnConnectorProcess: vi.fn(() => mockChildProcess()),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'setup_check', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:connector-grant-ready',
+      connectorGrant: {
+        customerId: 'golden',
+        grantId: 'grant-golden',
+      },
+    });
+    expect(deps.spawnConnectorProcess).toHaveBeenCalledWith(
+      bundledBridgePath,
+      ['serve', '--host', '100.64.0.10', '--port', '8765'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          EVAOS_DESKTOP_BRIDGE_MANAGED_BY: 'workbench-session',
+          EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID: 'com.evaos.workbench',
+        }),
+      })
+    );
+    expect(runConnectorCommand).toHaveBeenCalledTimes(2);
+    expect(ensureCustomerMacConnectorGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: 'golden',
+        deviceIdentifier: 'Proof-Mac.local',
+        permissionState: {
+          accessibility: 'granted',
+          screen_recording: 'granted',
+        },
+      })
+    );
     expect(JSON.stringify(result)).not.toMatch(/secret-token|100\.64\.0\.10|8765|token_path/i);
   });
 
