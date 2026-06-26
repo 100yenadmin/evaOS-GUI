@@ -28,14 +28,19 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     staleIndexedApps: Array<{ bundleId: string; path: string; status: string }>;
     runningProcesses: Array<{ pid: string | null; command: string | null }>;
     staleRunningProcesses: Array<{ pid: string | null; command: string }>;
-    launchAgent: { label: string; status: string; bridgePath: string | null };
+    launchAgent: { label: string; status: string; bridgePath: string | null; pid?: string | null };
     staleLaunchAgent: boolean;
     bridgeListener?: {
       port: string;
       status: string;
       expectedBridgePath: string;
-      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
-      staleOwners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
+      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean; ownershipSource?: string }>;
+      staleOwners: Array<{
+        pid: string;
+        command: string | null;
+        matchesExpectedBridge: boolean;
+        ownershipSource?: string;
+      }>;
     };
     staleBridgeListener?: boolean;
   }) => void;
@@ -125,14 +130,19 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     staleIndexedApps: Array<{ bundleId: string; path: string; status: string }>;
     runningProcesses: Array<{ pid: string | null; command: string | null }>;
     staleRunningProcesses: Array<{ pid: string | null; command: string }>;
-    launchAgent: { label: string; status: string; bridgePath: string | null };
+    launchAgent: { label: string; status: string; bridgePath: string | null; pid?: string | null };
     staleLaunchAgent: boolean;
     bridgeListener: {
       port: string;
       status: string;
       expectedBridgePath: string;
-      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
-      staleOwners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean }>;
+      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean; ownershipSource?: string }>;
+      staleOwners: Array<{
+        pid: string;
+        command: string | null;
+        matchesExpectedBridge: boolean;
+        ownershipSource?: string;
+      }>;
     };
     staleBridgeListener: boolean;
   };
@@ -147,6 +157,7 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
   parseAppBundlePaths: (output: string) => string[];
   parseBridgeListenerPids: (output: string) => string[];
   parseLaunchAgentBridgePath: (output: string) => string | null;
+  parseLaunchAgentPid: (output: string) => string | null;
   runProofPlanAction: (page: unknown, action?: string) => Promise<void>;
   writeDryRunProofFiles: (options: {
     artifactRoot: string;
@@ -196,6 +207,62 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     evidence: string;
   };
 };
+
+function argsEqual(actual: string[], expected: string[]): boolean {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
+function exactLaunchAgentPythonListenerExec(command: string, args: string[]): string {
+  if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {
+    return '/Applications/evaOS Workbench.app\n';
+  }
+  if (command === '/bin/ps') {
+    if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
+    if (argsEqual(args, ['-p', '18016', '-o', 'command='])) {
+      return '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --host 100.64.0.4 --port 8765\n';
+    }
+  }
+  if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
+    return '18016\n';
+  }
+  if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
+  if (command === '/bin/launchctl' && argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])) {
+    return [
+      'gui/501/com.electricsheep.evaos-desktop-bridge = {',
+      '  state = running',
+      '  program = /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+      '  arguments = {',
+      '    /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+      '    serve',
+      '    --host',
+      '    100.64.0.4',
+      '    --port',
+      '    8765',
+      '  }',
+      '  pid = 18016',
+      '}',
+    ].join('\n');
+  }
+  throw new Error(`unexpected command ${command} ${args.join(' ')}`);
+}
+
+function homebrewLaunchAgentNoListenerExec(command: string, args: string[]): string {
+  if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {
+    return '/Applications/evaOS Workbench.app\n';
+  }
+  if (command === '/bin/ps' && argsEqual(args, ['-axo', 'pid=,command='])) return '';
+  if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) return '';
+  if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
+  if (command === '/bin/launchctl' && argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])) {
+    return [
+      'gui/501/com.electricsheep.evaos-desktop-bridge = {',
+      '  state = waiting',
+      '  program = /opt/homebrew/bin/evaos-desktop-bridge',
+      '}',
+    ].join('\n');
+  }
+  throw new Error(`unexpected command ${command} ${args.join(' ')}`);
+}
 
 describe('evaOS installed app product proof', () => {
   it('exposes a package script for agents to run the installed-app proof', () => {
@@ -495,6 +562,17 @@ describe('evaOS installed app product proof', () => {
         'program = /Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge\n'
       )
     ).toBe('/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge');
+    expect(
+      installedAppProof.parseLaunchAgentBridgePath(
+        'program = /Applications/evaOS.app/Contents/Resources/Bridge/evaos-desktop-bridge\n'
+      )
+    ).toBe('/Applications/evaOS.app/Contents/Resources/Bridge/evaos-desktop-bridge');
+    expect(installedAppProof.parseLaunchAgentBridgePath('program = /opt/homebrew/bin/evaos-desktop-bridge\n')).toBe(
+      '/opt/homebrew/bin/evaos-desktop-bridge'
+    );
+    expect(
+      installedAppProof.parseLaunchAgentBridgePath('program = /opt/homebrew/bin/evaos-desktop-bridge-helper\n')
+    ).toBeNull();
   });
 
   it('fails desktop proof hygiene for Spotlight duplicates, stale processes, or stale bridge paths', () => {
@@ -601,6 +679,20 @@ describe('evaOS installed app product proof', () => {
     ).toThrow(/Port 8765 is owned by a non-candidate bridge process/);
   });
 
+  it('fails desktop proof hygiene when a non-candidate LaunchAgent is loaded without an active listener', () => {
+    const state = installedAppProof.inspectDesktopProofState(
+      '/Applications/evaOS Workbench.app',
+      homebrewLaunchAgentNoListenerExec
+    );
+
+    expect(state.bridgeListener).toMatchObject({ status: 'not-listening', staleOwners: [] });
+    expect(state.launchAgent.bridgePath).toBe('/opt/homebrew/bin/evaos-desktop-bridge');
+    expect(state.staleLaunchAgent).toBe(true);
+    expect(() => installedAppProof.assertDesktopProofStateClean(state)).toThrow(
+      /Workbench bridge LaunchAgent points to \/opt\/homebrew\/bin\/evaos-desktop-bridge/
+    );
+  });
+
   it('summarizes desktop proof hygiene from macOS system inventories', () => {
     const fakeExec = (command: string, args: string[]) => {
       if (command === '/usr/bin/mdfind' && args[0].includes('com.evaos.workbench.beta')) {
@@ -673,6 +765,48 @@ describe('evaOS installed app product proof', () => {
     expect(state.bridgeListener.staleOwners).toEqual([
       expect.objectContaining({
         pid: '17959',
+        matchesExpectedBridge: false,
+      }),
+    ]);
+  });
+
+  it('accepts a Python listener when launchd owns the exact installed bridge program', () => {
+    const state = installedAppProof.inspectDesktopProofState(
+      '/Applications/evaOS Workbench.app',
+      exactLaunchAgentPythonListenerExec
+    );
+
+    expect(installedAppProof.parseLaunchAgentPid('  pid = 18016')).toBe('18016');
+    expect(installedAppProof.parseLaunchAgentPid('18016 0 com.electricsheep.evaos-desktop-bridge')).toBe('18016');
+    expect(installedAppProof.parseLaunchAgentPid('- 0 com.electricsheep.evaos-desktop-bridge')).toBeNull();
+    expect(state.staleBridgeListener).toBe(false);
+    expect(state.bridgeListener.owners).toEqual([
+      expect.objectContaining({
+        pid: '18016',
+        matchesExpectedBridge: true,
+        ownershipSource: 'launchagent-program',
+      }),
+    ]);
+    expect(state.bridgeListener.staleOwners).toEqual([]);
+  });
+
+  it('keeps the listener stale when launchd owns the expected bridge but a different PID listens', () => {
+    const mismatchedExec = (command: string, args: string[]): string => {
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
+        return '99999\n';
+      }
+      if (command === '/bin/ps' && argsEqual(args, ['-p', '99999', '-o', 'command='])) {
+        return '/usr/bin/python -m something_else\n';
+      }
+      return exactLaunchAgentPythonListenerExec(command, args);
+    };
+
+    const state = installedAppProof.inspectDesktopProofState('/Applications/evaOS Workbench.app', mismatchedExec);
+
+    expect(state.staleBridgeListener).toBe(true);
+    expect(state.bridgeListener.staleOwners).toEqual([
+      expect.objectContaining({
+        pid: '99999',
         matchesExpectedBridge: false,
       }),
     ]);

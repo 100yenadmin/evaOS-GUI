@@ -225,7 +225,7 @@ describe('NativeCompanionPage', () => {
         releasedWorkbench: {
           installed: true,
           running: false,
-          path: '/Applications/evaOS.app',
+          path: '/Applications/evaOS Workbench.app',
           version: '0.6.28',
         },
         bridgeCli: {
@@ -268,7 +268,7 @@ describe('NativeCompanionPage', () => {
       success: true,
       data: {
         opened: true,
-        path: '/Applications/evaOS.app',
+        path: '/Applications/evaOS Workbench.app',
         message: 'Opened released evaOS Workbench for native pairing and repair.',
       },
     });
@@ -384,7 +384,7 @@ describe('NativeCompanionPage', () => {
         releasedWorkbench: {
           installed: true,
           running: false,
-          path: '/Applications/evaOS.app',
+          path: '/Applications/evaOS Workbench.app',
           version: '0.6.28',
         },
         bridgeCli: {
@@ -468,7 +468,7 @@ describe('NativeCompanionPage', () => {
         releasedWorkbench: {
           installed: true,
           running: false,
-          path: '/Applications/evaOS.app',
+          path: '/Applications/evaOS Workbench.app',
           version: '0.6.28',
         },
         bridgeCli: {

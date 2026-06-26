@@ -259,10 +259,36 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
   };
 }
 
+/**
+ * Extracts the bridge executable path from `launchctl` output.
+ * Supports `program = <path>` entries and argument-only lines from the
+ * LaunchAgent arguments block.
+ *
+ * @param {unknown} output Raw launchctl stdout.
+ * @returns {string | null} Bridge executable path, or null when absent.
+ */
 function parseLaunchAgentBridgePath(output) {
   const text = String(output || '');
-  const match = text.match(/\/[^\n"]*evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge/);
-  return match ? match[0] : null;
+  const programMatch = text.match(/^\s*program\s*=\s*"?(\/[^\n"]*evaos-desktop-bridge)(?=$|[\s"])"?\s*$/m);
+  if (programMatch) return programMatch[1];
+  const argumentMatch = text.match(/^\s*(\/[^\n"]*evaos-desktop-bridge)(?=$|[\s"])\s*$/m);
+  return argumentMatch ? argumentMatch[1] : null;
+}
+
+/**
+ * Extracts the bridge LaunchAgent PID from `launchctl` output.
+ * Supports `pid = <n>` from `launchctl print` and the
+ * `<pid> <status> com.electricsheep.evaos-desktop-bridge` row from `launchctl list`.
+ *
+ * @param {string} output Raw launchctl stdout.
+ * @returns {string | null} PID as a string, or null when absent.
+ */
+function parseLaunchAgentPid(output) {
+  const text = String(output || '');
+  const match =
+    text.match(/^\s*pid\s*=\s*(\d+)\s*$/m) ||
+    text.match(/^\s*(\d+)\s+-?\d+\s+com\.electricsheep\.evaos-desktop-bridge\s*$/m);
+  return match ? match[1] : null;
 }
 
 function readLaunchAgentBridgeState(execFileSyncImpl = execFileSync) {
@@ -287,12 +313,14 @@ function readLaunchAgentBridgeState(execFileSyncImpl = execFileSync) {
       label: BRIDGE_LAUNCH_AGENT_LABEL,
       status: 'loaded',
       bridgePath: parseLaunchAgentBridgePath(output),
+      pid: parseLaunchAgentPid(output),
     };
   } catch (error) {
     return {
       label: BRIDGE_LAUNCH_AGENT_LABEL,
       status: 'not-loaded',
       bridgePath: null,
+      pid: null,
       error: error?.message || String(error),
     };
   }
@@ -406,15 +434,15 @@ function inspectDesktopProofState(appPath = DEFAULT_APP_PATH, execFileSyncImpl =
   const indexedApps = readIndexedWorkbenchApps(execFileSyncImpl);
   const runningProcesses = readRunningWorkbenchProcesses(execFileSyncImpl);
   const launchAgent = readLaunchAgentBridgeState(execFileSyncImpl);
-  const bridgeListener = readBridgeListenerState(expectedBridgePath, execFileSyncImpl);
+  const rawBridgeListener = readBridgeListenerState(expectedBridgePath, execFileSyncImpl);
+  const bridgeListener = reconcileBridgeListenerWithLaunchAgent(rawBridgeListener, launchAgent, expectedBridgePath);
   const staleIndexedApps = indexedApps.filter(
     (entry) => entry.path && entry.path !== appPath && entry.path.startsWith(LEXAR_CODEX_PREFIX)
   );
   const staleRunningProcesses = runningProcesses.filter(
     (entry) => entry.command && entry.command.includes(`${LEXAR_CODEX_PREFIX}`) && !entry.command.includes(appPath)
   );
-  const staleLaunchAgent =
-    launchAgent.status === 'loaded' && launchAgent.bridgePath && launchAgent.bridgePath !== expectedBridgePath;
+  const staleLaunchAgent = launchAgent.status === 'loaded' && launchAgent.bridgePath !== expectedBridgePath;
 
   return {
     expectedAppPath: appPath,
@@ -427,6 +455,36 @@ function inspectDesktopProofState(appPath = DEFAULT_APP_PATH, execFileSyncImpl =
     staleLaunchAgent,
     bridgeListener,
     staleBridgeListener: bridgeListener.staleOwners.length > 0,
+  };
+}
+
+function reconcileBridgeListenerWithLaunchAgent(bridgeListener, launchAgent, expectedBridgePath) {
+  if (
+    !launchAgent ||
+    launchAgent.status !== 'loaded' ||
+    launchAgent.bridgePath !== expectedBridgePath ||
+    !launchAgent.pid ||
+    !Array.isArray(bridgeListener?.owners)
+  ) {
+    return bridgeListener;
+  }
+
+  const owners = bridgeListener.owners.map((owner) => {
+    if (String(owner.pid || '') !== String(launchAgent.pid)) {
+      return owner;
+    }
+
+    return {
+      ...owner,
+      matchesExpectedBridge: true,
+      ownershipSource: 'launchagent-program',
+    };
+  });
+
+  return {
+    ...bridgeListener,
+    owners,
+    staleOwners: owners.filter((owner) => !owner.matchesExpectedBridge),
   };
 }
 
@@ -447,7 +505,7 @@ function assertDesktopProofStateClean(state) {
   }
   if (state.staleLaunchAgent) {
     throw new Error(
-      `Workbench bridge LaunchAgent points to ${state.launchAgent.bridgePath}, expected ${state.expectedBridgePath}. Re-bootstrap the bundled bridge before Mac-control proof.`
+      `Workbench bridge LaunchAgent points to ${state.launchAgent.bridgePath || 'unknown program'}, expected ${state.expectedBridgePath}. Re-bootstrap the bundled bridge before Mac-control proof.`
     );
   }
   if (state.staleBridgeListener) {
@@ -1222,6 +1280,7 @@ module.exports = {
   parseRunningWorkbenchProcesses,
   parseBridgeListenerPids,
   parseLaunchAgentBridgePath,
+  parseLaunchAgentPid,
   parseLaunchServicesProtocolHandler,
   readIndexedWorkbenchApps,
   readLaunchAgentBridgeState,
