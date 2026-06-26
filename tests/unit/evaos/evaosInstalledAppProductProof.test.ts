@@ -691,6 +691,8 @@ describe('evaOS installed app product proof', () => {
   });
 
   it('fails installed-app trust when codesign or Gatekeeper rejects the candidate', () => {
+    const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-app-codesign-'));
+    fs.mkdirSync(path.join(tempApp, 'Contents/Resources/Bridge'), { recursive: true });
     const fakeExec = (command: string) => {
       if (command === '/usr/bin/codesign') {
         const error = new Error('codesign failed') as Error & { stderr: string };
@@ -700,7 +702,7 @@ describe('evaOS installed app product proof', () => {
       return '';
     };
 
-    const trust = installedAppProof.inspectInstalledAppTrustState('/Applications/evaOS Workbench.app', fakeExec);
+    const trust = installedAppProof.inspectInstalledAppTrustState(tempApp, fakeExec);
 
     expect(trust.codesign.ok).toBe(false);
     expect(() => installedAppProof.assertInstalledAppTrustStateClean(trust)).toThrow(/codesign verification failed/);
