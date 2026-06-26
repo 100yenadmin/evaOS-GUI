@@ -276,6 +276,18 @@ export PYTHONNOUSERSITE=1
 export PYTHONPATH="$BRIDGE_DIR/src"
 export PATH="$BRIDGE_DIR/bin:$PATH"
 export PYTHONDONTWRITEBYTECODE=1
+
+CACHE_ROOT="\${EVAOS_DESKTOP_BRIDGE_CACHE_DIR:-}"
+if [ -z "$CACHE_ROOT" ]; then
+  if [ -n "\${HOME:-}" ]; then
+    CACHE_ROOT="$HOME/Library/Caches/evaos-desktop-bridge"
+  else
+    CACHE_ROOT="/tmp/evaos-desktop-bridge-cache"
+  fi
+fi
+mkdir -p "$CACHE_ROOT/pycache" 2>/dev/null || true
+export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
+
 exec "$PYTHON_BIN" -S -m evaos_desktop_bridge.cli "$@"
 `;
 }

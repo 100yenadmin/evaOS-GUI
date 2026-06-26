@@ -41,6 +41,7 @@ describe('installQuitCleanup', () => {
       markExplicitQuit: () => calls.push('mark-explicit-quit'),
       destroyTray: () => calls.push('destroy-tray'),
       disposeCronResumeListener: () => calls.push('dispose-cron'),
+      stopNativeCompanionConnector: () => calls.push('stop-native-companion'),
       stopBackend,
       destroyPetWindow: () => calls.push('destroy-pet'),
       logInfo: vi.fn(),
@@ -59,6 +60,7 @@ describe('installQuitCleanup', () => {
       'mark-explicit-quit',
       'destroy-tray',
       'dispose-cron',
+      'stop-native-companion',
       'stop-backend-start',
     ]);
 
@@ -71,6 +73,7 @@ describe('installQuitCleanup', () => {
       'mark-explicit-quit',
       'destroy-tray',
       'dispose-cron',
+      'stop-native-companion',
       'stop-backend-start',
       'destroy-pet',
       'quit-app',

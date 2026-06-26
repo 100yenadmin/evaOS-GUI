@@ -4,13 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { execFile as execFileCallback } from 'node:child_process';
+import {
+  execFile as execFileCallback,
+  spawn as spawnCallback,
+  type ChildProcess,
+  type SpawnOptions,
+} from 'node:child_process';
 import fs from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { homedir, hostname } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   IEvaosNativeCompanionActionRequest,
@@ -36,6 +41,8 @@ const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
+const CONNECTOR_PORT = 8765;
+const WORKBENCH_BUNDLE_ID = 'com.evaos.workbench';
 const NATIVE_COMPANION_FIXTURE_STATES = [
   'ready',
   'repair_required',
@@ -81,6 +88,7 @@ export type EvaosNativeCompanionStatusDeps = {
     params?: Record<string, unknown>;
   }) => Promise<BridgeCommandResult>;
   readTextFile?: (path: string) => string;
+  spawnConnectorProcess?: (file: string, args: string[], options: SpawnOptions) => ChildProcess;
 };
 
 type BridgePayload = {
@@ -102,6 +110,14 @@ type BridgeCommandResult = {
   errorCode?: string;
   errorMessage?: string;
 };
+
+let workbenchManagedConnector:
+  | {
+      bridgePath: string;
+      host: string;
+      process: ChildProcess;
+    }
+  | undefined;
 
 export async function getEvaosNativeCompanionStatus(
   deps: EvaosNativeCompanionStatusDeps = {}
@@ -427,32 +443,134 @@ async function runConnectorStartAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
-  const started = await runBridgeCommand(bridgePath, ['connector-service', 'start', '--json'], deps);
-  const status = await waitForConnectorServiceReadyAfterStart(bridgePath, deps, started);
+  const before = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  if (connectorServiceIsReady(before) && workbenchManagedConnectorMatchesStatus(bridgePath, before.data)) {
+    return nativeActionResult(
+      'connector_start',
+      'succeeded',
+      'Mac Access connector is running from this Workbench session.',
+      {
+        sourcePointer: 'native-companion:workbench-session-connector-start',
+        auditId: before.auditId,
+        auditIds: compactStrings([before.auditId]),
+      }
+    );
+  }
+
+  await runBridgeCommand(bridgePath, ['connector-service', 'stop', '--json'], deps);
+  stopWorkbenchManagedConnector();
+
+  const host = connectorSessionHostFromStatus(before.data) ?? '127.0.0.1';
+  startWorkbenchManagedConnector(bridgePath, host, deps);
+  const status = await waitForConnectorServiceReadyAfterStart(bridgePath, deps, before);
   const ready = connectorServiceIsReady(status);
   if (ready) {
     return nativeActionResult(
       'connector_start',
       'succeeded',
-      started.ok
-        ? 'Mac Access connector is running and reachable.'
-        : 'Mac Access connector was already running and reachable after start reconciliation.',
+      'Mac Access connector is running from this Workbench session.',
       {
-        sourcePointer: 'native-companion:connector-service-start',
-        auditId: status.auditId ?? started.auditId,
-        auditIds: compactStrings([status.auditId, started.auditId]),
+        sourcePointer: 'native-companion:workbench-session-connector-start',
+        auditId: status.auditId ?? before.auditId,
+        auditIds: compactStrings([status.auditId, before.auditId]),
       }
     );
   }
 
-  const detail = bridgeFailureDetail(
-    started.ok ? status : started,
-    'The connector did not report a reachable local service after start.'
-  );
+  const detail = bridgeFailureDetail(status, 'The connector did not report a reachable local service after start.');
   return nativeActionResult('connector_start', 'repair_required', `Mac Access connector could not start. ${detail}`, {
-    sourcePointer: 'native-companion:connector-service-start',
-    auditId: status.auditId ?? started.auditId,
-    auditIds: compactStrings([status.auditId, started.auditId]),
+    sourcePointer: 'native-companion:workbench-session-connector-start',
+    auditId: status.auditId ?? before.auditId,
+    auditIds: compactStrings([status.auditId, before.auditId]),
+  });
+}
+
+function startWorkbenchManagedConnector(bridgePath: string, host: string, deps: EvaosNativeCompanionStatusDeps): void {
+  if (
+    workbenchManagedConnector?.bridgePath === bridgePath &&
+    workbenchManagedConnector.host === host &&
+    workbenchManagedConnector.process.exitCode === null &&
+    !workbenchManagedConnector.process.killed
+  ) {
+    return;
+  }
+
+  stopWorkbenchManagedConnector();
+  const spawnConnectorProcess = deps.spawnConnectorProcess ?? defaultSpawnConnectorProcess;
+  const args = ['serve', '--host', host, '--port', String(CONNECTOR_PORT)];
+  const child = spawnConnectorProcess(bridgePath, args, {
+    cwd: dirname(bridgePath),
+    detached: false,
+    env: workbenchManagedConnectorEnv(deps.env),
+    stdio: 'ignore',
+  });
+  child.once('exit', () => {
+    if (workbenchManagedConnector?.process === child) {
+      workbenchManagedConnector = undefined;
+    }
+  });
+  child.unref?.();
+  workbenchManagedConnector = { bridgePath, host, process: child };
+}
+
+function stopWorkbenchManagedConnector(): void {
+  const current = workbenchManagedConnector;
+  workbenchManagedConnector = undefined;
+  if (!current || current.process.killed || current.process.exitCode !== null) return;
+  current.process.kill('TERM');
+}
+
+export function stopEvaosNativeCompanionSessionConnector(): void {
+  stopWorkbenchManagedConnector();
+}
+
+function workbenchManagedConnectorMatchesStatus(bridgePath: string, status: unknown): boolean {
+  if (readString(status, 'managed_by') !== 'workbench-or-manual') return false;
+  const host = connectorSessionHostFromStatus(status);
+  return (
+    !!host &&
+    workbenchManagedConnector?.bridgePath === bridgePath &&
+    workbenchManagedConnector.host === host &&
+    workbenchManagedConnector.process.exitCode === null &&
+    !workbenchManagedConnector.process.killed
+  );
+}
+
+function workbenchManagedConnectorEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const appPath = workbenchAppPathFromResources();
+  return {
+    ...process.env,
+    ...env,
+    EVAOS_DESKTOP_BRIDGE_MODE: 'customer-mac-connector',
+    EVAOS_DESKTOP_BRIDGE_MANAGED_BY: 'workbench-session',
+    EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID: env.EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID ?? WORKBENCH_BUNDLE_ID,
+    ...(appPath ? { EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_APP_PATH: appPath } : {}),
+  };
+}
+
+function workbenchAppPathFromResources(): string | undefined {
+  const resourcesPath = readProcessResourcesPath();
+  if (!resourcesPath) return undefined;
+  const normalized = resourcesPath.replace(/\\/g, '/');
+  if (!normalized.endsWith('.app/Contents/Resources')) return undefined;
+  return dirname(dirname(resourcesPath));
+}
+
+function connectorSessionHostFromStatus(input: unknown): string | undefined {
+  return (
+    normalizeConnectorHost(readString(input, 'tailnet_ip')) ??
+    normalizeConnectorHost(readNestedString(input, ['health', 'host']))
+  );
+}
+
+async function runConnectorStopAction(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  stopWorkbenchManagedConnector();
+  return runCommandAction('connector_stop', bridgePath, ['connector-service', 'stop', '--json'], deps, {
+    successMessage: 'Mac Access connector stopped.',
+    failureMessage: 'Mac Access connector could not stop.',
   });
 }
 
@@ -1029,10 +1147,7 @@ export async function runNativeCompanionAction(
     case 'connector_start':
       return runConnectorStartAction(bridgePath, deps);
     case 'connector_stop':
-      return runCommandAction(request.action, bridgePath, ['connector-service', 'stop', '--json'], deps, {
-        successMessage: 'Mac Access connector stopped.',
-        failureMessage: 'Mac Access connector could not stop.',
-      });
+      return runConnectorStopAction(bridgePath, deps);
     case 'setup_check':
       return runSetupCheckAction(request, bridgePath, deps);
     case 'ensure_customer_mac_connector_grant':
@@ -1456,6 +1571,10 @@ async function defaultExecFile(file: string, args: string[], options: { timeout:
     stdout: String(result.stdout ?? ''),
     stderr: String(result.stderr ?? ''),
   };
+}
+
+function defaultSpawnConnectorProcess(file: string, args: string[], options: SpawnOptions): ChildProcess {
+  return spawnCallback(file, args, options);
 }
 
 async function defaultOpenPath(path: string): Promise<string> {

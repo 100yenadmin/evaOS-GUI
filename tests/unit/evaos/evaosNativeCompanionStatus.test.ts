@@ -4,13 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { hostname } from 'node:os';
 import {
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
   runNativeCompanionAction,
+  stopEvaosNativeCompanionSessionConnector,
   type EvaosNativeCompanionStatusDeps,
 } from '@/process/services/evaosNativeCompanionStatus';
 import { EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
@@ -18,6 +21,20 @@ import { EvaosBrokerSessionError } from '@/process/services/evaosBrokerSession';
 const json = (payload: unknown) => JSON.stringify(payload);
 const deviceName = hostname() || 'Customer Mac';
 const bundledBridgePath = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge';
+
+function mockChildProcess(): ChildProcess {
+  const child = new EventEmitter() as ChildProcess & { exitCode: number | null; killed: boolean };
+  child.exitCode = null;
+  child.killed = false;
+  child.kill = vi.fn(() => {
+    child.killed = true;
+    child.exitCode = 0;
+    child.emit('exit', 0, null);
+    return true;
+  }) as ChildProcess['kill'];
+  child.unref = vi.fn(() => child) as ChildProcess['unref'];
+  return child;
+}
 
 function depsWithResponses(
   responses: Record<string, unknown>,
@@ -42,6 +59,10 @@ function depsWithResponses(
 }
 
 describe('evaosNativeCompanionStatus', () => {
+  afterEach(() => {
+    stopEvaosNativeCompanionSessionConnector();
+  });
+
   it('exposes native companion state fixtures only under the local product proof gate', async () => {
     const execFile = vi.fn(async () => {
       throw new Error('fixture should not call bridge CLI');
@@ -947,43 +968,65 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result.message).toContain('Mac control setup check passed');
   });
 
-  it('reconciles Mac Access start when the connector is reachable after a failed start response', async () => {
-    const deps = depsWithResponses({
-      'connector-service start --json': {
-        ok: false,
-        errors: [{ code: 'already_running', message: 'launchd reported an old transient start failure' }],
-      },
-      'connector-service status --json': {
-        ok: true,
-        audit_id: 'audit-connector',
-        running: true,
-        health: { reachable: true },
-      },
+  it('starts then reuses a tracked Workbench-managed Mac Access connector', async () => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const execFile = vi.fn(async (_file, args) => {
+      const key = args.join(' ');
+      if (key === 'connector-service status --json') {
+        return {
+          stdout: json({
+            ok: true,
+            audit_id: 'audit-connector',
+            running: true,
+            managed_by: 'workbench-or-manual',
+            tailnet_ip: '100.64.0.4',
+            health: { reachable: true, host: '100.64.0.4' },
+          }),
+          stderr: '',
+        };
+      }
+      if (key === 'connector-service stop --json') {
+        return {
+          stdout: json({ ok: true, action: 'stop' }),
+          stderr: '',
+        };
+      }
+      throw new Error(`unexpected command ${key}`);
     });
+    const deps = depsWithResponses({}, { execFile, spawnConnectorProcess });
 
     const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+    const reused = await runNativeCompanionAction({ action: 'connector_start' }, deps);
 
     expect(result).toMatchObject({
       action: 'connector_start',
       status: 'succeeded',
-      sourcePointer: 'native-companion:connector-service-start',
+      sourcePointer: 'native-companion:workbench-session-connector-start',
       auditId: 'audit-connector',
     });
-    expect(result.message).toContain('already running and reachable');
+    expect(result.message).toContain('Workbench session');
+    expect(reused).toMatchObject({
+      action: 'connector_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:workbench-session-connector-start',
+      auditId: 'audit-connector',
+    });
+    expect(spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect(
+      execFile.mock.calls.filter(([, callArgs]) => callArgs.join(' ') === 'connector-service stop --json')
+    ).toHaveLength(1);
   });
 
-  it('waits for Mac Access connector reachability after launchd start races', async () => {
+  it('stops launchd and starts a Workbench-owned session connector for Mac Access', async () => {
+    const child = mockChildProcess();
+    const spawnConnectorProcess = vi.fn(() => child);
     const execFile = vi.fn(async (_file, args) => {
       const key = args.join(' ');
-      if (key === 'connector-service start --json') {
+      if (key === 'connector-service stop --json') {
         return {
           stdout: json({
             ok: true,
-            action: 'start',
-            status: {
-              running: true,
-              health: { reachable: false },
-            },
+            action: 'stop',
           }),
           stderr: '',
         };
@@ -997,7 +1040,9 @@ describe('evaosNativeCompanionStatus', () => {
             ok: true,
             audit_id: statusCalls > 1 ? 'audit-connector-ready' : 'audit-connector-starting',
             running: true,
-            health: { reachable: statusCalls > 1 },
+            managed_by: statusCalls > 1 ? 'workbench-or-manual' : 'launchagent',
+            tailnet_ip: '100.64.0.4',
+            health: { reachable: statusCalls > 1, host: '100.64.0.4' },
           }),
           stderr: '',
         };
@@ -1005,19 +1050,32 @@ describe('evaosNativeCompanionStatus', () => {
       throw new Error(`unexpected command ${key}`);
     });
     const sleep = vi.fn(async () => undefined);
-    const deps = depsWithResponses({}, { execFile, sleep });
+    const deps = depsWithResponses({}, { execFile, sleep, spawnConnectorProcess });
 
     const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
 
     expect(result).toMatchObject({
       action: 'connector_start',
       status: 'succeeded',
-      sourcePointer: 'native-companion:connector-service-start',
+      sourcePointer: 'native-companion:workbench-session-connector-start',
       auditId: 'audit-connector-ready',
     });
-    expect(result.message).toBe('Mac Access connector is running and reachable.');
+    expect(result.message).toBe('Mac Access connector is running from this Workbench session.');
+    expect(spawnConnectorProcess).toHaveBeenCalledWith(
+      bundledBridgePath,
+      ['serve', '--host', '100.64.0.4', '--port', '8765'],
+      expect.objectContaining({
+        cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
+        detached: false,
+        stdio: 'ignore',
+      })
+    );
+    expect(spawnConnectorProcess.mock.calls[0]?.[2]?.env).toMatchObject({
+      EVAOS_DESKTOP_BRIDGE_MANAGED_BY: 'workbench-session',
+      EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID: 'com.evaos.workbench',
+    });
     expect(execFile).toHaveBeenCalledTimes(3);
-    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 
   it('reconciles control start when current control status is ready after a failed start response', async () => {
