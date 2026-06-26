@@ -49,6 +49,7 @@ const CONNECTOR_PORT = 8765;
 const WORKBENCH_BUNDLE_ID = 'com.evaos.workbench';
 const WORKBENCH_PROTOCOL = 'evaos-workbench';
 const DIAGNOSTIC_SCHEMA_VERSION = 'evaos.workbench.diagnostic_packet.v1';
+const WORKBENCH_CONNECTOR_MANAGERS = new Set(['workbench-session', 'workbench-or-manual']);
 const NATIVE_COMPANION_FIXTURE_STATES = [
   'ready',
   'repair_required',
@@ -207,6 +208,7 @@ export async function getEvaosNativeCompanionStatus(
     connectorServiceReady,
     customerMacReady,
     pairingBlockedReason,
+    bridgePath,
   });
   const summaryText = nativeCompanionSummaryText({
     readiness,
@@ -598,7 +600,7 @@ async function runConnectorStartAction(
     sourcePointer: 'native-companion:workbench-session-connector-start',
     auditId: status.auditId ?? before.auditId,
     auditIds: compactStrings([status.auditId, before.auditId]),
-    blockerReason: classifyBridgeBlocker(status, 'connector_service_not_ready'),
+    blockerReason: classifyConnectorServiceBlocker(bridgePath, status, 'connector_service_not_ready'),
   });
 }
 
@@ -660,10 +662,15 @@ export function stopEvaosNativeCompanionSessionConnector(): void {
 }
 
 function workbenchManagedConnectorMatchesStatus(bridgePath: string, status: unknown): boolean {
-  if (readString(status, 'managed_by') !== 'workbench-or-manual') return false;
   const host = connectorSessionHostFromStatus(status);
+  if (!host) return false;
+  if (connectorStatusHasExplicitOwnerMismatch(bridgePath, status)) {
+    return false;
+  }
+  if (connectorStatusOwnedByCurrentWorkbench(bridgePath, status)) {
+    return true;
+  }
   return (
-    !!host &&
     workbenchManagedConnector?.bridgePath === bridgePath &&
     workbenchManagedConnector.host === host &&
     workbenchManagedConnector.process.exitCode === null &&
@@ -680,7 +687,16 @@ function workbenchManagedConnectorIsReady(bridgePath: string, result: BridgeComm
 }
 
 function connectorServiceIsReadyForWorkbenchSession(bridgePath: string, result: BridgeCommandResult): boolean {
-  return connectorServiceIsReady(result) || workbenchManagedConnectorIsReady(bridgePath, result);
+  if (!connectorServiceStatusAvailable(result) || readNestedBoolean(result.data, ['health', 'reachable']) !== true) {
+    return false;
+  }
+  if (workbenchManagedConnectorIsReady(bridgePath, result)) {
+    return true;
+  }
+  if (!connectorStatusHasOwnershipSignals(result.data)) {
+    return connectorServiceIsReady(result);
+  }
+  return connectorStatusOwnedByCurrentWorkbench(bridgePath, result.data);
 }
 
 function workbenchManagedConnectorEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -701,6 +717,133 @@ function workbenchAppPathFromResources(): string | undefined {
   const normalized = resourcesPath.replace(/\\/g, '/');
   if (!normalized.endsWith('.app/Contents/Resources')) return undefined;
   return dirname(dirname(resourcesPath));
+}
+
+function workbenchAppPathFromBridgePath(bridgePath: string): string | undefined {
+  const normalized = normalizeComparisonPath(bridgePath);
+  const appMarkerIndex = normalized?.indexOf('.app/');
+  if (appMarkerIndex === undefined || appMarkerIndex < 0) return undefined;
+  return normalized?.slice(0, appMarkerIndex + '.app'.length);
+}
+
+function normalizeComparisonPath(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized || undefined;
+}
+
+function pathIsSameOrNested(candidate: string | undefined, expectedRoot: string | undefined): boolean {
+  const normalizedCandidate = normalizeComparisonPath(candidate);
+  const normalizedRoot = normalizeComparisonPath(expectedRoot);
+  return Boolean(
+    normalizedCandidate &&
+    normalizedRoot &&
+    (normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`))
+  );
+}
+
+function connectorStatusHasOwnershipSignals(status: unknown): boolean {
+  return Boolean(
+    readString(status, 'managed_by') || connectorResponsibleBundleId(status) || connectorOwnerPaths(status).length > 0
+  );
+}
+
+function connectorStatusHasExplicitOwnerMismatch(bridgePath: string, status: unknown): boolean {
+  const managedBy = readString(status, 'managed_by')?.toLowerCase();
+  if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
+    return true;
+  }
+
+  const bundleId = connectorResponsibleBundleId(status);
+  if (bundleId && bundleId !== WORKBENCH_BUNDLE_ID) {
+    return true;
+  }
+
+  return connectorOwnerPathMatchesWorkbench(bridgePath, status) === false;
+}
+
+function connectorStatusOwnedByCurrentWorkbench(bridgePath: string, status: unknown): boolean {
+  const managedBy = readString(status, 'managed_by')?.toLowerCase();
+  if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
+    return false;
+  }
+
+  const bundleId = connectorResponsibleBundleId(status);
+  if (bundleId && bundleId !== WORKBENCH_BUNDLE_ID) {
+    return false;
+  }
+
+  const ownerMatch = connectorOwnerPathMatchesWorkbench(bridgePath, status);
+  if (ownerMatch === false) {
+    return false;
+  }
+
+  if (ownerMatch === true) {
+    return true;
+  }
+
+  return bundleId === WORKBENCH_BUNDLE_ID && Boolean(managedBy && WORKBENCH_CONNECTOR_MANAGERS.has(managedBy));
+}
+
+function connectorOwnerPathMatchesWorkbench(bridgePath: string, status: unknown): boolean | undefined {
+  const ownerPaths = connectorOwnerPaths(status);
+  if (ownerPaths.length === 0) return undefined;
+
+  const expectedBridgePath = normalizeComparisonPath(bridgePath);
+  const expectedAppPath = workbenchAppPathFromBridgePath(bridgePath);
+  return ownerPaths.some((ownerPath) => {
+    const normalizedOwner = normalizeComparisonPath(ownerPath);
+    return normalizedOwner === expectedBridgePath || pathIsSameOrNested(normalizedOwner, expectedAppPath);
+  });
+}
+
+function connectorOwnerPaths(status: unknown): string[] {
+  return compactStrings([
+    readString(status, 'responsible_app_path'),
+    readString(status, 'responsibleAppPath'),
+    readString(status, 'owner_app_path'),
+    readString(status, 'ownerAppPath'),
+    readString(status, 'process_path'),
+    readString(status, 'processPath'),
+    readString(status, 'executable_path'),
+    readString(status, 'executablePath'),
+    readString(status, 'bridge_path'),
+    readString(status, 'bridgePath'),
+    readString(status, 'launch_agent_program_path'),
+    readString(status, 'launchAgentProgramPath'),
+    readNestedString(status, ['responsible', 'app_path']),
+    readNestedString(status, ['responsible', 'appPath']),
+    readNestedString(status, ['process', 'path']),
+    readNestedString(status, ['launch_agent', 'program_path']),
+    readNestedString(status, ['launchAgent', 'programPath']),
+  ]);
+}
+
+function connectorResponsibleBundleId(status: unknown): string | undefined {
+  return (
+    readString(status, 'responsible_bundle_id') ??
+    readString(status, 'responsibleBundleId') ??
+    readString(status, 'bundle_id') ??
+    readString(status, 'bundleId') ??
+    readNestedString(status, ['responsible', 'bundle_id']) ??
+    readNestedString(status, ['responsible', 'bundleId'])
+  );
+}
+
+function classifyConnectorServiceBlocker(
+  bridgePath: string,
+  result: BridgeCommandResult,
+  fallback: IEvaosMacControlBlockerReason
+): IEvaosMacControlBlockerReason {
+  if (connectorStatusHasExplicitOwnerMismatch(bridgePath, result.data)) {
+    const managedBy = readString(result.data, 'managed_by')?.toLowerCase();
+    if (connectorResponsibleBundleId(result.data) || connectorOwnerPaths(result.data).length > 0) {
+      return 'listener_owner_mismatch';
+    }
+    if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
+      return 'not_workbench_managed';
+    }
+  }
+  return classifyBridgeBlocker(result, fallback);
 }
 
 function connectorSessionHostFromStatus(input: unknown): string | undefined {
@@ -866,6 +1009,7 @@ async function runSetupCheckAction(
             bridgeReady: true,
             connectorServiceReady: setup.connectorReady,
             customerMacReady: setup.macReady,
+            bridgePath,
           }) ?? 'unknown'),
     }
   );
@@ -934,7 +1078,7 @@ async function ensureCustomerMacConnectorGrantAction(
       'Start Mac Access and confirm the secure connector is reachable before connecting Mac control.',
       {
         sourcePointer: 'native-companion:connector-grant-connector-not-ready',
-        blockerReason: classifyBridgeBlocker(sessionConnector, 'connector_service_not_ready'),
+        blockerReason: classifyConnectorServiceBlocker(bridgePath, sessionConnector, 'connector_service_not_ready'),
       }
     );
   }
@@ -970,7 +1114,7 @@ async function ensureCustomerMacConnectorGrantAction(
           sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
           auditId: localCustomerMac?.auditId ?? controlSession.auditId,
           auditIds: compactStrings([localCustomerMac?.auditId, controlSession.auditId]),
-          blockerReason: classifyBridgeBlocker(sessionConnector, 'stale_connector_port_conflict'),
+          blockerReason: classifyConnectorServiceBlocker(bridgePath, sessionConnector, 'stale_connector_port_conflict'),
         }
       );
     }
@@ -1015,7 +1159,11 @@ async function ensureCustomerMacConnectorGrantAction(
             sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
             auditId: localCustomerMac.auditId,
             auditIds: compactStrings([localCustomerMac.auditId, controlSession.auditId]),
-            blockerReason: classifyBridgeBlocker(sessionConnector, 'stale_connector_port_conflict'),
+            blockerReason: classifyConnectorServiceBlocker(
+              bridgePath,
+              sessionConnector,
+              'stale_connector_port_conflict'
+            ),
           }
         );
       }
@@ -1503,6 +1651,7 @@ function blockerReasonForStatus(input: {
   connectorServiceReady: boolean;
   customerMacReady: boolean;
   pairingBlockedReason?: IEvaosMacControlBlockerReason;
+  bridgePath?: string;
 }): IEvaosMacControlBlockerReason | undefined {
   if (input.bridgeReady && input.connectorServiceReady && input.customerMacReady && !input.pairingBlockedReason) {
     return undefined;
@@ -1513,7 +1662,9 @@ function blockerReasonForStatus(input: {
     if (permissionReason) return permissionReason;
   }
   if (!input.connectorServiceReady) {
-    return classifyBridgeBlocker(input.connectorService, 'connector_service_not_ready');
+    return input.bridgePath
+      ? classifyConnectorServiceBlocker(input.bridgePath, input.connectorService, 'connector_service_not_ready')
+      : classifyBridgeBlocker(input.connectorService, 'connector_service_not_ready');
   }
   return input.pairingBlockedReason ?? 'unknown';
 }

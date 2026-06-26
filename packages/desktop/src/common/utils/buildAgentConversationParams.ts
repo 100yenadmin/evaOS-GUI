@@ -35,13 +35,14 @@ export type BuildAgentConversationInput = {
   extra?: Partial<ICreateConversationParams['extra']>;
 };
 
+function normalizeFirstPartyBackend(backend: string): string {
+  return backend === 'openclaw-gateway' ? 'openclaw' : backend;
+}
+
 export function getConversationTypeForBackend(backend: string): ICreateConversationParams['type'] {
-  switch (backend) {
+  switch (normalizeFirstPartyBackend(backend)) {
     case 'aionrs':
       return 'aionrs';
-    case 'openclaw-gateway':
-    case 'openclaw':
-      return 'openclaw-gateway';
     case 'nanobot':
       return 'nanobot';
     case 'remote':
@@ -72,9 +73,10 @@ export function buildAgentConversationParams(input: BuildAgentConversationInput)
     extra: extraOverrides,
   } = input;
 
-  const effectivePresetType = preset_agent_type || backend;
+  const normalizedBackend = normalizeFirstPartyBackend(backend);
+  const effectivePresetType = normalizeFirstPartyBackend(preset_agent_type || backend);
   const effectivePresetAssistantId = preset_assistant_id || custom_agent_id;
-  const type = getConversationTypeForBackend(is_preset ? effectivePresetType : backend);
+  const type = getConversationTypeForBackend(is_preset ? effectivePresetType : normalizedBackend);
   const extra: ICreateConversationParams['extra'] = {
     workspace,
     custom_workspace,
@@ -97,7 +99,7 @@ export function buildAgentConversationParams(input: BuildAgentConversationInput)
       extra.custom_agent_id = custom_agent_id;
     }
   } else if (type === 'acp') {
-    extra.backend = backend as string;
+    extra.backend = normalizedBackend as string;
     extra.agent_name = agent_name || name;
     if (agent_id) extra.agent_id = agent_id;
     if (cli_path) extra.cli_path = cli_path;
