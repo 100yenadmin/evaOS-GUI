@@ -31,6 +31,10 @@ const completeSecrets = [
 ];
 
 const completeVariables = [
+  'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+  'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+  'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+  'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
   'AIONUI_EVAOS_CUSTOMER_ID',
   'AIONUI_EVAOS_RUNTIME',
   'AIONUI_EVAOS_APPROVAL_ID',
@@ -51,6 +55,8 @@ describe('evaOS live canary GitHub environment inventory', () => {
 
     expect(report.ready).toBe(false);
     expect(report.missing).toContain('AIONUI_EVAOS_DESKTOP_SESSION');
+    expect(report.missing).toContain('AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL');
+    expect(report.missing).toContain('AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND');
     expect(report.missing).toContain('AIONUI_EVAOS_CUSTOMER_ID');
     expect(report.missing).toContain('AIONUI_EVAOS_APPROVAL_ID');
     expect(report.missingOneOf).toContainEqual([
@@ -89,7 +95,14 @@ describe('evaOS live canary GitHub environment inventory', () => {
     const report = inventory.auditEnvironmentInventory(
       {
         secrets: ['AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY', 'AIONUI_EVAOS_FIXTURE_SUPABASE_URL'],
-        variables: ['AIONUI_EVAOS_RUNTIME', 'AIONUI_EVAOS_PROVIDER_REQUIRED_STATES'],
+        variables: [
+          'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+          'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+          'AIONUI_EVAOS_RUNTIME',
+          'AIONUI_EVAOS_PROVIDER_REQUIRED_STATES',
+        ],
       },
       { provisioned: true }
     );
@@ -104,7 +117,13 @@ describe('evaOS live canary GitHub environment inventory', () => {
     const report = inventory.auditEnvironmentInventory(
       {
         secrets: ['AIONUI_EVAOS_FIXTURE_SUPABASE_URL'],
-        variables: ['AIONUI_EVAOS_RUNTIME'],
+        variables: [
+          'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+          'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+          'AIONUI_EVAOS_RUNTIME',
+        ],
       },
       { provisioned: true }
     );
@@ -113,6 +132,24 @@ describe('evaOS live canary GitHub environment inventory', () => {
     expect(report.missingOneOf).toContainEqual([
       'AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY',
       'SUPABASE_SECRET_KEY',
+    ]);
+  });
+
+  it('requires release canary support metadata even when live fixtures are workflow-provisioned', () => {
+    const report = inventory.auditEnvironmentInventory(
+      {
+        secrets: ['AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY'],
+        variables: ['AIONUI_EVAOS_RUNTIME'],
+      },
+      { provisioned: true }
+    );
+
+    expect(report.ready).toBe(false);
+    expect(report.missing).toEqual([
+      'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+      'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+      'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+      'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
     ]);
   });
 
@@ -138,6 +175,8 @@ describe('evaOS live canary GitHub environment inventory', () => {
     });
 
     expect(template).toContain('gh secret set AIONUI_EVAOS_DESKTOP_SESSION');
+    expect(template).toContain('gh variable set AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL');
+    expect(template).toContain('gh variable set AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND');
     expect(template).toContain('gh variable set AIONUI_EVAOS_CUSTOMER_ID');
     expect(template).toContain('AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION');
     expect(template).toContain('AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID');

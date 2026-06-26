@@ -123,6 +123,7 @@ The proof packet must include:
 - `codesign-dmg-macos-arm64.txt`, `stapler-dmg-macos-arm64.txt`, and `spctl-dmg-macos-arm64.txt`.
 - `codesign-macos-arm64.txt`, `stapler-macos-arm64.txt`, and `spctl-macos-arm64.txt`.
 - `install-smoke.md`, `launch-smoke.md`, `protocol-identity.md`, `installed-app-path-hygiene.md`, `updater-feed-audit.md`, `rollback-smoke.md`, and `support-notes.md`.
+- `support-canary-target.md` recording selected account, selected support VM target, `customer_vm` target kind, and Golden-secretless/template confirmation.
 - macOS x64 signing/Gatekeeper proof, or a concrete `macosX64.status=blocked` reason in `evaos-beta-rc-proof.json`.
 
 `installed-app-path-hygiene.md` must record the exact installed candidate path
@@ -132,6 +133,11 @@ Use product proof must use the exact app path rather than a bundle id, and that
 OpenClaw agents use the loaded evaos-desktop-bridge tools unless Computer Use is
 explicitly mounted in that runtime. RC canary success records this rule; it does
 not replace signed installed-app Computer Use product proof.
+
+`support-canary-target.md` must record `admin@electricsheephq.com` as the
+release-test account, the support VM as a `customer_vm` target, and that Golden
+VM remained secretless/template-only. David/customer targets are customer-lane
+proofs, not the internal release-good canary.
 
 `rollback-smoke.md` must explicitly record candidate rollback, released fallback launch, beta data/cache disposition, protocol handler state, and broker login/session proof.
 

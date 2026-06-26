@@ -2,6 +2,28 @@
 
 const CANARIES = [
   {
+    name: 'release-support-vm-target',
+    command: 'node scripts/evaosMacControlDoctor.js',
+    required: [
+      'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+      'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+      'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+      'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+    ],
+    exact: {
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
+    },
+    forbiddenValues: {
+      AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: ['golden', 'golden-vm', 'template', 'golden-template'],
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: ['Golden VM', 'Golden template', 'golden'],
+    },
+    optional: [
+      'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_LABEL',
+      'AIONUI_EVAOS_RELEASE_CANARY_RUNTIME_OWNER',
+      'EVAOS_MAC_CONTROL_DOCTOR_COMPUTER_USE_EVIDENCE',
+    ],
+  },
+  {
     name: 'broker-runtime-status',
     command: 'node scripts/evaosBrokerLiveCanary.js',
     required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
@@ -81,6 +103,13 @@ function inspectCanary(canary, env) {
   for (const [name, expected] of Object.entries(canary.exact ?? {})) {
     if (hasEnv(env, name) && env[name] !== expected) {
       invalidRequired.push(`${name} must equal ${expected}`);
+    }
+  }
+
+  for (const [name, forbiddenValues] of Object.entries(canary.forbiddenValues ?? {})) {
+    const value = hasEnv(env, name) ? String(env[name]).trim() : '';
+    if (value && forbiddenValues.some((forbidden) => value.toLowerCase() === String(forbidden).toLowerCase())) {
+      invalidRequired.push(`${name} must not be ${value}`);
     }
   }
 
