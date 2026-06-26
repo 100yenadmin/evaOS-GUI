@@ -517,7 +517,7 @@ function stopWorkbenchManagedConnector(): void {
   const current = workbenchManagedConnector;
   workbenchManagedConnector = undefined;
   if (!current || current.process.killed || current.process.exitCode !== null) return;
-  current.process.kill('TERM');
+  current.process.kill();
 }
 
 export function stopEvaosNativeCompanionSessionConnector(): void {
