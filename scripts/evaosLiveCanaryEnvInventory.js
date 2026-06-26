@@ -4,6 +4,26 @@ const { execFileSync } = require('node:child_process');
 
 const REQUIRED_SINGLE_FIXTURES = [
   {
+    name: 'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+    kind: 'variable-or-secret',
+    reason: 'release canary account email; expected internal support admin, not a customer or Golden template identity',
+  },
+  {
+    name: 'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+    kind: 'variable-or-secret',
+    reason: 'release canary support VM customer/target ID; must not be the Golden template',
+  },
+  {
+    name: 'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+    kind: 'variable-or-secret',
+    reason: 'release canary target kind; must be customer_vm',
+  },
+  {
+    name: 'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+    kind: 'variable-or-secret',
+    reason: 'human-visible release canary support VM label for installed-app proof packets',
+  },
+  {
     name: 'AIONUI_EVAOS_DESKTOP_SESSION',
     kind: 'secret',
     reason: 'desktop session for broker, trust-surface, provider, Company Brain, and Business Browser canaries',
@@ -60,6 +80,8 @@ const RECOMMENDED_VARIABLE_DEFAULTS = {
   AIONUI_EVAOS_RUNTIME: 'browser',
   AIONUI_EVAOS_PROVIDER_REQUIRED_STATES: 'connected,needs_login,expired,revoked,approval_required',
   AIONUI_EVAOS_APPROVAL_DENY_REASON: 'evaOS beta deny-loop canary',
+  AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',
+  AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
 };
 
 const REQUIRED_ONE_OF_FIXTURES = [
@@ -105,6 +127,17 @@ function auditEnvironmentInventory(input, options = {}) {
         satisfiedOneOf.push(group.names);
       } else {
         missingOneOf.push(group.names);
+      }
+    }
+
+    for (const fixture of REQUIRED_SINGLE_FIXTURES.filter((entry) =>
+      entry.name.startsWith('AIONUI_EVAOS_RELEASE_CANARY_')
+    )) {
+      const ok = fixture.kind === 'secret' ? inventory.secrets.has(fixture.name) : hasName(inventory, fixture.name);
+      if (ok) {
+        satisfied.push(fixture.name);
+      } else {
+        missing.push(fixture.name);
       }
     }
   } else {

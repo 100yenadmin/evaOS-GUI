@@ -19,6 +19,10 @@ const readiness = require('../../../scripts/evaosLiveCanaryReadiness.js') as {
 };
 
 const requiredEnv = {
+  AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',
+  AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'support-vm-customer',
+  AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
+  AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: 'Support VM',
   AIONUI_EVAOS_DESKTOP_SESSION: 'eds_live_session_for_test',
   AIONUI_EVAOS_CUSTOMER_ID: 'cus_123',
   AIONUI_EVAOS_APPROVAL_DENY_ACK: 'evaos-deny-test',
@@ -40,6 +44,7 @@ describe('evaOS live canary readiness', () => {
     const rendered = JSON.stringify(report);
 
     expect(report.ready).toBe(false);
+    expect(report.blockers).toContain('release-support-vm-target: missing AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL');
     expect(report.blockers).toContain('broker-runtime-status: missing AIONUI_EVAOS_DESKTOP_SESSION');
     expect(report.blockers).toContain('people-approval-deny: missing AIONUI_EVAOS_APPROVAL_DENY_ACK');
     expect(report.blockers).toContain('business-browser: missing AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK');
@@ -62,6 +67,26 @@ describe('evaOS live canary readiness', () => {
     );
   });
 
+  it('rejects Golden or non-customer-vm release canary targets', () => {
+    const report = readiness.inspectLiveCanaryReadiness({
+      ...requiredEnv,
+      AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'golden',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: 'Golden VM',
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.blockers).toContain(
+      'release-support-vm-target: AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND must equal customer_vm'
+    );
+    expect(report.blockers).toContain(
+      'release-support-vm-target: AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID must not be golden'
+    );
+    expect(report.blockers).toContain(
+      'release-support-vm-target: AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL must not be Golden VM'
+    );
+  });
+
   it('marks the live canary suite ready when required positive and negative fixtures are present', () => {
     const report = readiness.inspectLiveCanaryReadiness(requiredEnv);
 
@@ -75,6 +100,8 @@ describe('evaOS live canary readiness', () => {
     const markdown = readiness.renderMarkdown(report);
 
     expect(markdown).toContain('node scripts/evaosBrokerLiveCanary.js');
+    expect(markdown).toContain('node scripts/evaosMacControlDoctor.js');
+    expect(markdown).toContain('AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND');
     expect(markdown).toContain('AIONUI_EVAOS_DESKTOP_SESSION');
     expect(markdown).toContain('AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID');
     expect(markdown).not.toContain('eds_live_session_for_test');

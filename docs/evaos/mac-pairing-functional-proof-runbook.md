@@ -60,6 +60,9 @@ The release candidate may proceed only after the functional proof packet names:
 - app version
 - bridge path and bridge version
 - selected account/customer target
+- release canary account `admin@electricsheephq.com`
+- release canary support VM target kind `customer_vm`
+- confirmation that Golden VM stayed secretless/template-only and was not used as the authenticated product canary
 - local proof result
 - VM OpenClaw proof result
 - Hermes proof result
@@ -67,3 +70,16 @@ The release candidate may proceed only after the functional proof packet names:
 - updater metadata path proving macOS auto-update points to ZIP
 
 Final release gates still require signed/notarized/stapled app and DMG, Gatekeeper accepted, updater/feed isolation, protocol isolation, installed-app smoke, support path, and rollback proof.
+
+For the no-code first-party Mac-control flow, the release canary lane is the
+support-admin account and support VM, not Golden. Required non-secret CI/runtime
+metadata:
+
+- `AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL=admin@electricsheephq.com`
+- `AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID=<support-vm-customer-id>`
+- `AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND=customer_vm`
+- `AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL=<human-visible support VM label>`
+
+The canary must prove New Chat receives a visible assistant response and
+Mac & iPhone reaches no-code Mac-control ready from the signed installed app.
+Pairing/export prompts remain an advanced support fallback only.
