@@ -103,6 +103,41 @@ describe('useGuidSend', () => {
     createConversationInvokeMock.mockResolvedValue({ id: 'conv-1' });
     swrMutateMock.mockReset();
     swrMutateMock.mockResolvedValue(undefined);
+    sessionStorage.clear();
+  });
+
+  it('routes the evaOS/OpenClaw pill through the supported ACP backend instead of retired gateway conversations', async () => {
+    const deps = createDeps();
+    deps.selectedAgent = 'openclaw-gateway';
+    deps.selectedAgentKey = 'openclaw-gateway';
+    deps.selectedAgentInfo = {
+      id: 'openclaw-gateway',
+      key: 'openclaw-gateway',
+      name: 'OpenClaw',
+      agent_type: 'openclaw-gateway',
+      backend: 'openclaw-gateway',
+      cli_path: '/opt/evaos/openclaw',
+      isExtension: false,
+    } as never;
+    deps.is_presetAgent = false;
+    deps.getEffectiveAgentType = vi.fn(() => ({
+      agent_type: 'openclaw-gateway',
+      isAvailable: true,
+    }));
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    expect(createConversationInvokeMock).toHaveBeenCalledTimes(1);
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.type).toBe('acp');
+    expect(payload.extra.backend).toBe('openclaw');
+    expect(payload.extra.cli_path).toBe('/opt/evaos/openclaw');
+    expect(sessionStorage.getItem('openclaw_initial_message_conv-1')).toBeNull();
+    expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBe(JSON.stringify({ input: 'hello' }));
   });
 
   it('passes selected mode into assistant conversation overrides when creating a preset ACP conversation', async () => {

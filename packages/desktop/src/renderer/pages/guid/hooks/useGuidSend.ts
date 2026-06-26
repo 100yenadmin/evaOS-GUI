@@ -80,7 +80,7 @@ export type GuidSendResult = {
 };
 
 /**
- * Hook that manages the send logic for all conversation types (openclaw/nanobot/acp).
+ * Hook that manages the send logic for all conversation types.
  */
 export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
   const {
@@ -189,63 +189,6 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       ...(!is_preset && enabled_skills_to_send?.length ? { enabled_skills: enabled_skills_to_send } : {}),
       ...(!is_preset && excludeBuiltinSkills?.length ? { exclude_builtin_skills: excludeBuiltinSkills } : {}),
     };
-
-    // OpenClaw Gateway path
-    if (selectedAgent === 'openclaw-gateway') {
-      const openclawAgentInfo = agentInfo || findAgentByKey(selectedAgentKey);
-      const openclawConversationParams = buildAgentConversationParams({
-        backend: openclawAgentInfo?.backend || 'openclaw-gateway',
-        name: input,
-        agent_name: openclawAgentInfo?.name,
-        preset_assistant_id,
-        workspace: finalWorkspace,
-        model: current_model!,
-        cli_path: openclawAgentInfo?.cli_path,
-        custom_agent_id: openclawAgentInfo?.custom_agent_id,
-        custom_workspace: isCustomWorkspace,
-        extra: {
-          default_files: files,
-          runtime_validation: {
-            expected_workspace: finalWorkspace,
-            expected_backend: openclawAgentInfo?.backend,
-            expected_agent_name: openclawAgentInfo?.name,
-            expected_cli_path: openclawAgentInfo?.cli_path,
-            expected_model: current_model?.use_model,
-            switched_at: Date.now(),
-          },
-          ...nonPresetSkillExtra,
-          preset_enabled_skills: enabled_skills_to_send,
-          exclude_auto_inject_skills: excludeBuiltinSkills,
-        },
-      });
-
-      try {
-        const conversation = await ipcBridge.conversation.create.invoke(openclawConversationParams);
-
-        if (!conversation || !conversation.id) {
-          Message.error(t('conversation.createFailed'));
-          return;
-        }
-
-        if (isCustomWorkspace) {
-          updateWorkspaceTime(finalWorkspace);
-        }
-
-        emitter.emit('chat.history.refresh');
-
-        const initialMessage = {
-          input,
-          files: files.length > 0 ? files : undefined,
-        };
-        sessionStorage.setItem(`openclaw_initial_message_${conversation.id}`, JSON.stringify(initialMessage));
-
-        await navigate(`/conversation/${conversation.id}`);
-      } catch (error: unknown) {
-        console.error('Failed to create OpenClaw conversation:', error);
-        throw error;
-      }
-      return;
-    }
 
     // Nanobot path
     if (selectedAgent === 'nanobot') {

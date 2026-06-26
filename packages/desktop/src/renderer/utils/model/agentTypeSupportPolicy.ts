@@ -17,6 +17,10 @@ export function normalizeSupportedAgentSelection(
   agentType?: string,
   backend?: string
 ): { agent_type: 'acp' | 'aionrs'; backend?: string } | undefined {
+  if (agentType === 'openclaw-gateway' || backend === 'openclaw-gateway') {
+    return { agent_type: 'acp', backend: 'openclaw' };
+  }
+
   if (agentType === 'aionrs' || backend === 'aionrs') {
     return { agent_type: 'aionrs' };
   }

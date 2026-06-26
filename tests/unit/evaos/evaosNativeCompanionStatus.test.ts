@@ -1133,6 +1133,83 @@ describe('evaosNativeCompanionStatus', () => {
     ).toHaveLength(1);
   });
 
+  it('adopts an exact signed Workbench-owned connector after app relaunch without respawning it', async () => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const execFile = vi.fn(async (_file, args) => {
+      const key = args.join(' ');
+      if (key === 'connector-service status --json') {
+        return {
+          stdout: json({
+            ok: true,
+            audit_id: 'audit-adopted-connector',
+            loaded: false,
+            running: true,
+            managed_by: 'workbench-session',
+            responsible_bundle_id: 'com.evaos.workbench',
+            responsible_app_path: '/Applications/evaOS Workbench.app',
+            process_path: bundledBridgePath,
+            tailnet_ip: '100.64.0.4',
+            health: { reachable: true, host: '100.64.0.4' },
+          }),
+          stderr: '',
+        };
+      }
+      throw new Error(`unexpected command ${key}`);
+    });
+    const deps = depsWithResponses({}, { execFile, spawnConnectorProcess });
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:workbench-session-connector-start',
+      auditId: 'audit-adopted-connector',
+    });
+    expect(spawnConnectorProcess).not.toHaveBeenCalled();
+    expect(execFile.mock.calls.map(([, callArgs]) => callArgs.join(' '))).not.toContain(
+      'connector-service stop --json'
+    );
+  });
+
+  it('surfaces a stale listener owner when the connector port belongs to an old app bundle', async () => {
+    const staleStatus = {
+      ok: true,
+      audit_id: 'audit-stale-connector',
+      loaded: false,
+      running: true,
+      managed_by: 'workbench-session',
+      responsible_bundle_id: 'com.evaos.workbench.beta',
+      responsible_app_path: '/Volumes/LEXAR/Codex/old/evaOS Workbench Beta.app',
+      process_path: '/Volumes/LEXAR/Codex/old/evaOS Workbench Beta.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+      tailnet_ip: '100.64.0.4',
+      health: { reachable: true, host: '100.64.0.4' },
+    };
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': [staleStatus, staleStatus, staleStatus, staleStatus, staleStatus],
+        'connector-service stop --json': {
+          ok: true,
+          action: 'stop',
+        },
+      },
+      {
+        sleep: vi.fn(async () => undefined),
+        spawnConnectorProcess: vi.fn(() => mockChildProcess()),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_owner_mismatch',
+    });
+    expect(result.message).toContain('Mac Access connector could not start');
+    expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces a tracked Workbench-managed connector as ready when the bridge reports manual reachable status', async () => {
     const spawnConnectorProcess = vi.fn(() => mockChildProcess());
     const deps = depsWithResponses(

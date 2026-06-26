@@ -49,7 +49,10 @@ describe('Guid agent support policy', () => {
     expect(normalizeSupportedAgentSelection('acp', 'claude')).toEqual({ agent_type: 'acp', backend: 'claude' });
     expect(normalizeSupportedAgentSelection(undefined, 'claude')).toEqual({ agent_type: 'acp', backend: 'claude' });
     expect(normalizeSupportedAgentSelection('remote', 'remote')).toBeUndefined();
-    expect(normalizeSupportedAgentSelection('openclaw-gateway')).toBeUndefined();
+    expect(normalizeSupportedAgentSelection('openclaw-gateway')).toEqual({
+      agent_type: 'acp',
+      backend: 'openclaw',
+    });
     expect(normalizeSupportedAgentSelection('gemini')).toBeUndefined();
   });
 });
