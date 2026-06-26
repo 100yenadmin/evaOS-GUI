@@ -426,6 +426,11 @@ describe('Sider runtime route visibility', () => {
     await user.click(signIn);
 
     expect(brokerMocks.beginDesktopAuth).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByText('Continue evaOS sign-in in the browser, then return here.')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Open sign-in' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
   });
 
   it('keeps evaOS broker sign-in visible when the upstream shell account is signed in but broker session is missing', async () => {
