@@ -1244,6 +1244,19 @@ describe('evaosNativeCompanionStatus', () => {
       grantState: 'active',
       auditId: 'audit-grant',
     }));
+    const runConnectorCommand = vi.fn(async () => ({
+      ok: true,
+      auditId: 'audit-live-connector',
+      data: {
+        device: {
+          hostname: 'Proof-Mac.local',
+        },
+        permissions: {
+          accessibility: { status: 'granted' },
+          screen_recording: { status: 'granted' },
+        },
+      },
+    }));
     const deps = depsWithResponses(
       {
         'connector-service status --json': {
@@ -1285,6 +1298,7 @@ describe('evaosNativeCompanionStatus', () => {
       },
       {
         ensureCustomerMacConnectorGrant,
+        runConnectorCommand,
         readTextFile: vi.fn((path: string) => {
           expect(path).toMatch(/connector\.token$/);
           return 'secret-token-abcdef1234567890\n';
@@ -1308,7 +1322,7 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(result.pairing).toBeUndefined();
-    expect(result.auditIds).toEqual(['audit-grant', 'audit-mac', 'audit-control']);
+    expect(result.auditIds).toEqual(['audit-grant', 'audit-live-connector', 'audit-mac', 'audit-control']);
     expect(ensureCustomerMacConnectorGrant).toHaveBeenCalledWith({
       customerId: 'golden',
       deviceName,
@@ -1321,9 +1335,96 @@ describe('evaosNativeCompanionStatus', () => {
       },
       screenSharingOptIn: false,
     });
+    expect(runConnectorCommand).toHaveBeenCalledWith({
+      connectorUrl: 'http://100.64.0.10:8765',
+      connectorToken: 'secret-token-abcdef1234567890',
+      command: 'customerMacStatus',
+      params: {},
+    });
     expect(JSON.stringify(result)).not.toMatch(
       /PAIR-|customer_mac_complete_pairing|connectorUrl|connectorToken|secret-token|100\.64\.0\.10|8765|token_path/i
     );
+  });
+
+  it('does not register a grant when the live connector endpoint lacks Mac permissions', async () => {
+    const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
+      ok: true,
+      customerId: 'golden',
+      deviceId: 'device-golden',
+      grantId: 'grant-golden',
+      grantState: 'active',
+      auditId: 'audit-grant',
+    }));
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+          token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-local-mac',
+          data: {
+            device: {
+              hostname: 'Local-CLI-Mac.local',
+            },
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            ready: true,
+            active: true,
+            mode: 'ask-permission',
+            kill_switch: false,
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'audit-tail --json --limit 12': {
+          ok: true,
+          data: {
+            records: [{ audit_id: 'audit-local-mac' }, { audit_id: 'audit-control' }],
+          },
+        },
+      },
+      {
+        ensureCustomerMacConnectorGrant,
+        runConnectorCommand: vi.fn(async () => ({
+          ok: true,
+          auditId: 'audit-live-connector',
+          data: {
+            permissions: {
+              accessibility: { status: 'missing' },
+              screen_recording: { status: 'missing' },
+            },
+          },
+        })),
+        readTextFile: vi.fn(() => 'secret-token-abcdef1234567890\n'),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'setup_check', customerId: 'golden' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:connector-grant-live-permission-required',
+      auditId: 'audit-live-connector',
+    });
+    expect(result.message).toContain('live connector endpoint');
+    expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toMatch(/secret-token|100\.64\.0\.10|8765|token_path/i);
   });
 
   it('creates a renderer-safe pairing prompt without exposing connector private material', async () => {
