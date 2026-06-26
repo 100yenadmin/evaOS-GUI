@@ -44,8 +44,8 @@ function depsWithResponses(
   return {
     now: () => new Date('2026-06-07T03:45:00.000Z'),
     bridgePaths: [bundledBridgePath],
-    releasedWorkbenchPath: '/Applications/evaOS.app',
-    existsSync: vi.fn((path: string) => path === bundledBridgePath || path === '/Applications/evaOS.app'),
+    releasedWorkbenchPath: '/Applications/evaOS Workbench.app',
+    existsSync: vi.fn((path: string) => path === bundledBridgePath || path === '/Applications/evaOS Workbench.app'),
     execFile: vi.fn(async (_file, args) => {
       const key = args.join(' ');
       const response = responses[key];
@@ -106,7 +106,7 @@ describe('evaosNativeCompanionStatus', () => {
           AIONUI_E2E_TEST: '1',
           AIONUI_EVAOS_NATIVE_COMPANION_STATUS_FIXTURE: 'ready',
         } as NodeJS.ProcessEnv,
-        existsSync: vi.fn((path: string) => path === '/Applications/evaOS.app'),
+        existsSync: vi.fn((path: string) => path === '/Applications/evaOS Workbench.app'),
       }
     );
 
@@ -731,7 +731,9 @@ describe('evaosNativeCompanionStatus', () => {
         bridgePaths: [bundledBridge, homebrewBridge],
         existsSync: vi.fn(
           (candidate: string) =>
-            candidate === bundledBridge || candidate === homebrewBridge || candidate === '/Applications/evaOS.app'
+            candidate === bundledBridge ||
+            candidate === homebrewBridge ||
+            candidate === '/Applications/evaOS Workbench.app'
         ),
       }
     );
@@ -955,7 +957,7 @@ describe('evaosNativeCompanionStatus', () => {
     const deps = depsWithResponses(
       {},
       {
-        existsSync: vi.fn((path: string) => path === '/Applications/evaOS.app'),
+        existsSync: vi.fn((path: string) => path === '/Applications/evaOS Workbench.app'),
       }
     );
 
@@ -2409,7 +2411,7 @@ describe('evaosNativeCompanionStatus', () => {
     const deps = depsWithResponses(
       {},
       {
-        existsSync: vi.fn((path: string) => path === '/Applications/evaOS.app'),
+        existsSync: vi.fn((path: string) => path === '/Applications/evaOS Workbench.app'),
         openPath,
       }
     );
@@ -2418,10 +2420,10 @@ describe('evaosNativeCompanionStatus', () => {
 
     expect(result).toEqual({
       opened: true,
-      path: '/Applications/evaOS.app',
+      path: '/Applications/evaOS Workbench.app',
       message: 'Opened released evaOS Workbench for native pairing and repair.',
     });
-    expect(openPath).toHaveBeenCalledWith('/Applications/evaOS.app');
+    expect(openPath).toHaveBeenCalledWith('/Applications/evaOS Workbench.app');
   });
 
   it('opens new-app macOS repair targets without launching the released Workbench', async () => {

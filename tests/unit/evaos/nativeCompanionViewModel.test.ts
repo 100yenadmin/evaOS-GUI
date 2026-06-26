@@ -18,7 +18,7 @@ const baseStatus = (overrides: Partial<IEvaosNativeCompanionStatusView> = {}): I
   summaryText: 'Native companion repair is required before evaOS or Hermes can use Mac control.',
   sourcePointer: 'native-companion:read-only-bridge',
   canOpenReleasedWorkbench: true,
-  releasedWorkbench: { installed: true, path: '/Applications/evaOS.app' },
+  releasedWorkbench: { installed: true, path: '/Applications/evaOS Workbench.app' },
   bridgeCli: {
     installed: true,
     status: 'repair_required',

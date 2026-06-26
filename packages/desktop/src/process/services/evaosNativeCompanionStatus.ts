@@ -40,7 +40,7 @@ import { getDefaultEvaosBrokerSessionClient, isEvaosBrokerSessionError } from '.
 const execFileAsync = promisify(execFileCallback);
 
 const HOMEBREW_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
-const DEFAULT_RELEASED_WORKBENCH_PATH = '/Applications/evaOS.app';
+const DEFAULT_RELEASED_WORKBENCH_PATH = `/Applications/${EVAOS_BETA_IDENTITY.macAppBundleName}`;
 const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
@@ -427,7 +427,7 @@ function nativeCompanionFixtureStatus(
       running: false,
       path: DEFAULT_RELEASED_WORKBENCH_PATH,
       version: '0.6.27',
-      displayName: 'evaOS.app',
+      displayName: EVAOS_BETA_IDENTITY.macAppBundleName,
     },
     bridgeCli: {
       installed: true,
