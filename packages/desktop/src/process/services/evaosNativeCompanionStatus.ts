@@ -176,7 +176,7 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacPermissions = effectiveCustomerMacPermissions(customerMacStatusPermissions, controlSession);
   const bridgeEffectivePermissions = effectiveBridgePermissions(bridgePermissions, controlSession);
   const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgeEffectivePermissions);
-  const connectorServiceReady = connectorServiceIsReady(connectorService);
+  const connectorServiceReady = connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService);
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
@@ -227,7 +227,7 @@ export async function getEvaosNativeCompanionStatus(
         : connectorServiceStatusAvailable(connectorService)
           ? 'repair_required'
           : 'error',
-      running: readBoolean(connectorService.data, 'running'),
+      running: connectorServiceReady || readBoolean(connectorService.data, 'running'),
       reachable: readNestedBoolean(connectorService.data, ['health', 'reachable']),
       managedBy: readString(connectorService.data, 'managed_by'),
       tailnetIp: readString(connectorService.data, 'tailnet_ip'),
@@ -473,7 +473,7 @@ async function ensureWorkbenchManagedConnectorReady(
   before?: BridgeCommandResult
 ): Promise<BridgeCommandResult> {
   const current = before ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
-  if (connectorServiceIsReady(current) && workbenchManagedConnectorMatchesStatus(bridgePath, current.data)) {
+  if (workbenchManagedConnectorIsReady(bridgePath, current)) {
     return current;
   }
 
@@ -537,7 +537,15 @@ function workbenchManagedConnectorMatchesStatus(bridgePath: string, status: unkn
 }
 
 function workbenchManagedConnectorIsReady(bridgePath: string, result: BridgeCommandResult): boolean {
-  return connectorServiceIsReady(result) && workbenchManagedConnectorMatchesStatus(bridgePath, result.data);
+  return (
+    connectorServiceStatusAvailable(result) &&
+    readNestedBoolean(result.data, ['health', 'reachable']) === true &&
+    workbenchManagedConnectorMatchesStatus(bridgePath, result.data)
+  );
+}
+
+function connectorServiceIsReadyForWorkbenchSession(bridgePath: string, result: BridgeCommandResult): boolean {
+  return connectorServiceIsReady(result) || workbenchManagedConnectorIsReady(bridgePath, result);
 }
 
 function workbenchManagedConnectorEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -677,7 +685,9 @@ async function runSetupCheckAction(
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
   const setup = {
-    connectorReady: connectorServiceIsReady(connectorService),
+    connectorReady:
+      connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService) ||
+      connectorServiceCanAttemptWorkbenchSessionStart(connectorService),
     macReady:
       (customerMac.ok && hasGrantedCorePermissions(permissions)) || controlSessionHasPermissionProof(controlSession),
     controlReady: controlSession.ok,
@@ -767,7 +777,7 @@ async function ensureCustomerMacConnectorGrantAction(
   const connectorService =
     prepared?.connectorService ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
   let sessionConnector = connectorService;
-  if (!connectorServiceIsReady(sessionConnector)) {
+  if (!connectorServiceCanAttemptWorkbenchSessionStart(sessionConnector)) {
     return nativeActionResult(
       resultAction,
       'repair_required',
@@ -927,6 +937,10 @@ async function ensureCustomerMacConnectorGrantAction(
       agentPairingStatus: grant.agentPairingStatus ?? 'ready_for_agent_pairing',
     }
   );
+}
+
+function connectorServiceCanAttemptWorkbenchSessionStart(result: BridgeCommandResult): boolean {
+  return connectorServiceIsReady(result) || readNestedBoolean(result.data, ['health', 'reachable']) === true;
 }
 
 async function runAuditTailAction(

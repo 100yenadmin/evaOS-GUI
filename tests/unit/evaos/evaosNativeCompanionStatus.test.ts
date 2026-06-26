@@ -978,7 +978,8 @@ describe('evaosNativeCompanionStatus', () => {
           stdout: json({
             ok: true,
             audit_id: 'audit-connector',
-            running: true,
+            loaded: false,
+            running: false,
             managed_by: 'workbench-or-manual',
             tailnet_ip: '100.64.0.4',
             health: { reachable: true, host: '100.64.0.4' },
@@ -1018,6 +1019,105 @@ describe('evaosNativeCompanionStatus', () => {
     ).toHaveLength(1);
   });
 
+  it('surfaces a tracked Workbench-managed connector as ready when the bridge reports manual reachable status', async () => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': [
+          {
+            ok: true,
+            running: true,
+            managed_by: 'launchagent',
+            tailnet_ip: '100.64.0.4',
+            health: { reachable: true, host: '100.64.0.4' },
+          },
+          {
+            ok: true,
+            audit_id: 'audit-connector-ready',
+            loaded: false,
+            running: false,
+            managed_by: 'workbench-or-manual',
+            tailnet_ip: '100.64.0.4',
+            health: { reachable: true, host: '100.64.0.4' },
+          },
+          {
+            ok: true,
+            audit_id: 'audit-connector-status',
+            loaded: false,
+            running: false,
+            managed_by: 'workbench-or-manual',
+            tailnet_ip: '100.64.0.4',
+            health: { reachable: true, host: '100.64.0.4' },
+          },
+        ],
+        'connector-service stop --json': {
+          ok: true,
+          action: 'stop',
+        },
+        'status --json': {
+          ok: true,
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+            safety: { read_only: true },
+          },
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'customer-mac iphone-mirroring status --json': {
+          ok: true,
+          audit_id: 'audit-iphone',
+          data: { installed: true, running: false },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            ready: true,
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+          },
+        },
+        'audit-tail --json --limit 5': {
+          ok: true,
+          data: {
+            records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-control' }],
+          },
+        },
+      },
+      { spawnConnectorProcess }
+    );
+
+    const start = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(start).toMatchObject({
+      action: 'connector_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:workbench-session-connector-start',
+    });
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      connectorService: {
+        status: 'ready',
+        running: true,
+        reachable: true,
+        managedBy: 'workbench-or-manual',
+      },
+    });
+  });
+
   it('stops launchd and starts a Workbench-owned session connector for Mac Access', async () => {
     const child = mockChildProcess();
     const spawnConnectorProcess = vi.fn(() => child);
@@ -1040,7 +1140,8 @@ describe('evaosNativeCompanionStatus', () => {
           stdout: json({
             ok: true,
             audit_id: statusCalls > 1 ? 'audit-connector-ready' : 'audit-connector-starting',
-            running: true,
+            loaded: statusCalls <= 1,
+            running: statusCalls <= 1,
             managed_by: statusCalls > 1 ? 'workbench-or-manual' : 'launchagent',
             tailnet_ip: '100.64.0.4',
             health: { reachable: statusCalls > 1, host: '100.64.0.4' },
@@ -1328,7 +1429,8 @@ describe('evaosNativeCompanionStatus', () => {
           },
           {
             ok: true,
-            running: true,
+            loaded: false,
+            running: false,
             health: { reachable: true, host: '100.64.0.10' },
             managed_by: 'workbench-or-manual',
             tailnet_ip: '100.64.0.10',
@@ -1442,7 +1544,8 @@ describe('evaosNativeCompanionStatus', () => {
           },
           {
             ok: true,
-            running: true,
+            loaded: false,
+            running: false,
             health: { reachable: true, host: '100.64.0.10' },
             managed_by: 'workbench-or-manual',
             tailnet_ip: '100.64.0.10',
@@ -1551,7 +1654,8 @@ describe('evaosNativeCompanionStatus', () => {
           'connector-service status --json': [
             {
               ok: true,
-              running: true,
+              loaded: staleManagedBy === 'launchagent',
+              running: staleManagedBy === 'launchagent',
               health: { reachable: true, host: '100.64.0.10' },
               managed_by: staleManagedBy,
               tailnet_ip: '100.64.0.10',
@@ -1559,7 +1663,8 @@ describe('evaosNativeCompanionStatus', () => {
             },
             {
               ok: true,
-              running: true,
+              loaded: false,
+              running: false,
               health: { reachable: true, host: '100.64.0.10' },
               managed_by: 'workbench-or-manual',
               tailnet_ip: '100.64.0.10',
