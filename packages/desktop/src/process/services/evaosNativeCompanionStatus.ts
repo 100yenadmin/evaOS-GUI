@@ -6,6 +6,8 @@
 
 import { execFile as execFileCallback } from 'node:child_process';
 import fs from 'node:fs';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { homedir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -72,6 +74,12 @@ export type EvaosNativeCompanionStatusDeps = {
     permissionState?: Record<string, unknown>;
     screenSharingOptIn?: boolean;
   }) => Promise<IEvaosNativeCompanionConnectorGrant>;
+  runConnectorCommand?: (request: {
+    connectorUrl: string;
+    connectorToken: string;
+    command: string;
+    params?: Record<string, unknown>;
+  }) => Promise<BridgeCommandResult>;
   readTextFile?: (path: string) => string;
 };
 
@@ -659,25 +667,6 @@ async function ensureCustomerMacConnectorGrantAction(
     );
   }
 
-  const customerMac =
-    prepared?.customerMac ?? (await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps));
-  const controlSession =
-    prepared?.controlSession ??
-    (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
-  const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
-  if (!hasGrantedCorePermissions(permissions)) {
-    return nativeActionResult(
-      resultAction,
-      'repair_required',
-      'Mac Access needs Accessibility and Screen Recording before Workbench can connect Mac control.',
-      {
-        sourcePointer: 'native-companion:connector-grant-mac-permission-required',
-        auditId: customerMac.auditId,
-        auditIds: compactStrings([customerMac.auditId]),
-      }
-    );
-  }
-
   const connectorUrl = connectorUrlFromStatus(connectorService.data);
   const connectorToken = connectorTokenFromStatus(connectorService.data, deps);
   if (!connectorUrl || !connectorToken) {
@@ -688,6 +677,27 @@ async function ensureCustomerMacConnectorGrantAction(
       {
         sourcePointer: 'native-companion:connector-grant-local-secret-unavailable',
         agentPairingStatus: 'ready_for_agent_pairing',
+      }
+    );
+  }
+
+  const customerMac = await runConnectorCustomerMacStatus({ connectorUrl, connectorToken, deps });
+  const controlSession =
+    prepared?.controlSession ??
+    (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
+  const permissions = permissionView(customerMac.data?.permissions);
+  if (!customerMac.ok || !hasGrantedCorePermissions(permissions)) {
+    const detail = customerMac.ok
+      ? 'The brokered connector endpoint reports missing Accessibility or Screen Recording.'
+      : bridgeFailureDetail(customerMac, 'The brokered connector endpoint could not run customerMacStatus.');
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      `Mac Access needs the live connector endpoint to prove Accessibility and Screen Recording before Workbench can connect Mac control. ${detail}`,
+      {
+        sourcePointer: 'native-companion:connector-grant-live-permission-required',
+        auditId: customerMac.auditId,
+        auditIds: compactStrings([customerMac.auditId]),
       }
     );
   }
@@ -724,6 +734,7 @@ async function ensureCustomerMacConnectorGrantAction(
 
   const auditIds = compactStrings([
     grant.auditId,
+    customerMac.auditId,
     ...(prepared?.auditIds ?? [customerMac.auditId, controlSession.auditId]),
   ]);
   return nativeActionResult(
@@ -1257,6 +1268,97 @@ async function runBridgeCommand(
   }
 }
 
+async function runConnectorCustomerMacStatus(input: {
+  connectorUrl: string;
+  connectorToken: string;
+  deps: EvaosNativeCompanionStatusDeps;
+}): Promise<BridgeCommandResult> {
+  const runConnectorCommand = input.deps.runConnectorCommand ?? defaultRunConnectorCommand;
+  return runConnectorCommand({
+    connectorUrl: input.connectorUrl,
+    connectorToken: input.connectorToken,
+    command: 'customerMacStatus',
+    params: {},
+  });
+}
+
+async function defaultRunConnectorCommand(input: {
+  connectorUrl: string;
+  connectorToken: string;
+  command: string;
+  params?: Record<string, unknown>;
+}): Promise<BridgeCommandResult> {
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const settle = (result: BridgeCommandResult): void => {
+      if (settled) return;
+      settled = true;
+      resolvePromise(result);
+    };
+
+    let url: URL;
+    try {
+      url = new URL('/v1/commands', input.connectorUrl);
+    } catch {
+      settle({ ok: false, errorCode: 'connector_url_invalid', errorMessage: 'Connector URL is invalid.' });
+      return;
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      settle({
+        ok: false,
+        errorCode: 'connector_protocol_invalid',
+        errorMessage: 'Connector URL must use http or https.',
+      });
+      return;
+    }
+
+    const body = JSON.stringify({ command: input.command, params: input.params ?? {} });
+    const requestFn = url.protocol === 'https:' ? httpsRequest : httpRequest;
+    const request = requestFn(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.connectorToken}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: PAIRING_COMMAND_TIMEOUT_MS,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on('end', () => {
+          const parsed = parseBridgeCommandPayload(Buffer.concat(chunks).toString('utf8'));
+          if ((response.statusCode ?? 0) >= 400 && parsed.ok) {
+            settle({
+              ...parsed,
+              ok: false,
+              errorCode: `connector_http_${response.statusCode}`,
+              errorMessage: `Connector command failed with HTTP ${response.statusCode}.`,
+            });
+            return;
+          }
+          settle(parsed);
+        });
+      }
+    );
+    request.on('timeout', () => {
+      request.destroy(new Error('Connector command timed out.'));
+    });
+    request.on('error', (error) => {
+      settle({
+        ok: false,
+        errorCode: 'connector_command_failed',
+        errorMessage: error instanceof Error ? error.message : 'Connector command failed.',
+      });
+    });
+    request.end(body);
+  });
+}
+
 function parseBridgeCommandPayload(stdout: string): BridgeCommandResult {
   try {
     const payload = JSON.parse(stdout || '{}') as BridgePayload & Record<string, unknown>;
@@ -1362,7 +1464,7 @@ async function defaultOpenPath(path: string): Promise<string> {
 }
 
 async function defaultSleep(durationMs: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, durationMs));
+  await new Promise((done) => setTimeout(done, durationMs));
 }
 
 async function defaultOpenExternal(url: string): Promise<void> {
