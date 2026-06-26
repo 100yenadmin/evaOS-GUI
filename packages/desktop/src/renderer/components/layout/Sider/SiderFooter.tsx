@@ -116,6 +116,10 @@ interface SiderFooterProps {
   showSignIn?: boolean;
   onSignInClick?: () => void;
   signInError?: string | null;
+  signInMessage?: string | null;
+  signInUrl?: string | null;
+  onOpenSignInUrl?: () => void;
+  onCopySignInUrl?: () => void;
 }
 
 const SiderFooter: React.FC<SiderFooterProps> = ({
@@ -138,6 +142,10 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   showSignIn = false,
   onSignInClick,
   signInError,
+  signInMessage,
+  signInUrl,
+  onOpenSignInUrl,
+  onCopySignInUrl,
 }) => {
   const { t } = useTranslation();
   const footerRef = useRef<HTMLDivElement | null>(null);
@@ -324,6 +332,33 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
             </Tooltip>
             {!collapsed && signInError ? (
               <div className='collapsed-hidden px-8px text-10px leading-14px text-warning-6'>{signInError}</div>
+            ) : null}
+            {!collapsed && signInMessage ? (
+              <div className='collapsed-hidden flex flex-col gap-4px px-8px'>
+                <div className='text-10px leading-14px text-t-secondary'>{signInMessage}</div>
+                {signInUrl ? (
+                  <div className='flex gap-8px'>
+                    {onOpenSignInUrl ? (
+                      <button
+                        type='button'
+                        className='border-0 bg-transparent p-0 text-10px leading-14px text-primary-6 cursor-pointer'
+                        onClick={onOpenSignInUrl}
+                      >
+                        Open sign-in
+                      </button>
+                    ) : null}
+                    {onCopySignInUrl ? (
+                      <button
+                        type='button'
+                        className='border-0 bg-transparent p-0 text-10px leading-14px text-primary-6 cursor-pointer'
+                        onClick={onCopySignInUrl}
+                      >
+                        Copy link
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         )}
