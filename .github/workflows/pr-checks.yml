@@ -69,10 +69,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: List changed files
         id: changed-files
@@ -179,10 +193,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -224,10 +252,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -262,10 +304,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -306,10 +362,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -335,7 +405,7 @@ jobs:
 
       - name: Upload coverage to Codecov (Linux coverage only)
         id: codecov-upload
-        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository == 'iOfficeAI/AionUi'
+        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository == '100yenadmin/evaOS-GUI'
         uses: codecov/codecov-action@04b047e8bb82a0c002c8312c1c880fbc6a999d45
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -344,7 +414,7 @@ jobs:
           fail_ci_if_error: false
           verbose: true
       - name: Skip Codecov upload when preconditions are not met
-        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository != 'iOfficeAI/AionUi'
+        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository != '100yenadmin/evaOS-GUI'
         shell: bash
         run: |
           echo 'Skipping Codecov upload due to unmet preconditions.'
@@ -406,10 +476,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -438,10 +522,14 @@ jobs:
       - name: Publish i18n summary
         if: always()
         shell: bash
+        env:
+          I18N_OUTCOME: ${{ steps.i18n.outcome }}
         run: |
           {
             echo "## i18n validation"
-            if grep -q "⚠️" i18n-check.log; then
+            if [ "$I18N_OUTCOME" = "failure" ]; then
+              echo "i18n validation failed. Please review errors below."
+            elif [ -f i18n-check.log ] && grep -q "⚠️" i18n-check.log; then
               echo "Missing/incomplete translations found. Please review warnings below."
             else
               echo "No i18n warnings detected."
@@ -450,7 +538,11 @@ jobs:
             echo "<details><summary>i18n log</summary>"
             echo ""
             echo '```text'
-            cat i18n-check.log
+            if [ -f i18n-check.log ]; then
+              cat i18n-check.log
+            else
+              echo "i18n-check.log was not produced."
+            fi
             echo '```'
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -471,10 +563,24 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
