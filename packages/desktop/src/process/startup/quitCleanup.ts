@@ -15,6 +15,7 @@ type QuitCleanupDeps = {
   markExplicitQuit: () => void;
   destroyTray: () => void;
   disposeCronResumeListener: () => void;
+  stopNativeCompanionConnector?: () => void;
   stopBackend: () => Promise<void>;
   destroyPetWindow: () => Promise<void> | void;
   logInfo: (message: string) => void;
@@ -54,6 +55,7 @@ async function runQuitCleanup(deps: QuitCleanupDeps): Promise<void> {
 
   const cleanup = async () => {
     deps.disposeCronResumeListener();
+    deps.stopNativeCompanionConnector?.();
 
     await deps.stopBackend().catch((err) => deps.logError('[App] Failed to stop backend:', err));
 

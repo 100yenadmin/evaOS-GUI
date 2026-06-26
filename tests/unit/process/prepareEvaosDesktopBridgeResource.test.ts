@@ -17,6 +17,8 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(wrapper).toContain('unset PYTHONUSERBASE');
     expect(wrapper).toContain('export PYTHONNOUSERSITE=1');
     expect(wrapper).toContain('export PYTHONPATH="$BRIDGE_DIR/src"');
+    expect(wrapper).toContain('CACHE_ROOT="$HOME/Library/Caches/evaos-desktop-bridge"');
+    expect(wrapper).toContain('export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"');
     expect(wrapper).toContain('exec "$PYTHON_BIN" -S -m evaos_desktop_bridge.cli "$@"');
     expect(wrapper).not.toContain('${PYTHONPATH:+:$PYTHONPATH}');
     expect(wrapper).not.toContain('site-packages');
