@@ -584,16 +584,14 @@ describe('evaOS installed app product proof', () => {
           owners: [
             {
               pid: '17959',
-              command:
-                '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
+              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
               matchesExpectedBridge: false,
             },
           ],
           staleOwners: [
             {
               pid: '17959',
-              command:
-                '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
+              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
               matchesExpectedBridge: false,
             },
           ],
@@ -688,9 +686,7 @@ describe('evaOS installed app product proof', () => {
 
     const trust = installedAppProof.inspectInstalledAppTrustState(tempApp, () => '');
 
-    expect(trust.pythonCacheFiles).toEqual([
-      'src/evaos_desktop_bridge/__pycache__/qa_canary.cpython-314.pyc',
-    ]);
+    expect(trust.pythonCacheFiles).toEqual(['src/evaos_desktop_bridge/__pycache__/qa_canary.cpython-314.pyc']);
     expect(() => installedAppProof.assertInstalledAppTrustStateClean(trust)).toThrow(/Python cache files/);
   });
 

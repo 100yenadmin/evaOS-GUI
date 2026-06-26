@@ -217,11 +217,9 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
   let pids = [];
   try {
     pids = parseBridgeListenerPids(
-      execFileSyncImpl(
-        '/usr/sbin/lsof',
-        ['-nP', `-iTCP:${BRIDGE_LISTENER_PORT}`, '-sTCP:LISTEN', '-t'],
-        { encoding: 'utf8' }
-      )
+      execFileSyncImpl('/usr/sbin/lsof', ['-nP', `-iTCP:${BRIDGE_LISTENER_PORT}`, '-sTCP:LISTEN', '-t'], {
+        encoding: 'utf8',
+      })
     );
   } catch (error) {
     return {
@@ -374,7 +372,11 @@ function collectRelativeFiles(directory, rootPath, matches) {
 function inspectInstalledAppTrustState(appPath = DEFAULT_APP_PATH, execFileSyncImpl = execFileSync) {
   return {
     codesign: runTrustCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], execFileSyncImpl),
-    spctl: runTrustCommand('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose', appPath], execFileSyncImpl),
+    spctl: runTrustCommand(
+      '/usr/sbin/spctl',
+      ['--assess', '--type', 'execute', '--verbose', appPath],
+      execFileSyncImpl
+    ),
     pythonCacheFiles: findPythonCacheFiles(path.join(appPath, 'Contents', 'Resources', 'Bridge')),
   };
 }
