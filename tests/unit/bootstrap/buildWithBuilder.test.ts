@@ -139,20 +139,26 @@ childProcess.execSync = function mockedExecSync(command) {
       expect(generatedConfig).toContain('from: public');
       expect(generatedConfig).toContain('from: resources/app.png');
     } finally {
+      rmSync(thinShellConfigPath, { force: true });
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
-  it('rejects thin-shell when release flags are set', () => {
+  it.each([
+    { profile: 'thin-shell', releaseFlag: 'EVAOS_FINALIZE_MAC_DMG' },
+    { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_PUBLIC_RELEASE' },
+    { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
+    { profile: 'functional-smoke', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
+  ])('rejects $profile when release flag $releaseFlag is set', ({ profile, releaseFlag }) => {
     const { result, tempDir } = runBuildWithHook(
-      ['arm64', '--mac', 'dir', '--arm64', '--packaging-profile=thin-shell'],
-      { EVAOS_FINALIZE_MAC_DMG: 'true' }
+      ['arm64', '--mac', 'dir', '--arm64', `--packaging-profile=${profile}`],
+      { [releaseFlag]: 'true' }
     );
 
     try {
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain('EVAOS_PACKAGING_PROFILE=thin-shell is UI-shell proof only');
-      expect(result.stderr).toContain('EVAOS_FINALIZE_MAC_DMG');
+      expect(result.stderr).toContain(`EVAOS_PACKAGING_PROFILE=${profile} is smoke proof only`);
+      expect(result.stderr).toContain(releaseFlag);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

@@ -51,6 +51,20 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   console.log(`   ✓ Bundled resources verified for ${runtimeKey}`);
 }
 
+/**
+ * electron-builder afterPack hook.
+ *
+ * @param {{arch: string|number, electronPlatformName: string, appOutDir: string, packager?: object}} context - Build context from electron-builder.
+ * @returns {Promise<void>} Resolves after resource verification and any native-module rebuilds complete.
+ *
+ * The hook reads EVAOS_PACKAGING_PROFILE from the build environment. `full` and
+ * `functional-smoke` must include the bundled AionCore resources and fail closed
+ * when they are missing. `thin-shell` intentionally skips bundled runtime
+ * resource verification because it is a UI/layout smoke artifact only. Non-full
+ * profiles are refused when release, signing, notary, or distribution flags are
+ * present. Native module rebuild behavior remains unchanged: rebuild when cross
+ * compiling, on Windows same-arch packaging, or when FORCE_NATIVE_REBUILD=true.
+ */
 module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
   const packagingProfile = readPackagingProfile({ argv: [], env: process.env });

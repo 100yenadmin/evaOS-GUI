@@ -71,18 +71,23 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('rejects thin-shell when release flags are set', async () => {
+  it.each([
+    { profile: 'thin-shell', releaseFlag: 'EVAOS_FINALIZE_MAC_DMG' },
+    { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_PUBLIC_RELEASE' },
+    { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
+    { profile: 'functional-smoke', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
+  ])('rejects $profile when release flag $releaseFlag is set', async ({ profile, releaseFlag }) => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
-    const oldReleaseFlag = process.env.EVAOS_FINALIZE_MAC_DMG;
-    process.env.EVAOS_PACKAGING_PROFILE = 'thin-shell';
-    process.env.EVAOS_FINALIZE_MAC_DMG = 'true';
+    const oldReleaseFlag = process.env[releaseFlag];
+    process.env.EVAOS_PACKAGING_PROFILE = profile;
+    process.env[releaseFlag] = 'true';
     const { context, tempDir } = createLinuxContext();
 
     try {
-      await expect(afterPack(context)).rejects.toThrow('EVAOS_FINALIZE_MAC_DMG');
+      await expect(afterPack(context)).rejects.toThrow(releaseFlag);
     } finally {
       restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
-      restoreEnv('EVAOS_FINALIZE_MAC_DMG', oldReleaseFlag);
+      restoreEnv(releaseFlag, oldReleaseFlag);
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
