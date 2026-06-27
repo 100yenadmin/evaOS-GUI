@@ -76,6 +76,8 @@ describe('afterPack packaging profile guard', () => {
     { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_PUBLIC_RELEASE' },
     { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
     { profile: 'functional-smoke', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
+    { profile: 'functional-smoke', releaseFlag: 'appleIdPassword' },
+    { profile: 'functional-smoke', releaseFlag: 'teamId' },
   ])('rejects $profile when release flag $releaseFlag is set', async ({ profile, releaseFlag }) => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     const oldReleaseFlag = process.env[releaseFlag];

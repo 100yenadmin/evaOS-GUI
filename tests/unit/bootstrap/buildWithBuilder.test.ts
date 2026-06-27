@@ -149,6 +149,8 @@ childProcess.execSync = function mockedExecSync(command) {
     { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_PUBLIC_RELEASE' },
     { profile: 'thin-shell', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
     { profile: 'functional-smoke', releaseFlag: 'EVAOS_BETA_REQUIRE_SIGNING' },
+    { profile: 'functional-smoke', releaseFlag: 'appleId' },
+    { profile: 'functional-smoke', releaseFlag: 'TEAM_ID' },
   ])('rejects $profile when release flag $releaseFlag is set', ({ profile, releaseFlag }) => {
     const { result, tempDir } = runBuildWithHook(
       ['arm64', '--mac', 'dir', '--arm64', `--packaging-profile=${profile}`],
