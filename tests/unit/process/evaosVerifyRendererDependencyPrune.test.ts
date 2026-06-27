@@ -7,6 +7,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const verifier = require('../../../scripts/evaosVerifyRendererDependencyPrune.js') as {
   rendererOnlyPackages: string[];
+  runtimeTransitivePackages: string[];
+  verifyRendererDependencyManifest: (packageJsonPath?: string) => {
+    checkedRendererPackages: number;
+    checkedRuntimeTransitivePackages: number;
+  };
   verifyRendererDependencyPrune: (appPath: string) => { checkedPackages: number };
 };
 
@@ -70,6 +75,13 @@ describe('evaosVerifyRendererDependencyPrune', () => {
 
     expect(verifier.verifyRendererDependencyPrune(appPath)).toEqual({
       checkedPackages: verifier.rendererOnlyPackages.length,
+    });
+  });
+
+  it('keeps the verifier package lists in sync with package.json buckets', () => {
+    expect(verifier.verifyRendererDependencyManifest(require.resolve('../../../package.json'))).toEqual({
+      checkedRendererPackages: verifier.rendererOnlyPackages.length,
+      checkedRuntimeTransitivePackages: verifier.runtimeTransitivePackages.length,
     });
   });
 

@@ -50,9 +50,10 @@ rg -n "from ['\"](@arco-design/web-react|@codemirror/(commands|lang-css|lang-htm
 Remote package proof is enforced by Thin App Smoke after `electron-builder --dir` produces an unpacked `.app`:
 
 ```bash
+node scripts/evaosVerifyRendererDependencyPrune.js --verify-package-json
 node scripts/evaosVerifyRendererDependencyPrune.js "out/mac-arm64/AionUi.app"
 ```
 
-The verifier inspects both `app.asar` and `app.asar.unpacked/node_modules`. Absence from `app.asar` alone is not enough because native/WASM/runtime packages are intentionally unpacked.
+The verifier first checks the package-list buckets against `package.json`, then inspects both `app.asar` and `app.asar.unpacked/node_modules`. Absence from `app.asar` alone is not enough because native/WASM/runtime packages are intentionally unpacked.
 
 The renderer bundle must still launch and cover Markdown, diff UI, Mermaid diagrams, code highlighting, editor surfaces, settings, and updater UI.

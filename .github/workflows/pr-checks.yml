@@ -707,6 +707,7 @@ jobs:
 
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          node scripts/evaosVerifyRendererDependencyPrune.js --verify-package-json
           node scripts/evaosVerifyRendererDependencyPrune.js "$APP_PATH"
 
           {

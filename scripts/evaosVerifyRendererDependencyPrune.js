@@ -41,10 +41,20 @@ const rendererOnlyPackages = [
   'swr',
 ];
 
+const runtimeTransitivePackages = ['diff', 'eventemitter3'];
+
 function usage() {
-  console.error('Usage: node scripts/evaosVerifyRendererDependencyPrune.js <path-to-unpacked-app>');
+  console.error(
+    'Usage: node scripts/evaosVerifyRendererDependencyPrune.js <path-to-unpacked-app|--verify-package-json>'
+  );
 }
 
+/**
+ * Reads and parses the file-tree header from an Electron asar archive.
+ *
+ * @param {string} archivePath Path to the `app.asar` archive.
+ * @returns {{ files?: Record<string, unknown> }} Parsed asar header object.
+ */
 function readAsarHeader(archivePath) {
   const fd = fs.openSync(archivePath, 'r');
   try {
@@ -77,6 +87,46 @@ function packagePathExists(root, packageName) {
   return fs.existsSync(path.join(root, ...packageName.split('/')));
 }
 
+/**
+ * Verifies that the dependency-prune package lists match package.json buckets.
+ *
+ * @param {string} [packageJsonPath] Path to the package manifest to inspect.
+ * @returns {{ checkedRendererPackages: number, checkedRuntimeTransitivePackages: number }} Count of checked package names.
+ */
+function verifyRendererDependencyManifest(packageJsonPath = path.join(__dirname, '..', 'package.json')) {
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const dependencies = packageJson.dependencies || {};
+  const devDependencies = packageJson.devDependencies || {};
+  const errors = [];
+
+  for (const packageName of rendererOnlyPackages) {
+    if (dependencies[packageName] || !devDependencies[packageName]) {
+      errors.push(`${packageName} must be in devDependencies only`);
+    }
+  }
+
+  for (const packageName of runtimeTransitivePackages) {
+    if (!dependencies[packageName] || devDependencies[packageName]) {
+      errors.push(`${packageName} must stay in dependencies only`);
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(errors.join('\n'));
+  }
+
+  return {
+    checkedRendererPackages: rendererOnlyPackages.length,
+    checkedRuntimeTransitivePackages: runtimeTransitivePackages.length,
+  };
+}
+
+/**
+ * Verifies an unpacked Electron app does not raw-ship renderer-only packages.
+ *
+ * @param {string} appPath Path to the unpacked `.app` bundle.
+ * @returns {{ checkedPackages: number }} Count of renderer-only package names checked.
+ */
 function verifyRendererDependencyPrune(appPath) {
   if (!appPath) {
     throw new Error('Missing path to unpacked app');
@@ -116,6 +166,13 @@ function verifyRendererDependencyPrune(appPath) {
 
 function main() {
   try {
+    if (process.argv[2] === '--verify-package-json') {
+      const result = verifyRendererDependencyManifest(process.argv[3]);
+      console.log(
+        `Renderer dependency manifest verified for ${result.checkedRendererPackages} renderer packages and ${result.checkedRuntimeTransitivePackages} runtime-transitive packages.`
+      );
+      return;
+    }
     const result = verifyRendererDependencyPrune(process.argv[2]);
     console.log(`Renderer dependency prune verified for ${result.checkedPackages} packages.`);
   } catch (error) {
@@ -133,5 +190,7 @@ if (require.main === module) {
 
 module.exports = {
   rendererOnlyPackages,
+  runtimeTransitivePackages,
+  verifyRendererDependencyManifest,
   verifyRendererDependencyPrune,
 };
