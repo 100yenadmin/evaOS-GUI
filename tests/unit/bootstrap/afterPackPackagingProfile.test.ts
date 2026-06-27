@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -32,6 +32,13 @@ function createLinuxContext() {
     },
     tempDir,
   };
+}
+
+function createLinuxAionCoreResources(appOutDir: string) {
+  const runtimeDir = join(appOutDir, 'resources', 'bundled-aioncore', `linux-${process.arch}`);
+  mkdirSync(runtimeDir, { recursive: true });
+  writeFileSync(join(runtimeDir, 'aioncore'), '');
+  writeFileSync(join(runtimeDir, 'manifest.json'), '{}');
 }
 
 function restoreEnv(name: string, value: string | undefined) {
@@ -65,6 +72,20 @@ describe('afterPack packaging profile guard', () => {
 
     try {
       await expect(afterPack(context)).resolves.toBeUndefined();
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed for functional-smoke when hub resources are missing', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    createLinuxAionCoreResources(appOutDir);
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('hub');
     } finally {
       restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
       rmSync(tempDir, { recursive: true, force: true });

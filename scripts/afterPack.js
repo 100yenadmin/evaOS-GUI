@@ -43,6 +43,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
     missing
   );
   requirePackagedResource(resourcesDir, path.join('bundled-aioncore', runtimeKey, 'manifest.json'), missing);
+  requirePackagedResource(resourcesDir, 'hub', missing);
 
   if (missing.length > 0) {
     throw new Error(`Packaged app is missing required resource(s): ${missing.join(', ')}`);
@@ -58,7 +59,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
  * @returns {Promise<void>} Resolves after resource verification and any native-module rebuilds complete.
  *
  * The hook reads EVAOS_PACKAGING_PROFILE from the build environment. `full` and
- * `functional-smoke` must include the bundled AionCore resources and fail closed
+ * `functional-smoke` must include bundled AionCore and hub resources and fail closed
  * when they are missing. `thin-shell` intentionally skips bundled runtime
  * resource verification because it is a UI/layout smoke artifact only. Non-full
  * profiles are refused when release, signing, notary, or distribution flags are
@@ -67,6 +68,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
  */
 module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
+  // build-with-builder propagates CLI --packaging-profile into env before electron-builder runs hooks.
   const packagingProfile = readPackagingProfile({ argv: [], env: process.env });
   assertNonFullProfileNotRelease(packagingProfile, { env: process.env, context: 'electron-builder afterPack' });
 
