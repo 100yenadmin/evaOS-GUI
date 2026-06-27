@@ -158,6 +158,9 @@ function getPreparedAioncoreReuseState(options) {
 
   const actualShape = getPreparedResourceShape(targetDir, binaryName);
 
+  if (manifest.schema !== MANIFEST_SCHEMA) {
+    reasons.push(`schema mismatch: ${manifest.schema || 'missing'} != ${MANIFEST_SCHEMA}`);
+  }
   if (manifest.platform !== platform)
     reasons.push(`platform mismatch: ${manifest.platform || 'missing'} != ${platform}`);
   if (manifest.arch !== arch) reasons.push(`arch mismatch: ${manifest.arch || 'missing'} != ${arch}`);

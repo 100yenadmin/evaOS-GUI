@@ -147,6 +147,29 @@ describe('prepare-aioncore reuse', () => {
     }
   });
 
+  it('rejects reuse when the manifest schema is missing or stale', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
+    const { runtimeDir, version } = writePreparedRuntime(projectRoot);
+    const manifestPath = join(runtimeDir, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    delete manifest.schema;
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+
+    try {
+      const state = getPreparedAioncoreReuseState({
+        projectRoot,
+        platform: 'darwin',
+        arch: 'arm64',
+        version,
+      });
+
+      expect(state.reusable).toBe(false);
+      expect(state.reasons).toContain('schema mismatch: missing != aioncore-bundle/v2');
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects reuse when managed-resource presence changed after manifest write', () => {
     const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
     const { runtimeDir, version } = writePreparedRuntime(projectRoot, {
