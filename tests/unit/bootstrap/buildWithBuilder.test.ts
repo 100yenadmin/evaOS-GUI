@@ -42,7 +42,13 @@ function appendJson(filePath, value) {
 
 function recordPrepareCall(options) {
   appendJson(process.env.AIONUI_PREPARE_CALLS_FILE, options ?? null);
-  return { prepared: true, dir: 'mock-bundled-aioncore', sourceType: 'mock' };
+  const reused = process.env.AIONUI_PREPARE_REUSED === '1';
+  return {
+    prepared: true,
+    reused,
+    dir: path.join(process.cwd(), 'resources/bundled-aioncore', options?.platform + '-' + options?.arch),
+    sourceType: 'mock',
+  };
 }
 
 Module._load = function patchedLoad(request, parent, isMain) {
@@ -106,8 +112,31 @@ childProcess.execSync = function mockedExecSync(command) {
     try {
       expect(result.status, result.stderr || result.stdout).toBe(0);
 
-      const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{ arch?: string } | null>;
-      expect(calls).toContainEqual(expect.objectContaining({ arch: expectedArch }));
+      const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{
+        arch?: string;
+        reusePrepared?: boolean;
+      } | null>;
+      expect(calls).toContainEqual(expect.objectContaining({ arch: expectedArch, reusePrepared: true }));
+      expect(result.stdout).toContain('AionCore prepared: resources/bundled-aioncore');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('logs when bundled AionCore is reused from a prepared manifest', () => {
+    const { callsPath, result, tempDir } = runBuildWithHook(['arm64', '--mac', 'dir', '--arm64'], {
+      AIONUI_PREPARE_REUSED: '1',
+    });
+
+    try {
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+
+      const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{
+        arch?: string;
+        reusePrepared?: boolean;
+      } | null>;
+      expect(calls).toContainEqual(expect.objectContaining({ arch: 'arm64', reusePrepared: true }));
+      expect(result.stdout).toContain('AionCore reused from prepared manifest: resources/bundled-aioncore');
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

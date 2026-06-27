@@ -16,6 +16,9 @@ const path = require('path');
 
 const GITHUB_OWNER = 'iOfficeAI';
 const GITHUB_REPO = 'AionCore';
+const MANIFEST_SCHEMA = 'aioncore-bundle/v2';
+const MANAGED_RESOURCE_MARKERS = ['managed-resources', 'managed_resources'];
+const MANAGED_NODE_RUNTIME_MARKERS = ['managed-node', 'node-runtime'];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,6 +52,140 @@ function writeJson(filePath, payload) {
 
 function getBinaryName(platform) {
   return platform === 'win32' ? 'aioncore.exe' : 'aioncore';
+}
+
+function normalizeVersionTag(version) {
+  return version.startsWith('v') ? version : `v${version}`;
+}
+
+function readJsonIfExists(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function describeRelativePath(rootDir, relativePath, { executable = false } = {}) {
+  const absolutePath = path.join(rootDir, relativePath);
+  try {
+    const stats = fs.statSync(absolutePath);
+    const result = {
+      present: true,
+      relativePath,
+      type: stats.isDirectory() ? 'directory' : stats.isFile() ? 'file' : 'other',
+    };
+
+    if (executable) {
+      if (process.platform === 'win32') {
+        result.executable = stats.isFile();
+      } else {
+        try {
+          fs.accessSync(absolutePath, fs.constants.X_OK);
+          result.executable = true;
+        } catch {
+          result.executable = false;
+        }
+      }
+    }
+
+    return result;
+  } catch {
+    return { present: false, relativePath };
+  }
+}
+
+function describeFirstExistingPath(rootDir, candidates) {
+  for (const candidate of candidates) {
+    const description = describeRelativePath(rootDir, candidate);
+    if (description.present) return description;
+  }
+
+  return { present: false, candidates };
+}
+
+function getPreparedResourceShape(targetDir, binaryName) {
+  return {
+    binary: describeRelativePath(targetDir, binaryName, { executable: true }),
+    manifest: describeRelativePath(targetDir, 'manifest.json'),
+    managedResources: describeFirstExistingPath(targetDir, MANAGED_RESOURCE_MARKERS),
+    managedNodeRuntime: describeFirstExistingPath(targetDir, MANAGED_NODE_RUNTIME_MARKERS),
+  };
+}
+
+function getTargetPaths(projectRoot, platform, arch) {
+  const runtimeKey = `${platform}-${arch}`;
+  const targetDir = path.join(projectRoot, 'resources', 'bundled-aioncore', runtimeKey);
+  const binaryName = getBinaryName(platform);
+
+  return {
+    runtimeKey,
+    targetDir,
+    binaryName,
+    targetBinaryPath: path.join(targetDir, binaryName),
+    manifestPath: path.join(targetDir, 'manifest.json'),
+  };
+}
+
+function getExpectedPresence(manifest, key) {
+  if (!manifest.resourceShape || !Object.prototype.hasOwnProperty.call(manifest.resourceShape, key)) {
+    return null;
+  }
+
+  return Boolean(manifest.resourceShape[key]?.present);
+}
+
+/**
+ * Validate an existing prepared AionCore directory for manifest-aware reuse.
+ *
+ * @param {object} options - Reuse validation options.
+ * @param {string} options.projectRoot - Project root directory.
+ * @param {string} options.platform - Target platform.
+ * @param {string} options.arch - Target architecture.
+ * @param {string} options.version - Already resolved release tag.
+ * @returns {{reusable: boolean, reasons: string[], manifest: object | null, dir: string}}
+ */
+function getPreparedAioncoreReuseState(options) {
+  const { projectRoot, platform, arch, version } = options;
+  const { runtimeKey, targetDir, binaryName, manifestPath } = getTargetPaths(projectRoot, platform, arch);
+  const reasons = [];
+  const manifest = readJsonIfExists(manifestPath);
+
+  if (!manifest) {
+    reasons.push('manifest missing or unreadable');
+    return { reusable: false, reasons, manifest: null, dir: targetDir };
+  }
+
+  const actualShape = getPreparedResourceShape(targetDir, binaryName);
+
+  if (manifest.schema !== MANIFEST_SCHEMA) {
+    reasons.push(`schema mismatch: ${manifest.schema || 'missing'} != ${MANIFEST_SCHEMA}`);
+  }
+  if (manifest.platform !== platform)
+    reasons.push(`platform mismatch: ${manifest.platform || 'missing'} != ${platform}`);
+  if (manifest.arch !== arch) reasons.push(`arch mismatch: ${manifest.arch || 'missing'} != ${arch}`);
+  if (manifest.runtimeKey && manifest.runtimeKey !== runtimeKey) {
+    reasons.push(`runtimeKey mismatch: ${manifest.runtimeKey} != ${runtimeKey}`);
+  }
+  if (manifest.version !== version) reasons.push(`version mismatch: ${manifest.version || 'missing'} != ${version}`);
+  if (!actualShape.binary.present) reasons.push(`binary missing: ${binaryName}`);
+  if (actualShape.binary.present && actualShape.binary.executable === false) {
+    reasons.push(`binary is not executable: ${binaryName}`);
+  }
+  if (!actualShape.manifest.present) reasons.push('manifest missing');
+
+  for (const key of ['managedResources', 'managedNodeRuntime']) {
+    const expectedPresence = getExpectedPresence(manifest, key);
+    if (expectedPresence === null) {
+      reasons.push(`manifest missing resourceShape.${key}`);
+      continue;
+    }
+    if (expectedPresence !== actualShape[key].present) {
+      reasons.push(`${key} presence mismatch: manifest=${expectedPresence} actual=${actualShape[key].present}`);
+    }
+  }
+
+  return { reusable: reasons.length === 0, reasons, manifest, dir: targetDir };
 }
 
 // ---------------------------------------------------------------------------
@@ -193,11 +330,13 @@ function downloadAndExtract(platform, arch, tag) {
  * @param {string} options.platform - Target platform (process.platform)
  * @param {string} options.arch - Target architecture (process.arch)
  * @param {string} options.version - Backend version (default: 'latest')
- * @returns {{ prepared: true; dir: string; sourceType: string }}
+ * @param {boolean} options.reusePrepared - Reuse a matching prepared manifest when present.
+ * @param {object} options.env - Environment metadata for CI provenance.
+ * @returns {{ prepared: true; reused: boolean; dir: string; sourceType: string }}
  */
 function prepareAioncore(options) {
-  const { projectRoot, platform, arch, version = 'latest' } = options;
-  const runtimeKey = `${platform}-${arch}`;
+  const { projectRoot, platform, arch, version = 'latest', reusePrepared = false, env = process.env } = options;
+  const { runtimeKey, targetDir, binaryName, targetBinaryPath } = getTargetPaths(projectRoot, platform, arch);
 
   // Resolve the actual version tag — asset filenames include the tag
   let tag;
@@ -209,12 +348,23 @@ function prepareAioncore(options) {
     tag = resolved;
     console.log(`Resolved aioncore "latest" → ${tag}`);
   } else {
-    tag = version.startsWith('v') ? version : `v${version}`;
+    tag = normalizeVersionTag(version);
   }
 
-  const targetDir = path.join(projectRoot, 'resources', 'bundled-aioncore', runtimeKey);
-  const binaryName = getBinaryName(platform);
-  const targetBinaryPath = path.join(targetDir, binaryName);
+  if (reusePrepared) {
+    const reuseState = getPreparedAioncoreReuseState({ projectRoot, platform, arch, version: tag });
+    if (reuseState.reusable) {
+      console.log(`Reusing prepared aioncore for ${runtimeKey} (version: ${tag})`);
+      return {
+        prepared: true,
+        reused: true,
+        dir: targetDir,
+        sourceType: reuseState.manifest.sourceType || 'reuse',
+      };
+    }
+
+    console.log(`Prepared aioncore reuse unavailable for ${runtimeKey}: ${reuseState.reasons.join('; ')}`);
+  }
 
   console.log(`Preparing aioncore for ${runtimeKey} (version: ${tag})`);
 
@@ -249,13 +399,25 @@ function prepareAioncore(options) {
     // binary does not expose a --version flag (it has --app-version which
     // takes a value, not a self-report).
     const manifest = {
+      schema: MANIFEST_SCHEMA,
       platform,
       arch,
+      runtimeKey,
       version: tag,
+      requestedVersion: version,
       generatedAt: new Date().toISOString(),
+      github: {
+        runId: env.GITHUB_RUN_ID || null,
+        sha: env.GITHUB_SHA || null,
+        repository: env.GITHUB_REPOSITORY || null,
+      },
       sourceType,
       source: sourceDetail,
       files: [binaryName],
+      resourceShape: {
+        ...getPreparedResourceShape(targetDir, binaryName),
+        manifest: { present: true, relativePath: 'manifest.json', type: 'file' },
+      },
     };
 
     writeJson(path.join(targetDir, 'manifest.json'), manifest);
@@ -264,10 +426,13 @@ function prepareAioncore(options) {
     );
 
     if (tempDir) removeDirectorySafe(tempDir);
-    return { prepared: true, dir: targetDir, sourceType };
+    return { prepared: true, reused: false, dir: targetDir, sourceType };
   }
 
   throw new Error(`aioncore binary not found for ${runtimeKey} (tag: ${tag})`);
 }
 
-module.exports = { prepareAioncore };
+module.exports = {
+  getPreparedAioncoreReuseState,
+  prepareAioncore,
+};
