@@ -27,6 +27,26 @@ The controlled beta must not ship as upstream `AionUi`, use the upstream `iOffic
 
 No AWS, S3, external bucket, or CDN distribution is required for this controlled RC. The distribution surface is the existing GitHub Release in `100yenadmin/evaOS-GUI`.
 
+## Workbench Proof Matrix
+
+Keep Workbench build-cost and package-size work in the correct proof lane. A cheaper lane can prove a narrower claim, but it must not be cited as proof for a stronger release claim.
+
+| Lane             | Use for                                                                       | Artifact shape                                                                                                                                               | Required proof                                                                                                                                      | Not valid for                                                                                             |
+| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| PR quality       | Source-level correctness and cheap regression checks.                         | Usually no packaged artifact. Path-gated PRs may request package smoke when packaging/runtime/resource files change.                                         | PR planner decision, focused unit/script checks, static checks, and source review.                                                                  | Runtime resource proof, TCC proof, staging proof, or public release proof.                                |
+| Thin shell       | Fast UI shell/layout checks where runtime resources are intentionally absent. | Unsigned unpacked app or builder output with `EVAOS_PACKAGING_PROFILE=thin-shell`; skips AionCore, hub, and Bridge preparation.                              | The UI shell builds and launches far enough for the scoped visual/source claim. Strict release flags must fail with this profile.                   | Runtime, ACP, Mac-control, TCC, staging, release, or customer proof.                                      |
+| Functional smoke | Packaged runtime-resource shape without public distribution work.             | Unpacked `.app` with real Bridge, AionCore, and hub resources. No signing/notary/DMG/appcast/updater artifact.                                               | `Workbench Functional Smoke` succeeds, records SHA/run id, and verifies Bridge/AionCore/hub resources.                                              | TCC proof, public release proof, signed identity proof, updater/feed proof, or final installed-app proof. |
+| Staging RC       | Exact artifact validation before release decision.                            | Exact packaged artifact with source SHA, run id, version, and artifact checksum. Installed or extracted locally as the same artifact that will be evaluated. | Resource-shape proof, launch smoke, identity checks, and rollback notes for that exact artifact.                                                    | Public release proof unless it also satisfies the release lane below.                                     |
+| Release proof    | Controlled beta/customer distribution.                                        | Signed, notarized, stapled macOS artifact plus release metadata and updater/feed state.                                                                      | `codesign`, `spctl`, notarization/stapling evidence, updater/feed audit, Gatekeeper result, installed-app proof where required, and rollback proof. | Nothing weaker may replace this lane for public release.                                                  |
+
+Unsigned or ad-hoc smoke artifacts are not macOS TCC permission proof. Accessibility, Screen Recording, microphone, and related approvals are tied to the app's signing requirement, not just the visible app name or bundle id. If an ad-hoc smoke app prompts again while a signed beta app was already approved, classify that as a signing identity mismatch until proven otherwise.
+
+Unsigned or ad-hoc smoke artifacts are not public release proof. They may prove packaging shape or a narrow functional path, but they do not prove Gatekeeper, notarization, stapling, updater feeds, appcast state, or customer-install behavior.
+
+User OS-global installs of runtime tools are fallback-only. They can help manual recovery or debugging, but the normal Workbench package must either deliver the required runtime resources itself or present an intentional install-needed state. Do not rely on a user's global Claude, Codex, Node, or bridge install as the primary runtime delivery path.
+
+`thin-shell` is UI-only. It must never satisfy runtime, ACP, Mac-control, TCC, staging, release, or customer proof. Full release package behavior stays unchanged until optional ACP install gates are implemented and proven.
+
 ## Signing And Notarization
 
 Public beta publishing requires real macOS signing and notarization. Ad-hoc signing is not a distributable release candidate.
@@ -56,6 +76,7 @@ If a Keychain or signing GUI prompt appears, stop and fix signing/keychain ACLs.
 
 Before sharing a controlled beta link, attach proof to the release gate issue:
 
+- The proof lane from the Workbench proof matrix, with source SHA, workflow run id, artifact id, and exact app path or install path.
 - Signed macOS arm64 artifact exists.
 - Signed macOS x64 artifact exists or x64 is explicitly blocked.
 - `codesign --verify --deep --strict --verbose=2 <app>` passes.
