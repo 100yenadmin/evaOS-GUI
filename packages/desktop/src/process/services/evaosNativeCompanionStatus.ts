@@ -94,6 +94,7 @@ export type EvaosNativeCompanionStatusDeps = {
     command: string;
     params?: Record<string, unknown>;
   }) => Promise<BridgeCommandResult>;
+  probeConnectorReady?: (host: string, port: number) => Promise<boolean>;
   readTextFile?: (path: string) => string;
   spawnConnectorProcess?: (file: string, args: string[], options: SpawnOptions) => ChildProcess;
 };
@@ -184,7 +185,7 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacPermissions = effectiveCustomerMacPermissions(customerMacStatusPermissions, controlSession);
   const bridgeEffectivePermissions = effectiveBridgePermissions(bridgePermissions, controlSession);
   const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgeEffectivePermissions);
-  const connectorServiceReady = connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService);
+  const connectorServiceReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
@@ -581,7 +582,7 @@ async function runConnectorStartAction(
 ): Promise<IEvaosNativeCompanionActionResult> {
   const before = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
   const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before);
-  const ready = workbenchManagedConnectorIsReady(bridgePath, status);
+  const ready = await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, status, deps);
   if (ready) {
     return nativeActionResult(
       'connector_start',
@@ -600,7 +601,7 @@ async function runConnectorStartAction(
     sourcePointer: 'native-companion:workbench-session-connector-start',
     auditId: status.auditId ?? before.auditId,
     auditIds: compactStrings([status.auditId, before.auditId]),
-    blockerReason: classifyConnectorServiceBlocker(bridgePath, status, 'connector_service_not_ready'),
+    blockerReason: classifyConnectorServiceBlocker(bridgePath, status, 'stale_connector_port_conflict'),
   });
 }
 
@@ -610,7 +611,7 @@ async function ensureWorkbenchManagedConnectorReady(
   before?: BridgeCommandResult
 ): Promise<BridgeCommandResult> {
   const current = before ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
-  if (workbenchManagedConnectorIsReady(bridgePath, current)) {
+  if (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, current, deps)) {
     return current;
   }
 
@@ -686,8 +687,26 @@ function workbenchManagedConnectorIsReady(bridgePath: string, result: BridgeComm
   );
 }
 
-function connectorServiceIsReadyForWorkbenchSession(bridgePath: string, result: BridgeCommandResult): boolean {
+async function workbenchManagedConnectorIsReadyWithEndpoint(
+  bridgePath: string,
+  result: BridgeCommandResult,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<boolean> {
+  return (
+    workbenchManagedConnectorIsReady(bridgePath, result) && (await connectorReadyEndpointIsReady(result.data, deps))
+  );
+}
+
+async function connectorServiceIsReadyForWorkbenchSession(
+  bridgePath: string,
+  result: BridgeCommandResult,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<boolean> {
   if (!connectorServiceStatusAvailable(result) || readNestedBoolean(result.data, ['health', 'reachable']) !== true) {
+    return false;
+  }
+  const endpointReady = await connectorReadyEndpointIsReady(result.data, deps);
+  if (!endpointReady) {
     return false;
   }
   if (workbenchManagedConnectorIsReady(bridgePath, result)) {
@@ -697,6 +716,15 @@ function connectorServiceIsReadyForWorkbenchSession(bridgePath: string, result: 
     return connectorServiceIsReady(result);
   }
   return connectorStatusOwnedByCurrentWorkbench(bridgePath, result.data);
+}
+
+async function connectorReadyEndpointIsReady(input: unknown, deps: EvaosNativeCompanionStatusDeps): Promise<boolean> {
+  const host =
+    connectorSessionHostFromStatus(input) ??
+    (readNestedBoolean(input, ['health', 'reachable']) === true ? '127.0.0.1' : undefined);
+  if (!host) return false;
+  const probe = deps.probeConnectorReady ?? defaultProbeConnectorReady;
+  return probe(host, CONNECTOR_PORT);
 }
 
 function workbenchManagedConnectorEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -870,16 +898,18 @@ async function waitForConnectorServiceReadyAfterStart(
   started: BridgeCommandResult
 ): Promise<BridgeCommandResult> {
   const startedStatus = connectorServiceStatusFromStartResult(started);
-  if (startedStatus && workbenchManagedConnectorIsReady(bridgePath, startedStatus)) return startedStatus;
+  if (startedStatus && (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, startedStatus, deps))) {
+    return startedStatus;
+  }
 
   let latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  if (workbenchManagedConnectorIsReady(bridgePath, latest)) return latest;
+  if (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, latest, deps)) return latest;
 
   const sleep = deps.sleep ?? defaultSleep;
   for (let attempt = 1; attempt < CONNECTOR_START_STATUS_ATTEMPTS; attempt++) {
     await sleep(CONNECTOR_START_STATUS_RETRY_DELAY_MS);
     latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-    if (workbenchManagedConnectorIsReady(bridgePath, latest)) return latest;
+    if (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, latest, deps)) return latest;
   }
 
   return latest;
@@ -963,10 +993,10 @@ async function runSetupCheckAction(
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '12'], deps),
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
+  const connectorReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
+  const connectorCanAttemptGrant = connectorReady || connectorServiceCanAttemptWorkbenchSessionStart(connectorService);
   const setup = {
-    connectorReady:
-      connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService) ||
-      connectorServiceCanAttemptWorkbenchSessionStart(connectorService),
+    connectorReady,
     macReady:
       (customerMac.ok && hasGrantedCorePermissions(permissions)) || controlSessionHasPermissionProof(controlSession),
     controlReady: controlSession.ok,
@@ -976,7 +1006,7 @@ async function runSetupCheckAction(
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
   const agentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession.data) : 'not_ready';
 
-  if (ready && request.customerId?.trim()) {
+  if (connectorCanAttemptGrant && setup.macReady && setup.controlReady && request.customerId?.trim()) {
     return ensureCustomerMacConnectorGrantAction(request, bridgePath, deps, {
       connectorService,
       customerMac,
@@ -1103,9 +1133,9 @@ async function ensureCustomerMacConnectorGrantAction(
   let localPermissions = localCustomerMac
     ? effectiveCustomerMacPermissions(permissionView(localCustomerMac.data?.permissions), controlSession)
     : undefined;
-  if (!workbenchManagedConnectorIsReady(bridgePath, sessionConnector)) {
+  if (!(await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, sessionConnector, deps))) {
     sessionConnector = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, sessionConnector);
-    if (!workbenchManagedConnectorIsReady(bridgePath, sessionConnector)) {
+    if (!(await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, sessionConnector, deps))) {
       return nativeActionResult(
         resultAction,
         'repair_required',
@@ -1147,10 +1177,10 @@ async function ensureCustomerMacConnectorGrantAction(
     if (
       localCustomerMac.ok &&
       hasGrantedCorePermissions(localPermissions) &&
-      !workbenchManagedConnectorIsReady(bridgePath, sessionConnector)
+      !(await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, sessionConnector, deps))
     ) {
       sessionConnector = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, sessionConnector);
-      if (!workbenchManagedConnectorIsReady(bridgePath, sessionConnector)) {
+      if (!(await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, sessionConnector, deps))) {
         return nativeActionResult(
           resultAction,
           'repair_required',
@@ -2085,6 +2115,51 @@ async function defaultExecFile(file: string, args: string[], options: { timeout:
 
 function defaultSpawnConnectorProcess(file: string, args: string[], options: SpawnOptions): ChildProcess {
   return spawnCallback(file, args, options);
+}
+
+async function defaultProbeConnectorReady(host: string, port: number): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    let settled = false;
+    const settle = (ready: boolean): void => {
+      if (settled) return;
+      settled = true;
+      resolvePromise(ready);
+    };
+
+    const request = httpRequest(
+      {
+        host,
+        port,
+        path: '/ready',
+        method: 'GET',
+        timeout: 2000,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on('end', () => {
+          if ((response.statusCode ?? 0) >= 400) {
+            settle(false);
+            return;
+          }
+          const parsed = parseBridgeCommandPayload(Buffer.concat(chunks).toString('utf8'));
+          settle(
+            parsed.ok === true &&
+              readBoolean(parsed.data, 'ready') === true &&
+              readString(parsed.data, 'service') === 'evaos-desktop-bridge-connector'
+          );
+        });
+      }
+    );
+    request.on('timeout', () => {
+      request.destroy();
+      settle(false);
+    });
+    request.on('error', () => settle(false));
+    request.end();
+  });
 }
 
 async function defaultOpenPath(path: string): Promise<string> {

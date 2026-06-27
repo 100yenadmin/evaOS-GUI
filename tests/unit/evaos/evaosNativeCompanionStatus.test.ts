@@ -56,6 +56,7 @@ function depsWithResponses(
       return { stdout: json(payload), stderr: '' };
     }),
     openPath: vi.fn(async () => ''),
+    probeConnectorReady: vi.fn(async () => true),
     ...overrides,
   };
 }
@@ -239,6 +240,89 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(status.canOpenReleasedWorkbench).toBe(true);
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
+  });
+
+  it('does not mark Mac control ready when a reachable listener fails the bridge /ready contract', async () => {
+    const deps = depsWithResponses(
+      {
+        'status --json': {
+          ok: true,
+          audit_id: 'audit-bridge',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+            safety: {
+              read_only: true,
+            },
+          },
+        },
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: {
+            host: '100.64.0.10',
+            reachable: true,
+            status_line: 'HTTP/1.0 200 OK',
+          },
+          tailnet_ip: '100.64.0.10',
+          token_present: true,
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'customer-mac iphone-mirroring status --json': {
+          ok: true,
+          audit_id: 'audit-iphone',
+          data: {
+            installed: true,
+            running: false,
+          },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+          },
+        },
+        'audit-tail --json --limit 5': {
+          ok: true,
+          audit_id: 'audit-tail',
+          data: {
+            records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-iphone' }],
+          },
+        },
+      },
+      {
+        probeConnectorReady: vi.fn(async () => false),
+      }
+    );
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      connectorService: {
+        status: 'repair_required',
+        running: true,
+        reachable: true,
+        tailnetIp: '100.64.0.10',
+      },
+    });
+    expect(status.summaryText).toContain('repair is required');
+    expect(deps.probeConnectorReady).toHaveBeenCalledWith('100.64.0.10', 8765);
   });
 
   it('builds a redacted Mac-control diagnostic packet with a typed blocker category', async () => {
@@ -1210,6 +1294,50 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(result.message).toContain('Mac Access connector could not start');
     expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a health-only listener when /ready does not prove the Workbench bridge', async () => {
+    const healthOnlyStatus = {
+      ok: true,
+      audit_id: 'audit-health-only-connector',
+      loaded: false,
+      running: false,
+      managed_by: 'workbench-or-manual',
+      tailnet_ip: '100.64.0.4',
+      token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
+      health: { reachable: true, host: '100.64.0.4', status_line: 'HTTP/1.0 200 OK' },
+    };
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': [
+          healthOnlyStatus,
+          healthOnlyStatus,
+          healthOnlyStatus,
+          healthOnlyStatus,
+          healthOnlyStatus,
+        ],
+        'connector-service stop --json': {
+          ok: true,
+          action: 'stop',
+        },
+      },
+      {
+        sleep: vi.fn(async () => undefined),
+        probeConnectorReady: vi.fn(async () => false),
+        spawnConnectorProcess: vi.fn(() => mockChildProcess()),
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'stale_connector_port_conflict',
+    });
+    expect(result.message).toContain('Mac Access connector could not start');
+    expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect(deps.probeConnectorReady).toHaveBeenCalledWith('100.64.0.4', 8765);
   });
 
   it('surfaces a tracked Workbench-managed connector as ready when the bridge reports manual reachable status', async () => {
