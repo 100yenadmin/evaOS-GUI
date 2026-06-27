@@ -46,13 +46,12 @@ rg -n "from ['\"](@arco-design/web-react|@icon-park/react|mermaid|react-syntax-h
   packages/desktop/src/common packages/desktop/src/process packages/desktop/src/preload packages/web-host/src packages/web-cli/src scripts
 ```
 
-Remote package proof should inspect the packaged app after `electron-builder --dir` or a thin/functional smoke artifact:
+Remote package proof is enforced by Thin App Smoke after `electron-builder --dir` produces an unpacked `.app`:
 
 ```bash
-npx asar list "out/mac-arm64/AionUi.app/Contents/Resources/app.asar" \
-  | grep -E '^/node_modules/(@arco-design|@icon-park|mermaid|react-syntax-highlighter|@monaco-editor|@uiw|react-markdown|streamdown|diff2html)(/|$)' && exit 1 || true
+node scripts/evaosVerifyRendererDependencyPrune.js "out/mac-arm64/AionUi.app"
 ```
 
-Also inspect `app.asar.unpacked/node_modules`. Absence from `app.asar` alone is not enough because native/WASM/runtime packages are intentionally unpacked.
+The verifier inspects both `app.asar` and `app.asar.unpacked/node_modules`. Absence from `app.asar` alone is not enough because native/WASM/runtime packages are intentionally unpacked.
 
 The renderer bundle must still launch and cover Markdown, diff UI, Mermaid diagrams, code highlighting, editor surfaces, settings, and updater UI.
