@@ -604,6 +604,9 @@ jobs:
       - name: Run postinstall
         run: npm run postinstall || true
 
+      - name: Verify renderer dependency manifest
+        run: node scripts/evaosVerifyRendererDependencyPrune.js --verify-package-json
+
       - name: Get Electron version
         id: electron-version
         shell: bash
@@ -707,6 +710,7 @@ jobs:
 
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          node scripts/evaosVerifyRendererDependencyPrune.js "$APP_PATH"
 
           {
             echo "## Thin app smoke"
@@ -715,6 +719,7 @@ jobs:
             echo "- Version: \`$VERSION\`"
             echo "- Bundle ID: \`$BUNDLE_ID\`"
             echo "- Package smoke reasons: \`$PACKAGE_SMOKE_REASONS\`"
+            echo "- Renderer dependency prune: verified \`app.asar\` and \`app.asar.unpacked/node_modules\`"
             echo
             echo "This PR artifact is intentionally unpacked and may be ad-hoc/non-Developer-ID signed by packaging hooks. It produces no DMG, no release metadata, no notarization/stapling proof, no TCC or permission proof, and no public release proof."
             echo
