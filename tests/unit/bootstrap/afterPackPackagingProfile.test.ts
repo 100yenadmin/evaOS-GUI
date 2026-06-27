@@ -257,6 +257,37 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
+  it('fails closed when no-acp ACP agent resources are packaged but omitted from manifest inventory', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    const runtimeDir = createLinuxAionCoreResources(appOutDir, {
+      runtimeKey: `linux-${process.arch}`,
+      managedResourcesBundle: 'no-acp',
+      managedResourcesBundleResult: {
+        mode: 'no-acp',
+        managedResourcesPath: 'managed-resources',
+        sourceResources: ['acp/', 'acp/gemini/'],
+        prunedResources: [],
+        keptResources: ['acp/', 'acp/gemini/'],
+      },
+      resourceShape: {
+        managedResources: { present: true, relativePath: 'managed-resources' },
+        managedNodeRuntime: { present: false },
+      },
+    });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'claude'), { recursive: true });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'gemini'), { recursive: true });
+    createCompleteHubResources(appOutDir);
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('forbidden no-acp managed resource');
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed when hub resources are incomplete', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';

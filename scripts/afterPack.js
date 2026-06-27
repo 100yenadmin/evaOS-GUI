@@ -64,6 +64,26 @@ function isEntryCoveredByPrune(entry, pruneEntry) {
   return normalizedPrune.endsWith('/') && normalizedEntry.startsWith(normalizedPrune);
 }
 
+function listPackagedManagedResourceEntries(rootDir, relativeDir = '') {
+  if (!fs.existsSync(rootDir)) return null;
+
+  const currentDir = path.join(rootDir, relativeDir);
+  const entries = [];
+  for (const entry of fs
+    .readdirSync(currentDir, { withFileTypes: true })
+    .toSorted((a, b) => a.name.localeCompare(b.name))) {
+    const relativePath = normalizeResourceEntry(path.join(relativeDir, entry.name));
+    if (entry.isDirectory()) {
+      entries.push(`${relativePath}/`);
+      entries.push(...(listPackagedManagedResourceEntries(rootDir, relativePath) || []));
+    } else {
+      entries.push(relativePath);
+    }
+  }
+
+  return entries;
+}
+
 function readJsonFile(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -129,6 +149,12 @@ function requireManagedResourceInventory(runtimeDir, result, missing) {
   }
 
   const managedResourcesDir = path.join(runtimeDir, result.managedResourcesPath);
+  const packagedResources = listPackagedManagedResourceEntries(managedResourcesDir);
+  if (!packagedResources) {
+    missing.push(path.join('bundled-aioncore', path.basename(runtimeDir), result.managedResourcesPath));
+    return;
+  }
+
   for (const prunedEntry of prunedResources.map(normalizeResourceEntry)) {
     const relativeEntry = prunedEntry.endsWith('/') ? prunedEntry.slice(0, -1) : prunedEntry;
     if (relativeEntry && fs.existsSync(path.join(managedResourcesDir, relativeEntry))) {
@@ -141,6 +167,11 @@ function requireManagedResourceInventory(runtimeDir, result, missing) {
         )}`
       );
     }
+  }
+
+  const forbiddenPackagedResources = packagedResources.filter(isPrunedAcpPath);
+  if (forbiddenPackagedResources.length > 0) {
+    missing.push(`forbidden no-acp managed resource(s) still packaged: ${forbiddenPackagedResources.join(', ')}`);
   }
 
   for (const keptEntry of keptSet) {
