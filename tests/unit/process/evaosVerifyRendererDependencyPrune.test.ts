@@ -32,7 +32,17 @@ function addPackage(files: Record<string, unknown>, packageName: string) {
   }
 }
 
-function writeFakeAsar(appPath: string, packages: string[]) {
+function addNestedPackage(files: Record<string, unknown>, parentPackageName: string, packageName: string) {
+  let current = files;
+  for (const part of parentPackageName.split('/')) {
+    const entry = (current[part] ??= { files: {} }) as { files: Record<string, unknown> };
+    current = entry.files;
+  }
+  const nodeModules = (current.node_modules ??= { files: {} }) as { files: Record<string, unknown> };
+  addPackage(nodeModules.files, packageName);
+}
+
+function writeFakeAsar(appPath: string, packages: string[], nestedPackages: string[] = []) {
   const resources = path.join(appPath, 'Contents', 'Resources');
   fs.mkdirSync(resources, { recursive: true });
 
@@ -40,9 +50,12 @@ function writeFakeAsar(appPath: string, packages: string[]) {
   for (const packageName of packages) {
     addPackage(nodeModules.files, packageName);
   }
+  for (const packageName of nestedPackages) {
+    addNestedPackage(nodeModules.files, 'runtime-parent', packageName);
+  }
 
   const header = {
-    files: packages.length ? { node_modules: nodeModules } : { renderer: { files: {} } },
+    files: packages.length || nestedPackages.length ? { node_modules: nodeModules } : { renderer: { files: {} } },
   };
   const json = Buffer.from(JSON.stringify(header), 'utf8');
   const headerPayloadSize = 4 + align4(json.length);
@@ -58,10 +71,10 @@ function writeFakeAsar(appPath: string, packages: string[]) {
   fs.writeFileSync(path.join(resources, 'app.asar'), Buffer.concat([sizePickle, headerPickle]));
 }
 
-function makeApp(packages: string[] = verifier.runtimeTransitivePackages) {
+function makeApp(packages: string[] = verifier.runtimeTransitivePackages, nestedPackages: string[] = []) {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-renderer-prune-'));
   const appPath = path.join(tempDir, 'AionUi.app');
-  writeFakeAsar(appPath, packages);
+  writeFakeAsar(appPath, packages, nestedPackages);
   return appPath;
 }
 
@@ -103,6 +116,13 @@ describe('evaosVerifyRendererDependencyPrune', () => {
         expect(message).toContain(packageName);
       }
     }
+  });
+
+  it('fails if a moved renderer dependency ships inside nested app.asar node_modules', () => {
+    const leakedPackage = 'react';
+    const appPath = makeApp(verifier.runtimeTransitivePackages, [leakedPackage]);
+
+    expect(() => verifier.verifyRendererDependencyPrune(appPath)).toThrow(leakedPackage);
   });
 
   it('fails if a moved renderer dependency ships inside app.asar.unpacked node_modules', () => {

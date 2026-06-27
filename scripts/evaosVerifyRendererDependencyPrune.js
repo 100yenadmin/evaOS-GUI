@@ -88,8 +88,23 @@ function packagePathExists(root, packageName) {
 }
 
 function packagePathExistsInAsar(asarPaths, packageName) {
-  const root = `/node_modules/${packageName}`;
-  return asarPaths.some((entryPath) => entryPath === root || entryPath.startsWith(`${root}/`));
+  const packageParts = packageName.split('/');
+  return asarPaths.some((entryPath) => {
+    const parts = entryPath.split('/').filter(Boolean);
+    for (let index = 0; index < parts.length; index += 1) {
+      if (parts[index] !== 'node_modules') {
+        continue;
+      }
+      const candidateParts = parts.slice(index + 1, index + 1 + packageParts.length);
+      if (
+        candidateParts.length === packageParts.length &&
+        candidateParts.every((part, partIndex) => part === packageParts[partIndex])
+      ) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 /**
