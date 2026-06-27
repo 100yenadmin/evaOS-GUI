@@ -118,6 +118,8 @@ describe('classifyBackendStartupFailure', () => {
       isPackaged: true,
       runtimeKey: 'darwin-arm64',
       binaryName: 'aioncore',
+      acpManagedResourcesInstallNeeded: true,
+      manifestManagedResourcesBundle: 'no-acp',
       bundledDirExists: true,
       runtimeDirExists: true,
       resourcesDirEntries: ['app.asar', 'app.asar.unpacked/', 'bundled-aioncore/', 'hub/'],

@@ -129,6 +129,20 @@ function requireManagedResourceInventory(runtimeDir, result, missing) {
   }
 
   const managedResourcesDir = path.join(runtimeDir, result.managedResourcesPath);
+  for (const prunedEntry of prunedResources.map(normalizeResourceEntry)) {
+    const relativeEntry = prunedEntry.endsWith('/') ? prunedEntry.slice(0, -1) : prunedEntry;
+    if (relativeEntry && fs.existsSync(path.join(managedResourcesDir, relativeEntry))) {
+      missing.push(
+        `pruned managed resource still packaged: ${path.join(
+          'bundled-aioncore',
+          path.basename(runtimeDir),
+          result.managedResourcesPath,
+          relativeEntry
+        )}`
+      );
+    }
+  }
+
   for (const keptEntry of keptSet) {
     const relativeEntry = keptEntry.endsWith('/') ? keptEntry.slice(0, -1) : keptEntry;
     if (!fs.existsSync(path.join(managedResourcesDir, relativeEntry))) {

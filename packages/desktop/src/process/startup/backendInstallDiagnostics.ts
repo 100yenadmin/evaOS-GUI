@@ -146,7 +146,11 @@ function applyManifest(diagnostics: BackendInstallDiagnostics, manifestText: str
     if (files) diagnostics.manifestFiles = files;
     if (managedResourcesBundle) {
       diagnostics.manifestManagedResourcesBundle = managedResourcesBundle;
-      diagnostics.acpManagedResourcesInstallNeeded = managedResourcesBundle === 'no-acp';
+      if (managedResourcesBundle === 'no-acp') {
+        diagnostics.acpManagedResourcesInstallNeeded = true;
+      } else if (managedResourcesBundle === 'full') {
+        diagnostics.acpManagedResourcesInstallNeeded = false;
+      }
     }
     if (managedResourcesPresent !== undefined) diagnostics.manifestManagedResourcesPresent = managedResourcesPresent;
     if (managedNodeRuntimePresent !== undefined)

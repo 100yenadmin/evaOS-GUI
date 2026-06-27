@@ -119,6 +119,45 @@ describe('collectBackendInstallDiagnostics', () => {
       manifestManagedResourcesPruned: ['acp/claude/', 'acp/codex-cli/'],
     });
   });
+
+  it('leaves ACP install-needed diagnostics unset for unknown managed-resource bundle modes', () => {
+    const files = new Map<string, { mtimeMs: number; size: number; content?: string }>([
+      ['/Applications/AionUi.app/Contents/Resources', { mtimeMs: 1000, size: 0 }],
+      ['/Applications/AionUi.app/Contents/Resources/bundled-aioncore/darwin-arm64', { mtimeMs: 2000, size: 0 }],
+      [
+        '/Applications/AionUi.app/Contents/Resources/bundled-aioncore/darwin-arm64/manifest.json',
+        {
+          mtimeMs: 3000,
+          size: 128,
+          content: JSON.stringify({
+            version: 'v0.1.19',
+            generatedAt: '2026-06-27T12:00:00.000Z',
+            sourceType: 'download',
+            files: ['aioncore'],
+            managedResourcesBundle: 'future-mode',
+          }),
+        },
+      ],
+    ]);
+
+    const diagnostics = collectBackendInstallDiagnostics(
+      {
+        runtimeKey: 'darwin-arm64',
+        binaryName: 'aioncore',
+        resourcesPath: '/Applications/AionUi.app/Contents/Resources',
+      },
+      {
+        arch: 'arm64',
+        isPackaged: true,
+        platform: 'darwin',
+        readFile: (filePath) => files.get(filePath)?.content,
+        stat: (filePath) => files.get(filePath),
+      }
+    );
+
+    expect(diagnostics.manifestManagedResourcesBundle).toBe('future-mode');
+    expect(diagnostics.acpManagedResourcesInstallNeeded).toBeUndefined();
+  });
 });
 
 describe('appendAutoUpdateDiagnosticEvent', () => {

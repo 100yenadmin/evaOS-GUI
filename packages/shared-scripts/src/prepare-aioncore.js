@@ -75,6 +75,13 @@ function readJsonIfExists(filePath) {
   }
 }
 
+/**
+ * Normalize and validate the managed-resource bundle mode used while preparing
+ * AionCore runtime resources.
+ *
+ * @param {string | undefined | null} value - `full` or `no-acp`; blank values use the default `full` bundle.
+ * @returns {'full'|'no-acp'} Validated bundle mode.
+ */
 function normalizeManagedResourcesBundle(value) {
   const mode = String(value || DEFAULT_MANAGED_RESOURCES_BUNDLE).trim();
   if (!VALID_MANAGED_RESOURCES_BUNDLES.has(mode)) {
@@ -87,6 +94,13 @@ function normalizeManagedResourcesBundle(value) {
   return mode;
 }
 
+/**
+ * Read the managed-resource bundle mode from an environment object.
+ *
+ * @param {object} options - Read options.
+ * @param {Record<string, string | undefined>} options.env - Environment source; defaults to `process.env`.
+ * @returns {'full'|'no-acp'} Validated bundle mode.
+ */
 function readManagedResourcesBundle({ env = process.env } = {}) {
   return normalizeManagedResourcesBundle(env.AIONUI_MANAGED_RESOURCES_BUNDLE);
 }
@@ -263,6 +277,18 @@ function pruneAcpResourcesFromDirectory(rootDir, relativeDir = '') {
   return pruned;
 }
 
+/**
+ * Apply the requested managed-resource bundle to a prepared AionCore runtime directory.
+ *
+ * `full` leaves managed resources untouched. `no-acp` keeps AionCore and managed Node
+ * runtime files while pruning only ACP resources for Claude/Codex agents. The returned
+ * inventory is written into the manifest so release gates can prove what was kept or pruned.
+ *
+ * @param {object} options - Bundle application options.
+ * @param {string} options.targetDir - Prepared AionCore runtime directory.
+ * @param {'full'|'no-acp'} options.mode - Managed-resource bundle mode.
+ * @returns {{mode: 'full'|'no-acp', managedResourcesPath?: string, sourceResources?: string[], prunedResources: string[], keptResources?: string[]}}
+ */
 function applyManagedResourcesBundle({ targetDir, mode = DEFAULT_MANAGED_RESOURCES_BUNDLE } = {}) {
   const normalizedMode = normalizeManagedResourcesBundle(mode);
   if (normalizedMode === 'full') {
@@ -534,7 +560,7 @@ function downloadAndExtract(platform, arch, tag) {
  * @param {boolean} options.reusePrepared - Reuse a matching prepared manifest when present.
  * @param {object} options.env - Environment metadata for CI provenance and managed-resource bundle selection.
  * @param {'full'|'no-acp'} options.managedResourcesBundle - Managed resource bundle mode.
- * @returns {{ prepared: true; reused: boolean; dir: string; sourceType: string }}
+ * @returns {{ prepared: true; reused: boolean; dir: string; sourceType: string; managedResourcesBundle: 'full'|'no-acp'; prunedResources?: string[] }}
  */
 function prepareAioncore(options) {
   const { projectRoot, platform, arch, version = 'latest', reusePrepared = false, env = process.env } = options;
