@@ -46,6 +46,8 @@ const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
 const CONNECTOR_PORT = 8765;
+const CONNECTOR_READY_PROBE_TIMEOUT_MS = 2000;
+const CONNECTOR_READY_PROBE_DEADLINE_MS = 2500;
 const MAX_CONNECTOR_READY_RESPONSE_BYTES = 32 * 1024;
 const WORKBENCH_BUNDLE_ID = 'com.evaos.workbench';
 const WORKBENCH_PROTOCOL = 'evaos-workbench';
@@ -2121,9 +2123,11 @@ function defaultSpawnConnectorProcess(file: string, args: string[], options: Spa
 async function defaultProbeConnectorReady(host: string, port: number): Promise<boolean> {
   return new Promise((resolvePromise) => {
     let settled = false;
+    let deadline: NodeJS.Timeout | undefined;
     const settle = (ready: boolean): void => {
       if (settled) return;
       settled = true;
+      if (deadline) clearTimeout(deadline);
       resolvePromise(ready);
     };
 
@@ -2133,7 +2137,7 @@ async function defaultProbeConnectorReady(host: string, port: number): Promise<b
         port,
         path: '/ready',
         method: 'GET',
-        timeout: 2000,
+        timeout: CONNECTOR_READY_PROBE_TIMEOUT_MS,
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -2171,6 +2175,10 @@ async function defaultProbeConnectorReady(host: string, port: number): Promise<b
       settle(false);
     });
     request.on('error', () => settle(false));
+    deadline = setTimeout(() => {
+      request.destroy();
+      settle(false);
+    }, CONNECTOR_READY_PROBE_DEADLINE_MS);
     request.end();
   });
 }
