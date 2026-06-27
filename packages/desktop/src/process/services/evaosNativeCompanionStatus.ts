@@ -46,6 +46,7 @@ const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
 const CONNECTOR_PORT = 8765;
+const MAX_CONNECTOR_READY_RESPONSE_BYTES = 32 * 1024;
 const WORKBENCH_BUNDLE_ID = 'com.evaos.workbench';
 const WORKBENCH_PROTOCOL = 'evaos-workbench';
 const DIAGNOSTIC_SCHEMA_VERSION = 'evaos.workbench.diagnostic_packet.v1';
@@ -2136,20 +2137,32 @@ async function defaultProbeConnectorReady(host: string, port: number): Promise<b
       },
       (response) => {
         const chunks: Buffer[] = [];
+        let totalBytes = 0;
         response.on('data', (chunk: Buffer | string) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          totalBytes += buffer.length;
+          if (totalBytes > MAX_CONNECTOR_READY_RESPONSE_BYTES) {
+            response.destroy();
+            settle(false);
+            return;
+          }
+          chunks.push(buffer);
         });
         response.on('end', () => {
           if ((response.statusCode ?? 0) >= 400) {
             settle(false);
             return;
           }
-          const parsed = parseBridgeCommandPayload(Buffer.concat(chunks).toString('utf8'));
-          settle(
-            parsed.ok === true &&
-              readBoolean(parsed.data, 'ready') === true &&
-              readString(parsed.data, 'service') === 'evaos-desktop-bridge-connector'
-          );
+          try {
+            const parsed = parseBridgeCommandPayload(Buffer.concat(chunks).toString('utf8'));
+            settle(
+              parsed.ok !== false &&
+                readBoolean(parsed.data, 'ready') === true &&
+                readString(parsed.data, 'service') === 'evaos-desktop-bridge-connector'
+            );
+          } catch {
+            settle(false);
+          }
         });
       }
     );
