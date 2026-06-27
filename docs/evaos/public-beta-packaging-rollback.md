@@ -2,6 +2,8 @@
 
 This document defines the controlled macOS RC packaging, distribution, rollback, and support proof gate for the AionUi-based evaOS Workbench Beta shell.
 
+CI proof note: docs-only PRs should not run Workbench package smoke.
+
 ## Beta Identity
 
 - App name: `evaOS Workbench Beta`
