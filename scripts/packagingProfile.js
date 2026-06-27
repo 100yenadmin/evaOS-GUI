@@ -140,7 +140,7 @@ function getTruthyReleaseFlags(env = process.env) {
  * @param {{env?: NodeJS.ProcessEnv|Record<string, string|undefined>, context?: string}} [options] - Env and caller label.
  * @throws {Error} When a non-full profile is combined with release-only flags.
  */
-function assertThinShellNotRelease(profile, { env = process.env, context = 'build' } = {}) {
+function assertNonFullProfileNotRelease(profile, { env = process.env, context = 'build' } = {}) {
   if (profile === 'full') return;
 
   const releaseFlags = getTruthyReleaseFlags(env);
@@ -159,7 +159,7 @@ module.exports = {
   DEFAULT_PACKAGING_PROFILE,
   VALID_PACKAGING_PROFILES,
   RELEASE_ENV_FLAGS,
-  assertThinShellNotRelease,
+  assertNonFullProfileNotRelease,
   getTruthyReleaseFlags,
   isTruthyEnvValue,
   normalizePackagingProfile,

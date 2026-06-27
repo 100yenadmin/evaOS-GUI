@@ -14,7 +14,11 @@ const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { assertThinShellNotRelease, readPackagingProfile, stripPackagingProfileArgs } = require('./packagingProfile');
+const {
+  assertNonFullProfileNotRelease,
+  readPackagingProfile,
+  stripPackagingProfileArgs,
+} = require('./packagingProfile');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -381,7 +385,7 @@ function cleanupWindowsPackOutput() {
 // Parse command line arguments
 const rawArgs = process.argv.slice(2);
 const packagingProfile = readPackagingProfile({ argv: rawArgs, env: process.env });
-assertThinShellNotRelease(packagingProfile, { env: process.env, context: 'Workbench packaging' });
+assertNonFullProfileNotRelease(packagingProfile, { env: process.env, context: 'Workbench packaging' });
 process.env.EVAOS_PACKAGING_PROFILE = packagingProfile;
 const args = stripPackagingProfileArgs(rawArgs);
 const archList = ['x64', 'arm64', 'ia32', 'armv7l'];

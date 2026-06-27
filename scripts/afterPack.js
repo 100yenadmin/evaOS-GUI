@@ -8,7 +8,7 @@ const {
   verifyModuleBinary,
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
-const { assertThinShellNotRelease, readPackagingProfile } = require('./packagingProfile');
+const { assertNonFullProfileNotRelease, readPackagingProfile } = require('./packagingProfile');
 
 /**
  * afterPack hook for electron-builder
@@ -68,7 +68,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
 module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
   const packagingProfile = readPackagingProfile({ argv: [], env: process.env });
-  assertThinShellNotRelease(packagingProfile, { env: process.env, context: 'electron-builder afterPack' });
+  assertNonFullProfileNotRelease(packagingProfile, { env: process.env, context: 'electron-builder afterPack' });
 
   const targetArch = normalizeArch(typeof arch === 'string' ? arch : Arch[arch] || process.arch);
   const buildArch = normalizeArch(os.arch());
