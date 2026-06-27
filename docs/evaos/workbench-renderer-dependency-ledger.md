@@ -43,7 +43,8 @@ These package families stay in `dependencies` for this PR. Some are proven runti
 Local source checks:
 
 ```bash
-rg -n "from ['\"](@arco-design/web-react|@codemirror/(commands|lang-css|lang-html|lang-json|lang-markdown|view)|@dnd-kit/(core|sortable|utilities)|@floating-ui/react|@icon-park/react|@monaco-editor/react|@uiw/(codemirror-extensions-langs|react-codemirror)|classnames|dayjs|diff2html|katex|mermaid|qrcode\\.react|react|react-dom|react-i18next|react-markdown|react-router-dom|react-syntax-highlighter|react-virtuoso|rehype-(katex|raw)|remark-(breaks|gfm|math)|streamdown|swr)(/[^'\"]*)?['\"]" \
+MOVED_RENDERER_PACKAGE_PATTERN='@arco-design/web-react|@codemirror/(commands|lang-css|lang-html|lang-json|lang-markdown|view)|@dnd-kit/(core|sortable|utilities)|@floating-ui/react|@icon-park/react|@monaco-editor/react|@uiw/(codemirror-extensions-langs|react-codemirror)|classnames|dayjs|diff2html|katex|mermaid|qrcode\.react|react|react-dom|react-i18next|react-markdown|react-router-dom|react-syntax-highlighter|react-virtuoso|rehype-(katex|raw)|remark-(breaks|gfm|math)|streamdown|swr'
+rg -n "(from\\s+['\"](${MOVED_RENDERER_PACKAGE_PATTERN})(/[^'\"]*)?['\"]|import\\s+['\"](${MOVED_RENDERER_PACKAGE_PATTERN})(/[^'\"]*)?['\"]|require\\(\\s*['\"](${MOVED_RENDERER_PACKAGE_PATTERN})(/[^'\"]*)?['\"]\\s*\\))" \
   packages/desktop/src/common packages/desktop/src/process packages/desktop/src/preload packages/web-host/src packages/web-cli/src scripts
 ```
 
