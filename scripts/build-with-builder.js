@@ -14,6 +14,7 @@ const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { assertThinShellNotRelease, readPackagingProfile, stripPackagingProfileArgs } = require('./packagingProfile');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -23,6 +24,8 @@ const crypto = require('crypto');
 // "Device not configured" hdiutil errors (electron-builder#8415, actions/runner-images#12323).
 const DMG_RETRY_MAX = 3;
 const DMG_RETRY_DELAY_SEC = 30;
+const DEFAULT_BUILDER_CONFIG = 'packages/desktop/electron-builder.yml';
+const THIN_SHELL_REMOVED_RESOURCES = new Set(['resources/bundled-aioncore', 'resources/hub', 'resources/Bridge']);
 
 // Incremental build: hash of source files to detect changes
 const INCREMENTAL_CACHE_FILE = 'out/.build-hash';
@@ -103,6 +106,85 @@ function saveCurrentHash(hash) {
     }
     fs.writeFileSync(cacheFile, hash);
   } catch {}
+}
+
+function normalizeYamlScalar(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+}
+
+function removeThinShellExtraResources(configText) {
+  const lines = configText.split(/\r?\n/);
+  const output = [];
+  let inExtraResources = false;
+  let pendingComments = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const isTopLevelKey = /^[A-Za-z][A-Za-z0-9_-]*:/.test(line);
+
+    if (!inExtraResources) {
+      output.push(line);
+      if (/^extraResources:\s*(?:#.*)?$/.test(line)) {
+        inExtraResources = true;
+      }
+      continue;
+    }
+
+    if (isTopLevelKey && !/^extraResources:\s*(?:#.*)?$/.test(line)) {
+      output.push(...pendingComments, line);
+      pendingComments = [];
+      inExtraResources = false;
+      continue;
+    }
+
+    if (/^\s*#/.test(line)) {
+      pendingComments.push(line);
+      continue;
+    }
+
+    const fromMatch = line.match(/^(\s*)-\s+from:\s*(.+?)\s*(?:#.*)?$/);
+    if (!fromMatch) {
+      output.push(...pendingComments, line);
+      pendingComments = [];
+      continue;
+    }
+
+    const itemIndent = fromMatch[1].length;
+    const fromPath = normalizeYamlScalar(fromMatch[2]);
+    const shouldRemove = THIN_SHELL_REMOVED_RESOURCES.has(fromPath);
+    if (!shouldRemove) {
+      output.push(...pendingComments, line);
+      pendingComments = [];
+      continue;
+    }
+
+    pendingComments = [];
+    while (index + 1 < lines.length) {
+      const nextLine = lines[index + 1];
+      if (/^\s*$/.test(nextLine)) break;
+      const nextIndent = nextLine.match(/^(\s*)/)?.[1]?.length ?? 0;
+      if (nextIndent <= itemIndent) break;
+      index += 1;
+    }
+  }
+
+  output.push(...pendingComments);
+  return output.join('\n');
+}
+
+function writeThinShellBuilderConfig(projectRoot) {
+  const sourceConfigPath = path.join(projectRoot, DEFAULT_BUILDER_CONFIG);
+  const outDir = path.join(projectRoot, 'out');
+  const generatedConfigPath = path.join(outDir, 'electron-builder.thin-shell.yml');
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const sourceConfig = fs.readFileSync(sourceConfigPath, 'utf8');
+  const thinConfig = removeThinShellExtraResources(sourceConfig);
+  fs.writeFileSync(generatedConfigPath, thinConfig);
+
+  return path.relative(projectRoot, generatedConfigPath).replace(/\\/g, '/');
 }
 
 function viteBuildExists() {
@@ -216,13 +298,13 @@ function formatExecError(error) {
 
 // Create DMG using electron-builder --prepackaged with .app path
 // This preserves DMG styling from electron-builder.yml (window size, icon positions, background)
-function createDmgWithPrepackaged(appDir, targetArch) {
+function createDmgWithPrepackaged(appDir, targetArch, builderConfig) {
   const appName = fs.readdirSync(appDir).find((f) => f.endsWith('.app'));
   if (!appName) throw new Error(`No .app found in ${appDir}`);
   const appPath = path.join(appDir, appName);
 
   execSync(
-    `bunx electron-builder --config packages/desktop/electron-builder.yml --mac dmg --${targetArch} --prepackaged "${appPath}" --publish=never`,
+    `bunx electron-builder --config ${builderConfig} --mac dmg --${targetArch} --prepackaged "${appPath}" --publish=never`,
     {
       stdio: 'inherit',
       shell: process.platform === 'win32',
@@ -230,7 +312,7 @@ function createDmgWithPrepackaged(appDir, targetArch) {
   );
 }
 
-function buildWithDmgRetry(cmd, targetArch) {
+function buildWithDmgRetry(cmd, targetArch, builderConfig) {
   const isMac = process.platform === 'darwin';
   const outDir = path.resolve(__dirname, '../out');
 
@@ -252,7 +334,7 @@ function buildWithDmgRetry(cmd, targetArch) {
 
       try {
         console.log(`\n📀 DMG retry attempt ${attempt}/${DMG_RETRY_MAX}...`);
-        createDmgWithPrepackaged(appDir, targetArch);
+        createDmgWithPrepackaged(appDir, targetArch, builderConfig);
         console.log('✅ DMG created successfully on retry');
         return;
       } catch (retryError) {
@@ -297,7 +379,11 @@ function cleanupWindowsPackOutput() {
 }
 
 // Parse command line arguments
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const packagingProfile = readPackagingProfile({ argv: rawArgs, env: process.env });
+assertThinShellNotRelease(packagingProfile, { env: process.env, context: 'Workbench packaging' });
+process.env.EVAOS_PACKAGING_PROFILE = packagingProfile;
+const args = stripPackagingProfileArgs(rawArgs);
 const archList = ['x64', 'arm64', 'ia32', 'armv7l'];
 
 // Check for special flags
@@ -383,6 +469,7 @@ if (archArgs.length > 1) {
 
 console.log(`🔨 Building for architecture: ${targetArch}`);
 console.log(`📋 Builder arguments: ${builderArgs || '(none)'}`);
+console.log(`📦 Packaging profile: ${packagingProfile}`);
 if (skipVite) console.log('⚡ --skip-vite: Will skip Vite compilation if output exists');
 if (skipNative) console.log('⚡ --skip-native: Will skip native module rebuilding');
 if (packOnly) console.log('⚡ --pack-only: Will skip electron-builder distributable creation');
@@ -455,19 +542,29 @@ try {
     return;
   }
 
-  // 5. Prepare aioncore binary (for packaged runtime usage)
-  const { prepareAioncore } = require('../packages/shared-scripts/src/prepare-aioncore.js');
-  const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
   const projectRoot = path.resolve(__dirname, '..');
-  prepareAioncore({
-    projectRoot,
-    platform: process.platform,
-    arch: targetArch,
-    version: resolveAioncoreVersion(projectRoot),
-  });
+  const isThinShell = packagingProfile === 'thin-shell';
 
-  // 6. Prepare hub resources (index.json + extension zips for offline fallback)
-  execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });
+  // 5. Prepare runtime resources unless this is an explicit UI-only shell build.
+  if (isThinShell) {
+    console.log('🧪 thin-shell profile: skipping AionCore, hub, and Bridge resource preparation');
+    console.log(
+      '🧪 thin-shell output is UI/layout proof only, not runtime, ACP, Mac-control, TCC, staging, or release proof'
+    );
+  } else {
+    // Prepare aioncore binary (for packaged runtime usage)
+    const { prepareAioncore } = require('../packages/shared-scripts/src/prepare-aioncore.js');
+    const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
+    prepareAioncore({
+      projectRoot,
+      platform: process.platform,
+      arch: targetArch,
+      version: resolveAioncoreVersion(projectRoot),
+    });
+
+    // Prepare hub resources (index.json + extension zips for offline fallback)
+    execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });
+  }
 
   // 6. 运行 electron-builder 生成分发包（DMG/ZIP/EXE等）
   // Run electron-builder to create distributables (DMG/ZIP/EXE, etc.)
@@ -551,9 +648,14 @@ try {
     cleanupWindowsPackOutput();
   }
 
-  const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
+  const builderConfig = isThinShell ? writeThinShellBuilderConfig(projectRoot) : DEFAULT_BUILDER_CONFIG;
+  if (isThinShell) {
+    console.log(`🧪 thin-shell profile: generated temporary builder config at ${builderConfig}`);
+  }
+
+  const builderCommand = `bunx electron-builder --config ${builderConfig} ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
   try {
-    buildWithDmgRetry(builderCommand, targetArch);
+    buildWithDmgRetry(builderCommand, targetArch, builderConfig);
   } catch (error) {
     const winExePath = path.join(outDir, 'win-unpacked', 'AionUi.exe');
     const firstError = formatExecError(error);
@@ -581,7 +683,7 @@ try {
     cleanupWindowsPackOutput();
 
     try {
-      buildWithDmgRetry(`${builderCommand} --config.win.signAndEditExecutable=false`, targetArch);
+      buildWithDmgRetry(`${builderCommand} --config.win.signAndEditExecutable=false`, targetArch, builderConfig);
     } catch (retryError) {
       const retryFailure = formatExecError(retryError);
       throw new Error(

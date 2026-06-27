@@ -8,6 +8,7 @@ const {
   verifyModuleBinary,
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
+const { assertThinShellNotRelease, readPackagingProfile } = require('./packagingProfile');
 
 /**
  * afterPack hook for electron-builder
@@ -52,11 +53,15 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
 
 module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
+  const packagingProfile = readPackagingProfile({ argv: [], env: process.env });
+  assertThinShellNotRelease(packagingProfile, { env: process.env, context: 'electron-builder afterPack' });
+
   const targetArch = normalizeArch(typeof arch === 'string' ? arch : Arch[arch] || process.arch);
   const buildArch = normalizeArch(os.arch());
 
   console.log(`\n🔧 afterPack hook started`);
   console.log(`   Platform: ${electronPlatformName}, Build arch: ${buildArch}, Target arch: ${targetArch}`);
+  console.log(`   Packaging profile: ${packagingProfile}`);
 
   const isCrossCompile = buildArch !== targetArch;
   const forceRebuild = process.env.FORCE_NATIVE_REBUILD === 'true';
@@ -85,7 +90,11 @@ module.exports = async function afterPack(context) {
       console.warn(`   ⚠️  app.asar.unpacked not found`);
     }
 
-    verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    if (packagingProfile === 'thin-shell') {
+      console.log('   ✓ thin-shell profile: bundled runtime resource verification intentionally skipped');
+    } else {
+      verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    }
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }
