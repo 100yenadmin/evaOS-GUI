@@ -12,12 +12,20 @@ on:
         type: boolean
         required: false
         default: false
+      run_windows_checks:
+        description: 'Force Windows unit checks for this PR'
+        type: boolean
+        required: false
+        default: false
+      force_package_smoke:
+        description: 'Force the packaged app smoke for this PR'
+        type: boolean
+        required: false
+        default: false
   pull_request:
     types: [opened, synchronize, edited, closed, ready_for_review]
     branches: [main, dev]
     paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
       - '.vscode/**'
       - '.github/ISSUE_TEMPLATE/**'
 
@@ -44,6 +52,133 @@ jobs:
     steps:
       - run: echo "PR closed, cancelling in-progress runs via concurrency."
 
+  pr-check-plan:
+    name: PR Check Plan
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_windows_checks: ${{ steps.plan.outputs.run_windows_checks }}
+      windows_reasons_json: ${{ steps.plan.outputs.windows_reasons_json }}
+      run_package_smoke: ${{ steps.plan.outputs.run_package_smoke }}
+      package_smoke_reasons_json: ${{ steps.plan.outputs.package_smoke_reasons_json }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Resolve PR context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+
+      - name: List changed files
+        id: changed-files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_NUMBER="$WORKFLOW_DISPATCH_PR_NUMBER"
+          else
+            PR_NUMBER="$PULL_REQUEST_NUMBER"
+          fi
+
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' | tee changed-files.txt
+
+          PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          EXPECTED_COUNT="$(jq -r '.changed_files' <<< "$PR_INFO")"
+          BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+
+          RETURNED_COUNT="$(wc -l < changed-files.txt | tr -d '[:space:]')"
+          if [ "$RETURNED_COUNT" != "$EXPECTED_COUNT" ]; then
+            echo "::warning::PR file listing returned ${RETURNED_COUNT} of ${EXPECTED_COUNT} changed files; forcing gated checks."
+            echo "force_package_smoke=true" >> "$GITHUB_OUTPUT"
+            echo "force_windows_checks=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "force_package_smoke=false" >> "$GITHUB_OUTPUT"
+            echo "force_windows_checks=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout trusted base planner
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ steps.changed-files.outputs.base_ref }}
+          path: trusted-base
+          persist-credentials: false
+
+      - name: Plan macOS-first PR checks
+        id: plan
+        shell: bash
+        env:
+          RUN_WINDOWS_CHECKS: ${{ inputs.run_windows_checks }}
+          FORCE_PACKAGE_SMOKE_INPUT: ${{ inputs.force_package_smoke }}
+          TRUSTED_BASE_REF: ${{ steps.changed-files.outputs.base_ref }}
+          CHANGED_FILES_FORCE_WINDOWS_CHECKS: ${{ steps.changed-files.outputs.force_windows_checks }}
+          CHANGED_FILES_FORCE_PACKAGE_SMOKE: ${{ steps.changed-files.outputs.force_package_smoke }}
+        run: |
+          set -euo pipefail
+          TRUSTED_PLANNER="trusted-base/scripts/evaosPrCheckPlan.js"
+          if [ ! -f "$TRUSTED_PLANNER" ]; then
+            echo "::warning::Trusted PR check planner is missing on ${TRUSTED_BASE_REF}; forcing all gated checks."
+            {
+              echo "run_windows_checks=true"
+              echo 'windows_reasons_json=["trusted planner missing on base ref; fail closed"]'
+              echo "run_package_smoke=true"
+              echo 'package_smoke_reasons_json=["trusted planner missing on base ref; fail closed"]'
+            } | tee pr-check-plan.out
+            cat pr-check-plan.out >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FORCE_PACKAGE_SMOKE="$FORCE_PACKAGE_SMOKE_INPUT"
+          if [ "$CHANGED_FILES_FORCE_PACKAGE_SMOKE" = "true" ]; then
+            FORCE_PACKAGE_SMOKE=true
+          fi
+          if [ "$CHANGED_FILES_FORCE_WINDOWS_CHECKS" = "true" ]; then
+            RUN_WINDOWS_CHECKS=true
+          fi
+          export FORCE_PACKAGE_SMOKE RUN_WINDOWS_CHECKS
+          node "$TRUSTED_PLANNER" github-output < changed-files.txt | tee pr-check-plan.out
+          cat pr-check-plan.out >> "$GITHUB_OUTPUT"
+
+      - name: Publish check plan summary
+        shell: bash
+        env:
+          RUN_WINDOWS_CHECKS: ${{ steps.plan.outputs.run_windows_checks }}
+          WINDOWS_REASONS_JSON: ${{ steps.plan.outputs.windows_reasons_json }}
+          RUN_PACKAGE_SMOKE: ${{ steps.plan.outputs.run_package_smoke }}
+          PACKAGE_SMOKE_REASONS_JSON: ${{ steps.plan.outputs.package_smoke_reasons_json }}
+        run: |
+          {
+            printf '## PR check plan\n'
+            printf 'Windows checks: %s\n' "$RUN_WINDOWS_CHECKS"
+            printf 'Windows reasons: %s\n' "$WINDOWS_REASONS_JSON"
+            printf 'Package smoke: %s\n' "$RUN_PACKAGE_SMOKE"
+            printf 'Package smoke reasons: %s\n' "$PACKAGE_SMOKE_REASONS_JSON"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Job 1: Code quality checks (TypeScript, Oxlint, Oxfmt)
   code-quality:
     name: Code Quality
@@ -52,23 +187,38 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
           cache: true
@@ -85,7 +235,7 @@ jobs:
       - name: Run prek checks
         run: prek run --from-ref origin/${{ env.PR_BASE_REF }} --to-ref HEAD
 
-  # Job 2: Unit tests across all platforms
+  # Job 2: Unit tests for the macOS-first beta lane.
   unit-tests:
     name: Unit Tests (${{ matrix.os }})
     if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.draft == false)
@@ -94,30 +244,97 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-2022]
+        os: [macos-14]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
           cache: true
 
-      - name: Disable Windows Defender (Windows only)
-        if: matrix.os == 'windows-2022'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run postinstall
+        run: npm run postinstall || true
+
+      - name: Run extension system tests
+        run: bunx vitest run
+
+  windows-unit-tests:
+    name: Unit Tests (windows-2022)
+    needs: pr-check-plan
+    if: needs.pr-check-plan.outputs.run_windows_checks == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Resolve PR context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: latest
+          cache: true
+
+      - name: Disable Windows Defender
         shell: pwsh
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true
@@ -140,21 +357,37 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
 
       - name: Resolve PR context
-        uses: ./.github/actions/checkout-pr
-        with:
-          pr_number: ${{ inputs.pr_number }}
-          github_token: ${{ github.token }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
           cache: true
@@ -171,8 +404,9 @@ jobs:
         run: bun run test:coverage
 
       - name: Upload coverage to Codecov (Linux coverage only)
-        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository == 'iOfficeAI/AionUi'
-        uses: codecov/codecov-action@v5
+        id: codecov-upload
+        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository == '100yenadmin/evaOS-GUI'
+        uses: codecov/codecov-action@04b047e8bb82a0c002c8312c1c880fbc6a999d45
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
@@ -180,7 +414,7 @@ jobs:
           fail_ci_if_error: false
           verbose: true
       - name: Skip Codecov upload when preconditions are not met
-        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository != 'iOfficeAI/AionUi'
+        if: always() && hashFiles('coverage/lcov.info') != '' && github.repository != '100yenadmin/evaOS-GUI'
         shell: bash
         run: |
           echo 'Skipping Codecov upload due to unmet preconditions.'
@@ -188,29 +422,43 @@ jobs:
       - name: Coverage result summary
         if: always()
         shell: bash
+        env:
+          COVERAGE_OUTCOME: ${{ steps.coverage.outcome }}
+          CODECOV_UPLOAD_OUTCOME: ${{ steps.codecov-upload.outcome }}
         run: |
-          if [ "${{ steps.coverage.outcome }}" = "failure" ]; then
+          if [ "$COVERAGE_OUTCOME" = "failure" ]; then
             echo "::warning::Coverage tests failed (non-blocking). Check logs for failed test details."
-            echo "## Coverage check (non-blocking warning)" >> $GITHUB_STEP_SUMMARY
-            echo "Coverage command failed in this run. Please review test failures in logs." >> $GITHUB_STEP_SUMMARY
-            if [ -f coverage/lcov.info ]; then
-              echo "lcov.info exists, Codecov upload can still run." >> $GITHUB_STEP_SUMMARY
-            else
-              echo "lcov.info not found, Codecov upload was skipped." >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "## Coverage check" >> $GITHUB_STEP_SUMMARY
-            echo "Coverage command passed." >> $GITHUB_STEP_SUMMARY
-            if [ -f coverage/lcov.info ]; then
-              echo "Uploaded Linux (ubuntu-latest) coverage to Codecov." >> $GITHUB_STEP_SUMMARY
-            else
-              echo "Coverage passed but lcov.info is missing; Codecov upload was skipped." >> $GITHUB_STEP_SUMMARY
-            fi
           fi
+
+          {
+            if [ "$COVERAGE_OUTCOME" = "failure" ]; then
+              echo "## Coverage check (non-blocking warning)"
+              echo "Coverage command failed in this run. Please review test failures in logs."
+              if [ -f coverage/lcov.info ]; then
+                if [ "$CODECOV_UPLOAD_OUTCOME" = "success" ]; then
+                  echo "Codecov upload completed."
+                else
+                  echo "Codecov upload did not complete; outcome: ${CODECOV_UPLOAD_OUTCOME:-unknown}."
+                fi
+              else
+                echo "lcov.info not found, Codecov upload was skipped."
+              fi
+            else
+              echo "## Coverage check"
+              echo "Coverage command passed."
+              if [ "$CODECOV_UPLOAD_OUTCOME" = "success" ]; then
+                echo "Uploaded Linux (ubuntu-latest) coverage to Codecov."
+              elif [ -f coverage/lcov.info ]; then
+                echo "Codecov upload skipped or did not complete; outcome: ${CODECOV_UPLOAD_OUTCOME:-unknown}."
+              else
+                echo "Coverage passed but lcov.info is missing; Codecov upload was skipped."
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload coverage artifacts
         if: always() && hashFiles('coverage/lcov.info') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: coverage-report
           path: coverage/
@@ -223,15 +471,37 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Resolve PR context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
           cache: true
@@ -252,84 +522,81 @@ jobs:
       - name: Publish i18n summary
         if: always()
         shell: bash
+        env:
+          I18N_OUTCOME: ${{ steps.i18n.outcome }}
         run: |
-          echo "## i18n validation" >> $GITHUB_STEP_SUMMARY
-          if grep -q "⚠️" i18n-check.log; then
-            echo "Missing/incomplete translations found. Please review warnings below." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No i18n warnings detected." >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary>i18n log</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```text' >> $GITHUB_STEP_SUMMARY
-          cat i18n-check.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## i18n validation"
+            if [ "$I18N_OUTCOME" = "failure" ]; then
+              echo "i18n validation failed. Please review errors below."
+            elif [ -f i18n-check.log ] && grep -q "⚠️" i18n-check.log; then
+              echo "Missing/incomplete translations found. Please review warnings below."
+            else
+              echo "No i18n warnings detected."
+            fi
+            echo ""
+            echo "<details><summary>i18n log</summary>"
+            echo ""
+            echo '```text'
+            if [ -f i18n-check.log ]; then
+              cat i18n-check.log
+            else
+              echo "i18n-check.log was not produced."
+            fi
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # Job 4: Build test across all platforms (parallel with code-quality and unit-tests)
-  build-test:
-    name: Build Test (${{ matrix.platform }})
-    if: github.event.action != 'closed' && github.event.pull_request.draft == false && inputs.skip_build_test != true
-    runs-on: ${{ matrix.os }}
+  # Job 4: Apple Silicon unpacked app smoke for packaging/resource changes.
+  # DMG/ZIP installers remain release-only; PR smoke verifies packaged resource
+  # shape with an unpacked .app that may be ad-hoc signed by packaging hooks.
+  thin-app-smoke-macos-arm64:
+    name: Thin App Smoke (macos-arm64)
+    needs: pr-check-plan
+    if: needs.pr-check-plan.outputs.run_package_smoke == 'true' && inputs.skip_build_test != true
+    runs-on: macos-14
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-arm64'
-            os: 'macos-14'
-            arch: 'arm64'
-            target: '--mac'
-            build_args: '--mac --arm64'
-            unpacked_dir: 'mac-arm64'
-          - platform: 'macos-x64'
-            os: 'macos-14'
-            arch: 'x64'
-            target: '--mac'
-            build_args: '--mac --x64'
-            unpacked_dir: 'mac'
-          - platform: 'windows-x64'
-            os: 'windows-2022'
-            arch: 'x64'
-            target: '--win'
-            build_args: '--win --x64'
-            unpacked_dir: 'win-unpacked'
-          - platform: 'windows-arm64'
-            os: 'windows-2022'
-            arch: 'arm64'
-            target: '--win'
-            build_args: '--win --arm64'
-            unpacked_dir: 'win-arm64-unpacked'
-          - platform: 'linux'
-            os: 'ubuntu-latest'
-            arch: 'x64'
-            target: '--linux'
-            build_args: '--linux --x64'
-            unpacked_dir: 'linux-unpacked'
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Resolve PR context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_INFO="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${WORKFLOW_DISPATCH_PR_NUMBER}")"
+            HEAD_SHA="$(jq -r '.head.sha' <<< "$PR_INFO")"
+            BASE_REF="$(jq -r '.base.ref' <<< "$PR_INFO")"
+            git fetch --no-tags --depth=1 origin "refs/pull/${WORKFLOW_DISPATCH_PR_NUMBER}/head"
+            git checkout --detach "$HEAD_SHA"
+          else
+            BASE_REF="$PULL_REQUEST_BASE_REF"
+          fi
+          echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Setup bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
           cache: true
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-
-      - name: Setup just
-        uses: extractions/setup-just@v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -337,41 +604,34 @@ jobs:
       - name: Run postinstall
         run: npm run postinstall || true
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential python3 python3-pip pkg-config libsqlite3-dev fakeroot dpkg-dev rpm libnss3-dev libatk-bridge2.0-dev libdrm2 libxkbcommon-dev libxss1 libatspi2.0-dev libgtk-3-dev libxrandr2 libasound2-dev
-
       - name: Get Electron version
         id: electron-version
         shell: bash
         run: |
           ELECTRON_VERSION=$(node -p "require('./package.json').devDependencies.electron.replace(/[\^~]/g, '')")
-          echo "version=$ELECTRON_VERSION" >> $GITHUB_OUTPUT
+          echo "version=$ELECTRON_VERSION" >> "$GITHUB_OUTPUT"
           echo "Electron version: $ELECTRON_VERSION"
 
       # Restore Electron/Electron-Builder caches before install-app-deps
       - name: Cache Electron artifacts
         id: electron-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ${{ runner.temp }}/.cache/electron
             ${{ runner.temp }}/.cache/electron-builder
             ~/.cache/electron
             ~/.cache/electron-builder
-            ${{ env.LOCALAPPDATA }}\electron-builder\Cache
-          key: electron-cache-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'bun.lock') }}
+          key: electron-cache-macos-arm64-${{ hashFiles('package.json', 'bun.lock') }}
           restore-keys: |
-            electron-cache-${{ matrix.platform }}-${{ matrix.arch }}-
-            electron-cache-${{ matrix.platform }}-
+            electron-cache-macos-arm64-
 
       - name: Cache status
-        run: echo "electron-cache-hit=${{ steps.electron-cache.outputs.cache-hit }}"
+        env:
+          ELECTRON_CACHE_HIT: ${{ steps.electron-cache.outputs.cache-hit }}
+        run: printf 'electron-cache-hit=%s\n' "$ELECTRON_CACHE_HIT"
 
-      - name: Rebuild native modules for Electron (non-Windows)
-        if: "!startsWith(matrix.platform, 'windows')"
+      - name: Rebuild native modules for Electron
         run: bunx electron-builder install-app-deps
         env:
           npm_config_runtime: electron
@@ -379,176 +639,90 @@ jobs:
           ELECTRON_CACHE: ${{ runner.temp }}/.cache/electron
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/.cache/electron-builder
 
-      - name: Setup MSBuild (Windows only)
-        if: startsWith(matrix.platform, 'windows')
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: '17.0'
-
-      - name: Build test (Windows x64)
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          Write-Host "=========================================="
-          Write-Host "BUILD TEST: ${{ matrix.platform }}"
-          Write-Host "=========================================="
-          node scripts/build-with-builder.js x64 --win --x64
-          Write-Host "✓Build test passed for ${{ matrix.platform }}"
-        env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-          MSVS_VERSION: 2022
-          GYP_MSVS_VERSION: 2022
-          WindowsTargetPlatformVersion: 10.0.19041.0
-          CI: true
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Build test (Windows arm64)
-        if: matrix.platform == 'windows-arm64'
-        shell: pwsh
-        run: |
-          Write-Host "=========================================="
-          Write-Host "BUILD TEST: ${{ matrix.platform }}"
-          Write-Host "=========================================="
-          node scripts/build-with-builder.js arm64 --win --arm64
-          Write-Host "✓Build test passed for ${{ matrix.platform }}"
-        env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-          MSVS_VERSION: 2022
-          GYP_MSVS_VERSION: 2022
-          WindowsTargetPlatformVersion: 10.0.19041.0
-          CI: true
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Build test (non-Windows)
-        if: "!startsWith(matrix.platform, 'windows')"
+      - name: Build unpacked app only
         shell: bash
         run: |
           echo "=========================================="
-          echo "BUILD TEST: ${{ matrix.platform }}"
+          echo "THIN APP SMOKE: macos-arm64"
           echo "=========================================="
-          node scripts/build-with-builder.js auto ${{ matrix.build_args }}
-          echo "✓Build test passed for ${{ matrix.platform }}"
+          node scripts/build-with-builder.js arm64 --mac dir --arm64
+          echo "✓Unpacked app build passed for macos-arm64"
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-          npm_config_arch: ${{ matrix.arch }}
-          npm_config_target_arch: ${{ matrix.arch }}
+          npm_config_arch: arm64
+          npm_config_target_arch: arm64
           npm_config_runtime: electron
           npm_config_target: ${{ steps.electron-version.outputs.version }}
           npm_config_disturl: https://electronjs.org/headers
           CI: true
-          GH_TOKEN: ${{ github.token }}
 
-      - name: Verify build artifacts exist
+      - name: Verify unpacked app resource shape
         shell: bash
-        run: |
-          echo "=========================================="
-          echo "VERIFY ARTIFACTS: ${{ matrix.platform }}"
-          echo "=========================================="
-          ls -lah out || true
-
-          case "${{ matrix.platform }}" in
-            windows-*)
-              ls out/*.exe out/*latest*.yml >/dev/null
-              ;;
-            macos-*)
-              ls out/*.dmg out/*.zip out/*latest*.yml >/dev/null
-              ;;
-            linux)
-              ls out/*.deb out/*latest*.yml >/dev/null
-              ;;
-          esac
-
-      - name: Silent install smoke test (Windows x64)
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          Write-Host "=========================================="
-          Write-Host "SMOKE INSTALL: windows-x64"
-          Write-Host "=========================================="
-
-          $installer = Get-ChildItem -Path out -Filter "AionUi-*-win-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $installer) {
-            throw "No Windows installer found in out/"
-          }
-
-          Write-Host "Using installer: $($installer.FullName)"
-          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait -NoNewWindow
-
-          $candidates = @(
-            "$env:LOCALAPPDATA\\Programs\\AionUi\\AionUi.exe",
-            "$env:ProgramFiles\\AionUi\\AionUi.exe",
-            "$env:ProgramFiles(x86)\\AionUi\\AionUi.exe"
-          )
-
-          $installedExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $installedExe) {
-            throw "Silent install finished but app executable not found in expected locations"
-          }
-
-          Write-Host "Installed executable: $installedExe"
-
-      - name: Skip executable smoke for Windows arm64 cross build
-        if: matrix.platform == 'windows-arm64'
-        shell: pwsh
-        run: |
-          Write-Host "Skipping runtime install smoke for windows-arm64: runner is windows-x64, cannot reliably execute arm64 installer."
-          Get-ChildItem -Path out -Filter "AionUi-*-win-*.exe" | Format-Table Name, Length
-
-      - name: Install smoke test (macOS arm64)
-        if: matrix.platform == 'macos-arm64'
-        shell: bash
+        env:
+          PACKAGE_SMOKE_REASONS: ${{ needs.pr-check-plan.outputs.package_smoke_reasons_json }}
         run: |
           set -euo pipefail
           echo "=========================================="
-          echo "SMOKE INSTALL: macos-arm64"
+          echo "VERIFY UNPACKED APP RESOURCE SHAPE"
           echo "=========================================="
-
-          DMG_FILE=$(ls out/*.dmg | head -n 1)
-          MOUNT_POINT="/tmp/aionui-smoke-mount"
-          APP_DIR="/tmp/aionui-smoke-app"
-
-          rm -rf "$MOUNT_POINT" "$APP_DIR"
-          mkdir -p "$MOUNT_POINT" "$APP_DIR"
-
-          hdiutil attach "$DMG_FILE" -nobrowse -mountpoint "$MOUNT_POINT"
-          cp -R "$MOUNT_POINT"/*.app "$APP_DIR"/
-          hdiutil detach "$MOUNT_POINT"
-
-          APP_PATH=$(ls -d "$APP_DIR"/*.app | head -n 1)
-          APP_BIN="$APP_PATH/Contents/MacOS/AionUi"
-
-          test -x "$APP_BIN"
-          "$APP_BIN" --version || true
-
-      - name: Skip executable smoke for macOS x64 cross build
-        if: matrix.platform == 'macos-x64'
-        shell: bash
-        run: |
-          echo "Skipping runtime launch smoke for macos-x64 cross build on arm64 runner."
-          ls -lah out/*.dmg out/*.zip
-
-      - name: Install smoke test (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "=========================================="
-          echo "SMOKE INSTALL: linux"
-          echo "=========================================="
-
-          DEB_FILE=$(ls out/*.deb | head -n 1)
-          PKG_NAME=$(dpkg-deb -f "$DEB_FILE" Package)
-          sudo dpkg -i "$DEB_FILE" || sudo apt-get install -f -y
-
-          INSTALLED_BIN=$(dpkg -L "$PKG_NAME" | grep -Ei '/(bin|opt)/.*(aionui)$' | head -n 1 || true)
-          if [ -z "$INSTALLED_BIN" ]; then
-            echo "Package files:"
-            dpkg -L "$PKG_NAME" | head -n 50
-            echo "No installed executable path matched expected pattern"
+          APP_PATH="$(find out -type d -name '*.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app produced under out/"
+            find out -maxdepth 3 -print || true
             exit 1
           fi
 
-          test -x "$INSTALLED_BIN"
+          AIONCORE_DIR="$APP_PATH/Contents/Resources/bundled-aioncore"
+          HUB_DIR="$APP_PATH/Contents/Resources/hub"
+
+          for required_dir in "$AIONCORE_DIR" "$HUB_DIR"; do
+            if [ ! -d "$required_dir" ]; then
+              echo "::error::Missing required packaged resource directory: $required_dir"
+              find "$APP_PATH/Contents/Resources" -maxdepth 2 -print || true
+              exit 1
+            fi
+          done
+
+          AIONCORE_BIN="$AIONCORE_DIR/darwin-arm64/aioncore"
+          AIONCORE_MANIFEST="$AIONCORE_DIR/darwin-arm64/manifest.json"
+          if [ ! -x "$AIONCORE_BIN" ]; then
+            echo "::error::Missing executable bundled aioncore: $AIONCORE_BIN"
+            find "$AIONCORE_DIR" -maxdepth 3 -print || true
+            exit 1
+          fi
+          if [ ! -f "$AIONCORE_MANIFEST" ]; then
+            echo "::error::Missing bundled aioncore manifest: $AIONCORE_MANIFEST"
+            find "$AIONCORE_DIR" -maxdepth 3 -print || true
+            exit 1
+          fi
+
+          HUB_INDEX="$HUB_DIR/index.json"
+          HUB_MANIFEST="$HUB_DIR/manifest.json"
+          HUB_ZIP="$(find "$HUB_DIR" -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          if [ ! -f "$HUB_INDEX" ] || [ ! -f "$HUB_MANIFEST" ] || [ -z "$HUB_ZIP" ]; then
+            echo "::error::Hub resources are incomplete; expected index.json, manifest.json, and at least one extension zip"
+            find "$HUB_DIR" -maxdepth 2 -print || true
+            exit 1
+          fi
+
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+
+          {
+            echo "## Thin app smoke"
+            echo
+            echo "- App path: \`$APP_PATH\`"
+            echo "- Version: \`$VERSION\`"
+            echo "- Bundle ID: \`$BUNDLE_ID\`"
+            echo "- Package smoke reasons: \`$PACKAGE_SMOKE_REASONS\`"
+            echo
+            echo "This PR artifact is intentionally unpacked and may be ad-hoc/non-Developer-ID signed by packaging hooks. It produces no DMG, no release metadata, no notarization/stapling proof, no TCC or permission proof, and no public release proof."
+            echo
+            echo "### Size"
+            echo '```'
+            du -sh "$APP_PATH" out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Job 5: Test release scripts (fast, no build required)
   release-script-test:
@@ -558,7 +732,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
 
       - name: Create mock build artifacts
         shell: bash
