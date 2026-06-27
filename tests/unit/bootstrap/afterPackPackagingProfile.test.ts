@@ -226,13 +226,13 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('fails closed when no-acp pruned managed resources remain packaged', async () => {
+  it('uses normalized no-acp manifest mode when checking pruned managed resources', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
     const { appOutDir, context, tempDir } = createLinuxContext();
     const runtimeDir = createLinuxAionCoreResources(appOutDir, {
       runtimeKey: `linux-${process.arch}`,
-      managedResourcesBundle: 'no-acp',
+      managedResourcesBundle: ' no-acp ',
       managedResourcesBundleResult: {
         mode: 'no-acp',
         managedResourcesPath: 'managed-resources',

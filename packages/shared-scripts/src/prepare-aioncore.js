@@ -630,62 +630,65 @@ function prepareAioncore(options) {
 
   // Write result
   if (sourcePath) {
-    copyFileSafe(sourcePath, targetBinaryPath);
-    ensureExecutableMode(targetBinaryPath);
-    const copiedResourcePaths = copyManagedRuntimeResources({
-      binaryPath: sourcePath,
-      extractDir: sourceDetail.extractDir,
-      targetDir,
-    });
-    const sourceResourceShape = getPreparedResourceShape(targetDir, binaryName);
-    const managedResourcesBundleResult = applyManagedResourcesBundle({
-      targetDir,
-      mode: managedResourcesBundle,
-    });
-    const resourceShape = getPreparedResourceShape(targetDir, binaryName);
+    try {
+      copyFileSafe(sourcePath, targetBinaryPath);
+      ensureExecutableMode(targetBinaryPath);
+      const copiedResourcePaths = copyManagedRuntimeResources({
+        binaryPath: sourcePath,
+        extractDir: sourceDetail.extractDir,
+        targetDir,
+      });
+      const sourceResourceShape = getPreparedResourceShape(targetDir, binaryName);
+      const managedResourcesBundleResult = applyManagedResourcesBundle({
+        targetDir,
+        mode: managedResourcesBundle,
+      });
+      const resourceShape = getPreparedResourceShape(targetDir, binaryName);
 
-    // The release tag is the authoritative version — the aioncore
-    // binary does not expose a --version flag (it has --app-version which
-    // takes a value, not a self-report).
-    const manifest = {
-      schema: MANIFEST_SCHEMA,
-      platform,
-      arch,
-      runtimeKey,
-      version: tag,
-      requestedVersion: version,
-      generatedAt: new Date().toISOString(),
-      github: {
-        runId: env.GITHUB_RUN_ID || null,
-        sha: env.GITHUB_SHA || null,
-        repository: env.GITHUB_REPOSITORY || null,
-      },
-      managedResourcesBundle,
-      managedResourcesBundleResult,
-      sourceResourceShape,
-      sourceType,
-      source: { url: sourceDetail.url },
-      files: [binaryName, ...copiedResourcePaths],
-      resourceShape: {
-        ...resourceShape,
-        manifest: { present: true, relativePath: 'manifest.json', type: 'file' },
-      },
-    };
+      // The release tag is the authoritative version — the aioncore
+      // binary does not expose a --version flag (it has --app-version which
+      // takes a value, not a self-report).
+      const manifest = {
+        schema: MANIFEST_SCHEMA,
+        platform,
+        arch,
+        runtimeKey,
+        version: tag,
+        requestedVersion: version,
+        generatedAt: new Date().toISOString(),
+        github: {
+          runId: env.GITHUB_RUN_ID || null,
+          sha: env.GITHUB_SHA || null,
+          repository: env.GITHUB_REPOSITORY || null,
+        },
+        managedResourcesBundle,
+        managedResourcesBundleResult,
+        sourceResourceShape,
+        sourceType,
+        source: { url: sourceDetail.url },
+        files: [binaryName, ...copiedResourcePaths],
+        resourceShape: {
+          ...resourceShape,
+          manifest: { present: true, relativePath: 'manifest.json', type: 'file' },
+        },
+      };
 
-    writeJson(path.join(targetDir, 'manifest.json'), manifest);
-    console.log(
-      `  Bundled aioncore prepared: resources/bundled-aioncore/${runtimeKey}/${binaryName} [source=${sourceType}]`
-    );
+      writeJson(path.join(targetDir, 'manifest.json'), manifest);
+      console.log(
+        `  Bundled aioncore prepared: resources/bundled-aioncore/${runtimeKey}/${binaryName} [source=${sourceType}]`
+      );
 
-    if (tempDir) removeDirectorySafe(tempDir);
-    return {
-      prepared: true,
-      reused: false,
-      dir: targetDir,
-      sourceType,
-      managedResourcesBundle,
-      prunedResources: managedResourcesBundleResult.prunedResources,
-    };
+      return {
+        prepared: true,
+        reused: false,
+        dir: targetDir,
+        sourceType,
+        managedResourcesBundle,
+        prunedResources: managedResourcesBundleResult.prunedResources,
+      };
+    } finally {
+      if (tempDir) removeDirectorySafe(tempDir);
+    }
   }
 
   throw new Error(`aioncore binary not found for ${runtimeKey} (tag: ${tag})`);

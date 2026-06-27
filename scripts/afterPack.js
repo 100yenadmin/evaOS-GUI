@@ -154,12 +154,12 @@ function requireManagedResourceInventory(runtimeDir, result, missing) {
 }
 
 function verifyManagedResourcesBundleManifest(runtimeDir, manifest, missing) {
-  const bundleMode = manifest?.managedResourcesBundle;
-  if (bundleMode == null) {
+  const rawBundleMode = manifest?.managedResourcesBundle;
+  if (rawBundleMode == null) {
     missing.push('manifest managedResourcesBundle');
     return;
   }
-  normalizeManagedResourcesBundle(bundleMode);
+  const bundleMode = normalizeManagedResourcesBundle(rawBundleMode);
 
   const result = manifest?.managedResourcesBundleResult;
   if (bundleMode === 'no-acp') {
