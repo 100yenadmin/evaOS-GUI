@@ -559,12 +559,17 @@ try {
     // Prepare aioncore binary (for packaged runtime usage)
     const { prepareAioncore } = require('../packages/shared-scripts/src/prepare-aioncore.js');
     const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
-    prepareAioncore({
+    const aioncorePreparation = prepareAioncore({
       projectRoot,
       platform: process.platform,
       arch: targetArch,
       version: resolveAioncoreVersion(projectRoot),
+      reusePrepared: true,
+      env: process.env,
     });
+    console.log(
+      `✅ AionCore ${aioncorePreparation.reused ? 'reused from prepared manifest' : 'prepared'}: ${path.relative(projectRoot, aioncorePreparation.dir)}`
+    );
 
     // Prepare hub resources (index.json + extension zips for offline fallback)
     execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });
