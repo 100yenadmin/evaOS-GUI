@@ -24,6 +24,7 @@ type BackendInstallDiagnosticEnv = {
 };
 
 export type BackendInstallDiagnostics = {
+  acpManagedResourcesInstallNeeded?: boolean;
   appVersion: string;
   arch: string;
   binaryExists?: boolean;
@@ -37,6 +38,10 @@ export type BackendInstallDiagnostics = {
   manifestExists?: boolean;
   manifestFiles?: string[];
   manifestGeneratedAt?: string;
+  manifestManagedNodeRuntimePresent?: boolean;
+  manifestManagedResourcesBundle?: string;
+  manifestManagedResourcesPresent?: boolean;
+  manifestManagedResourcesPruned?: string[];
   manifestMtimeMs?: number;
   manifestParseError?: string;
   manifestPath?: string;
@@ -62,6 +67,10 @@ function getStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const strings = value.filter((item): item is string => typeof item === 'string');
   return strings.length === value.length ? strings : undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function getPathApi(platform: NodeJS.Platform): typeof path.win32 | typeof path.posix {
@@ -123,10 +132,26 @@ function applyManifest(diagnostics: BackendInstallDiagnostics, manifestText: str
     const generatedAt = getString(manifest.generatedAt);
     const sourceType = getString(manifest.sourceType);
     const files = getStringArray(manifest.files);
+    const managedResourcesBundle = getString(manifest.managedResourcesBundle);
+    const resourceShape = manifest.resourceShape as Record<string, { present?: unknown }> | undefined;
+    const managedResourcesPresent = getBoolean(resourceShape?.managedResources?.present);
+    const managedNodeRuntimePresent = getBoolean(resourceShape?.managedNodeRuntime?.present);
+    const managedResourcesBundleResult = manifest.managedResourcesBundleResult as
+      | { prunedResources?: unknown }
+      | undefined;
+    const prunedResources = getStringArray(managedResourcesBundleResult?.prunedResources);
     if (version) diagnostics.manifestVersion = version;
     if (generatedAt) diagnostics.manifestGeneratedAt = generatedAt;
     if (sourceType) diagnostics.manifestSourceType = sourceType;
     if (files) diagnostics.manifestFiles = files;
+    if (managedResourcesBundle) {
+      diagnostics.manifestManagedResourcesBundle = managedResourcesBundle;
+      diagnostics.acpManagedResourcesInstallNeeded = managedResourcesBundle === 'no-acp';
+    }
+    if (managedResourcesPresent !== undefined) diagnostics.manifestManagedResourcesPresent = managedResourcesPresent;
+    if (managedNodeRuntimePresent !== undefined)
+      diagnostics.manifestManagedNodeRuntimePresent = managedNodeRuntimePresent;
+    if (prunedResources) diagnostics.manifestManagedResourcesPruned = prunedResources;
   } catch (error) {
     diagnostics.manifestParseError = error instanceof Error ? error.message : String(error);
   }

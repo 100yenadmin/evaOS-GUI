@@ -34,11 +34,20 @@ function createLinuxContext() {
   };
 }
 
-function createLinuxAionCoreResources(appOutDir: string) {
+function createLinuxAionCoreResources(appOutDir: string, manifest: Record<string, unknown> = {}) {
   const runtimeDir = join(appOutDir, 'resources', 'bundled-aioncore', `linux-${process.arch}`);
   mkdirSync(runtimeDir, { recursive: true });
   writeFileSync(join(runtimeDir, 'aioncore'), '');
-  writeFileSync(join(runtimeDir, 'manifest.json'), '{}');
+  writeFileSync(join(runtimeDir, 'manifest.json'), JSON.stringify(manifest));
+  return runtimeDir;
+}
+
+function createCompleteHubResources(appOutDir: string) {
+  const hubDir = join(appOutDir, 'resources', 'hub');
+  mkdirSync(hubDir, { recursive: true });
+  writeFileSync(join(hubDir, 'index.json'), '{"extensions":{}}');
+  writeFileSync(join(hubDir, 'manifest.json'), '{"extensions":[]}');
+  writeFileSync(join(hubDir, 'extension.zip'), '');
 }
 
 function restoreEnv(name: string, value: string | undefined) {
@@ -86,6 +95,158 @@ describe('afterPack packaging profile guard', () => {
 
     try {
       await expect(afterPack(context)).rejects.toThrow('hub');
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('allows no-acp managed-resource bundles when required runtime resources are present', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    const runtimeDir = createLinuxAionCoreResources(appOutDir, {
+      runtimeKey: `linux-${process.arch}`,
+      managedResourcesBundle: 'no-acp',
+      managedResourcesBundleResult: {
+        mode: 'no-acp',
+        managedResourcesPath: 'managed-resources',
+        sourceResources: ['acp/', 'acp/claude/', 'acp/codex-cli/', 'acp/gemini/'],
+        prunedResources: ['acp/claude/', 'acp/codex-cli/'],
+        keptResources: ['acp/', 'acp/gemini/'],
+      },
+      sourceResourceShape: {
+        managedNodeRuntime: { present: true, relativePath: 'managed-node' },
+      },
+      resourceShape: {
+        managedResources: { present: true, relativePath: 'managed-resources' },
+        managedNodeRuntime: { present: true, relativePath: 'managed-node' },
+      },
+    });
+    mkdirSync(join(runtimeDir, 'managed-node'), { recursive: true });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'gemini'), { recursive: true });
+    createCompleteHubResources(appOutDir);
+
+    try {
+      await expect(afterPack(context)).resolves.toBeUndefined();
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when the AionCore manifest declares managed Node but packaging drops it', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    createLinuxAionCoreResources(appOutDir, {
+      runtimeKey: `linux-${process.arch}`,
+      managedResourcesBundle: 'no-acp',
+      managedResourcesBundleResult: {
+        mode: 'no-acp',
+        managedResourcesPath: 'managed-resources',
+        sourceResources: [],
+        prunedResources: [],
+        keptResources: [],
+      },
+      sourceResourceShape: {
+        managedNodeRuntime: { present: true, relativePath: 'managed-node' },
+      },
+      resourceShape: {
+        managedNodeRuntime: { present: true, relativePath: 'managed-node' },
+      },
+    });
+    createCompleteHubResources(appOutDir);
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('managed-node');
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when no-acp manifest records non-ACP managed-resource pruning', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    createLinuxAionCoreResources(appOutDir, {
+      runtimeKey: `linux-${process.arch}`,
+      managedResourcesBundle: 'no-acp',
+      managedResourcesBundleResult: {
+        mode: 'no-acp',
+        managedResourcesPath: 'managed-resources',
+        sourceResources: ['tools/', 'tools/codex.json'],
+        prunedResources: ['tools/codex.json'],
+        keptResources: ['tools/'],
+      },
+      resourceShape: {
+        managedNodeRuntime: { present: false },
+      },
+    });
+    createCompleteHubResources(appOutDir);
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('unexpected non-ACP managed-resource prune');
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when no-acp kept managed resources are missing from the package', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    createLinuxAionCoreResources(appOutDir, {
+      runtimeKey: `linux-${process.arch}`,
+      managedResourcesBundle: 'no-acp',
+      managedResourcesBundleResult: {
+        mode: 'no-acp',
+        managedResourcesPath: 'managed-resources',
+        sourceResources: ['acp/', 'acp/claude/', 'acp/gemini/'],
+        prunedResources: ['acp/claude/'],
+        keptResources: ['acp/', 'acp/gemini/'],
+      },
+      resourceShape: {
+        managedResources: { present: true, relativePath: 'managed-resources' },
+        managedNodeRuntime: { present: false },
+      },
+    });
+    mkdirSync(join(appOutDir, 'resources', 'bundled-aioncore', `linux-${process.arch}`, 'managed-resources', 'acp'), {
+      recursive: true,
+    });
+    createCompleteHubResources(appOutDir);
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('managed-resources/acp/gemini');
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when hub resources are incomplete', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { appOutDir, context, tempDir } = createLinuxContext();
+    createLinuxAionCoreResources(appOutDir, {
+      runtimeKey: `linux-${process.arch}`,
+      managedResourcesBundle: 'full',
+      managedResourcesBundleResult: {
+        mode: 'full',
+        prunedResources: [],
+      },
+      resourceShape: {
+        managedNodeRuntime: { present: false },
+      },
+    });
+    mkdirSync(join(appOutDir, 'resources', 'hub'), { recursive: true });
+    writeFileSync(join(appOutDir, 'resources', 'hub', 'index.json'), '{}');
+    writeFileSync(join(appOutDir, 'resources', 'hub', 'manifest.json'), '{}');
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('hub/*.zip');
     } finally {
       restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
       rmSync(tempDir, { recursive: true, force: true });

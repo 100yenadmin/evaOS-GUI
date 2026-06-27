@@ -19,6 +19,9 @@ const GITHUB_REPO = 'AionCore';
 const MANIFEST_SCHEMA = 'aioncore-bundle/v2';
 const MANAGED_RESOURCE_MARKERS = ['managed-resources', 'managed_resources'];
 const MANAGED_NODE_RUNTIME_MARKERS = ['managed-node', 'node-runtime'];
+const VALID_MANAGED_RESOURCES_BUNDLES = new Set(['full', 'no-acp']);
+const DEFAULT_MANAGED_RESOURCES_BUNDLE = 'full';
+const ACP_MANAGED_RESOURCE_RE = /(^|[-_])(?:claude|codex)(?:$|[-_])/i;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,6 +40,12 @@ function removeDirectorySafe(dirPath) {
 function copyFileSafe(sourcePath, targetPath) {
   ensureDirectory(path.dirname(targetPath));
   fs.copyFileSync(sourcePath, targetPath);
+}
+
+function copyDirectorySafe(sourcePath, targetPath) {
+  removeDirectorySafe(targetPath);
+  ensureDirectory(path.dirname(targetPath));
+  fs.cpSync(sourcePath, targetPath, { recursive: true });
 }
 
 function ensureExecutableMode(filePath) {
@@ -64,6 +73,29 @@ function readJsonIfExists(filePath) {
   } catch {
     return null;
   }
+}
+
+function normalizeManagedResourcesBundle(value) {
+  const mode = String(value || DEFAULT_MANAGED_RESOURCES_BUNDLE).trim();
+  if (!VALID_MANAGED_RESOURCES_BUNDLES.has(mode)) {
+    throw new Error(
+      `Invalid AIONUI_MANAGED_RESOURCES_BUNDLE "${mode}". Expected one of: ${[...VALID_MANAGED_RESOURCES_BUNDLES].join(
+        ', '
+      )}`
+    );
+  }
+  return mode;
+}
+
+function readManagedResourcesBundle({ env = process.env } = {}) {
+  return normalizeManagedResourcesBundle(env.AIONUI_MANAGED_RESOURCES_BUNDLE);
+}
+
+function getManifestManagedResourcesBundle(manifest) {
+  const raw = manifest?.managedResourcesBundle;
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw === 'object' && typeof raw.mode === 'string') return raw.mode;
+  return null;
 }
 
 function describeRelativePath(rootDir, relativePath, { executable = false } = {}) {
@@ -102,6 +134,159 @@ function describeFirstExistingPath(rootDir, candidates) {
   }
 
   return { present: false, candidates };
+}
+
+function isDirectory(filePath) {
+  try {
+    return fs.statSync(filePath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function findFirstDirectoryByMarkers(rootDir, markers) {
+  if (!isDirectory(rootDir)) return null;
+
+  const markerSet = new Set(markers);
+  const queue = [rootDir];
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    const entries = fs
+      .readdirSync(currentDir, { withFileTypes: true })
+      .toSorted((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const absolutePath = path.join(currentDir, entry.name);
+      if (markerSet.has(entry.name)) return absolutePath;
+      queue.push(absolutePath);
+    }
+  }
+
+  return null;
+}
+
+function getUniqueSearchRoots(binaryPath, extractDir) {
+  const roots = [];
+  for (const candidate of [path.dirname(binaryPath), extractDir]) {
+    if (candidate && !roots.includes(candidate)) roots.push(candidate);
+  }
+  return roots;
+}
+
+function copyFirstRuntimeDirectory(searchRoots, markers, targetDir) {
+  for (const searchRoot of searchRoots) {
+    const sourceDir = findFirstDirectoryByMarkers(searchRoot, markers);
+    if (!sourceDir) continue;
+
+    const targetName = path.basename(sourceDir);
+    copyDirectorySafe(sourceDir, path.join(targetDir, targetName));
+    return targetName;
+  }
+
+  return null;
+}
+
+function copyManagedRuntimeResources({ binaryPath, extractDir, targetDir }) {
+  const searchRoots = getUniqueSearchRoots(binaryPath, extractDir);
+  const copied = [];
+  const managedResources = copyFirstRuntimeDirectory(searchRoots, MANAGED_RESOURCE_MARKERS, targetDir);
+  if (managedResources) copied.push(managedResources);
+
+  const managedNodeRuntime = copyFirstRuntimeDirectory(searchRoots, MANAGED_NODE_RUNTIME_MARKERS, targetDir);
+  if (managedNodeRuntime) copied.push(managedNodeRuntime);
+
+  return copied;
+}
+
+function getPathSegments(relativePath) {
+  return relativePath.split(/[\\/]+/).filter(Boolean);
+}
+
+function hasAcpResourceContext(segments) {
+  return segments.some((segment) => {
+    const normalized = segment.toLowerCase().replace(/[_-]/g, '');
+    return normalized === 'acp' || normalized === 'acpadapter' || normalized === 'acpadapters';
+  });
+}
+
+function hasClaudeOrCodexSegment(segments) {
+  return segments.some((segment) => {
+    const stem = segment.toLowerCase().replace(/\.[^.]+$/, '');
+    return ACP_MANAGED_RESOURCE_RE.test(stem);
+  });
+}
+
+function isPrunableAcpManagedResourcePath(relativePath) {
+  const segments = getPathSegments(relativePath);
+  return hasAcpResourceContext(segments) && hasClaudeOrCodexSegment(segments);
+}
+
+function listDirectoryRelativeEntries(rootDir, relativeDir = '') {
+  if (!isDirectory(rootDir)) return [];
+
+  const entries = [];
+  const dirEntries = fs.readdirSync(rootDir, { withFileTypes: true }).toSorted((a, b) => a.name.localeCompare(b.name));
+  for (const entry of dirEntries) {
+    const absolutePath = path.join(rootDir, entry.name);
+    const relativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
+    if (entry.isDirectory()) {
+      entries.push(`${relativePath}/`);
+      entries.push(...listDirectoryRelativeEntries(absolutePath, relativePath));
+    } else {
+      entries.push(relativePath);
+    }
+  }
+
+  return entries;
+}
+
+function pruneAcpResourcesFromDirectory(rootDir, relativeDir = '') {
+  if (!isDirectory(rootDir)) return [];
+
+  const pruned = [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true }).toSorted((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const absolutePath = path.join(rootDir, entry.name);
+    const relativePath = path.join(relativeDir, entry.name);
+    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+    if (isPrunableAcpManagedResourcePath(normalizedRelativePath)) {
+      fs.rmSync(absolutePath, { recursive: true, force: true });
+      pruned.push(`${normalizedRelativePath}${entry.isDirectory() ? '/' : ''}`);
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      pruned.push(...pruneAcpResourcesFromDirectory(absolutePath, relativePath));
+    }
+  }
+
+  return pruned;
+}
+
+function applyManagedResourcesBundle({ targetDir, mode = DEFAULT_MANAGED_RESOURCES_BUNDLE } = {}) {
+  const normalizedMode = normalizeManagedResourcesBundle(mode);
+  if (normalizedMode === 'full') {
+    return {
+      mode: normalizedMode,
+      prunedResources: [],
+    };
+  }
+
+  const managedResources = describeFirstExistingPath(targetDir, MANAGED_RESOURCE_MARKERS);
+  if (!managedResources.present || !managedResources.relativePath) {
+    return {
+      mode: normalizedMode,
+      prunedResources: [],
+    };
+  }
+
+  return {
+    mode: normalizedMode,
+    managedResourcesPath: managedResources.relativePath,
+    sourceResources: listDirectoryRelativeEntries(path.join(targetDir, managedResources.relativePath)),
+    prunedResources: pruneAcpResourcesFromDirectory(path.join(targetDir, managedResources.relativePath)),
+    keptResources: listDirectoryRelativeEntries(path.join(targetDir, managedResources.relativePath)),
+  };
 }
 
 function getPreparedResourceShape(targetDir, binaryName) {
@@ -146,7 +331,8 @@ function getExpectedPresence(manifest, key) {
  * @returns {{reusable: boolean, reasons: string[], manifest: object | null, dir: string}}
  */
 function getPreparedAioncoreReuseState(options) {
-  const { projectRoot, platform, arch, version } = options;
+  const { projectRoot, platform, arch, version, managedResourcesBundle = DEFAULT_MANAGED_RESOURCES_BUNDLE } = options;
+  const expectedManagedResourcesBundle = normalizeManagedResourcesBundle(managedResourcesBundle);
   const { runtimeKey, targetDir, binaryName, manifestPath } = getTargetPaths(projectRoot, platform, arch);
   const reasons = [];
   const manifest = readJsonIfExists(manifestPath);
@@ -168,6 +354,21 @@ function getPreparedAioncoreReuseState(options) {
     reasons.push(`runtimeKey mismatch: ${manifest.runtimeKey} != ${runtimeKey}`);
   }
   if (manifest.version !== version) reasons.push(`version mismatch: ${manifest.version || 'missing'} != ${version}`);
+  try {
+    const manifestManagedResourcesBundle = getManifestManagedResourcesBundle(manifest);
+    if (!manifestManagedResourcesBundle) {
+      reasons.push('manifest missing managedResourcesBundle');
+    } else {
+      const actualManagedResourcesBundle = normalizeManagedResourcesBundle(manifestManagedResourcesBundle);
+      if (actualManagedResourcesBundle !== expectedManagedResourcesBundle) {
+        reasons.push(
+          `managedResourcesBundle mismatch: ${actualManagedResourcesBundle} != ${expectedManagedResourcesBundle}`
+        );
+      }
+    }
+  } catch (error) {
+    reasons.push(error instanceof Error ? error.message : String(error));
+  }
   if (!actualShape.binary.present) reasons.push(`binary missing: ${binaryName}`);
   if (actualShape.binary.present && actualShape.binary.executable === false) {
     reasons.push(`binary is not executable: ${binaryName}`);
@@ -315,7 +516,7 @@ function downloadAndExtract(platform, arch, tag) {
     throw new Error(`Binary ${binaryName} not found in downloaded archive`);
   }
 
-  return { binaryPath, tempDir, url };
+  return { binaryPath, extractDir, tempDir, url };
 }
 
 // ---------------------------------------------------------------------------
@@ -331,11 +532,15 @@ function downloadAndExtract(platform, arch, tag) {
  * @param {string} options.arch - Target architecture (process.arch)
  * @param {string} options.version - Backend version (default: 'latest')
  * @param {boolean} options.reusePrepared - Reuse a matching prepared manifest when present.
- * @param {object} options.env - Environment metadata for CI provenance.
+ * @param {object} options.env - Environment metadata for CI provenance and managed-resource bundle selection.
+ * @param {'full'|'no-acp'} options.managedResourcesBundle - Managed resource bundle mode.
  * @returns {{ prepared: true; reused: boolean; dir: string; sourceType: string }}
  */
 function prepareAioncore(options) {
   const { projectRoot, platform, arch, version = 'latest', reusePrepared = false, env = process.env } = options;
+  const managedResourcesBundle = normalizeManagedResourcesBundle(
+    options.managedResourcesBundle || readManagedResourcesBundle({ env })
+  );
   const { runtimeKey, targetDir, binaryName, targetBinaryPath } = getTargetPaths(projectRoot, platform, arch);
 
   // Resolve the actual version tag — asset filenames include the tag
@@ -352,7 +557,13 @@ function prepareAioncore(options) {
   }
 
   if (reusePrepared) {
-    const reuseState = getPreparedAioncoreReuseState({ projectRoot, platform, arch, version: tag });
+    const reuseState = getPreparedAioncoreReuseState({
+      projectRoot,
+      platform,
+      arch,
+      version: tag,
+      managedResourcesBundle,
+    });
     if (reuseState.reusable) {
       console.log(`Reusing prepared aioncore for ${runtimeKey} (version: ${tag})`);
       return {
@@ -360,6 +571,7 @@ function prepareAioncore(options) {
         reused: true,
         dir: targetDir,
         sourceType: reuseState.manifest.sourceType || 'reuse',
+        managedResourcesBundle,
       };
     }
 
@@ -383,7 +595,7 @@ function prepareAioncore(options) {
       sourcePath = result.binaryPath;
       tempDir = result.tempDir;
       sourceType = 'download';
-      sourceDetail = { url: result.url };
+      sourceDetail = { url: result.url, extractDir: result.extractDir };
       console.log(`  Downloaded from GitHub releases`);
     } catch (error) {
       console.warn(`  Download failed: ${error.message}`);
@@ -394,6 +606,17 @@ function prepareAioncore(options) {
   if (sourcePath) {
     copyFileSafe(sourcePath, targetBinaryPath);
     ensureExecutableMode(targetBinaryPath);
+    const copiedResourcePaths = copyManagedRuntimeResources({
+      binaryPath: sourcePath,
+      extractDir: sourceDetail.extractDir,
+      targetDir,
+    });
+    const sourceResourceShape = getPreparedResourceShape(targetDir, binaryName);
+    const managedResourcesBundleResult = applyManagedResourcesBundle({
+      targetDir,
+      mode: managedResourcesBundle,
+    });
+    const resourceShape = getPreparedResourceShape(targetDir, binaryName);
 
     // The release tag is the authoritative version — the aioncore
     // binary does not expose a --version flag (it has --app-version which
@@ -411,11 +634,14 @@ function prepareAioncore(options) {
         sha: env.GITHUB_SHA || null,
         repository: env.GITHUB_REPOSITORY || null,
       },
+      managedResourcesBundle,
+      managedResourcesBundleResult,
+      sourceResourceShape,
       sourceType,
-      source: sourceDetail,
-      files: [binaryName],
+      source: { url: sourceDetail.url },
+      files: [binaryName, ...copiedResourcePaths],
       resourceShape: {
-        ...getPreparedResourceShape(targetDir, binaryName),
+        ...resourceShape,
         manifest: { present: true, relativePath: 'manifest.json', type: 'file' },
       },
     };
@@ -426,13 +652,25 @@ function prepareAioncore(options) {
     );
 
     if (tempDir) removeDirectorySafe(tempDir);
-    return { prepared: true, reused: false, dir: targetDir, sourceType };
+    return {
+      prepared: true,
+      reused: false,
+      dir: targetDir,
+      sourceType,
+      managedResourcesBundle,
+      prunedResources: managedResourcesBundleResult.prunedResources,
+    };
   }
 
   throw new Error(`aioncore binary not found for ${runtimeKey} (tag: ${tag})`);
 }
 
 module.exports = {
+  DEFAULT_MANAGED_RESOURCES_BUNDLE,
+  VALID_MANAGED_RESOURCES_BUNDLES,
+  applyManagedResourcesBundle,
   getPreparedAioncoreReuseState,
+  normalizeManagedResourcesBundle,
   prepareAioncore,
+  readManagedResourcesBundle,
 };

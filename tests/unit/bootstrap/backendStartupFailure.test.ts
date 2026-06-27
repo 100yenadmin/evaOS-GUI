@@ -108,4 +108,24 @@ describe('classifyBackendStartupFailure', () => {
       missingRuntimeDir: false,
     });
   });
+
+  it('does not classify missing ACP managed resources as incomplete backend installation', () => {
+    const error = new Error('aioncore startup failed after binary resolution') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'resolve_binary',
+      isPackaged: true,
+      runtimeKey: 'darwin-arm64',
+      binaryName: 'aioncore',
+      bundledDirExists: true,
+      runtimeDirExists: true,
+      resourcesDirEntries: ['app.asar', 'app.asar.unpacked/', 'bundled-aioncore/', 'hub/'],
+      runtimeDirEntries: ['aioncore', 'manifest.json', 'managed-node/'],
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_startup_failed',
+    });
+  });
 });
