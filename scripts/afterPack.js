@@ -8,6 +8,7 @@ const {
   verifyModuleBinary,
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
+const { assertNonFullProfileNotRelease, readPackagingProfile } = require('./packagingProfile');
 
 /**
  * afterPack hook for electron-builder
@@ -42,6 +43,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
     missing
   );
   requirePackagedResource(resourcesDir, path.join('bundled-aioncore', runtimeKey, 'manifest.json'), missing);
+  requirePackagedResource(resourcesDir, 'hub', missing);
 
   if (missing.length > 0) {
     throw new Error(`Packaged app is missing required resource(s): ${missing.join(', ')}`);
@@ -50,13 +52,32 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   console.log(`   ✓ Bundled resources verified for ${runtimeKey}`);
 }
 
+/**
+ * electron-builder afterPack hook.
+ *
+ * @param {{arch: string|number, electronPlatformName: string, appOutDir: string, packager?: object}} context - Build context from electron-builder.
+ * @returns {Promise<void>} Resolves after resource verification and any native-module rebuilds complete.
+ *
+ * The hook reads EVAOS_PACKAGING_PROFILE from the build environment. `full` and
+ * `functional-smoke` must include bundled AionCore and hub resources and fail closed
+ * when they are missing. `thin-shell` intentionally skips bundled runtime
+ * resource verification because it is a UI/layout smoke artifact only. Non-full
+ * profiles are refused when release, signing, notary, or distribution flags are
+ * present. Native module rebuild behavior remains unchanged: rebuild when cross
+ * compiling, on Windows same-arch packaging, or when FORCE_NATIVE_REBUILD=true.
+ */
 module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
+  // build-with-builder propagates CLI --packaging-profile into env before electron-builder runs hooks.
+  const packagingProfile = readPackagingProfile({ argv: [], env: process.env });
+  assertNonFullProfileNotRelease(packagingProfile, { env: process.env, context: 'electron-builder afterPack' });
+
   const targetArch = normalizeArch(typeof arch === 'string' ? arch : Arch[arch] || process.arch);
   const buildArch = normalizeArch(os.arch());
 
   console.log(`\n🔧 afterPack hook started`);
   console.log(`   Platform: ${electronPlatformName}, Build arch: ${buildArch}, Target arch: ${targetArch}`);
+  console.log(`   Packaging profile: ${packagingProfile}`);
 
   const isCrossCompile = buildArch !== targetArch;
   const forceRebuild = process.env.FORCE_NATIVE_REBUILD === 'true';
@@ -85,7 +106,11 @@ module.exports = async function afterPack(context) {
       console.warn(`   ⚠️  app.asar.unpacked not found`);
     }
 
-    verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    if (packagingProfile === 'thin-shell') {
+      console.log('   ✓ thin-shell profile: bundled runtime resource verification intentionally skipped');
+    } else {
+      verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+    }
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }
