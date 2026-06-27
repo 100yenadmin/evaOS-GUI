@@ -47,6 +47,16 @@ User OS-global installs of runtime tools are fallback-only. They can help manual
 
 `thin-shell` is UI-only. It must never satisfy runtime, ACP, Mac-control, TCC, staging, release, or customer proof. Full release package behavior stays unchanged until optional ACP install gates are implemented and proven.
 
+## Managed Resource Bundles
+
+`AIONUI_MANAGED_RESOURCES_BUNDLE` controls only managed resources inside the prepared AionCore bundle:
+
+- `full` is the default and must remain the normal release behavior.
+- `no-acp` keeps the AionCore binary, the AionCore manifest, managed Node runtime resources when present, and hub resources; it prunes only Claude/Codex ACP managed resources.
+- Missing Claude/Codex ACP managed resources in a `no-acp` artifact are an intentional install-needed state, not a corrupt Workbench installation.
+- `no-acp` does not change evaOS/Hermes/OpenClaw broker protocols or customer APIs.
+- OS-global Claude, Codex, or Node installs remain fallback-only. They must not be treated as primary runtime delivery for release proof.
+
 ## Signing And Notarization
 
 Public beta publishing requires real macOS signing and notarization. Ad-hoc signing is not a distributable release candidate.

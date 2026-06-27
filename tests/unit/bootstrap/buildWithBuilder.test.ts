@@ -51,13 +51,19 @@ function recordPrepareCall(options) {
   };
 }
 
+function readManagedResourcesBundle({ env = process.env } = {}) {
+  const value = env.AIONUI_MANAGED_RESOURCES_BUNDLE || 'full';
+  if (value !== 'full' && value !== 'no-acp') throw new Error('Invalid AIONUI_MANAGED_RESOURCES_BUNDLE');
+  return value;
+}
+
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === './prepareAioncore' || request.endsWith('/prepareAioncore')) {
     return recordPrepareCall;
   }
 
   if (request.endsWith('packages/shared-scripts/src/prepare-aioncore.js')) {
-    return { prepareAioncore: recordPrepareCall };
+    return { prepareAioncore: recordPrepareCall, readManagedResourcesBundle };
   }
 
   if (request === './resolveAioncoreVersion.js' || request.endsWith('/resolveAioncoreVersion.js')) {
@@ -116,8 +122,11 @@ childProcess.execSync = function mockedExecSync(command) {
         arch?: string;
         reusePrepared?: boolean;
       } | null>;
-      expect(calls).toContainEqual(expect.objectContaining({ arch: expectedArch, reusePrepared: true }));
+      expect(calls).toContainEqual(
+        expect.objectContaining({ arch: expectedArch, managedResourcesBundle: 'full', reusePrepared: true })
+      );
       expect(result.stdout).toContain('AionCore prepared: resources/bundled-aioncore');
+      expect(result.stdout).toContain('Managed resources bundle: full');
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -135,7 +144,9 @@ childProcess.execSync = function mockedExecSync(command) {
         arch?: string;
         reusePrepared?: boolean;
       } | null>;
-      expect(calls).toContainEqual(expect.objectContaining({ arch: 'arm64', reusePrepared: true }));
+      expect(calls).toContainEqual(
+        expect.objectContaining({ arch: 'arm64', managedResourcesBundle: 'full', reusePrepared: true })
+      );
       expect(result.stdout).toContain('AionCore reused from prepared manifest: resources/bundled-aioncore');
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
@@ -169,6 +180,38 @@ childProcess.execSync = function mockedExecSync(command) {
       expect(generatedConfig).toContain('from: resources/app.png');
     } finally {
       rmSync(thinShellConfigPath, { force: true });
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes no-acp managed-resource bundle mode into AionCore preparation', () => {
+    const { callsPath, result, tempDir } = runBuildWithHook(['arm64', '--mac', 'dir', '--arm64'], {
+      AIONUI_MANAGED_RESOURCES_BUNDLE: 'no-acp',
+    });
+
+    try {
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      expect(result.stdout).toContain('Managed resources bundle: no-acp');
+
+      const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{
+        managedResourcesBundle?: string;
+        reusePrepared?: boolean;
+      } | null>;
+      expect(calls).toContainEqual(expect.objectContaining({ managedResourcesBundle: 'no-acp', reusePrepared: true }));
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid managed-resource bundle modes before packaging', () => {
+    const { result, tempDir } = runBuildWithHook(['arm64', '--mac', 'dir', '--arm64'], {
+      AIONUI_MANAGED_RESOURCES_BUNDLE: 'lite',
+    });
+
+    try {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Invalid AIONUI_MANAGED_RESOURCES_BUNDLE');
+    } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });

@@ -4,19 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const {
+  applyManagedResourcesBundle,
   getPreparedAioncoreReuseState,
+  normalizeManagedResourcesBundle,
   prepareAioncore,
+  readManagedResourcesBundle,
 } = require('../../../packages/shared-scripts/src/prepare-aioncore.js');
 
 type RuntimeOptions = {
   arch?: string;
   managedNodeRuntimePresent?: boolean;
+  managedResourcesBundle?: string;
   managedResourcesPresent?: boolean;
   platform?: string;
   version?: string;
@@ -60,6 +64,11 @@ function writePreparedRuntime(projectRoot: string, options: RuntimeOptions = {})
       repository: '100yenadmin/evaOS-GUI',
     },
     sourceType: 'download',
+    managedResourcesBundle: options.managedResourcesBundle ?? 'full',
+    managedResourcesBundleResult: {
+      mode: options.managedResourcesBundle ?? 'full',
+      prunedResources: [],
+    },
     source: {
       url: 'https://example.test/aioncore.tar.gz',
     },
@@ -104,6 +113,12 @@ function writePreparedRuntime(projectRoot: string, options: RuntimeOptions = {})
 }
 
 describe('prepare-aioncore reuse', () => {
+  it('normalizes AIONUI_MANAGED_RESOURCES_BUNDLE with full as the default', () => {
+    expect(readManagedResourcesBundle({ env: {} })).toBe('full');
+    expect(readManagedResourcesBundle({ env: { AIONUI_MANAGED_RESOURCES_BUNDLE: 'no-acp' } })).toBe('no-acp');
+    expect(() => normalizeManagedResourcesBundle('lite')).toThrow('Invalid AIONUI_MANAGED_RESOURCES_BUNDLE');
+  });
+
   it('reuses a prepared runtime when manifest and resource shape match', () => {
     const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
     const { runtimeDir, version } = writePreparedRuntime(projectRoot);
@@ -147,6 +162,26 @@ describe('prepare-aioncore reuse', () => {
     }
   });
 
+  it('rejects reuse when the managed-resource bundle mode differs from the manifest', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
+    const { version } = writePreparedRuntime(projectRoot, { managedResourcesBundle: 'full' });
+
+    try {
+      const state = getPreparedAioncoreReuseState({
+        projectRoot,
+        platform: 'darwin',
+        arch: 'arm64',
+        version,
+        managedResourcesBundle: 'no-acp',
+      });
+
+      expect(state.reusable).toBe(false);
+      expect(state.reasons).toContain('managedResourcesBundle mismatch: full != no-acp');
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects reuse when the manifest schema is missing or stale', () => {
     const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
     const { runtimeDir, version } = writePreparedRuntime(projectRoot);
@@ -170,6 +205,29 @@ describe('prepare-aioncore reuse', () => {
     }
   });
 
+  it('rejects reuse when the manifest does not record the managed-resource bundle mode', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
+    const { runtimeDir, version } = writePreparedRuntime(projectRoot);
+    const manifestPath = join(runtimeDir, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    delete manifest.managedResourcesBundle;
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+
+    try {
+      const state = getPreparedAioncoreReuseState({
+        projectRoot,
+        platform: 'darwin',
+        arch: 'arm64',
+        version,
+      });
+
+      expect(state.reusable).toBe(false);
+      expect(state.reasons).toContain('manifest missing managedResourcesBundle');
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects reuse when managed-resource presence changed after manifest write', () => {
     const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-reuse-'));
     const { runtimeDir, version } = writePreparedRuntime(projectRoot, {
@@ -188,6 +246,37 @@ describe('prepare-aioncore reuse', () => {
 
       expect(state.reusable).toBe(false);
       expect(state.reasons).toContain('managedResources presence mismatch: manifest=false actual=true');
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('prunes only Claude/Codex managed ACP resources while keeping managed Node runtime', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'aioncore-bundle-'));
+    const { runtimeDir } = writePreparedRuntime(projectRoot, {
+      managedNodeRuntimePresent: true,
+      managedResourcesPresent: true,
+    });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'claude'), { recursive: true });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'codex-cli'), { recursive: true });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'gemini'), { recursive: true });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'tools'), { recursive: true });
+    writeFileSync(join(runtimeDir, 'managed-resources', 'tools', 'codex.json'), '{}');
+    writeFileSync(join(runtimeDir, 'managed-node', 'node'), '#!/bin/sh\n');
+
+    try {
+      const result = applyManagedResourcesBundle({ targetDir: runtimeDir, mode: 'no-acp' });
+
+      expect(result).toEqual({
+        mode: 'no-acp',
+        managedResourcesPath: 'managed-resources',
+        sourceResources: ['acp/', 'acp/claude/', 'acp/codex-cli/', 'acp/gemini/', 'tools/', 'tools/codex.json'],
+        prunedResources: ['acp/claude/', 'acp/codex-cli/'],
+        keptResources: ['acp/', 'acp/gemini/', 'tools/', 'tools/codex.json'],
+      });
+      expect(existsSync(join(runtimeDir, 'managed-resources', 'acp', 'gemini'))).toBe(true);
+      expect(existsSync(join(runtimeDir, 'managed-resources', 'tools', 'codex.json'))).toBe(true);
+      expect(existsSync(join(runtimeDir, 'managed-node', 'node'))).toBe(true);
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
     }

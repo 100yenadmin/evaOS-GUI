@@ -19,6 +19,7 @@ const {
   readPackagingProfile,
   stripPackagingProfileArgs,
 } = require('./packagingProfile');
+const { readManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -387,6 +388,8 @@ const rawArgs = process.argv.slice(2);
 const packagingProfile = readPackagingProfile({ argv: rawArgs, env: process.env });
 assertNonFullProfileNotRelease(packagingProfile, { env: process.env, context: 'Workbench packaging' });
 process.env.EVAOS_PACKAGING_PROFILE = packagingProfile;
+const managedResourcesBundle = readManagedResourcesBundle({ env: process.env });
+process.env.AIONUI_MANAGED_RESOURCES_BUNDLE = managedResourcesBundle;
 const args = stripPackagingProfileArgs(rawArgs);
 const archList = ['x64', 'arm64', 'ia32', 'armv7l'];
 
@@ -474,6 +477,7 @@ if (archArgs.length > 1) {
 console.log(`🔨 Building for architecture: ${targetArch}`);
 console.log(`📋 Builder arguments: ${builderArgs || '(none)'}`);
 console.log(`📦 Packaging profile: ${packagingProfile}`);
+console.log(`📦 Managed resources bundle: ${managedResourcesBundle}`);
 if (skipVite) console.log('⚡ --skip-vite: Will skip Vite compilation if output exists');
 if (skipNative) console.log('⚡ --skip-native: Will skip native module rebuilding');
 if (packOnly) console.log('⚡ --pack-only: Will skip electron-builder distributable creation');
@@ -566,6 +570,7 @@ try {
       version: resolveAioncoreVersion(projectRoot),
       reusePrepared: true,
       env: process.env,
+      managedResourcesBundle,
     });
     console.log(
       `✅ AionCore ${aioncorePreparation.reused ? 'reused from prepared manifest' : 'prepared'}: ${path.relative(projectRoot, aioncorePreparation.dir)}`
