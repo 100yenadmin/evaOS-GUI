@@ -604,6 +604,9 @@ jobs:
       - name: Run postinstall
         run: npm run postinstall || true
 
+      - name: Verify renderer dependency manifest
+        run: node scripts/evaosVerifyRendererDependencyPrune.js --verify-package-json
+
       - name: Get Electron version
         id: electron-version
         shell: bash
@@ -707,7 +710,6 @@ jobs:
 
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          node scripts/evaosVerifyRendererDependencyPrune.js --verify-package-json
           node scripts/evaosVerifyRendererDependencyPrune.js "$APP_PATH"
 
           {

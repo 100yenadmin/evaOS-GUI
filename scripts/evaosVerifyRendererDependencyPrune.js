@@ -87,6 +87,11 @@ function packagePathExists(root, packageName) {
   return fs.existsSync(path.join(root, ...packageName.split('/')));
 }
 
+function packagePathExistsInAsar(asarPaths, packageName) {
+  const root = `/node_modules/${packageName}`;
+  return asarPaths.some((entryPath) => entryPath === root || entryPath.startsWith(`${root}/`));
+}
+
 /**
  * Verifies that the dependency-prune package lists match package.json buckets.
  *
@@ -125,7 +130,7 @@ function verifyRendererDependencyManifest(packageJsonPath = path.join(__dirname,
  * Verifies an unpacked Electron app does not raw-ship renderer-only packages.
  *
  * @param {string} appPath Path to the unpacked `.app` bundle.
- * @returns {{ checkedPackages: number }} Count of renderer-only package names checked.
+ * @returns {{ checkedPackages: number, checkedRuntimeTransitivePackages: number }} Count of package names checked.
  */
 function verifyRendererDependencyPrune(appPath) {
   if (!appPath) {
@@ -141,27 +146,36 @@ function verifyRendererDependencyPrune(appPath) {
 
   const header = readAsarHeader(appAsar);
   const asarPaths = collectPaths(header.files);
-  const leakedInAsar = rendererOnlyPackages.filter((packageName) => {
-    const root = `/node_modules/${packageName}`;
-    return asarPaths.some((entryPath) => entryPath === root || entryPath.startsWith(`${root}/`));
-  });
+  const leakedInAsar = rendererOnlyPackages.filter((packageName) => packagePathExistsInAsar(asarPaths, packageName));
 
   const leakedInUnpacked = rendererOnlyPackages.filter((packageName) =>
     packagePathExists(unpackedNodeModules, packageName)
   );
 
-  if (leakedInAsar.length || leakedInUnpacked.length) {
-    const errors = [];
-    if (leakedInAsar.length) {
-      errors.push(`Renderer-only packages leaked into app.asar: ${leakedInAsar.join(', ')}`);
-    }
-    if (leakedInUnpacked.length) {
-      errors.push(`Renderer-only packages leaked into app.asar.unpacked/node_modules: ${leakedInUnpacked.join(', ')}`);
-    }
+  const missingRuntimeTransitivePackages = runtimeTransitivePackages.filter(
+    (packageName) =>
+      !packagePathExistsInAsar(asarPaths, packageName) && !packagePathExists(unpackedNodeModules, packageName)
+  );
+
+  const errors = [];
+  if (leakedInAsar.length) {
+    errors.push(`Renderer-only packages leaked into app.asar: ${leakedInAsar.join(', ')}`);
+  }
+  if (leakedInUnpacked.length) {
+    errors.push(`Renderer-only packages leaked into app.asar.unpacked/node_modules: ${leakedInUnpacked.join(', ')}`);
+  }
+  if (missingRuntimeTransitivePackages.length) {
+    errors.push(`Missing runtime-transitive packages: ${missingRuntimeTransitivePackages.join(', ')}`);
+  }
+
+  if (errors.length) {
     throw new Error(errors.join('\n'));
   }
 
-  return { checkedPackages: rendererOnlyPackages.length };
+  return {
+    checkedPackages: rendererOnlyPackages.length,
+    checkedRuntimeTransitivePackages: runtimeTransitivePackages.length,
+  };
 }
 
 function main() {

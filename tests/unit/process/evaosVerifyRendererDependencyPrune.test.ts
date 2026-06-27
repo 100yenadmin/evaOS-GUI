@@ -12,7 +12,10 @@ const verifier = require('../../../scripts/evaosVerifyRendererDependencyPrune.js
     checkedRendererPackages: number;
     checkedRuntimeTransitivePackages: number;
   };
-  verifyRendererDependencyPrune: (appPath: string) => { checkedPackages: number };
+  verifyRendererDependencyPrune: (appPath: string) => {
+    checkedPackages: number;
+    checkedRuntimeTransitivePackages: number;
+  };
 };
 
 let tempDir: string | undefined;
@@ -55,7 +58,7 @@ function writeFakeAsar(appPath: string, packages: string[]) {
   fs.writeFileSync(path.join(resources, 'app.asar'), Buffer.concat([sizePickle, headerPickle]));
 }
 
-function makeApp(packages: string[] = []) {
+function makeApp(packages: string[] = verifier.runtimeTransitivePackages) {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-renderer-prune-'));
   const appPath = path.join(tempDir, 'AionUi.app');
   writeFakeAsar(appPath, packages);
@@ -75,6 +78,7 @@ describe('evaosVerifyRendererDependencyPrune', () => {
 
     expect(verifier.verifyRendererDependencyPrune(appPath)).toEqual({
       checkedPackages: verifier.rendererOnlyPackages.length,
+      checkedRuntimeTransitivePackages: verifier.runtimeTransitivePackages.length,
     });
   });
 
@@ -86,7 +90,7 @@ describe('evaosVerifyRendererDependencyPrune', () => {
   });
 
   it('fails if any moved renderer dependency ships inside app.asar node_modules', () => {
-    const appPath = makeApp(verifier.rendererOnlyPackages);
+    const appPath = makeApp([...verifier.runtimeTransitivePackages, ...verifier.rendererOnlyPackages]);
 
     expect(() => verifier.verifyRendererDependencyPrune(appPath)).toThrow(verifier.rendererOnlyPackages[0]);
 
@@ -110,5 +114,12 @@ describe('evaosVerifyRendererDependencyPrune', () => {
     );
 
     expect(() => verifier.verifyRendererDependencyPrune(appPath)).toThrow(leakedPackage);
+  });
+
+  it('fails if a runtime-transitive dependency is missing from the packaged app', () => {
+    const missingPackage = verifier.runtimeTransitivePackages[0];
+    const appPath = makeApp(verifier.runtimeTransitivePackages.filter((packageName) => packageName !== missingPackage));
+
+    expect(() => verifier.verifyRendererDependencyPrune(appPath)).toThrow(missingPackage);
   });
 });
