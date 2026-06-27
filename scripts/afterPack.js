@@ -10,6 +10,7 @@ const {
 } = require('./rebuildNativeModules');
 const { assertNonFullProfileNotRelease, readPackagingProfile } = require('./packagingProfile');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
+const MANAGED_RESOURCE_PATH_CANDIDATES = ['managed-resources', 'managed_resources'];
 
 /**
  * afterPack hook for electron-builder
@@ -84,6 +85,34 @@ function listPackagedManagedResourceEntries(rootDir, relativeDir = '') {
   return entries;
 }
 
+function getManagedResourceSearchPaths(result, manifest) {
+  const paths = [
+    result?.managedResourcesPath,
+    manifest?.resourceShape?.managedResources?.relativePath,
+    ...MANAGED_RESOURCE_PATH_CANDIDATES,
+  ];
+  return [
+    ...new Set(paths.filter((entry) => typeof entry === 'string' && entry.length > 0).map(normalizeResourceEntry)),
+  ];
+}
+
+function requireForbiddenManagedResourcesAbsent(runtimeDir, result, manifest, missing) {
+  for (const relativePath of getManagedResourceSearchPaths(result, manifest)) {
+    const managedResourcesDir = path.join(runtimeDir, relativePath);
+    const packagedResources = listPackagedManagedResourceEntries(managedResourcesDir);
+    if (!packagedResources) continue;
+
+    const forbiddenPackagedResources = packagedResources.filter(isPrunedAcpPath);
+    if (forbiddenPackagedResources.length > 0) {
+      missing.push(
+        `forbidden no-acp managed resource(s) still packaged: ${forbiddenPackagedResources
+          .map((entry) => path.join(relativePath, entry))
+          .join(', ')}`
+      );
+    }
+  }
+}
+
 function readJsonFile(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -130,7 +159,8 @@ function requireManagedNodePreserved(runtimeDir, manifest, missing) {
   requireManifestResourceShape(runtimeDir, manifest, 'managedNodeRuntime', missing);
 }
 
-function requireManagedResourceInventory(runtimeDir, result, missing) {
+function requireManagedResourceInventory(runtimeDir, result, manifest, missing) {
+  requireForbiddenManagedResourcesAbsent(runtimeDir, result, manifest, missing);
   if (!result?.managedResourcesPath) return;
   const sourceResources = Array.isArray(result.sourceResources) ? result.sourceResources : null;
   const keptResources = Array.isArray(result.keptResources) ? result.keptResources : null;
@@ -149,8 +179,7 @@ function requireManagedResourceInventory(runtimeDir, result, missing) {
   }
 
   const managedResourcesDir = path.join(runtimeDir, result.managedResourcesPath);
-  const packagedResources = listPackagedManagedResourceEntries(managedResourcesDir);
-  if (!packagedResources) {
+  if (!listPackagedManagedResourceEntries(managedResourcesDir)) {
     missing.push(path.join('bundled-aioncore', path.basename(runtimeDir), result.managedResourcesPath));
     return;
   }
@@ -167,11 +196,6 @@ function requireManagedResourceInventory(runtimeDir, result, missing) {
         )}`
       );
     }
-  }
-
-  const forbiddenPackagedResources = packagedResources.filter(isPrunedAcpPath);
-  if (forbiddenPackagedResources.length > 0) {
-    missing.push(`forbidden no-acp managed resource(s) still packaged: ${forbiddenPackagedResources.join(', ')}`);
   }
 
   for (const keptEntry of keptSet) {
@@ -204,7 +228,7 @@ function verifyManagedResourcesBundleManifest(runtimeDir, manifest, missing) {
     if (unexpectedPrunedResources.length > 0) {
       missing.push(`unexpected non-ACP managed-resource prune(s): ${unexpectedPrunedResources.join(', ')}`);
     }
-    requireManagedResourceInventory(runtimeDir, result, missing);
+    requireManagedResourceInventory(runtimeDir, result, manifest, missing);
   }
 
   requireManagedNodePreserved(runtimeDir, manifest, missing);

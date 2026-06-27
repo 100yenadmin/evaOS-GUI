@@ -533,16 +533,21 @@ function downloadAndExtract(platform, arch, tag) {
   removeDirectorySafe(tempDir);
   ensureDirectory(tempDir);
 
-  downloadFile(url, archivePath);
-  extractArchive(archivePath, extractDir, platform);
+  try {
+    downloadFile(url, archivePath);
+    extractArchive(archivePath, extractDir, platform);
 
-  const binaryName = getBinaryName(platform);
-  const binaryPath = findBinaryInDir(extractDir, binaryName);
-  if (!binaryPath) {
-    throw new Error(`Binary ${binaryName} not found in downloaded archive`);
+    const binaryName = getBinaryName(platform);
+    const binaryPath = findBinaryInDir(extractDir, binaryName);
+    if (!binaryPath) {
+      throw new Error(`Binary ${binaryName} not found in downloaded archive`);
+    }
+
+    return { binaryPath, extractDir, tempDir, url };
+  } catch (error) {
+    removeDirectorySafe(tempDir);
+    throw error;
   }
-
-  return { binaryPath, extractDir, tempDir, url };
 }
 
 // ---------------------------------------------------------------------------
