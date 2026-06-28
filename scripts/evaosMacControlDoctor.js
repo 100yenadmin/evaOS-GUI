@@ -20,7 +20,7 @@ const GATE_IDS = [
   'computer_use_evidence',
   'support_account_target',
   'route_visibility',
-  'new_chat_response',
+  'visible_agent_mac_tools',
   'mac_control_cold_start',
   'bridge_ready',
   'local_openclaw',
@@ -42,6 +42,39 @@ const ROUTE_MARKERS = [
   'Company Brain',
   'Mac & iPhone',
 ];
+
+const REQUIRED_VISIBLE_AGENT_MAC_TOOLS = [
+  'customer_mac_status',
+  'customer_mac_capabilities',
+  'desktop_control_status',
+  'desktop_see',
+  'desktop_bridge_audit_tail',
+  'desktop_control_stop',
+  'desktop_kill_switch',
+];
+const VISIBLE_AGENT_LOW_IMPACT_ACTION = 'approved_low_impact_action';
+
+const VISIBLE_AGENT_MAC_TOOL_PROMPT = [
+  'Release proof: call the active evaOS/OpenClaw Mac-control tools for this selected Workbench target.',
+  '',
+  'Required tools:',
+  ...REQUIRED_VISIBLE_AGENT_MAC_TOOLS.map((tool) => `- ${tool}`),
+  `- ${VISIBLE_AGENT_LOW_IMPACT_ACTION}: one approved low-impact desktop action with lowImpact=true and approved=true`,
+  '',
+  'Return a compact JSON structured proof with toolResults[], each tool name, ok/status, result data, and any audit id.',
+  'Do not ask for pairing codes, connection details, network endpoints, remote-shell details, browser-debug details, or tailnet keys.',
+].join('\n');
+
+const VISIBLE_AGENT_FAILURE_PATTERN =
+  /USER_AGENT_STARTUP_FAILED|agent type is no longer supported|selected agent failed to start|transport parse error|Invalid message \{|ACP parse|parse ACP|could not parse|Doctor warnings|Left plugin install index|broker-boundary|generic broker-boundary failure|mac_connector_material_missing/i;
+const OS_PERMISSION_PROMPT_PATTERN =
+  /"?(?:node|osascript|System Events)"?\s+wants access to control\s+"?System Events"?|System Events.*would like to control/i;
+const FORBIDDEN_PROOF_COMMAND_PATTERN =
+  /(?:^|[\s;&|()])(?:node|nodejs|osascript|osascript\.app|open\s+-a\s+Script\s+Editor|swift|python(?:3)?|ruby|perl)\b|System Events|AXUIElement|CGEvent|cliclick|xdotool|screencapture|screenrecord|ffmpeg|Chrome DevTools|--remote-debugging-port/i;
+const APPROVED_PROOF_COMMAND_PATTERN =
+  /(?:^|[\s;&|()])(?:openclaw|hermes|evaos-desktop-bridge|customer_mac_|desktop_(?:control|see|bridge)|mac-control-doctor|support-control|evaos-support)\b/i;
+const VISIBLE_AGENT_SUCCESS_STATUSES = new Set(['ok', 'passed', 'succeeded', 'success', 'ready', 'completed', 'done']);
+const VISIBLE_AGENT_TOOL_ARRAY_KEYS = ['toolResults', 'tool_results', 'toolCalls', 'tool_calls', 'results', 'calls'];
 
 const SENSITIVE_KEY_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret|connector[_-]?url|connector[_-]?token|headscale|tailscale|preauth)/i;
@@ -186,16 +219,31 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
     });
   }
 
-  const result = runShellCommand(command, options);
+  const normalizedCommand = String(command).trim();
+  if (FORBIDDEN_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
+    return failedGate(id, 'unapproved_executor', `${id} proof command uses an unapproved local executor.`, {
+      command: normalizedCommand,
+    });
+  }
+  if (!APPROVED_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
+    return failedGate(
+      id,
+      'unapproved_proof_command',
+      `${id} proof command must invoke brokered OpenClaw/Hermes/Mac-control tooling.`,
+      { command: normalizedCommand }
+    );
+  }
+
+  const result = runShellCommand(normalizedCommand, options);
   if (result.status === 0 && !result.signal && !result.error) {
     return passedGate(id, `${id} command completed.`, {
-      command,
+      command: normalizedCommand,
       data: result,
     });
   }
 
   return failedGate(id, 'runtime_not_configured', `${id} command failed.`, {
-    command,
+    command: normalizedCommand,
     data: result,
   });
 }
@@ -249,7 +297,7 @@ function runComputerUseEvidenceGate(options) {
   const requiredConcepts = [
     { name: 'screenshot', pattern: /screenshot|png|image/i },
     { name: 'accessibility', pattern: /accessibility|ax|accessibility tree/i },
-    { name: 'new-chat', pattern: /new chat|assistant response|thought complete/i },
+    { name: 'visible-agent-tool-proof', pattern: /visible agent|mac tool proof|visible-agent-mac-tools|tool proof/i },
     { name: 'mac-control', pattern: /mac (?:& iphone|control)|native companion/i },
   ];
   const missingConcepts = requiredConcepts
@@ -282,6 +330,232 @@ function parseJsonMaybe(text) {
   } catch {
     return undefined;
   }
+}
+
+function jsonCandidatesFromText(text) {
+  const candidates = [];
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return candidates;
+  candidates.push(trimmed);
+
+  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    candidates.push(match[1].trim());
+  }
+
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('{') || line.startsWith('['));
+  candidates.push(...lines);
+
+  for (const opener of ['{', '[']) {
+    const closer = opener === '{' ? '}' : ']';
+    const start = trimmed.indexOf(opener);
+    const end = trimmed.lastIndexOf(closer);
+    if (start >= 0 && end > start) {
+      candidates.push(trimmed.slice(start, end + 1));
+    }
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function payloadsFromVisibleAgentEvidence(evidence) {
+  if (evidence && typeof evidence === 'object') return [evidence];
+  if (typeof evidence !== 'string') return [];
+  return jsonCandidatesFromText(evidence).map(parseJsonMaybe).filter(Boolean);
+}
+
+function collectVisibleAgentToolRecords(payload, records = [], depth = 0) {
+  if (!payload || depth > 5) return records;
+  if (Array.isArray(payload)) {
+    for (const entry of payload) collectVisibleAgentToolRecords(entry, records, depth + 1);
+    return records;
+  }
+  if (typeof payload !== 'object') return records;
+
+  const record = payload;
+  if (visibleAgentToolName(record)) {
+    records.push(record);
+  }
+
+  for (const [key, value] of Object.entries(record)) {
+    if (VISIBLE_AGENT_TOOL_ARRAY_KEYS.includes(key) && Array.isArray(value)) {
+      for (const entry of value) collectVisibleAgentToolRecords(entry, records, depth + 1);
+    } else if (value && typeof value === 'object') {
+      collectVisibleAgentToolRecords(value, records, depth + 1);
+    }
+  }
+
+  return records;
+}
+
+function visibleAgentToolName(record) {
+  if (!record || typeof record !== 'object') return undefined;
+  const direct =
+    record.tool ||
+    record.name ||
+    record.id ||
+    record.toolName ||
+    record.tool_name ||
+    record.function?.name ||
+    record.call?.name;
+  return typeof direct === 'string' && direct.trim() ? direct.trim() : undefined;
+}
+
+function visibleAgentRecordStatus(record) {
+  if (!record || typeof record !== 'object') return undefined;
+  if (record.ok === true || record.success === true || record.passed === true) return 'ok';
+  const value = record.status || record.outcome || record.resultStatus || record.result_status;
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : undefined;
+}
+
+function visibleAgentRecordSucceeded(record) {
+  if (!record || typeof record !== 'object') return false;
+  if (record.ok === false || record.success === false || record.passed === false || record.error) return false;
+  const status = visibleAgentRecordStatus(record);
+  return status ? VISIBLE_AGENT_SUCCESS_STATUSES.has(status) : record.ok === true;
+}
+
+function visibleAgentRecordHasAuditId(record) {
+  if (!record || typeof record !== 'object') return false;
+  const direct =
+    record.auditId ||
+    record.audit_id ||
+    record.auditEventId ||
+    record.audit_event_id ||
+    record.auditRecordId ||
+    record.audit_record_id ||
+    record.eventId ||
+    record.event_id;
+  if (typeof direct === 'string' && direct.trim()) return true;
+  for (const key of ['result', 'data', 'output', 'structuredResult', 'structured_result']) {
+    const value = record[key];
+    if (!value || typeof value !== 'object') continue;
+    const nested =
+      value.auditId ||
+      value.audit_id ||
+      value.auditEventId ||
+      value.audit_event_id ||
+      value.auditRecordId ||
+      value.audit_record_id ||
+      value.eventId ||
+      value.event_id;
+    if (typeof nested === 'string' && nested.trim()) return true;
+  }
+  return false;
+}
+
+function visibleAgentRecordHasStructuredResult(record) {
+  if (!record || typeof record !== 'object') return false;
+  return Boolean(
+    (record.result && typeof record.result === 'object') ||
+    (record.data && typeof record.data === 'object') ||
+    (record.output && typeof record.output === 'object') ||
+    (record.structuredResult && typeof record.structuredResult === 'object') ||
+    (record.structured_result && typeof record.structured_result === 'object')
+  );
+}
+
+function visibleAgentRecordApproved(record) {
+  if (!record || typeof record !== 'object') return false;
+  if (record.approved === true || record.approval === true || record.userApproved === true) return true;
+  const approval = record.approval || record.approvalStatus || record.approval_status;
+  return typeof approval === 'string' && /approved|allowed|granted/i.test(approval);
+}
+
+function visibleAgentRecordLowImpact(record) {
+  if (!record || typeof record !== 'object') return false;
+  if (record.lowImpact === true || record.low_impact === true) return true;
+  const haystack = [
+    visibleAgentToolName(record),
+    record.category,
+    record.kind,
+    record.action,
+    record.actionName,
+    record.action_name,
+    record.description,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /low[-_\s]?impact|frontmost|active app|list windows|get[_\s-]?window|clipboard[_\s-]?read/.test(haystack);
+}
+
+function runVisibleAgentMacToolEvidenceGate(evidence) {
+  const text = typeof evidence === 'string' ? evidence : JSON.stringify(evidence ?? '');
+  if (OS_PERMISSION_PROMPT_PATTERN.test(text)) {
+    return failedGate(
+      'visible_agent_mac_tools',
+      'permission_missing',
+      'Visible Workbench agent proof triggered an OS permission prompt for node/osascript/System Events.',
+      { data: { failureKind: 'fatal' } }
+    );
+  }
+  if (VISIBLE_AGENT_FAILURE_PATTERN.test(text)) {
+    return failedGate(
+      'visible_agent_mac_tools',
+      'agent_cli_config_invalid',
+      'Visible Workbench agent proof rendered an ACP/startup/broker-boundary failure.',
+      { data: { failureKind: 'fatal' } }
+    );
+  }
+
+  const records = payloadsFromVisibleAgentEvidence(evidence).flatMap((payload) =>
+    collectVisibleAgentToolRecords(payload)
+  );
+  if (records.length === 0) {
+    return failedGate(
+      'visible_agent_mac_tools',
+      'agent_cli_config_invalid',
+      'Visible Workbench agent proof must include structured Mac-control tool results.',
+      { data: { failureKind: 'incomplete', missingTools: REQUIRED_VISIBLE_AGENT_MAC_TOOLS } }
+    );
+  }
+
+  const successfulStructuredRecords = records.filter(
+    (record) => visibleAgentRecordSucceeded(record) && visibleAgentRecordHasStructuredResult(record)
+  );
+  const successfulRecords = successfulStructuredRecords.filter(visibleAgentRecordHasAuditId);
+  const observedTools = Array.from(new Set(successfulRecords.map(visibleAgentToolName).filter(Boolean)));
+  const missingTools = REQUIRED_VISIBLE_AGENT_MAC_TOOLS.filter((tool) => !observedTools.includes(tool));
+  const lowImpactRecord = successfulRecords.find(
+    (record) => visibleAgentRecordLowImpact(record) && visibleAgentRecordApproved(record)
+  );
+  const missingAuditTools = Array.from(
+    new Set(
+      successfulStructuredRecords
+        .filter((record) => !visibleAgentRecordHasAuditId(record))
+        .map(visibleAgentToolName)
+        .filter(Boolean)
+    )
+  );
+
+  if (missingTools.length > 0 || !lowImpactRecord) {
+    return failedGate(
+      'visible_agent_mac_tools',
+      'agent_cli_config_invalid',
+      missingAuditTools.length > 0
+        ? 'Visible Workbench agent proof is missing audit ids for required Mac-control tool results.'
+        : 'Visible Workbench agent proof is missing required structured Mac-control tool results.',
+      {
+        data: {
+          failureKind: 'incomplete',
+          observedTools,
+          missingTools,
+          missingLowImpactAction: !lowImpactRecord,
+          missingAuditTools,
+        },
+      }
+    );
+  }
+
+  return passedGate('visible_agent_mac_tools', 'Visible Workbench agent returned structured Mac-control tool proof.', {
+    data: {
+      observedTools,
+      lowImpactAction: visibleAgentToolName(lowImpactRecord),
+    },
+  });
 }
 
 function runBridgeReadyGate(appPath, options = {}) {
@@ -366,7 +640,7 @@ async function navigateHash(page, route, timeout) {
   await page.waitForLoadState('domcontentloaded');
 }
 
-async function sendChatProbe(page, timeout, prompt) {
+async function sendVisibleAgentMacToolProbe(page, timeout, prompt) {
   const input = page.locator('textarea, [contenteditable="true"]').first();
   await input.waitFor({ state: 'visible', timeout });
   await input.fill(prompt).catch(async () => {
@@ -383,17 +657,18 @@ async function sendChatProbe(page, timeout, prompt) {
   });
 
   await waitForBodyText(page, prompt, timeout);
-  await page.waitForFunction(
-    (submittedPrompt) => {
-      const text = document.body?.innerText || '';
-      if (/USER_AGENT_STARTUP_FAILED|agent type is no longer supported|selected agent failed to start/i.test(text)) {
-        throw new Error('New Chat rendered an agent startup failure.');
-      }
-      return text.includes(submittedPrompt) && /Thought complete|assistant|done|response|completed/i.test(text);
-    },
-    prompt,
-    { timeout }
-  );
+  const deadline = Date.now() + timeout;
+  let lastGate = runVisibleAgentMacToolEvidenceGate('');
+  while (Date.now() < deadline) {
+    const text = await page.evaluate(() => document.body?.innerText || '');
+    lastGate = runVisibleAgentMacToolEvidenceGate(text);
+    if (lastGate.status === 'passed') return lastGate;
+    if (lastGate.data?.failureKind === 'fatal') {
+      throw new Error(lastGate.message || 'Visible agent Mac-tool proof failed.');
+    }
+    await page.waitForTimeout(500);
+  }
+  throw new Error(lastGate.message || 'Visible agent Mac-tool proof did not settle.');
 }
 
 async function runUiProductGates(options) {
@@ -403,7 +678,7 @@ async function runUiProductGates(options) {
   const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
   const supportAccount = options.supportAccount || DEFAULT_SUPPORT_ACCOUNT;
   const supportTarget = options.supportTarget || DEFAULT_SUPPORT_TARGET;
-  const chatPrompt = options.chatPrompt || 'ping';
+  const chatPrompt = options.chatPrompt || VISIBLE_AGENT_MAC_TOOL_PROMPT;
   const gates = [];
 
   const { _electron: electron } = require('playwright');
@@ -462,19 +737,25 @@ async function runUiProductGates(options) {
 
     try {
       await navigateHash(page, '/home', timeout);
-      await sendChatProbe(page, timeout, chatPrompt);
-      const screenshot = 'screenshots/new-chat-response.png';
+      const toolGate = await sendVisibleAgentMacToolProbe(page, timeout, chatPrompt);
+      const screenshot = 'screenshots/visible-agent-mac-tools.png';
       await page.screenshot({ path: path.join(artifactRoot, 'artifacts', screenshot), fullPage: true });
       gates.push(
-        passedGate('new_chat_response', 'New Chat produced a visible assistant response.', {
+        passedGate('visible_agent_mac_tools', 'Visible Workbench agent returned structured Mac-control tool proof.', {
           evidencePath: `artifacts/${screenshot}`,
+          data: toolGate.data,
         })
       );
     } catch (error) {
       gates.push(
-        failedGate('new_chat_response', 'agent_cli_config_invalid', 'New Chat response proof failed.', {
-          data: await captureUiFailure(page, artifactRoot, 'new_chat_response', error),
-        })
+        failedGate(
+          'visible_agent_mac_tools',
+          'runtime_not_configured',
+          'Visible Workbench agent Mac-tool proof failed.',
+          {
+            data: await captureUiFailure(page, artifactRoot, 'visible_agent_mac_tools', error),
+          }
+        )
       );
     }
 
@@ -549,10 +830,10 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
       route: '/native-companion',
     },
     runtimeStatus: {
-      evaos: gateStatus(gates, 'new_chat_response'),
+      evaos: gateStatus(gates, 'visible_agent_mac_tools'),
       openclaw: gateStatus(gates, 'local_openclaw'),
       hermes: gateStatus(gates, 'hermes'),
-      localAcp: gateStatus(gates, 'new_chat_response'),
+      localAcp: gateStatus(gates, 'visible_agent_mac_tools'),
       lastStartupCategory: blockerCategory,
     },
     brokerGrant: {
@@ -778,7 +1059,7 @@ async function runMacControlDoctor(options = {}) {
     if (options.skipUi) {
       gates.push(blockedGate('support_account_target', 'runtime_not_configured', 'UI proof skipped by option.'));
       gates.push(blockedGate('route_visibility', 'runtime_not_configured', 'UI proof skipped by option.'));
-      gates.push(blockedGate('new_chat_response', 'runtime_not_configured', 'UI proof skipped by option.'));
+      gates.push(blockedGate('visible_agent_mac_tools', 'runtime_not_configured', 'UI proof skipped by option.'));
       gates.push(blockedGate('mac_control_cold_start', 'runtime_not_configured', 'UI proof skipped by option.'));
     } else {
       gates.push(
@@ -788,7 +1069,8 @@ async function runMacControlDoctor(options = {}) {
           timeout,
           supportAccount,
           supportTarget,
-          chatPrompt: options.chatPrompt || process.env.EVAOS_MAC_CONTROL_DOCTOR_CHAT_PROMPT || 'ping',
+          chatPrompt:
+            options.chatPrompt || process.env.EVAOS_MAC_CONTROL_DOCTOR_CHAT_PROMPT || VISIBLE_AGENT_MAC_TOOL_PROMPT,
         }))
       );
     }
@@ -903,7 +1185,7 @@ function helpText() {
     'Usage: node scripts/evaosMacControlDoctor.js [--dry-run] [--app <path>] [--expected-head <sha>]',
     '',
     'Runs the composed Mac-control release proof harness against /Applications/evaOS Workbench.app.',
-    'Live mode fails closed unless exact installed app proof, Computer Use evidence, support target UI proof, New Chat response,',
+    'Live mode fails closed unless exact installed app proof, Computer Use evidence, support target UI proof, visible agent Mac-tool proof,',
     'Mac & iPhone cold-start, bridge /ready, OpenClaw, Hermes, stop/revoke, kill-switch, and post-reset gates pass.',
     '',
     'Required live smoke command environment variables:',
@@ -946,6 +1228,11 @@ module.exports = {
   GATE_IDS,
   REPORT_SCHEMA,
   ROUTE_MARKERS,
+  REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+  VISIBLE_AGENT_LOW_IMPACT_ACTION,
+  VISIBLE_AGENT_FAILURE_PATTERN,
+  VISIBLE_AGENT_MAC_TOOL_PROMPT,
+  OS_PERMISSION_PROMPT_PATTERN,
   artifactRootForHead,
   assertNoUnsafeDoctorOutput,
   bridgePathForApp,
@@ -958,6 +1245,7 @@ module.exports = {
   runConfiguredCommandGate,
   runComputerUseEvidenceGate,
   runMacControlDoctor,
+  runVisibleAgentMacToolEvidenceGate,
   sanitizeText,
   sanitizeValue,
 };

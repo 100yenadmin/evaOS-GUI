@@ -167,7 +167,9 @@ describe('nativeCompanionViewModel', () => {
     });
     const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
+    const toolStep = viewModel.repairSteps.find((step) => step.title === 'Test Mac control');
 
+    expect(viewModel.title).toBe('Mac control ready to connect');
     expect(viewModel.summary).toContain('Connect this signed-in Workbench session');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
@@ -182,6 +184,9 @@ describe('nativeCompanionViewModel', () => {
     });
     expect(pairing?.help).toContain('account-scoped connector grant');
     expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
+    expect(toolStep).toMatchObject({
+      state: 'neutral',
+    });
   });
 
   it('does not call a loopback-only connector ready for agent pairing', () => {

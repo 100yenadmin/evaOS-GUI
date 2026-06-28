@@ -17,6 +17,8 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
   DEFAULT_SUPPORT_ACCOUNT: string;
   DEFAULT_SUPPORT_TARGET: string;
   GATE_IDS: string[];
+  REQUIRED_VISIBLE_AGENT_MAC_TOOLS: string[];
+  VISIBLE_AGENT_MAC_TOOL_PROMPT: string;
   REPORT_SCHEMA: string;
   artifactRootForHead: (head: string, env?: Record<string, string | undefined>) => string;
   assertNoUnsafeDoctorOutput: (value: unknown) => void;
@@ -58,6 +60,13 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     supportAccount?: string;
     supportTarget?: string;
   }) => { id: string; status: string; reasonCode?: string; message?: string; evidencePath?: string };
+  runVisibleAgentMacToolEvidenceGate: (evidence: unknown) => {
+    id: string;
+    status: string;
+    reasonCode?: string;
+    message?: string;
+    data?: Record<string, unknown>;
+  };
   runConfiguredCommandGate: (
     id: string,
     envName: string,
@@ -89,7 +98,7 @@ describe('evaOS Mac control doctor', () => {
       'computer_use_evidence',
       'support_account_target',
       'route_visibility',
-      'new_chat_response',
+      'visible_agent_mac_tools',
       'mac_control_cold_start',
       'bridge_ready',
       'local_openclaw',
@@ -124,6 +133,131 @@ describe('evaOS Mac control doctor', () => {
     doctor.assertNoUnsafeDoctorOutput(fs.readFileSync(result.files.proofPath, 'utf8'));
   });
 
+  it('rejects a generic visible New Chat response as Mac-control proof', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate(
+      [
+        'Release proof: call the active evaOS/OpenClaw Mac-control tools.',
+        'Thought complete.',
+        'I can help with Mac control once the connector is ready.',
+      ].join('\n')
+    );
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+    expect(gate.message).toContain('structured');
+  });
+
+  it('requires structured visible tool results including low-impact, stop, and kill-switch proof', () => {
+    const proseOnly = doctor.runVisibleAgentMacToolEvidenceGate(
+      [
+        'customer_mac_status customer_mac_capabilities desktop_control_status desktop_see desktop_bridge_audit_tail',
+        'desktop_control_stop desktop_kill_switch all passed.',
+      ].join('\n')
+    );
+
+    expect(proseOnly).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+
+    const passed = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        { tool: 'customer_mac_status', ok: true, auditId: 'audit-status', result: { device: 'Workbench Mac' } },
+        { tool: 'customer_mac_capabilities', ok: true, auditId: 'audit-capabilities', result: { screen: true } },
+        { tool: 'desktop_control_status', ok: true, auditId: 'audit-control', result: { active: true } },
+        { tool: 'desktop_see', ok: true, auditId: 'audit-see', result: { screenshot: 'redacted' } },
+        { tool: 'desktop_bridge_audit_tail', ok: true, auditId: 'audit-tail', result: { records: ['audit-see'] } },
+        {
+          tool: 'desktop_control_action',
+          ok: true,
+          auditId: 'audit-low-impact',
+          approved: true,
+          lowImpact: true,
+          action: 'get_frontmost_app',
+          result: { app: 'evaOS Workbench' },
+        },
+        { tool: 'desktop_control_stop', ok: true, auditId: 'audit-stop', result: { active: false } },
+        { tool: 'desktop_kill_switch', ok: true, auditId: 'audit-kill', result: { killSwitch: true } },
+      ],
+    });
+
+    expect(passed).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'passed',
+      data: {
+        observedTools: expect.arrayContaining([
+          'customer_mac_status',
+          'customer_mac_capabilities',
+          'desktop_control_status',
+          'desktop_see',
+          'desktop_bridge_audit_tail',
+          'desktop_control_stop',
+          'desktop_kill_switch',
+        ]),
+      },
+    });
+  });
+
+  it('rejects visible tool proof when required tool calls do not carry audit ids', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        { tool: 'customer_mac_status', ok: true, result: { device: 'Workbench Mac' } },
+        { tool: 'customer_mac_capabilities', ok: true, result: { screen: true } },
+        { tool: 'desktop_control_status', ok: true, result: { active: true } },
+        { tool: 'desktop_see', ok: true, result: { screenshot: 'redacted' } },
+        { tool: 'desktop_bridge_audit_tail', ok: true, result: { records: [] } },
+        {
+          tool: 'desktop_control_action',
+          ok: true,
+          approved: true,
+          lowImpact: true,
+          result: { app: 'evaOS Workbench' },
+        },
+        { tool: 'desktop_control_stop', ok: true, result: { active: false } },
+        { tool: 'desktop_kill_switch', ok: true, result: { killSwitch: true } },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+      data: {
+        missingAuditTools: expect.arrayContaining([
+          'customer_mac_status',
+          'desktop_see',
+          'desktop_control_stop',
+          'desktop_kill_switch',
+        ]),
+      },
+    });
+    expect(gate.message).toContain('audit ids');
+  });
+
+  it('fails visible tool proof on ACP parse, broker-boundary, or OS permission prompt failures', () => {
+    expect(doctor.runVisibleAgentMacToolEvidenceGate('transport parse error: Invalid message {')).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+    expect(doctor.runVisibleAgentMacToolEvidenceGate('generic broker-boundary failure')).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+    expect(
+      doctor.runVisibleAgentMacToolEvidenceGate('"osascript" wants access to control "System Events"')
+    ).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'permission_missing',
+    });
+  });
+
   it('requires a redacted exact-path Computer Use evidence file for release proof', () => {
     const missing = doctor.runComputerUseEvidenceGate({});
 
@@ -140,9 +274,9 @@ describe('evaOS Mac control doctor', () => {
         '/Applications/evaOS Workbench.app',
         'admin@electricsheephq.com',
         'Support VM',
-        'screenshot saved to screenshots/new-chat-response.png',
+        'screenshot saved to screenshots/visible-agent-mac-tools.png',
         'accessibility tree captured',
-        'New Chat assistant response visible',
+        'Visible Workbench agent Mac tool proof visible',
         'Mac & iPhone native companion ready',
       ].join('\n')
     );
@@ -164,6 +298,49 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('rejects local fallback executors for configured smoke command gates', () => {
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD: 'node -e "process.exit(0)"',
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
+      status: 'failed',
+      reasonCode: 'unapproved_executor',
+    });
+
+    expect(
+      doctor.runConfiguredCommandGate('hermes', 'HERMES_SMOKE_CMD', {
+        HERMES_SMOKE_CMD: 'osascript -e "tell application \\"System Events\\" to keystroke \\"x\\""',
+      })
+    ).toMatchObject({
+      id: 'hermes',
+      status: 'failed',
+      reasonCode: 'unapproved_executor',
+    });
+  });
+
+  it('allows configured smoke command gates only for brokered Mac-control tooling', () => {
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD: 'printf evaos-desktop-bridge',
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
+      status: 'passed',
+    });
+
+    expect(
+      doctor.runConfiguredCommandGate('local_openclaw', 'LOCAL_SMOKE_CMD', {
+        LOCAL_SMOKE_CMD: 'echo ok',
+      })
+    ).toMatchObject({
+      id: 'local_openclaw',
+      status: 'failed',
+      reasonCode: 'unapproved_proof_command',
+    });
+  });
+
   it('builds a redacted diagnostic packet with selected support account and blocker category', () => {
     const packet = doctor.buildDiagnosticPacket(
       {
@@ -175,10 +352,10 @@ describe('evaOS Mac control doctor', () => {
       },
       [
         {
-          id: 'new_chat_response',
+          id: 'visible_agent_mac_tools',
           status: 'failed',
-          reasonCode: 'agent_cli_config_invalid',
-          message: 'Codex config invalid',
+          reasonCode: 'runtime_not_configured',
+          message: 'Mac tools not available',
         },
       ],
       {
@@ -192,7 +369,7 @@ describe('evaOS Mac control doctor', () => {
 
     expect(packet).toMatchObject({
       schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
-      blockerCategory: 'agent_cli_config_invalid',
+      blockerCategory: 'runtime_not_configured',
       selectedContext: {
         accountEmail: 'admin@electricsheephq.com',
         customerId: 'support-vm-customer',
@@ -208,6 +385,22 @@ describe('evaOS Mac control doctor', () => {
     expect(() => doctor.assertNoUnsafeDoctorOutput({ bad: 'connector_url=http://100.64.0.10:8765' })).toThrow(
       /Unsafe|connector/
     );
+  });
+
+  it('requires visible Workbench agent proof to name every Mac-control tool', () => {
+    expect(doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS).toEqual([
+      'customer_mac_status',
+      'customer_mac_capabilities',
+      'desktop_control_status',
+      'desktop_see',
+      'desktop_bridge_audit_tail',
+      'desktop_control_stop',
+      'desktop_kill_switch',
+    ]);
+    for (const tool of doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS) {
+      expect(doctor.VISIBLE_AGENT_MAC_TOOL_PROMPT).toContain(tool);
+    }
+    expect(doctor.VISIBLE_AGENT_MAC_TOOL_PROMPT).not.toMatch(/connector[_\s-]?url|connector[_\s-]?token|Bearer/i);
   });
 
   it('parses exact app and evidence arguments for handoff commands', () => {

@@ -30,6 +30,7 @@ import type {
   IEvaosNativeCompanionReadiness,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
+  IEvaosNativeCompanionRuntimeToolReadiness,
   IEvaosNativeCompanionStatusView,
   IEvaosWorkbenchDiagnosticPacketRequest,
   IEvaosWorkbenchDiagnosticPacketV1,
@@ -151,6 +152,7 @@ export async function getEvaosNativeCompanionStatus(
       generatedAt,
       readiness: 'repair_required',
       agentPairingStatus: 'not_ready',
+      runtimeToolReadiness: 'not_ready',
       pairingCapable: false,
       pairingBlockedReason: 'bundled_bridge_required',
       blockerReason: 'bridge_cli_missing',
@@ -200,6 +202,7 @@ export async function getEvaosNativeCompanionStatus(
   const agentPairingStatus = pairingCapable
     ? agentPairingStatusFromStatus(readiness, controlSession.data)
     : 'not_ready';
+  const runtimeToolReadiness = runtimeToolReadinessFromPairing(readiness, agentPairingStatus);
   const pairingBlockedReason = pairingCapable
     ? undefined
     : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
@@ -226,6 +229,7 @@ export async function getEvaosNativeCompanionStatus(
     generatedAt,
     readiness,
     agentPairingStatus,
+    runtimeToolReadiness,
     pairingCapable,
     pairingBlockedReason,
     blockerReason,
@@ -422,6 +426,7 @@ function nativeCompanionFixtureStatus(
     generatedAt,
     readiness: 'repair_required',
     agentPairingStatus: 'not_ready',
+    runtimeToolReadiness: 'not_ready',
     blockerReason: fixtureState === 'permission_needed' ? 'permission_missing' : 'connector_service_not_ready',
     summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair state fixture.',
     sourcePointer: `local-fixture:native-companion:${fixtureState}`,
@@ -490,6 +495,7 @@ function nativeCompanionFixtureStatus(
       ...base,
       readiness: 'ready',
       agentPairingStatus: 'ready_for_agent_pairing',
+      runtimeToolReadiness: 'pairing_ready',
       blockerReason: undefined,
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
       bridgeCli: { ...base.bridgeCli, status: 'ready' },
@@ -2361,6 +2367,16 @@ function agentPairingStatusFromStatus(
     return 'agent_paired';
   }
   return 'ready_for_agent_pairing';
+}
+
+function runtimeToolReadinessFromPairing(
+  readiness: IEvaosNativeCompanionStatusView['readiness'],
+  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus
+): IEvaosNativeCompanionRuntimeToolReadiness {
+  if (readiness !== 'ready' || agentPairingStatus === 'not_ready') return 'not_ready';
+  if (agentPairingStatus === 'agent_paired') return 'tools_ready';
+  if (agentPairingStatus === 'proof_failed') return 'proof_failed';
+  return 'pairing_ready';
 }
 
 function isAgentPairingStatus(value: string | undefined): value is IEvaosNativeCompanionAgentPairingStatus {

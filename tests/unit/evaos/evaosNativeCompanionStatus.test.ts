@@ -202,6 +202,7 @@ describe('evaosNativeCompanionStatus', () => {
       schemaVersion: 'evaos.native_companion_status.v1',
       readiness: 'ready',
       agentPairingStatus: 'ready_for_agent_pairing',
+      runtimeToolReadiness: 'pairing_ready',
       generatedAt: '2026-06-07T03:45:00.000Z',
       bridgeCli: {
         installed: true,
