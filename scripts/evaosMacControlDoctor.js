@@ -72,8 +72,15 @@ const OS_PERMISSION_PROMPT_PATTERN =
   /"?(?:node|osascript|System Events)"?\s+wants access to control\s+"?System Events"?|System Events.*would like to control/i;
 const FORBIDDEN_PROOF_COMMAND_PATTERN =
   /(?:^|[\s;&|()])(?:node|nodejs|osascript|osascript\.app|open\s+-a\s+Script\s+Editor|swift|python(?:3)?|ruby|perl)\b|System Events|AXUIElement|CGEvent|cliclick|xdotool|screencapture|screenrecord|ffmpeg|Chrome DevTools|--remote-debugging-port/i;
-const APPROVED_PROOF_COMMAND_PATTERN =
-  /(?:^|[\s;&|()])(?:openclaw|hermes|evaos-desktop-bridge|customer_mac_|desktop_(?:control|see|bridge)|mac-control-doctor|support-control|evaos-support)\b/i;
+const APPROVED_PROOF_EXECUTABLES = new Set([
+  'openclaw',
+  'hermes',
+  'evaos-desktop-bridge',
+  'mac-control-doctor',
+  'support-control',
+  'evaos-support',
+]);
+const APPROVED_PROOF_EXECUTABLE_PREFIXES = ['customer_mac_', 'desktop_control', 'desktop_see', 'desktop_bridge'];
 const VISIBLE_AGENT_SUCCESS_STATUSES = new Set(['ok', 'passed', 'succeeded', 'success', 'ready', 'completed', 'done']);
 const VISIBLE_AGENT_TOOL_ARRAY_KEYS = ['toolResults', 'tool_results', 'toolCalls', 'tool_calls', 'results', 'calls'];
 const DEFAULT_PROOF_AGENT_SELECTORS = [
@@ -225,6 +232,110 @@ function runShellCommand(command, options = {}) {
   };
 }
 
+function shellWords(command) {
+  return String(command || '').match(/(?:[^\s'"\\]+|"(?:\\.|[^"])*"|'[^']*')+/g) || [];
+}
+
+function unquoteShellWord(word) {
+  const value = String(word || '').trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function firstProofExecutable(command) {
+  const words = shellWords(command);
+  let sawEnv = false;
+  for (const rawWord of words) {
+    const word = unquoteShellWord(rawWord);
+    if (!word) continue;
+    if (word === 'env' || word === 'command') {
+      sawEnv = word === 'env';
+      continue;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
+    if (sawEnv && /^-/.test(word)) continue;
+    return path.basename(word);
+  }
+  return '';
+}
+
+function approvedProofExecutable(command) {
+  const executable = firstProofExecutable(command);
+  if (!executable) return false;
+  return (
+    APPROVED_PROOF_EXECUTABLES.has(executable) ||
+    APPROVED_PROOF_EXECUTABLE_PREFIXES.some((prefix) => executable.startsWith(prefix))
+  );
+}
+
+function commandProofPayloads(result) {
+  return [...payloadsFromVisibleAgentEvidence(result.stdout), ...payloadsFromVisibleAgentEvidence(result.stderr)];
+}
+
+function commandProofPayloadSucceeded(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadSucceeded(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  if (payload.ok === true || payload.success === true || payload.passed === true) return true;
+  const status = payload.status || payload.outcome || payload.resultStatus || payload.result_status;
+  if (typeof status === 'string' && VISIBLE_AGENT_SUCCESS_STATUSES.has(status.trim().toLowerCase())) return true;
+  return Object.values(payload).some((value) => commandProofPayloadSucceeded(value, depth + 1));
+}
+
+function commandProofPayloadHasAuditId(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadHasAuditId(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  for (const key of [
+    'auditId',
+    'audit_id',
+    'auditEventId',
+    'audit_event_id',
+    'auditRecordId',
+    'audit_record_id',
+    'eventId',
+    'event_id',
+  ]) {
+    if (typeof payload[key] === 'string' && payload[key].trim()) return true;
+  }
+  return Object.values(payload).some((value) => commandProofPayloadHasAuditId(value, depth + 1));
+}
+
+function commandProofPayloadFailsClosed(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadFailsClosed(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  if (
+    payload.failClosed === true ||
+    payload.fail_closed === true ||
+    payload.killSwitch === true ||
+    payload.kill_switch === true
+  ) {
+    return true;
+  }
+  const haystack = Object.values(payload)
+    .filter((value) => typeof value === 'string')
+    .join(' ');
+  if (/\bfail[-_\s]?closed\b|\bkill[-_\s]?switch\b/i.test(haystack)) return true;
+  return Object.values(payload).some((value) => commandProofPayloadFailsClosed(value, depth + 1));
+}
+
+function commandProofSatisfied(id, result) {
+  const payloads = commandProofPayloads(result);
+  if (payloads.length === 0) return { ok: false, reasonCode: 'missing_structured_proof' };
+  if (!payloads.some(commandProofPayloadSucceeded)) return { ok: false, reasonCode: 'missing_structured_success' };
+  if (!payloads.some(commandProofPayloadHasAuditId)) return { ok: false, reasonCode: 'missing_audit_proof' };
+  if (id === 'kill_switch' && !payloads.some(commandProofPayloadFailsClosed)) {
+    return { ok: false, reasonCode: 'kill_switch_not_fail_closed' };
+  }
+  return { ok: true };
+}
+
 function runConfiguredCommandGate(id, envName, env = process.env, options = {}) {
   const command = env[envName];
   if (!command || !String(command).trim()) {
@@ -239,7 +350,7 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
       command: normalizedCommand,
     });
   }
-  if (!APPROVED_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
+  if (!approvedProofExecutable(normalizedCommand)) {
     return failedGate(
       id,
       'unapproved_proof_command',
@@ -250,6 +361,13 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
 
   const result = runShellCommand(normalizedCommand, options);
   if (result.status === 0 && !result.signal && !result.error) {
+    const proof = commandProofSatisfied(id, result);
+    if (!proof.ok) {
+      return failedGate(id, proof.reasonCode, `${id} command did not emit required audited structured proof.`, {
+        command: normalizedCommand,
+        data: result,
+      });
+    }
     return passedGate(id, `${id} command completed.`, {
       command: normalizedCommand,
       data: result,
@@ -388,6 +506,20 @@ function payloadsFromVisibleAgentEvidence(evidence) {
   if (evidence && typeof evidence === 'object') return [evidence];
   if (typeof evidence !== 'string') return [];
   return jsonCandidatesFromText(evidence).map(parseJsonMaybe).filter(Boolean);
+}
+
+function visibleAgentEvidenceText(text, options = {}) {
+  let output = String(text || '');
+  const beforeText = String(options.beforeText || '');
+  const prompt = String(options.prompt || '');
+  if (beforeText) {
+    if (output.startsWith(beforeText)) output = output.slice(beforeText.length);
+    else output = output.replace(beforeText, ' ');
+  }
+  if (prompt) {
+    output = output.split(prompt).join(' ');
+  }
+  return output;
 }
 
 function collectVisibleAgentToolRecords(payload, records = [], depth = 0) {
@@ -914,6 +1046,7 @@ async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {})
 
   const inputSelector = '[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]';
   await setTextareaValue(page, inputSelector, prompt, submitTimeout);
+  const beforeSendText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
 
   const sendButton = page.locator('[data-testid="guid-send-btn"]').first();
   await sendButton.waitFor({ state: 'visible', timeout: submitTimeout });
@@ -941,7 +1074,9 @@ async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {})
   let lastGate = runVisibleAgentMacToolEvidenceGate('');
   while (Date.now() < deadline) {
     const text = await page.evaluate(() => document.body?.innerText || '');
-    lastGate = runVisibleAgentMacToolEvidenceGate(text);
+    lastGate = runVisibleAgentMacToolEvidenceGate(
+      visibleAgentEvidenceText(text, { beforeText: beforeSendText, prompt })
+    );
     if (lastGate.status === 'passed') return lastGate;
     if (lastGate.data?.failureKind === 'fatal') {
       throw new Error(lastGate.message || 'Visible agent Mac-tool proof failed.');
@@ -1093,6 +1228,8 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
   const launchAgent = extras.desktopProofState?.launchAgent || {};
   const bundleInfo = extras.bundleInfo || {};
   const ready = readinessGatePassed(gates);
+  const agentProofStatus = gateStatus(gates, 'visible_agent_mac_tools');
+  const agentProofReady = agentProofStatus === 'passed';
 
   return sanitizeValue({
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
@@ -1125,8 +1262,8 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
       lastStartupCategory: blockerCategory,
     },
     brokerGrant: {
-      state: gateStatus(gates, 'bridge_ready'),
-      agentPairingStatus: ready ? 'agent_paired' : 'not_ready',
+      state: agentProofStatus,
+      agentPairingStatus: agentProofReady ? 'agent_paired' : 'not_ready',
       sourcePointer: 'mac-control-doctor',
       auditIds: [],
     },
@@ -1545,4 +1682,5 @@ module.exports = {
   runVisibleAgentMacToolEvidenceGate,
   sanitizeText,
   sanitizeValue,
+  visibleAgentEvidenceText,
 };
