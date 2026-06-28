@@ -69,6 +69,10 @@ const VISIBLE_AGENT_FAILURE_PATTERN =
   /USER_AGENT_STARTUP_FAILED|agent type is no longer supported|selected agent failed to start|transport parse error|Invalid message \{|ACP parse|parse ACP|could not parse|Doctor warnings|Left plugin install index|broker-boundary|generic broker-boundary failure|mac_connector_material_missing/i;
 const OS_PERMISSION_PROMPT_PATTERN =
   /"?(?:node|osascript|System Events)"?\s+wants access to control\s+"?System Events"?|System Events.*would like to control/i;
+const FORBIDDEN_PROOF_COMMAND_PATTERN =
+  /(?:^|[\s;&|()])(?:node|nodejs|osascript|osascript\.app|open\s+-a\s+Script\s+Editor|swift|python(?:3)?|ruby|perl)\b|System Events|AXUIElement|CGEvent|cliclick|xdotool|screencapture|screenrecord|ffmpeg|Chrome DevTools|--remote-debugging-port/i;
+const APPROVED_PROOF_COMMAND_PATTERN =
+  /(?:^|[\s;&|()])(?:openclaw|hermes|evaos-desktop-bridge|customer_mac_|desktop_(?:control|see|bridge)|mac-control-doctor|support-control|evaos-support)\b/i;
 const VISIBLE_AGENT_SUCCESS_STATUSES = new Set(['ok', 'passed', 'succeeded', 'success', 'ready', 'completed', 'done']);
 const VISIBLE_AGENT_TOOL_ARRAY_KEYS = ['toolResults', 'tool_results', 'toolCalls', 'tool_calls', 'results', 'calls'];
 
@@ -215,16 +219,34 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
     });
   }
 
-  const result = runShellCommand(command, options);
+  const normalizedCommand = String(command).trim();
+  if (FORBIDDEN_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
+    return failedGate(
+      id,
+      'unapproved_executor',
+      `${id} proof command uses an unapproved local executor.`,
+      { command: normalizedCommand }
+    );
+  }
+  if (!APPROVED_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
+    return failedGate(
+      id,
+      'unapproved_proof_command',
+      `${id} proof command must invoke brokered OpenClaw/Hermes/Mac-control tooling.`,
+      { command: normalizedCommand }
+    );
+  }
+
+  const result = runShellCommand(normalizedCommand, options);
   if (result.status === 0 && !result.signal && !result.error) {
     return passedGate(id, `${id} command completed.`, {
-      command,
+      command: normalizedCommand,
       data: result,
     });
   }
 
   return failedGate(id, 'runtime_not_configured', `${id} command failed.`, {
-    command,
+    command: normalizedCommand,
     data: result,
   });
 }
@@ -398,11 +420,38 @@ function visibleAgentRecordSucceeded(record) {
   return status ? VISIBLE_AGENT_SUCCESS_STATUSES.has(status) : record.ok === true;
 }
 
+function visibleAgentRecordHasAuditId(record) {
+  if (!record || typeof record !== 'object') return false;
+  const direct =
+    record.auditId ||
+    record.audit_id ||
+    record.auditEventId ||
+    record.audit_event_id ||
+    record.auditRecordId ||
+    record.audit_record_id ||
+    record.eventId ||
+    record.event_id;
+  if (typeof direct === 'string' && direct.trim()) return true;
+  for (const key of ['result', 'data', 'output', 'structuredResult', 'structured_result']) {
+    const value = record[key];
+    if (!value || typeof value !== 'object') continue;
+    const nested =
+      value.auditId ||
+      value.audit_id ||
+      value.auditEventId ||
+      value.audit_event_id ||
+      value.auditRecordId ||
+      value.audit_record_id ||
+      value.eventId ||
+      value.event_id;
+    if (typeof nested === 'string' && nested.trim()) return true;
+  }
+  return false;
+}
+
 function visibleAgentRecordHasStructuredResult(record) {
   if (!record || typeof record !== 'object') return false;
   return Boolean(
-    record.auditId ||
-    record.audit_id ||
     (record.result && typeof record.result === 'object') ||
     (record.data && typeof record.data === 'object') ||
     (record.output && typeof record.output === 'object') ||
@@ -467,26 +516,38 @@ function runVisibleAgentMacToolEvidenceGate(evidence) {
     );
   }
 
-  const successfulRecords = records.filter(
+  const successfulStructuredRecords = records.filter(
     (record) => visibleAgentRecordSucceeded(record) && visibleAgentRecordHasStructuredResult(record)
   );
+  const successfulRecords = successfulStructuredRecords.filter(visibleAgentRecordHasAuditId);
   const observedTools = Array.from(new Set(successfulRecords.map(visibleAgentToolName).filter(Boolean)));
   const missingTools = REQUIRED_VISIBLE_AGENT_MAC_TOOLS.filter((tool) => !observedTools.includes(tool));
   const lowImpactRecord = successfulRecords.find(
     (record) => visibleAgentRecordLowImpact(record) && visibleAgentRecordApproved(record)
+  );
+  const missingAuditTools = Array.from(
+    new Set(
+      successfulStructuredRecords
+        .filter((record) => !visibleAgentRecordHasAuditId(record))
+        .map(visibleAgentToolName)
+        .filter(Boolean)
+    )
   );
 
   if (missingTools.length > 0 || !lowImpactRecord) {
     return failedGate(
       'visible_agent_mac_tools',
       'agent_cli_config_invalid',
-      'Visible Workbench agent proof is missing required structured Mac-control tool results.',
+      missingAuditTools.length > 0
+        ? 'Visible Workbench agent proof is missing audit ids for required Mac-control tool results.'
+        : 'Visible Workbench agent proof is missing required structured Mac-control tool results.',
       {
         data: {
           failureKind: 'incomplete',
           observedTools,
           missingTools,
           missingLowImpactAction: !lowImpactRecord,
+          missingAuditTools,
         },
       }
     );

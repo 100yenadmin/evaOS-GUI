@@ -202,6 +202,42 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('rejects visible tool proof when required tool calls do not carry audit ids', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        { tool: 'customer_mac_status', ok: true, result: { device: 'Workbench Mac' } },
+        { tool: 'customer_mac_capabilities', ok: true, result: { screen: true } },
+        { tool: 'desktop_control_status', ok: true, result: { active: true } },
+        { tool: 'desktop_see', ok: true, result: { screenshot: 'redacted' } },
+        { tool: 'desktop_bridge_audit_tail', ok: true, result: { records: [] } },
+        {
+          tool: 'desktop_control_action',
+          ok: true,
+          approved: true,
+          lowImpact: true,
+          result: { app: 'evaOS Workbench' },
+        },
+        { tool: 'desktop_control_stop', ok: true, result: { active: false } },
+        { tool: 'desktop_kill_switch', ok: true, result: { killSwitch: true } },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+      data: {
+        missingAuditTools: expect.arrayContaining([
+          'customer_mac_status',
+          'desktop_see',
+          'desktop_control_stop',
+          'desktop_kill_switch',
+        ]),
+      },
+    });
+    expect(gate.message).toContain('audit ids');
+  });
+
   it('fails visible tool proof on ACP parse, broker-boundary, or OS permission prompt failures', () => {
     expect(doctor.runVisibleAgentMacToolEvidenceGate('transport parse error: Invalid message {')).toMatchObject({
       id: 'visible_agent_mac_tools',
@@ -259,6 +295,49 @@ describe('evaOS Mac control doctor', () => {
       id: 'vm_openclaw',
       status: 'blocked',
       reasonCode: 'runtime_not_configured',
+    });
+  });
+
+  it('rejects local fallback executors for configured smoke command gates', () => {
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD: 'node -e "process.exit(0)"',
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
+      status: 'failed',
+      reasonCode: 'unapproved_executor',
+    });
+
+    expect(
+      doctor.runConfiguredCommandGate('hermes', 'HERMES_SMOKE_CMD', {
+        HERMES_SMOKE_CMD: 'osascript -e "tell application \\"System Events\\" to keystroke \\"x\\""',
+      })
+    ).toMatchObject({
+      id: 'hermes',
+      status: 'failed',
+      reasonCode: 'unapproved_executor',
+    });
+  });
+
+  it('allows configured smoke command gates only for brokered Mac-control tooling', () => {
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD: 'printf evaos-desktop-bridge',
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
+      status: 'passed',
+    });
+
+    expect(
+      doctor.runConfiguredCommandGate('local_openclaw', 'LOCAL_SMOKE_CMD', {
+        LOCAL_SMOKE_CMD: 'echo ok',
+      })
+    ).toMatchObject({
+      id: 'local_openclaw',
+      status: 'failed',
+      reasonCode: 'unapproved_proof_command',
     });
   });
 
