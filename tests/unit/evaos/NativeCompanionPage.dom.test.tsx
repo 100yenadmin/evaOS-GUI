@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { ConfigProvider } from '@arco-design/web-react';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NativeCompanionPage from '@/renderer/pages/native-companion';
@@ -1320,6 +1320,99 @@ describe('NativeCompanionPage', () => {
       customerId: 'golden',
       agentLabel: 'evaOS Workbench',
     });
+  });
+
+  it('refreshes status and clears a stale connected grant when the connector stops', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      customerContextMock.customerContext.selectedCustomerId = 'golden';
+      customerContextMock.customerContext.selectedTarget = {
+        customerId: 'golden',
+        targetKind: 'customer_vm',
+        displayName: 'Golden VM (admin@100yen.org)',
+        isDefault: true,
+      };
+      customerContextMock.customerContext.targets = [customerContextMock.customerContext.selectedTarget];
+      const readyStatus = {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-28T17:37:06.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for account-scoped Mac control.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true, running: true, path: '/Applications/evaOS Workbench.app' },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'unavailable', installed: false, running: false },
+        audit: { status: 'ready', auditIds: ['audit-mac-ready'] },
+      };
+      const stoppedStatus = {
+        ...readyStatus,
+        generatedAt: '2026-06-28T17:41:07.000Z',
+        readiness: 'repair_required',
+        agentPairingStatus: 'not_ready',
+        summaryText: 'Mac Access connector could not start. The connector did not report a reachable local service.',
+        connectorService: { status: 'repair_required', running: false, reachable: false },
+        customerMac: { status: 'repair_required', permissions: readyStatus.customerMac.permissions },
+      };
+      bridgeMocks.getStatus
+        .mockResolvedValueOnce({ success: true, data: readyStatus })
+        .mockResolvedValueOnce({ success: true, data: stoppedStatus });
+      bridgeMocks.runAction.mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'ensure_customer_mac_connector_grant',
+          status: 'succeeded',
+          message: 'Mac control is connected for this evaOS Workbench session.',
+          sourcePointer: 'native-companion:connector-grant-ready',
+          auditIds: ['audit-grant'],
+          refreshRecommended: false,
+          connectorGrant: {
+            ok: true,
+            customerId: 'golden',
+            deviceId: 'device-golden',
+            grantId: 'grant-golden',
+            grantState: 'active',
+            auditId: 'audit-grant',
+          },
+          agentPairingStatus: 'agent_paired',
+        },
+      });
+
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderNativeCompanion();
+
+      expect(await screen.findByText('Mac control ready to connect')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
+      await waitFor(() =>
+        expect(
+          screen.getAllByText('Mac control is connected for this evaOS Workbench session.').length
+        ).toBeGreaterThan(0)
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(6_000);
+      });
+
+      expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(2);
+      await waitFor(() =>
+        expect(screen.queryByText('Mac control is connected for this evaOS Workbench session.')).not.toBeInTheDocument()
+      );
+      expect(screen.getByText('Repair Mac access')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Turn On Mac Access' })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('ignores ambiguous account-looking rows when choosing a Mac pairing target', async () => {

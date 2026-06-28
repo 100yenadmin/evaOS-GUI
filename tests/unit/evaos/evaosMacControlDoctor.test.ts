@@ -64,6 +64,7 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     appPath: string,
     options?: { timeout?: number }
   ) => { id: string; status: string; reasonCode?: string; message?: string; data?: Record<string, unknown> };
+  macControlReadyTextSatisfied: (text: string) => boolean;
   runVisibleAgentMacToolEvidenceGate: (evidence: unknown) => {
     id: string;
     status: string;
@@ -115,9 +116,9 @@ describe('evaOS Mac control doctor', () => {
       'computer_use_evidence',
       'support_account_target',
       'route_visibility',
-      'visible_agent_mac_tools',
       'mac_control_cold_start',
       'bridge_ready',
+      'visible_agent_mac_tools',
       'local_openclaw',
       'vm_openclaw',
       'hermes',
@@ -307,6 +308,42 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('does not accept generic ready text on a repair-state Mac-control page as cold-start proof', () => {
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        ['Mac & iPhone', 'repair_required', 'Repair needed', 'Permissions Granted', 'Turn on Mac access', 'ready'].join(
+          '\n'
+        )
+      )
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'Mac control ready to connect',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+          'Connect Mac Control',
+        ].join('\n')
+      )
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'Mac control ready to connect',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+          'Mac control is connected for this evaOS Workbench session.',
+        ].join('\n')
+      )
+    ).toBe(true);
+  });
+
   it('passes bridge readiness only for the ready v1 schema with ok and ready true', () => {
     const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
     writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
@@ -435,6 +472,37 @@ describe('evaOS Mac control doctor', () => {
     doctor.assertNoUnsafeDoctorOutput(packet);
   });
 
+  it('does not report agent_paired unless both cold-start UI and bridge ready gates passed', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        { id: 'mac_control_cold_start', status: 'passed' },
+        { id: 'bridge_ready', status: 'failed', reasonCode: 'bridge_diagnostics_unavailable' },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      brokerGrant: {
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
+      },
+    });
+  });
+
   it('blocks unsafe endpoint, token, and prompt material in doctor reports', () => {
     expect(() => doctor.assertNoUnsafeDoctorOutput({ ok: 'Mac control ready' })).not.toThrow();
     expect(() => doctor.assertNoUnsafeDoctorOutput({ bad: 'Bearer abcdefghijklmnop' })).toThrow(/Unsafe|Bearer/);
@@ -473,6 +541,10 @@ describe('evaOS Mac control doctor', () => {
         'Support VM',
         '--computer-use-evidence',
         '/Volumes/LEXAR/Codex/evidence/proof.txt',
+        '--agent-key',
+        'openclaw-gateway',
+        '--agent-type',
+        'openclaw-gateway',
       ])
     ).toMatchObject({
       dryRun: true,
@@ -481,6 +553,8 @@ describe('evaOS Mac control doctor', () => {
       supportAccount: 'admin@electricsheephq.com',
       supportTarget: 'Support VM',
       computerUseEvidencePath: '/Volumes/LEXAR/Codex/evidence/proof.txt',
+      agentKey: 'openclaw-gateway',
+      agentType: 'openclaw-gateway',
     });
   });
 });
