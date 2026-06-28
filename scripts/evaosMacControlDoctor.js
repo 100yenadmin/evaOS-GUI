@@ -221,12 +221,9 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
 
   const normalizedCommand = String(command).trim();
   if (FORBIDDEN_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
-    return failedGate(
-      id,
-      'unapproved_executor',
-      `${id} proof command uses an unapproved local executor.`,
-      { command: normalizedCommand }
-    );
+    return failedGate(id, 'unapproved_executor', `${id} proof command uses an unapproved local executor.`, {
+      command: normalizedCommand,
+    });
   }
   if (!APPROVED_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
     return failedGate(
