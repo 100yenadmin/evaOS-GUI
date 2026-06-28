@@ -17,9 +17,9 @@ on:
         default: true
         type: boolean
       bridge_ref:
-        description: evaos-desktop-bridge ref to bundle
+        description: evaos-desktop-bridge ref to bundle; defaults to EVAOS_DESKTOP_BRIDGE_SOURCE_REF repo variable
         required: false
-        default: 207f6528461ecae51c39efd2654733c1b07d39a4
+        default: ''
         type: string
 
 concurrency:
@@ -36,7 +36,7 @@ env:
   EVAOS_DMG_CODESIGN: 'false'
   ELECTRON_BUILDER_COMPRESSION_LEVEL: '1'
   NODE_OPTIONS: '--max-old-space-size=8192'
-  WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref }}
+  WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref || vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
   WORKBENCH_SMOKE_REF: ${{ inputs.ref }}
 
 jobs:
