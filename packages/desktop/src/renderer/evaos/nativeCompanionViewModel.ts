@@ -657,9 +657,20 @@ function effectiveAgentPairingStatus(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   actionResult: IEvaosNativeCompanionActionResult | null
 ): IEvaosNativeCompanionAgentPairingStatus {
-  if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
-  if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
+  if (actionResultCanDriveAgentPairing(status, actionResult)) {
+    if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
+    if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
+  }
   return normalizeAgentPairingStatus(status?.agentPairingStatus);
+}
+
+function actionResultCanDriveAgentPairing(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  actionResult: IEvaosNativeCompanionActionResult | null | undefined
+): boolean {
+  if (!actionResult) return false;
+  if (!macPairingPrerequisitesReady(status)) return false;
+  return actionResult.status === 'succeeded';
 }
 
 function runtimeToolsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {

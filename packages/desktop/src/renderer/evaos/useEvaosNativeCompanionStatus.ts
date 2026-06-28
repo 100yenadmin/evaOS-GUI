@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ipcBridge } from '@/common';
 import type {
   IEvaosNativeCompanionActionRequest,
@@ -21,7 +21,7 @@ interface EvaosNativeCompanionStatusState {
   status: IEvaosNativeCompanionStatusView | null;
   loading: boolean;
   error: string | null;
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
   openReleasedWorkbench: () => Promise<IEvaosNativeCompanionOpenResult>;
   openRepairAction: (action: IEvaosNativeCompanionRepairAction) => Promise<IEvaosNativeCompanionRepairActionResult>;
   runAction: (request: IEvaosNativeCompanionActionRequest) => Promise<IEvaosNativeCompanionActionResult>;
@@ -30,36 +30,53 @@ interface EvaosNativeCompanionStatusState {
   ) => Promise<IEvaosWorkbenchDiagnosticPacketV1 | null>;
 }
 
+export const NATIVE_COMPANION_STATUS_POLL_MS = 5_000;
+
 export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompanionStatusState {
   const [status, setStatus] = useState<IEvaosNativeCompanionStatusView | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  const refreshInFlightRef = useRef(false);
+  const queuedForegroundRefreshRef = useRef(false);
 
-  const refresh = useCallback(async () => {
-    if (!enabled) {
-      setStatus(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke();
-      if (!response.success || !response.data) {
+  const refresh = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!enabled) {
         setStatus(null);
-        setError(response.msg || 'Workbench connector status failed safely.');
+        setLoading(false);
+        setError(null);
         return;
       }
-      setStatus(response.data);
-    } catch {
-      setStatus(null);
-      setError('Workbench connector status could not be reached.');
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled]);
+      if (refreshInFlightRef.current) {
+        if (!options.silent) queuedForegroundRefreshRef.current = true;
+        return;
+      }
+
+      refreshInFlightRef.current = true;
+      if (!options.silent) setLoading(true);
+      setError(null);
+      try {
+        const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke();
+        if (!response.success || !response.data) {
+          setStatus(null);
+          setError(response.msg || 'Workbench connector status failed safely.');
+          return;
+        }
+        setStatus(response.data);
+      } catch {
+        setStatus(null);
+        setError('Workbench connector status could not be reached.');
+      } finally {
+        setLoading(false);
+        refreshInFlightRef.current = false;
+        if (queuedForegroundRefreshRef.current) {
+          queuedForegroundRefreshRef.current = false;
+          void refresh();
+        }
+      }
+    },
+    [enabled]
+  );
 
   const openReleasedWorkbench = useCallback(async () => {
     const response = await ipcBridge.evaosNativeCompanion.openReleasedWorkbench.invoke();
@@ -119,6 +136,14 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const interval = window.setInterval(() => {
+      void refresh({ silent: true });
+    }, NATIVE_COMPANION_STATUS_POLL_MS);
+    return () => window.clearInterval(interval);
+  }, [enabled, refresh]);
 
   return {
     status,

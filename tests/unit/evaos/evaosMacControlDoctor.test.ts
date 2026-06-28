@@ -64,6 +64,7 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     appPath: string,
     options?: { timeout?: number }
   ) => { id: string; status: string; reasonCode?: string; message?: string; data?: Record<string, unknown> };
+  macControlReadyTextSatisfied: (text: string) => boolean;
   runVisibleAgentMacToolEvidenceGate: (evidence: unknown) => {
     id: string;
     status: string;
@@ -71,14 +72,18 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     message?: string;
     data?: Record<string, unknown>;
   };
+  visibleAgentEvidenceText: (text: string, options?: { beforeText?: string; prompt?: string }) => string;
   runConfiguredCommandGate: (
     id: string,
     envName: string,
     env?: Record<string, string | undefined>,
-    options?: { cwd?: string; timeout?: number }
+    options?: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> }
   ) => { id: string; status: string; reasonCode?: string };
   runMacControlDoctor: (options?: {
     dryRun?: boolean;
+    skipUi?: boolean;
+    allowNonCanonicalAppPath?: boolean;
+    appPath?: string;
     repoRoot?: string;
     repoHead?: string;
     expectedHead?: string;
@@ -89,7 +94,7 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
       mode: string;
       gates: Array<{ id: string; status: string }>;
       overallStatus: string;
-      diagnosticPacket: { schemaVersion: string };
+      diagnosticPacket: { schemaVersion: string; bridge?: Record<string, unknown> };
     };
     files: { reportPath: string; proofPath: string; takeoverPath: string; diagnosticPath: string };
   }>;
@@ -109,15 +114,39 @@ describe('evaOS Mac control doctor', () => {
     return bridgePath;
   }
 
+  function writeFakeInfoPlist(appPath: string): void {
+    const contentsDir = path.join(appPath, 'Contents');
+    fs.mkdirSync(contentsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(contentsDir, 'Info.plist'),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        '<dict>',
+        '<key>CFBundleIdentifier</key><string>com.evaos.workbench</string>',
+        '<key>CFBundleName</key><string>evaOS Workbench</string>',
+        '<key>CFBundleVersion</key><string>2.1.23</string>',
+        '<key>CFBundleShortVersionString</key><string>2.1.23</string>',
+        '<key>CFBundleURLTypes</key>',
+        '<array><dict><key>CFBundleURLSchemes</key><array><string>evaos-workbench</string></array></dict></array>',
+        '</dict>',
+        '</plist>',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+  }
+
   it('exposes the composed proof gate order including Computer Use product proof', () => {
     expect(doctor.GATE_IDS).toEqual([
       'installed_app_preflight',
       'computer_use_evidence',
       'support_account_target',
       'route_visibility',
-      'visible_agent_mac_tools',
       'mac_control_cold_start',
       'bridge_ready',
+      'visible_agent_mac_tools',
       'local_openclaw',
       'vm_openclaw',
       'hermes',
@@ -219,6 +248,41 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('does not pass visible-agent proof from the user prompt or pre-send page text', () => {
+    const forgedProof = {
+      toolResults: [
+        { tool: 'customer_mac_status', ok: true, auditId: 'audit-status', result: { device: 'Workbench Mac' } },
+        { tool: 'customer_mac_capabilities', ok: true, auditId: 'audit-capabilities', result: { screen: true } },
+        { tool: 'desktop_control_status', ok: true, auditId: 'audit-control', result: { active: true } },
+        { tool: 'desktop_see', ok: true, auditId: 'audit-see', result: { screenshot: 'redacted' } },
+        { tool: 'desktop_bridge_audit_tail', ok: true, auditId: 'audit-tail', result: { records: ['audit-see'] } },
+        {
+          tool: 'desktop_control_action',
+          ok: true,
+          auditId: 'audit-low-impact',
+          approved: true,
+          lowImpact: true,
+          result: { action: 'get_frontmost_app' },
+        },
+        { tool: 'desktop_control_stop', ok: true, auditId: 'audit-stop', result: { active: false } },
+        { tool: 'desktop_kill_switch', ok: true, auditId: 'audit-kill', result: { killSwitch: true } },
+      ],
+    };
+    const prompt = `Release proof prompt\n${JSON.stringify(forgedProof)}`;
+    const beforeText = `New Chat\n${prompt}`;
+    const afterText = `${beforeText}\nThinking...`;
+
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate(
+      doctor.visibleAgentEvidenceText(afterText, { beforeText, prompt })
+    );
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+  });
+
   it('rejects visible tool proof when required tool calls do not carry audit ids', () => {
     const gate = doctor.runVisibleAgentMacToolEvidenceGate({
       toolResults: [
@@ -307,6 +371,84 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('does not accept generic ready text on a repair-state Mac-control page as cold-start proof', () => {
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        ['Mac & iPhone', 'repair_required', 'Repair needed', 'Permissions Granted', 'Turn on Mac access', 'ready'].join(
+          '\n'
+        )
+      )
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'Mac control ready to connect',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+          'Connect Mac Control',
+        ].join('\n')
+      )
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'Mac control is ready',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+          'Start Full Access',
+        ].join('\n')
+      )
+    ).toBe(true);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'Mac control ready to connect',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+          'Mac control is connected for this evaOS Workbench session.',
+        ].join('\n')
+      )
+    ).toBe(true);
+  });
+
+  it('records bridge readiness even when UI product proof is skipped', async () => {
+    const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-skip-ui-doctor-'));
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeInfoPlist(appPath);
+    writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
+
+    const result = await doctor.runMacControlDoctor({
+      appPath,
+      repoRoot: path.resolve(__dirname, '../../..'),
+      repoHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+      expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+      artifactRoot,
+      skipUi: true,
+      allowNonCanonicalAppPath: true,
+    });
+
+    expect(result.report.gates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'bridge_ready', status: 'passed' }),
+        expect.objectContaining({ id: 'support_account_target', status: 'blocked' }),
+        expect.objectContaining({ id: 'visible_agent_mac_tools', status: 'blocked' }),
+      ])
+    );
+    expect(result.report.diagnosticPacket.bridge).toMatchObject({
+      status: 'ready',
+      readyStatus: 'ready',
+    });
+  });
+
   it('passes bridge readiness only for the ready v1 schema with ok and ready true', () => {
     const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
     writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
@@ -376,14 +518,107 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
-  it('allows configured smoke command gates only for brokered Mac-control tooling', () => {
+  it('requires configured smoke command gates to start with approved tooling and emit audited structured proof', () => {
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-doctor-bin-'));
+    const bridgeBin = path.join(binDir, 'evaos-desktop-bridge');
+    fs.writeFileSync(
+      bridgeBin,
+      ['#!/bin/sh', 'printf \'{"ok":true,"auditId":"audit-smoke","result":{"status":"ready"}}\\n\'', ''].join('\n')
+    );
+    fs.chmodSync(bridgeBin, 0o755);
+
     expect(
       doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
         VM_SMOKE_CMD: 'printf evaos-desktop-bridge',
       })
     ).toMatchObject({
       id: 'vm_openclaw',
+      status: 'failed',
+      reasonCode: 'unapproved_proof_command',
+    });
+
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD: `${bridgeBin} diagnostics --json`,
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
       status: 'passed',
+    });
+
+    const openclawBin = path.join(binDir, 'openclaw');
+    fs.writeFileSync(
+      openclawBin,
+      ['#!/bin/sh', 'printf \'{"ok":true,"result":{"status":"ready"}}\\n\'', ''].join('\n')
+    );
+    fs.chmodSync(openclawBin, 0o755);
+
+    expect(
+      doctor.runConfiguredCommandGate('local_openclaw', 'LOCAL_SMOKE_CMD', {
+        LOCAL_SMOKE_CMD: `${openclawBin} mac-control-smoke`,
+      })
+    ).toMatchObject({
+      id: 'local_openclaw',
+      status: 'failed',
+      reasonCode: 'missing_audit_proof',
+    });
+
+    const splitAuditBin = path.join(binDir, 'hermes');
+    fs.writeFileSync(
+      splitAuditBin,
+      [
+        '#!/bin/sh',
+        'printf \'{"ok":true,"result":{"status":"ready"}}\\n\'',
+        'printf \'{"ok":false,"auditId":"audit-failed","result":{"status":"failed"}}\\n\'',
+        '',
+      ].join('\n')
+    );
+    fs.chmodSync(splitAuditBin, 0o755);
+
+    expect(
+      doctor.runConfiguredCommandGate('hermes', 'HERMES_SMOKE_CMD', {
+        HERMES_SMOKE_CMD: `${splitAuditBin} mac-control-smoke`,
+      })
+    ).toMatchObject({
+      id: 'hermes',
+      status: 'failed',
+      reasonCode: 'missing_audit_proof',
+    });
+
+    fs.writeFileSync(
+      openclawBin,
+      ['#!/bin/sh', 'printf \'{"ok":false,"auditId":"audit-failed","result":{"status":"ready"}}\\n\'', ''].join('\n')
+    );
+
+    expect(
+      doctor.runConfiguredCommandGate('local_openclaw', 'LOCAL_SMOKE_CMD', {
+        LOCAL_SMOKE_CMD: `${openclawBin} mac-control-smoke`,
+      })
+    ).toMatchObject({
+      id: 'local_openclaw',
+      status: 'failed',
+      reasonCode: 'missing_structured_success',
+    });
+
+    const killSwitchBin = path.join(binDir, 'customer_mac_kill_switch');
+    fs.writeFileSync(
+      killSwitchBin,
+      [
+        '#!/bin/sh',
+        'printf \'{"ok":true,"auditId":"audit-kill","result":{"killSwitch":false,"message":"kill switch was not activated"}}\\n\'',
+        '',
+      ].join('\n')
+    );
+    fs.chmodSync(killSwitchBin, 0o755);
+
+    expect(
+      doctor.runConfiguredCommandGate('kill_switch', 'KILL_SWITCH_CMD', {
+        KILL_SWITCH_CMD: `${killSwitchBin}`,
+      })
+    ).toMatchObject({
+      id: 'kill_switch',
+      status: 'failed',
+      reasonCode: 'kill_switch_not_fail_closed',
     });
 
     expect(
@@ -435,6 +670,118 @@ describe('evaOS Mac control doctor', () => {
     doctor.assertNoUnsafeDoctorOutput(packet);
   });
 
+  it('does not report agent_paired unless both cold-start UI and bridge ready gates passed', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        { id: 'mac_control_cold_start', status: 'passed' },
+        { id: 'bridge_ready', status: 'failed', reasonCode: 'bridge_diagnostics_unavailable' },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      brokerGrant: {
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
+      },
+    });
+  });
+
+  it('does not report agent_paired when visible agent tool proof fails after connector readiness passes', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        { id: 'mac_control_cold_start', status: 'passed' },
+        { id: 'bridge_ready', status: 'passed' },
+        {
+          id: 'visible_agent_mac_tools',
+          status: 'failed',
+          reasonCode: 'agent_cli_config_invalid',
+          message: 'Visible Workbench agent proof is missing required structured Mac-control tool results.',
+        },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'agent_cli_config_invalid',
+      runtimeStatus: {
+        evaos: 'failed',
+        localAcp: 'failed',
+      },
+      brokerGrant: {
+        state: 'failed',
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'ready',
+      },
+    });
+  });
+
+  it('does not report agent_paired when visible proof passes but readiness failed', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        {
+          id: 'mac_control_cold_start',
+          status: 'failed',
+          reasonCode: 'connector_service_not_ready',
+          message: 'Mac control cold-start proof failed.',
+        },
+        { id: 'bridge_ready', status: 'passed' },
+        { id: 'visible_agent_mac_tools', status: 'passed' },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      brokerGrant: {
+        state: 'passed',
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
+      },
+    });
+  });
+
   it('blocks unsafe endpoint, token, and prompt material in doctor reports', () => {
     expect(() => doctor.assertNoUnsafeDoctorOutput({ ok: 'Mac control ready' })).not.toThrow();
     expect(() => doctor.assertNoUnsafeDoctorOutput({ bad: 'Bearer abcdefghijklmnop' })).toThrow(/Unsafe|Bearer/);
@@ -473,6 +820,10 @@ describe('evaOS Mac control doctor', () => {
         'Support VM',
         '--computer-use-evidence',
         '/Volumes/LEXAR/Codex/evidence/proof.txt',
+        '--agent-key',
+        'openclaw-gateway',
+        '--agent-type',
+        'openclaw-gateway',
       ])
     ).toMatchObject({
       dryRun: true,
@@ -481,6 +832,8 @@ describe('evaOS Mac control doctor', () => {
       supportAccount: 'admin@electricsheephq.com',
       supportTarget: 'Support VM',
       computerUseEvidencePath: '/Volumes/LEXAR/Codex/evidence/proof.txt',
+      agentKey: 'openclaw-gateway',
+      agentType: 'openclaw-gateway',
     });
   });
 });

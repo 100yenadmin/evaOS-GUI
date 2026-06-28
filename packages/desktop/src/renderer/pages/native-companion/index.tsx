@@ -118,9 +118,17 @@ const NativeCompanionPage: React.FC = () => {
     setAuthUrl(null);
   }, [selectedPairingCustomerId]);
   const currentActionResult = React.useMemo(
-    () => actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId, actionResultCustomerId),
-    [actionResult, actionResultCustomerId, selectedPairingCustomerId]
+    () =>
+      actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId, actionResultCustomerId, status),
+    [actionResult, actionResultCustomerId, selectedPairingCustomerId, status]
   );
+  React.useEffect(() => {
+    if (!actionResult || currentActionResult) return;
+    setActionResult(null);
+    setActionResultCustomerId(undefined);
+    setCopyMessage(null);
+    setHandoffMessage(null);
+  }, [actionResult, currentActionResult]);
   const viewModel = getNativeCompanionRepairViewModel({
     status,
     loading,
@@ -930,19 +938,66 @@ function effectiveAgentPairingStatus(
   status: IEvaosNativeCompanionStatusView | null | undefined,
   actionResult: IEvaosNativeCompanionActionResult | null
 ): IEvaosNativeCompanionAgentPairingStatus {
-  if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
-  if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
+  if (actionResultCanDriveAgentPairing(status, actionResult)) {
+    if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
+    if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
+  }
   return status?.agentPairingStatus ?? (status?.readiness === 'ready' ? 'ready_for_agent_pairing' : 'not_ready');
 }
 
 function actionResultForCurrentPairingCustomer(
   actionResult: IEvaosNativeCompanionActionResult | null,
   selectedPairingCustomerId: string | undefined,
-  actionResultCustomerId?: string
+  actionResultCustomerId: string | undefined,
+  status: IEvaosNativeCompanionStatusView | null | undefined
 ): IEvaosNativeCompanionActionResult | null {
   if (actionResultCustomerId && actionResultCustomerId !== selectedPairingCustomerId) return null;
+  if (!actionResultMatchesCurrentConnectorStatus(status, actionResult)) return null;
   if (!actionResult?.pairing) return actionResult;
   return actionResult.pairing.customerId === selectedPairingCustomerId ? actionResult : null;
+}
+
+function actionResultCanDriveAgentPairing(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  actionResult: IEvaosNativeCompanionActionResult | null | undefined
+): boolean {
+  if (!actionResult) return false;
+  if (!actionResultMatchesCurrentConnectorStatus(status, actionResult)) return false;
+  return actionResult.status === 'succeeded';
+}
+
+function actionResultMatchesCurrentConnectorStatus(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  actionResult: IEvaosNativeCompanionActionResult | null | undefined
+): boolean {
+  if (!actionResult) return true;
+  if (actionResult.status !== 'succeeded') return true;
+  if (!actionResultRequiresLiveConnector(actionResult)) return true;
+  const connectorReady =
+    status?.readiness === 'ready' &&
+    status.connectorService?.status === 'ready' &&
+    status.connectorService?.running === true &&
+    status.connectorService?.reachable === true &&
+    status.customerMac?.status === 'ready';
+  if (!connectorReady) return false;
+  if (!actionResultRequiresCurrentPairingProof(actionResult)) return true;
+  const currentPairingStatus = status.agentPairingStatus ?? 'ready_for_agent_pairing';
+  return currentPairingStatus !== 'not_ready' && currentPairingStatus !== 'proof_failed';
+}
+
+function actionResultRequiresLiveConnector(actionResult: IEvaosNativeCompanionActionResult): boolean {
+  return (
+    actionResult.action === 'connector_start' ||
+    actionResult.action === 'ensure_customer_mac_connector_grant' ||
+    actionResult.action === 'setup_check' ||
+    actionResult.action === 'control_start' ||
+    actionResult.action === 'control_stop' ||
+    actionResult.action === 'kill_switch'
+  );
+}
+
+function actionResultRequiresCurrentPairingProof(actionResult: IEvaosNativeCompanionActionResult): boolean {
+  return actionResult.action === 'ensure_customer_mac_connector_grant' || actionResult.action === 'setup_check';
 }
 
 function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): boolean {

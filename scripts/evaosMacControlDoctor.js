@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
 
 const installedProof = require('./evaosInstalledAppProductProof.js');
@@ -13,6 +14,7 @@ const DEFAULT_ARTIFACT_BASE = '/Volumes/LEXAR/Codex/evidence/evaos-mac-control-d
 const DEFAULT_SUPPORT_ACCOUNT = 'admin@electricsheephq.com';
 const DEFAULT_SUPPORT_TARGET = 'Support VM';
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_AGENT_PROOF_TIMEOUT_MS = 180_000;
 const MAX_COMMAND_OUTPUT = 8_000;
 
 const GATE_IDS = [
@@ -20,9 +22,9 @@ const GATE_IDS = [
   'computer_use_evidence',
   'support_account_target',
   'route_visibility',
-  'visible_agent_mac_tools',
   'mac_control_cold_start',
   'bridge_ready',
+  'visible_agent_mac_tools',
   'local_openclaw',
   'vm_openclaw',
   'hermes',
@@ -71,10 +73,33 @@ const OS_PERMISSION_PROMPT_PATTERN =
   /"?(?:node|osascript|System Events)"?\s+wants access to control\s+"?System Events"?|System Events.*would like to control/i;
 const FORBIDDEN_PROOF_COMMAND_PATTERN =
   /(?:^|[\s;&|()])(?:node|nodejs|osascript|osascript\.app|open\s+-a\s+Script\s+Editor|swift|python(?:3)?|ruby|perl)\b|System Events|AXUIElement|CGEvent|cliclick|xdotool|screencapture|screenrecord|ffmpeg|Chrome DevTools|--remote-debugging-port/i;
-const APPROVED_PROOF_COMMAND_PATTERN =
-  /(?:^|[\s;&|()])(?:openclaw|hermes|evaos-desktop-bridge|customer_mac_|desktop_(?:control|see|bridge)|mac-control-doctor|support-control|evaos-support)\b/i;
+const APPROVED_PROOF_EXECUTABLES = new Set([
+  'openclaw',
+  'hermes',
+  'evaos-desktop-bridge',
+  'mac-control-doctor',
+  'support-control',
+  'evaos-support',
+]);
+const APPROVED_PROOF_EXECUTABLE_PREFIXES = ['customer_mac_', 'desktop_control', 'desktop_see', 'desktop_bridge'];
 const VISIBLE_AGENT_SUCCESS_STATUSES = new Set(['ok', 'passed', 'succeeded', 'success', 'ready', 'completed', 'done']);
+const PROOF_FAILURE_STATUSES = new Set([
+  'denied',
+  'error',
+  'failed',
+  'failure',
+  'not_ready',
+  'rejected',
+  'repair_required',
+]);
+const FAIL_CLOSED_STATUSES = new Set(['fail_closed', 'failed_closed', 'closed', 'blocked', 'revoked']);
 const VISIBLE_AGENT_TOOL_ARRAY_KEYS = ['toolResults', 'tool_results', 'toolCalls', 'tool_calls', 'results', 'calls'];
+const DEFAULT_PROOF_AGENT_SELECTORS = [
+  '[data-agent-pill="true"][data-agent-key="openclaw-gateway"]',
+  '[data-agent-pill="true"][data-agent-key="openclaw"]',
+  '[data-agent-pill="true"][data-agent-type="openclaw-gateway"]',
+  '[data-agent-pill="true"][data-agent-type="openclaw"]',
+];
 
 const SENSITIVE_KEY_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret|connector[_-]?url|connector[_-]?token|headscale|tailscale|preauth)/i;
@@ -138,6 +163,14 @@ function sanitizeValue(value) {
     );
   }
   return value;
+}
+
+function textDigest(value) {
+  return crypto
+    .createHash('sha256')
+    .update(String(value || ''))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 function assertNoUnsafeDoctorOutput(value) {
@@ -218,6 +251,136 @@ function runShellCommand(command, options = {}) {
   };
 }
 
+function shellWords(command) {
+  return String(command || '').match(/(?:[^\s'"\\]+|"(?:\\.|[^"])*"|'[^']*')+/g) || [];
+}
+
+function unquoteShellWord(word) {
+  const value = String(word || '').trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function firstProofExecutable(command) {
+  const words = shellWords(command);
+  let sawEnv = false;
+  for (const rawWord of words) {
+    const word = unquoteShellWord(rawWord);
+    if (!word) continue;
+    if (word === 'env' || word === 'command') {
+      sawEnv = word === 'env';
+      continue;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
+    if (sawEnv && /^-/.test(word)) continue;
+    return path.basename(word);
+  }
+  return '';
+}
+
+function approvedProofExecutable(command) {
+  const executable = firstProofExecutable(command);
+  if (!executable) return false;
+  return (
+    APPROVED_PROOF_EXECUTABLES.has(executable) ||
+    APPROVED_PROOF_EXECUTABLE_PREFIXES.some((prefix) => executable.startsWith(prefix))
+  );
+}
+
+function commandProofPayloads(result) {
+  return [...payloadsFromVisibleAgentEvidence(result.stdout), ...payloadsFromVisibleAgentEvidence(result.stderr)];
+}
+
+function commandProofPayloadSucceeded(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadSucceeded(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  if (commandProofPayloadExplicitlyFailed(payload)) return false;
+  if (payload.ok === true || payload.success === true || payload.passed === true) return true;
+  const status = payload.status || payload.outcome || payload.resultStatus || payload.result_status;
+  if (typeof status === 'string' && VISIBLE_AGENT_SUCCESS_STATUSES.has(status.trim().toLowerCase())) return true;
+  return Object.values(payload).some((value) => commandProofPayloadSucceeded(value, depth + 1));
+}
+
+function commandProofPayloadExplicitlyFailed(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadExplicitlyFailed(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  if (payload.ok === false || payload.success === false || payload.passed === false) return true;
+  const status = payload.status || payload.outcome || payload.resultStatus || payload.result_status;
+  if (typeof status === 'string' && PROOF_FAILURE_STATUSES.has(status.trim().toLowerCase())) return true;
+  return Object.values(payload).some((value) => commandProofPayloadExplicitlyFailed(value, depth + 1));
+}
+
+function commandProofPayloadHasAuditId(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadHasAuditId(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  for (const key of [
+    'auditId',
+    'audit_id',
+    'auditEventId',
+    'audit_event_id',
+    'auditRecordId',
+    'audit_record_id',
+    'eventId',
+    'event_id',
+  ]) {
+    if (typeof payload[key] === 'string' && payload[key].trim()) return true;
+  }
+  return Object.values(payload).some((value) => commandProofPayloadHasAuditId(value, depth + 1));
+}
+
+function commandProofPayloadFailsClosed(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadFailsClosed(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  if (
+    payload.failClosed === false ||
+    payload.fail_closed === false ||
+    payload.killSwitch === false ||
+    payload.kill_switch === false
+  ) {
+    return false;
+  }
+  if (
+    payload.failClosed === true ||
+    payload.fail_closed === true ||
+    payload.killSwitch === true ||
+    payload.kill_switch === true
+  ) {
+    return true;
+  }
+  const status = payload.status || payload.state || payload.outcome || payload.resultStatus || payload.result_state;
+  if (typeof status === 'string' && FAIL_CLOSED_STATUSES.has(status.trim().toLowerCase())) return true;
+  return Object.values(payload).some((value) => commandProofPayloadFailsClosed(value, depth + 1));
+}
+
+function commandProofPayloadAuditedSuccess(payload) {
+  return (
+    commandProofPayloadSucceeded(payload) &&
+    commandProofPayloadHasAuditId(payload) &&
+    !commandProofPayloadExplicitlyFailed(payload)
+  );
+}
+
+function commandProofSatisfied(id, result) {
+  const payloads = commandProofPayloads(result);
+  if (payloads.length === 0) return { ok: false, reasonCode: 'missing_structured_proof' };
+  if (!payloads.some(commandProofPayloadSucceeded)) return { ok: false, reasonCode: 'missing_structured_success' };
+  const auditedSuccessPayloads = payloads.filter(commandProofPayloadAuditedSuccess);
+  if (auditedSuccessPayloads.length === 0) return { ok: false, reasonCode: 'missing_audit_proof' };
+  if (id === 'kill_switch' && !auditedSuccessPayloads.some(commandProofPayloadFailsClosed)) {
+    return { ok: false, reasonCode: 'kill_switch_not_fail_closed' };
+  }
+  return { ok: true };
+}
+
 function runConfiguredCommandGate(id, envName, env = process.env, options = {}) {
   const command = env[envName];
   if (!command || !String(command).trim()) {
@@ -232,7 +395,7 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
       command: normalizedCommand,
     });
   }
-  if (!APPROVED_PROOF_COMMAND_PATTERN.test(normalizedCommand)) {
+  if (!approvedProofExecutable(normalizedCommand)) {
     return failedGate(
       id,
       'unapproved_proof_command',
@@ -243,6 +406,13 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
 
   const result = runShellCommand(normalizedCommand, options);
   if (result.status === 0 && !result.signal && !result.error) {
+    const proof = commandProofSatisfied(id, result);
+    if (!proof.ok) {
+      return failedGate(id, proof.reasonCode, `${id} command did not emit required audited structured proof.`, {
+        command: normalizedCommand,
+        data: result,
+      });
+    }
     return passedGate(id, `${id} command completed.`, {
       command: normalizedCommand,
       data: result,
@@ -381,6 +551,20 @@ function payloadsFromVisibleAgentEvidence(evidence) {
   if (evidence && typeof evidence === 'object') return [evidence];
   if (typeof evidence !== 'string') return [];
   return jsonCandidatesFromText(evidence).map(parseJsonMaybe).filter(Boolean);
+}
+
+function visibleAgentEvidenceText(text, options = {}) {
+  let output = String(text || '');
+  const beforeText = String(options.beforeText || '');
+  const prompt = String(options.prompt || '');
+  if (beforeText) {
+    if (output.startsWith(beforeText)) output = output.slice(beforeText.length);
+    else output = output.replace(beforeText, ' ');
+  }
+  if (prompt) {
+    output = output.split(prompt).join(' ');
+  }
+  return output;
 }
 
 function collectVisibleAgentToolRecords(payload, records = [], depth = 0) {
@@ -614,6 +798,40 @@ function runBridgeReadyGate(appPath, options = {}) {
   });
 }
 
+function readinessGatePassed(gates) {
+  return gateStatus(gates, 'mac_control_cold_start') === 'passed' && gateStatus(gates, 'bridge_ready') === 'passed';
+}
+
+function macControlReadyTextSatisfied(text) {
+  const normalized = String(text || '');
+  if (
+    /repair_required|Repair needed|Setup needed|Needs retry|Needs permission|Reconnect Workbench|needs Mac pairing|Create Pairing Prompt|Mac access needs repair/i.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  const connectedOrAlreadyPaired =
+    /Mac control is connected for this evaOS Workbench session/i.test(normalized) ||
+    /Mac control is ready/i.test(normalized) ||
+    /Full Access agent control is active/i.test(normalized);
+  return (
+    connectedOrAlreadyPaired &&
+    /Workbench connector is reporting\s+ready locally/i.test(normalized) &&
+    /Accessibility and Screen Recording are ready/i.test(normalized) &&
+    /Guided Mac control setup[\s\S]*Ready/i.test(normalized)
+  );
+}
+
+function promptConversationMarker(prompt) {
+  return (
+    String(prompt || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length >= 12) || String(prompt || '').slice(0, 80)
+  );
+}
+
 async function resolveMainWindow(electronApp) {
   const existing = electronApp.windows().find((page) => !page.url().startsWith('devtools://'));
   if (existing) {
@@ -651,6 +869,31 @@ async function waitForBodyText(page, marker, timeout) {
     .waitFor({ state: 'visible', timeout });
 }
 
+async function waitForBodyMarkers(page, markers, timeout) {
+  await page.waitForFunction(
+    (expectedMarkers) => {
+      const text = document.body?.innerText || '';
+      return expectedMarkers.every((marker) => text.includes(marker));
+    },
+    markers,
+    { timeout }
+  );
+}
+
+async function collectAgentPillState(page) {
+  return page
+    .evaluate(() =>
+      Array.from(document.querySelectorAll('[data-agent-pill="true"]')).map((pill) => ({
+        key: pill.getAttribute('data-agent-key'),
+        type: pill.getAttribute('data-agent-type'),
+        selected: pill.getAttribute('data-agent-selected'),
+        nativeStatus: pill.getAttribute('data-agent-native-status'),
+        text: pill.textContent?.trim().slice(0, 120) || '',
+      }))
+    )
+    .catch((error) => [{ stateError: sanitizeText(error?.message || String(error)) }]);
+}
+
 async function navigateHash(page, route, timeout) {
   const expectedHash = route.startsWith('#') ? route : `#${route}`;
   await page.evaluate((hash) => {
@@ -660,28 +903,261 @@ async function navigateHash(page, route, timeout) {
   await page.waitForLoadState('domcontentloaded');
 }
 
-async function sendVisibleAgentMacToolProbe(page, timeout, prompt) {
-  const input = page.locator('textarea, [contenteditable="true"]').first();
+function cssAttributeValue(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
+
+async function maybeSelectProofAgent(page, options = {}) {
+  const agentKey = options.agentKey;
+  const agentType = options.agentType;
+  const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
+  await page.locator('[data-agent-pill="true"]').first().waitFor({ state: 'visible', timeout });
+
+  let selector = null;
+  if (agentKey) {
+    selector = `[data-agent-pill="true"][data-agent-key="${cssAttributeValue(agentKey)}"]`;
+  } else if (agentType) {
+    selector = `[data-agent-pill="true"][data-agent-type="${cssAttributeValue(agentType)}"]`;
+  } else {
+    for (const candidate of DEFAULT_PROOF_AGENT_SELECTORS) {
+      if (
+        await page
+          .locator(candidate)
+          .first()
+          .isVisible()
+          .catch(() => false)
+      ) {
+        selector = candidate;
+        break;
+      }
+    }
+  }
+
+  if (!selector) {
+    const agents = await collectAgentPillState(page);
+    throw new Error(`No evaOS/OpenClaw proof agent pill is visible. Available agents: ${JSON.stringify(agents)}`);
+  }
+
+  const pill = page.locator(selector).first();
+  await pill.waitFor({ state: 'visible', timeout: options.timeout || DEFAULT_TIMEOUT_MS });
+  const selected = await pill.getAttribute('data-agent-selected').catch(() => null);
+  if (selected !== 'true') {
+    await pill.click();
+    await page.waitForFunction(
+      (agentSelector) => document.querySelector(agentSelector)?.getAttribute('data-agent-selected') === 'true',
+      selector,
+      { timeout: options.timeout || DEFAULT_TIMEOUT_MS }
+    );
+  }
+  const selectedState = await pill.evaluate((node) => ({
+    key: node.getAttribute('data-agent-key'),
+    type: node.getAttribute('data-agent-type'),
+    nativeStatus: node.getAttribute('data-agent-native-status'),
+    text: node.textContent?.trim().slice(0, 120) || '',
+  }));
+  if (!/^(openclaw|openclaw-gateway)$/.test(selectedState.key || selectedState.type || '')) {
+    throw new Error(`Selected proof agent is not evaOS/OpenClaw: ${JSON.stringify(selectedState)}`);
+  }
+}
+
+async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error) {
+  const failure = await captureUiFailure(page, artifactRoot, gateId, error);
+  const state = await page
+    .evaluate(() => {
+      const input = document.querySelector('[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]');
+      const sendButton = document.querySelector('[data-testid="guid-send-btn"]');
+      const selectedAgent = document.querySelector('[data-agent-pill="true"][data-agent-selected="true"]');
+      const bodyText = document.body?.innerText || '';
+      const inputValue = input instanceof HTMLTextAreaElement ? input.value : '';
+      return {
+        hash: window.location.hash,
+        inputSummary: inputValue
+          ? {
+              length: inputValue.length,
+              sha256Prefix: '__INPUT_DIGEST__',
+            }
+          : null,
+        sendDisabled:
+          sendButton instanceof HTMLButtonElement
+            ? sendButton.disabled
+            : sendButton?.getAttribute('aria-disabled') || sendButton?.getAttribute('disabled') || null,
+        selectedAgent: selectedAgent
+          ? {
+              key: selectedAgent.getAttribute('data-agent-key'),
+              type: selectedAgent.getAttribute('data-agent-type'),
+              nativeStatus: selectedAgent.getAttribute('data-agent-native-status'),
+              text: selectedAgent.textContent?.trim().slice(0, 120),
+            }
+          : null,
+        availableAgents: Array.from(document.querySelectorAll('[data-agent-pill="true"]')).map((pill) => ({
+          key: pill.getAttribute('data-agent-key'),
+          type: pill.getAttribute('data-agent-type'),
+          selected: pill.getAttribute('data-agent-selected'),
+          nativeStatus: pill.getAttribute('data-agent-native-status'),
+          text: pill.textContent?.trim().slice(0, 120) || '',
+        })),
+        bodySummary: {
+          length: bodyText.length,
+          sha256Prefix: '__BODY_DIGEST__',
+        },
+      };
+    })
+    .catch((stateError) => ({ stateError: sanitizeText(stateError?.message || String(stateError)) }));
+  if (
+    state &&
+    typeof state === 'object' &&
+    state.inputSummary &&
+    state.inputSummary.sha256Prefix === '__INPUT_DIGEST__'
+  ) {
+    const inputValue = await page
+      .evaluate(() => {
+        const input = document.querySelector('[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]');
+        return input instanceof HTMLTextAreaElement ? input.value : '';
+      })
+      .catch(() => '');
+    state.inputSummary.sha256Prefix = textDigest(inputValue);
+  }
+  if (state && typeof state === 'object' && state.bodySummary && state.bodySummary.sha256Prefix === '__BODY_DIGEST__') {
+    const bodyText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+    state.bodySummary.sha256Prefix = textDigest(bodyText);
+  }
+  return { ...failure, state: sanitizeValue(state) };
+}
+
+async function setTextareaValue(page, selector, value, timeout) {
+  const input = page.locator(selector).first();
   await input.waitFor({ state: 'visible', timeout });
-  await input.fill(prompt).catch(async () => {
+  await input.fill(value).catch(async () => {
     await input.click();
-    await page.keyboard.insertText(prompt);
+    await page.evaluate(
+      ({ inputSelector, nextValue }) => {
+        const textarea = document.querySelector(inputSelector);
+        if (!(textarea instanceof HTMLTextAreaElement)) {
+          throw new Error(`Textarea not found for selector ${inputSelector}`);
+        }
+        const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+        valueSetter?.call(textarea, nextValue);
+        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextValue }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      { inputSelector: selector, nextValue: value }
+    );
+  });
+  await page.waitForFunction(
+    ({ inputSelector, expectedValue }) => {
+      const textarea = document.querySelector(inputSelector);
+      return textarea instanceof HTMLTextAreaElement && textarea.value === expectedValue;
+    },
+    { inputSelector: selector, expectedValue: value },
+    { timeout }
+  );
+}
+
+async function clickNativeCompanionAction(page, timeout) {
+  const candidateSelectors = [
+    '[data-testid="native-companion-next-action"]',
+    'button:has-text("Connect Mac Control")',
+    'button:has-text("Turn On Mac Access")',
+    'button:has-text("Run Setup Check")',
+  ];
+
+  for (const selector of candidateSelectors) {
+    const count = await page
+      .locator(selector)
+      .count()
+      .catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      const button = page.locator(selector).nth(index);
+      if (!(await button.isVisible().catch(() => false))) continue;
+      const label = (await button.textContent().catch(() => '')) || selector;
+      if (!/Turn On Mac Access|Connect Mac Control|Run Setup Check/i.test(label)) continue;
+      const disabled = await button.evaluate((node) => {
+        if (node instanceof HTMLButtonElement) return node.disabled;
+        return node.getAttribute('aria-disabled') === 'true' || node.hasAttribute('disabled');
+      });
+      if (disabled) continue;
+      await button.click({ timeout });
+      return label.trim();
+    }
+  }
+
+  return null;
+}
+
+async function convergeMacControlReady(page, options = {}) {
+  const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
+  const proofTimeout = options.proofTimeout || Math.max(timeout, DEFAULT_AGENT_PROOF_TIMEOUT_MS);
+  const deadline = Date.now() + Math.max(timeout, Math.min(proofTimeout, 120_000));
+  const actionLog = [];
+  let lastText = '';
+
+  await waitForBodyText(page, 'Mac control', timeout);
+
+  while (Date.now() < deadline) {
+    lastText = await page.evaluate(() => document.body?.innerText || '');
+    if (macControlReadyTextSatisfied(lastText)) {
+      return { actionLog, text: lastText };
+    }
+
+    const action = await clickNativeCompanionAction(page, timeout).catch((error) => {
+      actionLog.push(`click-error:${sanitizeText(error?.message || String(error)).slice(0, 160)}`);
+      return null;
+    });
+    if (action) {
+      actionLog.push(action);
+      await page.waitForTimeout(1_750);
+      continue;
+    }
+
+    await page.waitForTimeout(1_000);
+  }
+
+  throw new Error(
+    `Mac control did not converge to connected state. Actions: ${actionLog.join(' -> ') || 'none'}. Final text: ${sanitizeText(lastText).slice(0, 800)}`
+  );
+}
+
+async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {}) {
+  const submitTimeout = options.submitTimeout || timeout;
+  const proofTimeout = options.proofTimeout || Math.max(timeout, DEFAULT_AGENT_PROOF_TIMEOUT_MS);
+
+  await maybeSelectProofAgent(page, {
+    agentKey: options.agentKey,
+    agentType: options.agentType,
+    timeout: submitTimeout,
   });
 
-  const sendButton = page
-    .getByRole('button')
-    .filter({ hasText: /^$|send|submit|start|arrow/i })
-    .last();
-  await sendButton.click().catch(async () => {
-    await page.keyboard.press('Enter');
-  });
+  const inputSelector = '[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]';
+  await setTextareaValue(page, inputSelector, prompt, submitTimeout);
+  const beforeSendText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
 
-  await waitForBodyText(page, prompt, timeout);
-  const deadline = Date.now() + timeout;
+  const sendButton = page.locator('[data-testid="guid-send-btn"]').first();
+  await sendButton.waitFor({ state: 'visible', timeout: submitTimeout });
+  await page.waitForFunction(
+    () => {
+      const button = document.querySelector('[data-testid="guid-send-btn"]');
+      if (!button) return false;
+      if (button instanceof HTMLButtonElement) return !button.disabled;
+      return button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('disabled');
+    },
+    undefined,
+    { timeout: submitTimeout }
+  );
+  await sendButton.click();
+
+  await page.waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
+    timeout: submitTimeout,
+  });
+  await waitForBodyMarkers(page, [promptConversationMarker(prompt)], submitTimeout);
+  const deadline = Date.now() + proofTimeout;
   let lastGate = runVisibleAgentMacToolEvidenceGate('');
   while (Date.now() < deadline) {
     const text = await page.evaluate(() => document.body?.innerText || '');
-    lastGate = runVisibleAgentMacToolEvidenceGate(text);
+    lastGate = runVisibleAgentMacToolEvidenceGate(
+      visibleAgentEvidenceText(text, { beforeText: beforeSendText, prompt })
+    );
     if (lastGate.status === 'passed') return lastGate;
     if (lastGate.data?.failureKind === 'fatal') {
       throw new Error(lastGate.message || 'Visible agent Mac-tool proof failed.');
@@ -696,6 +1172,7 @@ async function runUiProductGates(options) {
   const executablePath = installedProof.installedExecutablePath(appPath);
   const artifactRoot = options.artifactRoot;
   const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
+  const proofTimeout = options.proofTimeout || DEFAULT_AGENT_PROOF_TIMEOUT_MS;
   const supportAccount = options.supportAccount || DEFAULT_SUPPORT_ACCOUNT;
   const supportTarget = options.supportTarget || DEFAULT_SUPPORT_TARGET;
   const chatPrompt = options.chatPrompt || VISIBLE_AGENT_MAC_TOOL_PROMPT;
@@ -712,8 +1189,8 @@ async function runUiProductGates(options) {
         ...process.env,
         AIONUI_DISABLE_AUTO_UPDATE: '1',
         AIONUI_DISABLE_DEVTOOLS: '1',
-        AIONUI_E2E_TEST: '1',
         AIONUI_CDP_PORT: '0',
+        AIONUI_MULTI_INSTANCE: '1',
         EVAOS_MAC_CONTROL_DOCTOR: '1',
         NODE_ENV: 'production',
       },
@@ -739,6 +1216,20 @@ async function runUiProductGates(options) {
     }
 
     try {
+      const adminToggle = page.locator('[data-testid="evaos-sidebar-admin-toggle"]').first();
+      if (await adminToggle.isVisible().catch(() => false)) {
+        const expanded = await adminToggle.getAttribute('aria-expanded').catch(() => null);
+        if (expanded !== 'true') {
+          await adminToggle.click();
+          await page.waitForFunction(
+            () =>
+              document.querySelector('[data-testid="evaos-sidebar-admin-toggle"]')?.getAttribute('aria-expanded') ===
+              'true',
+            undefined,
+            { timeout }
+          );
+        }
+      }
       for (const marker of ROUTE_MARKERS) {
         await waitForBodyText(page, marker, timeout);
       }
@@ -756,8 +1247,34 @@ async function runUiProductGates(options) {
     }
 
     try {
+      await navigateHash(page, '/native-companion', timeout);
+      const convergence = await convergeMacControlReady(page, { timeout, proofTimeout });
+      const screenshot = 'screenshots/mac-control-cold-start.png';
+      await page.screenshot({ path: path.join(artifactRoot, 'artifacts', screenshot), fullPage: true });
+      if (!macControlReadyTextSatisfied(convergence.text)) {
+        throw new Error('Mac control cold-start reached a non-ready or ambiguous state.');
+      }
+      gates.push(
+        passedGate('mac_control_cold_start', 'Mac & iPhone cold-start reached no-code ready state.', {
+          evidencePath: `artifacts/${screenshot}`,
+          data: { actionLog: convergence.actionLog },
+        })
+      );
+    } catch (error) {
+      gates.push(
+        failedGate('mac_control_cold_start', 'connector_service_not_ready', 'Mac control cold-start proof failed.', {
+          data: await captureUiFailure(page, artifactRoot, 'mac_control_cold_start', error),
+        })
+      );
+    }
+
+    try {
       await navigateHash(page, '/home', timeout);
-      const toolGate = await sendVisibleAgentMacToolProbe(page, timeout, chatPrompt);
+      const toolGate = await sendVisibleAgentMacToolProbe(page, timeout, chatPrompt, {
+        proofTimeout,
+        agentKey: options.agentKey,
+        agentType: options.agentType,
+      });
       const screenshot = 'screenshots/visible-agent-mac-tools.png';
       await page.screenshot({ path: path.join(artifactRoot, 'artifacts', screenshot), fullPage: true });
       gates.push(
@@ -773,44 +1290,9 @@ async function runUiProductGates(options) {
           'runtime_not_configured',
           'Visible Workbench agent Mac-tool proof failed.',
           {
-            data: await captureUiFailure(page, artifactRoot, 'visible_agent_mac_tools', error),
+            data: await captureVisibleAgentFailureState(page, artifactRoot, 'visible_agent_mac_tools', error),
           }
         )
-      );
-    }
-
-    try {
-      await navigateHash(page, '/native-companion', timeout);
-      const turnOn = page.getByRole('button', { name: /Turn On Mac Access/i }).first();
-      if (await turnOn.isVisible().catch(() => false)) {
-        await turnOn.click();
-      }
-      const setupCheck = page.getByRole('button', { name: /Run Setup Check/i }).first();
-      if (await setupCheck.isVisible().catch(() => false)) {
-        await setupCheck.click();
-      }
-      await waitForBodyText(page, 'Mac control', timeout);
-      await page.waitForFunction(
-        () => {
-          const text = document.body?.innerText || '';
-          if (/Create Pairing Prompt|Reconnect Workbench|needs Mac pairing/i.test(text)) return false;
-          return /Mac control is ready|Mac control ready|Mac & iPhone/.test(text) && /ready/i.test(text);
-        },
-        undefined,
-        { timeout }
-      );
-      const screenshot = 'screenshots/mac-control-cold-start.png';
-      await page.screenshot({ path: path.join(artifactRoot, 'artifacts', screenshot), fullPage: true });
-      gates.push(
-        passedGate('mac_control_cold_start', 'Mac & iPhone cold-start reached no-code ready state.', {
-          evidencePath: `artifacts/${screenshot}`,
-        })
-      );
-    } catch (error) {
-      gates.push(
-        failedGate('mac_control_cold_start', 'connector_service_not_ready', 'Mac control cold-start proof failed.', {
-          data: await captureUiFailure(page, artifactRoot, 'mac_control_cold_start', error),
-        })
       );
     }
   } finally {
@@ -825,6 +1307,9 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
   const blockerCategory = failedOrBlocked?.reasonCode || 'unknown';
   const launchAgent = extras.desktopProofState?.launchAgent || {};
   const bundleInfo = extras.bundleInfo || {};
+  const ready = readinessGatePassed(gates);
+  const agentProofStatus = gateStatus(gates, 'visible_agent_mac_tools');
+  const agentProofReady = ready && agentProofStatus === 'passed';
 
   return sanitizeValue({
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
@@ -857,8 +1342,8 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
       lastStartupCategory: blockerCategory,
     },
     brokerGrant: {
-      state: gateStatus(gates, 'bridge_ready'),
-      agentPairingStatus: gateStatus(gates, 'mac_control_cold_start') === 'passed' ? 'agent_paired' : 'not_ready',
+      state: agentProofStatus,
+      agentPairingStatus: agentProofReady ? 'agent_paired' : 'not_ready',
       sourcePointer: 'mac-control-doctor',
       auditIds: [],
     },
@@ -871,9 +1356,8 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
       readySource: 'mac-control-doctor',
     },
     connector: {
-      status: gateStatus(gates, 'mac_control_cold_start') === 'passed' ? 'ready' : 'repair_required',
-      ownerClassification:
-        gateStatus(gates, 'mac_control_cold_start') === 'passed' ? 'workbench_managed' : blockerCategory,
+      status: ready ? 'ready' : 'repair_required',
+      ownerClassification: ready ? 'workbench_managed' : blockerCategory,
       endpointSummary: 'redacted',
     },
     launchAgent: {
@@ -1019,6 +1503,9 @@ async function runMacControlDoctor(options = {}) {
   const customerId = options.customerId || process.env.EVAOS_MAC_CONTROL_DOCTOR_CUSTOMER_ID;
   const customerLabel = options.customerLabel || process.env.EVAOS_MAC_CONTROL_DOCTOR_CUSTOMER_LABEL || supportTarget;
   const timeout = options.timeout || Number(process.env.EVAOS_MAC_CONTROL_DOCTOR_TIMEOUT || DEFAULT_TIMEOUT_MS);
+  const proofTimeout =
+    options.proofTimeout ||
+    Number(process.env.EVAOS_MAC_CONTROL_DOCTOR_AGENT_TIMEOUT || DEFAULT_AGENT_PROOF_TIMEOUT_MS);
   const bridgePath = bridgePathForApp(appPath);
 
   installedProof.assertCanonicalProofAppPath(appPath, { allowNonCanonicalAppPath: options.allowNonCanonicalAppPath });
@@ -1076,6 +1563,8 @@ async function runMacControlDoctor(options = {}) {
       bundleInfo = installedProof.readInfoPlist(appPath);
     }
 
+    gates.push(runBridgeReadyGate(appPath, { timeout }));
+
     if (options.skipUi) {
       gates.push(blockedGate('support_account_target', 'runtime_not_configured', 'UI proof skipped by option.'));
       gates.push(blockedGate('route_visibility', 'runtime_not_configured', 'UI proof skipped by option.'));
@@ -1091,11 +1580,13 @@ async function runMacControlDoctor(options = {}) {
           supportTarget,
           chatPrompt:
             options.chatPrompt || process.env.EVAOS_MAC_CONTROL_DOCTOR_CHAT_PROMPT || VISIBLE_AGENT_MAC_TOOL_PROMPT,
+          proofTimeout,
+          agentKey: options.agentKey || process.env.EVAOS_MAC_CONTROL_DOCTOR_AGENT_KEY,
+          agentType: options.agentType || process.env.EVAOS_MAC_CONTROL_DOCTOR_AGENT_TYPE,
         }))
       );
     }
 
-    gates.push(runBridgeReadyGate(appPath, { timeout }));
     gates.push(
       runConfiguredCommandGate('local_openclaw', 'EVAOS_MAC_CONTROL_DOCTOR_LOCAL_OPENCLAW_CMD', process.env, {
         cwd: repoRoot,
@@ -1194,6 +1685,9 @@ function parseArgs(argv) {
     else if (arg === '--computer-use-evidence') options.computerUseEvidencePath = argv[++index];
     else if (arg === '--chat-prompt') options.chatPrompt = argv[++index];
     else if (arg === '--timeout') options.timeout = Number(argv[++index]);
+    else if (arg === '--agent-proof-timeout') options.proofTimeout = Number(argv[++index]);
+    else if (arg === '--agent-key') options.agentKey = argv[++index];
+    else if (arg === '--agent-type') options.agentType = argv[++index];
     else if (arg === '--help') options.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -1259,6 +1753,7 @@ module.exports = {
   buildDiagnosticPacket,
   buildDryRunGates,
   gateStatus,
+  macControlReadyTextSatisfied,
   overallStatus,
   parseArgs,
   renderMarkdown,
@@ -1269,4 +1764,5 @@ module.exports = {
   runVisibleAgentMacToolEvidenceGate,
   sanitizeText,
   sanitizeValue,
+  visibleAgentEvidenceText,
 };
