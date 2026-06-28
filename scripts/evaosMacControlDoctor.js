@@ -83,6 +83,16 @@ const APPROVED_PROOF_EXECUTABLES = new Set([
 ]);
 const APPROVED_PROOF_EXECUTABLE_PREFIXES = ['customer_mac_', 'desktop_control', 'desktop_see', 'desktop_bridge'];
 const VISIBLE_AGENT_SUCCESS_STATUSES = new Set(['ok', 'passed', 'succeeded', 'success', 'ready', 'completed', 'done']);
+const PROOF_FAILURE_STATUSES = new Set([
+  'denied',
+  'error',
+  'failed',
+  'failure',
+  'not_ready',
+  'rejected',
+  'repair_required',
+]);
+const FAIL_CLOSED_STATUSES = new Set(['fail_closed', 'failed_closed', 'closed', 'blocked', 'revoked']);
 const VISIBLE_AGENT_TOOL_ARRAY_KEYS = ['toolResults', 'tool_results', 'toolCalls', 'tool_calls', 'results', 'calls'];
 const DEFAULT_PROOF_AGENT_SELECTORS = [
   '[data-agent-pill="true"][data-agent-key="openclaw-gateway"]',
@@ -290,10 +300,21 @@ function commandProofPayloadSucceeded(payload, depth = 0) {
   if (!payload || depth > 5) return false;
   if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadSucceeded(entry, depth + 1));
   if (typeof payload !== 'object') return false;
+  if (commandProofPayloadExplicitlyFailed(payload)) return false;
   if (payload.ok === true || payload.success === true || payload.passed === true) return true;
   const status = payload.status || payload.outcome || payload.resultStatus || payload.result_status;
   if (typeof status === 'string' && VISIBLE_AGENT_SUCCESS_STATUSES.has(status.trim().toLowerCase())) return true;
   return Object.values(payload).some((value) => commandProofPayloadSucceeded(value, depth + 1));
+}
+
+function commandProofPayloadExplicitlyFailed(payload, depth = 0) {
+  if (!payload || depth > 5) return false;
+  if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadExplicitlyFailed(entry, depth + 1));
+  if (typeof payload !== 'object') return false;
+  if (payload.ok === false || payload.success === false || payload.passed === false) return true;
+  const status = payload.status || payload.outcome || payload.resultStatus || payload.result_status;
+  if (typeof status === 'string' && PROOF_FAILURE_STATUSES.has(status.trim().toLowerCase())) return true;
+  return Object.values(payload).some((value) => commandProofPayloadExplicitlyFailed(value, depth + 1));
 }
 
 function commandProofPayloadHasAuditId(payload, depth = 0) {
@@ -320,6 +341,14 @@ function commandProofPayloadFailsClosed(payload, depth = 0) {
   if (Array.isArray(payload)) return payload.some((entry) => commandProofPayloadFailsClosed(entry, depth + 1));
   if (typeof payload !== 'object') return false;
   if (
+    payload.failClosed === false ||
+    payload.fail_closed === false ||
+    payload.killSwitch === false ||
+    payload.kill_switch === false
+  ) {
+    return false;
+  }
+  if (
     payload.failClosed === true ||
     payload.fail_closed === true ||
     payload.killSwitch === true ||
@@ -327,19 +356,26 @@ function commandProofPayloadFailsClosed(payload, depth = 0) {
   ) {
     return true;
   }
-  const haystack = Object.values(payload)
-    .filter((value) => typeof value === 'string')
-    .join(' ');
-  if (/\bfail[-_\s]?closed\b|\bkill[-_\s]?switch\b/i.test(haystack)) return true;
+  const status = payload.status || payload.state || payload.outcome || payload.resultStatus || payload.result_state;
+  if (typeof status === 'string' && FAIL_CLOSED_STATUSES.has(status.trim().toLowerCase())) return true;
   return Object.values(payload).some((value) => commandProofPayloadFailsClosed(value, depth + 1));
+}
+
+function commandProofPayloadAuditedSuccess(payload) {
+  return (
+    commandProofPayloadSucceeded(payload) &&
+    commandProofPayloadHasAuditId(payload) &&
+    !commandProofPayloadExplicitlyFailed(payload)
+  );
 }
 
 function commandProofSatisfied(id, result) {
   const payloads = commandProofPayloads(result);
   if (payloads.length === 0) return { ok: false, reasonCode: 'missing_structured_proof' };
   if (!payloads.some(commandProofPayloadSucceeded)) return { ok: false, reasonCode: 'missing_structured_success' };
-  if (!payloads.some(commandProofPayloadHasAuditId)) return { ok: false, reasonCode: 'missing_audit_proof' };
-  if (id === 'kill_switch' && !payloads.some(commandProofPayloadFailsClosed)) {
+  const auditedSuccessPayloads = payloads.filter(commandProofPayloadAuditedSuccess);
+  if (auditedSuccessPayloads.length === 0) return { ok: false, reasonCode: 'missing_audit_proof' };
+  if (id === 'kill_switch' && !auditedSuccessPayloads.some(commandProofPayloadFailsClosed)) {
     return { ok: false, reasonCode: 'kill_switch_not_fail_closed' };
   }
   return { ok: true };
@@ -1273,7 +1309,7 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
   const bundleInfo = extras.bundleInfo || {};
   const ready = readinessGatePassed(gates);
   const agentProofStatus = gateStatus(gates, 'visible_agent_mac_tools');
-  const agentProofReady = agentProofStatus === 'passed';
+  const agentProofReady = ready && agentProofStatus === 'passed';
 
   return sanitizeValue({
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,

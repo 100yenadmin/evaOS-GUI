@@ -973,13 +973,16 @@ function actionResultMatchesCurrentConnectorStatus(
   if (!actionResult) return true;
   if (actionResult.status !== 'succeeded') return true;
   if (!actionResultRequiresLiveConnector(actionResult)) return true;
-  return (
+  const connectorReady =
     status?.readiness === 'ready' &&
     status.connectorService?.status === 'ready' &&
     status.connectorService?.running === true &&
     status.connectorService?.reachable === true &&
-    status.customerMac?.status === 'ready'
-  );
+    status.customerMac?.status === 'ready';
+  if (!connectorReady) return false;
+  if (!actionResultRequiresCurrentPairingProof(actionResult)) return true;
+  const currentPairingStatus = status.agentPairingStatus ?? 'ready_for_agent_pairing';
+  return currentPairingStatus !== 'not_ready' && currentPairingStatus !== 'proof_failed';
 }
 
 function actionResultRequiresLiveConnector(actionResult: IEvaosNativeCompanionActionResult): boolean {
@@ -991,6 +994,10 @@ function actionResultRequiresLiveConnector(actionResult: IEvaosNativeCompanionAc
     actionResult.action === 'control_stop' ||
     actionResult.action === 'kill_switch'
   );
+}
+
+function actionResultRequiresCurrentPairingProof(actionResult: IEvaosNativeCompanionActionResult): boolean {
+  return actionResult.action === 'ensure_customer_mac_connector_grant' || actionResult.action === 'setup_check';
 }
 
 function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): boolean {

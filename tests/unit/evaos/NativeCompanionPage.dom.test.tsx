@@ -1415,6 +1415,95 @@ describe('NativeCompanionPage', () => {
     }
   });
 
+  it('clears a stale connected grant when the latest status revokes pairing proof', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      customerContextMock.customerContext.selectedCustomerId = 'golden';
+      customerContextMock.customerContext.selectedTarget = {
+        customerId: 'golden',
+        targetKind: 'customer_vm',
+        displayName: 'Golden VM (admin@100yen.org)',
+        isDefault: true,
+      };
+      customerContextMock.customerContext.targets = [customerContextMock.customerContext.selectedTarget];
+      const readyStatus = {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-28T18:05:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for account-scoped Mac control.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true, running: true, path: '/Applications/evaOS Workbench.app' },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'unavailable', installed: false, running: false },
+        audit: { status: 'ready', auditIds: ['audit-mac-ready'] },
+      };
+      const revokedStatus = {
+        ...readyStatus,
+        generatedAt: '2026-06-28T18:05:05.000Z',
+        agentPairingStatus: 'not_ready',
+        summaryText: 'Mac control grant is not active for this session.',
+      };
+      bridgeMocks.getStatus
+        .mockResolvedValueOnce({ success: true, data: readyStatus })
+        .mockResolvedValueOnce({ success: true, data: revokedStatus });
+      bridgeMocks.runAction.mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'ensure_customer_mac_connector_grant',
+          status: 'succeeded',
+          message: 'Mac control is connected for this evaOS Workbench session.',
+          sourcePointer: 'native-companion:connector-grant-ready',
+          auditIds: ['audit-grant'],
+          refreshRecommended: false,
+          connectorGrant: {
+            ok: true,
+            customerId: 'golden',
+            deviceId: 'device-golden',
+            grantId: 'grant-golden',
+            grantState: 'active',
+            auditId: 'audit-grant',
+          },
+          agentPairingStatus: 'agent_paired',
+        },
+      });
+
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderNativeCompanion();
+
+      expect(await screen.findByText('Mac control ready to connect')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
+      await waitFor(() =>
+        expect(
+          screen.getAllByText('Mac control is connected for this evaOS Workbench session.').length
+        ).toBeGreaterThan(0)
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(6_000);
+      });
+
+      expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(2);
+      await waitFor(() =>
+        expect(screen.queryByText('Mac control is connected for this evaOS Workbench session.')).not.toBeInTheDocument()
+      );
+      expect(screen.getByRole('button', { name: 'Connect Mac Control' })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clears a stale connector-start success when the connector stops', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

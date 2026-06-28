@@ -563,6 +563,64 @@ describe('evaOS Mac control doctor', () => {
       reasonCode: 'missing_audit_proof',
     });
 
+    const splitAuditBin = path.join(binDir, 'hermes');
+    fs.writeFileSync(
+      splitAuditBin,
+      [
+        '#!/bin/sh',
+        'printf \'{"ok":true,"result":{"status":"ready"}}\\n\'',
+        'printf \'{"ok":false,"auditId":"audit-failed","result":{"status":"failed"}}\\n\'',
+        '',
+      ].join('\n')
+    );
+    fs.chmodSync(splitAuditBin, 0o755);
+
+    expect(
+      doctor.runConfiguredCommandGate('hermes', 'HERMES_SMOKE_CMD', {
+        HERMES_SMOKE_CMD: `${splitAuditBin} mac-control-smoke`,
+      })
+    ).toMatchObject({
+      id: 'hermes',
+      status: 'failed',
+      reasonCode: 'missing_audit_proof',
+    });
+
+    fs.writeFileSync(
+      openclawBin,
+      ['#!/bin/sh', 'printf \'{"ok":false,"auditId":"audit-failed","result":{"status":"ready"}}\\n\'', ''].join('\n')
+    );
+
+    expect(
+      doctor.runConfiguredCommandGate('local_openclaw', 'LOCAL_SMOKE_CMD', {
+        LOCAL_SMOKE_CMD: `${openclawBin} mac-control-smoke`,
+      })
+    ).toMatchObject({
+      id: 'local_openclaw',
+      status: 'failed',
+      reasonCode: 'missing_structured_success',
+    });
+
+    const killSwitchBin = path.join(binDir, 'customer_mac_kill_switch');
+    fs.writeFileSync(
+      killSwitchBin,
+      [
+        '#!/bin/sh',
+        'printf \'{"ok":true,"auditId":"audit-kill","result":{"killSwitch":false,"message":"kill switch was not activated"}}\\n\'',
+        '',
+      ].join('\n')
+    );
+    fs.chmodSync(killSwitchBin, 0o755);
+
+    expect(
+      doctor.runConfiguredCommandGate('kill_switch', 'KILL_SWITCH_CMD', {
+        KILL_SWITCH_CMD: `${killSwitchBin}`,
+      })
+    ).toMatchObject({
+      id: 'kill_switch',
+      status: 'failed',
+      reasonCode: 'kill_switch_not_fail_closed',
+    });
+
     expect(
       doctor.runConfiguredCommandGate('local_openclaw', 'LOCAL_SMOKE_CMD', {
         LOCAL_SMOKE_CMD: 'echo ok',
@@ -682,6 +740,44 @@ describe('evaOS Mac control doctor', () => {
       },
       connector: {
         status: 'ready',
+      },
+    });
+  });
+
+  it('does not report agent_paired when visible proof passes but readiness failed', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        {
+          id: 'mac_control_cold_start',
+          status: 'failed',
+          reasonCode: 'connector_service_not_ready',
+          message: 'Mac control cold-start proof failed.',
+        },
+        { id: 'bridge_ready', status: 'passed' },
+        { id: 'visible_agent_mac_tools', status: 'passed' },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      brokerGrant: {
+        state: 'passed',
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
       },
     });
   });
