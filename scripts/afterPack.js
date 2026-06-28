@@ -9,9 +9,11 @@ const {
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
 const { assertNonFullProfileNotRelease, getTruthyReleaseFlags, readPackagingProfile } = require('./packagingProfile');
+const { defaultBridgeSourceRef } = require('./prepareEvaosDesktopBridgeResource');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 const MANAGED_RESOURCE_PATH_CANDIDATES = ['managed-resources', 'managed_resources'];
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
+const FULL_SHA_RE = /^[0-9a-f]{40}$/;
 const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
 const MACHO_CPU_ARCHES = new Map([
   [0x01000007, 'x64'],
@@ -164,6 +166,31 @@ function shouldRejectPlaceholderBridge(packagingProfile) {
   return shouldRequireRealBridge() || packagingProfile === 'functional-smoke';
 }
 
+function expectedBridgeSourceRef() {
+  return String(process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef)
+    .trim()
+    .toLowerCase();
+}
+
+function verifyBridgeManifestSourceCommit(manifest) {
+  if (manifest.placeholder === true) return;
+
+  const expectedRef = expectedBridgeSourceRef();
+  const sourceCommit = String(manifest.sourceCommit || '')
+    .trim()
+    .toLowerCase();
+  if (!FULL_SHA_RE.test(expectedRef)) {
+    throw new Error(
+      `Packaged evaOS desktop bridge expected ref is not a full commit SHA: ${process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef}`
+    );
+  }
+  if (sourceCommit !== expectedRef) {
+    throw new Error(
+      `Packaged evaOS desktop bridge sourceCommit (${manifest.sourceCommit || 'missing'}) does not match expected ref ${expectedRef}.`
+    );
+  }
+}
+
 function isMachOExecutable(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return false;
   try {
@@ -262,6 +289,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, pa
       `Packaged evaOS desktop bridge is a diagnostic placeholder; EVAOS_PACKAGING_PROFILE=${packagingProfile} requires a real bridge.`
     );
   }
+  verifyBridgeManifestSourceCommit(manifest);
 
   if (shouldRequireRealBridge()) {
     requireMachOExecutableForArch(path.join(resourcesDir, peekabooRelativePath), peekabooRelativePath, targetArch);

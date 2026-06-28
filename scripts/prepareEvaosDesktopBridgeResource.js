@@ -189,6 +189,17 @@ function sanitizeCommandText(value, repo) {
     .replace(/https:\/\/x-access-token:[^/@]+@github\.com\//g, 'https://github.com/');
 }
 
+function placeholderReasonCode(error) {
+  const message = String(error?.message || '').toLowerCase();
+  if (message.includes('pinned evaos-desktop-bridge ref') || message.includes('source ref')) {
+    return 'bridge-source-ref-invalid-or-mismatched';
+  }
+  if (message.includes('source was not found') || message.includes('not found') || message.includes('clone')) {
+    return 'bridge-source-unavailable';
+  }
+  return 'bridge-source-preparation-failed';
+}
+
 function runGit(args, cwd, repoForRedaction) {
   try {
     return execFileSync('git', args, {
@@ -412,7 +423,7 @@ function preparePlaceholderBridgeResource(error) {
     throw error;
   }
 
-  const reason = sanitizeCommandText(error?.message || 'bridge source unavailable', defaultBridgeSourceRepo);
+  const reason = placeholderReasonCode(error);
   console.warn('::warning::Using evaOS desktop bridge diagnostic placeholder for non-release package-shape smoke.');
   fs.rmSync(bridgeResourceDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(bridgeResourceDir, 'bin'), { recursive: true });

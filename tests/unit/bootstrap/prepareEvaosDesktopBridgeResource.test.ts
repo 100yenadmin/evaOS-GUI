@@ -151,10 +151,15 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
     const manifest = JSON.parse(readFileSync(join(resourceDir, 'manifest.json'), 'utf8')) as {
       placeholder?: boolean;
+      placeholderReason?: string;
       sourcePath?: string;
     };
+    const wrapper = readFileSync(join(resourceDir, 'evaos-desktop-bridge'), 'utf8');
     expect(manifest.placeholder).toBe(true);
     expect(manifest.sourcePath).toBe('diagnostic-placeholder');
+    expect(manifest.placeholderReason).toBe('bridge-source-unavailable');
+    expect(JSON.stringify(manifest)).not.toContain(missingRepo);
+    expect(wrapper).not.toContain(missingRepo);
   });
 
   it('accepts truthy strings when disabling default local Bridge candidates', () => {

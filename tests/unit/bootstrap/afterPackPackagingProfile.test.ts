@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(__dirname, '../../..');
+const DEFAULT_BRIDGE_SOURCE_REF = '207f6528461ecae51c39efd2654733c1b07d39a4';
 const { RELEASE_ENV_FLAGS } = require(join(repoRoot, 'scripts/packagingProfile.js')) as {
   RELEASE_ENV_FLAGS: string[];
 };
@@ -140,7 +141,7 @@ function createCompleteBridgeResources(
     join(bridgeDir, 'manifest.json'),
     JSON.stringify({
       schema: 'evaos-desktop-bridge-resource/v1',
-      sourceCommit: 'test-bridge-ref',
+      sourceCommit: DEFAULT_BRIDGE_SOURCE_REF,
       ...manifest,
     })
   );
@@ -153,6 +154,8 @@ function restoreEnv(name: string, value: string | undefined) {
     process.env[name] = value;
   }
 }
+
+const itDarwinExecutable = process.platform === 'win32' ? it.skip : it;
 
 describe('afterPack packaging profile guard', () => {
   beforeEach(() => {
@@ -205,7 +208,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('verifies real evaOS desktop Bridge resources for macOS functional-smoke builds', async () => {
+  itDarwinExecutable('verifies real evaOS desktop Bridge resources for macOS functional-smoke builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
     const { context, resourcesDir, tempDir } = createDarwinContext();
@@ -221,7 +224,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('rejects executable Bridge resource directories in macOS functional-smoke builds', async () => {
+  itDarwinExecutable('rejects executable Bridge resource directories in macOS functional-smoke builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
     const { context, resourcesDir, tempDir } = createDarwinContext();
@@ -239,7 +242,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('fails closed when macOS non-thin packages omit Bridge resources', async () => {
+  itDarwinExecutable('fails closed when macOS non-thin packages omit Bridge resources', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
     const { context, resourcesDir, tempDir } = createDarwinContext();
@@ -254,7 +257,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('rejects diagnostic placeholder Bridge resources in functional-smoke builds', async () => {
+  itDarwinExecutable('rejects diagnostic placeholder Bridge resources in functional-smoke builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
     const { context, resourcesDir, tempDir } = createDarwinContext();
@@ -270,7 +273,26 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('requires native Mach-O Bridge helpers for release-like builds', async () => {
+  itDarwinExecutable('rejects stale Bridge manifests that do not match the expected source ref', async () => {
+    const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
+    process.env.EVAOS_PACKAGING_PROFILE = 'functional-smoke';
+    const { context, resourcesDir, tempDir } = createDarwinContext();
+    createDarwinAionCoreResources(resourcesDir);
+    createCompleteHubResourcesIn(resourcesDir);
+    createCompleteBridgeResources(resourcesDir, {
+      placeholder: false,
+      sourceCommit: '0000000000000000000000000000000000000000',
+    });
+
+    try {
+      await expect(afterPack(context)).rejects.toThrow('does not match expected ref');
+    } finally {
+      restoreEnv('EVAOS_PACKAGING_PROFILE', oldProfile);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  itDarwinExecutable('requires native Mach-O Bridge helpers for release-like builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     const oldAppleId = process.env.appleId;
     process.env.EVAOS_PACKAGING_PROFILE = 'full';
@@ -289,7 +311,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('requires matching-architecture Mach-O Bridge helpers for release-like builds', async () => {
+  itDarwinExecutable('requires matching-architecture Mach-O Bridge helpers for release-like builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     const oldAppleId = process.env.appleId;
     const wrongArch = process.arch === 'arm64' ? 'x64' : 'arm64';
@@ -309,7 +331,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('rejects ARM64_32 Mach-O Bridge helpers for arm64 release-like builds', async () => {
+  itDarwinExecutable('rejects ARM64_32 Mach-O Bridge helpers for arm64 release-like builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     const oldAppleId = process.env.appleId;
     process.env.EVAOS_PACKAGING_PROFILE = 'full';
@@ -328,7 +350,7 @@ describe('afterPack packaging profile guard', () => {
     }
   });
 
-  it('accepts matching-architecture Mach-O Bridge helpers for release-like builds', async () => {
+  itDarwinExecutable('accepts matching-architecture Mach-O Bridge helpers for release-like builds', async () => {
     const oldProfile = process.env.EVAOS_PACKAGING_PROFILE;
     const oldAppleId = process.env.appleId;
     process.env.EVAOS_PACKAGING_PROFILE = 'full';
