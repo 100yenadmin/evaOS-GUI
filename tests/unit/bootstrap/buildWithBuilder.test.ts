@@ -18,6 +18,8 @@ const { RELEASE_ENV_FLAGS } = require(join(repoRoot, 'scripts/packagingProfile.j
 const ambientBuildEnvKeys = [
   ...RELEASE_ENV_FLAGS,
   'AIONUI_MANAGED_RESOURCES_BUNDLE',
+  'appleId',
+  'APPLE_ID',
   'EVAOS_DESKTOP_BRIDGE_ALLOW_PLACEHOLDER',
   'EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL',
   'EVAOS_DESKTOP_BRIDGE_SOURCE_DIR',

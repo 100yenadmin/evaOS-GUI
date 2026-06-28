@@ -164,6 +164,8 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
   it('accepts truthy strings when disabling default local Bridge candidates', () => {
     const oldDisableDefaultCandidates = process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES;
+    const oldSourceDir = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR;
+    const oldSourceRef = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF;
     try {
       process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES = 'true';
       delete process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR;
@@ -171,6 +173,16 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
       expect(bridgeScript.sourceCandidates()).toEqual([]);
     } finally {
+      if (oldSourceDir == null) {
+        delete process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR;
+      } else {
+        process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR = oldSourceDir;
+      }
+      if (oldSourceRef == null) {
+        delete process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF;
+      } else {
+        process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF = oldSourceRef;
+      }
       if (oldDisableDefaultCandidates == null) {
         delete process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES;
       } else {
