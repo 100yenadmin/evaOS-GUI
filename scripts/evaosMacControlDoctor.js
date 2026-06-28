@@ -344,9 +344,7 @@ function jsonCandidatesFromText(text) {
 function payloadsFromVisibleAgentEvidence(evidence) {
   if (evidence && typeof evidence === 'object') return [evidence];
   if (typeof evidence !== 'string') return [];
-  return jsonCandidatesFromText(evidence)
-    .map(parseJsonMaybe)
-    .filter(Boolean);
+  return jsonCandidatesFromText(evidence).map(parseJsonMaybe).filter(Boolean);
 }
 
 function collectVisibleAgentToolRecords(payload, records = [], depth = 0) {
@@ -404,12 +402,12 @@ function visibleAgentRecordHasStructuredResult(record) {
   if (!record || typeof record !== 'object') return false;
   return Boolean(
     record.auditId ||
-      record.audit_id ||
-      (record.result && typeof record.result === 'object') ||
-      (record.data && typeof record.data === 'object') ||
-      (record.output && typeof record.output === 'object') ||
-      (record.structuredResult && typeof record.structuredResult === 'object') ||
-      (record.structured_result && typeof record.structured_result === 'object')
+    record.audit_id ||
+    (record.result && typeof record.result === 'object') ||
+    (record.data && typeof record.data === 'object') ||
+    (record.output && typeof record.output === 'object') ||
+    (record.structuredResult && typeof record.structuredResult === 'object') ||
+    (record.structured_result && typeof record.structured_result === 'object')
   );
 }
 
@@ -692,9 +690,14 @@ async function runUiProductGates(options) {
       );
     } catch (error) {
       gates.push(
-        failedGate('visible_agent_mac_tools', 'runtime_not_configured', 'Visible Workbench agent Mac-tool proof failed.', {
-          data: await captureUiFailure(page, artifactRoot, 'visible_agent_mac_tools', error),
-        })
+        failedGate(
+          'visible_agent_mac_tools',
+          'runtime_not_configured',
+          'Visible Workbench agent Mac-tool proof failed.',
+          {
+            data: await captureUiFailure(page, artifactRoot, 'visible_agent_mac_tools', error),
+          }
+        )
       );
     }
 
@@ -1008,7 +1011,8 @@ async function runMacControlDoctor(options = {}) {
           timeout,
           supportAccount,
           supportTarget,
-          chatPrompt: options.chatPrompt || process.env.EVAOS_MAC_CONTROL_DOCTOR_CHAT_PROMPT || VISIBLE_AGENT_MAC_TOOL_PROMPT,
+          chatPrompt:
+            options.chatPrompt || process.env.EVAOS_MAC_CONTROL_DOCTOR_CHAT_PROMPT || VISIBLE_AGENT_MAC_TOOL_PROMPT,
         }))
       );
     }

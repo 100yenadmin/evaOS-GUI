@@ -60,9 +60,13 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     supportAccount?: string;
     supportTarget?: string;
   }) => { id: string; status: string; reasonCode?: string; message?: string; evidencePath?: string };
-  runVisibleAgentMacToolEvidenceGate: (
-    evidence: unknown
-  ) => { id: string; status: string; reasonCode?: string; message?: string; data?: Record<string, unknown> };
+  runVisibleAgentMacToolEvidenceGate: (evidence: unknown) => {
+    id: string;
+    status: string;
+    reasonCode?: string;
+    message?: string;
+    data?: Record<string, unknown>;
+  };
   runConfiguredCommandGate: (
     id: string,
     envName: string,
