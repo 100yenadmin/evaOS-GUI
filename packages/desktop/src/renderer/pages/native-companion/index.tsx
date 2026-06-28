@@ -984,6 +984,7 @@ function actionResultMatchesCurrentConnectorStatus(
 
 function actionResultRequiresLiveConnector(actionResult: IEvaosNativeCompanionActionResult): boolean {
   return (
+    actionResult.action === 'connector_start' ||
     actionResult.action === 'ensure_customer_mac_connector_grant' ||
     actionResult.action === 'setup_check' ||
     actionResult.action === 'control_start' ||

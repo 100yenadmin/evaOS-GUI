@@ -37,6 +37,7 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const refreshInFlightRef = useRef(false);
+  const queuedForegroundRefreshRef = useRef(false);
 
   const refresh = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -46,7 +47,10 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
         setError(null);
         return;
       }
-      if (refreshInFlightRef.current) return;
+      if (refreshInFlightRef.current) {
+        if (!options.silent) queuedForegroundRefreshRef.current = true;
+        return;
+      }
 
       refreshInFlightRef.current = true;
       if (!options.silent) setLoading(true);
@@ -65,6 +69,10 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
       } finally {
         setLoading(false);
         refreshInFlightRef.current = false;
+        if (queuedForegroundRefreshRef.current) {
+          queuedForegroundRefreshRef.current = false;
+          void refresh();
+        }
       }
     },
     [enabled]

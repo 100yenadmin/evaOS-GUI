@@ -1415,6 +1415,84 @@ describe('NativeCompanionPage', () => {
     }
   });
 
+  it('clears a stale connector-start success when the connector stops', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      customerContextMock.customerContext.selectedCustomerId = 'golden';
+      customerContextMock.customerContext.selectedTarget = {
+        customerId: 'golden',
+        targetKind: 'customer_vm',
+        displayName: 'Golden VM (admin@100yen.org)',
+        isDefault: true,
+      };
+      customerContextMock.customerContext.targets = [customerContextMock.customerContext.selectedTarget];
+      const readyStatus = {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-28T18:10:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for account-scoped Mac control.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true, running: true, path: '/Applications/evaOS Workbench.app' },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'unavailable', installed: false, running: false },
+        audit: { status: 'ready', auditIds: ['audit-mac-ready'] },
+      };
+      const stoppedStatus = {
+        ...readyStatus,
+        generatedAt: '2026-06-28T18:10:05.000Z',
+        readiness: 'repair_required',
+        agentPairingStatus: 'not_ready',
+        summaryText: 'Mac Access connector could not start. The connector did not report a reachable local service.',
+        connectorService: { status: 'repair_required', running: false, reachable: false },
+        customerMac: { status: 'repair_required', permissions: readyStatus.customerMac.permissions },
+      };
+      bridgeMocks.getStatus
+        .mockResolvedValueOnce({ success: true, data: readyStatus })
+        .mockResolvedValueOnce({ success: true, data: stoppedStatus });
+      bridgeMocks.runAction.mockResolvedValueOnce({
+        success: true,
+        data: {
+          action: 'connector_start',
+          status: 'succeeded',
+          message: 'Mac Access connector started.',
+          sourcePointer: 'native-companion:connector-started',
+          auditIds: ['audit-start'],
+          refreshRecommended: false,
+        },
+      });
+
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderNativeCompanion();
+
+      await screen.findByText('Mac control ready to connect');
+      await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+      await user.click(screen.getByRole('button', { name: 'Turn On Mac Access' }));
+      await waitFor(() => expect(screen.getAllByText('Mac Access connector started.').length).toBeGreaterThan(0));
+
+      await act(async () => {
+        vi.advanceTimersByTime(6_000);
+      });
+
+      expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(screen.queryByText('Mac Access connector started.')).not.toBeInTheDocument());
+      expect(screen.getByText('Repair Mac access')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ignores ambiguous account-looking rows when choosing a Mac pairing target', async () => {
     const ambiguousAccountTarget = {
       customerId: 'acct_admin',

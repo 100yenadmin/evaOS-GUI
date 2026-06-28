@@ -81,6 +81,9 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
   ) => { id: string; status: string; reasonCode?: string };
   runMacControlDoctor: (options?: {
     dryRun?: boolean;
+    skipUi?: boolean;
+    allowNonCanonicalAppPath?: boolean;
+    appPath?: string;
     repoRoot?: string;
     repoHead?: string;
     expectedHead?: string;
@@ -91,7 +94,7 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
       mode: string;
       gates: Array<{ id: string; status: string }>;
       overallStatus: string;
-      diagnosticPacket: { schemaVersion: string };
+      diagnosticPacket: { schemaVersion: string; bridge?: Record<string, unknown> };
     };
     files: { reportPath: string; proofPath: string; takeoverPath: string; diagnosticPath: string };
   }>;
@@ -109,6 +112,30 @@ describe('evaOS Mac control doctor', () => {
     );
     fs.chmodSync(bridgePath, 0o755);
     return bridgePath;
+  }
+
+  function writeFakeInfoPlist(appPath: string): void {
+    const contentsDir = path.join(appPath, 'Contents');
+    fs.mkdirSync(contentsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(contentsDir, 'Info.plist'),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        '<dict>',
+        '<key>CFBundleIdentifier</key><string>com.evaos.workbench</string>',
+        '<key>CFBundleName</key><string>evaOS Workbench</string>',
+        '<key>CFBundleVersion</key><string>2.1.23</string>',
+        '<key>CFBundleShortVersionString</key><string>2.1.23</string>',
+        '<key>CFBundleURLTypes</key>',
+        '<array><dict><key>CFBundleURLSchemes</key><array><string>evaos-workbench</string></array></dict></array>',
+        '</dict>',
+        '</plist>',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
   }
 
   it('exposes the composed proof gate order including Computer Use product proof', () => {
@@ -369,6 +396,19 @@ describe('evaOS Mac control doctor', () => {
     expect(
       doctor.macControlReadyTextSatisfied(
         [
+          'Mac control is ready',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+          'Start Full Access',
+        ].join('\n')
+      )
+    ).toBe(true);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
           'Mac control ready to connect',
           'Workbench connector is reporting ready locally.',
           'Accessibility and Screen Recording are ready.',
@@ -378,6 +418,35 @@ describe('evaOS Mac control doctor', () => {
         ].join('\n')
       )
     ).toBe(true);
+  });
+
+  it('records bridge readiness even when UI product proof is skipped', async () => {
+    const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-skip-ui-doctor-'));
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeInfoPlist(appPath);
+    writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
+
+    const result = await doctor.runMacControlDoctor({
+      appPath,
+      repoRoot: path.resolve(__dirname, '../../..'),
+      repoHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+      expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+      artifactRoot,
+      skipUi: true,
+      allowNonCanonicalAppPath: true,
+    });
+
+    expect(result.report.gates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'bridge_ready', status: 'passed' }),
+        expect.objectContaining({ id: 'support_account_target', status: 'blocked' }),
+        expect.objectContaining({ id: 'visible_agent_mac_tools', status: 'blocked' }),
+      ])
+    );
+    expect(result.report.diagnosticPacket.bridge).toMatchObject({
+      status: 'ready',
+      readyStatus: 'ready',
+    });
   });
 
   it('passes bridge readiness only for the ready v1 schema with ok and ready true', () => {

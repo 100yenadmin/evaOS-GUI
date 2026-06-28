@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
 
 const installedProof = require('./evaosInstalledAppProductProof.js');
@@ -152,6 +153,14 @@ function sanitizeValue(value) {
     );
   }
   return value;
+}
+
+function textDigest(value) {
+  return crypto
+    .createHash('sha256')
+    .update(String(value || ''))
+    .digest('hex')
+    .slice(0, 16);
 }
 
 function assertNoUnsafeDoctorOutput(value) {
@@ -766,11 +775,24 @@ function macControlReadyTextSatisfied(text) {
   ) {
     return false;
   }
+  const connectedOrAlreadyPaired =
+    /Mac control is connected for this evaOS Workbench session/i.test(normalized) ||
+    /Mac control is ready/i.test(normalized) ||
+    /Full Access agent control is active/i.test(normalized);
   return (
-    /Mac control is connected for this evaOS Workbench session/i.test(normalized) &&
+    connectedOrAlreadyPaired &&
     /Workbench connector is reporting\s+ready locally/i.test(normalized) &&
     /Accessibility and Screen Recording are ready/i.test(normalized) &&
     /Guided Mac control setup[\s\S]*Ready/i.test(normalized)
+  );
+}
+
+function promptConversationMarker(prompt) {
+  return (
+    String(prompt || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length >= 12) || String(prompt || '').slice(0, 80)
   );
 }
 
@@ -912,9 +934,15 @@ async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error
       const sendButton = document.querySelector('[data-testid="guid-send-btn"]');
       const selectedAgent = document.querySelector('[data-agent-pill="true"][data-agent-selected="true"]');
       const bodyText = document.body?.innerText || '';
+      const inputValue = input instanceof HTMLTextAreaElement ? input.value : '';
       return {
         hash: window.location.hash,
-        inputValue: input instanceof HTMLTextAreaElement ? input.value : null,
+        inputSummary: inputValue
+          ? {
+              length: inputValue.length,
+              sha256Prefix: '__INPUT_DIGEST__',
+            }
+          : null,
         sendDisabled:
           sendButton instanceof HTMLButtonElement
             ? sendButton.disabled
@@ -934,10 +962,31 @@ async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error
           nativeStatus: pill.getAttribute('data-agent-native-status'),
           text: pill.textContent?.trim().slice(0, 120) || '',
         })),
-        bodyExcerpt: bodyText.slice(0, 1_500),
+        bodySummary: {
+          length: bodyText.length,
+          sha256Prefix: '__BODY_DIGEST__',
+        },
       };
     })
     .catch((stateError) => ({ stateError: sanitizeText(stateError?.message || String(stateError)) }));
+  if (
+    state &&
+    typeof state === 'object' &&
+    state.inputSummary &&
+    state.inputSummary.sha256Prefix === '__INPUT_DIGEST__'
+  ) {
+    const inputValue = await page
+      .evaluate(() => {
+        const input = document.querySelector('[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]');
+        return input instanceof HTMLTextAreaElement ? input.value : '';
+      })
+      .catch(() => '');
+    state.inputSummary.sha256Prefix = textDigest(inputValue);
+  }
+  if (state && typeof state === 'object' && state.bodySummary && state.bodySummary.sha256Prefix === '__BODY_DIGEST__') {
+    const bodyText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+    state.bodySummary.sha256Prefix = textDigest(bodyText);
+  }
   return { ...failure, state: sanitizeValue(state) };
 }
 
@@ -1065,11 +1114,7 @@ async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {})
   await page.waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
     timeout: submitTimeout,
   });
-  await waitForBodyMarkers(
-    page,
-    ['Release proof: call the active evaOS/OpenClaw Mac-control tools', 'customer_mac_status', 'desktop_kill_switch'],
-    submitTimeout
-  );
+  await waitForBodyMarkers(page, [promptConversationMarker(prompt)], submitTimeout);
   const deadline = Date.now() + proofTimeout;
   let lastGate = runVisibleAgentMacToolEvidenceGate('');
   while (Date.now() < deadline) {
@@ -1109,6 +1154,7 @@ async function runUiProductGates(options) {
         AIONUI_DISABLE_AUTO_UPDATE: '1',
         AIONUI_DISABLE_DEVTOOLS: '1',
         AIONUI_CDP_PORT: '0',
+        AIONUI_MULTI_INSTANCE: '1',
         EVAOS_MAC_CONTROL_DOCTOR: '1',
         NODE_ENV: 'production',
       },
@@ -1185,8 +1231,6 @@ async function runUiProductGates(options) {
         })
       );
     }
-
-    gates.push(runBridgeReadyGate(appPath, { timeout }));
 
     try {
       await navigateHash(page, '/home', timeout);
@@ -1482,6 +1526,8 @@ async function runMacControlDoctor(options = {}) {
     if (fs.existsSync(appPath)) {
       bundleInfo = installedProof.readInfoPlist(appPath);
     }
+
+    gates.push(runBridgeReadyGate(appPath, { timeout }));
 
     if (options.skipUi) {
       gates.push(blockedGate('support_account_target', 'runtime_not_configured', 'UI proof skipped by option.'));
