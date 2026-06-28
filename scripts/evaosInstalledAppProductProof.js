@@ -22,6 +22,7 @@ const DEFAULT_TIMEOUT_MS = 25_000;
 const LSREGISTER_PATH =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
 const LSREGISTER_DUMP_MAX_BUFFER = 64 * 1024 * 1024;
+const MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS = ['approvals', 'design-workspace', 'creative-studio'];
 
 const UNSAFE_PROOF_PATTERNS = [
   { name: 'desktop_session', pattern: /desktop_session/i },
@@ -230,6 +231,15 @@ function redactProcessCommand(command) {
     .replace(/https?:\/\/\S+/g, '[redacted-url]');
 }
 
+function commandLooksLikeBridgeServer(command, expectedBridgePath) {
+  const text = String(command || '');
+  return (
+    text.includes(expectedBridgePath) ||
+    /(?:^|\s)-m\s+evaos_desktop_bridge\.cli\s+serve(?:\s|$)/.test(text) ||
+    /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
+  );
+}
+
 function parseLsofFieldOutput(output, field) {
   const prefix = String(field || '').slice(0, 1);
   return (
@@ -297,10 +307,12 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
         parentCommand = null;
         parentExecutable = null;
       }
-      const commandMatchesExpectedBridge = command.includes(expectedBridgePath);
+      const commandMatchesExpectedBridgePath = command.includes(expectedBridgePath);
+      const commandMatchesBridgeServer = commandLooksLikeBridgeServer(command, expectedBridgePath);
       const workbenchChildMatchesExpectedBridge =
         Boolean(cwd && cwd === expectedBridgeRoot) &&
-        Boolean(expectedWorkbenchExecutable && parentExecutable === expectedWorkbenchExecutable);
+        Boolean(expectedWorkbenchExecutable && parentExecutable === expectedWorkbenchExecutable) &&
+        commandMatchesBridgeServer;
       return {
         pid,
         command: redactProcessCommand(command),
@@ -308,8 +320,8 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
         parentPid,
         parentCommand: redactProcessCommand(parentCommand),
         parentExecutable,
-        matchesExpectedBridge: commandMatchesExpectedBridge || workbenchChildMatchesExpectedBridge,
-        ownershipSource: commandMatchesExpectedBridge
+        matchesExpectedBridge: commandMatchesExpectedBridgePath || workbenchChildMatchesExpectedBridge,
+        ownershipSource: commandMatchesExpectedBridgePath
           ? 'process-command'
           : workbenchChildMatchesExpectedBridge
             ? 'workbench-child-cwd'
@@ -805,6 +817,12 @@ function safeReportForPlan(options) {
     bundleInfo: options.bundleInfo,
     desktopProofState: options.desktopProofState || null,
     installedAppTrustState: options.installedAppTrustState || null,
+    proofScope: {
+      claim: 'mac-control-scoped installed app proof',
+      supportDiagnostics: 'enabled-by-harness-for-native-companion-matrix',
+      includedRows: plan.map((entry) => entry.manifestRowId || entry.id),
+      outOfScopeRows: [...MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS],
+    },
     screenshots: plan.map((entry) => ({
       id: entry.id,
       route: entry.route,
@@ -913,6 +931,9 @@ function markdownForInstalledProof(report) {
 }
 
 function takeoverMarkdown(report) {
+  const includedRows = report.proofScope?.includedRows || [];
+  const outOfScopeRows = report.proofScope?.outOfScopeRows || MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS;
+
   return [
     '# Takeover',
     '',
@@ -922,7 +943,15 @@ function takeoverMarkdown(report) {
     `EVAOS_INSTALLED_APP_PROOF_EXPECTED_HEAD=${report.expectedHead} npm run evaos:installed-app-proof`,
     '```',
     '',
-    'A pass means the installed app bundle identity matched, the About page exposed the expected commit, and every golden Workbench parity row reached its required loaded, denied, or repair state before screenshot capture.',
+    'A pass means the installed app bundle identity matched, the About page exposed the expected commit, and each Mac-control-scoped installed proof row listed below reached its required loaded, denied, waived, or repair state before screenshot capture.',
+    '',
+    `Scoped rows: ${includedRows.map((id) => `\`${id}\``).join(', ') || '`none`'}.`,
+    '',
+    `Support diagnostics: \`${report.proofScope?.supportDiagnostics || 'not recorded'}\`.`,
+    '',
+    `Intentionally out of scope for this proof: ${outOfScopeRows.map((id) => `\`${id}\``).join(', ') || '`none`'}.`,
+    '',
+    'This takeover packet still does not prove visible first-party agent Mac-control tool calls, public updater/site distribution, unrelated customer VMs, or customer readiness.',
     '',
   ].join('\n');
 }
@@ -968,6 +997,15 @@ async function resolveMainWindow(electronApp) {
   }
 
   throw new Error('Failed to resolve installed app renderer window.');
+}
+
+async function enableSupportDiagnosticsForProof(page, timeout = DEFAULT_TIMEOUT_MS) {
+  await page.evaluate(() => {
+    window.localStorage?.setItem('evaos.supportDiagnostics', '1');
+  });
+  await page.waitForFunction(() => window.localStorage?.getItem('evaos.supportDiagnostics') === '1', undefined, {
+    timeout,
+  });
 }
 
 async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
@@ -1165,6 +1203,7 @@ async function captureInstalledAppProof(options = {}) {
   try {
     const page = await resolveMainWindow(electronApp);
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await enableSupportDiagnosticsForProof(page, timeout);
 
     for (const entry of preflightPlan) {
       try {
@@ -1207,6 +1246,12 @@ async function captureInstalledAppProof(options = {}) {
     installedAppTrustState,
     desktopProofState,
     protocolHandler,
+    proofScope: {
+      claim: 'mac-control-scoped installed app proof',
+      supportDiagnostics: 'enabled-by-harness-for-native-companion-matrix',
+      includedRows: proofPlan.map((entry) => entry.manifestRowId || entry.id),
+      outOfScopeRows: [...MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS],
+    },
     screenshots,
     preflightAssertions,
     parityAssertions: screenshots.map((entry) => ({

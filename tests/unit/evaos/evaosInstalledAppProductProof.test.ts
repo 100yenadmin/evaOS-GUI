@@ -399,12 +399,22 @@ describe('evaOS installed app product proof', () => {
       route: '/native-companion',
       screenshot: '06-mac-iphone.png',
       artifactName: 'screenshots/06-mac-iphone.png',
-      closeoutState: 'loaded',
-      settledMarkers: ['Mac & iPhone', 'Boundary clean'],
+      action: 'click-native-companion-advanced-diagnostics',
+      closeoutState: 'repair',
+      settledMarkers: ['Mac & iPhone', 'Mac control', 'Native companion status matrix', 'Boundary clean'],
     });
     expect(byId.get('mac-iphone')?.waitSelectors).toEqual(
-      expect.arrayContaining(['body:has-text("Mac & iPhone")', 'body:has-text("Boundary clean")'])
+      expect.arrayContaining([
+        'body:has-text("Mac & iPhone")',
+        'body:has-text("Mac control")',
+        'body:has-text("Native companion status matrix")',
+        'body:has-text("Boundary clean")',
+      ])
     );
+    expect(byId.get('new-chat-landing')).toMatchObject({
+      route: '/home',
+      hashRoute: '/guid',
+    });
     expect(byId.get('settings-about')?.waitSelectors).toContain('body:has-text("2fb812c12ddf")');
   });
 
@@ -919,6 +929,52 @@ describe('evaOS installed app product proof', () => {
     ]);
   });
 
+  it('keeps a Workbench child stale when the listener command is not the bridge server', () => {
+    const fakeExec = (command: string, args: string[]): string => {
+      if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {
+        return '/Applications/evaOS Workbench.app\n';
+      }
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
+        return '4242\n';
+      }
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-a', '-p', '4242', '-d', 'cwd', '-Fn'])) {
+        return 'p4242\nn/Applications/evaOS Workbench.app/Contents/Resources/Bridge\n';
+      }
+      if (command === '/bin/ps') {
+        if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
+        if (argsEqual(args, ['-p', '4242', '-o', 'command='])) return '/usr/bin/python3 -m http.server 8765\n';
+        if (argsEqual(args, ['-p', '4242', '-o', 'ppid='])) return '85316\n';
+        if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
+          return '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n';
+        }
+        if (argsEqual(args, ['-p', '85316', '-o', 'comm='])) {
+          return '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n';
+        }
+      }
+      if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
+      if (
+        command === '/bin/launchctl' &&
+        argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])
+      ) {
+        return 'Bad request. Could not find service.';
+      }
+      throw new Error(`unexpected command ${command} ${args.join(' ')}`);
+    };
+
+    const state = installedAppProof.inspectDesktopProofState('/Applications/evaOS Workbench.app', fakeExec);
+
+    expect(state.staleBridgeListener).toBe(true);
+    expect(state.bridgeListener.staleOwners).toEqual([
+      expect.objectContaining({
+        pid: '4242',
+        command: '/usr/bin/python3 -m http.server 8765',
+        cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
+        parentExecutable: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+        matchesExpectedBridge: false,
+      }),
+    ]);
+  });
+
   it('keeps the listener stale when launchd owns the expected bridge but a different PID listens', () => {
     const mismatchedExec = (command: string, args: string[]): string => {
       if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
@@ -1114,6 +1170,11 @@ describe('evaOS installed app product proof', () => {
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Exact Candidate Preflight');
     expect(fs.readFileSync(files.proofPath, 'utf8')).toContain('## Parity Assertions');
     expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Run from `/Volumes/LEXAR/repos');
+    expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Mac-control-scoped installed proof row');
+    expect(fs.readFileSync(files.takeoverPath, 'utf8')).not.toContain('every golden Workbench parity row');
+    expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('Intentionally out of scope');
+    expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('`approvals`');
+    expect(fs.readFileSync(files.takeoverPath, 'utf8')).toContain('visible first-party agent Mac-control tool calls');
     installedAppProof.assertNoUnsafeProofText(fs.readFileSync(files.reportPath, 'utf8'));
   });
 

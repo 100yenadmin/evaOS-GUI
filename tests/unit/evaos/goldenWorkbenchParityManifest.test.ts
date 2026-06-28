@@ -148,12 +148,19 @@ describe('goldenWorkbenchParityManifest', () => {
       ['evaos-dashboard', ['evaOS']],
       ['hermes-dashboard', ['Hermes']],
       ['mission-control', ['Mission Control']],
-      ['native-companion', ['Mac & iPhone', 'Boundary clean']],
+      ['native-companion', ['Mac & iPhone', 'Mac control', 'Native companion status matrix', 'Boundary clean']],
+    ]);
+    const installedProofActionOverrides = new Map([
+      ['native-companion', 'click-native-companion-advanced-diagnostics'],
+      ['branding', 'click-settings-about'],
+    ]);
+    const installedProofHashRouteOverrides = new Map([
+      ['home', '/guid'],
+      ['branding', '/settings/model'],
     ]);
     const installedProofRows = GOLDEN_WORKBENCH_PARITY_MANIFEST.filter(
       (row) => !outOfScopeForMacControlRelease.has(row.id)
     );
-    const installedProofCloseoutStateOverrides = new Map([['native-companion', 'loaded']]);
 
     expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST).toEqual(
       installedProofRows.map((row) => {
@@ -163,12 +170,13 @@ describe('goldenWorkbenchParityManifest', () => {
           route: row.expectedRoute || screenshotPlanById.get(row.proofTarget.planId)?.route,
           screenshot: row.proofTarget.screenshot,
           artifactName: row.proofTarget.artifactName,
-          closeoutState: installedProofCloseoutStateOverrides.get(row.id) || row.proofTarget.closeoutState,
+          closeoutState: row.proofTarget.closeoutState,
           settledMarkers: installedProofMarkerOverrides.get(row.id) || [...row.proofTarget.settledMarkers],
         };
-        return row.id === 'branding'
-          ? { ...manifestRow, hashRoute: '/settings/model', action: 'click-settings-about' }
-          : manifestRow;
+        const action = installedProofActionOverrides.get(row.id);
+        const withAction = action ? { ...manifestRow, action } : manifestRow;
+        const hashRoute = installedProofHashRouteOverrides.get(row.id);
+        return hashRoute ? { ...withAction, hashRoute } : withAction;
       })
     );
     for (const skippedId of outOfScopeForMacControlRelease) {
