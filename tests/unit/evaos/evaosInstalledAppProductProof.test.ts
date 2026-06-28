@@ -376,10 +376,7 @@ describe('evaOS installed app product proof', () => {
       settledMarkers: ['Mac & iPhone', 'Boundary clean'],
     });
     expect(byId.get('mac-iphone')?.waitSelectors).toEqual(
-      expect.arrayContaining([
-        'body:has-text("Mac & iPhone")',
-        'body:has-text("Boundary clean")',
-      ])
+      expect.arrayContaining(['body:has-text("Mac & iPhone")', 'body:has-text("Boundary clean")'])
     );
     expect(byId.get('settings-about')?.waitSelectors).toContain('body:has-text("2fb812c12ddf")');
   });
@@ -817,7 +814,10 @@ describe('evaOS installed app product proof', () => {
         }
       }
       if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
-      if (command === '/bin/launchctl' && argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])) {
+      if (
+        command === '/bin/launchctl' &&
+        argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])
+      ) {
         return 'Bad request. Could not find service.';
       }
       throw new Error(`unexpected command ${command} ${args.join(' ')}`);
