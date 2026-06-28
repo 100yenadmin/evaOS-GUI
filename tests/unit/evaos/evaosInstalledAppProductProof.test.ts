@@ -523,6 +523,46 @@ describe('evaOS installed app product proof', () => {
     expect(calls.every((args) => args.at(-1) === '/Applications/evaOS Workbench.app/Contents/Info.plist')).toBe(true);
   });
 
+  it('falls back to XML plist parsing when PlistBuddy is unavailable', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-linux-plist-')), 'evaOS Workbench.app');
+    const contentsDir = path.join(appPath, 'Contents');
+    fs.mkdirSync(contentsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(contentsDir, 'Info.plist'),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        '<dict>',
+        '<key>CFBundleIdentifier</key><string>com.evaos.workbench</string>',
+        '<key>CFBundleName</key><string>evaOS Workbench</string>',
+        '<key>CFBundleVersion</key><string>2.1.23</string>',
+        '<key>CFBundleShortVersionString</key><string>2.1.23</string>',
+        '<key>CFBundleURLTypes</key>',
+        '<array><dict><key>CFBundleURLSchemes</key><array><string>evaos-workbench</string></array></dict></array>',
+        '</dict>',
+        '</plist>',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    const missingPlistBuddy = Object.assign(new Error('spawnSync /usr/libexec/PlistBuddy ENOENT'), {
+      code: 'ENOENT',
+      path: '/usr/libexec/PlistBuddy',
+    });
+    const fakeExec = () => {
+      throw missingPlistBuddy;
+    };
+
+    expect(installedAppProof.readInfoPlist(appPath, fakeExec)).toEqual({
+      bundleId: 'com.evaos.workbench',
+      bundleName: 'evaOS Workbench',
+      bundleVersion: '2.1.23',
+      shortVersion: '2.1.23',
+      protocolSchemes: ['evaos-workbench'],
+    });
+  });
+
   it('requires macOS plist versions to stay numeric while beta labels live in release metadata', () => {
     expect(() => installedAppProof.assertMacVersionString('2.1.23', 'CFBundleShortVersionString')).not.toThrow();
     expect(() => installedAppProof.assertMacBuildVersion('28121317549', 'CFBundleVersion')).not.toThrow();

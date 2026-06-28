@@ -88,6 +88,54 @@ function plistPathForApp(appPath) {
   return path.join(appPath, 'Contents', 'Info.plist');
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function decodePlistXmlValue(value) {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function plistXmlStringValue(xml, key) {
+  const pattern = new RegExp(`<key>\\s*${escapeRegExp(key)}\\s*<\\/key>\\s*<string>([\\s\\S]*?)<\\/string>`);
+  const match = String(xml || '').match(pattern);
+  if (!match) {
+    return '';
+  }
+  return decodePlistXmlValue(match[1].trim());
+}
+
+function plistXmlStringArrayValue(xml, key) {
+  const pattern = new RegExp(`<key>\\s*${escapeRegExp(key)}\\s*<\\/key>\\s*<array>([\\s\\S]*?)<\\/array>`);
+  const match = String(xml || '').match(pattern);
+  if (!match) {
+    return [];
+  }
+  return [...match[1].matchAll(/<string>([\s\S]*?)<\/string>/g)]
+    .map((entry) => decodePlistXmlValue(entry[1].trim()))
+    .filter(Boolean);
+}
+
+function readInfoPlistXmlFallback(appPath) {
+  const xml = fs.readFileSync(plistPathForApp(appPath), 'utf8');
+  return {
+    bundleId: plistXmlStringValue(xml, 'CFBundleIdentifier'),
+    bundleName: plistXmlStringValue(xml, 'CFBundleName'),
+    bundleVersion: plistXmlStringValue(xml, 'CFBundleVersion'),
+    shortVersion: plistXmlStringValue(xml, 'CFBundleShortVersionString'),
+    protocolSchemes: plistXmlStringArrayValue(xml, 'CFBundleURLSchemes'),
+  };
+}
+
+function isMissingPlistBuddyError(error) {
+  return error?.code === 'ENOENT' && String(error?.path || '').includes('PlistBuddy');
+}
+
 function plistPrint(appPath, key, execFileSyncImpl = execFileSync) {
   return String(
     execFileSyncImpl('/usr/libexec/PlistBuddy', ['-c', key, plistPathForApp(appPath)], { encoding: 'utf8' })
@@ -104,17 +152,24 @@ function parsePlistArrayOutput(output) {
 }
 
 function readInfoPlist(appPath, execFileSyncImpl = execFileSync) {
-  const schemes = parsePlistArrayOutput(
-    plistPrint(appPath, 'Print:CFBundleURLTypes:0:CFBundleURLSchemes', execFileSyncImpl)
-  );
+  try {
+    const schemes = parsePlistArrayOutput(
+      plistPrint(appPath, 'Print:CFBundleURLTypes:0:CFBundleURLSchemes', execFileSyncImpl)
+    );
 
-  return {
-    bundleId: plistPrint(appPath, 'Print:CFBundleIdentifier', execFileSyncImpl),
-    bundleName: plistPrint(appPath, 'Print:CFBundleName', execFileSyncImpl),
-    bundleVersion: plistPrint(appPath, 'Print:CFBundleVersion', execFileSyncImpl),
-    shortVersion: plistPrint(appPath, 'Print:CFBundleShortVersionString', execFileSyncImpl),
-    protocolSchemes: schemes,
-  };
+    return {
+      bundleId: plistPrint(appPath, 'Print:CFBundleIdentifier', execFileSyncImpl),
+      bundleName: plistPrint(appPath, 'Print:CFBundleName', execFileSyncImpl),
+      bundleVersion: plistPrint(appPath, 'Print:CFBundleVersion', execFileSyncImpl),
+      shortVersion: plistPrint(appPath, 'Print:CFBundleShortVersionString', execFileSyncImpl),
+      protocolSchemes: schemes,
+    };
+  } catch (error) {
+    if (!isMissingPlistBuddyError(error)) {
+      throw error;
+    }
+    return readInfoPlistXmlFallback(appPath);
+  }
 }
 
 function assertMacVersionString(value, label) {
