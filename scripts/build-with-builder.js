@@ -123,24 +123,35 @@ function removeThinShellExtraResources(configText) {
   const lines = configText.split(/\r?\n/);
   const output = [];
   let inExtraResources = false;
+  let extraResourcesIndent = 0;
   let pendingComments = [];
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const isTopLevelKey = /^[A-Za-z][A-Za-z0-9_-]*:/.test(line);
+    const lineIndent = line.match(/^(\s*)/)?.[1]?.length ?? 0;
+    const extraResourcesMatch = line.match(/^(\s*)extraResources:\s*(?:#.*)?$/);
 
     if (!inExtraResources) {
       output.push(line);
-      if (/^extraResources:\s*(?:#.*)?$/.test(line)) {
+      if (extraResourcesMatch) {
         inExtraResources = true;
+        extraResourcesIndent = extraResourcesMatch[1].length;
       }
       continue;
     }
 
-    if (isTopLevelKey && !/^extraResources:\s*(?:#.*)?$/.test(line)) {
+    if (extraResourcesMatch && lineIndent <= extraResourcesIndent) {
+      output.push(...pendingComments, line);
+      pendingComments = [];
+      extraResourcesIndent = extraResourcesMatch[1].length;
+      continue;
+    }
+
+    if (!/^\s*(?:#.*)?$/.test(line) && lineIndent <= extraResourcesIndent) {
       output.push(...pendingComments, line);
       pendingComments = [];
       inExtraResources = false;
+      extraResourcesIndent = 0;
       continue;
     }
 
@@ -258,6 +269,12 @@ function dmgExists(outDir) {
   } catch {
     return false;
   }
+}
+
+function isMacBuildTarget(builderArgs) {
+  if (builderArgs.includes('--mac') || builderArgs.includes('--all')) return true;
+  if (builderArgs.includes('--win') || builderArgs.includes('--linux')) return false;
+  return process.platform === 'darwin';
 }
 
 function tryRemoveDir(targetDir) {
@@ -552,6 +569,7 @@ try {
 
   const projectRoot = path.resolve(__dirname, '..');
   const isThinShell = packagingProfile === 'thin-shell';
+  const isMacBuild = isMacBuildTarget(builderArgs);
 
   // 5. Prepare runtime resources unless this is an explicit UI-only shell build.
   if (isThinShell) {
@@ -578,6 +596,13 @@ try {
 
     // Prepare hub resources (index.json + extension zips for offline fallback)
     execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });
+
+    if (isMacBuild) {
+      // Prepare evaOS desktop Bridge resources for packaged Workbench Mac-control proof.
+      execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env });
+    } else {
+      console.log('ℹ️  Non-macOS build target: skipping evaOS desktop Bridge resource preparation');
+    }
   }
 
   // 6. 运行 electron-builder 生成分发包（DMG/ZIP/EXE等）

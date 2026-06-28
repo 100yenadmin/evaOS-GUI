@@ -12,10 +12,33 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(__dirname, '../../..');
 const thinShellConfigPath = join(repoRoot, 'out/electron-builder.thin-shell.yml');
+const { RELEASE_ENV_FLAGS } = require(join(repoRoot, 'scripts/packagingProfile.js')) as {
+  RELEASE_ENV_FLAGS: string[];
+};
+const ambientBuildEnvKeys = [
+  ...RELEASE_ENV_FLAGS,
+  'AIONUI_MANAGED_RESOURCES_BUNDLE',
+  'appleId',
+  'APPLE_ID',
+  'EVAOS_DESKTOP_BRIDGE_ALLOW_PLACEHOLDER',
+  'EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL',
+  'EVAOS_DESKTOP_BRIDGE_SOURCE_DIR',
+  'EVAOS_DESKTOP_BRIDGE_SOURCE_REF',
+  'EVAOS_DESKTOP_BRIDGE_SOURCE_REPO',
+  'EVAOS_PACKAGING_PROFILE',
+];
 
 describe('build-with-builder', () => {
   function readJsonIfExists<T>(filePath: string, fallback: T): T {
     return existsSync(filePath) ? JSON.parse(readFileSync(filePath, 'utf8')) : fallback;
+  }
+
+  function sanitizedProcessEnv() {
+    const env = { ...process.env };
+    for (const key of ambientBuildEnvKeys) {
+      delete env[key];
+    }
+    return env;
   }
 
   function runBuildWithHook(args: string[], env: Record<string, string> = {}) {
@@ -92,7 +115,7 @@ childProcess.execSync = function mockedExecSync(command) {
       cwd: repoRoot,
       encoding: 'utf8',
       env: {
-        ...process.env,
+        ...sanitizedProcessEnv(),
         ...env,
         AIONUI_PREPARE_CALLS_FILE: callsPath,
         AIONUI_EXEC_CALLS_FILE: execCallsPath,
@@ -107,13 +130,15 @@ childProcess.execSync = function mockedExecSync(command) {
     {
       args: ['arm64', '--win', '--arm64'],
       expectedArch: 'arm64',
+      expectedBridgePrep: false,
     },
     {
       args: ['auto', '--mac', '--x64'],
       expectedArch: 'x64',
+      expectedBridgePrep: true,
     },
-  ])('prepares bundled AionCore for $expectedArch with args $args', ({ args, expectedArch }) => {
-    const { callsPath, result, tempDir } = runBuildWithHook(args);
+  ])('prepares bundled AionCore for $expectedArch with args $args', ({ args, expectedArch, expectedBridgePrep }) => {
+    const { callsPath, execCallsPath, result, tempDir } = runBuildWithHook(args);
 
     try {
       expect(result.status, result.stderr || result.stdout).toBe(0);
@@ -127,6 +152,17 @@ childProcess.execSync = function mockedExecSync(command) {
       );
       expect(result.stdout).toContain('AionCore prepared: resources/bundled-aioncore');
       expect(result.stdout).toContain('Managed resources bundle: full');
+
+      const execCalls = readJsonIfExists<string[]>(execCallsPath, []);
+      expect(execCalls).toContainEqual(expect.stringContaining('node scripts/prepareHubResources.js'));
+      if (expectedBridgePrep) {
+        expect(execCalls).toContainEqual(expect.stringContaining('node scripts/prepareEvaosDesktopBridgeResource.js'));
+      } else {
+        expect(execCalls).not.toContainEqual(
+          expect.stringContaining('node scripts/prepareEvaosDesktopBridgeResource.js')
+        );
+        expect(result.stdout).toContain('Non-macOS build target: skipping evaOS desktop Bridge resource preparation');
+      }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -171,6 +207,10 @@ childProcess.execSync = function mockedExecSync(command) {
 
       const execCalls = readJsonIfExists<string[]>(execCallsPath, []);
       expect(execCalls).toContainEqual(expect.stringContaining('--config out/electron-builder.thin-shell.yml'));
+      expect(execCalls).not.toContainEqual(expect.stringContaining('node scripts/prepareHubResources.js'));
+      expect(execCalls).not.toContainEqual(
+        expect.stringContaining('node scripts/prepareEvaosDesktopBridgeResource.js')
+      );
 
       const generatedConfig = readFileSync(thinShellConfigPath, 'utf8');
       expect(generatedConfig).not.toContain('from: resources/bundled-aioncore');

@@ -16,6 +16,11 @@ on:
         required: false
         default: true
         type: boolean
+      bridge_ref:
+        description: evaos-desktop-bridge ref to bundle
+        required: false
+        default: 207f6528461ecae51c39efd2654733c1b07d39a4
+        type: string
 
 concurrency:
   group: workbench-functional-smoke-${{ github.event.inputs.ref }}
@@ -30,6 +35,7 @@ env:
   EVAOS_FINALIZE_MAC_DMG: 'false'
   EVAOS_DMG_CODESIGN: 'false'
   ELECTRON_BUILDER_COMPRESSION_LEVEL: '1'
+  WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref }}
 
 jobs:
   macos-arm64-app:
@@ -106,25 +112,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/evaosBetaReleaseGate.js audit-config
-          node scripts/evaosUpstreamGuardrailAudit.js
+          if [ -f scripts/evaosBetaReleaseGate.js ] && [ -f packages/desktop/src/process/evaosBetaSafety.ts ]; then
+            node scripts/evaosBetaReleaseGate.js audit-config
+          else
+            echo "::notice::Skipping beta release config audit; beta safety guardrail source is absent on this ref."
+          fi
+          if [ -f scripts/evaosUpstreamGuardrailAudit.js ]; then
+            node scripts/evaosUpstreamGuardrailAudit.js
+          else
+            echo "::notice::Skipping upstream guardrail audit; script is absent on this ref."
+          fi
 
       - name: Verify bridge source access
         shell: bash
         env:
-          BRIDGE_SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
+          BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${BRIDGE_SOURCE_TOKEN:-}" ]; then
-            echo "::error::GH_TOKEN secret is required to fetch electricsheephq/evaos-desktop-bridge for functional smoke."
+            echo "::error::A private bridge source token is required to fetch electricsheephq/evaos-desktop-bridge for functional smoke."
             exit 1
           fi
 
       - name: Build unpacked app only
         shell: bash
         env:
-          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.GH_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          EVAOS_PACKAGING_PROFILE: functional-smoke
+          EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES: '1'
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ env.WORKBENCH_SMOKE_BRIDGE_REF }}
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN }}
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: |
           set -euo pipefail
@@ -157,7 +173,25 @@ jobs:
 
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          BRIDGE_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.version || m.commit || 'unknown')" "$BRIDGE_MANIFEST")"
+          if ! [[ "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::Workbench Functional Smoke requires a full 40-character Bridge commit SHA, got: $WORKBENCH_SMOKE_BRIDGE_REF"
+            exit 1
+          fi
+
+          BRIDGE_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const commit=m.sourceCommit || m.commit || ''; if (m.placeholder || !/^[0-9a-f]{40}$/i.test(commit)) process.exit(2); console.log(commit)" "$BRIDGE_MANIFEST")" || {
+            echo "::error::Bundled bridge manifest does not record a resolved 40-character source commit."
+            exit 1
+          }
+          BRIDGE_REQUESTED_REF="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.requestedSourceRef || '')" "$BRIDGE_MANIFEST")"
+
+          if [ "$BRIDGE_REQUESTED_REF" != "$WORKBENCH_SMOKE_BRIDGE_REF" ]; then
+            echo "::error::Bundled bridge requested ref ($BRIDGE_REQUESTED_REF) does not match workflow input ($WORKBENCH_SMOKE_BRIDGE_REF)"
+            exit 1
+          fi
+          if [ "$BRIDGE_VERSION" != "$WORKBENCH_SMOKE_BRIDGE_REF" ]; then
+            echo "::error::Bundled bridge resolved commit ($BRIDGE_VERSION) does not match workflow input ($WORKBENCH_SMOKE_BRIDGE_REF)"
+            exit 1
+          fi
 
           {
             echo "app_path=$APP_PATH"
@@ -175,9 +209,10 @@ jobs:
             echo "- Version: \`$VERSION\`"
             echo "- Bundle ID: \`$BUNDLE_ID\`"
             echo "- Bridge manifest: \`$BRIDGE_VERSION\`"
+            echo "- Requested bridge ref: \`$WORKBENCH_SMOKE_BRIDGE_REF\`"
             echo
-            echo "This artifact is intentionally unsigned/unnotarized and contains no DMG or release metadata."
-            echo "Use it for functional proof only. Public release still requires the normal signed/notarized gate."
+            echo "Functional Smoke may prove packaged runtime-resource shape and non-TCC functional wiring for the named artifact only."
+            echo "It does not prove release, TCC/permissions, signed identity, Mac-control closure, customer readiness, public updater/feed readiness, or final installed-app behavior."
             echo
             echo "### Size"
             echo '```'

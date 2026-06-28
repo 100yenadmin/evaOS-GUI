@@ -8,9 +8,17 @@ const {
   verifyModuleBinary,
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
-const { assertNonFullProfileNotRelease, readPackagingProfile } = require('./packagingProfile');
+const { assertNonFullProfileNotRelease, getTruthyReleaseFlags, readPackagingProfile } = require('./packagingProfile');
+const { defaultBridgeSourceRef } = require('./prepareEvaosDesktopBridgeResource');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 const MANAGED_RESOURCE_PATH_CANDIDATES = ['managed-resources', 'managed_resources'];
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
+const FULL_SHA_RE = /^[0-9a-f]{40}$/;
+const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+const MACHO_CPU_ARCHES = new Map([
+  [0x01000007, 'x64'],
+  [0x0100000c, 'arm64'],
+]);
 
 /**
  * afterPack hook for electron-builder
@@ -32,6 +40,22 @@ function requirePackagedResource(resourcesDir, relativePath, missing) {
   const absolutePath = path.join(resourcesDir, relativePath);
   if (!fs.existsSync(absolutePath)) {
     missing.push(relativePath);
+  }
+}
+
+function requireExecutableResource(resourcesDir, relativePath, missing) {
+  const absolutePath = path.join(resourcesDir, relativePath);
+  if (!fs.existsSync(absolutePath)) {
+    missing.push(relativePath);
+    return;
+  }
+  if (!fs.statSync(absolutePath).isFile()) {
+    throw new Error(`Packaged resource is not a file: ${relativePath}`);
+  }
+  try {
+    fs.accessSync(absolutePath, fs.constants.X_OK);
+  } catch {
+    throw new Error(`Packaged resource is not executable: ${relativePath}`);
   }
 }
 
@@ -113,12 +137,119 @@ function requireForbiddenManagedResourcesAbsent(runtimeDir, result, manifest, mi
   }
 }
 
-function readJsonFile(filePath) {
+function readJsonFile(filePath, description = 'JSON manifest') {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (error) {
-    throw new Error(`Packaged app has unreadable AionCore manifest: ${filePath} (${error.message})`);
+    throw new Error(`Packaged app has unreadable ${description}: ${filePath} (${error.message})`);
   }
+}
+
+function isTruthy(value) {
+  return TRUE_VALUES.has(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
+function shouldRequireRealBridge() {
+  return (
+    isTruthy(process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL) ||
+    isTruthy(process.env.EVAOS_BETA_PUBLIC_RELEASE) ||
+    isTruthy(process.env.EVAOS_BETA_REQUIRE_SIGNING) ||
+    getTruthyReleaseFlags(process.env).length > 0
+  );
+}
+
+function shouldRejectPlaceholderBridge(packagingProfile) {
+  return shouldRequireRealBridge() || packagingProfile === 'functional-smoke';
+}
+
+function expectedBridgeSourceRef() {
+  return String(process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef)
+    .trim()
+    .toLowerCase();
+}
+
+function verifyBridgeManifestSourceCommit(manifest) {
+  if (manifest.placeholder === true) return;
+
+  const expectedRef = expectedBridgeSourceRef();
+  const sourceCommit = String(manifest.sourceCommit || '')
+    .trim()
+    .toLowerCase();
+  if (!FULL_SHA_RE.test(expectedRef)) {
+    throw new Error(
+      `Packaged evaOS desktop bridge expected ref is not a full commit SHA: ${process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef}`
+    );
+  }
+  if (sourceCommit !== expectedRef) {
+    throw new Error(
+      `Packaged evaOS desktop bridge sourceCommit (${manifest.sourceCommit || 'missing'}) does not match expected ref ${expectedRef}.`
+    );
+  }
+}
+
+function isMachOExecutable(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+  try {
+    if (!fs.statSync(filePath).isFile()) return false;
+    fs.accessSync(filePath, fs.constants.X_OK);
+    const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
+    return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function readMachOArchitectures(filePath) {
+  const buffer = fs.readFileSync(filePath, { encoding: null, flag: 'r' });
+  if (buffer.length < 8) return [];
+  const magic = buffer.subarray(0, 4).toString('hex');
+  const architectures = new Set();
+
+  const addCpuType = (cpuType) => {
+    const arch = MACHO_CPU_ARCHES.get(cpuType);
+    if (arch) architectures.add(arch);
+  };
+
+  if (magic === 'feedface' || magic === 'feedfacf') {
+    addCpuType(buffer.readUInt32BE(4));
+  } else if (magic === 'cefaedfe' || magic === 'cffaedfe') {
+    addCpuType(buffer.readUInt32LE(4));
+  } else if (magic === 'cafebabe' || magic === 'cafebabf') {
+    const nfatArch = buffer.readUInt32BE(4);
+    const entrySize = magic === 'cafebabf' ? 32 : 20;
+    for (let index = 0; index < nfatArch; index += 1) {
+      const offset = 8 + index * entrySize;
+      if (offset + 4 > buffer.length) break;
+      addCpuType(buffer.readUInt32BE(offset));
+    }
+  }
+
+  return Array.from(architectures);
+}
+
+function requireMachOExecutable(filePath, relativePath) {
+  if (isMachOExecutable(filePath)) return;
+  throw new Error(`Release builds require ${relativePath} to be a native Mach-O executable: ${filePath}`);
+}
+
+function requireMachOExecutableForArch(filePath, relativePath, targetArch) {
+  requireMachOExecutable(filePath, relativePath);
+  const normalizedTargetArch = normalizeArch(targetArch);
+  const expectedArch =
+    normalizedTargetArch === 'x64' || normalizedTargetArch === 'arm64' ? normalizedTargetArch : undefined;
+  if (!expectedArch) return;
+
+  const architectures = readMachOArchitectures(filePath);
+  if (architectures.includes(expectedArch)) return;
+
+  const actual = architectures.length > 0 ? architectures.join(', ') : 'unknown';
+  throw new Error(
+    `Release builds require ${relativePath} to contain ${expectedArch} Mach-O code; found ${actual}: ${filePath}`
+  );
 }
 
 function verifyHubResources(resourcesDir, missing) {
@@ -131,6 +262,41 @@ function verifyHubResources(resourcesDir, missing) {
   } catch {
     missing.push('hub/');
   }
+}
+
+function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, packagingProfile, targetArch) {
+  if (electronPlatformName !== 'darwin') return;
+
+  const bridgeRelativePath = path.join('Bridge', 'evaos-desktop-bridge');
+  const peekabooRelativePath = path.join('Bridge', 'bin', 'peekaboo');
+  const helperRelativePath = path.join('Bridge', 'bin', 'evaos-connector-helper');
+  const manifestRelativePath = path.join('Bridge', 'manifest.json');
+  const manifestPath = path.join(resourcesDir, manifestRelativePath);
+  const missing = [];
+
+  requireExecutableResource(resourcesDir, bridgeRelativePath, missing);
+  requireExecutableResource(resourcesDir, peekabooRelativePath, missing);
+  requireExecutableResource(resourcesDir, helperRelativePath, missing);
+  requirePackagedResource(resourcesDir, manifestRelativePath, missing);
+
+  if (missing.length > 0) {
+    throw new Error(`Packaged app is missing required evaOS desktop bridge resource(s): ${missing.join(', ')}`);
+  }
+
+  const manifest = readJsonFile(manifestPath, 'evaOS desktop bridge manifest');
+  if (manifest.placeholder === true && shouldRejectPlaceholderBridge(packagingProfile)) {
+    throw new Error(
+      `Packaged evaOS desktop bridge is a diagnostic placeholder; EVAOS_PACKAGING_PROFILE=${packagingProfile} requires a real bridge.`
+    );
+  }
+  verifyBridgeManifestSourceCommit(manifest);
+
+  if (shouldRequireRealBridge()) {
+    requireMachOExecutableForArch(path.join(resourcesDir, peekabooRelativePath), peekabooRelativePath, targetArch);
+    requireMachOExecutableForArch(path.join(resourcesDir, helperRelativePath), helperRelativePath, targetArch);
+  }
+
+  console.log('   ✓ evaOS desktop bridge resource verified');
 }
 
 function requireManifestResourceShape(runtimeDir, manifest, key, missing) {
@@ -250,7 +416,7 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   verifyHubResources(resourcesDir, missing);
 
   if (missing.length === 0) {
-    const manifest = readJsonFile(manifestPath);
+    const manifest = readJsonFile(manifestPath, 'AionCore manifest');
     verifyManagedResourcesBundleManifest(runtimeDir, manifest, missing);
     requireManifestResourceShape(runtimeDir, manifest, 'managedResources', missing);
     requireManifestResourceShape(runtimeDir, manifest, 'managedNodeRuntime', missing);
@@ -324,6 +490,7 @@ module.exports = async function afterPack(context) {
       console.log('   ✓ thin-shell profile: bundled runtime resource verification intentionally skipped');
     } else {
       verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
+      verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, packagingProfile, targetArch);
     }
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);

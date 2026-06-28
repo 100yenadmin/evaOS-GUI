@@ -133,6 +133,9 @@ nsis:
   differentialPackage: false
 
 mac:
+  extraResources:
+    - from: resources/Bridge
+      to: Bridge
   target:
     - dmg
     - zip
