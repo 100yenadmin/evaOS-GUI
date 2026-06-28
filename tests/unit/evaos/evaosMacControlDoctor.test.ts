@@ -60,6 +60,10 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     supportAccount?: string;
     supportTarget?: string;
   }) => { id: string; status: string; reasonCode?: string; message?: string; evidencePath?: string };
+  runBridgeReadyGate: (
+    appPath: string,
+    options?: { timeout?: number }
+  ) => { id: string; status: string; reasonCode?: string; message?: string; data?: Record<string, unknown> };
   runVisibleAgentMacToolEvidenceGate: (evidence: unknown) => {
     id: string;
     status: string;
@@ -92,6 +96,19 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
 };
 
 describe('evaOS Mac control doctor', () => {
+  function writeFakeBridge(appPath: string, body: string, exitCode = 0): string {
+    const bridgeDir = path.join(appPath, 'Contents', 'Resources', 'Bridge');
+    fs.mkdirSync(bridgeDir, { recursive: true });
+    const bridgePath = path.join(bridgeDir, 'evaos-desktop-bridge');
+    fs.writeFileSync(
+      bridgePath,
+      ['#!/bin/sh', `cat <<'JSON'`, body, 'JSON', `exit ${exitCode}`, ''].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(bridgePath, 0o755);
+    return bridgePath;
+  }
+
   it('exposes the composed proof gate order including Computer Use product proof', () => {
     expect(doctor.GATE_IDS).toEqual([
       'installed_app_preflight',
@@ -287,6 +304,45 @@ describe('evaOS Mac control doctor', () => {
       id: 'computer_use_evidence',
       status: 'passed',
       evidencePath,
+    });
+  });
+
+  it('passes bridge readiness only for the ready v1 schema with ok and ready true', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
+
+    expect(doctor.runBridgeReadyGate(appPath)).toMatchObject({
+      id: 'bridge_ready',
+      status: 'passed',
+    });
+  });
+
+  it('fails bridge readiness on malformed JSON even when the bridge exits zero', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(appPath, 'not json');
+
+    expect(doctor.runBridgeReadyGate(appPath)).toMatchObject({
+      id: 'bridge_ready',
+      status: 'failed',
+      reasonCode: 'bridge_diagnostics_unavailable',
+    });
+  });
+
+  it('fails bridge readiness when ready schema reports not ready despite exit zero', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: false }));
+
+    const gate = doctor.runBridgeReadyGate(appPath);
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'failed',
+      reasonCode: 'bridge_diagnostics_unavailable',
+      data: {
+        readySchema: 'evaos.desktop_bridge.ready.v1',
+        readyOk: true,
+        readyState: false,
+      },
     });
   });
 
