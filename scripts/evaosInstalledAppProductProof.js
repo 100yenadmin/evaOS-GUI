@@ -213,8 +213,21 @@ function readProcessCommand(pid, execFileSyncImpl = execFileSync) {
   return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })).trim();
 }
 
+function readProcessExecutable(pid, execFileSyncImpl = execFileSync) {
+  return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf8' })).trim();
+}
+
 function readProcessParentPid(pid, execFileSyncImpl = execFileSync) {
   return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'ppid='], { encoding: 'utf8' })).trim();
+}
+
+function redactProcessCommand(command) {
+  if (!command) return command;
+  return String(command)
+    .replace(/(--host(?:=|\s+))\S+/g, '$1[redacted-host]')
+    .replace(/(--port(?:=|\s+))\S+/g, '$1[redacted-port]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[redacted-ip]')
+    .replace(/https?:\/\/\S+/g, '[redacted-url]');
 }
 
 function parseLsofFieldOutput(output, field) {
@@ -269,6 +282,7 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
       let cwd = null;
       let parentPid = null;
       let parentCommand = null;
+      let parentExecutable = null;
       try {
         cwd = readProcessCwd(pid, execFileSyncImpl);
       } catch {
@@ -277,20 +291,23 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
       try {
         parentPid = readProcessParentPid(pid, execFileSyncImpl);
         parentCommand = parentPid ? readProcessCommand(parentPid, execFileSyncImpl) : null;
+        parentExecutable = parentPid ? readProcessExecutable(parentPid, execFileSyncImpl) : null;
       } catch {
         parentPid = null;
         parentCommand = null;
+        parentExecutable = null;
       }
       const commandMatchesExpectedBridge = command.includes(expectedBridgePath);
       const workbenchChildMatchesExpectedBridge =
         Boolean(cwd && cwd === expectedBridgeRoot) &&
-        Boolean(expectedWorkbenchExecutable && parentCommand?.includes(expectedWorkbenchExecutable));
+        Boolean(expectedWorkbenchExecutable && parentExecutable === expectedWorkbenchExecutable);
       return {
         pid,
-        command,
+        command: redactProcessCommand(command),
         cwd,
         parentPid,
-        parentCommand,
+        parentCommand: redactProcessCommand(parentCommand),
+        parentExecutable,
         matchesExpectedBridge: commandMatchesExpectedBridge || workbenchChildMatchesExpectedBridge,
         ownershipSource: commandMatchesExpectedBridge
           ? 'process-command'

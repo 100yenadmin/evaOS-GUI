@@ -34,10 +34,23 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
       port: string;
       status: string;
       expectedBridgePath: string;
-      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean; ownershipSource?: string }>;
+      owners: Array<{
+        pid: string;
+        command: string | null;
+        cwd?: string | null;
+        parentPid?: string | null;
+        parentCommand?: string | null;
+        parentExecutable?: string | null;
+        matchesExpectedBridge: boolean;
+        ownershipSource?: string;
+      }>;
       staleOwners: Array<{
         pid: string;
         command: string | null;
+        cwd?: string | null;
+        parentPid?: string | null;
+        parentCommand?: string | null;
+        parentExecutable?: string | null;
         matchesExpectedBridge: boolean;
         ownershipSource?: string;
       }>;
@@ -136,10 +149,23 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
       port: string;
       status: string;
       expectedBridgePath: string;
-      owners: Array<{ pid: string; command: string | null; matchesExpectedBridge: boolean; ownershipSource?: string }>;
+      owners: Array<{
+        pid: string;
+        command: string | null;
+        cwd?: string | null;
+        parentPid?: string | null;
+        parentCommand?: string | null;
+        parentExecutable?: string | null;
+        matchesExpectedBridge: boolean;
+        ownershipSource?: string;
+      }>;
       staleOwners: Array<{
         pid: string;
         command: string | null;
+        cwd?: string | null;
+        parentPid?: string | null;
+        parentCommand?: string | null;
+        parentExecutable?: string | null;
         matchesExpectedBridge: boolean;
         ownershipSource?: string;
       }>;
@@ -365,7 +391,8 @@ describe('evaOS installed app product proof', () => {
 
     const byId = new Map(proofPlan.map((entry) => [entry.id, entry]));
     for (const skippedId of outOfScopeForMacControlRelease) {
-      expect(byId.has(skippedId)).toBe(false);
+      const skippedPlanId = GOLDEN_WORKBENCH_PARITY_MANIFEST.find((row) => row.id === skippedId)?.proofTarget.planId;
+      expect(skippedPlanId ? byId.has(skippedPlanId) : false).toBe(false);
     }
     expect(byId.get('mac-iphone')).toMatchObject({
       id: 'mac-iphone',
@@ -812,6 +839,9 @@ describe('evaOS installed app product proof', () => {
         if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
           return '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n';
         }
+        if (argsEqual(args, ['-p', '85316', '-o', 'comm='])) {
+          return '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n';
+        }
       }
       if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
       if (
@@ -829,13 +859,64 @@ describe('evaOS installed app product proof', () => {
     expect(state.bridgeListener.owners).toEqual([
       expect.objectContaining({
         pid: '44784',
+        command:
+          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host [redacted-host] --port [redacted-port]',
         cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
         parentPid: '85316',
+        parentCommand: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
+        parentExecutable: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
         matchesExpectedBridge: true,
         ownershipSource: 'workbench-child-cwd',
       }),
     ]);
     expect(state.bridgeListener.staleOwners).toEqual([]);
+  });
+
+  it('keeps a Workbench-mentioned wrapper parent stale when its executable is not the signed Workbench app', () => {
+    const fakeExec = (command: string, args: string[]): string => {
+      if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {
+        return '/Applications/evaOS Workbench.app\n';
+      }
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
+        return '44784\n';
+      }
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-a', '-p', '44784', '-d', 'cwd', '-Fn'])) {
+        return 'p44784\nn/Applications/evaOS Workbench.app/Contents/Resources/Bridge\n';
+      }
+      if (command === '/bin/ps') {
+        if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
+        if (argsEqual(args, ['-p', '44784', '-o', 'command='])) {
+          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host 100.64.0.4 --port 8765\n';
+        }
+        if (argsEqual(args, ['-p', '44784', '-o', 'ppid='])) return '85316\n';
+        if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
+          return '/bin/sh -c "/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench --pretend-parent"\n';
+        }
+        if (argsEqual(args, ['-p', '85316', '-o', 'comm='])) return '/bin/sh\n';
+      }
+      if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
+      if (
+        command === '/bin/launchctl' &&
+        argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])
+      ) {
+        return 'Bad request. Could not find service.';
+      }
+      throw new Error(`unexpected command ${command} ${args.join(' ')}`);
+    };
+
+    const state = installedAppProof.inspectDesktopProofState('/Applications/evaOS Workbench.app', fakeExec);
+
+    expect(state.staleBridgeListener).toBe(true);
+    expect(state.bridgeListener.staleOwners).toEqual([
+      expect.objectContaining({
+        pid: '44784',
+        command:
+          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host [redacted-host] --port [redacted-port]',
+        parentCommand: '/bin/sh -c "/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench --pretend-parent"',
+        parentExecutable: '/bin/sh',
+        matchesExpectedBridge: false,
+      }),
+    ]);
   });
 
   it('keeps the listener stale when launchd owns the expected bridge but a different PID listens', () => {

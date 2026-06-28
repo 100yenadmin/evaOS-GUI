@@ -29,8 +29,10 @@ const installedProofManifest = require('../../../scripts/evaosInstalledProofMani
     manifestRowId: string;
     id: string;
     route: string | undefined;
+    hashRoute?: string;
     screenshot: string;
     artifactName: string;
+    action?: string;
     closeoutState: string;
     settledMarkers: string[];
   }>;
@@ -170,9 +172,9 @@ describe('goldenWorkbenchParityManifest', () => {
       })
     );
     for (const skippedId of outOfScopeForMacControlRelease) {
-      expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST.map((row) => row.id)).not.toContain(
-        skippedId
-      );
+      expect(
+        installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST.map((row) => row.manifestRowId)
+      ).not.toContain(skippedId);
     }
   });
 
