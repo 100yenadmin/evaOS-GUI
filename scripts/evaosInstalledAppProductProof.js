@@ -22,6 +22,7 @@ const DEFAULT_TIMEOUT_MS = 25_000;
 const LSREGISTER_PATH =
   '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
 const LSREGISTER_DUMP_MAX_BUFFER = 64 * 1024 * 1024;
+const MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS = ['approvals', 'design-workspace', 'creative-studio'];
 
 const UNSAFE_PROOF_PATTERNS = [
   { name: 'desktop_session', pattern: /desktop_session/i },
@@ -213,6 +214,57 @@ function readProcessCommand(pid, execFileSyncImpl = execFileSync) {
   return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })).trim();
 }
 
+function readProcessExecutable(pid, execFileSyncImpl = execFileSync) {
+  return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf8' })).trim();
+}
+
+function readProcessParentPid(pid, execFileSyncImpl = execFileSync) {
+  return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'ppid='], { encoding: 'utf8' })).trim();
+}
+
+function redactProcessCommand(command) {
+  if (!command) return command;
+  return String(command)
+    .replace(/(--host(?:=|\s+))\S+/g, '$1[redacted-host]')
+    .replace(/(--port(?:=|\s+))\S+/g, '$1[redacted-port]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[redacted-ip]')
+    .replace(/https?:\/\/\S+/g, '[redacted-url]');
+}
+
+function commandLooksLikeBridgeServer(command, expectedBridgePath) {
+  const text = String(command || '');
+  return (
+    text.includes(expectedBridgePath) ||
+    /(?:^|\s)-m\s+evaos_desktop_bridge\.cli\s+serve(?:\s|$)/.test(text) ||
+    /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
+  );
+}
+
+function parseLsofFieldOutput(output, field) {
+  const prefix = String(field || '').slice(0, 1);
+  return (
+    String(output || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.startsWith(prefix)) || ''
+  ).slice(1);
+}
+
+function readProcessCwd(pid, execFileSyncImpl = execFileSync) {
+  const output = execFileSyncImpl('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+    encoding: 'utf8',
+  });
+  return parseLsofFieldOutput(output, 'n') || null;
+}
+
+function expectedWorkbenchExecutableForBridgePath(expectedBridgePath) {
+  const marker = '/Contents/Resources/Bridge/';
+  const markerIndex = expectedBridgePath.indexOf(marker);
+  if (markerIndex === -1) return null;
+  const appPath = expectedBridgePath.slice(0, markerIndex);
+  return installedExecutablePath(appPath);
+}
+
 function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFileSync) {
   let pids = [];
   try {
@@ -235,10 +287,45 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
   const owners = pids.map((pid) => {
     try {
       const command = readProcessCommand(pid, execFileSyncImpl);
+      const expectedBridgeRoot = path.dirname(expectedBridgePath);
+      const expectedWorkbenchExecutable = expectedWorkbenchExecutableForBridgePath(expectedBridgePath);
+      let cwd = null;
+      let parentPid = null;
+      let parentCommand = null;
+      let parentExecutable = null;
+      try {
+        cwd = readProcessCwd(pid, execFileSyncImpl);
+      } catch {
+        cwd = null;
+      }
+      try {
+        parentPid = readProcessParentPid(pid, execFileSyncImpl);
+        parentCommand = parentPid ? readProcessCommand(parentPid, execFileSyncImpl) : null;
+        parentExecutable = parentPid ? readProcessExecutable(parentPid, execFileSyncImpl) : null;
+      } catch {
+        parentPid = null;
+        parentCommand = null;
+        parentExecutable = null;
+      }
+      const commandMatchesExpectedBridgePath = command.includes(expectedBridgePath);
+      const commandMatchesBridgeServer = commandLooksLikeBridgeServer(command, expectedBridgePath);
+      const workbenchChildMatchesExpectedBridge =
+        Boolean(cwd && cwd === expectedBridgeRoot) &&
+        Boolean(expectedWorkbenchExecutable && parentExecutable === expectedWorkbenchExecutable) &&
+        commandMatchesBridgeServer;
       return {
         pid,
-        command,
-        matchesExpectedBridge: command.includes(expectedBridgePath),
+        command: redactProcessCommand(command),
+        cwd,
+        parentPid,
+        parentCommand: redactProcessCommand(parentCommand),
+        parentExecutable,
+        matchesExpectedBridge: commandMatchesExpectedBridgePath || workbenchChildMatchesExpectedBridge,
+        ownershipSource: commandMatchesExpectedBridgePath
+          ? 'process-command'
+          : workbenchChildMatchesExpectedBridge
+            ? 'workbench-child-cwd'
+            : undefined,
       };
     } catch (error) {
       return {
@@ -630,7 +717,7 @@ function normalizeInstalledProofEntries(plan, options = {}) {
 
   return sourcePlan.map((entry) => {
     const screenshotEntry = screenshotEntriesById.get(entry.id);
-    const baseWaitSelectors = isCustomPlan ? entry.waitSelectors || [] : screenshotEntry?.waitSelectors || [];
+    const baseWaitSelectors = Array.isArray(entry.waitSelectors) ? entry.waitSelectors : [];
     const settledMarkers = Array.isArray(entry.settledMarkers)
       ? [...entry.settledMarkers]
       : baseWaitSelectors.map(normalizeWaitSelector).map(markerFromWaitSelector).filter(Boolean);
@@ -651,9 +738,10 @@ function normalizeInstalledProofEntries(plan, options = {}) {
       manifestRowId: entry.manifestRowId || entry.id,
       id: entry.id,
       route: entry.route,
+      hashRoute: entry.hashRoute,
       screenshot: entry.screenshot,
       artifactName: entry.artifactName || `screenshots/${entry.screenshot}`,
-      action: entry.action || (isCustomPlan ? undefined : screenshotEntry?.action),
+      action: entry.action,
       closeoutState: entry.closeoutState || 'loaded',
       settledMarkers,
       waitSelectors,
@@ -674,8 +762,10 @@ function buildInstalledProofPreflightPlan(options = {}) {
       manifestRowId: 'exact-candidate-preflight',
       id: 'settings-about-current-candidate',
       route: '/settings/about',
+      hashRoute: '/settings/model',
       screenshot: 'preflight-settings-about.png',
       artifactName: 'screenshots/preflight-settings-about.png',
+      action: 'click-settings-about',
       closeoutState: 'loaded',
       settledMarkers,
       waitSelectors: settledMarkers.map(markerSelector),
@@ -727,6 +817,12 @@ function safeReportForPlan(options) {
     bundleInfo: options.bundleInfo,
     desktopProofState: options.desktopProofState || null,
     installedAppTrustState: options.installedAppTrustState || null,
+    proofScope: {
+      claim: 'mac-control-scoped installed app proof',
+      supportDiagnostics: 'enabled-by-harness-for-native-companion-matrix',
+      includedRows: plan.map((entry) => entry.manifestRowId || entry.id),
+      outOfScopeRows: [...MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS],
+    },
     screenshots: plan.map((entry) => ({
       id: entry.id,
       route: entry.route,
@@ -835,6 +931,9 @@ function markdownForInstalledProof(report) {
 }
 
 function takeoverMarkdown(report) {
+  const includedRows = report.proofScope?.includedRows || [];
+  const outOfScopeRows = report.proofScope?.outOfScopeRows || MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS;
+
   return [
     '# Takeover',
     '',
@@ -844,7 +943,15 @@ function takeoverMarkdown(report) {
     `EVAOS_INSTALLED_APP_PROOF_EXPECTED_HEAD=${report.expectedHead} npm run evaos:installed-app-proof`,
     '```',
     '',
-    'A pass means the installed app bundle identity matched, the About page exposed the expected commit, and every golden Workbench parity row reached its required loaded, denied, or repair state before screenshot capture.',
+    'A pass means the installed app bundle identity matched, the About page exposed the expected commit, and each Mac-control-scoped installed proof row listed below reached its required loaded, denied, waived, or repair state before screenshot capture.',
+    '',
+    `Scoped rows: ${includedRows.map((id) => `\`${id}\``).join(', ') || '`none`'}.`,
+    '',
+    `Support diagnostics: \`${report.proofScope?.supportDiagnostics || 'not recorded'}\`.`,
+    '',
+    `Intentionally out of scope for this proof: ${outOfScopeRows.map((id) => `\`${id}\``).join(', ') || '`none`'}.`,
+    '',
+    'This takeover packet still does not prove visible first-party agent Mac-control tool calls, public updater/site distribution, unrelated customer VMs, or customer readiness.',
     '',
   ].join('\n');
 }
@@ -892,6 +999,15 @@ async function resolveMainWindow(electronApp) {
   throw new Error('Failed to resolve installed app renderer window.');
 }
 
+async function enableSupportDiagnosticsForProof(page, timeout = DEFAULT_TIMEOUT_MS) {
+  await page.evaluate(() => {
+    window.localStorage?.setItem('evaos.supportDiagnostics', '1');
+  });
+  await page.waitForFunction(() => window.localStorage?.getItem('evaos.supportDiagnostics') === '1', undefined, {
+    timeout,
+  });
+}
+
 async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
   if (!action) return;
 
@@ -907,14 +1023,23 @@ async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
     return;
   }
 
+  if (action === 'click-settings-about') {
+    const aboutTab = page.getByText('About', { exact: true }).first();
+    await aboutTab.waitFor({ state: 'visible', timeout });
+    await aboutTab.click();
+    await page.waitForFunction(() => window.location.hash === '#/settings/about', undefined, { timeout });
+    return;
+  }
+
   throw new Error(`Installed app proof action is not allowlisted: ${action}`);
 }
 
 async function captureProofEntry(page, entry, artifactRoot, timeout) {
-  const expectedHash = entry.route.startsWith('#') ? entry.route : `#${entry.route}`;
+  const navigationRoute = entry.hashRoute || entry.route;
+  const expectedHash = navigationRoute.startsWith('#') ? navigationRoute : `#${navigationRoute}`;
   await page.evaluate((route) => {
     window.location.hash = route.startsWith('#') ? route : `#${route}`;
-  }, entry.route);
+  }, navigationRoute);
   await page.waitForFunction((hash) => window.location.hash === hash, expectedHash, { timeout });
   await page.waitForLoadState('domcontentloaded');
   await runProofPlanAction(page, entry.action, timeout);
@@ -930,6 +1055,7 @@ async function captureProofEntry(page, entry, artifactRoot, timeout) {
     id: entry.id,
     manifestRowId: entry.manifestRowId,
     route: entry.route,
+    hashRoute: entry.hashRoute,
     screenshot: entry.artifactName,
     artifactName: entry.artifactName,
     closeoutState: entry.closeoutState,
@@ -1077,6 +1203,7 @@ async function captureInstalledAppProof(options = {}) {
   try {
     const page = await resolveMainWindow(electronApp);
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await enableSupportDiagnosticsForProof(page, timeout);
 
     for (const entry of preflightPlan) {
       try {
@@ -1119,6 +1246,12 @@ async function captureInstalledAppProof(options = {}) {
     installedAppTrustState,
     desktopProofState,
     protocolHandler,
+    proofScope: {
+      claim: 'mac-control-scoped installed app proof',
+      supportDiagnostics: 'enabled-by-harness-for-native-companion-matrix',
+      includedRows: proofPlan.map((entry) => entry.manifestRowId || entry.id),
+      outOfScopeRows: [...MAC_CONTROL_OUT_OF_SCOPE_PARITY_ROWS],
+    },
     screenshots,
     preflightAssertions,
     parityAssertions: screenshots.map((entry) => ({

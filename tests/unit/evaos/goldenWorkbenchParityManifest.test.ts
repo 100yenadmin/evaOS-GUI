@@ -29,8 +29,10 @@ const installedProofManifest = require('../../../scripts/evaosInstalledProofMani
     manifestRowId: string;
     id: string;
     route: string | undefined;
+    hashRoute?: string;
     screenshot: string;
     artifactName: string;
+    action?: string;
     closeoutState: string;
     settledMarkers: string[];
   }>;
@@ -138,17 +140,50 @@ describe('goldenWorkbenchParityManifest', () => {
       settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => [entry.id, entry])
     );
 
-    expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST).toEqual(
-      GOLDEN_WORKBENCH_PARITY_MANIFEST.map((row) => ({
-        manifestRowId: row.id,
-        id: row.proofTarget.planId,
-        route: row.expectedRoute || screenshotPlanById.get(row.proofTarget.planId)?.route,
-        screenshot: row.proofTarget.screenshot,
-        artifactName: row.proofTarget.artifactName,
-        closeoutState: row.proofTarget.closeoutState,
-        settledMarkers: [...row.proofTarget.settledMarkers],
-      }))
+    const outOfScopeForMacControlRelease = new Set(['approvals', 'design-workspace', 'creative-studio']);
+    const installedProofMarkerOverrides = new Map([
+      ['connected-apps', ['Connected Apps', 'Customer context']],
+      ['people-access', ['People & Access', 'Customer context']],
+      ['company-brain', ['Company Brain', 'Website handoff', 'Open dashboard']],
+      ['evaos-dashboard', ['evaOS']],
+      ['hermes-dashboard', ['Hermes']],
+      ['mission-control', ['Mission Control']],
+      ['native-companion', ['Mac & iPhone', 'Mac control', 'Native companion status matrix', 'Boundary clean']],
+    ]);
+    const installedProofActionOverrides = new Map([
+      ['native-companion', 'click-native-companion-advanced-diagnostics'],
+      ['branding', 'click-settings-about'],
+    ]);
+    const installedProofHashRouteOverrides = new Map([
+      ['home', '/guid'],
+      ['branding', '/settings/model'],
+    ]);
+    const installedProofRows = GOLDEN_WORKBENCH_PARITY_MANIFEST.filter(
+      (row) => !outOfScopeForMacControlRelease.has(row.id)
     );
+
+    expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST).toEqual(
+      installedProofRows.map((row) => {
+        const manifestRow = {
+          manifestRowId: row.id,
+          id: row.proofTarget.planId,
+          route: row.expectedRoute || screenshotPlanById.get(row.proofTarget.planId)?.route,
+          screenshot: row.proofTarget.screenshot,
+          artifactName: row.proofTarget.artifactName,
+          closeoutState: row.proofTarget.closeoutState,
+          settledMarkers: installedProofMarkerOverrides.get(row.id) || [...row.proofTarget.settledMarkers],
+        };
+        const action = installedProofActionOverrides.get(row.id);
+        const withAction = action ? { ...manifestRow, action } : manifestRow;
+        const hashRoute = installedProofHashRouteOverrides.get(row.id);
+        return hashRoute ? { ...withAction, hashRoute } : withAction;
+      })
+    );
+    for (const skippedId of outOfScopeForMacControlRelease) {
+      expect(
+        installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST.map((row) => row.manifestRowId)
+      ).not.toContain(skippedId);
+    }
   });
 
   it('tracks hidden RC routes separately from visible Workbench navigation labels', () => {
