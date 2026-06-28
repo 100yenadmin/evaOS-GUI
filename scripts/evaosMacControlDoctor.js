@@ -190,8 +190,15 @@ function failedGate(id, reasonCode, message, details = {}) {
   return makeGate(id, 'failed', { ...details, reasonCode, message });
 }
 
+function resolveCommandShell() {
+  for (const candidate of ['/bin/zsh', '/usr/bin/zsh', '/bin/bash', '/usr/bin/bash']) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return process.env.SHELL || '/bin/sh';
+}
+
 function runShellCommand(command, options = {}) {
-  const result = spawnSync('/bin/zsh', ['-lc', command], {
+  const result = spawnSync(resolveCommandShell(), ['-lc', command], {
     cwd: options.cwd || path.resolve(__dirname, '..'),
     encoding: 'utf8',
     timeout: options.timeout || DEFAULT_TIMEOUT_MS,
