@@ -153,6 +153,11 @@ export type IEvaosNativeCompanionAgentPairingStatus =
   | 'pairing_prompt_created'
   | 'agent_paired'
   | 'proof_failed';
+export type IEvaosNativeCompanionRuntimeToolReadiness =
+  | 'not_ready'
+  | 'pairing_ready'
+  | 'tools_ready'
+  | 'proof_failed';
 export type IEvaosNativeCompanionStatusValue =
   | 'ready'
   | 'available'
@@ -189,6 +194,7 @@ export interface IEvaosNativeCompanionStatusView {
   generatedAt: string;
   readiness: IEvaosNativeCompanionReadiness;
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
+  runtimeToolReadiness?: IEvaosNativeCompanionRuntimeToolReadiness;
   pairingCapable?: boolean;
   pairingBlockedReason?: IEvaosMacControlBlockerReason;
   blockerReason?: IEvaosMacControlBlockerReason;

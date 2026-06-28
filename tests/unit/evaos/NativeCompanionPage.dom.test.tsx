@@ -276,7 +276,7 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     const { container } = renderNativeCompanion();
 
-    expect(await screen.findByText('Mac control is ready')).toBeInTheDocument();
+    expect(await screen.findByText('Mac control ready to connect')).toBeInTheDocument();
     expect(screen.getByText(/Local Workbench connector proof is ready/i)).toBeInTheDocument();
     expect(screen.getAllByText('Connect Mac control').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Connect Mac Control' })).toBeInTheDocument();

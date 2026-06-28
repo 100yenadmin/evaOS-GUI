@@ -138,7 +138,7 @@ function titleForState(
   if (secureConnectorLinkRequired(status)) return 'Connect secure Mac link';
   switch (state) {
     case 'ready':
-      return 'Mac control is ready';
+      return runtimeToolsReady(status) ? 'Mac control is ready' : 'Mac control ready to connect';
     case 'not_paired':
       return 'Pair this Mac';
     case 'permission_needed':
@@ -237,10 +237,7 @@ function repairStepsForState(
     {
       title: 'Test Mac control',
       detail: 'Run a setup check and one approved low-impact action from evaOS/OpenClaw and Hermes.',
-      state:
-        state === 'ready' && normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired'
-          ? 'ready'
-          : 'neutral',
+      state: state === 'ready' && runtimeToolsReady(status) ? 'ready' : 'neutral',
     },
     {
       title: 'Stop or revoke access',
@@ -647,7 +644,7 @@ function pairingTone(
 ): NativeCompanionTone {
   if (state === 'offline' || state === 'unsupported') return 'offline';
   if (state !== 'ready') return 'attention';
-  return normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired' ? 'ready' : 'attention';
+  return runtimeToolsReady(status) ? 'ready' : 'attention';
 }
 
 function normalizeAgentPairingStatus(
@@ -663,6 +660,13 @@ function effectiveAgentPairingStatus(
   if (actionResult?.agentPairingStatus) return actionResult.agentPairingStatus;
   if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
   return normalizeAgentPairingStatus(status?.agentPairingStatus);
+}
+
+function runtimeToolsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  return (
+    status?.runtimeToolReadiness === 'tools_ready' ||
+    normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired'
+  );
 }
 
 function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
