@@ -339,6 +339,16 @@ function parseJsonMaybe(text) {
   }
 }
 
+function isBridgeReadyPayload(payload) {
+  return (
+    payload &&
+    typeof payload === 'object' &&
+    payload.schema === 'evaos.desktop_bridge.ready.v1' &&
+    payload.ok === true &&
+    payload.ready === true
+  );
+}
+
 function jsonCandidatesFromText(text) {
   const candidates = [];
   const trimmed = String(text || '').trim();
@@ -579,7 +589,7 @@ function runBridgeReadyGate(appPath, options = {}) {
   const stdout = sanitizeText(result.stdout || '').slice(0, MAX_COMMAND_OUTPUT);
   const stderr = sanitizeText(result.stderr || '').slice(0, MAX_COMMAND_OUTPUT);
   const parsed = parseJsonMaybe(result.stdout || '');
-  const ok = result.status === 0 && !result.signal && parsed?.ok !== false;
+  const ok = result.status === 0 && !result.signal && isBridgeReadyPayload(parsed);
 
   if (ok) {
     return passedGate('bridge_ready', 'Bundled bridge /ready check passed.', {
@@ -596,6 +606,9 @@ function runBridgeReadyGate(appPath, options = {}) {
       stdout,
       stderr,
       error: result.error ? sanitizeText(result.error.message) : undefined,
+      readySchema: parsed && typeof parsed === 'object' ? parsed.schema : undefined,
+      readyOk: parsed && typeof parsed === 'object' ? parsed.ok : undefined,
+      readyState: parsed && typeof parsed === 'object' ? parsed.ready : undefined,
       ready: sanitizeValue(parsed),
     },
   });
@@ -1249,6 +1262,7 @@ module.exports = {
   overallStatus,
   parseArgs,
   renderMarkdown,
+  runBridgeReadyGate,
   runConfiguredCommandGate,
   runComputerUseEvidenceGate,
   runMacControlDoctor,
