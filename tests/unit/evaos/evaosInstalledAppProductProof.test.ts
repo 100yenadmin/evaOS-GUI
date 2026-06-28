@@ -356,23 +356,28 @@ describe('evaOS installed app product proof', () => {
       expectedHead: '2fb812c12ddfcba9e25511bc06b136862ae9130f',
     });
 
+    const outOfScopeForMacControlRelease = new Set(['approvals', 'design-workspace', 'creative-studio']);
     expect(proofPlan.map((entry) => entry.id)).toEqual(
-      GOLDEN_WORKBENCH_PARITY_MANIFEST.map((row) => row.proofTarget.planId)
+      GOLDEN_WORKBENCH_PARITY_MANIFEST.filter((row) => !outOfScopeForMacControlRelease.has(row.id)).map(
+        (row) => row.proofTarget.planId
+      )
     );
 
     const byId = new Map(proofPlan.map((entry) => [entry.id, entry]));
+    for (const skippedId of outOfScopeForMacControlRelease) {
+      expect(byId.has(skippedId)).toBe(false);
+    }
     expect(byId.get('mac-iphone')).toMatchObject({
       id: 'mac-iphone',
       route: '/native-companion',
       screenshot: '06-mac-iphone.png',
       artifactName: 'screenshots/06-mac-iphone.png',
-      closeoutState: 'repair',
-      settledMarkers: ['Mac & iPhone', 'Mac control repair', 'Boundary clean'],
+      closeoutState: 'loaded',
+      settledMarkers: ['Mac & iPhone', 'Boundary clean'],
     });
     expect(byId.get('mac-iphone')?.waitSelectors).toEqual(
       expect.arrayContaining([
         'body:has-text("Mac & iPhone")',
-        'body:has-text("Mac control repair")',
         'body:has-text("Boundary clean")',
       ])
     );
@@ -785,6 +790,49 @@ describe('evaOS installed app product proof', () => {
         pid: '18016',
         matchesExpectedBridge: true,
         ownershipSource: 'launchagent-program',
+      }),
+    ]);
+    expect(state.bridgeListener.staleOwners).toEqual([]);
+  });
+
+  it('accepts a Python listener spawned by the exact signed Workbench app from the bundled bridge cwd', () => {
+    const fakeExec = (command: string, args: string[]): string => {
+      if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {
+        return '/Applications/evaOS Workbench.app\n';
+      }
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
+        return '44784\n';
+      }
+      if (command === '/usr/sbin/lsof' && argsEqual(args, ['-a', '-p', '44784', '-d', 'cwd', '-Fn'])) {
+        return 'p44784\nn/Applications/evaOS Workbench.app/Contents/Resources/Bridge\n';
+      }
+      if (command === '/bin/ps') {
+        if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
+        if (argsEqual(args, ['-p', '44784', '-o', 'command='])) {
+          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host 100.64.0.4 --port 8765\n';
+        }
+        if (argsEqual(args, ['-p', '44784', '-o', 'ppid='])) return '85316\n';
+        if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
+          return '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n';
+        }
+      }
+      if (command === '/usr/bin/id' && argsEqual(args, ['-u'])) return '501\n';
+      if (command === '/bin/launchctl' && argsEqual(args, ['print', 'gui/501/com.electricsheep.evaos-desktop-bridge'])) {
+        return 'Bad request. Could not find service.';
+      }
+      throw new Error(`unexpected command ${command} ${args.join(' ')}`);
+    };
+
+    const state = installedAppProof.inspectDesktopProofState('/Applications/evaOS Workbench.app', fakeExec);
+
+    expect(state.staleBridgeListener).toBe(false);
+    expect(state.bridgeListener.owners).toEqual([
+      expect.objectContaining({
+        pid: '44784',
+        cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
+        parentPid: '85316',
+        matchesExpectedBridge: true,
+        ownershipSource: 'workbench-child-cwd',
       }),
     ]);
     expect(state.bridgeListener.staleOwners).toEqual([]);

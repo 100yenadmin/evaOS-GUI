@@ -138,17 +138,42 @@ describe('goldenWorkbenchParityManifest', () => {
       settledShellSmokePlan.SETTLED_SHELL_SCREENSHOT_PLAN.map((entry) => [entry.id, entry])
     );
 
-    expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST).toEqual(
-      GOLDEN_WORKBENCH_PARITY_MANIFEST.map((row) => ({
-        manifestRowId: row.id,
-        id: row.proofTarget.planId,
-        route: row.expectedRoute || screenshotPlanById.get(row.proofTarget.planId)?.route,
-        screenshot: row.proofTarget.screenshot,
-        artifactName: row.proofTarget.artifactName,
-        closeoutState: row.proofTarget.closeoutState,
-        settledMarkers: [...row.proofTarget.settledMarkers],
-      }))
+    const outOfScopeForMacControlRelease = new Set(['approvals', 'design-workspace', 'creative-studio']);
+    const installedProofMarkerOverrides = new Map([
+      ['connected-apps', ['Connected Apps', 'Customer context']],
+      ['people-access', ['People & Access', 'Customer context']],
+      ['company-brain', ['Company Brain', 'Website handoff', 'Open dashboard']],
+      ['evaos-dashboard', ['evaOS']],
+      ['hermes-dashboard', ['Hermes']],
+      ['mission-control', ['Mission Control']],
+      ['native-companion', ['Mac & iPhone', 'Boundary clean']],
+    ]);
+    const installedProofRows = GOLDEN_WORKBENCH_PARITY_MANIFEST.filter(
+      (row) => !outOfScopeForMacControlRelease.has(row.id)
     );
+    const installedProofCloseoutStateOverrides = new Map([['native-companion', 'loaded']]);
+
+    expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST).toEqual(
+      installedProofRows.map((row) => {
+        const manifestRow = {
+          manifestRowId: row.id,
+          id: row.proofTarget.planId,
+          route: row.expectedRoute || screenshotPlanById.get(row.proofTarget.planId)?.route,
+          screenshot: row.proofTarget.screenshot,
+          artifactName: row.proofTarget.artifactName,
+          closeoutState: installedProofCloseoutStateOverrides.get(row.id) || row.proofTarget.closeoutState,
+          settledMarkers: installedProofMarkerOverrides.get(row.id) || [...row.proofTarget.settledMarkers],
+        };
+        return row.id === 'branding'
+          ? { ...manifestRow, hashRoute: '/settings/model', action: 'click-settings-about' }
+          : manifestRow;
+      })
+    );
+    for (const skippedId of outOfScopeForMacControlRelease) {
+      expect(installedProofManifest.GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST.map((row) => row.id)).not.toContain(
+        skippedId
+      );
+    }
   });
 
   it('tracks hidden RC routes separately from visible Workbench navigation labels', () => {

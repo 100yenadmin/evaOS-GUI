@@ -213,6 +213,35 @@ function readProcessCommand(pid, execFileSyncImpl = execFileSync) {
   return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })).trim();
 }
 
+function readProcessParentPid(pid, execFileSyncImpl = execFileSync) {
+  return String(execFileSyncImpl('/bin/ps', ['-p', String(pid), '-o', 'ppid='], { encoding: 'utf8' })).trim();
+}
+
+function parseLsofFieldOutput(output, field) {
+  const prefix = String(field || '').slice(0, 1);
+  return (
+    String(output || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.startsWith(prefix)) || ''
+  ).slice(1);
+}
+
+function readProcessCwd(pid, execFileSyncImpl = execFileSync) {
+  const output = execFileSyncImpl('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+    encoding: 'utf8',
+  });
+  return parseLsofFieldOutput(output, 'n') || null;
+}
+
+function expectedWorkbenchExecutableForBridgePath(expectedBridgePath) {
+  const marker = '/Contents/Resources/Bridge/';
+  const markerIndex = expectedBridgePath.indexOf(marker);
+  if (markerIndex === -1) return null;
+  const appPath = expectedBridgePath.slice(0, markerIndex);
+  return installedExecutablePath(appPath);
+}
+
 function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFileSync) {
   let pids = [];
   try {
@@ -235,10 +264,39 @@ function readBridgeListenerState(expectedBridgePath, execFileSyncImpl = execFile
   const owners = pids.map((pid) => {
     try {
       const command = readProcessCommand(pid, execFileSyncImpl);
+      const expectedBridgeRoot = path.dirname(expectedBridgePath);
+      const expectedWorkbenchExecutable = expectedWorkbenchExecutableForBridgePath(expectedBridgePath);
+      let cwd = null;
+      let parentPid = null;
+      let parentCommand = null;
+      try {
+        cwd = readProcessCwd(pid, execFileSyncImpl);
+      } catch {
+        cwd = null;
+      }
+      try {
+        parentPid = readProcessParentPid(pid, execFileSyncImpl);
+        parentCommand = parentPid ? readProcessCommand(parentPid, execFileSyncImpl) : null;
+      } catch {
+        parentPid = null;
+        parentCommand = null;
+      }
+      const commandMatchesExpectedBridge = command.includes(expectedBridgePath);
+      const workbenchChildMatchesExpectedBridge =
+        Boolean(cwd && cwd === expectedBridgeRoot) &&
+        Boolean(expectedWorkbenchExecutable && parentCommand?.includes(expectedWorkbenchExecutable));
       return {
         pid,
         command,
-        matchesExpectedBridge: command.includes(expectedBridgePath),
+        cwd,
+        parentPid,
+        parentCommand,
+        matchesExpectedBridge: commandMatchesExpectedBridge || workbenchChildMatchesExpectedBridge,
+        ownershipSource: commandMatchesExpectedBridge
+          ? 'process-command'
+          : workbenchChildMatchesExpectedBridge
+            ? 'workbench-child-cwd'
+            : undefined,
       };
     } catch (error) {
       return {
@@ -630,7 +688,7 @@ function normalizeInstalledProofEntries(plan, options = {}) {
 
   return sourcePlan.map((entry) => {
     const screenshotEntry = screenshotEntriesById.get(entry.id);
-    const baseWaitSelectors = isCustomPlan ? entry.waitSelectors || [] : screenshotEntry?.waitSelectors || [];
+    const baseWaitSelectors = Array.isArray(entry.waitSelectors) ? entry.waitSelectors : [];
     const settledMarkers = Array.isArray(entry.settledMarkers)
       ? [...entry.settledMarkers]
       : baseWaitSelectors.map(normalizeWaitSelector).map(markerFromWaitSelector).filter(Boolean);
@@ -651,9 +709,10 @@ function normalizeInstalledProofEntries(plan, options = {}) {
       manifestRowId: entry.manifestRowId || entry.id,
       id: entry.id,
       route: entry.route,
+      hashRoute: entry.hashRoute,
       screenshot: entry.screenshot,
       artifactName: entry.artifactName || `screenshots/${entry.screenshot}`,
-      action: entry.action || (isCustomPlan ? undefined : screenshotEntry?.action),
+      action: entry.action,
       closeoutState: entry.closeoutState || 'loaded',
       settledMarkers,
       waitSelectors,
@@ -674,8 +733,10 @@ function buildInstalledProofPreflightPlan(options = {}) {
       manifestRowId: 'exact-candidate-preflight',
       id: 'settings-about-current-candidate',
       route: '/settings/about',
+      hashRoute: '/settings/model',
       screenshot: 'preflight-settings-about.png',
       artifactName: 'screenshots/preflight-settings-about.png',
+      action: 'click-settings-about',
       closeoutState: 'loaded',
       settledMarkers,
       waitSelectors: settledMarkers.map(markerSelector),
@@ -907,14 +968,23 @@ async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
     return;
   }
 
+  if (action === 'click-settings-about') {
+    const aboutTab = page.getByText('About', { exact: true }).first();
+    await aboutTab.waitFor({ state: 'visible', timeout });
+    await aboutTab.click();
+    await page.waitForFunction(() => window.location.hash === '#/settings/about', undefined, { timeout });
+    return;
+  }
+
   throw new Error(`Installed app proof action is not allowlisted: ${action}`);
 }
 
 async function captureProofEntry(page, entry, artifactRoot, timeout) {
-  const expectedHash = entry.route.startsWith('#') ? entry.route : `#${entry.route}`;
+  const navigationRoute = entry.hashRoute || entry.route;
+  const expectedHash = navigationRoute.startsWith('#') ? navigationRoute : `#${navigationRoute}`;
   await page.evaluate((route) => {
     window.location.hash = route.startsWith('#') ? route : `#${route}`;
-  }, entry.route);
+  }, navigationRoute);
   await page.waitForFunction((hash) => window.location.hash === hash, expectedHash, { timeout });
   await page.waitForLoadState('domcontentloaded');
   await runProofPlanAction(page, entry.action, timeout);
@@ -930,6 +1000,7 @@ async function captureProofEntry(page, entry, artifactRoot, timeout) {
     id: entry.id,
     manifestRowId: entry.manifestRowId,
     route: entry.route,
+    hashRoute: entry.hashRoute,
     screenshot: entry.artifactName,
     artifactName: entry.artifactName,
     closeoutState: entry.closeoutState,
