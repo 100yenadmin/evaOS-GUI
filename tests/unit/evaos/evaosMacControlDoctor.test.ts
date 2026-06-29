@@ -40,7 +40,9 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
       };
       desktopProofState?: {
         launchAgent?: { label?: string; status?: string; bridgePath?: string };
+        bridgeListener?: { status?: string; staleOwners?: Array<unknown>; owners?: Array<unknown> };
         staleLaunchAgent?: boolean;
+        staleBridgeListener?: boolean;
       };
     }
   ) => { schemaVersion: string; blockerCategory: string; selectedContext: Record<string, unknown> };
@@ -62,7 +64,15 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
   }) => { id: string; status: string; reasonCode?: string; message?: string; evidencePath?: string };
   runBridgeReadyGate: (
     appPath: string,
-    options?: { timeout?: number }
+    options?: {
+      timeout?: number;
+      desktopProofState?: {
+        launchAgent?: { status?: string; bridgePath?: string | null };
+        staleLaunchAgent?: boolean;
+        bridgeListener?: { status?: string; staleOwners?: Array<unknown>; owners?: Array<unknown> };
+        staleBridgeListener?: boolean;
+      };
+    }
   ) => { id: string; status: string; reasonCode?: string; message?: string; data?: Record<string, unknown> };
   macControlReadyTextSatisfied: (text: string) => boolean;
   runVisibleAgentMacToolEvidenceGate: (evidence: unknown) => {
@@ -88,6 +98,12 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     repoHead?: string;
     expectedHead?: string;
     artifactRoot?: string;
+    desktopProofState?: {
+      launchAgent?: { status?: string; bridgePath?: string | null };
+      staleLaunchAgent?: boolean;
+      bridgeListener?: { status?: string; staleOwners?: Array<unknown>; owners?: Array<unknown> };
+      staleBridgeListener?: boolean;
+    };
   }) => Promise<{
     report: {
       schema: string;
@@ -244,6 +260,38 @@ describe('evaOS Mac control doctor', () => {
           'desktop_control_stop',
           'desktop_kill_switch',
         ]),
+      },
+    });
+  });
+
+  it('requires visible desktop_kill_switch proof to fail closed', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        { tool: 'customer_mac_status', ok: true, auditId: 'audit-status', result: { device: 'Workbench Mac' } },
+        { tool: 'customer_mac_capabilities', ok: true, auditId: 'audit-capabilities', result: { screen: true } },
+        { tool: 'desktop_control_status', ok: true, auditId: 'audit-control', result: { active: true } },
+        { tool: 'desktop_see', ok: true, auditId: 'audit-see', result: { screenshot: 'redacted' } },
+        { tool: 'desktop_bridge_audit_tail', ok: true, auditId: 'audit-tail', result: { records: ['audit-see'] } },
+        {
+          tool: 'desktop_control_action',
+          ok: true,
+          auditId: 'audit-low-impact',
+          approved: true,
+          lowImpact: true,
+          action: 'get_frontmost_app',
+          result: { app: 'evaOS Workbench' },
+        },
+        { tool: 'desktop_control_stop', ok: true, auditId: 'audit-stop', result: { active: false } },
+        { tool: 'desktop_kill_switch', ok: true, auditId: 'audit-kill', result: { killSwitch: false } },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'kill_switch_not_fail_closed',
+      data: {
+        observedTools: expect.arrayContaining(['desktop_kill_switch']),
       },
     });
   });
@@ -425,6 +473,7 @@ describe('evaOS Mac control doctor', () => {
     const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
     writeFakeInfoPlist(appPath);
     writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
+    const bridgePath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'evaos-desktop-bridge');
 
     const result = await doctor.runMacControlDoctor({
       appPath,
@@ -434,6 +483,19 @@ describe('evaOS Mac control doctor', () => {
       artifactRoot,
       skipUi: true,
       allowNonCanonicalAppPath: true,
+      desktopProofState: {
+        launchAgent: {
+          status: 'loaded',
+          bridgePath,
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          status: 'listening',
+          owners: [{ pid: '1234', matchesExpectedBridge: true }],
+          staleOwners: [],
+        },
+        staleBridgeListener: false,
+      },
     });
 
     expect(result.report.gates).toEqual(
@@ -484,6 +546,242 @@ describe('evaOS Mac control doctor', () => {
         readySchema: 'evaos.desktop_bridge.ready.v1',
         readyOk: true,
         readyState: false,
+      },
+    });
+  });
+
+  it('fails bridge readiness with typed blocker when stale UI conflicts with bridge status truth', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(
+      appPath,
+      JSON.stringify({
+        schema: 'evaos.desktop_bridge.ready.v1',
+        ok: false,
+        ready: false,
+        blockers: [{ code: 'connector_service_unreachable', message: 'Connector service is not reachable.' }],
+        connector_service: {
+          running: false,
+          status: 'not-running',
+        },
+        control_session: {
+          active: false,
+          kill_switch: false,
+        },
+      })
+    );
+
+    const gate = doctor.runBridgeReadyGate(appPath);
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'failed',
+      reasonCode: 'connector_service_unreachable',
+      data: {
+        ready: {
+          blockers: [{ code: 'connector_service_unreachable' }],
+          connector_service: {
+            running: false,
+            status: 'not-running',
+          },
+        },
+      },
+    });
+  });
+
+  it('keeps stale connected UI diagnostic repair-required when bridge truth is unreachable', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(
+      appPath,
+      JSON.stringify({
+        schema: 'evaos.desktop_bridge.ready.v1',
+        ok: false,
+        ready: false,
+        blockers: [{ code: 'connector_service_unreachable', message: 'Connector service is not reachable.' }],
+      })
+    );
+
+    const bridgeGate = doctor.runBridgeReadyGate(appPath);
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        { id: 'mac_control_cold_start', status: 'passed', message: 'Stale UI claimed Mac control was ready.' },
+        bridgeGate,
+        { id: 'visible_agent_mac_tools', status: 'passed' },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'connector_service_unreachable',
+      bridge: {
+        status: 'repair_required',
+        readyStatus: 'not_ready',
+      },
+      brokerGrant: {
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
+        ownerClassification: 'connector_service_unreachable',
+      },
+    });
+  });
+
+  it('fails bridge readiness when the live listener is missing even if ready JSON is green', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
+
+    const gate = doctor.runBridgeReadyGate(appPath, {
+      desktopProofState: {
+        launchAgent: {
+          status: 'loaded',
+          bridgePath: path.join(appPath, 'Contents', 'Resources', 'Bridge', 'evaos-desktop-bridge'),
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          status: 'not-listening',
+          owners: [],
+          staleOwners: [],
+        },
+        staleBridgeListener: false,
+      },
+    });
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'failed',
+      reasonCode: 'missing_live_listener',
+    });
+  });
+
+  it('accepts a verified Workbench-managed live listener when LaunchAgent status is not loaded', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    const bridgePath = writeFakeBridge(
+      appPath,
+      JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true })
+    );
+
+    const gate = doctor.runBridgeReadyGate(appPath, {
+      desktopProofState: {
+        launchAgent: {
+          status: 'not-loaded',
+          bridgePath,
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          status: 'listening',
+          owners: [{ pid: '1234', matchesExpectedBridge: true }],
+          staleOwners: [],
+        },
+        staleBridgeListener: false,
+      },
+    });
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'passed',
+    });
+  });
+
+  it('keeps stale listener owners blocked even when the listener is present', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    const bridgePath = writeFakeBridge(
+      appPath,
+      JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true })
+    );
+
+    const gate = doctor.runBridgeReadyGate(appPath, {
+      desktopProofState: {
+        launchAgent: {
+          status: 'not-loaded',
+          bridgePath,
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          status: 'listening',
+          owners: [{ pid: '9999', matchesExpectedBridge: false }],
+          staleOwners: [{ pid: '9999', command: '/Applications/Old.app/bridge' }],
+        },
+        staleBridgeListener: true,
+      },
+    });
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'failed',
+      reasonCode: 'stale_bridge_owner',
+    });
+  });
+
+  it('prioritizes missing live listener as the diagnostic blocker over installed-app preflight', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        {
+          id: 'installed_app_preflight',
+          status: 'failed',
+          reasonCode: 'not_workbench_managed',
+          message: 'Installed app product proof failed.',
+        },
+        {
+          id: 'computer_use_evidence',
+          status: 'blocked',
+          reasonCode: 'runtime_not_configured',
+          message: 'Computer Use evidence not provided.',
+        },
+        {
+          id: 'bridge_ready',
+          status: 'failed',
+          reasonCode: 'missing_live_listener',
+          message: 'No live Workbench bridge listener is present for Mac-control proof.',
+        },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+        desktopProofState: {
+          launchAgent: {
+            status: 'loaded',
+            bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+          },
+          staleLaunchAgent: false,
+          bridgeListener: {
+            status: 'not-listening',
+            owners: [],
+            staleOwners: [],
+          },
+          staleBridgeListener: false,
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'missing_live_listener',
+      connector: {
+        ownerClassification: 'missing_live_listener',
+      },
+      lastAction: {
+        action: 'bridge_ready',
+        blockerReason: 'missing_live_listener',
       },
     });
   });
@@ -739,7 +1037,72 @@ describe('evaOS Mac control doctor', () => {
         agentPairingStatus: 'not_ready',
       },
       connector: {
-        status: 'ready',
+        status: 'repair_required',
+        ownerClassification: 'agent_cli_config_invalid',
+      },
+    });
+  });
+
+  it('keeps support-control-only smoke from satisfying visible first-party Mac-control proof', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        {
+          tool: 'support_control_smoke',
+          ok: true,
+          auditId: 'audit-support-control',
+          result: { status: 'healthy' },
+        },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+      data: {
+        observedTools: ['support_control_smoke'],
+        missingTools: doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+      },
+    });
+
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        { id: 'mac_control_cold_start', status: 'passed' },
+        { id: 'bridge_ready', status: 'passed' },
+        {
+          id: 'visible_agent_mac_tools',
+          status: 'failed',
+          reasonCode: 'agent_cli_config_invalid',
+          message: 'Visible Workbench agent proof is missing required structured Mac-control tool results.',
+          data: {
+            observedTools: ['support_control_smoke'],
+            missingTools: doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+          },
+        },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'agent_cli_config_invalid',
+      brokerGrant: {
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
+        ownerClassification: 'agent_cli_config_invalid',
       },
     });
   });
