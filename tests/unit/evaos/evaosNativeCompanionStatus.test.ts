@@ -243,6 +243,144 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
   });
 
+  it('uses bridge ready as connector truth when legacy connector-service status is stale', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        ok: false,
+        data: {
+          running: false,
+          loaded: false,
+          managed_by: 'offline',
+          health: { reachable: false, ready: false, host_kind: 'tailnet' },
+        },
+      },
+      'ready --json': {
+        ok: true,
+        ready: true,
+        service: 'evaos-desktop-bridge-connector',
+        connector_service: {
+          health: { reachable: true, ready: true, host_kind: 'tailnet' },
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          device: { hostname: 'Matthew Calderon' },
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        data: { installed: true, running: true },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: { active: false, ready: true, kill_switch: false },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: { records: [{ audit_id: 'audit-mac' }, { audit_id: 'audit-control' }] },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      connectorService: {
+        status: 'ready',
+        running: true,
+        reachable: true,
+      },
+      customerMac: {
+        status: 'ready',
+      },
+    });
+  });
+
+  it('does not accept bridge ready proof from a different signed app owner', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        audit_id: 'audit-bridge',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+          safety: { read_only: true },
+        },
+      },
+      'connector-service status --json': {
+        ok: false,
+        data: {
+          running: false,
+          loaded: false,
+          managed_by: 'offline',
+          health: { reachable: false, ready: false, host_kind: 'tailnet' },
+        },
+      },
+      'ready --json': {
+        ok: true,
+        ready: true,
+        service: 'evaos-desktop-bridge-connector',
+        connector_service: {
+          health: { reachable: true, ready: true, host_kind: 'tailnet' },
+          responsible_bundle_id: 'com.evaos.workbench.beta',
+          responsible_app_path: '/Applications/evaOS Workbench Beta.app',
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        audit_id: 'audit-mac',
+        data: {
+          permissions: {
+            accessibility: { status: 'granted' },
+            screen_recording: { status: 'granted' },
+          },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': {
+        ok: true,
+        data: { installed: true, running: true },
+      },
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control',
+        data: { active: false, ready: true, kill_switch: false },
+      },
+      'audit-tail --json --limit 5': {
+        ok: true,
+        data: { records: [] },
+      },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status.readiness).toBe('repair_required');
+    expect(status.connectorService).toMatchObject({
+      status: 'repair_required',
+      running: false,
+      reachable: false,
+    });
+  });
+
   it('does not mark Mac control ready when a reachable listener fails the bridge /ready contract', async () => {
     const deps = depsWithResponses(
       {
@@ -1259,6 +1397,54 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
+  it('accepts bridge ready proof when connector-service status is stale during connector start', async () => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: false,
+          data: {
+            running: false,
+            loaded: false,
+            managed_by: 'offline',
+            health: { reachable: false, ready: false, host_kind: 'tailnet' },
+          },
+        },
+        'ready --json': [
+          {
+            ok: true,
+            ready: true,
+            service: 'evaos-desktop-bridge-connector',
+            connector_service: {
+              health: { reachable: true, ready: true, host_kind: 'tailnet' },
+            },
+          },
+          {
+            ok: true,
+            ready: true,
+            service: 'evaos-desktop-bridge-connector',
+            connector_service: {
+              health: { reachable: true, ready: true, host_kind: 'tailnet' },
+            },
+          },
+        ],
+      },
+      { spawnConnectorProcess }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:workbench-session-connector-start',
+    });
+    expect(spawnConnectorProcess).not.toHaveBeenCalled();
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+  });
+
   it('surfaces a stale listener owner when the connector port belongs to an old app bundle', async () => {
     const staleStatus = {
       ok: true,
@@ -1471,6 +1657,19 @@ describe('evaosNativeCompanionStatus', () => {
           stderr: '',
         };
       }
+      if (key === 'ready --json') {
+        return {
+          stdout: json({
+            ok: false,
+            ready: false,
+            service: 'evaos-desktop-bridge-connector',
+            connector_service: {
+              health: { reachable: false, ready: false },
+            },
+          }),
+          stderr: '',
+        };
+      }
       throw new Error(`unexpected command ${key}`);
     });
     const sleep = vi.fn(async () => undefined);
@@ -1498,7 +1697,7 @@ describe('evaosNativeCompanionStatus', () => {
       EVAOS_DESKTOP_BRIDGE_MANAGED_BY: 'workbench-session',
       EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID: 'com.evaos.workbench',
     });
-    expect(execFile).toHaveBeenCalledTimes(3);
+    expect(execFile).toHaveBeenCalledTimes(4);
     expect(sleep).not.toHaveBeenCalled();
   });
 
@@ -1759,6 +1958,16 @@ describe('evaosNativeCompanionStatus', () => {
             token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
           },
         ],
+        'ready --json': {
+          ok: true,
+          ready: true,
+          service: 'evaos-desktop-bridge-connector',
+          connector_service: {
+            health: { reachable: true, ready: true, host_kind: 'tailnet' },
+            responsible_bundle_id: 'com.evaos.workbench',
+            responsible_app_path: '/Applications/evaOS Workbench.app',
+          },
+        },
         'connector-service stop --json': {
           ok: true,
           action: 'stop',

@@ -88,7 +88,7 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     envName: string,
     env?: Record<string, string | undefined>,
     options?: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> }
-  ) => { id: string; status: string; reasonCode?: string };
+  ) => { id: string; status: string; reasonCode?: string; data?: Record<string, unknown> };
   ensureAdminRouteSurfaceVisible: (
     page: {
       locator: (selector: string) => {
@@ -544,6 +544,63 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('stores bridge ready proof without unsafe token-state evidence', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(
+      appPath,
+      JSON.stringify({
+        schema: 'evaos.desktop_bridge.ready.v1',
+        ok: true,
+        ready: true,
+        service: 'evaos-desktop-bridge-connector',
+        token_state: 'present',
+        connector_service: {
+          ok: true,
+          ready: true,
+          running: true,
+          loaded: true,
+          token_present: true,
+          health: {
+            authenticated: true,
+            host_kind: 'tailnet',
+            reachable: true,
+            ready: true,
+          },
+        },
+        service_events: [
+          {
+            category: 'serve_ready',
+            details: {
+              token_state: 'present',
+              host: '100.64.0.8',
+              port: 8765,
+            },
+          },
+        ],
+      })
+    );
+
+    const gate = doctor.runBridgeReadyGate(appPath, {
+      desktopProofState: { launchAgent: { status: 'loaded' }, bridgeListener: { status: 'listening' } },
+    });
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'passed',
+      data: {
+        ready: {
+          schema: 'evaos.desktop_bridge.ready.v1',
+          ok: true,
+          ready: true,
+        },
+      },
+    });
+    expect(JSON.stringify(gate)).not.toContain('token_state');
+    expect(JSON.stringify(gate)).not.toContain('token_present');
+    expect(JSON.stringify(gate)).not.toContain('100.64.0.8');
+    doctor.assertNoUnsafeDoctorOutput(JSON.stringify(gate));
+  });
+
   it('fails bridge readiness on malformed JSON even when the bridge exits zero', () => {
     const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
     writeFakeBridge(appPath, 'not json');
@@ -601,10 +658,9 @@ describe('evaOS Mac control doctor', () => {
       reasonCode: 'connector_service_unreachable',
       data: {
         ready: {
-          blockers: [{ code: 'connector_service_unreachable' }],
-          connector_service: {
+          blockerCodes: ['connector_service_unreachable'],
+          connectorService: {
             running: false,
-            status: 'not-running',
           },
         },
       },
@@ -1013,6 +1069,57 @@ describe('evaOS Mac control doctor', () => {
       id: 'vm_openclaw',
       status: 'passed',
     });
+  });
+
+  it('summarizes proof command stdout without storing endpoint or connector material', () => {
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-doctor-proof-bin-'));
+    const supportScript = path.join(binDir, 'evaos-support.sh');
+    fs.writeFileSync(
+      supportScript,
+      [
+        '#!/bin/sh',
+        "cat <<'JSON'",
+        JSON.stringify({
+          ok: true,
+          status: 'passed',
+          audit_id: 'audit-command',
+          proof_id: 'proof-command',
+          gate: 'local-openclaw',
+          results: {
+            connector_url: 'http://100.64.0.8:8765',
+            connector_token: 'secret-token',
+            headscale_node_id: '123',
+            tailscale_backend_state: 'Running',
+          },
+        }),
+        'JSON',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(supportScript, 0o755);
+
+    const gate = doctor.runConfiguredCommandGate(
+      'local_openclaw',
+      'PROOF_CMD',
+      { PROOF_CMD: `${supportScript} mac-connector doctor-proof --gate local-openclaw --targets matt-bailey --json` },
+      { cwd: binDir }
+    );
+
+    expect(gate.status).toBe('passed');
+    expect(gate.data).toMatchObject({
+      status: 0,
+      stdoutDigest: expect.any(String),
+      payloadSummary: {
+        payloadCount: 1,
+        successPayloadCount: 1,
+        auditedSuccessPayloadCount: 1,
+      },
+    });
+    expect(JSON.stringify(gate)).not.toContain('connector_url');
+    expect(JSON.stringify(gate)).not.toContain('headscale');
+    expect(JSON.stringify(gate)).not.toContain('100.64.0.8');
+    doctor.assertNoUnsafeDoctorOutput(JSON.stringify(gate));
   });
 
   it('rejects shell chaining in approved support-control proof commands', () => {
