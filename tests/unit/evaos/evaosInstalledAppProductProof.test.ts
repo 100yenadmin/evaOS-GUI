@@ -772,6 +772,33 @@ describe('evaOS installed app product proof', () => {
     );
   });
 
+  it('fails desktop proof hygiene when the expected bridge owner has no live listener', () => {
+    expect(() =>
+      installedAppProof.assertDesktopProofStateClean({
+        expectedAppPath: '/Applications/evaOS Workbench.app',
+        expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        indexedApps: [],
+        staleIndexedApps: [],
+        runningProcesses: [],
+        staleRunningProcesses: [],
+        launchAgent: {
+          label: 'com.electricsheep.evaos-desktop-bridge',
+          status: 'loaded',
+          bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          port: '8765',
+          status: 'not-listening',
+          expectedBridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+          owners: [],
+          staleOwners: [],
+        },
+        staleBridgeListener: false,
+      })
+    ).toThrow(/No live Workbench bridge listener/);
+  });
+
   it('summarizes desktop proof hygiene from macOS system inventories', () => {
     const fakeExec = (command: string, args: string[]) => {
       if (command === '/usr/bin/mdfind' && args[0].includes('com.evaos.workbench.beta')) {

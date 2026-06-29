@@ -657,6 +657,11 @@ function assertDesktopProofStateClean(state) {
         .join(', ')}. Stop the stale listener or reinstall the signed candidate before Mac-control proof.`
     );
   }
+  if (state.bridgeListener?.status && state.bridgeListener.status !== 'listening') {
+    throw new Error(
+      `No live Workbench bridge listener is present on port ${state.bridgeListener.port || BRIDGE_LISTENER_PORT}. Start the bundled Workbench bridge before Mac-control proof.`
+    );
+  }
 }
 
 function compactLaunchServicesLine(line) {

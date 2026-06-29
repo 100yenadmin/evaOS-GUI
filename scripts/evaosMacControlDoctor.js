@@ -519,6 +519,104 @@ function isBridgeReadyPayload(payload) {
   );
 }
 
+function nestedValue(payload, keys, depth = 0) {
+  if (!payload || depth > 6) return undefined;
+  if (Array.isArray(payload)) {
+    for (const entry of payload) {
+      const value = nestedValue(entry, keys, depth + 1);
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  }
+  if (typeof payload !== 'object') return undefined;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      return payload[key];
+    }
+  }
+  for (const value of Object.values(payload)) {
+    const nested = nestedValue(value, keys, depth + 1);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+
+function collectPayloadCodes(payload, codes = [], depth = 0) {
+  if (!payload || depth > 6) return codes;
+  if (Array.isArray(payload)) {
+    for (const entry of payload) collectPayloadCodes(entry, codes, depth + 1);
+    return codes;
+  }
+  if (typeof payload !== 'object') return codes;
+
+  for (const key of ['code', 'error', 'reasonCode', 'reason_code', 'status', 'state']) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim()) codes.push(value.trim());
+  }
+  for (const value of Object.values(payload)) {
+    collectPayloadCodes(value, codes, depth + 1);
+  }
+  return codes;
+}
+
+function normalizeBridgeReadyReasonCode(code) {
+  const normalized = String(code || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  if (!normalized) return undefined;
+  if (/kill_switch|control_kill_switch_active/.test(normalized)) return 'control_kill_switch_active';
+  if (/connector_service_unreachable|service_unreachable|connection_refused|unreachable|offline/.test(normalized)) {
+    return 'connector_service_unreachable';
+  }
+  if (/connector_service_not_running|not_running|not_loaded|launchagent_not_loaded/.test(normalized)) {
+    return 'connector_service_not_running';
+  }
+  if (/missing_live_listener|not_listening|listener_missing|listener_not_running/.test(normalized)) {
+    return 'missing_live_listener';
+  }
+  if (/stale_bridge_owner|stale_owner|wrong_owner|not_workbench_managed/.test(normalized)) {
+    return 'stale_bridge_owner';
+  }
+  if (/token_missing/.test(normalized)) return 'token_missing';
+  return undefined;
+}
+
+function bridgeReadyPayloadReasonCode(payload) {
+  if (!payload || typeof payload !== 'object') return 'bridge_diagnostics_unavailable';
+  if (nestedValue(payload, ['kill_switch', 'killSwitch']) === true) return 'control_kill_switch_active';
+  const normalized = collectPayloadCodes(payload).map(normalizeBridgeReadyReasonCode).find(Boolean);
+  if (normalized) return normalized;
+  if (nestedValue(payload, ['running']) === false) return 'connector_service_not_running';
+  if (nestedValue(payload, ['reachable']) === false) return 'connector_service_unreachable';
+  return 'bridge_diagnostics_unavailable';
+}
+
+function bridgeOwnerTruthBlocker(desktopProofState) {
+  if (!desktopProofState || typeof desktopProofState !== 'object') return null;
+  const listener = desktopProofState.bridgeListener || {};
+  const staleOwners = Array.isArray(listener.staleOwners) ? listener.staleOwners : [];
+  if (desktopProofState.staleLaunchAgent || desktopProofState.staleBridgeListener || staleOwners.length > 0) {
+    return {
+      reasonCode: 'stale_bridge_owner',
+      message: 'Bridge live owner truth does not match the installed Workbench candidate.',
+    };
+  }
+  if (desktopProofState.launchAgent?.status && desktopProofState.launchAgent.status !== 'loaded') {
+    return {
+      reasonCode: 'connector_service_not_running',
+      message: 'Workbench bridge LaunchAgent is not loaded.',
+    };
+  }
+  if (listener.status && listener.status !== 'listening') {
+    return {
+      reasonCode: 'missing_live_listener',
+      message: 'No live Workbench bridge listener is present for Mac-control proof.',
+    };
+  }
+  return null;
+}
+
 function jsonCandidatesFromText(text) {
   const candidates = [];
   const trimmed = String(text || '').trim();
@@ -774,6 +872,21 @@ function runBridgeReadyGate(appPath, options = {}) {
   const stderr = sanitizeText(result.stderr || '').slice(0, MAX_COMMAND_OUTPUT);
   const parsed = parseJsonMaybe(result.stdout || '');
   const ok = result.status === 0 && !result.signal && isBridgeReadyPayload(parsed);
+  const ownerBlocker = bridgeOwnerTruthBlocker(options.desktopProofState);
+
+  if (ownerBlocker) {
+    return failedGate('bridge_ready', ownerBlocker.reasonCode, ownerBlocker.message, {
+      command: `${bridgePath} ready --json`,
+      data: {
+        status: result.status,
+        signal: result.signal,
+        stdout,
+        stderr,
+        ready: sanitizeValue(parsed),
+        desktopProofState: sanitizeValue(options.desktopProofState),
+      },
+    });
+  }
 
   if (ok) {
     return passedGate('bridge_ready', 'Bundled bridge /ready check passed.', {
@@ -782,7 +895,9 @@ function runBridgeReadyGate(appPath, options = {}) {
     });
   }
 
-  return failedGate('bridge_ready', 'bridge_diagnostics_unavailable', 'Bundled bridge /ready check failed.', {
+  const reasonCode = bridgeReadyPayloadReasonCode(parsed);
+
+  return failedGate('bridge_ready', reasonCode, 'Bundled bridge /ready check failed.', {
     command: `${bridgePath} ready --json`,
     data: {
       status: result.status,
@@ -1310,6 +1425,7 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
   const ready = readinessGatePassed(gates);
   const agentProofStatus = gateStatus(gates, 'visible_agent_mac_tools');
   const agentProofReady = ready && agentProofStatus === 'passed';
+  const connectorReady = agentProofReady;
 
   return sanitizeValue({
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
@@ -1356,8 +1472,8 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
       readySource: 'mac-control-doctor',
     },
     connector: {
-      status: ready ? 'ready' : 'repair_required',
-      ownerClassification: ready ? 'workbench_managed' : blockerCategory,
+      status: connectorReady ? 'ready' : 'repair_required',
+      ownerClassification: connectorReady ? 'workbench_managed' : blockerCategory,
       endpointSummary: 'redacted',
     },
     launchAgent: {
@@ -1556,6 +1672,9 @@ async function runMacControlDoctor(options = {}) {
       })
     );
 
+    if (!desktopProofState && options.desktopProofState) {
+      desktopProofState = options.desktopProofState;
+    }
     if (!desktopProofState && fs.existsSync(appPath)) {
       desktopProofState = installedProof.inspectDesktopProofState(appPath);
     }
@@ -1563,7 +1682,7 @@ async function runMacControlDoctor(options = {}) {
       bundleInfo = installedProof.readInfoPlist(appPath);
     }
 
-    gates.push(runBridgeReadyGate(appPath, { timeout }));
+    gates.push(runBridgeReadyGate(appPath, { timeout, desktopProofState }));
 
     if (options.skipUi) {
       gates.push(blockedGate('support_account_target', 'runtime_not_configured', 'UI proof skipped by option.'));
