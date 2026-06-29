@@ -254,6 +254,33 @@ function runProofCommand(parsedCommand, options = {}) {
   };
 }
 
+function summarizeCommandPayloads(payloads) {
+  const entries = Array.isArray(payloads) ? payloads : [];
+  return {
+    payloadCount: entries.length,
+    successPayloadCount: entries.filter(commandProofPayloadSucceeded).length,
+    auditedSuccessPayloadCount: entries.filter(commandProofPayloadAuditedSuccess).length,
+    explicitFailurePayloadCount: entries.filter(commandProofPayloadExplicitlyFailed).length,
+    failClosedPayloadCount: entries.filter(commandProofPayloadFailsClosed).length,
+  };
+}
+
+function summarizeProofCommandResult(result) {
+  const stdout = String(result?.stdout || '');
+  const stderr = String(result?.stderr || '');
+  const payloads = commandProofPayloads(result || {});
+  return sanitizeValue({
+    status: result?.status,
+    signal: result?.signal || undefined,
+    error: result?.error ? '[REDACTED]' : undefined,
+    stdoutDigest: stdout ? textDigest(stdout) : undefined,
+    stderrDigest: stderr ? textDigest(stderr) : undefined,
+    stdoutBytes: stdout ? Buffer.byteLength(stdout, 'utf8') : 0,
+    stderrBytes: stderr ? Buffer.byteLength(stderr, 'utf8') : 0,
+    payloadSummary: summarizeCommandPayloads(payloads),
+  });
+}
+
 function shellWords(command) {
   return String(command || '').match(/(?:[^\s'"\\]+|"(?:\\.|[^"])*"|'[^']*')+/g) || [];
 }
@@ -449,18 +476,18 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
     if (!proof.ok) {
       return failedGate(id, proof.reasonCode, `${id} command did not emit required audited structured proof.`, {
         command: normalizedCommand,
-        data: result,
+        data: summarizeProofCommandResult(result),
       });
     }
     return passedGate(id, `${id} command completed.`, {
       command: normalizedCommand,
-      data: result,
+      data: summarizeProofCommandResult(result),
     });
   }
 
   return failedGate(id, 'runtime_not_configured', `${id} command failed.`, {
     command: normalizedCommand,
-    data: result,
+    data: summarizeProofCommandResult(result),
   });
 }
 
@@ -659,6 +686,67 @@ function bridgeOwnerTruthBlocker(desktopProofState) {
     };
   }
   return null;
+}
+
+function summarizeBridgeReadyPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return {
+      parseable: false,
+    };
+  }
+
+  const connectorService =
+    payload.connector_service && typeof payload.connector_service === 'object' ? payload.connector_service : {};
+  const health = connectorService.health && typeof connectorService.health === 'object' ? connectorService.health : {};
+  const owner = connectorService.owner && typeof connectorService.owner === 'object' ? connectorService.owner : {};
+  const controlSession =
+    payload.control_session && typeof payload.control_session === 'object' ? payload.control_session : {};
+  const serviceEvents = Array.isArray(payload.service_events) ? payload.service_events : [];
+
+  return sanitizeValue({
+    schema: payload.schema,
+    ok: payload.ok,
+    ready: payload.ready,
+    service: payload.service,
+    connectorService: {
+      ok: connectorService.ok,
+      ready: connectorService.ready,
+      running: connectorService.running,
+      loaded: connectorService.loaded,
+      managedBy: connectorService.managed_by,
+      health: {
+        authenticated: health.authenticated,
+        hostKind: health.host_kind,
+        reachable: health.reachable,
+        ready: health.ready,
+      },
+      owner: {
+        classification: owner.classification,
+        bundleId: owner.bundle_id,
+        label: owner.label,
+        appPathKind: owner.app_path?.kind,
+        programPathKind: owner.program_path?.kind,
+        plistPathKind: owner.plist_path?.kind,
+        manifestPathKind: owner.manifest_path?.kind,
+        sourceCommitPresent: Boolean(owner.source_commit),
+      },
+    },
+    controlSession: {
+      active: controlSession.active,
+      mode: controlSession.mode,
+      killSwitch: controlSession.kill_switch,
+    },
+    blockerCodes: Array.isArray(payload.blockers)
+      ? payload.blockers
+          .map((blocker) => blocker?.code)
+          .filter(Boolean)
+          .slice(0, 12)
+      : [],
+    serviceEventCategories: serviceEvents
+      .map((event) => event?.category)
+      .filter(Boolean)
+      .slice(-8),
+  });
 }
 
 function jsonCandidatesFromText(text) {
@@ -929,21 +1017,26 @@ function runBridgeReadyGate(appPath, options = {}) {
     timeout: options.timeout || DEFAULT_TIMEOUT_MS,
     maxBuffer: 4 * 1024 * 1024,
   });
-  const stdout = sanitizeText(result.stdout || '').slice(0, MAX_COMMAND_OUTPUT);
-  const stderr = sanitizeText(result.stderr || '').slice(0, MAX_COMMAND_OUTPUT);
+  const stdout = sanitizeText(result.stdout || '');
+  const stderr = sanitizeText(result.stderr || '');
   const parsed = parseJsonMaybe(result.stdout || '');
   const ok = result.status === 0 && !result.signal && isBridgeReadyPayload(parsed);
   const ownerBlocker = bridgeOwnerTruthBlocker(options.desktopProofState);
+  const commandSummary = {
+    status: result.status,
+    signal: result.signal || undefined,
+    stdoutDigest: stdout ? textDigest(stdout) : undefined,
+    stderrDigest: stderr ? textDigest(stderr) : undefined,
+    stdoutBytes: stdout ? Buffer.byteLength(stdout, 'utf8') : 0,
+    stderrBytes: stderr ? Buffer.byteLength(stderr, 'utf8') : 0,
+  };
 
   if (ownerBlocker) {
     return failedGate('bridge_ready', ownerBlocker.reasonCode, ownerBlocker.message, {
       command: `${bridgePath} ready --json`,
       data: {
-        status: result.status,
-        signal: result.signal,
-        stdout,
-        stderr,
-        ready: sanitizeValue(parsed),
+        ...commandSummary,
+        ready: summarizeBridgeReadyPayload(parsed),
         desktopProofState: sanitizeValue(options.desktopProofState),
       },
     });
@@ -952,7 +1045,7 @@ function runBridgeReadyGate(appPath, options = {}) {
   if (ok) {
     return passedGate('bridge_ready', 'Bundled bridge /ready check passed.', {
       command: `${bridgePath} ready --json`,
-      data: { stdout, stderr, ready: sanitizeValue(parsed) },
+      data: { ...commandSummary, ready: summarizeBridgeReadyPayload(parsed) },
     });
   }
 
@@ -963,13 +1056,12 @@ function runBridgeReadyGate(appPath, options = {}) {
     data: {
       status: result.status,
       signal: result.signal,
-      stdout,
-      stderr,
+      ...commandSummary,
       error: result.error ? sanitizeText(result.error.message) : undefined,
       readySchema: parsed && typeof parsed === 'object' ? parsed.schema : undefined,
       readyOk: parsed && typeof parsed === 'object' ? parsed.ok : undefined,
       readyState: parsed && typeof parsed === 'object' ? parsed.ready : undefined,
-      ready: sanitizeValue(parsed),
+      ready: summarizeBridgeReadyPayload(parsed),
     },
   });
 }

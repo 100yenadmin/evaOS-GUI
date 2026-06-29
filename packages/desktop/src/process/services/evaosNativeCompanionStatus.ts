@@ -256,7 +256,7 @@ export async function getEvaosNativeCompanionStatus(
           ? 'repair_required'
           : 'error',
       running: connectorServiceReady || readBoolean(connectorService.data, 'running'),
-      reachable: readNestedBoolean(connectorService.data, ['health', 'reachable']),
+      reachable: connectorServiceReady || readNestedBoolean(connectorService.data, ['health', 'reachable']),
       managedBy: readString(connectorService.data, 'managed_by'),
       tailnetIp: readString(connectorService.data, 'tailnet_ip'),
       permissionTarget: readString(connectorService.data, 'permission_target'),
@@ -591,7 +591,7 @@ async function runConnectorStartAction(
 ): Promise<IEvaosNativeCompanionActionResult> {
   const before = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
   const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before);
-  const ready = await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, status, deps);
+  const ready = await connectorServiceIsReadyForWorkbenchSession(bridgePath, status, deps);
   if (ready) {
     return nativeActionResult(
       'connector_start',
@@ -620,7 +620,7 @@ async function ensureWorkbenchManagedConnectorReady(
   before?: BridgeCommandResult
 ): Promise<BridgeCommandResult> {
   const current = before ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
-  if (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, current, deps)) {
+  if (await connectorServiceIsReadyForWorkbenchSession(bridgePath, current, deps)) {
     return current;
   }
 
@@ -701,9 +701,20 @@ async function workbenchManagedConnectorIsReadyWithEndpoint(
   result: BridgeCommandResult,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<boolean> {
-  return (
-    workbenchManagedConnectorIsReady(bridgePath, result) && (await connectorReadyEndpointIsReady(result.data, deps))
-  );
+  if (
+    workbenchManagedConnectorIsReady(bridgePath, result) &&
+    (await connectorReadyEndpointIsReady(result.data, deps))
+  ) {
+    return true;
+  }
+  if (!connectorServiceHasSecureRegistrationHost(result.data)) {
+    return false;
+  }
+  if (connectorStatusHasExplicitOwnerMismatch(bridgePath, result.data)) {
+    return false;
+  }
+  const ready = await runBridgeCommand(bridgePath, ['ready', '--json'], deps);
+  return bridgeReadyCommandShowsConnectorReady(bridgePath, ready);
 }
 
 async function connectorServiceIsReadyForWorkbenchSession(
@@ -711,20 +722,40 @@ async function connectorServiceIsReadyForWorkbenchSession(
   result: BridgeCommandResult,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<boolean> {
-  if (!connectorServiceStatusAvailable(result) || readNestedBoolean(result.data, ['health', 'reachable']) !== true) {
+  if (connectorServiceStatusAvailable(result) && readNestedBoolean(result.data, ['health', 'reachable']) === true) {
+    const endpointReady = await connectorReadyEndpointIsReady(result.data, deps);
+    if (endpointReady) {
+      if (workbenchManagedConnectorIsReady(bridgePath, result)) {
+        return true;
+      }
+      if (!connectorStatusHasOwnershipSignals(result.data)) {
+        return connectorServiceIsReady(result);
+      }
+      return connectorStatusOwnedByCurrentWorkbench(bridgePath, result.data);
+    }
+  }
+
+  const ready = await runBridgeCommand(bridgePath, ['ready', '--json'], deps);
+  return bridgeReadyCommandShowsConnectorReady(bridgePath, ready);
+}
+
+function bridgeReadyCommandShowsConnectorReady(bridgePath: string, result: BridgeCommandResult): boolean {
+  const connectorService = result.data?.connector_service;
+  if (connectorStatusHasExplicitOwnerMismatch(bridgePath, connectorService)) {
     return false;
   }
-  const endpointReady = await connectorReadyEndpointIsReady(result.data, deps);
-  if (!endpointReady) {
+  if (
+    connectorStatusHasOwnershipSignals(connectorService) &&
+    !connectorStatusOwnedByCurrentWorkbench(bridgePath, connectorService)
+  ) {
     return false;
   }
-  if (workbenchManagedConnectorIsReady(bridgePath, result)) {
-    return true;
-  }
-  if (!connectorStatusHasOwnershipSignals(result.data)) {
-    return connectorServiceIsReady(result);
-  }
-  return connectorStatusOwnedByCurrentWorkbench(bridgePath, result.data);
+  return (
+    result.ok &&
+    readBoolean(result.data, 'ready') === true &&
+    readString(result.data, 'service') === 'evaos-desktop-bridge-connector' &&
+    readNestedBoolean(result.data, ['connector_service', 'health', 'reachable']) !== false
+  );
 }
 
 async function connectorReadyEndpointIsReady(input: unknown, deps: EvaosNativeCompanionStatusDeps): Promise<boolean> {
@@ -786,24 +817,25 @@ function connectorStatusHasOwnershipSignals(status: unknown): boolean {
 
 function connectorStatusHasExplicitOwnerMismatch(bridgePath: string, status: unknown): boolean {
   const managedBy = readString(status, 'managed_by')?.toLowerCase();
-  if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
-    return true;
-  }
-
   const bundleId = connectorResponsibleBundleId(status);
   if (bundleId && bundleId !== WORKBENCH_BUNDLE_ID) {
     return true;
   }
 
-  return connectorOwnerPathMatchesWorkbench(bridgePath, status) === false;
+  const ownerMatch = connectorOwnerPathMatchesWorkbench(bridgePath, status);
+  if (ownerMatch === false) {
+    return true;
+  }
+
+  if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
+    return bundleId !== WORKBENCH_BUNDLE_ID && ownerMatch !== true;
+  }
+
+  return false;
 }
 
 function connectorStatusOwnedByCurrentWorkbench(bridgePath: string, status: unknown): boolean {
   const managedBy = readString(status, 'managed_by')?.toLowerCase();
-  if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
-    return false;
-  }
-
   const bundleId = connectorResponsibleBundleId(status);
   if (bundleId && bundleId !== WORKBENCH_BUNDLE_ID) {
     return false;
@@ -816,6 +848,10 @@ function connectorStatusOwnedByCurrentWorkbench(bridgePath: string, status: unkn
 
   if (ownerMatch === true) {
     return true;
+  }
+
+  if (managedBy && !WORKBENCH_CONNECTOR_MANAGERS.has(managedBy)) {
+    return false;
   }
 
   return bundleId === WORKBENCH_BUNDLE_ID && Boolean(managedBy && WORKBENCH_CONNECTOR_MANAGERS.has(managedBy));
@@ -1110,7 +1146,8 @@ async function ensureCustomerMacConnectorGrantAction(
   const connectorService =
     prepared?.connectorService ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
   let sessionConnector = connectorService;
-  if (!connectorServiceCanAttemptWorkbenchSessionStart(sessionConnector)) {
+  const sessionConnectorReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, sessionConnector, deps);
+  if (!sessionConnectorReady && !connectorServiceCanAttemptWorkbenchSessionStart(sessionConnector)) {
     return nativeActionResult(
       resultAction,
       'repair_required',
