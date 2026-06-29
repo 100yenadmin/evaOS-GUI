@@ -35,7 +35,7 @@ function shouldRequireRealBridge() {
 }
 
 function selectedBridgeSourceRef() {
-  return process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || defaultBridgeSourceRef;
+  return String(process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || '').trim() || defaultBridgeSourceRef;
 }
 
 function isMutableBridgeSourceRef(ref) {
@@ -43,6 +43,14 @@ function isMutableBridgeSourceRef(ref) {
     .trim()
     .toLowerCase();
   return !normalized || normalized === 'main' || normalized === 'master' || normalized === 'head';
+}
+
+function isFullCommitSha(ref) {
+  return /^[0-9a-f]{40}$/i.test(String(ref || '').trim());
+}
+
+function shouldCloneBridgeRefAsBranch(ref) {
+  return !isFullCommitSha(ref);
 }
 
 function sourceCandidates() {
@@ -86,10 +94,16 @@ function prepareBridgeSourceCheckout() {
   fs.rmSync(bridgeSourceCacheDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(bridgeSourceCacheDir), { recursive: true });
 
-  try {
-    runGit(['clone', '--depth', '1', '--branch', ref, cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
-  } catch {
-    fs.rmSync(bridgeSourceCacheDir, { recursive: true, force: true });
+  if (shouldCloneBridgeRefAsBranch(ref)) {
+    try {
+      runGit(['clone', '--depth', '1', '--branch', ref, cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
+    } catch {
+      fs.rmSync(bridgeSourceCacheDir, { recursive: true, force: true });
+      runGit(['clone', '--depth', '1', cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
+      runGit(['fetch', '--depth', '1', 'origin', ref], bridgeSourceCacheDir, repo);
+      runGit(['checkout', '--detach', 'FETCH_HEAD'], bridgeSourceCacheDir, repo);
+    }
+  } else {
     runGit(['clone', '--depth', '1', cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
     runGit(['fetch', '--depth', '1', 'origin', ref], bridgeSourceCacheDir, repo);
     runGit(['checkout', '--detach', 'FETCH_HEAD'], bridgeSourceCacheDir, repo);
@@ -336,6 +350,22 @@ function writeManifest(manifest) {
   fs.writeFileSync(path.join(bridgeResourceDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
+function bridgeManifest({ sourcePath, sourceCommit, sourceBranch, placeholder, placeholderReason }) {
+  const manifest = {
+    schema: 'evaos-desktop-bridge-resource/v1',
+    requestedSourceRef: selectedBridgeSourceRef(),
+    sourcePath,
+    sourceCommit,
+    sourceBranch,
+    placeholder,
+    generatedAt: new Date().toISOString(),
+  };
+  if (placeholderReason !== undefined) {
+    manifest.placeholderReason = placeholderReason;
+  }
+  return manifest;
+}
+
 function preparePlaceholderBridgeResource(error) {
   if (shouldRequireRealBridge() || !shouldAllowPlaceholder()) {
     throw error;
@@ -346,15 +376,15 @@ function preparePlaceholderBridgeResource(error) {
   fs.rmSync(bridgeResourceDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(bridgeResourceDir, 'bin'), { recursive: true });
   writePlaceholderWrapper(reason);
-  writeManifest({
-    schema: 'evaos-desktop-bridge-resource/v1',
-    sourcePath: PLACEHOLDER_SOURCE,
-    sourceCommit: undefined,
-    sourceBranch: undefined,
-    placeholder: true,
-    placeholderReason: reason,
-    generatedAt: new Date().toISOString(),
-  });
+  writeManifest(
+    bridgeManifest({
+      sourcePath: PLACEHOLDER_SOURCE,
+      sourceCommit: undefined,
+      sourceBranch: undefined,
+      placeholder: true,
+      placeholderReason: reason,
+    })
+  );
   console.log(`Prepared evaOS desktop bridge diagnostic placeholder at ${bridgeResourceDir}`);
 }
 
@@ -409,14 +439,12 @@ function main() {
     requireMachOReleaseBinary(helperPath, 'bundled evaOS connector helper');
   }
 
-  const manifest = {
-    schema: 'evaos-desktop-bridge-resource/v1',
+  const manifest = bridgeManifest({
     sourcePath: bridgeSourceDir,
     sourceCommit: gitValue(bridgeSourceDir, ['rev-parse', 'HEAD']),
     sourceBranch: gitValue(bridgeSourceDir, ['rev-parse', '--abbrev-ref', 'HEAD']),
     placeholder: false,
-    generatedAt: new Date().toISOString(),
-  };
+  });
   writeManifest(manifest);
 
   console.log(`Prepared evaOS desktop bridge resource from ${bridgeSourceDir}`);
@@ -428,8 +456,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  bridgeManifest,
   bridgeWrapperScript,
   isMachOExecutable,
   resolveBridgeSourceDir,
+  shouldCloneBridgeRefAsBranch,
   sourceCandidates,
 };
