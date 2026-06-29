@@ -4,8 +4,16 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
+  bridgeManifest: (input: {
+    sourcePath: string;
+    sourceCommit?: string;
+    sourceBranch?: string;
+    placeholder: boolean;
+    placeholderReason?: string;
+  }) => Record<string, unknown>;
   bridgeWrapperScript: () => string;
   isMachOExecutable: (filePath: string) => boolean;
+  shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
 };
 
@@ -61,6 +69,48 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_SOURCE_REF', previousSourceRef);
       restoreEnv('EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES', previousDisableDefault);
     }
+  });
+
+  it('records the requested bridge source ref in packaged resource manifests', () => {
+    const previousSourceRef = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF;
+    const bridgeSha = '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b';
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF = bridgeSha;
+
+      expect(
+        bridgeResource.bridgeManifest({
+          sourcePath: '/tmp/evaos-desktop-bridge',
+          sourceCommit: bridgeSha,
+          sourceBranch: 'HEAD',
+          placeholder: false,
+        })
+      ).toMatchObject({
+        requestedSourceRef: bridgeSha,
+        sourceCommit: bridgeSha,
+        placeholder: false,
+      });
+
+      expect(
+        bridgeResource.bridgeManifest({
+          sourcePath: 'diagnostic-placeholder',
+          placeholder: true,
+          placeholderReason: 'source unavailable',
+        })
+      ).toMatchObject({
+        requestedSourceRef: bridgeSha,
+        sourceCommit: undefined,
+        placeholder: true,
+        placeholderReason: 'source unavailable',
+      });
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_SOURCE_REF', previousSourceRef);
+    }
+  });
+
+  it('does not try to clone a full bridge commit SHA as a branch name', () => {
+    expect(bridgeResource.shouldCloneBridgeRefAsBranch('60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b')).toBe(false);
+    expect(bridgeResource.shouldCloneBridgeRefAsBranch('evaos-workbench-v0.6.27')).toBe(true);
   });
 });
 
