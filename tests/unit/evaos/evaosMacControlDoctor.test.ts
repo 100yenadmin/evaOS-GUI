@@ -89,6 +89,29 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     env?: Record<string, string | undefined>,
     options?: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> }
   ) => { id: string; status: string; reasonCode?: string };
+  ensureAdminRouteSurfaceVisible: (
+    page: {
+      locator: (selector: string) => {
+        first: () => {
+          waitFor?: (options: { state: string; timeout: number }) => Promise<void>;
+          isVisible: () => Promise<boolean>;
+          getAttribute: (name: string) => Promise<string | null>;
+          click: () => Promise<void>;
+        };
+      };
+      waitForFunction: (fn: () => boolean, arg?: unknown, options?: { timeout: number }) => Promise<void>;
+    },
+    timeout: number
+  ) => Promise<void>;
+  captureVisibleAgentFailureState: (
+    page: {
+      screenshot: (options: { path: string; fullPage: boolean }) => Promise<void>;
+      evaluate: (fn: () => unknown) => Promise<unknown>;
+    },
+    artifactRoot: string,
+    gateId: string,
+    error: Error & { preSendAgentState?: unknown; structuredFailureEvidence?: unknown }
+  ) => Promise<{ state: Record<string, unknown> }>;
   runMacControlDoctor: (options?: {
     dryRun?: boolean;
     skipUi?: boolean;
@@ -638,6 +661,49 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('prefers the Mac-control cold-start blocker over harness-like route visibility failure', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        {
+          id: 'route_visibility',
+          status: 'failed',
+          reasonCode: 'runtime_not_configured',
+          message: 'Expected route visibility did not settle.',
+          data: {
+            message: 'Timed out waiting for visible Admin route marker while Admin section was collapsed.',
+          },
+        },
+        {
+          id: 'mac_control_cold_start',
+          status: 'failed',
+          reasonCode: 'connector_service_not_ready',
+          message: 'Mac control cold-start proof failed.',
+        },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'connector_service_not_ready',
+      lastAction: {
+        action: 'mac_control_cold_start',
+        blockerReason: 'connector_service_not_ready',
+      },
+    });
+  });
+
   it('fails bridge readiness when the live listener is missing even if ready JSON is green', () => {
     const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
     writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
@@ -927,6 +993,129 @@ describe('evaOS Mac control doctor', () => {
       id: 'local_openclaw',
       status: 'failed',
       reasonCode: 'unapproved_proof_command',
+    });
+  });
+
+  it('allows the evaos-support.sh wrapper as approved structured proof tooling', () => {
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-doctor-bin-'));
+    const supportScript = path.join(binDir, 'evaos-support.sh');
+    fs.writeFileSync(
+      supportScript,
+      ['#!/bin/sh', 'printf \'{"ok":true,"auditId":"audit-support","result":{"status":"ready"}}\\n\'', ''].join('\n')
+    );
+    fs.chmodSync(supportScript, 0o755);
+
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD: `${supportScript} runtime-health --targets support-vm`,
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
+      status: 'passed',
+    });
+  });
+
+  it('rejects shell chaining in approved support-control proof commands', () => {
+    expect(
+      doctor.runConfiguredCommandGate('vm_openclaw', 'VM_SMOKE_CMD', {
+        VM_SMOKE_CMD:
+          'evaos-support.sh runtime-health --targets support-vm; printf \'{"ok":true,"auditId":"audit-forged","result":{"status":"ready"}}\\n\'',
+      })
+    ).toMatchObject({
+      id: 'vm_openclaw',
+      status: 'failed',
+      reasonCode: 'unsupported_proof_command_syntax',
+    });
+  });
+
+  it('expands the Admin route surface deterministically before checking route markers', async () => {
+    const events: string[] = [];
+    let expanded = false;
+    const adminToggle = {
+      waitFor: vi.fn(async () => {
+        events.push('wait-toggle');
+      }),
+      isVisible: vi.fn(async () => {
+        events.push('visible-toggle');
+        return true;
+      }),
+      getAttribute: vi.fn(async (name: string) => {
+        events.push(`attr:${name}`);
+        return expanded ? 'true' : 'false';
+      }),
+      click: vi.fn(async () => {
+        events.push('click-toggle');
+        expanded = true;
+      }),
+    };
+    const page = {
+      locator: vi.fn(() => ({
+        first: () => adminToggle,
+      })),
+      waitForFunction: vi.fn(async () => {
+        events.push('wait-expanded');
+      }),
+    };
+
+    await doctor.ensureAdminRouteSurfaceVisible(page, 250);
+
+    expect(events).toEqual(['wait-toggle', 'visible-toggle', 'attr:aria-expanded', 'click-toggle', 'wait-expanded']);
+    expect(adminToggle.click).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves pre-send proof-agent state when later failure capture loses agent pills', async () => {
+    const artifactRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-agent-failure-'));
+    const error = Object.assign(new Error('Visible Workbench agent proof did not settle.'), {
+      preSendAgentState: {
+        selectedAgent: {
+          key: 'openclaw-gateway',
+          type: 'openclaw-gateway',
+          nativeStatus: 'ready',
+        },
+        availableAgents: [
+          {
+            key: 'openclaw-gateway',
+            type: 'openclaw-gateway',
+            selected: 'true',
+            nativeStatus: 'ready',
+          },
+        ],
+      },
+      structuredFailureEvidence: {
+        status: 'failed',
+        reasonCode: 'agent_cli_config_invalid',
+        data: {
+          failureKind: 'fatal',
+        },
+      },
+    });
+    const page = {
+      screenshot: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => ({
+        hash: '#/conversation/after-navigation',
+        selectedAgent: null,
+        availableAgents: [],
+        bodySummary: { length: 120, sha256Prefix: '__BODY_DIGEST__' },
+      })),
+    };
+
+    const failure = await doctor.captureVisibleAgentFailureState(page, artifactRoot, 'visible_agent_mac_tools', error);
+
+    expect(failure.state).toMatchObject({
+      selectedAgent: null,
+      availableAgents: [],
+      preSendAgentState: {
+        selectedAgent: {
+          key: 'openclaw-gateway',
+          nativeStatus: 'ready',
+        },
+      },
+      structuredFailureEvidence: {
+        reasonCode: 'agent_cli_config_invalid',
+        data: {
+          failureKind: 'fatal',
+        },
+      },
     });
   });
 

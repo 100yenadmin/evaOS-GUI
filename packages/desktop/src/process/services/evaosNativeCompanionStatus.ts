@@ -1381,10 +1381,11 @@ async function createPairingPromptAction(
 
   const customerMac = await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps);
   const permissions = permissionView(customerMac.data?.permissions);
+  const deviceIdentifier = connectorDeviceIdentifier(customerMac.data);
   if (!hasGrantedCorePermissions(permissions)) {
     const controlSession = await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps);
     if (controlSessionHasPermissionProof(controlSession)) {
-      return createPairingPromptWithReadyMac({ bridgePath, customerId, deps });
+      return createPairingPromptWithReadyMac({ bridgePath, customerId, deps, deviceIdentifier });
     }
     return nativeActionResult(
       'create_pairing_prompt',
@@ -1399,15 +1400,16 @@ async function createPairingPromptAction(
     );
   }
 
-  return createPairingPromptWithReadyMac({ bridgePath, customerId, deps });
+  return createPairingPromptWithReadyMac({ bridgePath, customerId, deps, deviceIdentifier });
 }
 
 async function createPairingPromptWithReadyMac(input: {
   bridgePath: string;
   customerId: string;
   deps: EvaosNativeCompanionStatusDeps;
+  deviceIdentifier?: string;
 }): Promise<IEvaosNativeCompanionActionResult> {
-  const { bridgePath, customerId, deps } = input;
+  const { bridgePath, customerId, deps, deviceIdentifier } = input;
   const createEnrollment =
     deps.createCustomerMacEnrollment ??
     ((enrollmentInput) => getDefaultEvaosBrokerSessionClient().createCustomerMacEnrollment(enrollmentInput));
@@ -1438,6 +1440,7 @@ async function createPairingPromptWithReadyMac(input: {
     bridgePath,
     enrollment,
     deviceName,
+    deviceIdentifier,
     deps,
   });
   if (!registration.ok) {
@@ -1486,24 +1489,24 @@ async function completeLocalConnectorEnrollment(input: {
   bridgePath: string;
   enrollment: { customerId: string; pairingCode: string; expiresAt?: string };
   deviceName: string;
+  deviceIdentifier?: string;
   deps: EvaosNativeCompanionStatusDeps;
 }): Promise<BridgeCommandResult> {
-  return runBridgeCommand(
-    input.bridgePath,
-    [
-      'connector-service',
-      'complete-enrollment',
-      '--json',
-      '--enrollment-code',
-      input.enrollment.pairingCode,
-      '--customer-id',
-      input.enrollment.customerId,
-      '--device-name',
-      input.deviceName,
-    ],
-    input.deps,
-    PAIRING_COMMAND_TIMEOUT_MS
-  );
+  const args = [
+    'connector-service',
+    'complete-enrollment',
+    '--json',
+    '--enrollment-code',
+    input.enrollment.pairingCode,
+    '--customer-id',
+    input.enrollment.customerId,
+    '--device-name',
+    input.deviceName,
+  ];
+  if (input.deviceIdentifier) {
+    args.push('--device-identifier', input.deviceIdentifier);
+  }
+  return runBridgeCommand(input.bridgePath, args, input.deps, PAIRING_COMMAND_TIMEOUT_MS);
 }
 
 function isBrokerSessionReconnectRequired(error: unknown): boolean {

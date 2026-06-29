@@ -80,6 +80,7 @@ const APPROVED_PROOF_EXECUTABLES = new Set([
   'mac-control-doctor',
   'support-control',
   'evaos-support',
+  'evaos-support.sh',
 ]);
 const APPROVED_PROOF_EXECUTABLE_PREFIXES = ['customer_mac_', 'desktop_control', 'desktop_see', 'desktop_bridge'];
 const VISIBLE_AGENT_SUCCESS_STATUSES = new Set(['ok', 'passed', 'succeeded', 'success', 'ready', 'completed', 'done']);
@@ -231,15 +232,8 @@ function failedGate(id, reasonCode, message, details = {}) {
   return makeGate(id, 'failed', { ...details, reasonCode, message });
 }
 
-function resolveCommandShell() {
-  for (const candidate of ['/bin/zsh', '/usr/bin/zsh', '/bin/bash', '/usr/bin/bash']) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return process.env.SHELL || '/bin/sh';
-}
-
-function runShellCommand(command, options = {}) {
-  const result = spawnSync(resolveCommandShell(), ['-lc', command], {
+function runProofCommand(parsedCommand, options = {}) {
+  const result = spawnSync(parsedCommand.executable, parsedCommand.args, {
     cwd: options.cwd || path.resolve(__dirname, '..'),
     encoding: 'utf8',
     timeout: options.timeout || DEFAULT_TIMEOUT_MS,
@@ -247,6 +241,7 @@ function runShellCommand(command, options = {}) {
     env: {
       ...process.env,
       ...options.env,
+      ...parsedCommand.env,
     },
   });
 
@@ -274,25 +269,55 @@ function unquoteShellWord(word) {
   return value;
 }
 
-function firstProofExecutable(command) {
+function proofCommandWordUnsupported(word) {
+  return /[;&|()<>`]/.test(String(word || ''));
+}
+
+function parseProofCommand(command) {
   const words = shellWords(command);
+  if (words.length === 0) return { ok: false, reasonCode: 'empty_proof_command' };
+
+  const env = {};
+  const args = [];
+  let executable = '';
   let sawEnv = false;
+
   for (const rawWord of words) {
     const word = unquoteShellWord(rawWord);
     if (!word) continue;
-    if (word === 'env' || word === 'command') {
+    if (proofCommandWordUnsupported(word)) {
+      return { ok: false, reasonCode: 'unsupported_proof_command_syntax' };
+    }
+    if (!executable && (word === 'env' || word === 'command')) {
       sawEnv = word === 'env';
       continue;
     }
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
-    if (sawEnv && /^-/.test(word)) continue;
-    return path.basename(word);
+    if (!executable && /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
+      const separatorIndex = word.indexOf('=');
+      env[word.slice(0, separatorIndex)] = word.slice(separatorIndex + 1);
+      continue;
+    }
+    if (!executable && sawEnv && /^-/.test(word)) {
+      continue;
+    }
+    if (!executable) {
+      executable = word;
+      continue;
+    }
+    args.push(word);
   }
-  return '';
+
+  if (!executable) return { ok: false, reasonCode: 'empty_proof_command' };
+  return { ok: true, executable, executableName: path.basename(executable), args, env };
+}
+
+function firstProofExecutable(command) {
+  const parsed = parseProofCommand(command);
+  return parsed.ok ? parsed.executableName : '';
 }
 
 function approvedProofExecutable(command) {
-  const executable = firstProofExecutable(command);
+  const executable = typeof command === 'string' ? firstProofExecutable(command) : path.basename(command || '');
   if (!executable) return false;
   return (
     APPROVED_PROOF_EXECUTABLES.has(executable) ||
@@ -403,7 +428,13 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
       command: normalizedCommand,
     });
   }
-  if (!approvedProofExecutable(normalizedCommand)) {
+  const parsedCommand = parseProofCommand(normalizedCommand);
+  if (!parsedCommand.ok) {
+    return failedGate(id, parsedCommand.reasonCode, `${id} proof command uses unsupported shell syntax.`, {
+      command: normalizedCommand,
+    });
+  }
+  if (!approvedProofExecutable(parsedCommand.executableName)) {
     return failedGate(
       id,
       'unapproved_proof_command',
@@ -412,7 +443,7 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
     );
   }
 
-  const result = runShellCommand(normalizedCommand, options);
+  const result = runProofCommand(parsedCommand, options);
   if (result.status === 0 && !result.signal && !result.error) {
     const proof = commandProofSatisfied(id, result);
     if (!proof.ok) {
@@ -1105,6 +1136,7 @@ async function maybeSelectProofAgent(page, options = {}) {
   if (!/^(openclaw|openclaw-gateway)$/.test(selectedState.key || selectedState.type || '')) {
     throw new Error(`Selected proof agent is not evaOS/OpenClaw: ${JSON.stringify(selectedState)}`);
   }
+  return sanitizeValue(selectedState);
 }
 
 async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error) {
@@ -1150,6 +1182,12 @@ async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error
       };
     })
     .catch((stateError) => ({ stateError: sanitizeText(stateError?.message || String(stateError)) }));
+  if (state && typeof state === 'object') {
+    if (error?.preSendAgentState) state.preSendAgentState = sanitizeValue(error.preSendAgentState);
+    if (error?.structuredFailureEvidence) {
+      state.structuredFailureEvidence = sanitizeValue(error.structuredFailureEvidence);
+    }
+  }
   if (
     state &&
     typeof state === 'object' &&
@@ -1267,49 +1305,84 @@ async function convergeMacControlReady(page, options = {}) {
 async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {}) {
   const submitTimeout = options.submitTimeout || timeout;
   const proofTimeout = options.proofTimeout || Math.max(timeout, DEFAULT_AGENT_PROOF_TIMEOUT_MS);
+  let preSendAgentState = null;
 
-  await maybeSelectProofAgent(page, {
-    agentKey: options.agentKey,
-    agentType: options.agentType,
-    timeout: submitTimeout,
-  });
+  try {
+    const selectedAgent = await maybeSelectProofAgent(page, {
+      agentKey: options.agentKey,
+      agentType: options.agentType,
+      timeout: submitTimeout,
+    });
+    preSendAgentState = {
+      selectedAgent,
+      availableAgents: await collectAgentPillState(page),
+    };
 
-  const inputSelector = '[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]';
-  await setTextareaValue(page, inputSelector, prompt, submitTimeout);
-  const beforeSendText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+    const inputSelector = '[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]';
+    await setTextareaValue(page, inputSelector, prompt, submitTimeout);
+    const beforeSendText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
 
-  const sendButton = page.locator('[data-testid="guid-send-btn"]').first();
-  await sendButton.waitFor({ state: 'visible', timeout: submitTimeout });
-  await page.waitForFunction(
-    () => {
-      const button = document.querySelector('[data-testid="guid-send-btn"]');
-      if (!button) return false;
-      if (button instanceof HTMLButtonElement) return !button.disabled;
-      return button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('disabled');
-    },
-    undefined,
-    { timeout: submitTimeout }
-  );
-  await sendButton.click();
-
-  await page.waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
-    timeout: submitTimeout,
-  });
-  await waitForBodyMarkers(page, [promptConversationMarker(prompt)], submitTimeout);
-  const deadline = Date.now() + proofTimeout;
-  let lastGate = runVisibleAgentMacToolEvidenceGate('');
-  while (Date.now() < deadline) {
-    const text = await page.evaluate(() => document.body?.innerText || '');
-    lastGate = runVisibleAgentMacToolEvidenceGate(
-      visibleAgentEvidenceText(text, { beforeText: beforeSendText, prompt })
+    const sendButton = page.locator('[data-testid="guid-send-btn"]').first();
+    await sendButton.waitFor({ state: 'visible', timeout: submitTimeout });
+    await page.waitForFunction(
+      () => {
+        const button = document.querySelector('[data-testid="guid-send-btn"]');
+        if (!button) return false;
+        if (button instanceof HTMLButtonElement) return !button.disabled;
+        return button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('disabled');
+      },
+      undefined,
+      { timeout: submitTimeout }
     );
-    if (lastGate.status === 'passed') return lastGate;
-    if (lastGate.data?.failureKind === 'fatal') {
-      throw new Error(lastGate.message || 'Visible agent Mac-tool proof failed.');
+    await sendButton.click();
+
+    await page.waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
+      timeout: submitTimeout,
+    });
+    await waitForBodyMarkers(page, [promptConversationMarker(prompt)], submitTimeout);
+    const deadline = Date.now() + proofTimeout;
+    let lastGate = runVisibleAgentMacToolEvidenceGate('');
+    while (Date.now() < deadline) {
+      const text = await page.evaluate(() => document.body?.innerText || '');
+      lastGate = runVisibleAgentMacToolEvidenceGate(
+        visibleAgentEvidenceText(text, { beforeText: beforeSendText, prompt })
+      );
+      if (lastGate.status === 'passed') return lastGate;
+      if (lastGate.data?.failureKind === 'fatal') {
+        const error = new Error(lastGate.message || 'Visible agent Mac-tool proof failed.');
+        error.preSendAgentState = preSendAgentState;
+        error.structuredFailureEvidence = lastGate;
+        throw error;
+      }
+      await page.waitForTimeout(500);
     }
-    await page.waitForTimeout(500);
+    const error = new Error(lastGate.message || 'Visible agent Mac-tool proof did not settle.');
+    error.preSendAgentState = preSendAgentState;
+    error.structuredFailureEvidence = lastGate;
+    throw error;
+  } catch (error) {
+    if (preSendAgentState && error && typeof error === 'object' && !error.preSendAgentState) {
+      error.preSendAgentState = preSendAgentState;
+    }
+    throw error;
   }
-  throw new Error(lastGate.message || 'Visible agent Mac-tool proof did not settle.');
+}
+
+async function ensureAdminRouteSurfaceVisible(page, timeout) {
+  const adminToggle = page.locator('[data-testid="evaos-sidebar-admin-toggle"]').first();
+  if (adminToggle.waitFor) {
+    await adminToggle.waitFor({ state: 'visible', timeout }).catch(() => undefined);
+  }
+  if (!(await adminToggle.isVisible().catch(() => false))) return;
+  const expanded = await adminToggle.getAttribute('aria-expanded').catch(() => null);
+  if (expanded === 'true') return;
+  await adminToggle.click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid="evaos-sidebar-admin-toggle"]')?.getAttribute('aria-expanded') === 'true',
+    undefined,
+    { timeout }
+  );
 }
 
 async function runUiProductGates(options) {
@@ -1361,20 +1434,7 @@ async function runUiProductGates(options) {
     }
 
     try {
-      const adminToggle = page.locator('[data-testid="evaos-sidebar-admin-toggle"]').first();
-      if (await adminToggle.isVisible().catch(() => false)) {
-        const expanded = await adminToggle.getAttribute('aria-expanded').catch(() => null);
-        if (expanded !== 'true') {
-          await adminToggle.click();
-          await page.waitForFunction(
-            () =>
-              document.querySelector('[data-testid="evaos-sidebar-admin-toggle"]')?.getAttribute('aria-expanded') ===
-              'true',
-            undefined,
-            { timeout }
-          );
-        }
-      }
+      await ensureAdminRouteSurfaceVisible(page, timeout);
       for (const marker of ROUTE_MARKERS) {
         await waitForBodyText(page, marker, timeout);
       }
@@ -1429,13 +1489,18 @@ async function runUiProductGates(options) {
         })
       );
     } catch (error) {
+      const failureData = await captureVisibleAgentFailureState(page, artifactRoot, 'visible_agent_mac_tools', error);
+      const structuredReason =
+        error?.structuredFailureEvidence && typeof error.structuredFailureEvidence === 'object'
+          ? error.structuredFailureEvidence.reasonCode
+          : undefined;
       gates.push(
         failedGate(
           'visible_agent_mac_tools',
-          'runtime_not_configured',
+          structuredReason || 'runtime_not_configured',
           'Visible Workbench agent Mac-tool proof failed.',
           {
-            data: await captureVisibleAgentFailureState(page, artifactRoot, 'visible_agent_mac_tools', error),
+            data: failureData,
           }
         )
       );
@@ -1540,10 +1605,16 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
 
 function primaryDiagnosticBlocker(gates) {
   const candidates = gates.filter((gate) => gate.status === 'failed' || gate.status === 'blocked');
-  return (
-    candidates.find((gate) => gate.id === 'bridge_ready' && BRIDGE_TRUTH_REASON_CODES.has(gate.reasonCode)) ||
-    candidates[0]
+  const bridgeTruth = candidates.find(
+    (gate) => gate.id === 'bridge_ready' && BRIDGE_TRUTH_REASON_CODES.has(gate.reasonCode)
   );
+  if (bridgeTruth) return bridgeTruth;
+  const routeHarnessFailure = candidates.find(
+    (gate) => gate.id === 'route_visibility' && gate.reasonCode === 'runtime_not_configured'
+  );
+  const coldStartFailure = candidates.find((gate) => gate.id === 'mac_control_cold_start');
+  if (routeHarnessFailure && coldStartFailure) return coldStartFailure;
+  return candidates[0];
 }
 
 function gateStatus(gates, id) {
@@ -1909,6 +1980,8 @@ module.exports = {
   bridgePathForApp,
   buildDiagnosticPacket,
   buildDryRunGates,
+  captureVisibleAgentFailureState,
+  ensureAdminRouteSurfaceVisible,
   gateStatus,
   macControlReadyTextSatisfied,
   overallStatus,
