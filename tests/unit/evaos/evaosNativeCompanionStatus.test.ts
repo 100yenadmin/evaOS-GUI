@@ -2085,13 +2085,16 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           audit_id: 'audit-mac',
           data: {
+            device: {
+              hostname: 'Proof-Mac.local',
+            },
             permissions: {
               accessibility: { status: 'granted' },
               screen_recording: { status: 'granted' },
             },
           },
         },
-        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName} --device-identifier Proof-Mac.local`]:
           {
             ok: true,
             audit_id: 'audit-pairing',
@@ -2135,7 +2138,7 @@ describe('evaosNativeCompanionStatus', () => {
       (call) => call[1][0] === 'connector-service' && call[1][1] === 'complete-enrollment'
     );
     expect(completeCall?.[1].join(' ')).toBe(
-      `connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`
+      `connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName} --device-identifier Proof-Mac.local`
     );
     expect(completeCall?.[2]).toEqual({ timeout: 30000 });
   });
@@ -2154,6 +2157,9 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           audit_id: 'audit-mac-stale',
           data: {
+            device: {
+              hostname: 'Proof-Mac.local',
+            },
             permissions: {
               accessibility: { status: 'granted' },
               screen_recording: { status: 'missing' },
@@ -2174,7 +2180,7 @@ describe('evaosNativeCompanionStatus', () => {
             },
           },
         },
-        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName} --device-identifier Proof-Mac.local`]:
           {
             ok: true,
             audit_id: 'audit-pairing',
@@ -2283,13 +2289,16 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           audit_id: 'audit-mac',
           data: {
+            device: {
+              hostname: 'Proof-Mac.local',
+            },
             permissions: {
               accessibility: { status: 'granted' },
               screen_recording: { status: 'granted' },
             },
           },
         },
-        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName} --device-identifier Proof-Mac.local`]:
           {
             ok: false,
             errors: [
@@ -2339,13 +2348,16 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           audit_id: 'audit-mac',
           data: {
+            device: {
+              hostname: 'Proof-Mac.local',
+            },
             permissions: {
               accessibility: { status: 'granted' },
               screen_recording: { status: 'granted' },
             },
           },
         },
-        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName}`]:
+        [`connector-service complete-enrollment --json --enrollment-code PAIR-1234 --customer-id golden --device-name ${deviceName} --device-identifier Proof-Mac.local`]:
           {
             ok: false,
             error: {
