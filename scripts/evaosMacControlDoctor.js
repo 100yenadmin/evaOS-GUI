@@ -617,7 +617,11 @@ function bridgeOwnerTruthBlocker(desktopProofState) {
       message: 'No live Workbench bridge listener is present for Mac-control proof.',
     };
   }
-  if (desktopProofState.launchAgent?.status && desktopProofState.launchAgent.status !== 'loaded' && !listenerListening) {
+  if (
+    desktopProofState.launchAgent?.status &&
+    desktopProofState.launchAgent.status !== 'loaded' &&
+    !listenerListening
+  ) {
     return {
       reasonCode: 'connector_service_not_running',
       message: 'Workbench bridge LaunchAgent is not loaded.',
