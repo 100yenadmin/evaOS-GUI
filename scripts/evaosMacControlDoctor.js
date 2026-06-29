@@ -821,6 +821,9 @@ function runVisibleAgentMacToolEvidenceGate(evidence) {
   const lowImpactRecord = successfulRecords.find(
     (record) => visibleAgentRecordLowImpact(record) && visibleAgentRecordApproved(record)
   );
+  const killSwitchRecords = successfulRecords.filter(
+    (record) => visibleAgentToolName(record) === 'desktop_kill_switch'
+  );
   const missingAuditTools = Array.from(
     new Set(
       successfulStructuredRecords
@@ -844,6 +847,20 @@ function runVisibleAgentMacToolEvidenceGate(evidence) {
           missingTools,
           missingLowImpactAction: !lowImpactRecord,
           missingAuditTools,
+        },
+      }
+    );
+  }
+
+  if (!killSwitchRecords.some(commandProofPayloadFailsClosed)) {
+    return failedGate(
+      'visible_agent_mac_tools',
+      'kill_switch_not_fail_closed',
+      'Visible Workbench agent proof must show desktop_kill_switch failed closed.',
+      {
+        data: {
+          failureKind: 'incomplete',
+          observedTools,
         },
       }
     );

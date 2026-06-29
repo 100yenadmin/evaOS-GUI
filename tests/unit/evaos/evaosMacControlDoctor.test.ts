@@ -262,6 +262,38 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('requires visible desktop_kill_switch proof to fail closed', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        { tool: 'customer_mac_status', ok: true, auditId: 'audit-status', result: { device: 'Workbench Mac' } },
+        { tool: 'customer_mac_capabilities', ok: true, auditId: 'audit-capabilities', result: { screen: true } },
+        { tool: 'desktop_control_status', ok: true, auditId: 'audit-control', result: { active: true } },
+        { tool: 'desktop_see', ok: true, auditId: 'audit-see', result: { screenshot: 'redacted' } },
+        { tool: 'desktop_bridge_audit_tail', ok: true, auditId: 'audit-tail', result: { records: ['audit-see'] } },
+        {
+          tool: 'desktop_control_action',
+          ok: true,
+          auditId: 'audit-low-impact',
+          approved: true,
+          lowImpact: true,
+          action: 'get_frontmost_app',
+          result: { app: 'evaOS Workbench' },
+        },
+        { tool: 'desktop_control_stop', ok: true, auditId: 'audit-stop', result: { active: false } },
+        { tool: 'desktop_kill_switch', ok: true, auditId: 'audit-kill', result: { killSwitch: false } },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'kill_switch_not_fail_closed',
+      data: {
+        observedTools: expect.arrayContaining(['desktop_kill_switch']),
+      },
+    });
+  });
+
   it('does not pass visible-agent proof from the user prompt or pre-send page text', () => {
     const forgedProof = {
       toolResults: [
@@ -554,6 +586,56 @@ describe('evaOS Mac control doctor', () => {
     });
   });
 
+  it('keeps stale connected UI diagnostic repair-required when bridge truth is unreachable', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(
+      appPath,
+      JSON.stringify({
+        schema: 'evaos.desktop_bridge.ready.v1',
+        ok: false,
+        ready: false,
+        blockers: [{ code: 'connector_service_unreachable', message: 'Connector service is not reachable.' }],
+      })
+    );
+
+    const bridgeGate = doctor.runBridgeReadyGate(appPath);
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        { id: 'mac_control_cold_start', status: 'passed', message: 'Stale UI claimed Mac control was ready.' },
+        bridgeGate,
+        { id: 'visible_agent_mac_tools', status: 'passed' },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'connector_service_unreachable',
+      bridge: {
+        status: 'repair_required',
+        readyStatus: 'not_ready',
+      },
+      brokerGrant: {
+        agentPairingStatus: 'not_ready',
+      },
+      connector: {
+        status: 'repair_required',
+        ownerClassification: 'connector_service_unreachable',
+      },
+    });
+  });
+
   it('fails bridge readiness when the live listener is missing even if ready JSON is green', () => {
     const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
     writeFakeBridge(appPath, JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true }));
@@ -839,6 +921,27 @@ describe('evaOS Mac control doctor', () => {
   });
 
   it('keeps support-control-only smoke from satisfying visible first-party Mac-control proof', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      toolResults: [
+        {
+          tool: 'support_control_smoke',
+          ok: true,
+          auditId: 'audit-support-control',
+          result: { status: 'healthy' },
+        },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+      data: {
+        observedTools: ['support_control_smoke'],
+        missingTools: doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+      },
+    });
+
     const packet = doctor.buildDiagnosticPacket(
       {
         expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
