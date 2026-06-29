@@ -491,6 +491,39 @@ function runConfiguredCommandGate(id, envName, env = process.env, options = {}) 
   });
 }
 
+function runPostResetRecoveryGate(appPath, env = process.env, options = {}) {
+  const commandGate = runConfiguredCommandGate('post_reset_recovery', 'EVAOS_MAC_CONTROL_DOCTOR_POST_RESET_CMD', env, {
+    cwd: options.cwd,
+    timeout: options.timeout,
+    env: options.env,
+  });
+  if (commandGate.status !== 'passed') return commandGate;
+
+  const readyGate = runBridgeReadyGate(appPath, { timeout: options.timeout });
+  if (readyGate.status === 'passed') {
+    return passedGate('post_reset_recovery', 'Post-reset recovery restored installed Workbench bridge readiness.', {
+      command: commandGate.command,
+      data: {
+        command: commandGate.data,
+        bridgeReady: readyGate.data,
+      },
+    });
+  }
+
+  return failedGate(
+    'post_reset_recovery',
+    readyGate.reasonCode || 'bridge_diagnostics_unavailable',
+    'Post-reset recovery command completed, but installed Workbench bridge readiness did not recover.',
+    {
+      command: commandGate.command,
+      data: {
+        command: commandGate.data,
+        bridgeReady: readyGate.data,
+      },
+    }
+  );
+}
+
 function readComputerUseEvidence(evidencePath) {
   if (!evidencePath || !String(evidencePath).trim()) {
     return null;
@@ -1938,7 +1971,7 @@ async function runMacControlDoctor(options = {}) {
       })
     );
     gates.push(
-      runConfiguredCommandGate('post_reset_recovery', 'EVAOS_MAC_CONTROL_DOCTOR_POST_RESET_CMD', process.env, {
+      runPostResetRecoveryGate(appPath, process.env, {
         cwd: repoRoot,
         timeout,
       })
@@ -2083,6 +2116,7 @@ module.exports = {
   runConfiguredCommandGate,
   runComputerUseEvidenceGate,
   runMacControlDoctor,
+  runPostResetRecoveryGate,
   runVisibleAgentMacToolEvidenceGate,
   sanitizeText,
   sanitizeValue,
