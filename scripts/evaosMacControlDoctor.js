@@ -93,6 +93,14 @@ const PROOF_FAILURE_STATUSES = new Set([
   'repair_required',
 ]);
 const FAIL_CLOSED_STATUSES = new Set(['fail_closed', 'failed_closed', 'closed', 'blocked', 'revoked']);
+const BRIDGE_TRUTH_REASON_CODES = new Set([
+  'connector_service_not_running',
+  'connector_service_unreachable',
+  'control_kill_switch_active',
+  'missing_live_listener',
+  'stale_bridge_owner',
+  'token_missing',
+]);
 const VISIBLE_AGENT_TOOL_ARRAY_KEYS = ['toolResults', 'tool_results', 'toolCalls', 'tool_calls', 'results', 'calls'];
 const DEFAULT_PROOF_AGENT_SELECTORS = [
   '[data-agent-pill="true"][data-agent-key="openclaw-gateway"]',
@@ -596,22 +604,23 @@ function bridgeOwnerTruthBlocker(desktopProofState) {
   if (!desktopProofState || typeof desktopProofState !== 'object') return null;
   const listener = desktopProofState.bridgeListener || {};
   const staleOwners = Array.isArray(listener.staleOwners) ? listener.staleOwners : [];
+  const listenerListening = listener.status === 'listening';
   if (desktopProofState.staleLaunchAgent || desktopProofState.staleBridgeListener || staleOwners.length > 0) {
     return {
       reasonCode: 'stale_bridge_owner',
       message: 'Bridge live owner truth does not match the installed Workbench candidate.',
     };
   }
-  if (desktopProofState.launchAgent?.status && desktopProofState.launchAgent.status !== 'loaded') {
-    return {
-      reasonCode: 'connector_service_not_running',
-      message: 'Workbench bridge LaunchAgent is not loaded.',
-    };
-  }
   if (listener.status && listener.status !== 'listening') {
     return {
       reasonCode: 'missing_live_listener',
       message: 'No live Workbench bridge listener is present for Mac-control proof.',
+    };
+  }
+  if (desktopProofState.launchAgent?.status && desktopProofState.launchAgent.status !== 'loaded' && !listenerListening) {
+    return {
+      reasonCode: 'connector_service_not_running',
+      message: 'Workbench bridge LaunchAgent is not loaded.',
     };
   }
   return null;
@@ -1435,7 +1444,7 @@ async function runUiProductGates(options) {
 }
 
 function buildDiagnosticPacket(options, gates, extras = {}) {
-  const failedOrBlocked = gates.find((gate) => gate.status === 'failed' || gate.status === 'blocked');
+  const failedOrBlocked = primaryDiagnosticBlocker(gates);
   const blockerCategory = failedOrBlocked?.reasonCode || 'unknown';
   const launchAgent = extras.desktopProofState?.launchAgent || {};
   const bundleInfo = extras.bundleInfo || {};
@@ -1523,6 +1532,14 @@ function buildDiagnosticPacket(options, gates, extras = {}) {
       rawPromptMaterialIncluded: false,
     },
   });
+}
+
+function primaryDiagnosticBlocker(gates) {
+  const candidates = gates.filter((gate) => gate.status === 'failed' || gate.status === 'blocked');
+  return (
+    candidates.find((gate) => gate.id === 'bridge_ready' && BRIDGE_TRUTH_REASON_CODES.has(gate.reasonCode)) ||
+    candidates[0]
+  );
 }
 
 function gateStatus(gates, id) {

@@ -40,7 +40,9 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
       };
       desktopProofState?: {
         launchAgent?: { label?: string; status?: string; bridgePath?: string };
+        bridgeListener?: { status?: string; staleOwners?: Array<unknown>; owners?: Array<unknown> };
         staleLaunchAgent?: boolean;
+        staleBridgeListener?: boolean;
       };
     }
   ) => { schemaVersion: string; blockerCategory: string; selectedContext: Record<string, unknown> };
@@ -660,6 +662,127 @@ describe('evaOS Mac control doctor', () => {
       id: 'bridge_ready',
       status: 'failed',
       reasonCode: 'missing_live_listener',
+    });
+  });
+
+  it('accepts a verified Workbench-managed live listener when LaunchAgent status is not loaded', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    const bridgePath = writeFakeBridge(
+      appPath,
+      JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true })
+    );
+
+    const gate = doctor.runBridgeReadyGate(appPath, {
+      desktopProofState: {
+        launchAgent: {
+          status: 'not-loaded',
+          bridgePath,
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          status: 'listening',
+          owners: [{ pid: '1234', matchesExpectedBridge: true }],
+          staleOwners: [],
+        },
+        staleBridgeListener: false,
+      },
+    });
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'passed',
+    });
+  });
+
+  it('keeps stale listener owners blocked even when the listener is present', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    const bridgePath = writeFakeBridge(
+      appPath,
+      JSON.stringify({ schema: 'evaos.desktop_bridge.ready.v1', ok: true, ready: true })
+    );
+
+    const gate = doctor.runBridgeReadyGate(appPath, {
+      desktopProofState: {
+        launchAgent: {
+          status: 'not-loaded',
+          bridgePath,
+        },
+        staleLaunchAgent: false,
+        bridgeListener: {
+          status: 'listening',
+          owners: [{ pid: '9999', matchesExpectedBridge: false }],
+          staleOwners: [{ pid: '9999', command: '/Applications/Old.app/bridge' }],
+        },
+        staleBridgeListener: true,
+      },
+    });
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'failed',
+      reasonCode: 'stale_bridge_owner',
+    });
+  });
+
+  it('prioritizes missing live listener as the diagnostic blocker over installed-app preflight', () => {
+    const packet = doctor.buildDiagnosticPacket(
+      {
+        expectedHead: 'b8b301f1aaff5d66ca5f70ec43e5aff74eb29b54',
+        appPath: '/Applications/evaOS Workbench.app',
+        supportAccount: 'admin@electricsheephq.com',
+        supportTarget: 'Support VM',
+      },
+      [
+        {
+          id: 'installed_app_preflight',
+          status: 'failed',
+          reasonCode: 'not_workbench_managed',
+          message: 'Installed app product proof failed.',
+        },
+        {
+          id: 'computer_use_evidence',
+          status: 'blocked',
+          reasonCode: 'runtime_not_configured',
+          message: 'Computer Use evidence not provided.',
+        },
+        {
+          id: 'bridge_ready',
+          status: 'failed',
+          reasonCode: 'missing_live_listener',
+          message: 'No live Workbench bridge listener is present for Mac-control proof.',
+        },
+      ],
+      {
+        bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+        bundleInfo: {
+          bundleId: 'com.evaos.workbench',
+          shortVersion: '2.1.23',
+        },
+        desktopProofState: {
+          launchAgent: {
+            status: 'loaded',
+            bridgePath: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+          },
+          staleLaunchAgent: false,
+          bridgeListener: {
+            status: 'not-listening',
+            owners: [],
+            staleOwners: [],
+          },
+          staleBridgeListener: false,
+        },
+      }
+    );
+
+    expect(packet).toMatchObject({
+      blockerCategory: 'missing_live_listener',
+      connector: {
+        ownerClassification: 'missing_live_listener',
+      },
+      lastAction: {
+        action: 'bridge_ready',
+        blockerReason: 'missing_live_listener',
+      },
     });
   });
 
