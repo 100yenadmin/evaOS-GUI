@@ -7,6 +7,32 @@
 import { containsEvaosSecretMaterial, EvaosBrokerSessionError } from '@process/services/evaosBrokerSession';
 
 const SAFE_SECRET_METADATA_KEYS = new Set(['rawSecretsStoredInWorkbench', 'hasBrokeredGrant']);
+const SAFE_MAC_CONTROL_BLOCKER_REASONS = new Set([
+  'listener_owner_mismatch',
+  'port_in_use',
+  'token_missing',
+  'not_workbench_managed',
+  'secure_network_link_required',
+  'permission_missing',
+  'broker_session_expired',
+  'agent_cli_config_invalid',
+  'runtime_not_configured',
+  'bundled_bridge_required',
+  'connector_service_not_ready',
+  'bridge_cli_missing',
+  'bridge_diagnostics_unavailable',
+  'pairing_not_ready',
+  'stale_connector_port_conflict',
+  'missing_live_listener',
+  'unknown',
+]);
+const SAFE_MAC_CONTROL_BLOCKER_FIELDS = new Set([
+  'blockerReason',
+  'pairingBlockedReason',
+  'blockerCategory',
+  'lastStartupCategory',
+  'ownerClassification',
+]);
 
 export function assertEvaosRendererSafePayload(value: unknown): void {
   assertEvaosRendererSafePayloadAt(value, '$', new WeakSet<object>(), 0);
@@ -26,6 +52,9 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
         return;
       }
       throwRendererSecretError(path);
+    }
+    if (isSafeMacControlBlockerReason(path, value)) {
+      return;
     }
     if (containsEvaosSecretMaterial(value)) {
       throwRendererSecretError(path);
@@ -57,6 +86,13 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
 
 function isSafeSecretMetadata(key: string, value: unknown): boolean {
   return SAFE_SECRET_METADATA_KEYS.has(key) && typeof value === 'boolean';
+}
+
+function isSafeMacControlBlockerReason(path: string, value: string): boolean {
+  const fieldName = path.split('.').at(-1);
+  return Boolean(
+    fieldName && SAFE_MAC_CONTROL_BLOCKER_FIELDS.has(fieldName) && SAFE_MAC_CONTROL_BLOCKER_REASONS.has(value)
+  );
 }
 
 function isSafePairingSetupPrompt(value: string): boolean {
