@@ -283,6 +283,27 @@ describe('evaOS Mac control doctor', () => {
       reasonCode: 'agent_cli_config_invalid',
     });
 
+    const visibleSteps = doctor.runVisibleAgentMacToolEvidenceGate(
+      [
+        'View Steps - 9',
+        'customer_mac_status execute',
+        'customer_mac_capabilities execute',
+        'desktop_control_status execute',
+        'desktop_see: max_chars: 4000, max_nodes: 200 execute',
+        'desktop_bridge_audit_tail: limit: 20 execute',
+        'customer_mac_local_site_action: action: reload, dry_run: true execute',
+        'desktop_control_stop execute',
+        'desktop_kill_switch execute',
+      ].join('\n')
+    );
+
+    expect(visibleSteps).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+    expect(visibleSteps.message).toContain('structured');
+
     const passed = doctor.runVisibleAgentMacToolEvidenceGate({
       toolResults: [
         { tool: 'customer_mac_status', ok: true, auditId: 'audit-status', result: { device: 'Workbench Mac' } },
