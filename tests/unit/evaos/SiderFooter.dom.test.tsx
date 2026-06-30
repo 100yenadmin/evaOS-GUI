@@ -78,6 +78,42 @@ describe('SiderFooter auth controls', () => {
     expect(onLogoutClick).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the customer switcher for multi-target sessions even before a selected customer is hydrated', async () => {
+    const user = userEvent.setup();
+    const onCustomerChange = vi.fn();
+
+    render(
+      <SiderFooter
+        {...baseProps}
+        accountLabel='admin@electricsheephq.com'
+        customerTargets={[
+          {
+            customerId: 'support-vm',
+            displayName: 'Support VM',
+            status: 'active',
+            healthStatus: 'ready',
+          },
+          {
+            customerId: 'admin-account',
+            displayName: 'Admin Account',
+            status: 'active',
+            healthStatus: 'ready',
+          },
+        ]}
+        canSwitchCustomers
+        onCustomerChange={onCustomerChange}
+      />
+    );
+
+    const customerSelect = screen.getByLabelText('Selected customer');
+    expect(customerSelect).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'Choose customer' })).toBeDisabled();
+
+    await user.selectOptions(customerSelect, 'support-vm');
+
+    expect(onCustomerChange).toHaveBeenCalledWith('support-vm');
+  });
+
   it('starts broker sign-in from a footer-coordinate event when the event target is not the button', () => {
     const onSignInClick = vi.fn();
 

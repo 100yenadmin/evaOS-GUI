@@ -459,7 +459,7 @@ describe('evaOS Mac control doctor', () => {
     expect(
       doctor.macControlReadyTextSatisfied(
         [
-          'Mac control ready to connect',
+          'Mac Access is on',
           'Workbench connector is reporting ready locally.',
           'Accessibility and Screen Recording are ready.',
           'Guided Mac control setup',
@@ -485,7 +485,7 @@ describe('evaOS Mac control doctor', () => {
     expect(
       doctor.macControlReadyTextSatisfied(
         [
-          'Mac control ready to connect',
+          'Mac Access is on',
           'Workbench connector is reporting ready locally.',
           'Accessibility and Screen Recording are ready.',
           'Guided Mac control setup',

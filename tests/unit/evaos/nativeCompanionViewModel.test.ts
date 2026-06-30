@@ -169,8 +169,8 @@ describe('nativeCompanionViewModel', () => {
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
     const toolStep = viewModel.repairSteps.find((step) => step.title === 'Test Mac control');
 
-    expect(viewModel.title).toBe('Mac control ready to connect');
-    expect(viewModel.summary).toContain('Connect this signed-in Workbench session');
+    expect(viewModel.title).toBe('Mac Access is on');
+    expect(viewModel.summary).toContain('Local Workbench connector and macOS permissions are ready');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
       action: 'ensure_customer_mac_connector_grant',
@@ -209,16 +209,16 @@ describe('nativeCompanionViewModel', () => {
     const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
 
-    expect(viewModel.state).toBe('repair_required');
-    expect(viewModel.title).toBe('Connect secure Mac link');
-    expect(viewModel.summary).toContain('broker-owned private connector link');
+    expect(viewModel.state).toBe('ready');
+    expect(viewModel.title).toBe('Mac Access is on');
+    expect(viewModel.summary).toContain('Local Workbench connector and macOS permissions are ready');
     expect(pairing).toMatchObject({
-      value: 'Secure link needed',
+      value: 'Agent setup needed',
       tone: 'attention',
     });
     expect(pairingStep).toMatchObject({
       detail: expect.stringContaining('broker-owned private connector link'),
-      state: 'neutral',
+      state: 'attention',
     });
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
@@ -316,7 +316,7 @@ describe('nativeCompanionViewModel', () => {
     expect(pairingStep).toMatchObject({
       state: 'ready',
     });
-    expect(viewModel.summary).toContain('Connect this signed-in Workbench session');
+    expect(viewModel.summary).toContain('Local Workbench connector and macOS permissions are ready');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
       action: 'control_start',
@@ -536,7 +536,7 @@ describe('nativeCompanionViewModel', () => {
       },
     });
 
-    expect(viewModel.state).toBe('repair_required');
+    expect(viewModel.state).toBe('ready');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
       action: 'ensure_customer_mac_connector_grant',

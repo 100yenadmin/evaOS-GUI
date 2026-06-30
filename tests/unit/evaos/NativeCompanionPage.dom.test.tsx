@@ -276,8 +276,8 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     const { container } = renderNativeCompanion();
 
-    expect(await screen.findByText('Mac control ready to connect')).toBeInTheDocument();
-    expect(screen.getByText(/Local Workbench connector proof is ready/i)).toBeInTheDocument();
+    expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+    expect(screen.getByText(/Local Workbench connector and macOS permissions are ready/i)).toBeInTheDocument();
     expect(screen.getAllByText('Connect Mac control').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Connect Mac Control' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Export Pairing Prompt' })).not.toBeInTheDocument();
@@ -298,7 +298,7 @@ describe('NativeCompanionPage', () => {
     await waitFor(() => expect(bridgeMocks.openReleasedWorkbench).toHaveBeenCalledTimes(1));
   });
 
-  it('shows a support-required secure-link blocker before enabling agent pairing', async () => {
+  it('shows an agent setup blocker without failing local Mac Access', async () => {
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -358,8 +358,8 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText('Connect secure Mac link')).toBeInTheDocument();
-    expect(screen.getByText('Secure link needed')).toBeInTheDocument();
+    expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+    expect(screen.getByText('Agent setup needed')).toBeInTheDocument();
     expect(screen.getAllByText(/broker-owned private connector link/).length).toBeGreaterThan(0);
     expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Connect Mac Control');
     expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
@@ -600,7 +600,7 @@ describe('NativeCompanionPage', () => {
         data: {
           action: 'setup_check',
           status: 'succeeded',
-          message: 'Mac control setup check passed. Create a pairing prompt before agent control.',
+          message: 'Mac Access setup check passed. Local Workbench connector and macOS permissions are ready.',
           sourcePointer: 'native-companion:setup-check',
           auditIds: ['audit-mac', 'audit-control'],
           refreshRecommended: false,
@@ -1392,7 +1392,7 @@ describe('NativeCompanionPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderNativeCompanion();
 
-      expect(await screen.findByText('Mac control ready to connect')).toBeInTheDocument();
+      expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
       await waitFor(() =>
         expect(
@@ -1482,7 +1482,7 @@ describe('NativeCompanionPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderNativeCompanion();
 
-      expect(await screen.findByText('Mac control ready to connect')).toBeInTheDocument();
+      expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
       await waitFor(() =>
         expect(
@@ -1565,7 +1565,7 @@ describe('NativeCompanionPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderNativeCompanion();
 
-      await screen.findByText('Mac control ready to connect');
+      await screen.findByText('Mac Access is on');
       await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
       await user.click(screen.getByRole('button', { name: 'Turn On Mac Access' }));
       await waitFor(() => expect(screen.getAllByText('Mac Access connector started.').length).toBeGreaterThan(0));
@@ -1985,7 +1985,7 @@ describe('NativeCompanionPage', () => {
         data: {
           action: 'setup_check',
           status: 'succeeded',
-          message: 'Mac control setup check passed. evaOS and Hermes can use the paired Workbench connector.',
+          message: 'Mac Access setup check passed. Local Workbench connector and macOS permissions are ready.',
           sourcePointer: 'native-companion:setup-check',
           auditIds: ['audit-mac-ready', 'audit-control-ready'],
           refreshRecommended: false,

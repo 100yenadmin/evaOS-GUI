@@ -1090,7 +1090,6 @@ async function runSetupCheckAction(
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
   const connectorReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
-  const connectorCanAttemptGrant = connectorReady || connectorServiceCanAttemptWorkbenchSessionStart(connectorService);
   const setup = {
     connectorReady,
     macReady:
@@ -1102,22 +1101,12 @@ async function runSetupCheckAction(
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
   const agentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession.data) : 'not_ready';
 
-  if (connectorCanAttemptGrant && setup.macReady && setup.controlReady && request.customerId?.trim()) {
-    return ensureCustomerMacConnectorGrantAction(request, bridgePath, deps, {
-      connectorService,
-      customerMac,
-      controlSession,
-      auditIds,
-      setup,
-    });
-  }
-
   return nativeActionResult(
     'setup_check',
     ready ? 'succeeded' : 'repair_required',
     ready
-      ? 'Mac control setup check passed. evaOS and Hermes can use the paired Workbench connector.'
-      : 'Mac control setup needs repair before evaOS or Hermes can use this Workbench connector.',
+      ? 'Mac Access setup check passed. Local Workbench connector and macOS permissions are ready.'
+      : 'Mac Access setup needs repair before agent control can use this Workbench connector.',
     {
       sourcePointer: 'native-companion:setup-check',
       auditId: auditIds[0],

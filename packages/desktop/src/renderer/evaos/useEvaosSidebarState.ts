@@ -8,11 +8,7 @@ import { useMemo } from 'react';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useEvaosCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { evaosBrokerSessionKey, useEvaosBrokerSessionStatus } from '@renderer/hooks/useEvaosBrokerSessionStatus';
-import {
-  canAccessEvaosAdminRuntimes,
-  evaosRouteAllowsMissingBroker,
-  evaosRuntimeRouteDecision,
-} from '@renderer/evaos/evaosRuntimeVisibility';
+import { evaosRouteAllowsMissingBroker, evaosRuntimeRouteDecision } from '@renderer/evaos/evaosRuntimeVisibility';
 import type { IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
 
 interface EvaosSidebarState {
@@ -70,14 +66,6 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     ]
   );
 
-  const brokerPolicyContext = useMemo(
-    () => ({
-      ...routeContext,
-      authenticated: shellAuthenticated,
-    }),
-    [routeContext, shellAuthenticated]
-  );
-
   const canSeeRepairableRoute = useMemo(() => {
     return (routePath: string): boolean => {
       if (!shellAuthenticated || brokerSessionStatus.loading) return false;
@@ -109,8 +97,7 @@ export function useEvaosSidebarState(): EvaosSidebarState {
     };
   }, [brokerAuthenticated, brokerSessionStatus.loading, customerContext.loaded, routeContext, shellAuthenticated]);
 
-  const canSwitchCustomers =
-    brokerAuthenticated && canAccessEvaosAdminRuntimes(brokerPolicyContext) && customerContext.targets.length > 1;
+  const canSwitchCustomers = brokerAuthenticated && customerContext.targets.length > 1;
 
   return {
     accountLabel: brokerSessionStatus.session?.authenticated
