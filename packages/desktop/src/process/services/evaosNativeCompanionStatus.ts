@@ -1354,7 +1354,7 @@ async function ensureCustomerMacConnectorGrantAction(
       auditIds,
       setup: prepared?.setup,
       control: controlSummaryFromPayload(controlSession.data),
-      connectorGrant: grant,
+      connectorGrant: rendererSafeConnectorGrant(grant),
       agentPairingStatus: grant.agentPairingStatus ?? 'ready_for_agent_pairing',
     }
   );
@@ -2314,17 +2314,41 @@ function nativeActionResult(
     action,
     status,
     message,
-    sourcePointer: options.sourcePointer ?? 'native-companion:action',
+    sourcePointer: rendererSafeNativeSourcePointer(options.sourcePointer),
     auditId: options.auditId,
     auditIds: options.auditIds ?? [],
     refreshRecommended: options.refreshRecommended ?? true,
     setup: options.setup,
     control: options.control,
-    connectorGrant: options.connectorGrant,
+    connectorGrant: options.connectorGrant ? rendererSafeConnectorGrant(options.connectorGrant) : undefined,
     pairing: options.pairing,
     agentPairingStatus: options.agentPairingStatus,
     events: options.events,
     blockerReason: options.blockerReason,
+  };
+}
+
+function rendererSafeNativeSourcePointer(value: string | undefined): string {
+  const normalized = safeDiagnosticText(value);
+  if (
+    normalized &&
+    /^(?:native-companion|local-fixture):[A-Za-z0-9:_-]+$/.test(normalized) &&
+    !/\[redacted/.test(normalized)
+  ) {
+    return normalized;
+  }
+  return 'native-companion:action';
+}
+
+function rendererSafeConnectorGrant(grant: IEvaosNativeCompanionConnectorGrant): IEvaosNativeCompanionConnectorGrant {
+  return {
+    ok: grant.ok === true,
+    customerId: safeDiagnosticText(grant.customerId) ?? 'unknown',
+    deviceId: safeDiagnosticText(grant.deviceId),
+    grantId: safeDiagnosticText(grant.grantId),
+    grantState: safeDiagnosticText(grant.grantState),
+    agentPairingStatus: grant.agentPairingStatus,
+    auditId: safeDiagnosticText(grant.auditId),
   };
 }
 
