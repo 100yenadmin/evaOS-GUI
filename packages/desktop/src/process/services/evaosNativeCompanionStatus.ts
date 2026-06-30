@@ -1254,9 +1254,21 @@ async function ensureCustomerMacConnectorGrantAction(
     }
   }
 
-  let connectorUrl = connectorUrlFromStatus(sessionConnector.data);
+  let connectorUrl = await resolveConnectorUrlFromStatus(sessionConnector.data, deps);
   let connectorToken = connectorTokenFromStatus(sessionConnector.data, deps);
-  if (!connectorUrl || !connectorToken) {
+  if (!connectorUrl) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Mac control is ready locally, but Workbench could not determine the private tailnet connector address.',
+      {
+        sourcePointer: 'native-companion:connector-grant-tailnet-host-unavailable',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        blockerReason: 'secure_network_link_required',
+      }
+    );
+  }
+  if (!connectorToken) {
     return nativeActionResult(
       resultAction,
       'repair_required',
@@ -1301,7 +1313,7 @@ async function ensureCustomerMacConnectorGrantAction(
           }
         );
       }
-      connectorUrl = connectorUrlFromStatus(sessionConnector.data);
+      connectorUrl = await resolveConnectorUrlFromStatus(sessionConnector.data, deps);
       connectorToken = connectorTokenFromStatus(sessionConnector.data, deps);
       if (connectorUrl && connectorToken) {
         customerMac = await runConnectorCustomerMacStatus({ connectorUrl, connectorToken, deps });
@@ -1866,6 +1878,74 @@ function connectorUrlFromStatus(input: unknown): string | undefined {
     normalizeConnectorHost(readNestedString(input, ['health', 'host']));
   if (!isSafeConnectorRegistrationHost(host)) return undefined;
   return `http://${host}:8765`;
+}
+
+async function resolveConnectorUrlFromStatus(
+  input: unknown,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<string | undefined> {
+  const statusUrl = connectorUrlFromStatus(input);
+  if (statusUrl) return statusUrl;
+  if (!connectorStatusAllowsPrivateTailnetHostResolution(input)) return undefined;
+  const host = await resolvePrivateTailnetHost(deps);
+  return host ? `http://${host}:${CONNECTOR_PORT}` : undefined;
+}
+
+function connectorStatusAllowsPrivateTailnetHostResolution(input: unknown): boolean {
+  if (readNestedBoolean(input, ['health', 'reachable']) !== true) return false;
+  const hostKind = readNestedString(input, ['health', 'host_kind']) ?? readNestedString(input, ['health', 'hostKind']);
+  return hostKind === 'tailnet' && readNestedBoolean(input, ['health', 'authenticated']) !== false;
+}
+
+async function resolvePrivateTailnetHost(deps: EvaosNativeCompanionStatusDeps): Promise<string | undefined> {
+  const envHost = normalizeConnectorHost(deps.env?.EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST);
+  if (isSafeConnectorRegistrationHost(envHost)) return envHost;
+
+  const tailscaleHost = await resolveTailnetHostFromTailscaleCli(deps);
+  if (tailscaleHost) return tailscaleHost;
+
+  return resolveTailnetHostFromIfconfig(deps);
+}
+
+async function resolveTailnetHostFromTailscaleCli(deps: EvaosNativeCompanionStatusDeps): Promise<string | undefined> {
+  const candidates = await Promise.all(
+    ['/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', 'tailscale'].map((command) =>
+      runLocalCommandStdout(command, ['ip', '-4'], deps)
+    )
+  );
+  for (const stdout of candidates) {
+    const host = firstSafeConnectorHostFromText(stdout);
+    if (host) return host;
+  }
+  return undefined;
+}
+
+async function resolveTailnetHostFromIfconfig(deps: EvaosNativeCompanionStatusDeps): Promise<string | undefined> {
+  const stdout = await runLocalCommandStdout('/sbin/ifconfig', [], deps);
+  return firstSafeConnectorHostFromText(stdout);
+}
+
+async function runLocalCommandStdout(
+  file: string,
+  args: string[],
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<string | undefined> {
+  const execFile = deps.execFile ?? defaultExecFile;
+  try {
+    const completed = await execFile(file, args, { timeout: 3000 });
+    return completed.stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+function firstSafeConnectorHostFromText(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  for (const match of input.matchAll(/\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/g)) {
+    const host = normalizeConnectorHost(match[0]);
+    if (isSafeConnectorRegistrationHost(host)) return host;
+  }
+  return undefined;
 }
 
 function connectorTokenFromStatus(input: unknown, deps: EvaosNativeCompanionStatusDeps): string | undefined {
