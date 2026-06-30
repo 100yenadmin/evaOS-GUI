@@ -169,9 +169,14 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
   );
   const showThemeToggle = isSettings && !collapsed;
   const themeTooltip = theme === 'dark' ? t('settings.lightMode') : t('settings.darkMode');
-  const showAccountBlock = !collapsed && (accountLabel || selectedCustomerLabel || selectedCustomerId);
-  const canRenderCustomerSelect =
-    canSwitchCustomers && selectedCustomerId && customerTargets.length > 1 && Boolean(onCustomerChange);
+  const customerTargetsWithIds = customerTargets.filter((target) => Boolean(target.customerId));
+  const selectedCustomerValue =
+    selectedCustomerId && customerTargetsWithIds.some((target) => target.customerId === selectedCustomerId)
+      ? selectedCustomerId
+      : '';
+  const showAccountBlock =
+    !collapsed && (accountLabel || selectedCustomerLabel || selectedCustomerId || customerTargetsWithIds.length > 0);
+  const canRenderCustomerSelect = canSwitchCustomers && customerTargetsWithIds.length > 1 && Boolean(onCustomerChange);
 
   const footerActionHandlers = {
     settings: onSettingsClick,
@@ -203,11 +208,16 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
           {canRenderCustomerSelect ? (
             <select
               aria-label='Selected customer'
-              value={selectedCustomerId}
+              value={selectedCustomerValue}
               onChange={(event) => onCustomerChange?.(event.currentTarget.value)}
               className='mt-4px h-26px w-full min-w-0 rd-6px border border-solid border-[var(--color-border-2)] bg-fill-1 px-6px text-11px text-t-primary outline-none'
             >
-              {customerTargets.map((target) => (
+              {selectedCustomerValue ? null : (
+                <option value='' disabled>
+                  Choose customer
+                </option>
+              )}
+              {customerTargetsWithIds.map((target) => (
                 <option key={target.customerId} value={target.customerId}>
                   {target.displayName}
                 </option>

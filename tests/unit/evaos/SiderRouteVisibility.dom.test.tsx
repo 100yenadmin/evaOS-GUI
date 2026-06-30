@@ -531,7 +531,8 @@ describe('Sider runtime route visibility', () => {
     expect(customerContextMock.selectCustomer).toHaveBeenCalledWith('second-customer');
   });
 
-  it('keeps company admins customer-scoped without the global customer switcher', () => {
+  it('keeps company admins customer-scoped while still allowing explicit customer switching', async () => {
+    const user = userEvent.setup();
     customerContextMock.roles = ['admin'];
     customerContextMock.isOperator = false;
     customerContextMock.scopes = ['manage_integrations', 'manage_members', 'open_business_browser'];
@@ -565,8 +566,12 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('evaOS')).not.toBeInTheDocument();
     expect(screen.queryByText('Hermes')).not.toBeInTheDocument();
     expect(screen.queryByText('Mission Control')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
-    expect(screen.getByText('Company Admin Customer')).toBeInTheDocument();
+    const customerSelect = screen.getByLabelText('Selected customer');
+    expect(customerSelect).toHaveValue('company-admin-customer');
+
+    await user.selectOptions(customerSelect, 'other-customer');
+
+    expect(customerContextMock.selectCustomer).toHaveBeenCalledWith('other-customer');
   });
 
   it('shows customer-scoped technical runtimes without business-admin surfaces or the customer switcher', () => {

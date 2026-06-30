@@ -1318,7 +1318,7 @@ describe('evaosNativeCompanionStatus', () => {
         controlReady: true,
       },
     });
-    expect(result.message).toContain('Mac control setup check passed');
+    expect(result.message).toContain('Mac Access setup check passed');
   });
 
   it('starts then reuses a tracked Workbench-managed Mac Access connector', async () => {
@@ -1929,7 +1929,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
-  it('auto-ensures a first-party connector grant during setup check for a selected VM-backed customer', async () => {
+  it('keeps setup check local for a selected VM-backed customer', async () => {
     const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
       ok: true,
       customerId: 'golden',
@@ -2031,42 +2031,27 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result).toMatchObject({
       action: 'setup_check',
       status: 'succeeded',
-      sourcePointer: 'native-companion:connector-grant-ready',
+      sourcePointer: 'native-companion:setup-check',
       agentPairingStatus: 'ready_for_agent_pairing',
-      connectorGrant: {
-        customerId: 'golden',
-        deviceId: 'device-golden',
-        grantId: 'grant-golden',
-        grantState: 'active',
-        auditId: 'audit-grant',
+      setup: {
+        connectorReady: true,
+        macReady: true,
+        controlReady: true,
       },
     });
+    expect(result.message).toContain('Mac Access setup check passed');
     expect(result.pairing).toBeUndefined();
-    expect(result.auditIds).toEqual(['audit-grant', 'audit-live-connector', 'audit-mac', 'audit-control']);
-    expect(ensureCustomerMacConnectorGrant).toHaveBeenCalledWith({
-      customerId: 'golden',
-      deviceName,
-      deviceIdentifier: 'Proof-Mac.local',
-      connectorUrl: 'http://100.64.0.10:8765',
-      connectorToken: 'secret-token-abcdef1234567890',
-      permissionState: {
-        accessibility: 'granted',
-        screen_recording: 'granted',
-      },
-      screenSharingOptIn: false,
-    });
-    expect(runConnectorCommand).toHaveBeenCalledWith({
-      connectorUrl: 'http://100.64.0.10:8765',
-      connectorToken: 'secret-token-abcdef1234567890',
-      command: 'customerMacStatus',
-      params: {},
-    });
+    expect(result.connectorGrant).toBeUndefined();
+    expect(result.auditIds).toEqual(['audit-mac', 'audit-control']);
+    expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
+    expect(runConnectorCommand).not.toHaveBeenCalled();
+    expect(deps.readTextFile).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toMatch(
       /PAIR-|customer_mac_complete_pairing|connectorUrl|connectorToken|secret-token|100\.64\.0\.10|8765|token_path/i
     );
   });
 
-  it('does not register a grant when the live connector endpoint lacks Mac permissions', async () => {
+  it('does not register a grant when explicit broker connect sees live endpoint missing Mac permissions', async () => {
     const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
       ok: true,
       customerId: 'golden',
@@ -2151,10 +2136,13 @@ describe('evaosNativeCompanionStatus', () => {
       }
     );
 
-    const result = await runNativeCompanionAction({ action: 'setup_check', customerId: 'golden' }, deps);
+    const result = await runNativeCompanionAction(
+      { action: 'ensure_customer_mac_connector_grant', customerId: 'golden' },
+      deps
+    );
 
     expect(result).toMatchObject({
-      action: 'setup_check',
+      action: 'ensure_customer_mac_connector_grant',
       status: 'repair_required',
       sourcePointer: 'native-companion:connector-grant-live-permission-required',
       auditId: 'audit-live-connector',
@@ -2170,7 +2158,7 @@ describe('evaosNativeCompanionStatus', () => {
     ['LaunchAgent-managed', 'launchagent'],
     ['untracked Workbench/manual', 'workbench-or-manual'],
   ])(
-    'restarts a stale %s connector before registering the first-party grant when local permission proof is green',
+    'restarts a stale %s connector before explicit first-party grant when local permission proof is green',
     async (_label, staleManagedBy) => {
       const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
         ok: true,
@@ -2257,10 +2245,13 @@ describe('evaosNativeCompanionStatus', () => {
         }
       );
 
-      const result = await runNativeCompanionAction({ action: 'setup_check', customerId: 'golden' }, deps);
+      const result = await runNativeCompanionAction(
+        { action: 'ensure_customer_mac_connector_grant', customerId: 'golden' },
+        deps
+      );
 
       expect(result).toMatchObject({
-        action: 'setup_check',
+        action: 'ensure_customer_mac_connector_grant',
         status: 'succeeded',
         sourcePointer: 'native-companion:connector-grant-ready',
         connectorGrant: {

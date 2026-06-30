@@ -117,7 +117,7 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
   if (!status) return 'offline';
   const haystack = statusText(status, error);
 
-  if (macPairingPrerequisitesReady(status)) return 'ready';
+  if (localMacAccessReady(status)) return 'ready';
   if (hasBlockingReadinessActionResult(input.actionResult) || hasBlockingStatusError(status)) return 'repair_required';
   if (!status.releasedWorkbench.installed && !status.bridgeCli.installed) return 'unsupported';
   if (PAIRING_PATTERN.test(haystack)) return 'not_paired';
@@ -135,10 +135,10 @@ function titleForState(
   status: IEvaosNativeCompanionStatusView | null | undefined
 ): string {
   if (loading) return 'Checking Mac control';
-  if (secureConnectorLinkRequired(status)) return 'Connect secure Mac link';
+  if (state !== 'ready' && secureConnectorLinkRequired(status)) return 'Connect secure Mac link';
   switch (state) {
     case 'ready':
-      return runtimeToolsReady(status) ? 'Mac control is ready' : 'Mac control ready to connect';
+      return runtimeToolsReady(status) ? 'Mac control is ready' : 'Mac Access is on';
     case 'not_paired':
       return 'Pair this Mac';
     case 'permission_needed':
@@ -158,12 +158,12 @@ function summaryForState(
   status: IEvaosNativeCompanionStatusView | null | undefined
 ): string {
   if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
-  if (secureConnectorLinkRequired(status)) {
+  if (state !== 'ready' && secureConnectorLinkRequired(status)) {
     return 'Local Mac permissions and connector status are ready, but this Mac still needs the broker-owned private connector link before Workbench can connect Mac control.';
   }
   switch (state) {
     case 'ready':
-      return 'Local Workbench connector proof is ready. Connect this signed-in Workbench session to the selected evaOS/OpenClaw and Hermes context before Mac-control tools run.';
+      return 'Local Workbench connector and macOS permissions are ready. Connect agent access separately when evaOS/OpenClaw or Hermes needs to operate this Mac.';
     case 'not_paired':
       return 'This Mac needs a fresh Workbench connector grant before evaOS or Hermes chat can use Mac control.';
     case 'permission_needed':
@@ -622,9 +622,8 @@ function pairingValue(
   state: NativeCompanionUserState
 ): string {
   if (state === 'not_paired') return 'Connect this Mac';
-  if (secureConnectorLinkRequired(status)) return 'Secure link needed';
-  if (status?.pairingCapable === false) return 'Setup needed';
   if (state !== 'ready') return state === 'offline' || state === 'unsupported' ? 'Unavailable' : 'Repair needed';
+  if (status?.pairingCapable === false) return 'Agent setup needed';
   switch (normalizeAgentPairingStatus(status?.agentPairingStatus)) {
     case 'agent_paired':
       return 'Agent paired';
@@ -709,13 +708,17 @@ function canCreatePairingPrompt(
   return connectorServiceReady(status) && permissionsReady(status);
 }
 
-function macPairingPrerequisitesReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+function localMacAccessReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
   return (
-    status?.readiness === 'ready' &&
+    status?.bridgeCli.installed === true &&
+    status.bridgeCli.status !== 'error' &&
     connectorServiceReady(status) &&
-    permissionsReady(status) &&
-    status.pairingCapable !== false
+    permissionsReady(status)
   );
+}
+
+function macPairingPrerequisitesReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  return localMacAccessReady(status);
 }
 
 function hasBlockingStatusError(status: IEvaosNativeCompanionStatusView): boolean {

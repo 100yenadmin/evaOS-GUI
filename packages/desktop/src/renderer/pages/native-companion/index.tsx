@@ -997,7 +997,7 @@ function actionResultRequiresLiveConnector(actionResult: IEvaosNativeCompanionAc
 }
 
 function actionResultRequiresCurrentPairingProof(actionResult: IEvaosNativeCompanionActionResult): boolean {
-  return actionResult.action === 'ensure_customer_mac_connector_grant' || actionResult.action === 'setup_check';
+  return actionResult.action === 'ensure_customer_mac_connector_grant';
 }
 
 function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): boolean {
