@@ -1,0 +1,11 @@
+title = "AionUi public repository Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known fake provider-key and redaction fixtures in unit tests"
+paths = [
+  '''tests/unit/common/protocolDetector\.test\.ts''',
+  '''tests/unit/bootstrap/prepareEvaosDesktopBridgeResource\.test\.ts''',
+]

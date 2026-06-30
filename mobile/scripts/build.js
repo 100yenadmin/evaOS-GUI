@@ -28,6 +28,15 @@ if (!profile) {
   process.exit(1);
 }
 
+function requireEnv(name, purpose) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Error: ${name} is required for ${purpose}.`);
+    process.exit(1);
+  }
+  return value;
+}
+
 // Read current version
 const versionPath = path.join(__dirname, '..', 'versions', 'version.json');
 let versionData;
@@ -88,8 +97,8 @@ console.log(`\nRunning: ${easCommand}\n`);
 const appleEnv =
   platform === 'ios'
     ? {
-        EXPO_APPLE_TEAM_ID: process.env.EXPO_APPLE_TEAM_ID || 'M4AG47ZV62',
-        EXPO_APPLE_ID: process.env.EXPO_APPLE_ID || 'liangzhewei@gmail.com',
+        EXPO_APPLE_TEAM_ID: requireEnv('EXPO_APPLE_TEAM_ID', 'iOS builds'),
+        EXPO_APPLE_ID: requireEnv('EXPO_APPLE_ID', 'iOS builds'),
         ...(applePassword ? { EXPO_APPLE_PASSWORD: applePassword } : {}),
       }
     : {};
@@ -123,7 +132,7 @@ if (platform === 'ios' && isLocal && (autoSubmit || directSubmit)) {
 
   if (directSubmit) {
     // Upload directly to App Store Connect via xcrun altool (bypasses EAS)
-    const appleId = process.env.APPLE_ID || 'liangzhewei@gmail.com';
+    const appleId = process.env.APPLE_ID || requireEnv('EXPO_APPLE_ID', 'direct iOS submission');
     const submitCommand = `xcrun altool --upload-app -f "${outputFile}" -t ${platform} -u "${appleId}" -p "@keychain:AC_PASSWORD"`;
     console.log(`\nUploading directly to TestFlight: xcrun altool --upload-app\n`);
     try {
@@ -135,7 +144,7 @@ if (platform === 'ios' && isLocal && (autoSubmit || directSubmit)) {
         '  Make sure your App-Specific Password is saved in Keychain as "AC_PASSWORD".',
       );
       console.error(
-        '  To save it: security add-generic-password -a "liangzhewei@gmail.com" -s "AC_PASSWORD" -w "<your-app-specific-password>" -U',
+        '  To save it: security add-generic-password -a "$EXPO_APPLE_ID" -s "AC_PASSWORD" -w "<your-app-specific-password>" -U',
       );
       process.exit(1);
     }

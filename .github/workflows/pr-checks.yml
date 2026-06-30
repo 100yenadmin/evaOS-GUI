@@ -229,6 +229,9 @@ jobs:
       - name: Run postinstall
         run: npm run postinstall || true
 
+      - name: Run public sensitive content scan
+        run: node scripts/check-public-sensitive-content.js
+
       - name: Install prek
         run: npm install -g @j178/prek
 
