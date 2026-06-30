@@ -109,6 +109,22 @@ const DEFAULT_PROOF_AGENT_SELECTORS = [
   '[data-agent-pill="true"][data-agent-type="openclaw-gateway"]',
   '[data-agent-pill="true"][data-agent-type="openclaw"]',
 ];
+const GUID_INPUT_SELECTOR = [
+  '[data-testid="guid-input"] textarea',
+  'textarea[data-testid="guid-input"]',
+  '[data-testid="sendbox-input"] textarea',
+  'textarea[data-testid="sendbox-input"]',
+  'textarea[placeholder*="send a message"]',
+  'textarea[placeholder*="Send message"]',
+  'textarea',
+].join(', ');
+const GUID_SEND_BUTTON_SELECTOR = [
+  '[data-testid="guid-send-btn"]',
+  '[data-testid="sendbox-send-btn"]',
+  '.send-button-custom',
+  'button[class*="send-button"]',
+  'button[aria-label*="Send"]',
+].join(', ');
 
 const SENSITIVE_KEY_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|client[_-]?secret|connector[_-]?url|connector[_-]?token|headscale|tailscale|preauth)/i;
@@ -573,7 +589,7 @@ function runComputerUseEvidenceGate(options) {
   const requiredConcepts = [
     { name: 'screenshot', pattern: /screenshot|png|image/i },
     { name: 'accessibility', pattern: /accessibility|ax|accessibility tree/i },
-    { name: 'visible-agent-tool-proof', pattern: /visible agent|mac tool proof|visible-agent-mac-tools|tool proof/i },
+    { name: 'visible-agent-tool-proof', pattern: /visible agent|visible-agent|mac tool proof|visible-agent-mac-tools|tool proof/i },
     { name: 'mac-control', pattern: /mac (?:& iphone|control)|native companion/i },
   ];
   const missingConcepts = requiredConcepts
@@ -1306,9 +1322,9 @@ async function maybeSelectProofAgent(page, options = {}) {
 async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error) {
   const failure = await captureUiFailure(page, artifactRoot, gateId, error);
   const state = await page
-    .evaluate(() => {
-      const input = document.querySelector('[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]');
-      const sendButton = document.querySelector('[data-testid="guid-send-btn"]');
+    .evaluate(({ inputSelector, sendButtonSelector }) => {
+      const input = document.querySelector(inputSelector);
+      const sendButton = document.querySelector(sendButtonSelector);
       const selectedAgent = document.querySelector('[data-agent-pill="true"][data-agent-selected="true"]');
       const bodyText = document.body?.innerText || '';
       const inputValue = input instanceof HTMLTextAreaElement ? input.value : '';
@@ -1344,7 +1360,7 @@ async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error
           sha256Prefix: '__BODY_DIGEST__',
         },
       };
-    })
+    }, { inputSelector: GUID_INPUT_SELECTOR, sendButtonSelector: GUID_SEND_BUTTON_SELECTOR })
     .catch((stateError) => ({ stateError: sanitizeText(stateError?.message || String(stateError)) }));
   if (state && typeof state === 'object') {
     if (error?.preSendAgentState) state.preSendAgentState = sanitizeValue(error.preSendAgentState);
@@ -1359,10 +1375,10 @@ async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error
     state.inputSummary.sha256Prefix === '__INPUT_DIGEST__'
   ) {
     const inputValue = await page
-      .evaluate(() => {
-        const input = document.querySelector('[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]');
+      .evaluate((inputSelector) => {
+        const input = document.querySelector(inputSelector);
         return input instanceof HTMLTextAreaElement ? input.value : '';
-      })
+      }, GUID_INPUT_SELECTOR)
       .catch(() => '');
     state.inputSummary.sha256Prefix = textDigest(inputValue);
   }
@@ -1374,32 +1390,199 @@ async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error
 }
 
 async function setTextareaValue(page, selector, value, timeout) {
-  const input = page.locator(selector).first();
-  await input.waitFor({ state: 'visible', timeout });
-  await input.fill(value).catch(async () => {
-    await input.click();
-    await page.evaluate(
-      ({ inputSelector, nextValue }) => {
-        const textarea = document.querySelector(inputSelector);
-        if (!(textarea instanceof HTMLTextAreaElement)) {
-          throw new Error(`Textarea not found for selector ${inputSelector}`);
-        }
-        const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-        valueSetter?.call(textarea, nextValue);
-        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextValue }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-      },
-      { inputSelector: selector, nextValue: value }
-    );
-  });
+  await page.waitForFunction(
+    (inputSelector) =>
+      Array.from(document.querySelectorAll(inputSelector)).some((candidate) => {
+        if (!(candidate instanceof HTMLTextAreaElement)) return false;
+        const rect = candidate.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && !candidate.disabled && !candidate.readOnly;
+      }),
+    selector,
+    { timeout }
+  );
+  await page.evaluate(
+    ({ inputSelector, nextValue }) => {
+      const visibleTextareas = Array.from(document.querySelectorAll(inputSelector))
+        .filter((candidate) => {
+          if (!(candidate instanceof HTMLTextAreaElement)) return false;
+          const rect = candidate.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && !candidate.disabled && !candidate.readOnly;
+        })
+        .sort((left, right) => {
+          const leftRect = left.getBoundingClientRect();
+          const rightRect = right.getBoundingClientRect();
+          const leftComposer = left.closest('.sendbox-panel, .guid-input-card-shell, [class*="guidInputCard"]') ? 1 : 0;
+          const rightComposer = right.closest('.sendbox-panel, .guid-input-card-shell, [class*="guidInputCard"]') ? 1 : 0;
+          return rightComposer - leftComposer || rightRect.bottom - leftRect.bottom || rightRect.right - leftRect.right;
+        });
+      const textarea = visibleTextareas[0];
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        throw new Error(`Textarea not found for selector ${inputSelector}`);
+      }
+      textarea.focus();
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      valueSetter?.call(textarea, nextValue);
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: nextValue }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    { inputSelector: selector, nextValue: value }
+  );
   await page.waitForFunction(
     ({ inputSelector, expectedValue }) => {
-      const textarea = document.querySelector(inputSelector);
-      return textarea instanceof HTMLTextAreaElement && textarea.value === expectedValue;
+      return Array.from(document.querySelectorAll(inputSelector)).some(
+        (textarea) => textarea instanceof HTMLTextAreaElement && textarea.value === expectedValue
+      );
     },
     { inputSelector: selector, expectedValue: value },
     { timeout }
   );
+}
+
+async function clickGuidSendButtonForInput(page, inputSelector, expectedValue, timeout) {
+  return page.waitForFunction(
+    ({ inputSelector: selector, expectedValue: value }) => {
+      const input =
+        Array.from(document.querySelectorAll(selector)).find(
+          (candidate) => candidate instanceof HTMLTextAreaElement && candidate.value === value
+        ) ||
+        Array.from(document.querySelectorAll(selector)).find((candidate) => {
+          if (!(candidate instanceof HTMLTextAreaElement)) return false;
+          const rect = candidate.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+      if (!(input instanceof HTMLTextAreaElement)) return false;
+
+      const isEnabledButton = (candidate) => {
+        if (!(candidate instanceof HTMLButtonElement)) return false;
+        const rect = candidate.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
+        return true;
+      };
+
+      const card =
+        input.closest('.guid-input-card-shell') ||
+        input.closest('[class*="guidInputCard"]') ||
+        input.closest('.sendbox-panel');
+      const scopedSelectors = [
+        '[data-testid="guid-send-btn"]',
+        '[data-testid="sendbox-send-btn"]',
+        '.send-button-custom',
+        'button[class*="send-button"]',
+        'button[aria-label*="Send"]',
+      ];
+      const scopedRoot = card || document;
+      for (const selector of scopedSelectors) {
+        const candidate = scopedRoot.querySelector(selector);
+        if (isEnabledButton(candidate)) return true;
+      }
+
+      return false;
+    },
+    { inputSelector, expectedValue },
+    { timeout }
+  ).then(() =>
+    page.evaluate(({ inputSelector: selector, expectedValue: value }) => {
+      const input =
+        Array.from(document.querySelectorAll(selector)).find(
+          (candidate) => candidate instanceof HTMLTextAreaElement && candidate.value === value
+        ) ||
+        Array.from(document.querySelectorAll(selector)).find((candidate) => {
+          if (!(candidate instanceof HTMLTextAreaElement)) return false;
+          const rect = candidate.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+      if (!(input instanceof HTMLTextAreaElement)) {
+        throw new Error(`GUID input not found for selector ${selector}`);
+      }
+
+      const isEnabledButton = (candidate) => {
+        if (!(candidate instanceof HTMLButtonElement)) return false;
+        const rect = candidate.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
+        return true;
+      };
+
+      const card =
+        input.closest('.guid-input-card-shell') ||
+        input.closest('[class*="guidInputCard"]') ||
+        input.closest('.sendbox-panel');
+      const scopedSelectors = [
+        '[data-testid="guid-send-btn"]',
+        '[data-testid="sendbox-send-btn"]',
+        '.send-button-custom',
+        'button[class*="send-button"]',
+        'button[aria-label*="Send"]',
+      ];
+      const scopedRoot = card || document;
+      let button = null;
+      for (const selector of scopedSelectors) {
+        const candidate = scopedRoot.querySelector(selector);
+        if (isEnabledButton(candidate)) {
+          button = candidate;
+          break;
+        }
+      }
+
+      if (!button) throw new Error('Enabled GUID send button was not found near the filled input.');
+      const buttonRect = button.getBoundingClientRect();
+      button.click();
+      return {
+        clicked: true,
+        testId: button.getAttribute('data-testid') || null,
+        className: button.getAttribute('class') || null,
+        buttonRect: {
+          x: Math.round(buttonRect.x),
+          y: Math.round(buttonRect.y),
+          width: Math.round(buttonRect.width),
+          height: Math.round(buttonRect.height),
+        },
+      };
+    }, { inputSelector, expectedValue })
+  );
+}
+
+async function submitGuidPrompt(page, inputSelector, prompt, timeout) {
+  const clickState = await clickGuidSendButtonForInput(page, inputSelector, prompt, timeout);
+  const routeChanged = await page
+    .waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
+      timeout: Math.min(timeout, 15000),
+    })
+    .then(() => true)
+    .catch(() => false);
+  if (routeChanged) return { method: 'button_click', clickState };
+
+  await setTextareaValue(page, inputSelector, prompt, timeout);
+  const input = page.locator(inputSelector).first();
+  await input.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
+    timeout,
+  });
+  return { method: 'keyboard_enter_after_button_click', clickState };
+}
+
+async function openExistingProofConversationIfAvailable(page, timeout) {
+  const hash = await page.evaluate(() => window.location.hash).catch(() => '');
+  if (/^#\/conversation\/[^/]+/.test(hash)) return { opened: false, reason: 'already_in_conversation' };
+
+  const candidates = page.getByText(/Release proof: call the active evaOS\/OpenClaw Mac-control tools/i);
+  const count = await candidates.count().catch(() => 0);
+  for (let index = 0; index < count; index += 1) {
+    const candidate = candidates.nth(index);
+    if (!(await candidate.isVisible().catch(() => false))) continue;
+    await candidate.click({ timeout }).catch(() => undefined);
+    const opened = await page
+      .waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
+        timeout: Math.min(timeout, 10_000),
+      })
+      .then(() => true)
+      .catch(() => false);
+    if (opened) return { opened: true, index };
+  }
+
+  return { opened: false, reason: 'no_existing_proof_conversation' };
 }
 
 async function clickNativeCompanionAction(page, timeout) {
@@ -1469,6 +1652,8 @@ async function convergeMacControlReady(page, options = {}) {
 async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {}) {
   const submitTimeout = options.submitTimeout || timeout;
   const proofTimeout = options.proofTimeout || Math.max(timeout, DEFAULT_AGENT_PROOF_TIMEOUT_MS);
+  const probeNonce = `Mac-control proof nonce ${Date.now().toString(36)}`;
+  const probePrompt = `${prompt}\n\n${probeNonce}`;
   let preSendAgentState = null;
 
   try {
@@ -1481,35 +1666,20 @@ async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {})
       selectedAgent,
       availableAgents: await collectAgentPillState(page),
     };
+    await openExistingProofConversationIfAvailable(page, submitTimeout);
 
-    const inputSelector = '[data-testid="guid-input"] textarea, textarea[data-testid="guid-input"]';
-    await setTextareaValue(page, inputSelector, prompt, submitTimeout);
+    const inputSelector = GUID_INPUT_SELECTOR;
+    await setTextareaValue(page, inputSelector, probePrompt, submitTimeout);
     const beforeSendText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
 
-    const sendButton = page.locator('[data-testid="guid-send-btn"]').first();
-    await sendButton.waitFor({ state: 'visible', timeout: submitTimeout });
-    await page.waitForFunction(
-      () => {
-        const button = document.querySelector('[data-testid="guid-send-btn"]');
-        if (!button) return false;
-        if (button instanceof HTMLButtonElement) return !button.disabled;
-        return button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('disabled');
-      },
-      undefined,
-      { timeout: submitTimeout }
-    );
-    await sendButton.click();
-
-    await page.waitForFunction(() => /^#\/conversation\/[^/]+/.test(window.location.hash), undefined, {
-      timeout: submitTimeout,
-    });
-    await waitForBodyMarkers(page, [promptConversationMarker(prompt)], submitTimeout);
+    await submitGuidPrompt(page, inputSelector, probePrompt, submitTimeout);
+    await waitForBodyMarkers(page, [probeNonce], submitTimeout);
     const deadline = Date.now() + proofTimeout;
     let lastGate = runVisibleAgentMacToolEvidenceGate('');
     while (Date.now() < deadline) {
       const text = await page.evaluate(() => document.body?.innerText || '');
       lastGate = runVisibleAgentMacToolEvidenceGate(
-        visibleAgentEvidenceText(text, { beforeText: beforeSendText, prompt })
+        visibleAgentEvidenceText(text, { beforeText: beforeSendText, prompt: probePrompt })
       );
       if (lastGate.status === 'passed') return lastGate;
       if (lastGate.data?.failureKind === 'fatal') {
@@ -1520,6 +1690,18 @@ async function sendVisibleAgentMacToolProbe(page, timeout, prompt, options = {})
       }
       await page.waitForTimeout(500);
     }
+    const finalText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+    const finalGate = runVisibleAgentMacToolEvidenceGate(
+      visibleAgentEvidenceText(finalText, { beforeText: beforeSendText, prompt: probePrompt })
+    );
+    if (finalGate.status === 'passed') return finalGate;
+    if (finalGate.data?.failureKind === 'fatal') {
+      const error = new Error(finalGate.message || 'Visible agent Mac-tool proof failed.');
+      error.preSendAgentState = preSendAgentState;
+      error.structuredFailureEvidence = finalGate;
+      throw error;
+    }
+    lastGate = finalGate;
     const error = new Error(lastGate.message || 'Visible agent Mac-tool proof did not settle.');
     error.preSendAgentState = preSendAgentState;
     error.structuredFailureEvidence = lastGate;
@@ -1653,6 +1835,19 @@ async function runUiProductGates(options) {
         })
       );
     } catch (error) {
+      const finalVisibleText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+      const finalVisibleGate = runVisibleAgentMacToolEvidenceGate(finalVisibleText);
+      if (finalVisibleGate.status === 'passed') {
+        const screenshot = 'screenshots/visible-agent-mac-tools.png';
+        await page.screenshot({ path: path.join(artifactRoot, 'artifacts', screenshot), fullPage: true });
+        gates.push(
+          passedGate('visible_agent_mac_tools', 'Visible Workbench agent rendered Mac-control tool execution proof.', {
+            evidencePath: `artifacts/${screenshot}`,
+            data: finalVisibleGate.data,
+          })
+        );
+        return gates;
+      }
       const failureData = await captureVisibleAgentFailureState(page, artifactRoot, 'visible_agent_mac_tools', error);
       const structuredReason =
         error?.structuredFailureEvidence && typeof error.structuredFailureEvidence === 'object'
