@@ -89,6 +89,11 @@ const doctor = require('../../../scripts/evaosMacControlDoctor.js') as {
     env?: Record<string, string | undefined>,
     options?: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> }
   ) => { id: string; status: string; reasonCode?: string; data?: Record<string, unknown> };
+  runPostResetRecoveryGate?: (
+    appPath: string,
+    env?: Record<string, string | undefined>,
+    options?: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> }
+  ) => { id: string; status: string; reasonCode?: string; data?: Record<string, unknown> };
   ensureAdminRouteSurfaceVisible: (
     page: {
       locator: (selector: string) => {
@@ -1132,6 +1137,58 @@ describe('evaOS Mac control doctor', () => {
       id: 'vm_openclaw',
       status: 'failed',
       reasonCode: 'unsupported_proof_command_syntax',
+    });
+  });
+
+  it('fails post-reset recovery when the audited command succeeds but bridge readiness stays down', () => {
+    expect(doctor.runPostResetRecoveryGate).toBeTypeOf('function');
+    if (!doctor.runPostResetRecoveryGate) return;
+
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-post-reset-app-')), 'evaOS Workbench.app');
+    writeFakeBridge(
+      appPath,
+      JSON.stringify({
+        schema: 'evaos.desktop_bridge.ready.v1',
+        ok: false,
+        ready: false,
+        blockers: [{ code: 'connector_service_unreachable', message: 'Connector service is not reachable.' }],
+        connector_service: {
+          running: false,
+          health: { reachable: false },
+        },
+      })
+    );
+
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-post-reset-bin-'));
+    const supportScript = path.join(binDir, 'evaos-support.sh');
+    fs.writeFileSync(
+      supportScript,
+      ['#!/bin/sh', 'printf \'{"ok":true,"auditId":"audit-reset","result":{"status":"ready"}}\\n\'', ''].join('\n')
+    );
+    fs.chmodSync(supportScript, 0o755);
+
+    const gate = doctor.runPostResetRecoveryGate(
+      appPath,
+      { EVAOS_MAC_CONTROL_DOCTOR_POST_RESET_CMD: `${supportScript} mac-connector doctor-proof --gate post-reset` },
+      { cwd: binDir }
+    );
+
+    expect(gate).toMatchObject({
+      id: 'post_reset_recovery',
+      status: 'failed',
+      reasonCode: 'connector_service_unreachable',
+      data: {
+        command: {
+          payloadSummary: {
+            auditedSuccessPayloadCount: 1,
+          },
+        },
+        bridgeReady: {
+          ready: {
+            blockerCodes: ['connector_service_unreachable'],
+          },
+        },
+      },
     });
   });
 

@@ -176,13 +176,14 @@ export async function getEvaosNativeCompanionStatus(
     };
   }
 
-  const [bridge, connectorService, customerMac, iPhone, controlSession, audit] = await Promise.all([
+  const [bridge, connectorService, customerMac, iPhone, controlSession, audit, bridgeReadyStatus] = await Promise.all([
     runBridgeCommand(bridgePath, ['status', '--json'], deps),
     runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'iphone-mirroring', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '5'], deps),
+    runBridgeCommand(bridgePath, ['ready', '--json'], deps),
   ]);
 
   const bridgePermissions = permissionView(bridge.data?.permissions);
@@ -190,15 +191,24 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacPermissions = effectiveCustomerMacPermissions(customerMacStatusPermissions, controlSession);
   const bridgeEffectivePermissions = effectiveBridgePermissions(bridgePermissions, controlSession);
   const bridgeReady = bridge.ok && hasGrantedCorePermissions(bridgeEffectivePermissions);
-  const connectorServiceReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
+  const connectorServiceData = connectorServiceDataForWorkbenchReadiness(
+    bridgePath,
+    connectorService.data,
+    bridgeReadyStatus
+  );
+  const connectorServiceForReadiness: BridgeCommandResult = { ...connectorService, data: connectorServiceData };
+  const connectorServiceReady = await connectorServiceIsReadyForWorkbenchSession(
+    bridgePath,
+    connectorServiceForReadiness,
+    deps
+  );
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
   const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
-    isPairingCapableBridgePath(bridgePath, deps.env) &&
-    connectorServiceHasSecureRegistrationHost(connectorService.data);
+    isPairingCapableBridgePath(bridgePath, deps.env) && connectorServiceHasSecureRegistrationHost(connectorServiceData);
   const agentPairingStatus = pairingCapable
     ? agentPairingStatusFromStatus(readiness, controlSession.data)
     : 'not_ready';
@@ -252,14 +262,14 @@ export async function getEvaosNativeCompanionStatus(
     connectorService: {
       status: connectorServiceReady
         ? 'ready'
-        : connectorServiceStatusAvailable(connectorService)
+        : connectorServiceStatusAvailable(connectorServiceForReadiness)
           ? 'repair_required'
           : 'error',
-      running: connectorServiceReady || readBoolean(connectorService.data, 'running'),
-      reachable: connectorServiceReady || readNestedBoolean(connectorService.data, ['health', 'reachable']),
-      managedBy: readString(connectorService.data, 'managed_by'),
-      tailnetIp: readString(connectorService.data, 'tailnet_ip'),
-      permissionTarget: readString(connectorService.data, 'permission_target'),
+      running: connectorServiceReady || readBoolean(connectorServiceData, 'running'),
+      reachable: connectorServiceReady || readNestedBoolean(connectorServiceData, ['health', 'reachable']),
+      managedBy: readString(connectorServiceData, 'managed_by'),
+      tailnetIp: readString(connectorServiceData, 'tailnet_ip'),
+      permissionTarget: readString(connectorServiceData, 'permission_target'),
     },
     customerMac: {
       status: customerMacReady ? 'ready' : customerMac.ok ? 'repair_required' : 'error',
@@ -739,6 +749,41 @@ async function connectorServiceIsReadyForWorkbenchSession(
   return bridgeReadyCommandShowsConnectorReady(bridgePath, ready);
 }
 
+function connectorServiceDataForWorkbenchReadiness(
+  bridgePath: string,
+  fallbackData: unknown,
+  readyResult: BridgeCommandResult
+): Record<string, unknown> | undefined {
+  const fallbackRecord =
+    fallbackData && typeof fallbackData === 'object' ? (fallbackData as Record<string, unknown>) : undefined;
+  if (!bridgeReadyCommandShowsConnectorReady(bridgePath, readyResult)) return fallbackRecord;
+  const readyConnector = readyResult.data?.connector_service;
+  if (!readyConnector || typeof readyConnector !== 'object') return fallbackRecord;
+  const fallbackConnector = fallbackRecord ?? {};
+  const readyRecord = readyConnector as Record<string, unknown>;
+  const fallbackHealth =
+    fallbackConnector.health && typeof fallbackConnector.health === 'object'
+      ? (fallbackConnector.health as Record<string, unknown>)
+      : {};
+  const readyHealth =
+    readyRecord.health && typeof readyRecord.health === 'object' ? (readyRecord.health as Record<string, unknown>) : {};
+
+  return {
+    ...fallbackConnector,
+    ...readyRecord,
+    running: readBoolean(readyRecord, 'running') ?? true,
+    ready: readBoolean(readyRecord, 'ready') ?? true,
+    loaded: readBoolean(readyRecord, 'loaded') ?? readBoolean(fallbackConnector, 'loaded'),
+    managed_by: readString(readyRecord, 'managed_by') ?? readString(fallbackConnector, 'managed_by'),
+    health: {
+      ...fallbackHealth,
+      ...readyHealth,
+      reachable: readNestedBoolean(readyRecord, ['health', 'reachable']) ?? true,
+      ready: readNestedBoolean(readyRecord, ['health', 'ready']) ?? true,
+    },
+  };
+}
+
 function bridgeReadyCommandShowsConnectorReady(bridgePath: string, result: BridgeCommandResult): boolean {
   const connectorService = result.data?.connector_service;
   if (connectorStatusHasExplicitOwnerMismatch(bridgePath, connectorService)) {
@@ -885,6 +930,10 @@ function connectorOwnerPaths(status: unknown): string[] {
     readString(status, 'launchAgentProgramPath'),
     readNestedString(status, ['responsible', 'app_path']),
     readNestedString(status, ['responsible', 'appPath']),
+    readNestedString(status, ['owner', 'app_path', 'value']),
+    readNestedString(status, ['owner', 'appPath', 'value']),
+    readNestedString(status, ['owner', 'program_path', 'value']),
+    readNestedString(status, ['owner', 'programPath', 'value']),
     readNestedString(status, ['process', 'path']),
     readNestedString(status, ['launch_agent', 'program_path']),
     readNestedString(status, ['launchAgent', 'programPath']),
@@ -898,7 +947,9 @@ function connectorResponsibleBundleId(status: unknown): string | undefined {
     readString(status, 'bundle_id') ??
     readString(status, 'bundleId') ??
     readNestedString(status, ['responsible', 'bundle_id']) ??
-    readNestedString(status, ['responsible', 'bundleId'])
+    readNestedString(status, ['responsible', 'bundleId']) ??
+    readNestedString(status, ['owner', 'bundle_id']) ??
+    readNestedString(status, ['owner', 'bundleId'])
   );
 }
 
@@ -1797,6 +1848,8 @@ function connectorServiceHasSecureRegistrationHost(input: unknown): boolean {
   const tailnetIp = readString(input, 'tailnet_ip');
   if (isSafeConnectorRegistrationHost(tailnetIp)) return true;
   if (readNestedBoolean(input, ['health', 'reachable']) !== true) return false;
+  const hostKind = readNestedString(input, ['health', 'host_kind']) ?? readNestedString(input, ['health', 'hostKind']);
+  if (hostKind === 'tailnet' && readNestedBoolean(input, ['health', 'authenticated']) !== false) return true;
   return isSafeConnectorRegistrationHost(readNestedString(input, ['health', 'host']));
 }
 

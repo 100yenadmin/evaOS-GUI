@@ -270,7 +270,16 @@ describe('evaosNativeCompanionStatus', () => {
         ready: true,
         service: 'evaos-desktop-bridge-connector',
         connector_service: {
-          health: { reachable: true, ready: true, host_kind: 'tailnet' },
+          health: { authenticated: true, reachable: true, ready: true, host_kind: 'tailnet' },
+          owner: {
+            app_path: { kind: 'path', value: '/Applications/evaOS Workbench.app' },
+            bundle_id: 'com.evaos.workbench',
+            classification: 'workbench_bundle',
+            program_path: {
+              kind: 'path',
+              value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+            },
+          },
         },
       },
       'customer-mac status --json': {
@@ -303,6 +312,10 @@ describe('evaosNativeCompanionStatus', () => {
 
     expect(status).toMatchObject({
       readiness: 'ready',
+      agentPairingStatus: 'ready_for_agent_pairing',
+      runtimeToolReadiness: 'pairing_ready',
+      pairingCapable: true,
+      pairingBlockedReason: undefined,
       connectorService: {
         status: 'ready',
         running: true,
