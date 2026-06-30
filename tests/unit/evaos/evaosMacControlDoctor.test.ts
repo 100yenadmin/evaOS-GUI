@@ -158,6 +158,35 @@ describe('evaOS Mac control doctor', () => {
     return bridgePath;
   }
 
+  function writeSelfStartingFakeBridge(appPath: string): string {
+    const bridgeDir = path.join(appPath, 'Contents', 'Resources', 'Bridge');
+    fs.mkdirSync(bridgeDir, { recursive: true });
+    const bridgePath = path.join(bridgeDir, 'evaos-desktop-bridge');
+    const statePath = path.join(bridgeDir, 'started');
+    fs.writeFileSync(
+      bridgePath,
+      [
+        '#!/bin/sh',
+        `STATE=${JSON.stringify(statePath)}`,
+        'if [ "$1" = "connector-service" ] && [ "$2" = "start" ]; then',
+        '  echo started > "$STATE"',
+        `  printf '%s\\n' '{"ok":true,"command":"connector_service.start","audit_id":"audit-start"}'`,
+        '  exit 0',
+        'fi',
+        'if [ "$1" = "ready" ] && [ "$2" = "--json" ] && [ -f "$STATE" ]; then',
+        `  printf '%s\\n' '{"schema":"evaos.desktop_bridge.ready.v1","ok":true,"ready":true}'`,
+        '  exit 0',
+        'fi',
+        `printf '%s\\n' '{"schema":"evaos.desktop_bridge.ready.v1","ok":false,"ready":false,"blockers":[{"code":"connector_service_not_running"}],"connector_service":{"running":false}}'`,
+        'exit 2',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(bridgePath, 0o755);
+    return bridgePath;
+  }
+
   function writeFakeInfoPlist(appPath: string): void {
     const contentsDir = path.join(appPath, 'Contents');
     fs.mkdirSync(contentsDir, { recursive: true });
@@ -467,7 +496,7 @@ describe('evaOS Mac control doctor', () => {
           'Connect Mac Control',
         ].join('\n')
       )
-    ).toBe(false);
+    ).toBe(true);
 
     expect(
       doctor.macControlReadyTextSatisfied(
@@ -546,6 +575,21 @@ describe('evaOS Mac control doctor', () => {
     expect(doctor.runBridgeReadyGate(appPath)).toMatchObject({
       id: 'bridge_ready',
       status: 'passed',
+    });
+  });
+
+  it('starts the bundled connector once before failing bridge readiness', () => {
+    const appPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-ready-app-')), 'evaOS Workbench.app');
+    writeSelfStartingFakeBridge(appPath);
+
+    const gate = doctor.runBridgeReadyGate(appPath);
+
+    expect(gate).toMatchObject({
+      id: 'bridge_ready',
+      status: 'passed',
+      data: {
+        recoveredByStart: true,
+      },
     });
   });
 

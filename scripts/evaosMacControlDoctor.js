@@ -1045,40 +1045,76 @@ function runBridgeReadyGate(appPath, options = {}) {
     return blockedGate('bridge_ready', 'bridge_cli_missing', `Bundled bridge is missing at ${bridgePath}.`);
   }
 
-  const result = spawnSync(bridgePath, ['ready', '--json'], {
-    encoding: 'utf8',
-    timeout: options.timeout || DEFAULT_TIMEOUT_MS,
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  const stdout = sanitizeText(result.stdout || '');
-  const stderr = sanitizeText(result.stderr || '');
-  const parsed = parseJsonMaybe(result.stdout || '');
-  const ok = result.status === 0 && !result.signal && isBridgeReadyPayload(parsed);
+  const runReady = () =>
+    spawnSync(bridgePath, ['ready', '--json'], {
+      encoding: 'utf8',
+      timeout: options.timeout || DEFAULT_TIMEOUT_MS,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  let result = runReady();
+  let parsed = parseJsonMaybe(result.stdout || '');
+  let ok = result.status === 0 && !result.signal && isBridgeReadyPayload(parsed);
   const ownerBlocker = bridgeOwnerTruthBlocker(options.desktopProofState);
-  const commandSummary = {
-    status: result.status,
-    signal: result.signal || undefined,
-    stdoutDigest: stdout ? textDigest(stdout) : undefined,
-    stderrDigest: stderr ? textDigest(stderr) : undefined,
-    stdoutBytes: stdout ? Buffer.byteLength(stdout, 'utf8') : 0,
-    stderrBytes: stderr ? Buffer.byteLength(stderr, 'utf8') : 0,
+  const summarizeReadyResult = (readyResult) => {
+    const stdout = sanitizeText(readyResult.stdout || '');
+    const stderr = sanitizeText(readyResult.stderr || '');
+    return {
+      status: readyResult.status,
+      signal: readyResult.signal || undefined,
+      stdoutDigest: stdout ? textDigest(stdout) : undefined,
+      stderrDigest: stderr ? textDigest(stderr) : undefined,
+      stdoutBytes: stdout ? Buffer.byteLength(stdout, 'utf8') : 0,
+      stderrBytes: stderr ? Buffer.byteLength(stderr, 'utf8') : 0,
+    };
   };
+  const firstCommandSummary = summarizeReadyResult(result);
 
   if (ownerBlocker) {
     return failedGate('bridge_ready', ownerBlocker.reasonCode, ownerBlocker.message, {
       command: `${bridgePath} ready --json`,
       data: {
-        ...commandSummary,
+        ...firstCommandSummary,
         ready: summarizeBridgeReadyPayload(parsed),
         desktopProofState: sanitizeValue(options.desktopProofState),
       },
     });
   }
 
+  const firstReasonCode = bridgeReadyPayloadReasonCode(parsed);
+  const canSelfStart = new Set([
+    'bridge_diagnostics_unavailable',
+    'connector_service_not_running',
+    'connector_service_unreachable',
+    'missing_live_listener',
+  ]);
+  let recoverySummary;
+  if (!ok && canSelfStart.has(firstReasonCode)) {
+    const startResult = spawnSync(bridgePath, ['connector-service', 'start'], {
+      encoding: 'utf8',
+      timeout: options.timeout || DEFAULT_TIMEOUT_MS,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    recoverySummary = summarizeProofCommandResult({
+      status: startResult.status,
+      signal: startResult.signal,
+      stdout: startResult.stdout || '',
+      stderr: startResult.stderr || '',
+      error: startResult.error ? startResult.error.message : undefined,
+    });
+    result = runReady();
+    parsed = parseJsonMaybe(result.stdout || '');
+    ok = result.status === 0 && !result.signal && isBridgeReadyPayload(parsed);
+  }
+
   if (ok) {
     return passedGate('bridge_ready', 'Bundled bridge /ready check passed.', {
       command: `${bridgePath} ready --json`,
-      data: { ...commandSummary, ready: summarizeBridgeReadyPayload(parsed) },
+      data: {
+        ...summarizeReadyResult(result),
+        recoveredByStart: Boolean(recoverySummary),
+        recovery: recoverySummary,
+        ready: summarizeBridgeReadyPayload(parsed),
+      },
     });
   }
 
@@ -1089,11 +1125,13 @@ function runBridgeReadyGate(appPath, options = {}) {
     data: {
       status: result.status,
       signal: result.signal,
-      ...commandSummary,
+      ...summarizeReadyResult(result),
       error: result.error ? sanitizeText(result.error.message) : undefined,
       readySchema: parsed && typeof parsed === 'object' ? parsed.schema : undefined,
       readyOk: parsed && typeof parsed === 'object' ? parsed.ok : undefined,
       readyState: parsed && typeof parsed === 'object' ? parsed.ready : undefined,
+      firstReasonCode,
+      recovery: recoverySummary,
       ready: summarizeBridgeReadyPayload(parsed),
     },
   });
@@ -1115,6 +1153,7 @@ function macControlReadyTextSatisfied(text) {
   const connectedOrAlreadyPaired =
     /Mac control is connected for this evaOS Workbench session/i.test(normalized) ||
     /Mac control is ready/i.test(normalized) ||
+    /Mac Access is on/i.test(normalized) ||
     /Full Access agent control is active/i.test(normalized);
   return (
     connectedOrAlreadyPaired &&
