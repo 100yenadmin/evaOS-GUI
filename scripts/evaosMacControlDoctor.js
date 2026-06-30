@@ -589,7 +589,10 @@ function runComputerUseEvidenceGate(options) {
   const requiredConcepts = [
     { name: 'screenshot', pattern: /screenshot|png|image/i },
     { name: 'accessibility', pattern: /accessibility|ax|accessibility tree/i },
-    { name: 'visible-agent-tool-proof', pattern: /visible agent|visible-agent|mac tool proof|visible-agent-mac-tools|tool proof/i },
+    {
+      name: 'visible-agent-tool-proof',
+      pattern: /visible agent|visible-agent|mac tool proof|visible-agent-mac-tools|tool proof/i,
+    },
     { name: 'mac-control', pattern: /mac (?:& iphone|control)|native companion/i },
   ];
   const missingConcepts = requiredConcepts
@@ -1322,45 +1325,48 @@ async function maybeSelectProofAgent(page, options = {}) {
 async function captureVisibleAgentFailureState(page, artifactRoot, gateId, error) {
   const failure = await captureUiFailure(page, artifactRoot, gateId, error);
   const state = await page
-    .evaluate(({ inputSelector, sendButtonSelector }) => {
-      const input = document.querySelector(inputSelector);
-      const sendButton = document.querySelector(sendButtonSelector);
-      const selectedAgent = document.querySelector('[data-agent-pill="true"][data-agent-selected="true"]');
-      const bodyText = document.body?.innerText || '';
-      const inputValue = input instanceof HTMLTextAreaElement ? input.value : '';
-      return {
-        hash: window.location.hash,
-        inputSummary: inputValue
-          ? {
-              length: inputValue.length,
-              sha256Prefix: '__INPUT_DIGEST__',
-            }
-          : null,
-        sendDisabled:
-          sendButton instanceof HTMLButtonElement
-            ? sendButton.disabled
-            : sendButton?.getAttribute('aria-disabled') || sendButton?.getAttribute('disabled') || null,
-        selectedAgent: selectedAgent
-          ? {
-              key: selectedAgent.getAttribute('data-agent-key'),
-              type: selectedAgent.getAttribute('data-agent-type'),
-              nativeStatus: selectedAgent.getAttribute('data-agent-native-status'),
-              text: selectedAgent.textContent?.trim().slice(0, 120),
-            }
-          : null,
-        availableAgents: Array.from(document.querySelectorAll('[data-agent-pill="true"]')).map((pill) => ({
-          key: pill.getAttribute('data-agent-key'),
-          type: pill.getAttribute('data-agent-type'),
-          selected: pill.getAttribute('data-agent-selected'),
-          nativeStatus: pill.getAttribute('data-agent-native-status'),
-          text: pill.textContent?.trim().slice(0, 120) || '',
-        })),
-        bodySummary: {
-          length: bodyText.length,
-          sha256Prefix: '__BODY_DIGEST__',
-        },
-      };
-    }, { inputSelector: GUID_INPUT_SELECTOR, sendButtonSelector: GUID_SEND_BUTTON_SELECTOR })
+    .evaluate(
+      ({ inputSelector, sendButtonSelector }) => {
+        const input = document.querySelector(inputSelector);
+        const sendButton = document.querySelector(sendButtonSelector);
+        const selectedAgent = document.querySelector('[data-agent-pill="true"][data-agent-selected="true"]');
+        const bodyText = document.body?.innerText || '';
+        const inputValue = input instanceof HTMLTextAreaElement ? input.value : '';
+        return {
+          hash: window.location.hash,
+          inputSummary: inputValue
+            ? {
+                length: inputValue.length,
+                sha256Prefix: '__INPUT_DIGEST__',
+              }
+            : null,
+          sendDisabled:
+            sendButton instanceof HTMLButtonElement
+              ? sendButton.disabled
+              : sendButton?.getAttribute('aria-disabled') || sendButton?.getAttribute('disabled') || null,
+          selectedAgent: selectedAgent
+            ? {
+                key: selectedAgent.getAttribute('data-agent-key'),
+                type: selectedAgent.getAttribute('data-agent-type'),
+                nativeStatus: selectedAgent.getAttribute('data-agent-native-status'),
+                text: selectedAgent.textContent?.trim().slice(0, 120),
+              }
+            : null,
+          availableAgents: Array.from(document.querySelectorAll('[data-agent-pill="true"]')).map((pill) => ({
+            key: pill.getAttribute('data-agent-key'),
+            type: pill.getAttribute('data-agent-type'),
+            selected: pill.getAttribute('data-agent-selected'),
+            nativeStatus: pill.getAttribute('data-agent-native-status'),
+            text: pill.textContent?.trim().slice(0, 120) || '',
+          })),
+          bodySummary: {
+            length: bodyText.length,
+            sha256Prefix: '__BODY_DIGEST__',
+          },
+        };
+      },
+      { inputSelector: GUID_INPUT_SELECTOR, sendButtonSelector: GUID_SEND_BUTTON_SELECTOR }
+    )
     .catch((stateError) => ({ stateError: sanitizeText(stateError?.message || String(stateError)) }));
   if (state && typeof state === 'object') {
     if (error?.preSendAgentState) state.preSendAgentState = sanitizeValue(error.preSendAgentState);
@@ -1412,7 +1418,9 @@ async function setTextareaValue(page, selector, value, timeout) {
           const leftRect = left.getBoundingClientRect();
           const rightRect = right.getBoundingClientRect();
           const leftComposer = left.closest('.sendbox-panel, .guid-input-card-shell, [class*="guidInputCard"]') ? 1 : 0;
-          const rightComposer = right.closest('.sendbox-panel, .guid-input-card-shell, [class*="guidInputCard"]') ? 1 : 0;
+          const rightComposer = right.closest('.sendbox-panel, .guid-input-card-shell, [class*="guidInputCard"]')
+            ? 1
+            : 0;
           return rightComposer - leftComposer || rightRect.bottom - leftRect.bottom || rightRect.right - leftRect.right;
         });
       const textarea = visibleTextareas[0];
@@ -1439,108 +1447,113 @@ async function setTextareaValue(page, selector, value, timeout) {
 }
 
 async function clickGuidSendButtonForInput(page, inputSelector, expectedValue, timeout) {
-  return page.waitForFunction(
-    ({ inputSelector: selector, expectedValue: value }) => {
-      const input =
-        Array.from(document.querySelectorAll(selector)).find(
-          (candidate) => candidate instanceof HTMLTextAreaElement && candidate.value === value
-        ) ||
-        Array.from(document.querySelectorAll(selector)).find((candidate) => {
-          if (!(candidate instanceof HTMLTextAreaElement)) return false;
+  return page
+    .waitForFunction(
+      ({ inputSelector: selector, expectedValue: value }) => {
+        const input =
+          Array.from(document.querySelectorAll(selector)).find(
+            (candidate) => candidate instanceof HTMLTextAreaElement && candidate.value === value
+          ) ||
+          Array.from(document.querySelectorAll(selector)).find((candidate) => {
+            if (!(candidate instanceof HTMLTextAreaElement)) return false;
+            const rect = candidate.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+        if (!(input instanceof HTMLTextAreaElement)) return false;
+
+        const isEnabledButton = (candidate) => {
+          if (!(candidate instanceof HTMLButtonElement)) return false;
           const rect = candidate.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        });
-      if (!(input instanceof HTMLTextAreaElement)) return false;
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
+          return true;
+        };
 
-      const isEnabledButton = (candidate) => {
-        if (!(candidate instanceof HTMLButtonElement)) return false;
-        const rect = candidate.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return false;
-        if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
-        return true;
-      };
-
-      const card =
-        input.closest('.guid-input-card-shell') ||
-        input.closest('[class*="guidInputCard"]') ||
-        input.closest('.sendbox-panel');
-      const scopedSelectors = [
-        '[data-testid="guid-send-btn"]',
-        '[data-testid="sendbox-send-btn"]',
-        '.send-button-custom',
-        'button[class*="send-button"]',
-        'button[aria-label*="Send"]',
-      ];
-      const scopedRoot = card || document;
-      for (const selector of scopedSelectors) {
-        const candidate = scopedRoot.querySelector(selector);
-        if (isEnabledButton(candidate)) return true;
-      }
-
-      return false;
-    },
-    { inputSelector, expectedValue },
-    { timeout }
-  ).then(() =>
-    page.evaluate(({ inputSelector: selector, expectedValue: value }) => {
-      const input =
-        Array.from(document.querySelectorAll(selector)).find(
-          (candidate) => candidate instanceof HTMLTextAreaElement && candidate.value === value
-        ) ||
-        Array.from(document.querySelectorAll(selector)).find((candidate) => {
-          if (!(candidate instanceof HTMLTextAreaElement)) return false;
-          const rect = candidate.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        });
-      if (!(input instanceof HTMLTextAreaElement)) {
-        throw new Error(`GUID input not found for selector ${selector}`);
-      }
-
-      const isEnabledButton = (candidate) => {
-        if (!(candidate instanceof HTMLButtonElement)) return false;
-        const rect = candidate.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return false;
-        if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
-        return true;
-      };
-
-      const card =
-        input.closest('.guid-input-card-shell') ||
-        input.closest('[class*="guidInputCard"]') ||
-        input.closest('.sendbox-panel');
-      const scopedSelectors = [
-        '[data-testid="guid-send-btn"]',
-        '[data-testid="sendbox-send-btn"]',
-        '.send-button-custom',
-        'button[class*="send-button"]',
-        'button[aria-label*="Send"]',
-      ];
-      const scopedRoot = card || document;
-      let button = null;
-      for (const selector of scopedSelectors) {
-        const candidate = scopedRoot.querySelector(selector);
-        if (isEnabledButton(candidate)) {
-          button = candidate;
-          break;
+        const card =
+          input.closest('.guid-input-card-shell') ||
+          input.closest('[class*="guidInputCard"]') ||
+          input.closest('.sendbox-panel');
+        const scopedSelectors = [
+          '[data-testid="guid-send-btn"]',
+          '[data-testid="sendbox-send-btn"]',
+          '.send-button-custom',
+          'button[class*="send-button"]',
+          'button[aria-label*="Send"]',
+        ];
+        const scopedRoot = card || document;
+        for (const selector of scopedSelectors) {
+          const candidate = scopedRoot.querySelector(selector);
+          if (isEnabledButton(candidate)) return true;
         }
-      }
 
-      if (!button) throw new Error('Enabled GUID send button was not found near the filled input.');
-      const buttonRect = button.getBoundingClientRect();
-      button.click();
-      return {
-        clicked: true,
-        testId: button.getAttribute('data-testid') || null,
-        className: button.getAttribute('class') || null,
-        buttonRect: {
-          x: Math.round(buttonRect.x),
-          y: Math.round(buttonRect.y),
-          width: Math.round(buttonRect.width),
-          height: Math.round(buttonRect.height),
+        return false;
+      },
+      { inputSelector, expectedValue },
+      { timeout }
+    )
+    .then(() =>
+      page.evaluate(
+        ({ inputSelector: selector, expectedValue: value }) => {
+          const input =
+            Array.from(document.querySelectorAll(selector)).find(
+              (candidate) => candidate instanceof HTMLTextAreaElement && candidate.value === value
+            ) ||
+            Array.from(document.querySelectorAll(selector)).find((candidate) => {
+              if (!(candidate instanceof HTMLTextAreaElement)) return false;
+              const rect = candidate.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            });
+          if (!(input instanceof HTMLTextAreaElement)) {
+            throw new Error(`GUID input not found for selector ${selector}`);
+          }
+
+          const isEnabledButton = (candidate) => {
+            if (!(candidate instanceof HTMLButtonElement)) return false;
+            const rect = candidate.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
+            return true;
+          };
+
+          const card =
+            input.closest('.guid-input-card-shell') ||
+            input.closest('[class*="guidInputCard"]') ||
+            input.closest('.sendbox-panel');
+          const scopedSelectors = [
+            '[data-testid="guid-send-btn"]',
+            '[data-testid="sendbox-send-btn"]',
+            '.send-button-custom',
+            'button[class*="send-button"]',
+            'button[aria-label*="Send"]',
+          ];
+          const scopedRoot = card || document;
+          let button = null;
+          for (const selector of scopedSelectors) {
+            const candidate = scopedRoot.querySelector(selector);
+            if (isEnabledButton(candidate)) {
+              button = candidate;
+              break;
+            }
+          }
+
+          if (!button) throw new Error('Enabled GUID send button was not found near the filled input.');
+          const buttonRect = button.getBoundingClientRect();
+          button.click();
+          return {
+            clicked: true,
+            testId: button.getAttribute('data-testid') || null,
+            className: button.getAttribute('class') || null,
+            buttonRect: {
+              x: Math.round(buttonRect.x),
+              y: Math.round(buttonRect.y),
+              width: Math.round(buttonRect.width),
+              height: Math.round(buttonRect.height),
+            },
+          };
         },
-      };
-    }, { inputSelector, expectedValue })
-  );
+        { inputSelector, expectedValue }
+      )
+    );
 }
 
 async function submitGuidPrompt(page, inputSelector, prompt, timeout) {
