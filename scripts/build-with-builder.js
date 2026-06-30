@@ -397,6 +397,7 @@ if (archArgs.length > 1) {
 
 console.log(`🔨 Building for architecture: ${targetArch}`);
 console.log(`📋 Builder arguments: ${builderArgs || '(none)'}`);
+console.log(`📦 Managed resources bundle: ${process.env.AIONUI_MANAGED_RESOURCES_BUNDLE || 'full'}`);
 if (skipVite) console.log('⚡ --skip-vite: Will skip Vite compilation if output exists');
 if (skipNative) console.log('⚡ --skip-native: Will skip native module rebuilding');
 if (packOnly) console.log('⚡ --pack-only: Will skip electron-builder distributable creation');
@@ -469,7 +470,7 @@ try {
   }
 
   // 5. Prepare aioncore binary (for packaged runtime usage)
-  const { prepareAioncore } = require('../packages/shared-scripts/src/prepare-aioncore.js');
+  const { prepareAioncore, readManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
   const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
   const projectRoot = path.resolve(__dirname, '..');
   prepareAioncore({
@@ -477,6 +478,8 @@ try {
     platform: process.platform,
     arch: targetArch,
     version: resolveAioncoreVersion(projectRoot),
+    env: process.env,
+    managedResourcesBundle: readManagedResourcesBundle({ env: process.env }),
   });
 
   // 6. Prepare hub resources (index.json + extension zips for offline fallback)

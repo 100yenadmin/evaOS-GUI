@@ -8,6 +8,7 @@ const {
   verifyModuleBinary,
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
+const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 
 /**
  * afterPack hook for electron-builder
@@ -50,6 +51,96 @@ function requirePackagedResource(resourcesDir, relativePath, missing) {
   if (!fs.existsSync(absolutePath)) {
     missing.push(relativePath);
   }
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Packaged app has unreadable AionCore manifest: ${filePath} (${error.message})`);
+  }
+}
+
+function getPathSegments(relativePath) {
+  return String(relativePath || '')
+    .split(/[\\/]+/)
+    .filter(Boolean);
+}
+
+function normalizeResourceEntry(entry) {
+  return String(entry || '').replace(/\\/g, '/');
+}
+
+function isPrunedAcpPath(relativePath) {
+  const segments = getPathSegments(normalizeResourceEntry(relativePath));
+  const hasAcpContext = segments.some((segment) => {
+    const normalized = segment.toLowerCase().replace(/[_-]/g, '');
+    return normalized === 'acp' || normalized === 'acpadapter' || normalized === 'acpadapters';
+  });
+  const hasClaudeOrCodex = segments.some((segment) => {
+    const stem = segment.toLowerCase().replace(/\.[^.]+$/, '');
+    return /(^|[-_])(?:claude|codex)(?:$|[-_])/i.test(stem);
+  });
+  return hasAcpContext && hasClaudeOrCodex;
+}
+
+function listPackagedManagedResourceEntries(rootDir, relativeDir = '') {
+  if (!fs.existsSync(rootDir)) return null;
+
+  const currentDir = path.join(rootDir, relativeDir);
+  const entries = [];
+  for (const entry of fs
+    .readdirSync(currentDir, { withFileTypes: true })
+    .toSorted((a, b) => a.name.localeCompare(b.name))) {
+    const relativePath = normalizeResourceEntry(path.join(relativeDir, entry.name));
+    if (entry.isDirectory()) {
+      entries.push(`${relativePath}/`);
+      entries.push(...(listPackagedManagedResourceEntries(rootDir, relativePath) || []));
+    } else {
+      entries.push(relativePath);
+    }
+  }
+
+  return entries;
+}
+
+function requireNoAcpManagedResources(runtimeDir, manifest, missing) {
+  const managedResourcesPath =
+    manifest?.managedResourcesBundleResult?.managedResourcesPath ||
+    manifest?.resourceShape?.managedResources?.relativePath ||
+    'managed-resources';
+  const managedResourcesDir = path.join(runtimeDir, managedResourcesPath);
+  const packagedResources = listPackagedManagedResourceEntries(managedResourcesDir);
+  if (!packagedResources) return;
+
+  const forbiddenPackagedResources = packagedResources.filter(isPrunedAcpPath);
+  if (forbiddenPackagedResources.length > 0) {
+    missing.push(
+      `forbidden no-acp managed resource(s) still packaged: ${forbiddenPackagedResources
+        .map((entry) => path.join(managedResourcesPath, entry))
+        .join(', ')}`
+    );
+  }
+}
+
+function verifyManagedResourcesBundleManifest(runtimeDir, manifest, missing) {
+  if (manifest?.managedResourcesBundle == null) return;
+  const bundleMode = normalizeManagedResourcesBundle(manifest.managedResourcesBundle);
+  if (bundleMode !== 'no-acp') return;
+
+  const result = manifest?.managedResourcesBundleResult;
+  if (!result || result.mode !== 'no-acp') {
+    missing.push('manifest managedResourcesBundleResult.mode');
+  }
+  const prunedResources = Array.isArray(result?.prunedResources) ? result.prunedResources : [];
+  const unexpectedPrunedResources = prunedResources.filter(
+    (entry) => typeof entry !== 'string' || !isPrunedAcpPath(entry)
+  );
+  if (unexpectedPrunedResources.length > 0) {
+    missing.push(`unexpected non-ACP managed-resource prune(s): ${unexpectedPrunedResources.join(', ')}`);
+  }
+
+  requireNoAcpManagedResources(runtimeDir, manifest, missing);
 }
 
 function isMachOExecutable(filePath) {
@@ -152,6 +243,8 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
 
 function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) {
   const runtimeKey = `${electronPlatformName}-${targetArch}`;
+  const runtimeDir = path.join(resourcesDir, 'bundled-aioncore', runtimeKey);
+  const manifestPath = path.join(runtimeDir, 'manifest.json');
   const missing = [];
 
   requirePackagedResource(
@@ -162,6 +255,14 @@ function verifyBundledResources(resourcesDir, electronPlatformName, targetArch) 
   requirePackagedResource(resourcesDir, path.join('bundled-aioncore', runtimeKey, 'manifest.json'), missing);
   requirePackagedResource(resourcesDir, path.join('bundled-aioncore', runtimeKey, 'managed-resources'), missing);
   requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformName, missing);
+
+  if (missing.length === 0) {
+    const manifest = readJsonFile(manifestPath);
+    verifyManagedResourcesBundleManifest(runtimeDir, manifest, missing);
+    if (manifest.managedResourcesBundle === 'no-acp') {
+      console.log('   ✓ AionCore managed resources bundle: no-acp');
+    }
+  }
 
   if (missing.length > 0) {
     throw new Error(`Packaged app is missing required resource(s): ${missing.join(', ')}`);

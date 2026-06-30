@@ -104,6 +104,30 @@ describe('afterPack bundled resource verification', () => {
     expect(() => afterPack.verifyBundledResources(resourcesDir, 'win32', 'x64')).not.toThrow();
   });
 
+  it('rejects forbidden Claude/Codex ACP resources in no-acp packages', () => {
+    const resourcesDir = makeTempResources();
+    const runtimeDir = writeRuntimeFixture(resourcesDir, 'darwin-arm64', {
+      nodePath: join('node-v24.11.0-darwin-arm64', 'bin', 'node'),
+    });
+    mkdirSync(join(runtimeDir, 'managed-resources', 'acp', 'codex-acp', '0.14.0'), { recursive: true });
+    writeFileSync(join(runtimeDir, 'managed-resources', 'acp', 'codex-acp', '0.14.0', 'package.json'), '{}');
+    writeFileSync(
+      join(runtimeDir, 'manifest.json'),
+      JSON.stringify({
+        managedResourcesBundle: 'no-acp',
+        managedResourcesBundleResult: {
+          mode: 'no-acp',
+          managedResourcesPath: 'managed-resources',
+          prunedResources: ['acp/codex-acp/'],
+        },
+      })
+    );
+
+    expect(() => afterPack.verifyBundledResources(resourcesDir, 'darwin', 'arm64')).toThrow(
+      /forbidden no-acp managed resource/
+    );
+  });
+
   it('requires the evaOS connector helper in macOS bridge resources', () => {
     const resourcesDir = makeTempResources();
     writeBridgeFixture(resourcesDir);

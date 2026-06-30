@@ -20,6 +20,10 @@ const path = require('path');
 
 const GITHUB_OWNER = 'iOfficeAI';
 const GITHUB_REPO = 'AionCore';
+const MANIFEST_SCHEMA = 'aioncore-bundle/v2';
+const VALID_MANAGED_RESOURCES_BUNDLES = new Set(['full', 'no-acp']);
+const DEFAULT_MANAGED_RESOURCES_BUNDLE = 'full';
+const ACP_MANAGED_RESOURCE_RE = /(^|[-_])(?:claude|codex)(?:$|[-_])/i;
 
 const ACTIONS_ARTIFACT_TARGETS = {
   'darwin-arm64': {
@@ -80,6 +84,174 @@ function writeJson(filePath, payload) {
 
 function getBinaryName(platform) {
   return platform === 'win32' ? 'aioncore.exe' : 'aioncore';
+}
+
+function normalizeVersionTag(version) {
+  return version.startsWith('v') ? version : `v${version}`;
+}
+
+function normalizeManagedResourcesBundle(value) {
+  const mode = String(value || DEFAULT_MANAGED_RESOURCES_BUNDLE).trim();
+  if (!VALID_MANAGED_RESOURCES_BUNDLES.has(mode)) {
+    throw new Error(
+      `Invalid AIONUI_MANAGED_RESOURCES_BUNDLE "${mode}". Expected one of: ${[...VALID_MANAGED_RESOURCES_BUNDLES].join(
+        ', '
+      )}`
+    );
+  }
+  return mode;
+}
+
+function readManagedResourcesBundle({ env = process.env } = {}) {
+  return normalizeManagedResourcesBundle(env.AIONUI_MANAGED_RESOURCES_BUNDLE);
+}
+
+function describeRelativePath(rootDir, relativePath, { executable = false } = {}) {
+  const absolutePath = path.join(rootDir, relativePath);
+  try {
+    const stats = fs.statSync(absolutePath);
+    const result = {
+      present: true,
+      relativePath,
+      type: stats.isDirectory() ? 'directory' : stats.isFile() ? 'file' : 'other',
+    };
+
+    if (executable) {
+      if (process.platform === 'win32') {
+        result.executable = stats.isFile();
+      } else {
+        try {
+          fs.accessSync(absolutePath, fs.constants.X_OK);
+          result.executable = true;
+        } catch {
+          result.executable = false;
+        }
+      }
+    }
+
+    return result;
+  } catch {
+    return { present: false, relativePath };
+  }
+}
+
+function describeFirstExistingPath(rootDir, candidates) {
+  for (const candidate of candidates) {
+    const description = describeRelativePath(rootDir, candidate);
+    if (description.present) return description;
+  }
+
+  return { present: false, candidates };
+}
+
+function isDirectory(filePath) {
+  try {
+    return fs.statSync(filePath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function getPathSegments(relativePath) {
+  return String(relativePath || '')
+    .split(/[\\/]+/)
+    .filter(Boolean);
+}
+
+function isPrunableAcpManagedResourcePath(relativePath) {
+  const segments = getPathSegments(relativePath);
+  const hasAcpContext = segments.some((segment) => {
+    const normalized = segment.toLowerCase().replace(/[_-]/g, '');
+    return normalized === 'acp' || normalized === 'acpadapter' || normalized === 'acpadapters';
+  });
+  const hasClaudeOrCodex = segments.some((segment) => {
+    const stem = segment.toLowerCase().replace(/\.[^.]+$/, '');
+    return ACP_MANAGED_RESOURCE_RE.test(stem);
+  });
+  return hasAcpContext && hasClaudeOrCodex;
+}
+
+function listDirectoryRelativeEntries(rootDir, relativeDir = '') {
+  if (!isDirectory(rootDir)) return [];
+
+  const entries = [];
+  const dirEntries = fs.readdirSync(rootDir, { withFileTypes: true }).toSorted((a, b) => a.name.localeCompare(b.name));
+  for (const entry of dirEntries) {
+    const absolutePath = path.join(rootDir, entry.name);
+    const relativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
+    if (entry.isDirectory()) {
+      entries.push(`${relativePath}/`);
+      entries.push(...listDirectoryRelativeEntries(absolutePath, relativePath));
+    } else {
+      entries.push(relativePath);
+    }
+  }
+
+  return entries;
+}
+
+function pruneAcpResourcesFromDirectory(rootDir, relativeDir = '') {
+  if (!isDirectory(rootDir)) return [];
+
+  const pruned = [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true }).toSorted((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const absolutePath = path.join(rootDir, entry.name);
+    const relativePath = path.join(relativeDir, entry.name);
+    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+    if (isPrunableAcpManagedResourcePath(normalizedRelativePath)) {
+      fs.rmSync(absolutePath, { recursive: true, force: true });
+      pruned.push(`${normalizedRelativePath}${entry.isDirectory() ? '/' : ''}`);
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      pruned.push(...pruneAcpResourcesFromDirectory(absolutePath, relativePath));
+    }
+  }
+
+  return pruned;
+}
+
+function getPreparedResourceShape(targetDir, binaryName) {
+  return {
+    binary: describeRelativePath(targetDir, binaryName, { executable: true }),
+    manifest: describeRelativePath(targetDir, 'manifest.json'),
+    managedResources: describeFirstExistingPath(targetDir, ['managed-resources', 'managed_resources']),
+    managedNodeRuntime: describeFirstExistingPath(targetDir, [
+      path.join('managed-resources', 'node'),
+      path.join('managed_resources', 'node'),
+      'managed-node',
+      'node-runtime',
+    ]),
+  };
+}
+
+function applyManagedResourcesBundle({ targetDir, mode = DEFAULT_MANAGED_RESOURCES_BUNDLE } = {}) {
+  const normalizedMode = normalizeManagedResourcesBundle(mode);
+  if (normalizedMode === 'full') {
+    return {
+      mode: normalizedMode,
+      prunedResources: [],
+    };
+  }
+
+  const managedResources = describeFirstExistingPath(targetDir, ['managed-resources', 'managed_resources']);
+  if (!managedResources.present || !managedResources.relativePath) {
+    return {
+      mode: normalizedMode,
+      prunedResources: [],
+    };
+  }
+
+  const managedResourcesDir = path.join(targetDir, managedResources.relativePath);
+  return {
+    mode: normalizedMode,
+    managedResourcesPath: managedResources.relativePath,
+    sourceResources: listDirectoryRelativeEntries(managedResourcesDir),
+    prunedResources: pruneAcpResourcesFromDirectory(managedResourcesDir),
+    keptResources: listDirectoryRelativeEntries(managedResourcesDir),
+  };
 }
 
 function getActionsTarget(platform, arch) {
@@ -443,9 +615,12 @@ function downloadAndExtract(platform, arch, tag) {
  * @returns {{ prepared: true; dir: string; sourceType: string }}
  */
 function prepareAioncore(options) {
-  const { projectRoot, platform, arch, version = 'latest' } = options;
+  const { projectRoot, platform, arch, version = 'latest', env = process.env } = options;
+  const managedResourcesBundle = normalizeManagedResourcesBundle(
+    options.managedResourcesBundle || readManagedResourcesBundle({ env })
+  );
   const runtimeKey = `${platform}-${arch}`;
-  const actionsRunId = (process.env.AIONUI_BACKEND_RUN_ID || '').trim();
+  const actionsRunId = (env.AIONUI_BACKEND_RUN_ID || '').trim();
 
   let tag = null;
   const resolveReleaseTag = () => {
@@ -458,7 +633,7 @@ function prepareAioncore(options) {
       tag = resolved;
       console.log(`Resolved aioncore "latest" → ${tag}`);
     } else {
-      tag = version.startsWith('v') ? version : `v${version}`;
+      tag = normalizeVersionTag(version);
     }
     return tag;
   };
@@ -566,18 +741,39 @@ function prepareAioncore(options) {
     }
 
     const bundledManagedResourcesDir = prepareManagedResources(managedResourcesBinaryPath, targetDir);
+    const sourceResourceShape = getPreparedResourceShape(targetDir, binaryName);
+    const managedResourcesBundleResult = applyManagedResourcesBundle({
+      targetDir,
+      mode: managedResourcesBundle,
+    });
+    const resourceShape = getPreparedResourceShape(targetDir, binaryName);
 
     // The release tag is the authoritative version — the aioncore
     // binary does not expose a --version flag (it has --app-version which
     // takes a value, not a self-report).
     const manifest = {
+      schema: MANIFEST_SCHEMA,
       platform,
       arch,
+      runtimeKey,
       version: tag || `actions-run-${actionsRunId}`,
+      requestedVersion: version,
       generatedAt: new Date().toISOString(),
+      github: {
+        runId: env.GITHUB_RUN_ID || null,
+        sha: env.GITHUB_SHA || null,
+        repository: env.GITHUB_REPOSITORY || null,
+      },
+      managedResourcesBundle,
+      managedResourcesBundleResult,
+      sourceResourceShape,
       sourceType,
       source: sourceDetail,
       files: [binaryName, 'managed-resources/'],
+      resourceShape: {
+        ...resourceShape,
+        manifest: { present: true, relativePath: 'manifest.json', type: 'file' },
+      },
     };
 
     writeJson(path.join(targetDir, 'manifest.json'), manifest);
@@ -585,17 +781,33 @@ function prepareAioncore(options) {
       `  Bundled aioncore prepared: resources/bundled-aioncore/${runtimeKey}/${binaryName} [source=${sourceType}]`
     );
     console.log(`  Bundled managed resources prepared: ${bundledManagedResourcesDir}`);
+    if (managedResourcesBundle === 'no-acp') {
+      console.log(
+        `  AionCore managed resources bundle: no-acp (${managedResourcesBundleResult.prunedResources.length} ACP entries pruned)`
+      );
+    }
 
     for (const tempDir of tempDirs) removeDirectorySafe(tempDir);
-    return { prepared: true, dir: targetDir, sourceType };
+    return {
+      prepared: true,
+      dir: targetDir,
+      sourceType,
+      managedResourcesBundle,
+      prunedResources: managedResourcesBundleResult.prunedResources,
+    };
   }
 
   throw new Error(`aioncore binary not found for ${runtimeKey} (tag: ${tag})`);
 }
 
 module.exports = {
+  DEFAULT_MANAGED_RESOURCES_BUNDLE,
+  VALID_MANAGED_RESOURCES_BUNDLES,
+  applyManagedResourcesBundle,
   getActionsArtifactMissingMessage,
   getActionsArtifactName,
   getManagedResourcesRuntimePlan,
+  normalizeManagedResourcesBundle,
   prepareAioncore,
+  readManagedResourcesBundle,
 };
