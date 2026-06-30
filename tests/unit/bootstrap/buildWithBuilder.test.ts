@@ -45,13 +45,17 @@ function recordPrepareCall(options) {
   return { prepared: true, dir: 'mock-bundled-aioncore', sourceType: 'mock' };
 }
 
+function readManagedResourcesBundle() {
+  return process.env.AIONUI_MANAGED_RESOURCES_BUNDLE || 'full';
+}
+
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === './prepareAioncore' || request.endsWith('/prepareAioncore')) {
     return recordPrepareCall;
   }
 
   if (request.endsWith('packages/shared-scripts/src/prepare-aioncore.js')) {
-    return { prepareAioncore: recordPrepareCall };
+    return { prepareAioncore: recordPrepareCall, readManagedResourcesBundle };
   }
 
   if (request === './resolveAioncoreVersion.js' || request.endsWith('/resolveAioncoreVersion.js')) {
