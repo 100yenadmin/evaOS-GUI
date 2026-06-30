@@ -1090,7 +1090,7 @@ describe('NativeCompanionPage', () => {
     expect(bridgeMocks.runAction).not.toHaveBeenCalled();
   });
 
-  it('uses a VM-backed pairing target when the footer is on the admin account row', async () => {
+  it('requires choosing the VM-backed pairing target when the footer is on the admin account row', async () => {
     const accountOnlyTarget = {
       customerId: 'admin@100yen.org',
       customerAccountId: 'acct_admin',
@@ -1173,7 +1173,12 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText(/Mac control target: Golden Test VM/)).toBeInTheDocument();
+    const targetSelect = await screen.findByTestId('native-companion-mac-target-select');
+    expect(targetSelect).toHaveValue('');
+    expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
+
+    await user.selectOptions(targetSelect, 'golden');
+    expect(screen.getByText(/Mac control target: Golden Test VM/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
 
@@ -1186,7 +1191,7 @@ describe('NativeCompanionPage', () => {
     expect(document.body.textContent).not.toMatch(/admin@100yen\.org.*Pairing code/s);
   });
 
-  it('keeps a VM-backed Mac target pairable when its live display name is the admin email', async () => {
+  it('requires an explicit Mac target when the selected footer account is account-only', async () => {
     const accountOnlyTarget = {
       customerId: 'admin@100yen.org',
       customerAccountId: 'acct_admin',
@@ -1266,9 +1271,9 @@ describe('NativeCompanionPage', () => {
           refreshRecommended: false,
           connectorGrant: {
             ok: true,
-            customerId: 'golden',
-            deviceId: 'device-golden',
-            grantId: 'grant-golden',
+            customerId: 'benjamin-kennedy',
+            deviceId: 'device-benjamin',
+            grantId: 'grant-benjamin',
             grantState: 'active',
             auditId: 'audit-grant',
           },
@@ -1285,9 +1290,10 @@ describe('NativeCompanionPage', () => {
           auditIds: ['audit-pairing'],
           refreshRecommended: false,
           pairing: {
-            customerId: 'golden',
+            customerId: 'benjamin-kennedy',
             pairingCode: 'PAIR-1234',
-            setupPrompt: 'Customer: golden\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with this code.',
+            setupPrompt:
+              'Customer: benjamin-kennedy\nPairing code: PAIR-1234\nUse customer_mac_complete_pairing with this code.',
           },
           agentPairingStatus: 'pairing_prompt_created',
         },
@@ -1296,8 +1302,13 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText(/Mac control target: Golden VM \(admin@100yen\.org\)/)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/Mac control target: Benjamin Kennedy/i);
+    const targetSelect = await screen.findByTestId('native-companion-mac-target-select');
+    expect(targetSelect).toHaveValue('');
+    expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
+    expect(document.body.textContent).not.toMatch(/Mac control target: Golden VM \(admin@100yen\.org\)/i);
+
+    await user.selectOptions(targetSelect, 'benjamin-kennedy');
+    expect(screen.getByText(/Mac control target: Benjamin Kennedy/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
     await waitFor(() =>
@@ -1307,7 +1318,7 @@ describe('NativeCompanionPage', () => {
     );
     expect(bridgeMocks.runAction).toHaveBeenLastCalledWith({
       action: 'ensure_customer_mac_connector_grant',
-      customerId: 'golden',
+      customerId: 'benjamin-kennedy',
       agentLabel: 'evaOS Workbench',
     });
 
@@ -1317,7 +1328,7 @@ describe('NativeCompanionPage', () => {
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(bridgeMocks.runAction).toHaveBeenCalledWith({
       action: 'create_pairing_prompt',
-      customerId: 'golden',
+      customerId: 'benjamin-kennedy',
       agentLabel: 'evaOS Workbench',
     });
   });
@@ -1663,7 +1674,9 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText(/Mac control target: Golden Test VM/)).toBeInTheDocument();
+    const targetSelect = await screen.findByTestId('native-companion-mac-target-select');
+    expect(targetSelect).toHaveValue('');
+    await user.selectOptions(targetSelect, 'golden');
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Export Pairing Prompt' }));
 

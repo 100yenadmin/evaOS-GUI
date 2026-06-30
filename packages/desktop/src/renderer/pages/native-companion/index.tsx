@@ -57,16 +57,17 @@ const NativeCompanionPage: React.FC = () => {
   const { openFeedback } = useFeedback();
   const { selectedCustomerId, selectedTarget, targets = [], isOperator } = customerContext;
   const [lockedPairingCustomerId, setLockedPairingCustomerId] = React.useState<string | undefined>();
+  const pairableMacControlTargets = React.useMemo(() => targets.filter(isPairableMacControlTarget), [targets]);
   const selectedPairingTarget = React.useMemo(
     () =>
       selectMacPairingTarget({
-        targets,
+        targets: pairableMacControlTargets,
         selectedCustomerId,
         selectedTarget,
         lockedPairingCustomerId,
         isOperator,
       }),
-    [isOperator, lockedPairingCustomerId, selectedCustomerId, selectedTarget, targets]
+    [isOperator, lockedPairingCustomerId, pairableMacControlTargets, selectedCustomerId, selectedTarget]
   );
   const selectedPairingCustomerId = selectedPairingTarget?.customerId;
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction, getDiagnosticPacket } =
@@ -220,6 +221,10 @@ const NativeCompanionPage: React.FC = () => {
     await navigator.clipboard.writeText(prompt);
     setCopyMessage('Pairing prompt copied.');
   }, [currentActionResult?.pairing?.setupPrompt]);
+
+  const handlePairingTargetChange = React.useCallback((customerId: string) => {
+    setLockedPairingCustomerId(customerId || undefined);
+  }, []);
 
   const handleReconnectWorkbench = React.useCallback(async () => {
     if (selectedPairingCustomerId) {
@@ -418,11 +423,12 @@ const NativeCompanionPage: React.FC = () => {
                   Workbench starts the local connector, then connects Mac control to the selected account-scoped
                   evaOS/OpenClaw and Hermes agent context.
                 </p>
-                {selectedPairingTarget ? (
-                  <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>
-                    Mac control target: {macPairingTargetLabel(selectedPairingTarget)}
-                  </p>
-                ) : null}
+                <MacPairingTargetControl
+                  targets={pairableMacControlTargets}
+                  selectedCustomerId={selectedPairingCustomerId}
+                  selectedTarget={selectedPairingTarget}
+                  onChange={handlePairingTargetChange}
+                />
               </div>
               <Tag color={guidedSetupReady ? 'green' : 'orange'}>{guidedSetupReady ? 'Ready' : 'Setup needed'}</Tag>
             </div>
@@ -1018,7 +1024,7 @@ function selectMacPairingTarget(input: {
   lockedPairingCustomerId?: string;
   isOperator?: boolean;
 }): IEvaosCustomerTargetView | undefined {
-  const pairableTargets = input.targets.filter(isPairableMacControlTarget);
+  const pairableTargets = input.targets;
   const selectedTargetFromList = input.selectedCustomerId
     ? pairableTargets.find((target) => target.customerId === input.selectedCustomerId)
     : undefined;
@@ -1028,12 +1034,60 @@ function selectMacPairingTarget(input: {
     ? pairableTargets.find((target) => target.customerId === input.lockedPairingCustomerId)
     : undefined;
   if (lockedTargetFromList) return lockedTargetFromList;
+  if (input.selectedCustomerId) return undefined;
 
   return (
     pairableTargets.find((target) => target.isDefault) ??
     (input.isOperator ? pairableTargets.find((target) => target.customerId === 'golden') : undefined) ??
     pairableTargets[0]
   );
+}
+
+function MacPairingTargetControl({
+  targets,
+  selectedCustomerId,
+  selectedTarget,
+  onChange,
+}: {
+  targets: IEvaosCustomerTargetView[];
+  selectedCustomerId?: string;
+  selectedTarget?: IEvaosCustomerTargetView;
+  onChange: (customerId: string) => void;
+}) {
+  const targetText = selectedTarget ? macPairingTargetLabel(selectedTarget) : 'Choose Mac target';
+  if (targets.length > 1 || (!selectedTarget && targets.length > 0)) {
+    return (
+      <div className='mt-4px flex max-w-420px flex-col gap-4px text-12px leading-18px text-t-secondary'>
+        <p className='m-0'>Mac control target: {targetText}</p>
+        <select
+          data-testid='native-companion-mac-target-select'
+          aria-label='Mac control target'
+          value={selectedCustomerId ?? ''}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          className='h-30px w-full min-w-0 rd-6px border border-solid border-[var(--color-border-2)] bg-fill-1 px-8px text-12px text-t-primary outline-none'
+        >
+          {selectedCustomerId ? null : (
+            <option value='' disabled>
+              Choose Mac target
+            </option>
+          )}
+          {targets.map((target) => (
+            <option key={target.customerId} value={target.customerId}>
+              {macPairingTargetLabel(target)}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  if (selectedTarget) {
+    return (
+      <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>
+        Mac control target: {macPairingTargetLabel(selectedTarget)}
+      </p>
+    );
+  }
+  return <p className='m-0 mt-4px text-12px leading-18px text-t-secondary'>Mac control target: Choose Mac target</p>;
 }
 
 function macPairingTargetLabel(target: IEvaosCustomerTargetView): string {
