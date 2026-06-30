@@ -135,6 +135,28 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     ).toThrow(/renderer-visible secret material/);
   });
 
+  it('allows typed Mac-control blocker reasons without allowing raw connector diagnostics', async () => {
+    const { assertEvaosRendererSafePayload } = await loadBrokerBridge();
+
+    expect(() =>
+      assertEvaosRendererSafePayload({
+        action: 'ensure_customer_mac_connector_grant',
+        status: 'repair_required',
+        blockerReason: 'token_missing',
+        blockerCategory: 'token_missing',
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertEvaosRendererSafePayload({
+        action: 'ensure_customer_mac_connector_grant',
+        status: 'repair_required',
+        blockerReason: 'connector_url=http://100.64.0.10:8765&connector_token=secret-token-abcdef1234567890',
+        blockerCategory: 'token_missing',
+      })
+    ).toThrow(/renderer-visible secret material/);
+  });
+
   it('fails closed when a broker client accidentally returns desktop-session material through IPC', async () => {
     const { initEvaosBrokerBridge, ipcBridge } = await loadBrokerBridge();
     const client = {
