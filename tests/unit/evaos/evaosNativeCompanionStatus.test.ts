@@ -2167,6 +2167,8 @@ describe('evaosNativeCompanionStatus', () => {
         grantId: 'grant-golden',
         grantState: 'active',
         auditId: 'audit-grant',
+        sourcePointer: 'http://100.64.0.10:8765/register?connector_token=secret-token-abcdef1234567890',
+        connectorToken: 'secret-token-abcdef1234567890',
       }));
       const runConnectorCommand = vi.fn().mockResolvedValueOnce({
         ok: true,
@@ -2259,6 +2261,9 @@ describe('evaosNativeCompanionStatus', () => {
           grantId: 'grant-golden',
         },
       });
+      expect(result.connectorGrant).not.toHaveProperty('sourcePointer');
+      expect(result.connectorGrant).not.toHaveProperty('connectorToken');
+      expect(JSON.stringify(result)).not.toMatch(/secret-token|connector_token|100\.64\.0\.10|8765/i);
       expect(deps.spawnConnectorProcess).toHaveBeenCalledWith(
         bundledBridgePath,
         ['serve', '--host', '100.64.0.10', '--port', '8765'],
