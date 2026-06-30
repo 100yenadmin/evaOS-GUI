@@ -2154,6 +2154,114 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(result)).not.toMatch(/secret-token|100\.64\.0\.10|8765|token_path/i);
   });
 
+  it('privately resolves a redacted tailnet connector host before explicit first-party grant', async () => {
+    const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
+      ok: true,
+      customerId: 'golden',
+      deviceId: 'device-golden',
+      grantId: 'grant-golden',
+      grantState: 'active',
+      auditId: 'audit-grant',
+      sourcePointer: 'http://100.64.0.4:8765/register?connector_token=secret-token-abcdef1234567890',
+      connectorToken: 'secret-token-abcdef1234567890',
+    }));
+    const runConnectorCommand = vi.fn(async () => ({
+      ok: true,
+      auditId: 'audit-live-ready',
+      data: {
+        device: {
+          hostname: 'Proof-Mac.local',
+        },
+        permissions: {
+          accessibility: { status: 'granted' },
+          screen_recording: { status: 'granted' },
+        },
+      },
+    }));
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          loaded: true,
+          running: true,
+          health: { authenticated: true, host_kind: 'tailnet', reachable: true, ready: true },
+          managed_by: 'launchagent',
+          owner: {
+            app_path: { kind: 'path', value: '/Applications/evaOS Workbench.app' },
+            bundle_id: 'com.evaos.workbench',
+            program_path: {
+              kind: 'path',
+              value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+            },
+          },
+          tailnet_available: true,
+          token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
+          token_present: true,
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            ready: true,
+            active: true,
+            mode: 'ask-permission',
+            kill_switch: false,
+          },
+        },
+        'ready --json': {
+          ok: true,
+          ready: true,
+          service: 'evaos-desktop-bridge-connector',
+          connector_service: {
+            health: { host_kind: 'tailnet', reachable: true },
+            managed_by: 'launchagent',
+            owner: {
+              app_path: { kind: 'path', value: '/Applications/evaOS Workbench.app' },
+              bundle_id: 'com.evaos.workbench',
+            },
+            ready: true,
+            running: true,
+          },
+        },
+        'ip -4': '100.64.0.4\n',
+      },
+      {
+        ensureCustomerMacConnectorGrant,
+        runConnectorCommand,
+        readTextFile: vi.fn(() => 'secret-token-abcdef1234567890\n'),
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'ensure_customer_mac_connector_grant', customerId: 'golden' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      action: 'ensure_customer_mac_connector_grant',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:connector-grant-ready',
+      connectorGrant: {
+        customerId: 'golden',
+        grantId: 'grant-golden',
+      },
+    });
+    expect(runConnectorCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectorUrl: 'http://100.64.0.4:8765',
+        connectorToken: 'secret-token-abcdef1234567890',
+        command: 'customerMacStatus',
+      })
+    );
+    expect(ensureCustomerMacConnectorGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: 'golden',
+        connectorUrl: 'http://100.64.0.4:8765',
+      })
+    );
+    expect(JSON.stringify(result)).not.toMatch(/secret-token|connector_token|100\.64\.0\.4|8765|token_path/i);
+  });
+
   it.each([
     ['LaunchAgent-managed', 'launchagent'],
     ['untracked Workbench/manual', 'workbench-or-manual'],
