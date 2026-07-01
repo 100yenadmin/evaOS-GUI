@@ -12,6 +12,7 @@ const DEFAULT_BUSINESS_BROWSER_TEST_URL = 'https://www.electricsheephq.com/dashb
 const DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS = 'www.electricsheephq.com';
 const DEFAULT_COMPANY_BRAIN_QUERY = 'What changed recently for this account?';
 const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
+const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -432,7 +433,7 @@ function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
       usage_metadata: {},
       capabilities: ['Mail', 'Calendar', 'Drive'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         identity: 'google-workspace-aionui-fixture@100yen.org',
         scopes: ['gmail.readonly'],
@@ -453,7 +454,7 @@ function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
       usage_metadata: {},
       capabilities: ['Channels', 'Messages'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         identity: 'slack-aionui-fixture@100yen.org',
         scopes: ['channels:read'],
@@ -474,7 +475,7 @@ function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
       usage_metadata: {},
       capabilities: ['Issues', 'Project status'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         raw_provider_token_stored: false,
       },
@@ -491,7 +492,7 @@ function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
       usage_metadata: {},
       capabilities: ['Pages', 'Databases'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         raw_provider_token_stored: false,
       },
@@ -504,6 +505,14 @@ function providerFixtureSubjectsFromRows(rows) {
   return [
     ...new Set((Array.isArray(rows) ? rows : []).map((row) => safeText(row?.provider_subject_id, 220)).filter(Boolean)),
   ];
+}
+
+function acceptanceFixtureDeleteQuery(query) {
+  return {
+    ...query,
+    'metadata->>source': `eq.${FIXTURE_PROVIDER_METADATA_SOURCE}`,
+    'metadata->>acceptance_fixture': 'eq.true',
+  };
 }
 
 async function upsertProviderFixtureRows(
@@ -839,25 +848,31 @@ async function restoreProviderSnapshots(admin, state) {
         });
       }
     } else if (fixtureRows.length === 0) {
-      await admin.deleteRows('customer_provider_profiles', {
-        customer_id: `eq.${state.customerId}`,
-        provider_key: `eq.${providerKey}`,
-      });
+      await admin.deleteRows(
+        'customer_provider_profiles',
+        acceptanceFixtureDeleteQuery({
+          customer_id: `eq.${state.customerId}`,
+          provider_key: `eq.${providerKey}`,
+        })
+      );
     }
   }
   for (const row of fixtureRows) {
     const rowId = safeText(row?.id, 160);
     if (!rowId || snapshotIds.has(rowId)) continue;
-    await admin.deleteRows('customer_provider_profiles', { id: `eq.${rowId}` });
+    await admin.deleteRows('customer_provider_profiles', acceptanceFixtureDeleteQuery({ id: `eq.${rowId}` }));
   }
   for (const subject of fixtureSubjects) {
     for (const providerKey of FIXTURE_PROVIDER_KEYS) {
       if (snapshotSubjectKeys.has(`${providerKey}\0${subject}`)) continue;
-      await admin.deleteRows('customer_provider_profiles', {
-        customer_id: `eq.${state.customerId}`,
-        provider_key: `eq.${providerKey}`,
-        provider_subject_id: `eq.${subject}`,
-      });
+      await admin.deleteRows(
+        'customer_provider_profiles',
+        acceptanceFixtureDeleteQuery({
+          customer_id: `eq.${state.customerId}`,
+          provider_key: `eq.${providerKey}`,
+          provider_subject_id: `eq.${subject}`,
+        })
+      );
     }
   }
 }

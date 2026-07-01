@@ -19,6 +19,21 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
 
 type ProviderRow = Record<string, unknown>;
 
+function rowValue(row: ProviderRow, key: string) {
+  if (key.startsWith('metadata->>')) {
+    const metadataKey = key.slice('metadata->>'.length);
+    const metadata = row.metadata as Record<string, unknown> | undefined;
+    return metadata?.[metadataKey];
+  }
+  return row[key];
+}
+
+function rowMatchesQuery(row: ProviderRow, query: Record<string, string>) {
+  return Object.entries(query).every(([key, value]) => {
+    return typeof value !== 'string' || !value.startsWith('eq.') || String(rowValue(row, key)) === value.slice(3);
+  });
+}
+
 class FakeProviderAdmin {
   rows: ProviderRow[];
   deletes: Array<{ query: Record<string, string> }> = [];
@@ -65,6 +80,7 @@ class FakeProviderAdmin {
 
   async deleteRows(_table: string, query: Record<string, string>) {
     this.deletes.push({ query });
+    this.rows = this.rows.filter((row) => !rowMatchesQuery(row, query));
   }
 }
 
@@ -363,6 +379,7 @@ describe('evaOS live canary fixture provisioner', () => {
         customer_id: 'golden',
         provider_key: 'google_workspace',
         provider_subject_id: 'acct_account_profile_requester',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
         status: 'connected',
       },
     ]);
@@ -398,7 +415,14 @@ describe('evaOS live canary fixture provisioner', () => {
     });
 
     expect(admin.patches.map((patch) => patch.query)).toContainEqual({ id: 'eq.snapshot-row-1' });
-    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual({ id: 'eq.fixture-row-1' });
+    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual(
+      expect.objectContaining({
+        id: 'eq.fixture-row-1',
+        'metadata->>source': 'eq.aionui_live_canary_fixture',
+        'metadata->>acceptance_fixture': 'eq.true',
+      })
+    );
+    expect(admin.rows.some((row) => row.id === 'fixture-row-1')).toBe(false);
   });
 
   it('deletes subject-scoped fixture rows without deleting restored snapshot subjects', async () => {
@@ -440,12 +464,98 @@ describe('evaOS live canary fixture provisioner', () => {
       customer_id: 'eq.golden',
       provider_key: 'eq.google_workspace',
       provider_subject_id: 'eq.acct_account_profile_requester',
+      'metadata->>source': 'eq.aionui_live_canary_fixture',
+      'metadata->>acceptance_fixture': 'eq.true',
     });
-    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual({
-      customer_id: 'eq.golden',
-      provider_key: 'eq.slack',
-      provider_subject_id: 'eq.legacy_customer',
+    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual(
+      expect.objectContaining({
+        customer_id: 'eq.golden',
+        provider_key: 'eq.slack',
+        provider_subject_id: 'eq.legacy_customer',
+      })
+    );
+  });
+
+  it('preserves genuine rows when provider-key fallback cleanup runs', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'genuine-slack-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'connected',
+        metadata: { source: 'real_customer_connection' },
+      },
+      {
+        id: 'fixture-slack-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'expired',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [],
+      providerFixtureRows: [],
     });
+
+    expect(admin.rows.some((row) => row.id === 'genuine-slack-row')).toBe(true);
+    expect(admin.rows.some((row) => row.id === 'fixture-slack-row')).toBe(false);
+    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual(
+      expect.objectContaining({
+        customer_id: 'eq.golden',
+        provider_key: 'eq.slack',
+        'metadata->>source': 'eq.aionui_live_canary_fixture',
+        'metadata->>acceptance_fixture': 'eq.true',
+      })
+    );
+  });
+
+  it('preserves genuine rows when subject fallback cleanup runs from stale state', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'genuine-google-row',
+        customer_id: 'golden',
+        provider_key: 'google_workspace',
+        provider_subject_id: 'acct_account_profile_requester',
+        status: 'connected',
+        metadata: { source: 'real_customer_connection' },
+      },
+      {
+        id: 'fixture-google-row',
+        customer_id: 'golden',
+        provider_key: 'google_workspace',
+        provider_subject_id: 'acct_account_profile_requester',
+        status: 'connected',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [],
+      providerFixtureRows: [
+        {
+          customer_id: 'golden',
+          provider_key: 'google_workspace',
+          provider_subject_id: 'acct_account_profile_requester',
+        },
+      ],
+      providerFixtureSubjects: ['acct_account_profile_requester'],
+    });
+
+    expect(admin.rows.some((row) => row.id === 'genuine-google-row')).toBe(true);
+    expect(admin.rows.some((row) => row.id === 'fixture-google-row')).toBe(false);
+    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual(
+      expect.objectContaining({
+        customer_id: 'eq.golden',
+        provider_key: 'eq.google_workspace',
+        provider_subject_id: 'eq.acct_account_profile_requester',
+        'metadata->>source': 'eq.aionui_live_canary_fixture',
+        'metadata->>acceptance_fixture': 'eq.true',
+      })
+    );
   });
 
   it('keeps restored snapshot rows out of id and subject cleanup passes', async () => {
@@ -484,12 +594,16 @@ describe('evaOS live canary fixture provisioner', () => {
       providerFixtureSubjects: ['acct_account_profile_requester'],
     });
 
-    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual({ id: 'eq.snapshot-row-1' });
-    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual({
-      customer_id: 'eq.golden',
-      provider_key: 'eq.google_workspace',
-      provider_subject_id: 'eq.acct_account_profile_requester',
-    });
+    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual(
+      expect.objectContaining({ id: 'eq.snapshot-row-1' })
+    );
+    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual(
+      expect.objectContaining({
+        customer_id: 'eq.golden',
+        provider_key: 'eq.google_workspace',
+        provider_subject_id: 'eq.acct_account_profile_requester',
+      })
+    );
   });
 
   it('fails closed on a stale snapshot id without overwriting a duplicate natural-key row', async () => {
