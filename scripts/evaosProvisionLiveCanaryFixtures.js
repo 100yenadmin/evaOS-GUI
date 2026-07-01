@@ -399,6 +399,17 @@ async function writeProviderProfileRow(
   return admin.insert('customer_provider_profiles', row, { select, label });
 }
 
+async function assertProviderFixtureRowsWritable(admin, rows) {
+  for (const row of rows) {
+    const lookup = providerProfileLookup(row);
+    const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id,metadata', limit: 20 });
+    if (existing.length === 0 || existing.some(isAcceptanceFixtureRow)) continue;
+    throw new Error(
+      `${row.provider_key} provider fixture found an existing non-fixture provider row; refusing to overwrite it.`
+    );
+  }
+}
+
 async function restoreProviderProfileSnapshot(
   admin,
   row,
@@ -549,16 +560,16 @@ async function upsertProviderFixtureRows(
       ? profileList.map((profileId) => providerFixtureScope(customerAccountId, profileId))
       : [{}];
   assertUniqueProviderFixtureSubjects(scopes);
+  const rowsToWrite = scopes.flatMap((scope) => providerFixtureRows(customerId, scope, ttlMinutes));
   const writtenRows = [];
 
-  for (const scope of scopes) {
-    for (const row of providerFixtureRows(customerId, scope, ttlMinutes)) {
-      const written = await writeProviderProfileRow(admin, row, {
-        select: 'id,customer_id,provider_key,provider_subject_id,status',
-        label: `${row.provider_key} provider fixture`,
-      });
-      writtenRows.push(written);
-    }
+  await assertProviderFixtureRowsWritable(admin, rowsToWrite);
+  for (const row of rowsToWrite) {
+    const written = await writeProviderProfileRow(admin, row, {
+      select: 'id,customer_id,provider_key,provider_subject_id,status',
+      label: `${row.provider_key} provider fixture`,
+    });
+    writtenRows.push(written);
   }
   return writtenRows;
 }
@@ -873,16 +884,6 @@ async function restoreProviderSnapshots(admin, state) {
           label: `${providerKey} provider snapshot restore`,
         });
       }
-    } else {
-      // Marker-scoped fallback catches old or partially-written fixture state
-      // where a row id or provider_subject_id was not persisted.
-      await admin.deleteRows(
-        'customer_provider_profiles',
-        acceptanceFixtureDeleteQuery({
-          customer_id: `eq.${state.customerId}`,
-          provider_key: `eq.${providerKey}`,
-        })
-      );
     }
   }
   for (const row of fixtureRows) {
@@ -904,16 +905,22 @@ async function restoreProviderSnapshots(admin, state) {
     }
   }
   // Final marker-only sweep catches legacy state files that persisted neither
-  // row ids nor provider_subject_id. Rows that lost the marker are preserved
-  // deliberately; guessing at those would risk deleting real provider state.
+  // row ids nor provider_subject_id. Snapshot row ids are excluded so restore
+  // remains faithful even when an old fixture-marked row was part of the
+  // snapshot. Rows that lost the marker are preserved deliberately; guessing at
+  // those would risk deleting real provider state.
   for (const providerKey of FIXTURE_PROVIDER_KEYS) {
-    await admin.deleteRows(
-      'customer_provider_profiles',
-      acceptanceFixtureDeleteQuery({
-        customer_id: `eq.${state.customerId}`,
-        provider_key: `eq.${providerKey}`,
-      })
-    );
+    const preservedSnapshotIds = (snapshotsByKey.get(providerKey) ?? [])
+      .map((row) => safeText(row?.id, 160))
+      .filter(Boolean);
+    const query = acceptanceFixtureDeleteQuery({
+      customer_id: `eq.${state.customerId}`,
+      provider_key: `eq.${providerKey}`,
+    });
+    if (preservedSnapshotIds.length > 0) {
+      query.id = `not.in.(${preservedSnapshotIds.join(',')})`;
+    }
+    await admin.deleteRows('customer_provider_profiles', query);
   }
 }
 

@@ -30,7 +30,17 @@ function rowValue(row: ProviderRow, key: string) {
 
 function rowMatchesQuery(row: ProviderRow, query: Record<string, string>) {
   return Object.entries(query).every(([key, value]) => {
-    return typeof value !== 'string' || !value.startsWith('eq.') || String(rowValue(row, key)) === value.slice(3);
+    if (typeof value !== 'string') return true;
+    const actual = rowValue(row, key);
+    if (value.startsWith('eq.')) return String(actual) === value.slice(3);
+    if (value.startsWith('in.(') && value.endsWith(')')) {
+      return value.slice(4, -1).split(',').includes(String(actual));
+    }
+    if (value.startsWith('not.in.(') && value.endsWith(')')) {
+      return !value.slice(8, -1).split(',').includes(String(actual));
+    }
+    if (value === 'is.null') return actual === null || actual === undefined;
+    return true;
   });
 }
 
@@ -46,13 +56,10 @@ class FakeProviderAdmin {
 
   async select(_table: string, query: Record<string, string | number>) {
     const rows = this.rows.filter((row) => {
-      for (const [key, value] of Object.entries(query)) {
-        if (key === 'select' || key === 'limit') continue;
-        if (typeof value === 'string' && value.startsWith('eq.') && String(row[key]) !== value.slice(3)) {
-          return false;
-        }
-      }
-      return true;
+      const filteredQuery = Object.fromEntries(
+        Object.entries(query).filter(([key]) => key !== 'select' && key !== 'limit')
+      ) as Record<string, string>;
+      return rowMatchesQuery(row, filteredQuery);
     });
     return rows.slice(0, Number(query.limit ?? rows.length)).map((row) => Object.assign({}, row));
   }
@@ -267,6 +274,35 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(admin.patches).toEqual([]);
   });
 
+  it('preflights every subject before writing provider fixtures', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'real-google-row',
+        customer_id: 'golden',
+        provider_key: 'google_workspace',
+        provider_subject_id: 'acct_account_profile_second-profile',
+        status: 'connected',
+        metadata: { source: 'real_customer_connection' },
+      },
+    ]);
+
+    await expect(
+      provisioner.upsertProviderFixtureRows(admin, 'golden', {
+        customerAccountId: 'account',
+        profileIds: ['first-profile', 'second-profile'],
+      })
+    ).rejects.toThrow(/existing non-fixture provider row/);
+
+    expect(admin.rows).toEqual([
+      expect.objectContaining({
+        id: 'real-google-row',
+        metadata: { source: 'real_customer_connection' },
+      }),
+    ]);
+    expect(admin.inserts).toEqual([]);
+    expect(admin.patches).toEqual([]);
+  });
+
   it('writes provider fixtures for the scoped customer-account subjects required by live approvals', async () => {
     const admin = new FakeProviderAdmin([]);
     const customerAccountId = '823ee8be-d547-4df9-9ee5-20cc7bb1ddcb';
@@ -474,7 +510,7 @@ describe('evaOS live canary fixture provisioner', () => {
         customer_id: 'golden',
         provider_key: 'slack',
         status: 'fixture',
-        metadata: { source: 'real_customer_connection' },
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
       },
       {
         id: 'fixture-slack-row',
@@ -502,7 +538,7 @@ describe('evaOS live canary fixture provisioner', () => {
             customer_id: 'golden',
             provider_key: 'slack',
             status: 'connected',
-            metadata: { source: 'real_customer_connection' },
+            metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
           },
         },
       ],
