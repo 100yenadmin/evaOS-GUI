@@ -434,7 +434,6 @@ function providerFixtureScope(customerAccountId, profileId) {
   return {
     provider_subject_id: externalUserIdForCustomerProfile(customerAccountId, profileId),
     customer_account_id: customerAccountId,
-    owner_profile_id: profileId,
   };
 }
 
@@ -528,16 +527,14 @@ function providerFixtureSubjectsFromRows(rows) {
 }
 
 function assertUniqueProviderFixtureSubjects(scopes) {
-  const seen = new Map();
+  const seen = new Set();
   for (const scope of scopes) {
     const subject = safeText(scope?.provider_subject_id, 220);
     if (!subject) continue;
-    const owner = safeText(scope?.owner_profile_id, 220) ?? 'unknown';
-    const existingOwner = seen.get(subject);
-    if (existingOwner && existingOwner !== owner) {
+    if (seen.has(subject)) {
       throw new Error(`Provider subject id collision for live canary fixture subject ${subject}.`);
     }
-    seen.set(subject, owner);
+    seen.add(subject);
   }
 }
 
@@ -904,23 +901,26 @@ async function restoreProviderSnapshots(admin, state) {
       );
     }
   }
-  // Final marker-only sweep catches legacy state files that persisted neither
-  // row ids nor provider_subject_id. Snapshot row ids are excluded so restore
-  // remains faithful even when an old fixture-marked row was part of the
-  // snapshot. Rows that lost the marker are preserved deliberately; guessing at
-  // those would risk deleting real provider state.
-  for (const providerKey of FIXTURE_PROVIDER_KEYS) {
-    const preservedSnapshotIds = (snapshotsByKey.get(providerKey) ?? [])
-      .map((row) => safeText(row?.id, 160))
-      .filter(Boolean);
-    const query = acceptanceFixtureDeleteQuery({
-      customer_id: `eq.${state.customerId}`,
-      provider_key: `eq.${providerKey}`,
-    });
-    if (preservedSnapshotIds.length > 0) {
-      query.id = `not.in.(${preservedSnapshotIds.join(',')})`;
+  if (fixtureSubjects.size === 0) {
+    // Final marker-only sweep catches legacy state files that persisted neither
+    // row ids nor provider_subject_id. It is intentionally limited to old
+    // null-subject rows so it cannot delete fixture rows from another scoped
+    // canary run. Rows that lost the marker are preserved deliberately; guessing
+    // at those would risk deleting real provider state.
+    for (const providerKey of FIXTURE_PROVIDER_KEYS) {
+      const preservedSnapshotIds = (snapshotsByKey.get(providerKey) ?? [])
+        .map((row) => safeText(row?.id, 160))
+        .filter(Boolean);
+      const query = acceptanceFixtureDeleteQuery({
+        customer_id: `eq.${state.customerId}`,
+        provider_key: `eq.${providerKey}`,
+        provider_subject_id: 'is.null',
+      });
+      if (preservedSnapshotIds.length > 0) {
+        query.id = `not.in.(${preservedSnapshotIds.join(',')})`;
+      }
+      await admin.deleteRows('customer_provider_profiles', query);
     }
-    await admin.deleteRows('customer_provider_profiles', query);
   }
 }
 

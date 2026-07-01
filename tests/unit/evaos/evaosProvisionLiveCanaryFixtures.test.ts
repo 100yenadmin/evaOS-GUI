@@ -19,6 +19,33 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
 
 type ProviderRow = Record<string, unknown>;
 
+const CUSTOMER_PROVIDER_PROFILE_COLUMNS = new Set([
+  'id',
+  'customer_id',
+  'provider_key',
+  'provider_subject_id',
+  'customer_account_id',
+  'display_name',
+  'status',
+  'active',
+  'usage_summary',
+  'usage_metadata',
+  'capabilities',
+  'metadata',
+  'last_validated_at',
+  'pipedream_app_slug',
+  'pipedream_account_id',
+  'pipedream_app_name',
+]);
+
+function assertCustomerProviderProfileColumns(row: ProviderRow) {
+  for (const key of Object.keys(row)) {
+    if (!CUSTOMER_PROVIDER_PROFILE_COLUMNS.has(key)) {
+      throw new Error(`Unknown customer_provider_profiles column in fixture test: ${key}`);
+    }
+  }
+}
+
 function rowValue(row: ProviderRow, key: string) {
   if (key.startsWith('metadata->>')) {
     const metadataKey = key.slice('metadata->>'.length);
@@ -51,6 +78,7 @@ class FakeProviderAdmin {
   patches: Array<{ query: Record<string, string>; body: ProviderRow }> = [];
 
   constructor(rows: ProviderRow[]) {
+    rows.forEach(assertCustomerProviderProfileColumns);
     this.rows = rows.map((row) => Object.assign({}, row));
   }
 
@@ -66,18 +94,17 @@ class FakeProviderAdmin {
 
   async insert(_table: string, body: ProviderRow, options: Record<string, unknown> = {}) {
     const row = { id: body.id ?? `inserted-${this.inserts.length + 1}`, ...body };
+    assertCustomerProviderProfileColumns(row);
     this.rows.push(row);
     this.inserts.push({ body: row, options });
     return { ...row };
   }
 
   async patch(_table: string, query: Record<string, string>, body: ProviderRow) {
+    assertCustomerProviderProfileColumns(body);
     this.patches.push({ query, body });
     for (const row of this.rows) {
-      const matches = Object.entries(query).every(([key, value]) => {
-        return typeof value !== 'string' || !value.startsWith('eq.') || String(row[key]) === value.slice(3);
-      });
-      if (matches) Object.assign(row, body);
+      if (rowMatchesQuery(row, query)) Object.assign(row, body);
     }
   }
 
@@ -322,7 +349,7 @@ describe('evaOS live canary fixture provisioner', () => {
       `acct_${customerAccountId}_profile_${profileTwo}`,
     ]);
     expect(googleRows.map((row) => row.customer_account_id)).toEqual([customerAccountId, customerAccountId]);
-    expect(googleRows.map((row) => row.owner_profile_id).toSorted()).toEqual([profileOne, profileTwo]);
+    expect(googleRows.some((row) => 'owner_profile_id' in row)).toBe(false);
     for (const row of googleRows) {
       const metadata = row.metadata as Record<string, unknown>;
       expect(row.status).toBe('connected');
@@ -558,6 +585,8 @@ describe('evaOS live canary fixture provisioner', () => {
       expect.objectContaining({
         customer_id: 'eq.golden',
         provider_key: 'eq.slack',
+        provider_subject_id: 'is.null',
+        id: 'not.in.(snapshot-slack-row)',
         'metadata->>source': 'eq.aionui_live_canary_fixture',
         'metadata->>acceptance_fixture': 'eq.true',
       })
