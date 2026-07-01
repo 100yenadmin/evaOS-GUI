@@ -243,21 +243,24 @@ describe('evaOS live canary fixture provisioner', () => {
 
   it('writes provider fixtures for the scoped customer-account subjects required by live approvals', async () => {
     const admin = new FakeProviderAdmin([]);
+    const customerAccountId = '823ee8be-d547-4df9-9ee5-20cc7bb1ddcb';
+    const profileOne = '11111111-1111-4111-8111-111111111111';
+    const profileTwo = '22222222-2222-4222-8222-222222222222';
 
     await provisioner.upsertProviderFixtureRows(admin, 'golden', {
-      customerAccountId: 'account:one',
-      profileIds: ['profile.one', 'profile.two'],
+      customerAccountId,
+      profileIds: [profileOne, profileTwo],
       ttlMinutes: 60,
     });
 
     const googleRows = admin.rows.filter((row) => row.provider_key === 'google_workspace');
     expect(googleRows).toHaveLength(2);
     expect(googleRows.map((row) => row.provider_subject_id).toSorted()).toEqual([
-      'acct_account-one_profile_profile-one',
-      'acct_account-one_profile_profile-two',
+      `acct_${customerAccountId}_profile_${profileOne}`,
+      `acct_${customerAccountId}_profile_${profileTwo}`,
     ]);
-    expect(googleRows.map((row) => row.customer_account_id)).toEqual(['account:one', 'account:one']);
-    expect(googleRows.map((row) => row.owner_profile_id).toSorted()).toEqual(['profile.one', 'profile.two']);
+    expect(googleRows.map((row) => row.customer_account_id)).toEqual([customerAccountId, customerAccountId]);
+    expect(googleRows.map((row) => row.owner_profile_id).toSorted()).toEqual([profileOne, profileTwo]);
     for (const row of googleRows) {
       const metadata = row.metadata as Record<string, unknown>;
       expect(row.status).toBe('connected');

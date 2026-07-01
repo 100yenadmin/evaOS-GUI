@@ -741,6 +741,8 @@ async function provisionFixtures(options = loadOptions()) {
 
   const writtenProviderFixtureRows = await upsertProviderFixtureRows(admin, options.customerId, {
     customerAccountId: customerAccount.id,
+    // The broker checks both the active admin session and the requester
+    // approval session, so the canary seeds provider rows for both subjects.
     profileIds: [adminProfile.id, requester.userId],
     ttlMinutes: options.ttlMinutes,
   });
@@ -847,7 +849,9 @@ async function restoreProviderSnapshots(admin, state) {
           label: `${providerKey} provider snapshot restore`,
         });
       }
-    } else if (fixtureRows.length === 0) {
+    } else {
+      // Marker-scoped fallback catches old or partially-written fixture state
+      // where a row id or provider_subject_id was not persisted.
       await admin.deleteRows(
         'customer_provider_profiles',
         acceptanceFixtureDeleteQuery({
