@@ -339,9 +339,14 @@ async function snapshotProviderRows(admin, customerId) {
 }
 
 function providerProfileLookup(row) {
+  const customerId = safeText(row?.customer_id, 160);
+  const providerKey = safeText(row?.provider_key, 80);
+  if (!customerId || !providerKey) {
+    throw new Error('Provider profile row requires customer_id and provider_key.');
+  }
   return {
-    customer_id: `eq.${row.customer_id}`,
-    provider_key: `eq.${row.provider_key}`,
+    customer_id: `eq.${customerId}`,
+    provider_key: `eq.${providerKey}`,
   };
 }
 
@@ -353,8 +358,11 @@ async function writeProviderProfileRow(
   const lookup = providerProfileLookup(row);
   const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id', limit: 1 });
   if (existing.length > 0) {
-    await admin.patch('customer_provider_profiles', lookup, row);
-    const rows = await admin.select('customer_provider_profiles', { ...lookup, select, limit: 1 });
+    const selectedId = safeText(existing[0]?.id, 160);
+    if (!selectedId) throw new Error(`${label} lookup did not return a row id.`);
+    const selectedLookup = { id: `eq.${selectedId}` };
+    await admin.patch('customer_provider_profiles', selectedLookup, row);
+    const rows = await admin.select('customer_provider_profiles', { ...selectedLookup, select, limit: 1 });
     if (!rows[0]) throw new Error(`${label} patch did not return a verifiable row.`);
     return rows[0];
   }
@@ -712,14 +720,20 @@ async function provisionFixtures(options = loadOptions()) {
 
 async function restoreProviderSnapshots(admin, state) {
   const snapshots = Array.isArray(state.providerSnapshots) ? state.providerSnapshots : [];
-  const snapshotByKey = new Map(snapshots.map((entry) => [entry.providerKey, entry.row]));
+  const snapshotsByKey = new Map();
+  for (const entry of snapshots) {
+    if (!snapshotsByKey.has(entry.providerKey)) snapshotsByKey.set(entry.providerKey, []);
+    snapshotsByKey.get(entry.providerKey).push(entry.row);
+  }
   for (const providerKey of FIXTURE_PROVIDER_KEYS) {
-    const row = snapshotByKey.get(providerKey);
-    if (row) {
-      await restoreProviderProfileSnapshot(admin, row, {
-        select: 'customer_id,provider_key,status',
-        label: `${providerKey} provider snapshot restore`,
-      });
+    const rows = snapshotsByKey.get(providerKey) ?? [];
+    if (rows.length > 0) {
+      for (const row of rows) {
+        await restoreProviderProfileSnapshot(admin, row, {
+          select: 'customer_id,provider_key,status',
+          label: `${providerKey} provider snapshot restore`,
+        });
+      }
     } else {
       await admin.deleteRows('customer_provider_profiles', {
         customer_id: `eq.${state.customerId}`,
@@ -821,6 +835,7 @@ module.exports = {
   providerProfileLookup,
   renderGithubEnvFile,
   restoreProviderProfileSnapshot,
+  restoreProviderSnapshots,
   sanitizedProvisionReport,
   upsertProviderFixtureRows,
   writeProviderProfileRow,

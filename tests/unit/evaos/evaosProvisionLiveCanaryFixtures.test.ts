@@ -11,6 +11,7 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
     admin: FakeProviderAdmin,
     row: Record<string, unknown>
   ) => Promise<Record<string, unknown>>;
+  restoreProviderSnapshots: (admin: FakeProviderAdmin, state: Record<string, unknown>) => Promise<void>;
   upsertProviderFixtureRows: (admin: FakeProviderAdmin, customerId: string) => Promise<void>;
 };
 
@@ -18,7 +19,8 @@ type ProviderRow = Record<string, unknown>;
 
 class FakeProviderAdmin {
   rows: ProviderRow[];
-  inserts: ProviderRow[] = [];
+  deletes: Array<{ query: Record<string, string> }> = [];
+  inserts: Array<{ body: ProviderRow; options: Record<string, unknown> }> = [];
   patches: Array<{ query: Record<string, string>; body: ProviderRow }> = [];
 
   constructor(rows: ProviderRow[]) {
@@ -38,10 +40,10 @@ class FakeProviderAdmin {
     return rows.slice(0, Number(query.limit ?? rows.length)).map((row) => Object.assign({}, row));
   }
 
-  async insert(_table: string, body: ProviderRow) {
+  async insert(_table: string, body: ProviderRow, options: Record<string, unknown> = {}) {
     const row = { id: body.id ?? `inserted-${this.inserts.length + 1}`, ...body };
     this.rows.push(row);
-    this.inserts.push(row);
+    this.inserts.push({ body: row, options });
     return { ...row };
   }
 
@@ -57,6 +59,10 @@ class FakeProviderAdmin {
 
   async upsert() {
     throw new Error('unexpected composite upsert');
+  }
+
+  async deleteRows(_table: string, query: Record<string, string>) {
+    this.deletes.push({ query });
   }
 }
 
@@ -171,13 +177,19 @@ describe('evaOS live canary fixture provisioner', () => {
     ).toThrow(/unsafe material/i);
   });
 
-  it('patches or inserts provider fixture rows without requiring a composite unique constraint', async () => {
+  it('patches one selected provider fixture row or inserts without requiring a composite unique constraint', async () => {
     const admin = new FakeProviderAdmin([
       {
-        id: 'existing-slack',
+        id: 'existing-slack-1',
         customer_id: 'golden',
         provider_key: 'slack',
         status: 'old',
+      },
+      {
+        id: 'existing-slack-2',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'duplicate-old',
       },
     ]);
 
@@ -185,11 +197,16 @@ describe('evaOS live canary fixture provisioner', () => {
 
     expect(admin.patches).toEqual([
       expect.objectContaining({
-        query: { customer_id: 'eq.golden', provider_key: 'eq.slack' },
+        query: { id: 'eq.existing-slack-1' },
       }),
     ]);
-    expect(admin.inserts.map((row) => String(row.provider_key)).toSorted()).toEqual(['linear', 'notion']);
-    expect(admin.rows.find((row) => row.provider_key === 'slack')?.status).toBe('connected');
+    expect(admin.inserts.map((insert) => String(insert.body.provider_key)).toSorted()).toEqual(['linear', 'notion']);
+    expect(admin.inserts.map((insert) => insert.options)).toEqual([
+      { select: 'customer_id,provider_key,status', label: 'linear provider fixture' },
+      { select: 'customer_id,provider_key,status', label: 'notion provider fixture' },
+    ]);
+    expect(admin.rows.find((row) => row.id === 'existing-slack-1')?.status).toBe('connected');
+    expect(admin.rows.find((row) => row.id === 'existing-slack-2')?.status).toBe('duplicate-old');
   });
 
   it('restores provider snapshots by row id before falling back to natural-key writes', async () => {
@@ -215,5 +232,64 @@ describe('evaOS live canary fixture provisioner', () => {
       }),
     ]);
     expect(admin.rows[0]?.status).toBe('connected');
+  });
+
+  it('restores every duplicate provider snapshot row instead of collapsing by provider key', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row-1',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture-1',
+      },
+      {
+        id: 'snapshot-row-2',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture-2',
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-row-1',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            status: 'connected',
+          },
+        },
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-row-2',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            status: 'revoked',
+          },
+        },
+      ],
+    });
+
+    expect(admin.patches.map((patch) => patch.query)).toEqual([
+      { id: 'eq.snapshot-row-1' },
+      { id: 'eq.snapshot-row-2' },
+    ]);
+    expect(admin.rows.map((row) => row.status)).toEqual(['connected', 'revoked']);
+    expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual(['eq.linear', 'eq.notion']);
+  });
+
+  it('rejects provider profile writes without customer and provider natural keys', async () => {
+    const admin = new FakeProviderAdmin([]);
+
+    await expect(
+      provisioner.restoreProviderProfileSnapshot(admin, {
+        customer_id: 'golden',
+        status: 'connected',
+      })
+    ).rejects.toThrow(/customer_id and provider_key/);
   });
 });
