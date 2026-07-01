@@ -338,6 +338,56 @@ async function snapshotProviderRows(admin, customerId) {
   return rows.map((row) => ({ providerKey: row.provider_key, row }));
 }
 
+function providerProfileLookup(row) {
+  const customerId = safeText(row?.customer_id, 160);
+  const providerKey = safeText(row?.provider_key, 80);
+  if (!customerId || !providerKey) {
+    throw new Error('Provider profile row requires customer_id and provider_key.');
+  }
+  return {
+    customer_id: `eq.${customerId}`,
+    provider_key: `eq.${providerKey}`,
+  };
+}
+
+async function writeProviderProfileRow(
+  admin,
+  row,
+  { select = 'customer_id,provider_key,status', label = 'provider profile' } = {}
+) {
+  const lookup = providerProfileLookup(row);
+  const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id', limit: 1 });
+  if (existing.length > 0) {
+    const selectedId = safeText(existing[0]?.id, 160);
+    if (!selectedId) throw new Error(`${label} lookup did not return a row id.`);
+    const selectedLookup = { id: `eq.${selectedId}` };
+    await admin.patch('customer_provider_profiles', selectedLookup, row);
+    const rows = await admin.select('customer_provider_profiles', { ...selectedLookup, select, limit: 1 });
+    if (!rows[0]) throw new Error(`${label} patch did not return a verifiable row.`);
+    return rows[0];
+  }
+  return admin.insert('customer_provider_profiles', row, { select, label });
+}
+
+async function restoreProviderProfileSnapshot(
+  admin,
+  row,
+  { select = 'customer_id,provider_key,status', label = 'provider profile snapshot' } = {}
+) {
+  if (row?.id) {
+    const rowId = safeText(row.id, 160);
+    await admin.patch('customer_provider_profiles', { id: `eq.${rowId}` }, row);
+    const rows = await admin.select('customer_provider_profiles', {
+      id: `eq.${rowId}`,
+      select,
+      limit: 1,
+    });
+    if (rows[0]) return rows[0];
+    throw new Error(`${label} restore could not verify snapshot row ${rowId}.`);
+  }
+  return writeProviderProfileRow(admin, row, { label });
+}
+
 async function upsertProviderFixtureRows(admin, customerId) {
   const now = new Date().toISOString();
   const rows = [
@@ -396,8 +446,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
   ];
 
   for (const row of rows) {
-    await admin.upsert('customer_provider_profiles', row, {
-      onConflict: 'customer_id,provider_key',
+    await writeProviderProfileRow(admin, row, {
       select: 'customer_id,provider_key,status',
       label: `${row.provider_key} provider fixture`,
     });
@@ -673,15 +722,20 @@ async function provisionFixtures(options = loadOptions()) {
 
 async function restoreProviderSnapshots(admin, state) {
   const snapshots = Array.isArray(state.providerSnapshots) ? state.providerSnapshots : [];
-  const snapshotByKey = new Map(snapshots.map((entry) => [entry.providerKey, entry.row]));
+  const snapshotsByKey = new Map();
+  for (const entry of snapshots) {
+    if (!snapshotsByKey.has(entry.providerKey)) snapshotsByKey.set(entry.providerKey, []);
+    snapshotsByKey.get(entry.providerKey).push(entry.row);
+  }
   for (const providerKey of FIXTURE_PROVIDER_KEYS) {
-    const row = snapshotByKey.get(providerKey);
-    if (row) {
-      await admin.upsert('customer_provider_profiles', row, {
-        onConflict: 'customer_id,provider_key',
-        select: 'customer_id,provider_key,status',
-        label: `${providerKey} provider snapshot restore`,
-      });
+    const rows = snapshotsByKey.get(providerKey) ?? [];
+    if (rows.length > 0) {
+      for (const row of rows) {
+        await restoreProviderProfileSnapshot(admin, row, {
+          select: 'customer_id,provider_key,status',
+          label: `${providerKey} provider snapshot restore`,
+        });
+      }
     } else {
       await admin.deleteRows('customer_provider_profiles', {
         customer_id: `eq.${state.customerId}`,
@@ -780,6 +834,11 @@ module.exports = {
   fixtureEnvFromProvision,
   loadOptions,
   provisionFixtures,
+  providerProfileLookup,
   renderGithubEnvFile,
+  restoreProviderProfileSnapshot,
+  restoreProviderSnapshots,
   sanitizedProvisionReport,
+  upsertProviderFixtureRows,
+  writeProviderProfileRow,
 };

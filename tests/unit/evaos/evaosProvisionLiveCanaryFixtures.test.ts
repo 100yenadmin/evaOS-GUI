@@ -4,10 +4,67 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.js') as {
   assertNoUnsafeProofOutput: (value: unknown) => void;
-  fixtureEnvFromProvision: (state: Record<string, any>) => Record<string, string>;
+  fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
   renderGithubEnvFile: (env: Record<string, string>) => string;
-  sanitizedProvisionReport: (state: Record<string, any>) => Record<string, any>;
+  sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
+  restoreProviderProfileSnapshot: (
+    admin: FakeProviderAdmin,
+    row: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
+  restoreProviderSnapshots: (admin: FakeProviderAdmin, state: Record<string, unknown>) => Promise<void>;
+  upsertProviderFixtureRows: (admin: FakeProviderAdmin, customerId: string) => Promise<void>;
 };
+
+type ProviderRow = Record<string, unknown>;
+
+class FakeProviderAdmin {
+  rows: ProviderRow[];
+  deletes: Array<{ query: Record<string, string> }> = [];
+  inserts: Array<{ body: ProviderRow; options: Record<string, unknown> }> = [];
+  patches: Array<{ query: Record<string, string>; body: ProviderRow }> = [];
+
+  constructor(rows: ProviderRow[]) {
+    this.rows = rows.map((row) => Object.assign({}, row));
+  }
+
+  async select(_table: string, query: Record<string, string | number>) {
+    const rows = this.rows.filter((row) => {
+      for (const [key, value] of Object.entries(query)) {
+        if (key === 'select' || key === 'limit') continue;
+        if (typeof value === 'string' && value.startsWith('eq.') && String(row[key]) !== value.slice(3)) {
+          return false;
+        }
+      }
+      return true;
+    });
+    return rows.slice(0, Number(query.limit ?? rows.length)).map((row) => Object.assign({}, row));
+  }
+
+  async insert(_table: string, body: ProviderRow, options: Record<string, unknown> = {}) {
+    const row = { id: body.id ?? `inserted-${this.inserts.length + 1}`, ...body };
+    this.rows.push(row);
+    this.inserts.push({ body: row, options });
+    return { ...row };
+  }
+
+  async patch(_table: string, query: Record<string, string>, body: ProviderRow) {
+    this.patches.push({ query, body });
+    for (const row of this.rows) {
+      const matches = Object.entries(query).every(([key, value]) => {
+        return typeof value !== 'string' || !value.startsWith('eq.') || String(row[key]) === value.slice(3);
+      });
+      if (matches) Object.assign(row, body);
+    }
+  }
+
+  async upsert() {
+    throw new Error('unexpected composite upsert');
+  }
+
+  async deleteRows(_table: string, query: Record<string, string>) {
+    this.deletes.push({ query });
+  }
+}
 
 function fixtureState() {
   return {
@@ -118,5 +175,163 @@ describe('evaOS live canary fixture provisioner', () => {
         accidentallyUnsafe: 'Bearer secret_token_for_test',
       })
     ).toThrow(/unsafe material/i);
+  });
+
+  it('patches one selected provider fixture row or inserts without requiring a composite unique constraint', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'existing-slack-1',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'old',
+      },
+      {
+        id: 'existing-slack-2',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'duplicate-old',
+      },
+    ]);
+
+    await provisioner.upsertProviderFixtureRows(admin, 'golden');
+
+    expect(admin.patches).toEqual([
+      expect.objectContaining({
+        query: { id: 'eq.existing-slack-1' },
+      }),
+    ]);
+    expect(admin.inserts.map((insert) => String(insert.body.provider_key)).toSorted()).toEqual(['linear', 'notion']);
+    expect(admin.inserts.map((insert) => insert.options)).toEqual([
+      { select: 'customer_id,provider_key,status', label: 'linear provider fixture' },
+      { select: 'customer_id,provider_key,status', label: 'notion provider fixture' },
+    ]);
+    expect(admin.rows.find((row) => row.id === 'existing-slack-1')?.status).toBe('connected');
+    expect(admin.rows.find((row) => row.id === 'existing-slack-2')?.status).toBe('duplicate-old');
+  });
+
+  it('restores provider snapshots by row id before falling back to natural-key writes', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture',
+      },
+    ]);
+
+    await provisioner.restoreProviderProfileSnapshot(admin, {
+      id: 'snapshot-row',
+      customer_id: 'golden',
+      provider_key: 'slack',
+      status: 'connected',
+    });
+
+    expect(admin.patches).toEqual([
+      expect.objectContaining({
+        query: { id: 'eq.snapshot-row' },
+      }),
+    ]);
+    expect(admin.rows[0]?.status).toBe('connected');
+  });
+
+  it('restores every duplicate provider snapshot row instead of collapsing by provider key', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row-1',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture-1',
+      },
+      {
+        id: 'snapshot-row-2',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture-2',
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-row-1',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            status: 'connected',
+          },
+        },
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-row-2',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            status: 'revoked',
+          },
+        },
+      ],
+    });
+
+    expect(admin.patches.map((patch) => patch.query)).toEqual([
+      { id: 'eq.snapshot-row-1' },
+      { id: 'eq.snapshot-row-2' },
+    ]);
+    expect(admin.rows.map((row) => row.status)).toEqual(['connected', 'revoked']);
+    expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual(['eq.linear', 'eq.notion']);
+  });
+
+  it('fails closed on a stale snapshot id without overwriting a duplicate natural-key row', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'duplicate-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'duplicate-original',
+      },
+    ]);
+
+    await expect(
+      provisioner.restoreProviderProfileSnapshot(admin, {
+        id: 'missing-snapshot-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'connected',
+      })
+    ).rejects.toThrow(/could not verify snapshot row missing-snapshot-row/);
+
+    expect(admin.patches).toEqual([
+      expect.objectContaining({
+        query: { id: 'eq.missing-snapshot-row' },
+      }),
+    ]);
+    expect(admin.inserts).toEqual([]);
+    expect(admin.rows.find((row) => row.id === 'duplicate-row')?.status).toBe('duplicate-original');
+  });
+
+  it('rejects natural-key provider fixture patches when the selected row id is missing', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'old',
+      },
+    ]);
+
+    await expect(provisioner.upsertProviderFixtureRows(admin, 'golden')).rejects.toThrow(
+      /slack provider fixture lookup did not return a row id/
+    );
+  });
+
+  it('rejects provider profile writes without customer and provider natural keys', async () => {
+    const admin = new FakeProviderAdmin([]);
+
+    await expect(
+      provisioner.restoreProviderProfileSnapshot(admin, {
+        customer_id: 'golden',
+        status: 'connected',
+      })
+    ).rejects.toThrow(/customer_id and provider_key/);
   });
 });
