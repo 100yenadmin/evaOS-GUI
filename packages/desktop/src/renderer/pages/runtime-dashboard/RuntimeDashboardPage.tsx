@@ -313,33 +313,43 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
 
   const selectedCustomerLabel =
     customerContext.selectedTarget?.displayName ?? customerContext.selectedCustomerId ?? 'No customer selected';
-  const statusText = safeUiText(statusView?.status, runtimeError ? 'blocked' : 'waiting');
-  const healthText = runtimeError ?? safeUiText(statusView?.healthSummary, subtitle);
-  const settledState = runtimeSettledState(statusView, runtimeError);
+  const selectedCustomerId = customerContext.selectedCustomerId;
+  const currentStatusView =
+    selectedCustomerId && statusView?.customerId === selectedCustomerId && statusView.runtimeKey === runtimeKey
+      ? statusView
+      : null;
+  const currentRuntimeSurface =
+    selectedCustomerId && runtimeSurfaceMatches(runtimeSurface ?? undefined, selectedCustomerId, runtimeKey)
+      ? runtimeSurface
+      : null;
+  const statusText = safeUiText(currentStatusView?.status, runtimeError ? 'blocked' : 'waiting');
+  const healthText = runtimeError ?? safeUiText(currentStatusView?.healthSummary, subtitle);
+  const settledState = runtimeSettledState(currentStatusView, runtimeError);
   const actionsAllowedByState = settledState !== 'denied' && settledState !== 'offline';
   const canRequestBrokerRuntimeAction =
-    Boolean(customerContext.selectedCustomerId) &&
+    Boolean(selectedCustomerId) &&
     customerContext.loaded &&
     !loadingStatus &&
     !runtimeError &&
     actionsAllowedByState &&
-    Boolean(statusView);
+    Boolean(currentStatusView);
   const canAttachRuntime =
     canRequestBrokerRuntimeAction &&
-    (!statusView?.actions?.length ||
-      hasRuntimeAction(statusView, ['attach_dashboard', 'start_attach', 'launch', 'runtime_launch']));
+    (!currentStatusView?.actions?.length ||
+      hasRuntimeAction(currentStatusView, ['attach_dashboard', 'start_attach', 'launch', 'runtime_launch']));
   const canOpenRuntime =
-    canRequestBrokerRuntimeAction && hasRuntimeAction(statusView, ['open_dashboard', 'open']) && !canAttachRuntime;
-  const attachAvailable = canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(statusView));
-  const showHeader = !runtimeSurface || showDiagnostics || Boolean(actionError || runtimeError);
+    canRequestBrokerRuntimeAction && hasRuntimeAction(currentStatusView, ['open_dashboard', 'open']) && !canAttachRuntime;
+  const attachAvailable =
+    canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(currentStatusView));
+  const showHeader = !currentRuntimeSurface || showDiagnostics || Boolean(actionError || runtimeError);
   const openSupportReport = useCallback(async () => {
     try {
       await openEvaosSupportEmail({
         subject: `evaOS Workbench support: ${title}`,
         body: [
           `Route: runtime:${runtimeKey}`,
-          `State: ${runtimeSurface ? 'loaded' : settledState}`,
-          `Status: ${runtimeSurface?.status ?? statusText}`,
+          `State: ${currentRuntimeSurface ? 'loaded' : settledState}`,
+          `Status: ${currentRuntimeSurface?.status ?? statusText}`,
           issueRef ? `Issue: ${issueRef}` : null,
           actionError || runtimeError ? `Blocker: ${actionError ?? runtimeError}` : null,
         ]
@@ -349,17 +359,16 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     } catch (error) {
       console.error('[RuntimeDashboardPage] Failed to open evaOS support report:', error);
     }
-  }, [actionError, issueRef, runtimeError, runtimeKey, runtimeSurface, settledState, statusText, title]);
+  }, [actionError, currentRuntimeSurface, issueRef, runtimeError, runtimeKey, settledState, statusText, title]);
 
   useEffect(() => {
-    const selectedCustomerId = customerContext.selectedCustomerId;
-    if (!selectedCustomerId || !canAttachRuntime || runtimeSurface || actionTarget || actionError) {
+    if (!selectedCustomerId || !canAttachRuntime || currentRuntimeSurface || actionTarget || actionError) {
       return;
     }
     const autoAttachKey = [
       selectedCustomerId,
       runtimeKey,
-      statusView?.auditId ?? statusView?.lastCheckedAt ?? statusView?.status ?? 'unknown',
+      currentStatusView?.auditId ?? currentStatusView?.lastCheckedAt ?? currentStatusView?.status ?? 'unknown',
     ].join(':');
     if (autoAttachKeyRef.current === autoAttachKey) {
       return;
@@ -370,13 +379,13 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     actionError,
     actionTarget,
     canAttachRuntime,
-    customerContext.selectedCustomerId,
+    currentRuntimeSurface,
+    currentStatusView?.auditId,
+    currentStatusView?.lastCheckedAt,
+    currentStatusView?.status,
     runRuntimeAction,
     runtimeKey,
-    runtimeSurface,
-    statusView?.auditId,
-    statusView?.lastCheckedAt,
-    statusView?.status,
+    selectedCustomerId,
   ]);
 
   return (
@@ -392,11 +401,11 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
             <div className='min-w-0'>
               <div className='flex flex-wrap items-center gap-8px'>
                 <h1 className='m-0 text-22px leading-28px font-bold text-t-primary max-sm:text-20px'>{title}</h1>
-                <Tag color={runtimeSurface ? 'green' : settledStateColor(settledState)}>
-                  {runtimeSurface ? 'loaded' : settledState}
+                <Tag color={currentRuntimeSurface ? 'green' : settledStateColor(settledState)}>
+                  {currentRuntimeSurface ? 'loaded' : settledState}
                 </Tag>
               </div>
-              {!runtimeSurface ? (
+              {!currentRuntimeSurface ? (
                 <p className='m-0 mt-3px max-w-880px truncate text-13px leading-20px text-t-secondary'>
                   {loadingStatus ? `Loading ${title}...` : healthText}
                 </p>
@@ -416,7 +425,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                   icon={<Refresh theme='outline' size='16' />}
                   loading={loadingStatus || actionTarget !== null}
                   disabled={!customerContext.selectedCustomerId}
-                  onClick={() => (runtimeSurface ? void runRuntimeAction('attach') : void loadRuntimeStatus())}
+                  onClick={() => (currentRuntimeSurface ? void runRuntimeAction('attach') : void loadRuntimeStatus())}
                 >
                   Retry
                 </Button>
@@ -434,16 +443,16 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           className='flex min-h-0 flex-1 flex-col overflow-hidden'
           data-testid={`evaos-runtime-dashboard-${runtimeKey}`}
         >
-          {runtimeSurface ? (
+          {currentRuntimeSurface ? (
             <section
               className='flex min-h-0 flex-1 flex-col overflow-hidden rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1'
               data-testid={`evaos-runtime-surface-container-${runtimeKey}`}
             >
               <webview
-                key={`${runtimeSurface.customerId}:${runtimeSurface.runtimeKey}:${runtimeSurface.surfaceId}:${runtimeSurface.partition}`}
+                key={`${currentRuntimeSurface.customerId}:${currentRuntimeSurface.runtimeKey}:${currentRuntimeSurface.surfaceId}:${currentRuntimeSurface.partition}`}
                 data-testid={`evaos-runtime-surface-${runtimeKey}`}
-                src={runtimeSurface.surfaceUri}
-                partition={runtimeSurface.partition}
+                src={currentRuntimeSurface.surfaceUri}
+                partition={currentRuntimeSurface.partition}
                 className='block h-full min-h-0 w-full flex-1 border-0'
                 style={{ display: 'flex', height: '100%', width: '100%' }}
               />
@@ -545,12 +554,12 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                   )}
                 </div>
                 <div className='grid grid-cols-1 gap-8px text-12px leading-18px text-t-secondary sm:grid-cols-2 lg:grid-cols-3'>
-                  <EvidenceRow label='Customer' value={statusView?.customerId} />
-                  <EvidenceRow label='Account' value={statusView?.customerAccountId} />
-                  <EvidenceRow label='Owner' value={statusView?.owner} />
-                  <EvidenceRow label='Runtime' value={statusView?.runtimeKey} />
-                  <EvidenceRow label='Source' value={statusView?.sourcePointer} />
-                  <EvidenceRow label='Audit' value={statusView?.auditId} />
+                  <EvidenceRow label='Customer' value={currentStatusView?.customerId} />
+                  <EvidenceRow label='Account' value={currentStatusView?.customerAccountId} />
+                  <EvidenceRow label='Owner' value={currentStatusView?.owner} />
+                  <EvidenceRow label='Runtime' value={currentStatusView?.runtimeKey} />
+                  <EvidenceRow label='Source' value={currentStatusView?.sourcePointer} />
+                  <EvidenceRow label='Audit' value={currentStatusView?.auditId} />
                 </div>
                 <div className='flex items-start gap-8px text-12px leading-18px text-t-secondary'>
                   {attachAvailable ? (

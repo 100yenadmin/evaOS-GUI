@@ -315,6 +315,10 @@ describe('RuntimeDashboardPage', () => {
       />
     );
 
+    expect(screen.queryByTestId('evaos-runtime-surface-openclaw')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('evaos-runtime-surface-hermes')).not.toBeInTheDocument();
+    expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledTimes(1);
+
     await waitFor(() =>
       expect(evaosBrokerMock.runtimeStatus).toHaveBeenCalledWith({
         customerId: 'fixture-customer-acme',
