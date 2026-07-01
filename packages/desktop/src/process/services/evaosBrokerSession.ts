@@ -60,6 +60,7 @@ import type {
   IEvaosRuntimeActionRequest,
   IEvaosRuntimeActionResult,
   IEvaosRuntimeActionType,
+  IEvaosRuntimeLaunchMode,
   IEvaosRuntimeStatusRequest,
   IEvaosRuntimeStatusView,
   IEvaosRuntimeSurfaceView,
@@ -329,6 +330,7 @@ export class EvaosBrokerSessionClient {
         action: 'runtime_launch',
         customer_id: customerId,
         runtime,
+        launch_mode: normalizeRuntimeLaunchMode(request.launchMode),
       },
       session
     );
@@ -563,11 +565,6 @@ export class EvaosBrokerSessionClient {
       'Choose a customer before loading Business Browser.'
     );
     const session = this.requireActiveSession();
-    const policy = await this.peopleAccessPolicy({ customerId });
-
-    if (!policy.scopes.includes('open_business_browser')) {
-      return businessBrowserDeniedView(policy, customerId);
-    }
 
     const raw = await this.postJson(
       {
@@ -577,8 +574,8 @@ export class EvaosBrokerSessionClient {
       },
       session
     );
-    const runtime = sanitizeBusinessBrowserRuntimeStatus(raw, policy, customerId);
-    return businessBrowserViewFromRuntime(runtime, policy, customerId);
+    const runtime = sanitizeBusinessBrowserRuntimeStatus(raw, null, customerId);
+    return businessBrowserViewFromRuntime(runtime, null, customerId);
   }
 
   async launchBusinessBrowser(
@@ -1111,25 +1108,19 @@ export class EvaosBrokerSessionClient {
       'Choose a customer before controlling Business Browser.'
     );
     const session = this.requireActiveSession();
-    const policy = await this.peopleAccessPolicy({ customerId });
-    assertPolicyScope(
-      policy,
-      'open_business_browser',
-      'You do not have permission to control Business Browser for this account.'
-    );
-    assertBusinessBrowserPolicyProof(policy);
 
     const raw = await this.postJson(
       stripUndefined({
         action,
         customer_id: customerId,
         runtime: action === 'runtime_launch' ? 'browser' : undefined,
+        launch_mode: action === 'runtime_launch' ? 'dashboard_surface' : undefined,
         url,
       }),
       session
     );
 
-    return sanitizeBusinessBrowserActionResult(raw, { action, customerId, policy, url }, options);
+    return sanitizeBusinessBrowserActionResult(raw, { action, customerId, policy: null, url }, options);
   }
 }
 
@@ -1339,6 +1330,10 @@ function normalizeRuntimeAction(action: IEvaosRuntimeActionType): IEvaosRuntimeA
     return action;
   }
   throw new EvaosBrokerSessionError('invalid_runtime', 'Choose a supported evaOS runtime action.');
+}
+
+function normalizeRuntimeLaunchMode(value: IEvaosRuntimeLaunchMode | undefined): IEvaosRuntimeLaunchMode {
+  return value === 'mac_control_tools' ? 'mac_control_tools' : 'dashboard_surface';
 }
 
 function normalizeProviderKey(providerKey: IEvaosProviderKey): IEvaosProviderKey {
@@ -1863,6 +1858,7 @@ function sanitizeRuntimeStatus(
     actions: safeActionList(record.actions),
     sourcePointer: safeText(record.source_pointer),
     auditId: safeText(record.audit_id),
+    backendEnforced: safeBoolean(record.backend_enforced),
   });
 }
 
@@ -2572,42 +2568,16 @@ function sanitizeProviderApprovalRequestResult(
   });
 }
 
-function businessBrowserDeniedView(
-  policy: IEvaosPeopleAccessPolicyView,
-  customerId: string
-): IEvaosBusinessBrowserView {
-  return stripUndefined({
-    schemaVersion: 'evaos.browser_status.v1' as const,
-    customerId,
-    customerAccountId: policy.customerAccountId,
-    membershipId: policy.membershipId,
-    membershipRole: policy.membershipRole,
-    routeDenied: true,
-    routeDenialReason: 'Business Browser requires the open_business_browser scope for this customer account.',
-    backendEnforced: policy.backendEnforced,
-    displayLabel: 'Business Browser',
-    status: 'denied',
-    authNeeded: false,
-    captchaNeeded: false,
-    waitingOnUser: false,
-    controlSessionActive: false,
-    canLaunch: false,
-    canOpenUrl: false,
-    canStop: false,
-    actions: [],
-    policyAuditId: policy.auditId,
-  });
-}
-
 function businessBrowserViewFromRuntime(
   runtime: IEvaosRuntimeStatusView,
-  policy: IEvaosPeopleAccessPolicyView,
+  policy: IEvaosPeopleAccessPolicyView | null,
   fallbackCustomerId: string
 ): IEvaosBusinessBrowserView {
   if (runtime.runtimeKey !== 'browser') {
     throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned the wrong runtime.');
   }
   assertCustomerScopeMatches(runtime.customerId, policy, fallbackCustomerId, 'browser runtime');
+  assertCustomerAccountMatches(runtime.customerAccountId, policy, 'browser runtime');
 
   const actions = runtime.actions ?? [];
   const status = runtime.status.toLowerCase();
@@ -2616,12 +2586,12 @@ function businessBrowserViewFromRuntime(
 
   return stripUndefined({
     schemaVersion: 'evaos.browser_status.v1' as const,
-    customerId: runtime.customerId || policy.selectedCustomerId || fallbackCustomerId,
-    customerAccountId: runtime.customerAccountId ?? policy.customerAccountId,
-    membershipId: policy.membershipId,
-    membershipRole: policy.membershipRole,
+    customerId: runtime.customerId || policy?.selectedCustomerId || fallbackCustomerId,
+    customerAccountId: runtime.customerAccountId ?? policy?.customerAccountId,
+    membershipId: policy?.membershipId,
+    membershipRole: policy?.membershipRole,
     routeDenied: false,
-    backendEnforced: policy.backendEnforced,
+    backendEnforced: runtime.backendEnforced ?? policy?.backendEnforced ?? Boolean(runtime.sourcePointer && runtime.auditId),
     displayLabel: runtime.displayLabel || 'Business Browser',
     status: runtime.status,
     healthSummary: runtime.healthSummary,
@@ -2638,7 +2608,7 @@ function businessBrowserViewFromRuntime(
     actions,
     sourcePointer: runtime.sourcePointer,
     auditId: runtime.auditId,
-    policyAuditId: policy.auditId,
+    policyAuditId: policy?.auditId,
   });
 }
 
@@ -2647,7 +2617,7 @@ function sanitizeBusinessBrowserActionResult(
   fallback: {
     action: EvaosBusinessBrowserActionKind;
     customerId: string;
-    policy: IEvaosPeopleAccessPolicyView;
+    policy: IEvaosPeopleAccessPolicyView | null;
     url?: string;
   },
   options: EvaosBusinessBrowserActionOptions = {}
@@ -2702,7 +2672,7 @@ function createBusinessBrowserRuntimeSurface(
   fallback: {
     action: EvaosBusinessBrowserActionKind;
     customerId: string;
-    policy: IEvaosPeopleAccessPolicyView;
+    policy: IEvaosPeopleAccessPolicyView | null;
   },
   options: EvaosBusinessBrowserActionOptions,
   browser?: IEvaosBusinessBrowserView
@@ -2738,7 +2708,7 @@ function extractBusinessBrowserRuntime(record: Record<string, unknown>): unknown
 
 function sanitizeBusinessBrowserRuntimeStatus(
   raw: unknown,
-  policy: IEvaosPeopleAccessPolicyView,
+  policy: IEvaosPeopleAccessPolicyView | null,
   fallbackCustomerId: string
 ): IEvaosRuntimeStatusView {
   const record = asRecord(raw);
@@ -2756,12 +2726,7 @@ function sanitizeBusinessBrowserRuntimeStatus(
   assertCustomerScopeMatches(responseCustomerId, policy, fallbackCustomerId, 'browser runtime');
 
   const responseCustomerAccountId = safeText(record.customer_account_id);
-  if (responseCustomerAccountId && policy.customerAccountId && responseCustomerAccountId !== policy.customerAccountId) {
-    throw new EvaosBrokerSessionError(
-      'broker_invalid_response',
-      'The evaOS broker returned browser runtime evidence for a different customer account.'
-    );
-  }
+  assertCustomerAccountMatches(responseCustomerAccountId, policy, 'browser runtime');
 
   const sourcePointer = safeBusinessBrowserRuntimeSourcePointer(record.source_pointer);
   const auditId = safeText(record.audit_id);
@@ -3727,15 +3692,6 @@ function assertApprovalPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
   }
 }
 
-function assertBusinessBrowserPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
-  if (policy.backendEnforced !== true || !policy.auditId) {
-    throw new EvaosBrokerSessionError(
-      'action_denied',
-      'Business Browser actions require backend-enforced account policy proof.'
-    );
-  }
-}
-
 function assertCompanyBrainPolicyProof(policy: IEvaosPeopleAccessPolicyView): void {
   if (policy.backendEnforced !== true || !policy.auditId) {
     throw new EvaosBrokerSessionError(
@@ -3747,7 +3703,7 @@ function assertCompanyBrainPolicyProof(policy: IEvaosPeopleAccessPolicyView): vo
 
 function assertCustomerScopeMatches(
   responseCustomerId: string | undefined,
-  policy: IEvaosPeopleAccessPolicyView,
+  policy: IEvaosPeopleAccessPolicyView | null,
   fallbackCustomerId: string,
   context: string
 ): void {
@@ -3755,7 +3711,7 @@ function assertCustomerScopeMatches(
     return;
   }
 
-  const allowedCustomerIds = new Set([fallbackCustomerId, policy.selectedCustomerId].filter(Boolean));
+  const allowedCustomerIds = new Set([fallbackCustomerId, policy?.selectedCustomerId].filter(Boolean));
   if (!allowedCustomerIds.has(responseCustomerId)) {
     throw new EvaosBrokerSessionError(
       'broker_invalid_response',
@@ -3766,10 +3722,10 @@ function assertCustomerScopeMatches(
 
 function assertCustomerAccountMatches(
   responseCustomerAccountId: string | undefined,
-  policy: IEvaosPeopleAccessPolicyView,
+  policy: IEvaosPeopleAccessPolicyView | null,
   context: string
 ): void {
-  if (responseCustomerAccountId && policy.customerAccountId && responseCustomerAccountId !== policy.customerAccountId) {
+  if (responseCustomerAccountId && policy?.customerAccountId && responseCustomerAccountId !== policy.customerAccountId) {
     throw new EvaosBrokerSessionError(
       'broker_invalid_response',
       `The evaOS broker returned ${context} evidence for a different customer account.`

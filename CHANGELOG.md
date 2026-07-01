@@ -2,6 +2,18 @@
 
 ## evaOS Workbench Stable R&D (unreleased)
 
+### Mac Connector RC Preservation
+
+- Preserved the known-good evaOS Workbench 2.1.23 direct Mac connector RC anchor at `ed458a05c9c62d5f2a6cac1fef725bc9968c31ba`, tagged `evaos-mac-control-support-vm-proof-20260630`.
+- That anchor passed direct support VM -> Workbench Mac-control proof for the native Mac & iPhone connector path. It remains the rollback/proof reference while brokered proxy modules are repaired separately.
+- Known release blocker at that anchor: brokered proxy/runtime modules (`evaOS`, `Hermes`, `Mission Control`, `Shared Browser`) were not release-usable even though the native Mac connector proof passed.
+
+### Broker Runtime Surfaces
+
+- Classified `evaOS`, `Hermes`, `Mission Control`, `Shared Browser`, and `Terminal` as brokered proxy/runtime modules, separate from the native Mac & iPhone connector and separate from ACP/chat Mac-control follow-up work.
+- Runtime dashboard launches now use a dashboard-surface contract so `openclaw` and `hermes` pages do not require Mac connector material unless a caller explicitly asks for Mac-control tools.
+- Shared Browser now lets the broker runtime/status/action contract authorize support/operator access instead of failing early on a duplicate customer-account preflight.
+
 ### Native Companion Boundary
 
 - evaOS Workbench is a shell/workflow compositor. Mac pairing, TCC/local control, secure callbacks, signed helpers, local credential custody, and local machine audit authority remain in the evaOS native companion and broker-backed Workbench fallback until exact-candidate native canaries pass.

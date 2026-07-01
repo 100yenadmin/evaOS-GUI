@@ -268,6 +268,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           customerId: selectedCustomerId,
           runtime: runtimeKey,
           action,
+          launchMode: 'dashboard_surface',
         });
         if (!isCurrentRequest(requestEpoch, selectedCustomerId)) return;
         if (!response.success || !response.data) {
