@@ -249,6 +249,17 @@ describe('evaOS live canary fixture provisioner', () => {
     }
   });
 
+  it('fails closed instead of truncating provider subject ids into collisions', async () => {
+    const admin = new FakeProviderAdmin([]);
+
+    await expect(
+      provisioner.upsertProviderFixtureRows(admin, 'golden', {
+        customerAccountId: `account-${'a'.repeat(120)}`,
+        profileIds: [`profile-${'b'.repeat(120)}`],
+      })
+    ).rejects.toThrow(/subject id is too long/i);
+  });
+
   it('restores provider snapshots by row id before falling back to natural-key writes', async () => {
     const admin = new FakeProviderAdmin([
       {

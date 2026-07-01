@@ -44,7 +44,11 @@ function externalUserIdForCustomerProfile(customerAccountId, profileId) {
   if (!account || !profile) {
     throw new Error('Could not derive a valid provider subject id.');
   }
-  return `acct_${account}_profile_${profile}`.slice(0, 200);
+  const externalUserId = `acct_${account}_profile_${profile}`;
+  if (externalUserId.length > 200) {
+    throw new Error('Provider subject id is too long for the live canary fixture.');
+  }
+  return externalUserId;
 }
 
 function isoAfter(minutes) {
@@ -762,6 +766,9 @@ async function provisionFixtures(options = loadOptions()) {
     },
     providerSnapshots,
     providerFixtureRows: writtenProviderFixtureRows,
+    providerFixtureSubjects: [
+      ...new Set(writtenProviderFixtureRows.map((row) => safeText(row?.provider_subject_id, 220)).filter(Boolean)),
+    ],
     approval,
     companyBrain: {
       accountId: companyBrainAccountId,
@@ -796,6 +803,23 @@ async function restoreProviderSnapshots(admin, state) {
   const snapshots = Array.isArray(state.providerSnapshots) ? state.providerSnapshots : [];
   const snapshotIds = new Set(snapshots.map((entry) => safeText(entry?.row?.id, 160)).filter(Boolean));
   const fixtureRows = Array.isArray(state.providerFixtureRows) ? state.providerFixtureRows : [];
+  const fixtureSubjects = new Set(
+    [
+      ...(Array.isArray(state.providerFixtureSubjects) ? state.providerFixtureSubjects : []),
+      ...fixtureRows.map((row) => row?.provider_subject_id),
+    ]
+      .map((subject) => safeText(subject, 220))
+      .filter(Boolean)
+  );
+  const snapshotSubjectKeys = new Set(
+    snapshots
+      .map((entry) => {
+        const providerKey = safeText(entry?.providerKey ?? entry?.row?.provider_key, 80);
+        const subject = safeText(entry?.row?.provider_subject_id, 220);
+        return providerKey && subject ? `${providerKey}\0${subject}` : undefined;
+      })
+      .filter(Boolean)
+  );
   const snapshotsByKey = new Map();
   for (const entry of snapshots) {
     if (!snapshotsByKey.has(entry.providerKey)) snapshotsByKey.set(entry.providerKey, []);
@@ -821,6 +845,16 @@ async function restoreProviderSnapshots(admin, state) {
     const rowId = safeText(row?.id, 160);
     if (!rowId || snapshotIds.has(rowId)) continue;
     await admin.deleteRows('customer_provider_profiles', { id: `eq.${rowId}` });
+  }
+  for (const subject of fixtureSubjects) {
+    for (const providerKey of FIXTURE_PROVIDER_KEYS) {
+      if (snapshotSubjectKeys.has(`${providerKey}\0${subject}`)) continue;
+      await admin.deleteRows('customer_provider_profiles', {
+        customer_id: `eq.${state.customerId}`,
+        provider_key: `eq.${providerKey}`,
+        provider_subject_id: `eq.${subject}`,
+      });
+    }
   }
 }
 
