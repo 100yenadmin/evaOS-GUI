@@ -11,7 +11,7 @@ const DEFAULT_ADMIN_EMAIL = 'admin@100yen.org';
 const DEFAULT_BUSINESS_BROWSER_TEST_URL = 'https://www.electricsheephq.com/dashboard/';
 const DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS = 'www.electricsheephq.com';
 const DEFAULT_COMPANY_BRAIN_QUERY = 'What changed recently for this account?';
-const FIXTURE_PROVIDER_KEYS = ['slack', 'linear', 'notion'];
+const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -393,9 +393,28 @@ async function upsertProviderFixtureRows(admin, customerId) {
   const rows = [
     {
       customer_id: customerId,
+      provider_key: 'google_workspace',
+      display_name: 'Google Workspace',
+      status: 'connected',
+      active: true,
+      usage_summary: 'Controlled connected provider fixture for AionUi live canary proof.',
+      usage_metadata: {},
+      capabilities: ['Mail', 'Calendar', 'Drive'],
+      metadata: {
+        source: 'aionui_live_canary_fixture',
+        acceptance_fixture: true,
+        identity: 'google-workspace-aionui-fixture@100yen.org',
+        scopes: ['gmail.readonly'],
+        server_secret_ref: `provider://acceptance-fixture/${customerId}/google_workspace`,
+        raw_provider_token_stored: false,
+      },
+      last_validated_at: now,
+    },
+    {
+      customer_id: customerId,
       provider_key: 'slack',
       display_name: 'Slack',
-      status: 'connected',
+      status: 'expired',
       active: false,
       usage_summary: 'Controlled expired provider fixture for AionUi live canary proof.',
       usage_metadata: {},
@@ -610,7 +629,7 @@ function loadOptions(env = process.env) {
       'AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS',
       DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS
     ),
-    approvalProviderKey: optionalEnv(env, 'AIONUI_EVAOS_APPROVAL_PROVIDER_KEY', 'slack'),
+    approvalProviderKey: optionalEnv(env, 'AIONUI_EVAOS_APPROVAL_PROVIDER_KEY', 'google_workspace'),
     runtime: optionalEnv(env, 'AIONUI_EVAOS_RUNTIME', 'browser'),
     ttlMinutes: Number(optionalEnv(env, 'AIONUI_EVAOS_FIXTURE_TTL_MINUTES', '180')),
     statePath: optionalEnv(
