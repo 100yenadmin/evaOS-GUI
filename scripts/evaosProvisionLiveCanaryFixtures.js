@@ -371,15 +371,24 @@ function providerProfileLookup(row) {
   return lookup;
 }
 
+function isAcceptanceFixtureRow(row) {
+  const metadata = asRecord(row?.metadata);
+  return metadata?.source === FIXTURE_PROVIDER_METADATA_SOURCE && metadata?.acceptance_fixture === true;
+}
+
 async function writeProviderProfileRow(
   admin,
   row,
-  { select = 'customer_id,provider_key,status', label = 'provider profile' } = {}
+  { select = 'customer_id,provider_key,status', label = 'provider profile', allowNonFixturePatch = false } = {}
 ) {
   const lookup = providerProfileLookup(row);
-  const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id', limit: 1 });
+  const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id,metadata', limit: 20 });
   if (existing.length > 0) {
-    const selectedId = safeText(existing[0]?.id, 160);
+    const selected = existing.find(isAcceptanceFixtureRow) ?? (allowNonFixturePatch ? existing[0] : undefined);
+    if (!selected) {
+      throw new Error(`${label} found an existing non-fixture provider row; refusing to overwrite it.`);
+    }
+    const selectedId = safeText(selected?.id, 160);
     if (!selectedId) throw new Error(`${label} lookup did not return a row id.`);
     const selectedLookup = { id: `eq.${selectedId}` };
     await admin.patch('customer_provider_profiles', selectedLookup, row);
@@ -406,7 +415,7 @@ async function restoreProviderProfileSnapshot(
     if (rows[0]) return rows[0];
     throw new Error(`${label} restore could not verify snapshot row ${rowId}.`);
   }
-  return writeProviderProfileRow(admin, row, { label });
+  return writeProviderProfileRow(admin, row, { label, allowNonFixturePatch: true });
 }
 
 function providerFixtureScope(customerAccountId, profileId) {

@@ -210,6 +210,7 @@ describe('evaOS live canary fixture provisioner', () => {
         id: 'existing-slack-1',
         customer_id: 'golden',
         provider_key: 'slack',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
         status: 'old',
       },
       {
@@ -239,6 +240,31 @@ describe('evaOS live canary fixture provisioner', () => {
     ]);
     expect(admin.rows.find((row) => row.id === 'existing-slack-1')?.status).toBe('expired');
     expect(admin.rows.find((row) => row.id === 'existing-slack-2')?.status).toBe('duplicate-old');
+  });
+
+  it('refuses to overwrite genuine provider rows with live canary fixtures', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'real-google-row',
+        customer_id: 'golden',
+        provider_key: 'google_workspace',
+        provider_subject_id: 'acct_account_profile_requester',
+        status: 'connected',
+        metadata: { source: 'real_customer_connection' },
+      },
+    ]);
+
+    await expect(
+      provisioner.upsertProviderFixtureRows(admin, 'golden', {
+        customerAccountId: 'account',
+        profileIds: ['requester'],
+      })
+    ).rejects.toThrow(/existing non-fixture provider row/);
+
+    expect(admin.rows.find((row) => row.id === 'real-google-row')?.metadata).toEqual({
+      source: 'real_customer_connection',
+    });
+    expect(admin.patches).toEqual([]);
   });
 
   it('writes provider fixtures for the scoped customer-account subjects required by live approvals', async () => {
@@ -642,6 +668,7 @@ describe('evaOS live canary fixture provisioner', () => {
       {
         customer_id: 'golden',
         provider_key: 'slack',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
         status: 'old',
       },
     ]);
