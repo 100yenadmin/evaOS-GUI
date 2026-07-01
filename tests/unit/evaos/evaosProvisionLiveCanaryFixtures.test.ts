@@ -317,6 +317,21 @@ describe('evaOS live canary fixture provisioner', () => {
     ).rejects.toThrow(/subject id is too long/i);
   });
 
+  it('fails closed when sanitized provider subject ids would collide', async () => {
+    const admin = new FakeProviderAdmin([]);
+
+    await expect(
+      provisioner.upsertProviderFixtureRows(admin, 'golden', {
+        customerAccountId: 'account',
+        profileIds: ['profile.one', 'profile,one'],
+      })
+    ).rejects.toThrow(/subject id collision/i);
+
+    expect(admin.rows).toEqual([]);
+    expect(admin.inserts).toEqual([]);
+    expect(admin.patches).toEqual([]);
+  });
+
   it('restores provider snapshots by row id before falling back to natural-key writes', async () => {
     const admin = new FakeProviderAdmin([
       {
@@ -387,11 +402,9 @@ describe('evaOS live canary fixture provisioner', () => {
       { id: 'eq.snapshot-row-2' },
     ]);
     expect(admin.rows.map((row) => row.status)).toEqual(['connected', 'revoked']);
-    expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual([
-      'eq.google_workspace',
-      'eq.linear',
-      'eq.notion',
-    ]);
+    expect(admin.deletes.map((deleted) => deleted.query.provider_key)).toEqual(
+      expect.arrayContaining(['eq.google_workspace', 'eq.linear', 'eq.notion'])
+    );
   });
 
   it('deletes scoped fixture rows that did not exist before the canary run', async () => {
@@ -452,6 +465,67 @@ describe('evaOS live canary fixture provisioner', () => {
       })
     );
     expect(admin.rows.some((row) => row.id === 'fixture-row-1')).toBe(false);
+  });
+
+  it('marker-sweeps legacy fixture rows even when provider snapshots exist', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-slack-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture',
+        metadata: { source: 'real_customer_connection' },
+      },
+      {
+        id: 'fixture-slack-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'expired',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
+      },
+      {
+        id: 'genuine-slack-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'connected',
+        metadata: { source: 'real_customer_connection' },
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-slack-row',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            status: 'connected',
+            metadata: { source: 'real_customer_connection' },
+          },
+        },
+      ],
+      providerFixtureRows: [
+        {
+          customer_id: 'golden',
+          provider_key: 'slack',
+          status: 'expired',
+        },
+      ],
+    });
+
+    expect(admin.rows.some((row) => row.id === 'snapshot-slack-row')).toBe(true);
+    expect(admin.rows.some((row) => row.id === 'genuine-slack-row')).toBe(true);
+    expect(admin.rows.some((row) => row.id === 'fixture-slack-row')).toBe(false);
+    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual(
+      expect.objectContaining({
+        customer_id: 'eq.golden',
+        provider_key: 'eq.slack',
+        'metadata->>source': 'eq.aionui_live_canary_fixture',
+        'metadata->>acceptance_fixture': 'eq.true',
+      })
+    );
   });
 
   it('deletes subject-scoped fixture rows without deleting restored snapshot subjects', async () => {

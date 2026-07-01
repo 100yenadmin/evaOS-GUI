@@ -516,6 +516,20 @@ function providerFixtureSubjectsFromRows(rows) {
   ];
 }
 
+function assertUniqueProviderFixtureSubjects(scopes) {
+  const seen = new Map();
+  for (const scope of scopes) {
+    const subject = safeText(scope?.provider_subject_id, 220);
+    if (!subject) continue;
+    const owner = safeText(scope?.owner_profile_id, 220) ?? 'unknown';
+    const existingOwner = seen.get(subject);
+    if (existingOwner && existingOwner !== owner) {
+      throw new Error(`Provider subject id collision for live canary fixture subject ${subject}.`);
+    }
+    seen.set(subject, owner);
+  }
+}
+
 function acceptanceFixtureDeleteQuery(query) {
   return {
     ...query,
@@ -534,6 +548,7 @@ async function upsertProviderFixtureRows(
     customerAccountId && profileList.length > 0
       ? profileList.map((profileId) => providerFixtureScope(customerAccountId, profileId))
       : [{}];
+  assertUniqueProviderFixtureSubjects(scopes);
   const writtenRows = [];
 
   for (const scope of scopes) {
@@ -887,6 +902,18 @@ async function restoreProviderSnapshots(admin, state) {
         })
       );
     }
+  }
+  // Final marker-only sweep catches legacy state files that persisted neither
+  // row ids nor provider_subject_id. Rows that lost the marker are preserved
+  // deliberately; guessing at those would risk deleting real provider state.
+  for (const providerKey of FIXTURE_PROVIDER_KEYS) {
+    await admin.deleteRows(
+      'customer_provider_profiles',
+      acceptanceFixtureDeleteQuery({
+        customer_id: `eq.${state.customerId}`,
+        provider_key: `eq.${providerKey}`,
+      })
+    );
   }
 }
 
