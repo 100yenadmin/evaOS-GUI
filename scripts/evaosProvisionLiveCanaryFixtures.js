@@ -610,7 +610,7 @@ function loadOptions(env = process.env) {
       'AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS',
       DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS
     ),
-    approvalProviderKey: optionalEnv(env, 'AIONUI_EVAOS_APPROVAL_PROVIDER_KEY', 'google_workspace'),
+    approvalProviderKey: optionalEnv(env, 'AIONUI_EVAOS_APPROVAL_PROVIDER_KEY', 'slack'),
     runtime: optionalEnv(env, 'AIONUI_EVAOS_RUNTIME', 'browser'),
     ttlMinutes: Number(optionalEnv(env, 'AIONUI_EVAOS_FIXTURE_TTL_MINUTES', '180')),
     statePath: optionalEnv(

@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.js') as {
   assertNoUnsafeProofOutput: (value: unknown) => void;
   fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
+  loadOptions: (env: Record<string, string>) => Record<string, unknown>;
   renderGithubEnvFile: (env: Record<string, string>) => string;
   sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   restoreProviderProfileSnapshot: (
@@ -166,6 +167,15 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(text).not.toMatch(/eds_(admin|requester|denied)/);
     expect(text).not.toMatch(/service[_-]?role/i);
     expect(text).not.toMatch(/desktop[_-]?session/i);
+  });
+
+  it('uses the connected provider fixture for approval requests by default', () => {
+    const options = provisioner.loadOptions({
+      AIONUI_EVAOS_FIXTURE_SUPABASE_URL: 'https://example.supabase.co',
+      AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
+    });
+
+    expect(options.approvalProviderKey).toBe('slack');
   });
 
   it('rejects unsafe proof output if a secret marker is accidentally added', () => {
