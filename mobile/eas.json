@@ -26,10 +26,20 @@
   },
   "submit": {
     "production": {
-      "ios": {}
+      "ios": {
+        "appName": "AionUi Mobile",
+        "bundleIdentifier": "ai.resopod.aionui",
+        "language": "en-US",
+        "sku": "aionui-mobile"
+      }
     },
     "preview": {
-      "ios": {}
+      "ios": {
+        "appName": "AionUi Mobile",
+        "bundleIdentifier": "ai.resopod.aionui",
+        "language": "en-US",
+        "sku": "aionui-mobile-preview"
+      }
     }
   }
 }

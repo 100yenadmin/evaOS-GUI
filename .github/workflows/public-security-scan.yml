@@ -27,7 +27,7 @@ jobs:
           node-version: 24
 
       - name: Run repo-owned public scan
-        run: node scripts/check-public-sensitive-content.js
+        run: node scripts/security/check-public-sensitive-content.js
 
   gitleaks:
     name: Gitleaks Full History
@@ -54,9 +54,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run TruffleHog verified scan
-        uses: trufflesecurity/trufflehog@f446421baf832d6356c42c1743d99abff52ff334
-        with:
-          path: ./
-          version: 3.95.7
-          extra_args: --only-verified
+      - name: Run TruffleHog verified full-history scan
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo:ro" \
+            ghcr.io/trufflesecurity/trufflehog:3.95.7 \
+            git file:///repo \
+            --only-verified \
+            --no-update \
+            --fail

@@ -13,6 +13,8 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const projectRoot = path.join(__dirname, '..');
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 const profileIndex = args.indexOf('--profile');
@@ -62,8 +64,17 @@ try {
 
 // Build eas command args
 const outputExt = platform === 'ios' ? '.ipa' : '.apk';
-const localOutputPath = path.join(__dirname, '..', `build-${Date.now()}${outputExt}`);
+const localOutputPath = path.join(projectRoot, `build-${Date.now()}${outputExt}`);
 let buildArgs = args.filter((a) => a !== '--auto-submit' && a !== '--direct-submit');
+
+if (!isLocal && directSubmit) {
+  console.error('Error: --direct-submit is only supported with --local builds.');
+  process.exit(1);
+}
+
+if (!isLocal && autoSubmit && !buildArgs.includes('--auto-submit-with-profile')) {
+  buildArgs.push('--auto-submit-with-profile', profile);
+}
 
 // For local builds with submit, capture output path for later submission
 if (isLocal && (autoSubmit || directSubmit)) {
@@ -93,20 +104,30 @@ if (isLocal && platform === 'ios') {
 const easCommand = `eas build ${buildArgs.join(' ')}`;
 console.log(`\nRunning: ${easCommand}\n`);
 
-// Apple-specific env vars (only needed for iOS builds)
-const appleEnv =
-  platform === 'ios'
-    ? {
-        EXPO_APPLE_TEAM_ID: requireEnv('EXPO_APPLE_TEAM_ID', 'iOS builds'),
-        EXPO_APPLE_ID: requireEnv('EXPO_APPLE_ID', 'iOS builds'),
-        ...(applePassword ? { EXPO_APPLE_PASSWORD: applePassword } : {}),
-      }
-    : {};
+const appleEnv = {};
+if (platform === 'ios') {
+  if (process.env.EXPO_APPLE_TEAM_ID) {
+    appleEnv.EXPO_APPLE_TEAM_ID = process.env.EXPO_APPLE_TEAM_ID;
+  }
+  if (process.env.EXPO_APPLE_ID) {
+    appleEnv.EXPO_APPLE_ID = process.env.EXPO_APPLE_ID;
+  }
+  if (applePassword) {
+    appleEnv.EXPO_APPLE_PASSWORD = applePassword;
+  }
+  if (autoSubmit || directSubmit) {
+    appleEnv.EXPO_APPLE_ID = requireEnv('EXPO_APPLE_ID', 'iOS submission');
+  }
+  if (autoSubmit) {
+    appleEnv.EXPO_APPLE_TEAM_ID = requireEnv('EXPO_APPLE_TEAM_ID', 'EAS iOS submission');
+  }
+}
 
 // Execute eas build
 try {
   execSync(easCommand, {
     stdio: 'inherit',
+    cwd: projectRoot,
     env: {
       ...process.env,
       PATH: `/usr/bin:${process.env.PATH}`,
@@ -150,11 +171,12 @@ if (platform === 'ios' && isLocal && (autoSubmit || directSubmit)) {
     }
   } else {
     // Upload via EAS submit
-    const submitCommand = `eas submit --platform ${platform} --path ${outputFile} --non-interactive`;
+    const submitCommand = `eas submit --platform ${platform} --profile ${profile} --path ${outputFile} --non-interactive`;
     console.log(`\nSubmitting to TestFlight: ${submitCommand}\n`);
     try {
       execSync(submitCommand, {
         stdio: 'inherit',
+        cwd: projectRoot,
         env: {
           ...process.env,
           ...appleEnv,

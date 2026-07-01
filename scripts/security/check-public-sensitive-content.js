@@ -9,24 +9,52 @@ const { execFileSync } = require('node:child_process');
 const { existsSync, readFileSync, statSync } = require('node:fs');
 
 const MAX_TEXT_FILE_BYTES = 8 * 1024 * 1024;
-const personalAppleEmail = ['liangzhewei', 'gmail.com'].join('@');
-const personalAppleTeamId = ['M4', 'AG47', 'ZV62'].join('');
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function exactLinePattern(parts) {
+  return new RegExp(parts.map(escapeRegExp).join(''));
+}
+
+function hasUnsafeLiteralAssignment(line, keys, valuePattern) {
+  const keyPattern = keys.map(escapeRegExp).join('|');
+  const jsonLikeAssignment = line.match(
+    new RegExp(`(?:^\\s*|[{,]\\s*)["']?(?:${keyPattern})["']?\\s*:\\s*["']([^"']+)["']`, 'i')
+  );
+  const envAssignment = line.match(new RegExp(`(?:^|\\s)(?:${keyPattern})\\s*=\\s*["']?([^"'\\s]+)["']?`, 'i'));
+  const value = (jsonLikeAssignment?.[1] || envAssignment?.[1] || '').trim();
+  if (!value || value.startsWith('${') || value.startsWith('$')) {
+    return false;
+  }
+  if (/^(?:<|YOUR_|REPLACE_|example|test|fake|dummy)/i.test(value)) {
+    return false;
+  }
+  return valuePattern.test(value);
+}
 
 const CONTENT_RULES = [
   {
-    id: 'personal-apple-id',
-    message: 'Hardcoded personal Apple account identifier must use environment-backed configuration.',
-    test: (line) => line.includes(personalAppleEmail),
+    id: 'hardcoded-apple-account-id',
+    message: 'Hardcoded Apple account identifiers must use environment-backed configuration.',
+    test: (line) =>
+      hasUnsafeLiteralAssignment(line, ['appleId', 'EXPO_APPLE_ID', 'APPLE_ID'], /^[^\s@]+@[^\s@]+\.[^\s@]+$/),
   },
   {
-    id: 'personal-apple-team-id',
-    message: 'Hardcoded Apple team identifier must use environment-backed configuration.',
-    test: (line) => line.includes(personalAppleTeamId),
+    id: 'hardcoded-apple-team-id',
+    message: 'Hardcoded Apple team identifiers must use environment-backed configuration.',
+    test: (line) =>
+      hasUnsafeLiteralAssignment(
+        line,
+        ['appleTeamId', 'appleTeamID', 'EXPO_APPLE_TEAM_ID', 'APPLE_TEAM_ID'],
+        /^[A-Z0-9]{10}$/
+      ),
   },
   {
     id: 'private-key-material',
     message: 'Private key material must never be committed.',
-    pattern: /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/,
+    pattern: /-----BEGIN (?:RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----/,
   },
   {
     id: 'openai-api-key',
@@ -70,6 +98,39 @@ const RISKY_FILE_PATH_PATTERN =
 
 const ALLOWLIST = [
   {
+    filePath: '.gitleaks.toml',
+    ruleIds: ['openai-api-key'],
+    patterns: [exactLinePattern(["'''sk-", "abc123def456ghi789jkl012'''"])],
+  },
+  {
+    filePath: '.gitleaks.toml',
+    ruleIds: ['google-api-key'],
+    patterns: [/'''AIzaa\{35\}'''/],
+  },
+  {
+    filePath: '.gitleaks.toml',
+    ruleIds: ['test-fixture-secret'],
+    patterns: [
+      exactLinePattern(["'''super", '-secret', "-token'''"]),
+      exactLinePattern([
+        "'''https://x-access-token:super",
+        '-secret',
+        "-token@github\\.com/electricsheephq/evaos-desktop-bridge\\.git'''",
+      ]),
+    ],
+  },
+  {
+    filePath: '.gitleaks.toml',
+    ruleIds: ['github-token-in-url'],
+    patterns: [
+      exactLinePattern([
+        "'''https://x-access-token:super",
+        '-secret',
+        "-token@github\\.com/electricsheephq/evaos-desktop-bridge\\.git'''",
+      ]),
+    ],
+  },
+  {
     filePath: 'tests/unit/common/protocolDetector.test.ts',
     ruleIds: ['openai-api-key', 'google-api-key'],
   },
@@ -83,9 +144,14 @@ function normalizePath(filePath) {
   return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-function isAllowed(filePath, ruleId) {
+function isAllowed(filePath, ruleId, line) {
   const normalized = normalizePath(filePath);
-  return ALLOWLIST.some((entry) => entry.filePath === normalized && entry.ruleIds.includes(ruleId));
+  return ALLOWLIST.some(
+    (entry) =>
+      entry.filePath === normalized &&
+      entry.ruleIds.includes(ruleId) &&
+      (!entry.patterns || entry.patterns.some((pattern) => pattern.test(line)))
+  );
 }
 
 function makeFinding(filePath, line, rule) {
@@ -120,7 +186,7 @@ function scanText({ filePath, text }) {
   lines.forEach((line, index) => {
     for (const rule of CONTENT_RULES) {
       const matched = rule.test ? rule.test(line) : rule.pattern.test(line);
-      if (matched && !isAllowed(filePath, rule.id)) {
+      if (matched && !isAllowed(filePath, rule.id, line)) {
         findings.push(makeFinding(filePath, index + 1, rule));
       }
     }
