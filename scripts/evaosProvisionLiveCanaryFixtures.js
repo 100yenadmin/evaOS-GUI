@@ -34,6 +34,19 @@ function sha256Hex(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function externalUserIdForCustomerProfile(customerAccountId, profileId) {
+  const account = String(customerAccountId || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '-');
+  const profile = String(profileId || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '-');
+  if (!account || !profile) {
+    throw new Error('Could not derive a valid provider subject id.');
+  }
+  return `acct_${account}_profile_${profile}`.slice(0, 200);
+}
+
 function isoAfter(minutes) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
@@ -341,13 +354,16 @@ async function snapshotProviderRows(admin, customerId) {
 function providerProfileLookup(row) {
   const customerId = safeText(row?.customer_id, 160);
   const providerKey = safeText(row?.provider_key, 80);
+  const providerSubjectId = safeText(row?.provider_subject_id, 220);
   if (!customerId || !providerKey) {
     throw new Error('Provider profile row requires customer_id and provider_key.');
   }
-  return {
+  const lookup = {
     customer_id: `eq.${customerId}`,
     provider_key: `eq.${providerKey}`,
   };
+  if (providerSubjectId) lookup.provider_subject_id = `eq.${providerSubjectId}`;
+  return lookup;
 }
 
 async function writeProviderProfileRow(
@@ -388,11 +404,22 @@ async function restoreProviderProfileSnapshot(
   return writeProviderProfileRow(admin, row, { label });
 }
 
-async function upsertProviderFixtureRows(admin, customerId) {
+function providerFixtureScope(customerAccountId, profileId) {
+  if (!customerAccountId || !profileId) return {};
+  return {
+    provider_subject_id: externalUserIdForCustomerProfile(customerAccountId, profileId),
+    customer_account_id: customerAccountId,
+    owner_profile_id: profileId,
+  };
+}
+
+function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
   const now = new Date().toISOString();
-  const rows = [
+  const connectedExpiresAt = isoAfter(ttlMinutes);
+  return [
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'google_workspace',
       display_name: 'Google Workspace',
       status: 'connected',
@@ -406,12 +433,14 @@ async function upsertProviderFixtureRows(admin, customerId) {
         identity: 'google-workspace-aionui-fixture@100yen.org',
         scopes: ['gmail.readonly'],
         server_secret_ref: `provider://acceptance-fixture/${customerId}/google_workspace`,
+        expires_at: connectedExpiresAt,
         raw_provider_token_stored: false,
       },
       last_validated_at: now,
     },
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'slack',
       display_name: 'Slack',
       status: 'expired',
@@ -432,6 +461,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
     },
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'linear',
       display_name: 'Linear',
       status: 'revoked',
@@ -448,6 +478,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
     },
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'notion',
       display_name: 'Notion',
       status: 'needs_login',
@@ -463,13 +494,30 @@ async function upsertProviderFixtureRows(admin, customerId) {
       last_validated_at: null,
     },
   ];
+}
 
-  for (const row of rows) {
-    await writeProviderProfileRow(admin, row, {
-      select: 'customer_id,provider_key,status',
-      label: `${row.provider_key} provider fixture`,
-    });
+async function upsertProviderFixtureRows(
+  admin,
+  customerId,
+  { customerAccountId, profileIds = [], ttlMinutes = 180 } = {}
+) {
+  const profileList = Array.isArray(profileIds) ? [...new Set(profileIds.filter(Boolean))] : [];
+  const scopes =
+    customerAccountId && profileList.length > 0
+      ? profileList.map((profileId) => providerFixtureScope(customerAccountId, profileId))
+      : [{}];
+  const writtenRows = [];
+
+  for (const scope of scopes) {
+    for (const row of providerFixtureRows(customerId, scope, ttlMinutes)) {
+      const written = await writeProviderProfileRow(admin, row, {
+        select: 'id,customer_id,provider_key,provider_subject_id,status',
+        label: `${row.provider_key} provider fixture`,
+      });
+      writtenRows.push(written);
+    }
   }
+  return writtenRows;
 }
 
 async function createApprovalRequest(endpoint, requesterSession, customerId, providerKey) {
@@ -672,7 +720,11 @@ async function provisionFixtures(options = loadOptions()) {
     ttlMinutes: options.ttlMinutes,
   });
 
-  await upsertProviderFixtureRows(admin, options.customerId);
+  const writtenProviderFixtureRows = await upsertProviderFixtureRows(admin, options.customerId, {
+    customerAccountId: customerAccount.id,
+    profileIds: [adminProfile.id, requester.userId],
+    ttlMinutes: options.ttlMinutes,
+  });
   const approval = await createApprovalRequest(
     options.brokerEndpoint,
     requesterSession.raw,
@@ -709,6 +761,7 @@ async function provisionFixtures(options = loadOptions()) {
       denied: deniedSession,
     },
     providerSnapshots,
+    providerFixtureRows: writtenProviderFixtureRows,
     approval,
     companyBrain: {
       accountId: companyBrainAccountId,
@@ -741,6 +794,8 @@ async function provisionFixtures(options = loadOptions()) {
 
 async function restoreProviderSnapshots(admin, state) {
   const snapshots = Array.isArray(state.providerSnapshots) ? state.providerSnapshots : [];
+  const snapshotIds = new Set(snapshots.map((entry) => safeText(entry?.row?.id, 160)).filter(Boolean));
+  const fixtureRows = Array.isArray(state.providerFixtureRows) ? state.providerFixtureRows : [];
   const snapshotsByKey = new Map();
   for (const entry of snapshots) {
     if (!snapshotsByKey.has(entry.providerKey)) snapshotsByKey.set(entry.providerKey, []);
@@ -755,12 +810,17 @@ async function restoreProviderSnapshots(admin, state) {
           label: `${providerKey} provider snapshot restore`,
         });
       }
-    } else {
+    } else if (fixtureRows.length === 0) {
       await admin.deleteRows('customer_provider_profiles', {
         customer_id: `eq.${state.customerId}`,
         provider_key: `eq.${providerKey}`,
       });
     }
+  }
+  for (const row of fixtureRows) {
+    const rowId = safeText(row?.id, 160);
+    if (!rowId || snapshotIds.has(rowId)) continue;
+    await admin.deleteRows('customer_provider_profiles', { id: `eq.${rowId}` });
   }
 }
 

@@ -216,12 +216,37 @@ describe('evaOS live canary fixture provisioner', () => {
       'notion',
     ]);
     expect(admin.inserts.map((insert) => insert.options)).toEqual([
-      { select: 'customer_id,provider_key,status', label: 'google_workspace provider fixture' },
-      { select: 'customer_id,provider_key,status', label: 'linear provider fixture' },
-      { select: 'customer_id,provider_key,status', label: 'notion provider fixture' },
+      { select: 'id,customer_id,provider_key,provider_subject_id,status', label: 'google_workspace provider fixture' },
+      { select: 'id,customer_id,provider_key,provider_subject_id,status', label: 'linear provider fixture' },
+      { select: 'id,customer_id,provider_key,provider_subject_id,status', label: 'notion provider fixture' },
     ]);
     expect(admin.rows.find((row) => row.id === 'existing-slack-1')?.status).toBe('expired');
     expect(admin.rows.find((row) => row.id === 'existing-slack-2')?.status).toBe('duplicate-old');
+  });
+
+  it('writes provider fixtures for the scoped customer-account subjects required by live approvals', async () => {
+    const admin = new FakeProviderAdmin([]);
+
+    await provisioner.upsertProviderFixtureRows(admin, 'golden', {
+      customerAccountId: 'account:one',
+      profileIds: ['profile.one', 'profile.two'],
+      ttlMinutes: 60,
+    });
+
+    const googleRows = admin.rows.filter((row) => row.provider_key === 'google_workspace');
+    expect(googleRows).toHaveLength(2);
+    expect(googleRows.map((row) => row.provider_subject_id).toSorted()).toEqual([
+      'acct_account-one_profile_profile-one',
+      'acct_account-one_profile_profile-two',
+    ]);
+    expect(googleRows.map((row) => row.customer_account_id)).toEqual(['account:one', 'account:one']);
+    expect(googleRows.map((row) => row.owner_profile_id).toSorted()).toEqual(['profile.one', 'profile.two']);
+    for (const row of googleRows) {
+      const metadata = row.metadata as Record<string, unknown>;
+      expect(row.status).toBe('connected');
+      expect(row.active).toBe(true);
+      expect(Date.parse(String(metadata.expires_at))).toBeGreaterThan(Date.now());
+    }
   });
 
   it('restores provider snapshots by row id before falling back to natural-key writes', async () => {
@@ -299,6 +324,58 @@ describe('evaOS live canary fixture provisioner', () => {
       'eq.linear',
       'eq.notion',
     ]);
+  });
+
+  it('deletes scoped fixture rows that did not exist before the canary run', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row-1',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        provider_subject_id: 'legacy_customer',
+        status: 'fixture-1',
+      },
+      {
+        id: 'fixture-row-1',
+        customer_id: 'golden',
+        provider_key: 'google_workspace',
+        provider_subject_id: 'acct_account_profile_requester',
+        status: 'connected',
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-row-1',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            provider_subject_id: 'legacy_customer',
+            status: 'connected',
+          },
+        },
+      ],
+      providerFixtureRows: [
+        {
+          id: 'snapshot-row-1',
+          customer_id: 'golden',
+          provider_key: 'slack',
+          provider_subject_id: 'legacy_customer',
+        },
+        {
+          id: 'fixture-row-1',
+          customer_id: 'golden',
+          provider_key: 'google_workspace',
+          provider_subject_id: 'acct_account_profile_requester',
+        },
+      ],
+    });
+
+    expect(admin.patches.map((patch) => patch.query)).toContainEqual({ id: 'eq.snapshot-row-1' });
+    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual({ id: 'eq.fixture-row-1' });
   });
 
   it('fails closed on a stale snapshot id without overwriting a duplicate natural-key row', async () => {
