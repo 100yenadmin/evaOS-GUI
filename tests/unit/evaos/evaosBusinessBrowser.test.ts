@@ -154,6 +154,72 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     });
   });
 
+  it('accepts same-customer browser status for a different account only with explicit broker enforcement', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        browserRuntimeResponse({
+          customer_account_id: 'acct_runtime_selected_by_broker',
+          backend_enforced: true,
+        })
+      )
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    const status = await client.businessBrowserStatus({ customerId: 'david-poku' });
+
+    expect(status).toMatchObject({
+      customerId: 'david-poku',
+      customerAccountId: 'acct_runtime_selected_by_broker',
+      routeDenied: false,
+      backendEnforced: true,
+    });
+  });
+
+  it('fails closed when same-customer browser status lacks explicit broker enforcement', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        browserRuntimeResponse({
+          customer_account_id: 'acct_runtime_selected_by_broker',
+          backend_enforced: false,
+        })
+      )
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime enforcement proof.',
+    });
+  });
+
+  it('maps broker-denied browser runtime status as a denied route', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        browserRuntimeResponse({
+          status: 'denied',
+          health_summary: 'Shared Browser denied by broker policy.',
+          control_session_active: true,
+          actions: ['browser_open_url', 'browser_stop'],
+        })
+      )
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    const status = await client.businessBrowserStatus({ customerId: 'david-poku' });
+
+    expect(status).toMatchObject({
+      routeDenied: true,
+      routeDenialReason: 'Shared Browser denied by broker policy.',
+      backendEnforced: true,
+      canLaunch: false,
+      canOpenUrl: false,
+      canStop: false,
+    });
+  });
+
   it('fails closed when browser status lacks explicit customer proof', async () => {
     const fetchImpl = fetchMock();
     fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_id: undefined })));
@@ -162,6 +228,17 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
       code: 'broker_invalid_response',
       message: 'The evaOS broker did not return browser runtime customer proof.',
+    });
+  });
+
+  it('fails closed when browser status lacks explicit backend enforcement proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ backend_enforced: undefined })));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime enforcement proof.',
     });
   });
 
@@ -204,6 +281,24 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
       message: 'The evaOS broker did not return browser action enforcement proof.',
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when browser action lacks explicit customer proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_launch_123',
+        backend_enforced: true,
+      })
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.launchBusinessBrowser({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser action customer proof.',
+    });
   });
 
   it('opens a brokered URL only with action-scoped backend proof and sanitized URL evidence', async () => {

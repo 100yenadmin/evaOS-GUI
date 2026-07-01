@@ -13,6 +13,7 @@
 - Classified `evaOS`, `Hermes`, `Mission Control`, `Shared Browser`, and `Terminal` as brokered proxy/runtime modules, separate from the native Mac & iPhone connector and separate from ACP/chat Mac-control follow-up work.
 - Runtime dashboard launches now use a dashboard-surface contract so `openclaw` and `hermes` pages do not require Mac connector material unless a caller explicitly asks for Mac-control tools.
 - Shared Browser now lets the broker runtime/status/action contract authorize support/operator access instead of failing early on a duplicate customer-account preflight.
+- Validation added in this change: broker/session unit coverage for `dashboard_surface` launch payloads, explicit Shared Browser broker customer/enforcement proof, denied-route clearing, and renderer runtime-surface attachment. Signed installed-app live proxy smoke remains a separate release gate before any public/customer readiness claim.
 
 ### Native Companion Boundary
 

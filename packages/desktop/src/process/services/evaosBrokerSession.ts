@@ -2583,6 +2583,8 @@ function businessBrowserViewFromRuntime(
   const status = runtime.status.toLowerCase();
   const controlSessionActive = runtime.controlSessionActive ?? false;
   const running = status === 'running' || status === 'ready' || status === 'active';
+  const routeDenied = isBusinessBrowserRuntimeDenied(status);
+  const backendEnforced = runtime.backendEnforced === true || policy?.backendEnforced === true;
 
   return stripUndefined({
     schemaVersion: 'evaos.browser_status.v1' as const,
@@ -2590,9 +2592,11 @@ function businessBrowserViewFromRuntime(
     customerAccountId: runtime.customerAccountId ?? policy?.customerAccountId,
     membershipId: policy?.membershipId,
     membershipRole: policy?.membershipRole,
-    routeDenied: false,
-    backendEnforced:
-      runtime.backendEnforced ?? policy?.backendEnforced ?? Boolean(runtime.sourcePointer && runtime.auditId),
+    routeDenied,
+    routeDenialReason: routeDenied
+      ? runtime.healthSummary || 'Business Browser denied by broker runtime policy.'
+      : undefined,
+    backendEnforced,
     displayLabel: runtime.displayLabel || 'Business Browser',
     status: runtime.status,
     healthSummary: runtime.healthSummary,
@@ -2601,9 +2605,10 @@ function businessBrowserViewFromRuntime(
     captchaNeeded: runtime.captchaNeeded ?? false,
     waitingOnUser: runtime.waitingOnUser ?? false,
     controlSessionActive,
-    canLaunch: isBusinessBrowserActionAvailable(actions, 'launch') || !running,
-    canOpenUrl: isBusinessBrowserActionAvailable(actions, 'open_url') || controlSessionActive || running,
-    canStop: isBusinessBrowserActionAvailable(actions, 'stop') || controlSessionActive,
+    canLaunch: !routeDenied && (isBusinessBrowserActionAvailable(actions, 'launch') || !running),
+    canOpenUrl:
+      !routeDenied && (isBusinessBrowserActionAvailable(actions, 'open_url') || controlSessionActive || running),
+    canStop: !routeDenied && (isBusinessBrowserActionAvailable(actions, 'stop') || controlSessionActive),
     lastCheckedAt: runtime.lastCheckedAt,
     lastActivityAt: runtime.lastActivityAt,
     actions,
@@ -2629,6 +2634,12 @@ function sanitizeBusinessBrowserActionResult(
   }
 
   const responseCustomerId = safeText(record.customer_id);
+  if (!responseCustomerId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return browser action customer proof.'
+    );
+  }
   assertCustomerScopeMatches(responseCustomerId, fallback.policy, fallback.customerId, 'browser action');
 
   const status = safeText(record.status) ?? (record.ok === true ? 'ok' : undefined);
@@ -2728,6 +2739,14 @@ function sanitizeBusinessBrowserRuntimeStatus(
 
   const responseCustomerAccountId = safeText(record.customer_account_id);
   assertCustomerAccountMatches(responseCustomerAccountId, policy, 'browser runtime');
+
+  const backendEnforced = safeBoolean(record.backend_enforced);
+  if (backendEnforced !== true) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return browser runtime enforcement proof.'
+    );
+  }
 
   const sourcePointer = safeBusinessBrowserRuntimeSourcePointer(record.source_pointer);
   const auditId = safeText(record.audit_id);
@@ -3196,6 +3215,10 @@ function isBusinessBrowserActionAvailable(actions: string[], capability: 'launch
     return allowed.has('browser_open_url') || allowed.has('open_url') || allowed.has('open');
   }
   return allowed.has('browser_stop') || allowed.has('stop_browser') || allowed.has('stop');
+}
+
+function isBusinessBrowserRuntimeDenied(status: string): boolean {
+  return /^(denied|blocked|forbidden|unauthorized|not_authorized|permission_denied)$/.test(status.trim().toLowerCase());
 }
 
 function safeProviderProfiles(value: unknown, expectedCustomerAccountId?: string): IEvaosProviderProfileView[] {
