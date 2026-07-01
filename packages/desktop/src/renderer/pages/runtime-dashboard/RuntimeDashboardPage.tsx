@@ -172,7 +172,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     selectedCustomerRef.current = customerContext.selectedCustomerId;
     requestEpochRef.current += 1;
     clearRuntimeEvidence();
-  }, [clearRuntimeEvidence, customerContext.selectedCustomerId]);
+  }, [clearRuntimeEvidence, customerContext.selectedCustomerId, runtimeKey]);
 
   const isCurrentRequest = useCallback((epoch: number, customerId: string) => {
     return requestEpochRef.current === epoch && selectedCustomerRef.current === customerId;
@@ -440,6 +440,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
               data-testid={`evaos-runtime-surface-container-${runtimeKey}`}
             >
               <webview
+                key={`${runtimeSurface.customerId}:${runtimeSurface.runtimeKey}:${runtimeSurface.surfaceId}:${runtimeSurface.partition}`}
                 data-testid={`evaos-runtime-surface-${runtimeKey}`}
                 src={runtimeSurface.surfaceUri}
                 partition={runtimeSurface.partition}

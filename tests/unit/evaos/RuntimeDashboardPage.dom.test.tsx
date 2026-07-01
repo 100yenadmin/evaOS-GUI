@@ -214,6 +214,128 @@ describe('RuntimeDashboardPage', () => {
     }
   );
 
+  it('clears the attached runtime surface when switching broker runtime routes', async () => {
+    localStorage.clear();
+    evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'fixture-customer-acme',
+        customerAccountId: 'fixture-account-acme',
+        runtimeKey: 'openclaw',
+        displayLabel: 'evaOS',
+        status: 'running',
+        healthSummary: 'evaOS runtime live',
+        actions: ['attach_dashboard'],
+        sourcePointer: 'broker:runtime_status:openclaw',
+        auditId: 'audit-runtime-status-openclaw',
+      },
+    });
+    evaosBrokerMock.runtimeAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        status: 'attached',
+        runtimeKey: 'openclaw',
+        customerId: 'fixture-customer-acme',
+        message: 'Attached evaOS runtime surface.',
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-openclaw-fixture',
+          surfaceUri: 'evaos-runtime-surface://surface-openclaw-fixture/',
+          partition: 'evaos-runtime-openclaw-fixture',
+          customerId: 'fixture-customer-acme',
+          runtimeKey: 'openclaw',
+          displayLabel: 'evaOS',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:openclaw',
+          auditId: 'audit-runtime-launch-openclaw',
+        },
+        backendEnforced: true,
+      },
+    });
+
+    const { rerender } = render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#500'
+      />
+    );
+
+    expect(await screen.findByTestId('evaos-runtime-surface-openclaw')).toHaveAttribute(
+      'src',
+      'evaos-runtime-surface://surface-openclaw-fixture/'
+    );
+
+    evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.runtime_status.v1',
+        customerId: 'fixture-customer-acme',
+        customerAccountId: 'fixture-account-acme',
+        runtimeKey: 'hermes',
+        displayLabel: 'Hermes',
+        status: 'running',
+        healthSummary: 'Hermes runtime live',
+        actions: ['attach_dashboard'],
+        sourcePointer: 'broker:runtime_status:hermes',
+        auditId: 'audit-runtime-status-hermes',
+      },
+    });
+    evaosBrokerMock.runtimeAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        status: 'attached',
+        runtimeKey: 'hermes',
+        customerId: 'fixture-customer-acme',
+        message: 'Attached Hermes runtime surface.',
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-hermes-fixture',
+          surfaceUri: 'evaos-runtime-surface://surface-hermes-fixture/',
+          partition: 'evaos-runtime-hermes-fixture',
+          customerId: 'fixture-customer-acme',
+          runtimeKey: 'hermes',
+          displayLabel: 'Hermes',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:hermes',
+          auditId: 'audit-runtime-launch-hermes',
+        },
+        backendEnforced: true,
+      },
+    });
+
+    rerender(
+      <RuntimeDashboardPage
+        runtimeKey='hermes'
+        title='Hermes'
+        subtitle='Hermes dashboard and PTY endpoint.'
+        issueRef='#500'
+      />
+    );
+
+    await waitFor(() =>
+      expect(evaosBrokerMock.runtimeStatus).toHaveBeenCalledWith({
+        customerId: 'fixture-customer-acme',
+        runtime: 'hermes',
+      })
+    );
+    await waitFor(() =>
+      expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
+        customerId: 'fixture-customer-acme',
+        runtime: 'hermes',
+        action: 'attach',
+        launchMode: 'dashboard_surface',
+      })
+    );
+    expect(screen.queryByTestId('evaos-runtime-surface-openclaw')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('evaos-runtime-surface-hermes')).toHaveAttribute(
+      'src',
+      'evaos-runtime-surface://surface-hermes-fixture/'
+    );
+  });
+
   it('loads brokered runtime status automatically for the selected customer', async () => {
     render(
       <RuntimeDashboardPage
