@@ -375,13 +375,16 @@ async function restoreProviderProfileSnapshot(
   { select = 'customer_id,provider_key,status', label = 'provider profile snapshot' } = {}
 ) {
   if (row?.id) {
-    await admin.patch('customer_provider_profiles', { id: `eq.${row.id}` }, row);
+    const rowId = safeText(row.id, 160);
+    await admin.patch('customer_provider_profiles', { id: `eq.${rowId}` }, row);
     const rows = await admin.select('customer_provider_profiles', {
-      id: `eq.${row.id}`,
+      id: `eq.${rowId}`,
       select,
       limit: 1,
     });
     if (rows[0]) return rows[0];
+    providerProfileLookup(row);
+    return admin.insert('customer_provider_profiles', row, { select, label });
   }
   return writeProviderProfileRow(admin, row, { label });
 }

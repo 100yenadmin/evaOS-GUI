@@ -282,6 +282,37 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual(['eq.linear', 'eq.notion']);
   });
 
+  it('reinserts a missing snapshot row without overwriting a duplicate natural-key row', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'duplicate-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'duplicate-original',
+      },
+    ]);
+
+    await provisioner.restoreProviderProfileSnapshot(admin, {
+      id: 'missing-snapshot-row',
+      customer_id: 'golden',
+      provider_key: 'slack',
+      status: 'connected',
+    });
+
+    expect(admin.patches).toEqual([
+      expect.objectContaining({
+        query: { id: 'eq.missing-snapshot-row' },
+      }),
+    ]);
+    expect(admin.inserts.map((insert) => insert.body)).toEqual([
+      expect.objectContaining({
+        id: 'missing-snapshot-row',
+        status: 'connected',
+      }),
+    ]);
+    expect(admin.rows.find((row) => row.id === 'duplicate-row')?.status).toBe('duplicate-original');
+  });
+
   it('rejects provider profile writes without customer and provider natural keys', async () => {
     const admin = new FakeProviderAdmin([]);
 
