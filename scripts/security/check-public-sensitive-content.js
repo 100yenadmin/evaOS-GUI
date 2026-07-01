@@ -164,6 +164,9 @@ function makeFinding(filePath, line, rule) {
   };
 }
 
+/**
+ * Scans a tracked repository path for secret-bearing file names.
+ */
 function scanPath(filePath) {
   const normalized = normalizePath(filePath);
   if (!RISKY_FILE_PATH_PATTERN.test(normalized)) {
@@ -179,6 +182,9 @@ function scanPath(filePath) {
   ];
 }
 
+/**
+ * Scans text content for public-repository sensitive material.
+ */
 function scanText({ filePath, text }) {
   const findings = [];
   const lines = text.split(/\r?\n/);
@@ -210,6 +216,9 @@ function trackedFiles(cwd) {
   return output.toString('utf8').split('\0').filter(Boolean);
 }
 
+/**
+ * Scans all tracked text files in a repository checkout.
+ */
 function scanRepository({ cwd = process.cwd() } = {}) {
   const findings = [];
   for (const filePath of trackedFiles(cwd)) {

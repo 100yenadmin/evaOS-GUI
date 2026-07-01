@@ -104,22 +104,26 @@ if (isLocal && platform === 'ios') {
 const easCommand = `eas build ${buildArgs.join(' ')}`;
 console.log(`\nRunning: ${easCommand}\n`);
 
+const expoAppleId = process.env.EXPO_APPLE_ID || process.env.APPLE_ID || process.env.appleId;
+const expoAppleTeamId =
+  process.env.EXPO_APPLE_TEAM_ID || process.env.TEAM_ID || process.env.teamId;
 const appleEnv = {};
 if (platform === 'ios') {
-  if (process.env.EXPO_APPLE_TEAM_ID) {
-    appleEnv.EXPO_APPLE_TEAM_ID = process.env.EXPO_APPLE_TEAM_ID;
+  if (expoAppleTeamId) {
+    appleEnv.EXPO_APPLE_TEAM_ID = expoAppleTeamId;
   }
-  if (process.env.EXPO_APPLE_ID) {
-    appleEnv.EXPO_APPLE_ID = process.env.EXPO_APPLE_ID;
+  if (expoAppleId) {
+    appleEnv.EXPO_APPLE_ID = expoAppleId;
   }
   if (applePassword) {
     appleEnv.EXPO_APPLE_PASSWORD = applePassword;
   }
   if (autoSubmit || directSubmit) {
-    appleEnv.EXPO_APPLE_ID = requireEnv('EXPO_APPLE_ID', 'iOS submission');
+    appleEnv.EXPO_APPLE_ID = expoAppleId || requireEnv('EXPO_APPLE_ID', 'iOS submission');
   }
   if (autoSubmit) {
-    appleEnv.EXPO_APPLE_TEAM_ID = requireEnv('EXPO_APPLE_TEAM_ID', 'EAS iOS submission');
+    appleEnv.EXPO_APPLE_TEAM_ID =
+      expoAppleTeamId || requireEnv('EXPO_APPLE_TEAM_ID', 'EAS iOS submission');
   }
 }
 
@@ -153,7 +157,7 @@ if (platform === 'ios' && isLocal && (autoSubmit || directSubmit)) {
 
   if (directSubmit) {
     // Upload directly to App Store Connect via xcrun altool (bypasses EAS)
-    const appleId = process.env.APPLE_ID || requireEnv('EXPO_APPLE_ID', 'direct iOS submission');
+    const appleId = expoAppleId || requireEnv('EXPO_APPLE_ID', 'direct iOS submission');
     const submitCommand = `xcrun altool --upload-app -f "${outputFile}" -t ${platform} -u "${appleId}" -p "@keychain:AC_PASSWORD"`;
     console.log(`\nUploading directly to TestFlight: xcrun altool --upload-app\n`);
     try {

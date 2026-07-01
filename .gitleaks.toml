@@ -6,29 +6,29 @@ useDefault = true
 [[allowlists]]
 description = "Fake short OpenAI protocol detector fixture"
 condition = "AND"
-paths = ['''tests/unit/common/protocolDetector\.test\.ts''']
+paths = ['''^tests/unit/common/protocolDetector\.test\.ts$''']
 regexes = ['''sk-abc123def456ghi789''']
 
 [[allowlists]]
 description = "Fake long OpenAI protocol detector fixture"
 condition = "AND"
-paths = ['''tests/unit/common/protocolDetector\.test\.ts''']
+paths = ['''^tests/unit/common/protocolDetector\.test\.ts$''']
 regexes = ['''sk-abc123def456ghi789jkl012''']
 
 [[allowlists]]
 description = "Fake Google API key protocol detector fixture"
 condition = "AND"
-paths = ['''tests/unit/common/protocolDetector\.test\.ts''']
+paths = ['''^tests/unit/common/protocolDetector\.test\.ts$''']
 regexes = ['''AIzaa{35}''']
 
 [[allowlists]]
 description = "Fake bridge resource token fixture"
 condition = "AND"
-paths = ['''tests/unit/bootstrap/prepareEvaosDesktopBridgeResource\.test\.ts''']
+paths = ['''^tests/unit/bootstrap/prepareEvaosDesktopBridgeResource\.test\.ts$''']
 regexes = ['''super-secret-token''']
 
 [[allowlists]]
 description = "Fake bridge resource credential URL fixture"
 condition = "AND"
-paths = ['''tests/unit/bootstrap/prepareEvaosDesktopBridgeResource\.test\.ts''']
+paths = ['''^tests/unit/bootstrap/prepareEvaosDesktopBridgeResource\.test\.ts$''']
 regexes = ['''https://x-access-token:super-secret-token@github\.com/electricsheephq/evaos-desktop-bridge\.git''']
