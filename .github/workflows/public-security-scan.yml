@@ -1,0 +1,87 @@
+name: Public Security Scan
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  public-sensitive-content:
+    name: Public Sensitive Content
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout trusted public scanner
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.base_ref }}
+          path: trusted-security-base
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Run repo-owned public scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRUSTED_SCANNER="trusted-security-base/scripts/security/check-public-sensitive-content.js"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -f "$TRUSTED_SCANNER" ]; then
+            node "$TRUSTED_SCANNER" "$PWD"
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "::warning::Trusted public scanner is missing on ${GITHUB_BASE_REF}; using PR scanner for bootstrap."
+            fi
+            node scripts/security/check-public-sensitive-content.js "$PWD"
+          fi
+
+  gitleaks:
+    name: Gitleaks Full History
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+          GITLEAKS_NOTIFY_USER_LIST: ''
+
+  trufflehog:
+    name: TruffleHog Verified
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run TruffleHog verified full-history scan
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo:ro" \
+            ghcr.io/trufflesecurity/trufflehog:3.95.7 \
+            git file:///repo \
+            --only-verified \
+            --no-update \
+            --fail

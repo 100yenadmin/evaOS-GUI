@@ -13,6 +13,8 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const projectRoot = path.join(__dirname, '..');
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 const profileIndex = args.indexOf('--profile');
@@ -26,6 +28,31 @@ const directSubmit = args.includes('--direct-submit');
 if (!profile) {
   console.error('Error: --profile is required (e.g., --profile preview or --profile production)');
   process.exit(1);
+}
+
+function requireEnv(name, purpose) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Error: ${name} is required for ${purpose}.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const expoAppleId = process.env.EXPO_APPLE_ID || process.env.APPLE_ID || process.env.appleId;
+const expoAppleTeamId = process.env.EXPO_APPLE_TEAM_ID || process.env.TEAM_ID || process.env.teamId;
+
+if (!isLocal && directSubmit) {
+  console.error('Error: --direct-submit is only supported with --local builds.');
+  process.exit(1);
+}
+
+if (platform === 'ios' && (autoSubmit || directSubmit) && !expoAppleId) {
+  requireEnv('EXPO_APPLE_ID', 'iOS submission');
+}
+
+if (platform === 'ios' && autoSubmit && !expoAppleTeamId) {
+  requireEnv('EXPO_APPLE_TEAM_ID', 'EAS iOS submission');
 }
 
 // Read current version
@@ -53,8 +80,12 @@ try {
 
 // Build eas command args
 const outputExt = platform === 'ios' ? '.ipa' : '.apk';
-const localOutputPath = path.join(__dirname, '..', `build-${Date.now()}${outputExt}`);
+const localOutputPath = path.join(projectRoot, `build-${Date.now()}${outputExt}`);
 let buildArgs = args.filter((a) => a !== '--auto-submit' && a !== '--direct-submit');
+
+if (!isLocal && autoSubmit && !buildArgs.includes('--auto-submit-with-profile')) {
+  buildArgs.push('--auto-submit-with-profile', profile);
+}
 
 // For local builds with submit, capture output path for later submission
 if (isLocal && (autoSubmit || directSubmit)) {
@@ -83,21 +114,31 @@ if (isLocal && platform === 'ios') {
 // Build the eas command
 const easCommand = `eas build ${buildArgs.join(' ')}`;
 console.log(`\nRunning: ${easCommand}\n`);
-
-// Apple-specific env vars (only needed for iOS builds)
-const appleEnv =
-  platform === 'ios'
-    ? {
-        EXPO_APPLE_TEAM_ID: process.env.EXPO_APPLE_TEAM_ID || 'M4AG47ZV62',
-        EXPO_APPLE_ID: process.env.EXPO_APPLE_ID || 'liangzhewei@gmail.com',
-        ...(applePassword ? { EXPO_APPLE_PASSWORD: applePassword } : {}),
-      }
-    : {};
+const appleEnv = {};
+if (platform === 'ios') {
+  if (expoAppleTeamId) {
+    appleEnv.EXPO_APPLE_TEAM_ID = expoAppleTeamId;
+  }
+  if (expoAppleId) {
+    appleEnv.EXPO_APPLE_ID = expoAppleId;
+  }
+  if (applePassword) {
+    appleEnv.EXPO_APPLE_PASSWORD = applePassword;
+  }
+  if (autoSubmit || directSubmit) {
+    appleEnv.EXPO_APPLE_ID = expoAppleId || requireEnv('EXPO_APPLE_ID', 'iOS submission');
+  }
+  if (autoSubmit) {
+    appleEnv.EXPO_APPLE_TEAM_ID =
+      expoAppleTeamId || requireEnv('EXPO_APPLE_TEAM_ID', 'EAS iOS submission');
+  }
+}
 
 // Execute eas build
 try {
   execSync(easCommand, {
     stdio: 'inherit',
+    cwd: projectRoot,
     env: {
       ...process.env,
       PATH: `/usr/bin:${process.env.PATH}`,
@@ -123,7 +164,7 @@ if (platform === 'ios' && isLocal && (autoSubmit || directSubmit)) {
 
   if (directSubmit) {
     // Upload directly to App Store Connect via xcrun altool (bypasses EAS)
-    const appleId = process.env.APPLE_ID || 'liangzhewei@gmail.com';
+    const appleId = expoAppleId || requireEnv('EXPO_APPLE_ID', 'direct iOS submission');
     const submitCommand = `xcrun altool --upload-app -f "${outputFile}" -t ${platform} -u "${appleId}" -p "@keychain:AC_PASSWORD"`;
     console.log(`\nUploading directly to TestFlight: xcrun altool --upload-app\n`);
     try {
@@ -135,17 +176,18 @@ if (platform === 'ios' && isLocal && (autoSubmit || directSubmit)) {
         '  Make sure your App-Specific Password is saved in Keychain as "AC_PASSWORD".',
       );
       console.error(
-        '  To save it: security add-generic-password -a "liangzhewei@gmail.com" -s "AC_PASSWORD" -w "<your-app-specific-password>" -U',
+        '  To save it: security add-generic-password -a "$EXPO_APPLE_ID" -s "AC_PASSWORD" -w "<your-app-specific-password>" -U',
       );
       process.exit(1);
     }
   } else {
     // Upload via EAS submit
-    const submitCommand = `eas submit --platform ${platform} --path ${outputFile} --non-interactive`;
+    const submitCommand = `eas submit --platform ${platform} --profile ${profile} --path ${outputFile} --non-interactive`;
     console.log(`\nSubmitting to TestFlight: ${submitCommand}\n`);
     try {
       execSync(submitCommand, {
         stdio: 'inherit',
+        cwd: projectRoot,
         env: {
           ...process.env,
           ...appleEnv,

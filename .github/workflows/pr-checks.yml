@@ -69,6 +69,7 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
+        id: pr-context
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -193,6 +194,7 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
+        id: public-scan-context
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -211,6 +213,14 @@ jobs:
             BASE_REF="$PULL_REQUEST_BASE_REF"
           fi
           echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted public scanner
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ steps.public-scan-context.outputs.base_ref }}
+          path: trusted-security-base
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -228,6 +238,18 @@ jobs:
 
       - name: Run postinstall
         run: npm run postinstall || true
+
+      - name: Run public sensitive content scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRUSTED_SCANNER="trusted-security-base/scripts/security/check-public-sensitive-content.js"
+          if [ -f "$TRUSTED_SCANNER" ]; then
+            node "$TRUSTED_SCANNER" "$PWD"
+          else
+            echo "::warning::Trusted public scanner is missing on ${PR_BASE_REF}; using PR scanner for bootstrap."
+            node scripts/security/check-public-sensitive-content.js "$PWD"
+          fi
 
       - name: Install prek
         run: npm install -g @j178/prek
@@ -725,7 +747,7 @@ jobs:
 
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          BRIDGE_SUMMARY="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (m.placeholder !== true) { console.error('::error::Expected thin-app-smoke to bundle the diagnostic Bridge placeholder'); process.exit(1); } console.log('diagnostic-placeholder')" "$BRIDGE_MANIFEST")"
+          BRIDGE_SUMMARY="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const sha=/^[0-9a-f]{40}$/i; if (m.placeholder === true) { console.log('diagnostic-placeholder'); process.exit(0); } if (!sha.test(String(m.requestedSourceRef || '')) || !sha.test(String(m.sourceCommit || '')) || m.requestedSourceRef !== m.sourceCommit) { console.error('::error::Expected thin-app-smoke to bundle a diagnostic Bridge placeholder or the pinned real Bridge source'); process.exit(1); } console.log('pinned-real-bridge@' + String(m.sourceCommit).slice(0, 12));" "$BRIDGE_MANIFEST")"
           node scripts/evaosVerifyRendererDependencyPrune.js "$APP_PATH"
 
           {
@@ -738,7 +760,7 @@ jobs:
             echo "- Bridge manifest: \`$BRIDGE_SUMMARY\`"
             echo "- Renderer dependency prune: verified \`app.asar\` and \`app.asar.unpacked/node_modules\`"
             echo
-            echo "This PR artifact is intentionally unpacked and may use a diagnostic Bridge placeholder when private source access is unavailable. It may be ad-hoc/non-Developer-ID signed by packaging hooks. It produces no DMG, no release metadata, no notarization/stapling proof, no TCC or permission proof, and no public release proof."
+            echo "This PR artifact is intentionally unpacked and may use a diagnostic Bridge placeholder when private source access is unavailable, or a pinned real Bridge source when CI can fetch it. It may be ad-hoc/non-Developer-ID signed by packaging hooks. It produces no DMG, no release metadata, no notarization/stapling proof, no TCC or permission proof, and no public release proof."
             echo
             echo "### Size"
             echo '```'

@@ -27,14 +27,18 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "liangzhewei@gmail.com",
-        "appleTeamId": "M4AG47ZV62"
+        "appName": "AionUi Mobile",
+        "bundleIdentifier": "ai.resopod.aionui",
+        "language": "en-US",
+        "sku": "aionui-mobile"
       }
     },
     "preview": {
       "ios": {
-        "appleId": "liangzhewei@gmail.com",
-        "appleTeamId": "M4AG47ZV62"
+        "appName": "AionUi Mobile",
+        "bundleIdentifier": "ai.resopod.aionui",
+        "language": "en-US",
+        "sku": "aionui-mobile-preview"
       }
     }
   }
