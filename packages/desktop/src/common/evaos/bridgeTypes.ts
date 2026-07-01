@@ -80,11 +80,13 @@ export interface IEvaosRuntimeStatusRequest {
 }
 
 export type IEvaosRuntimeActionType = 'launch' | 'attach' | 'open';
+export type IEvaosRuntimeLaunchMode = 'dashboard_surface' | 'mac_control_tools';
 
 export interface IEvaosRuntimeActionRequest {
   customerId: string;
   runtime: IEvaosRuntimeKey;
   action: IEvaosRuntimeActionType;
+  launchMode?: IEvaosRuntimeLaunchMode;
 }
 
 export interface IEvaosSafeUrlSummary {
@@ -116,6 +118,7 @@ export interface IEvaosRuntimeStatusView {
   actions?: string[];
   sourcePointer?: string;
   auditId?: string;
+  backendEnforced?: boolean;
 }
 
 export interface IEvaosRuntimeSurfaceView {

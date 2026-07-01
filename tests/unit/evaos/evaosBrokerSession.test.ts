@@ -947,6 +947,7 @@ describe('EvaosBrokerSessionClient', () => {
       action: 'runtime_launch',
       customer_id: 'cus_123',
       runtime: 'openclaw',
+      launch_mode: 'dashboard_surface',
     });
     expect(openRuntimeUrl).toHaveBeenCalledWith(
       'https://runtime.example.test/openclaw?desktop_session=eds_runtime_launch_secret#token=bad'

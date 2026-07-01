@@ -166,6 +166,7 @@ describe('TerminalPage', () => {
         customerId: 'david-poku',
         runtime: 'terminal',
         action: 'attach',
+        launchMode: 'dashboard_surface',
       });
     });
     const surface = await screen.findByTestId('evaos-runtime-surface-terminal');

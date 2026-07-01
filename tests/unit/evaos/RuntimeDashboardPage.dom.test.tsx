@@ -113,6 +113,7 @@ describe('RuntimeDashboardPage', () => {
         customerId: 'fixture-customer-acme',
         runtime: 'openclaw',
         action: 'attach',
+        launchMode: 'dashboard_surface',
       })
     );
     expect(await screen.findByText(/evaOS broker attach did not return a runtime surface handle/)).toBeInTheDocument();
@@ -196,6 +197,7 @@ describe('RuntimeDashboardPage', () => {
           customerId: 'fixture-customer-acme',
           runtime: runtimeKey,
           action: 'attach',
+          launchMode: 'dashboard_surface',
         })
       );
       const surface = await screen.findByTestId(`evaos-runtime-surface-${runtimeKey}`);
@@ -261,6 +263,7 @@ describe('RuntimeDashboardPage', () => {
         customerId: 'fixture-customer-acme',
         runtime: 'openclaw',
         action: 'attach',
+        launchMode: 'dashboard_surface',
       })
     );
     expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument();
@@ -391,6 +394,7 @@ describe('RuntimeDashboardPage', () => {
         customerId: 'fixture-customer-acme',
         runtime: 'openclaw',
         action: 'open',
+        launchMode: 'dashboard_surface',
       })
     );
     fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));

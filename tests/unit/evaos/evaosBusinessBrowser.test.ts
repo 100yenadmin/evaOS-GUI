@@ -39,34 +39,6 @@ function authenticatedClient(fetchImpl: EvaosBrokerFetch): EvaosBrokerSessionCli
   });
 }
 
-const accountPayload = {
-  customer_account_id: 'acct_123',
-  selected_customer_id: 'david-poku',
-  members: [
-    {
-      membership_id: 'mem_admin',
-      email: 'admin@example.test',
-      membership_role: 'admin',
-      status: 'active',
-    },
-  ],
-};
-
-function policyPayload(scopes: string[], overrides: Record<string, unknown> = {}) {
-  return {
-    schema_version: 'evaos.account_policy.v1',
-    customer_account_id: 'acct_123',
-    selected_customer_id: 'david-poku',
-    membership_id: 'mem_admin',
-    membership_role: 'admin',
-    scopes,
-    advanced_surfaces: {},
-    backend_enforced: true,
-    audit_id: 'audit_policy_123',
-    ...overrides,
-  };
-}
-
 function browserRuntimeResponse(overrides: Record<string, unknown> = {}) {
   return {
     schema_version: 'desktop-runtime-session/v1',
@@ -81,6 +53,7 @@ function browserRuntimeResponse(overrides: Record<string, unknown> = {}) {
     actions: ['browser_open_url', 'browser_stop', 'access_token=bad'],
     source_pointer: 'broker:runtime_status:browser',
     audit_id: 'audit_browser_123',
+    backend_enforced: true,
     last_checked_at: '2026-06-03T12:01:00.000Z',
     ...overrides,
   };
@@ -105,42 +78,43 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('returns route denial without runtime_status when open_business_browser is absent', async () => {
+  it('asks the broker for browser runtime truth without a local customer-account preflight', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['view_company_brain'])));
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse()));
     const client = authenticatedClient(fetchImpl);
 
     const status = await client.businessBrowserStatus({ customerId: 'david-poku' });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'runtime_status',
+      customer_id: 'david-poku',
+      runtime: 'browser',
+    });
     expect(status).toMatchObject({
       schemaVersion: 'evaos.browser_status.v1',
       customerId: 'david-poku',
       customerAccountId: 'acct_123',
-      routeDenied: true,
-      routeDenialReason: 'Business Browser requires the open_business_browser scope for this customer account.',
-      status: 'denied',
-      canLaunch: false,
-      canOpenUrl: false,
-      canStop: false,
-      policyAuditId: 'audit_policy_123',
+      routeDenied: false,
+      backendEnforced: true,
+      status: 'running',
+      canLaunch: true,
+      canOpenUrl: true,
+      canStop: true,
+      sourcePointer: 'broker:runtime_status:browser',
+      auditId: 'audit_browser_123',
     });
   });
 
   it('maps runtime_status to browser control metadata without exposing URL secrets', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse()));
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse()));
     const client = authenticatedClient(fetchImpl);
 
     const status = await client.businessBrowserStatus({ customerId: 'david-poku' });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
       action: 'runtime_status',
       customer_id: 'david-poku',
       runtime: 'browser',
@@ -171,10 +145,7 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
 
   it('fails closed when runtime evidence belongs to a different customer', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_id: 'other-customer' })));
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_id: 'other-customer' })));
     const client = authenticatedClient(fetchImpl);
 
     await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
@@ -183,12 +154,75 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     });
   });
 
+  it('accepts same-customer browser status for a different account only with explicit broker enforcement', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        browserRuntimeResponse({
+          customer_account_id: 'acct_runtime_selected_by_broker',
+          backend_enforced: true,
+        })
+      )
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    const status = await client.businessBrowserStatus({ customerId: 'david-poku' });
+
+    expect(status).toMatchObject({
+      customerId: 'david-poku',
+      customerAccountId: 'acct_runtime_selected_by_broker',
+      routeDenied: false,
+      backendEnforced: true,
+    });
+  });
+
+  it('fails closed when same-customer browser status lacks explicit broker enforcement', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        browserRuntimeResponse({
+          customer_account_id: 'acct_runtime_selected_by_broker',
+          backend_enforced: false,
+        })
+      )
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime enforcement proof.',
+    });
+  });
+
+  it('maps broker-denied browser runtime status as a denied route', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        browserRuntimeResponse({
+          status: 'denied',
+          health_summary: 'Shared Browser denied by broker policy.',
+          control_session_active: true,
+          actions: ['browser_open_url', 'browser_stop'],
+        })
+      )
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    const status = await client.businessBrowserStatus({ customerId: 'david-poku' });
+
+    expect(status).toMatchObject({
+      routeDenied: true,
+      routeDenialReason: 'Shared Browser denied by broker policy.',
+      backendEnforced: true,
+      canLaunch: false,
+      canOpenUrl: false,
+      canStop: false,
+    });
+  });
+
   it('fails closed when browser status lacks explicit customer proof', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_id: undefined })));
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_id: undefined })));
     const client = authenticatedClient(fetchImpl);
 
     await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
@@ -197,12 +231,20 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     });
   });
 
+  it('fails closed when browser status lacks explicit backend enforcement proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ backend_enforced: undefined })));
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser runtime enforcement proof.',
+    });
+  });
+
   it('fails closed when browser status lacks runtime audit or source proof', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ audit_id: undefined })));
+    fetchImpl.mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ audit_id: undefined })));
     const client = authenticatedClient(fetchImpl);
 
     await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
@@ -211,12 +253,9 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     });
 
     fetchImpl.mockReset();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse(browserRuntimeResponse({ source_pointer: 'broker:runtime_status:openclaw' }))
-      );
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(browserRuntimeResponse({ source_pointer: 'broker:runtime_status:openclaw' }))
+    );
 
     await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
       code: 'broker_invalid_response',
@@ -224,55 +263,62 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     });
   });
 
-  it('fails closed when browser status belongs to a different customer account', async () => {
+  it('uses backend browser action proof instead of local account-policy proof for mutations', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(jsonResponse(browserRuntimeResponse({ customer_account_id: 'acct_other' })));
-    const client = authenticatedClient(fetchImpl);
-
-    await expect(client.businessBrowserStatus({ customerId: 'david-poku' })).rejects.toMatchObject({
-      code: 'broker_invalid_response',
-      message: 'The evaOS broker returned browser runtime evidence for a different customer account.',
-    });
-  });
-
-  it('denies browser mutations before action RPCs when policy proof is not backend-enforced', async () => {
-    const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'], { backend_enforced: false })));
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        customer_id: 'david-poku',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_launch_123',
+        backend_enforced: false,
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     await expect(client.launchBusinessBrowser({ customerId: 'david-poku' })).rejects.toMatchObject({
-      code: 'action_denied',
-      message: 'Business Browser actions require backend-enforced account policy proof.',
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser action enforcement proof.',
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when browser action lacks explicit customer proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_launch_123',
+        backend_enforced: true,
+      })
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    await expect(client.launchBusinessBrowser({ customerId: 'david-poku' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+      message: 'The evaOS broker did not return browser action customer proof.',
+    });
   });
 
   it('opens a brokered URL only with action-scoped backend proof and sanitized URL evidence', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'opened',
-          customer_id: 'david-poku',
-          message: 'Browser URL opened.',
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'opened',
+        customer_id: 'david-poku',
+        message: 'Browser URL opened.',
+        current_url: 'https://workspace.example.test/app?access_token=raw-token#frag',
+        source_pointer: 'broker:browser_open_url:david-poku',
+        audit_id: 'audit_open_123',
+        backend_enforced: true,
+        browser: browserRuntimeResponse({
           current_url: 'https://workspace.example.test/app?access_token=raw-token#frag',
-          source_pointer: 'broker:browser_open_url:david-poku',
-          audit_id: 'audit_open_123',
-          backend_enforced: true,
-          browser: browserRuntimeResponse({
-            current_url: 'https://workspace.example.test/app?access_token=raw-token#frag',
-            source_pointer: 'broker:runtime_status:browser',
-            audit_id: 'audit_browser_after_open',
-          }),
-        })
-      );
+          source_pointer: 'broker:runtime_status:browser',
+          audit_id: 'audit_browser_after_open',
+        }),
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     const result = await client.openBusinessBrowserUrl({
@@ -280,8 +326,8 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
       url: 'https://workspace.example.test/app?view=alpha#section',
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
       action: 'browser_open_url',
       customer_id: 'david-poku',
       url: 'https://workspace.example.test/app',
@@ -324,35 +370,33 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
       sourcePointer: 'broker:browser_open_url:david-poku',
       auditId: 'audit_launch_surface',
     }));
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'attached',
-          customer_id: 'david-poku',
-          message: 'Browser attached.',
-          launch_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        customer_id: 'david-poku',
+        message: 'Browser attached.',
+        launch_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+        current_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_launch_surface',
+        backend_enforced: true,
+        browser: browserRuntimeResponse({
           current_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
-          source_pointer: 'broker:runtime_launch:browser',
-          audit_id: 'audit_launch_surface',
-          backend_enforced: true,
-          browser: browserRuntimeResponse({
-            current_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
-            source_pointer: 'broker:runtime_status:browser',
-            audit_id: 'audit_browser_after_launch',
-          }),
-        })
-      );
+          source_pointer: 'broker:runtime_status:browser',
+          audit_id: 'audit_browser_after_launch',
+        }),
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     const result = await client.launchBusinessBrowser({ customerId: 'david-poku' }, { createRuntimeSurface });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
       action: 'runtime_launch',
       customer_id: 'david-poku',
       runtime: 'browser',
+      launch_mode: 'dashboard_surface',
     });
     expect(createRuntimeSurface).toHaveBeenCalledWith(
       'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
@@ -376,23 +420,20 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
   it('fails closed when a brokered Business Browser action omits the runtime surface target', async () => {
     const fetchImpl = fetchMock();
     const createRuntimeSurface = vi.fn();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'attached',
-          customer_id: 'david-poku',
-          message: 'Browser attached, but no surface target was issued.',
-          source_pointer: 'broker:runtime_launch:browser',
-          audit_id: 'audit_missing_surface',
-          backend_enforced: true,
-          browser: browserRuntimeResponse({
-            source_pointer: 'broker:runtime_status:browser',
-            audit_id: 'audit_browser_after_launch',
-          }),
-        })
-      );
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        customer_id: 'david-poku',
+        message: 'Browser attached, but no surface target was issued.',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_missing_surface',
+        backend_enforced: true,
+        browser: browserRuntimeResponse({
+          source_pointer: 'broker:runtime_status:browser',
+          audit_id: 'audit_browser_after_launch',
+        }),
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     await expect(
@@ -407,24 +448,21 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
   it('fails closed when a Business Browser action returns a remote plaintext surface URL', async () => {
     const fetchImpl = fetchMock();
     const createRuntimeSurface = vi.fn();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'attached',
-          customer_id: 'david-poku',
-          message: 'Browser attached.',
-          launch_url: 'http://runtime.example.test/browser',
-          source_pointer: 'broker:runtime_launch:browser',
-          audit_id: 'audit_plaintext_surface',
-          backend_enforced: true,
-          browser: browserRuntimeResponse({
-            source_pointer: 'broker:runtime_status:browser',
-            audit_id: 'audit_browser_after_launch',
-          }),
-        })
-      );
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        customer_id: 'david-poku',
+        message: 'Browser attached.',
+        launch_url: 'http://runtime.example.test/browser',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_plaintext_surface',
+        backend_enforced: true,
+        browser: browserRuntimeResponse({
+          source_pointer: 'broker:runtime_status:browser',
+          audit_id: 'audit_browser_after_launch',
+        }),
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     await expect(
@@ -438,18 +476,15 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
 
   it('fails closed when browser action proof reuses runtime_status evidence', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'opened',
-          customer_id: 'david-poku',
-          source_pointer: 'broker:runtime_status:browser',
-          audit_id: 'audit_open_123',
-          backend_enforced: true,
-        })
-      );
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'opened',
+        customer_id: 'david-poku',
+        source_pointer: 'broker:runtime_status:browser',
+        audit_id: 'audit_open_123',
+        backend_enforced: true,
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     await expect(
@@ -462,23 +497,20 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
 
   it('fails closed when browser action returns unscoped nested runtime status', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'opened',
-          customer_id: 'david-poku',
-          source_pointer: 'broker:browser_open_url:david-poku',
-          audit_id: 'audit_open_123',
-          backend_enforced: true,
-          browser: browserRuntimeResponse({
-            customer_id: undefined,
-            source_pointer: 'broker:runtime_status:browser',
-            audit_id: 'audit_browser_after_open',
-          }),
-        })
-      );
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'opened',
+        customer_id: 'david-poku',
+        source_pointer: 'broker:browser_open_url:david-poku',
+        audit_id: 'audit_open_123',
+        backend_enforced: true,
+        browser: browserRuntimeResponse({
+          customer_id: undefined,
+          source_pointer: 'broker:runtime_status:browser',
+          audit_id: 'audit_browser_after_open',
+        }),
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     await expect(
@@ -491,25 +523,22 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
 
   it('sends stop through the browser_stop action contract', async () => {
     const fetchImpl = fetchMock();
-    fetchImpl
-      .mockResolvedValueOnce(jsonResponse(accountPayload))
-      .mockResolvedValueOnce(jsonResponse(policyPayload(['open_business_browser'])))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          status: 'stopped',
-          customer_id: 'david-poku',
-          message: 'Browser stopped.',
-          source_pointer: 'broker:browser_stop:david-poku',
-          audit_id: 'audit_stop_123',
-          backend_enforced: true,
-        })
-      );
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'stopped',
+        customer_id: 'david-poku',
+        message: 'Browser stopped.',
+        source_pointer: 'broker:browser_stop:david-poku',
+        audit_id: 'audit_stop_123',
+        backend_enforced: true,
+      })
+    );
     const client = authenticatedClient(fetchImpl);
 
     const result = await client.stopBusinessBrowser({ customerId: 'david-poku' });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(requestBody(fetchImpl.mock.calls[2])).toEqual({
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
       action: 'browser_stop',
       customer_id: 'david-poku',
     });
