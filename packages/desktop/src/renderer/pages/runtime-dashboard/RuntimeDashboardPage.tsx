@@ -338,7 +338,9 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     (!currentStatusView?.actions?.length ||
       hasRuntimeAction(currentStatusView, ['attach_dashboard', 'start_attach', 'launch', 'runtime_launch']));
   const canOpenRuntime =
-    canRequestBrokerRuntimeAction && hasRuntimeAction(currentStatusView, ['open_dashboard', 'open']) && !canAttachRuntime;
+    canRequestBrokerRuntimeAction &&
+    hasRuntimeAction(currentStatusView, ['open_dashboard', 'open']) &&
+    !canAttachRuntime;
   const attachAvailable =
     canRequestBrokerRuntimeAction || (actionsAllowedByState && hasSafeAttachAction(currentStatusView));
   const showHeader = !currentRuntimeSurface || showDiagnostics || Boolean(actionError || runtimeError);
