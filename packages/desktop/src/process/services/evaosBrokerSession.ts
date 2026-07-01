@@ -2591,7 +2591,8 @@ function businessBrowserViewFromRuntime(
     membershipId: policy?.membershipId,
     membershipRole: policy?.membershipRole,
     routeDenied: false,
-    backendEnforced: runtime.backendEnforced ?? policy?.backendEnforced ?? Boolean(runtime.sourcePointer && runtime.auditId),
+    backendEnforced:
+      runtime.backendEnforced ?? policy?.backendEnforced ?? Boolean(runtime.sourcePointer && runtime.auditId),
     displayLabel: runtime.displayLabel || 'Business Browser',
     status: runtime.status,
     healthSummary: runtime.healthSummary,
@@ -3725,7 +3726,11 @@ function assertCustomerAccountMatches(
   policy: IEvaosPeopleAccessPolicyView | null,
   context: string
 ): void {
-  if (responseCustomerAccountId && policy?.customerAccountId && responseCustomerAccountId !== policy.customerAccountId) {
+  if (
+    responseCustomerAccountId &&
+    policy?.customerAccountId &&
+    responseCustomerAccountId !== policy.customerAccountId
+  ) {
     throw new EvaosBrokerSessionError(
       'broker_invalid_response',
       `The evaOS broker returned ${context} evidence for a different customer account.`
