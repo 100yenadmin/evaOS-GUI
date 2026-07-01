@@ -338,6 +338,46 @@ async function snapshotProviderRows(admin, customerId) {
   return rows.map((row) => ({ providerKey: row.provider_key, row }));
 }
 
+function providerProfileLookup(row) {
+  return {
+    customer_id: `eq.${row.customer_id}`,
+    provider_key: `eq.${row.provider_key}`,
+  };
+}
+
+async function writeProviderProfileRow(
+  admin,
+  row,
+  { select = 'customer_id,provider_key,status', label = 'provider profile' } = {}
+) {
+  const lookup = providerProfileLookup(row);
+  const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id', limit: 1 });
+  if (existing.length > 0) {
+    await admin.patch('customer_provider_profiles', lookup, row);
+    const rows = await admin.select('customer_provider_profiles', { ...lookup, select, limit: 1 });
+    if (!rows[0]) throw new Error(`${label} patch did not return a verifiable row.`);
+    return rows[0];
+  }
+  return admin.insert('customer_provider_profiles', row, { select, label });
+}
+
+async function restoreProviderProfileSnapshot(
+  admin,
+  row,
+  { select = 'customer_id,provider_key,status', label = 'provider profile snapshot' } = {}
+) {
+  if (row?.id) {
+    await admin.patch('customer_provider_profiles', { id: `eq.${row.id}` }, row);
+    const rows = await admin.select('customer_provider_profiles', {
+      id: `eq.${row.id}`,
+      select,
+      limit: 1,
+    });
+    if (rows[0]) return rows[0];
+  }
+  return writeProviderProfileRow(admin, row, { label });
+}
+
 async function upsertProviderFixtureRows(admin, customerId) {
   const now = new Date().toISOString();
   const rows = [
@@ -396,8 +436,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
   ];
 
   for (const row of rows) {
-    await admin.upsert('customer_provider_profiles', row, {
-      onConflict: 'customer_id,provider_key',
+    await writeProviderProfileRow(admin, row, {
       select: 'customer_id,provider_key,status',
       label: `${row.provider_key} provider fixture`,
     });
@@ -677,8 +716,7 @@ async function restoreProviderSnapshots(admin, state) {
   for (const providerKey of FIXTURE_PROVIDER_KEYS) {
     const row = snapshotByKey.get(providerKey);
     if (row) {
-      await admin.upsert('customer_provider_profiles', row, {
-        onConflict: 'customer_id,provider_key',
+      await restoreProviderProfileSnapshot(admin, row, {
         select: 'customer_id,provider_key,status',
         label: `${providerKey} provider snapshot restore`,
       });
@@ -780,6 +818,10 @@ module.exports = {
   fixtureEnvFromProvision,
   loadOptions,
   provisionFixtures,
+  providerProfileLookup,
   renderGithubEnvFile,
+  restoreProviderProfileSnapshot,
   sanitizedProvisionReport,
+  upsertProviderFixtureRows,
+  writeProviderProfileRow,
 };

@@ -4,10 +4,61 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.js') as {
   assertNoUnsafeProofOutput: (value: unknown) => void;
-  fixtureEnvFromProvision: (state: Record<string, any>) => Record<string, string>;
+  fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
   renderGithubEnvFile: (env: Record<string, string>) => string;
-  sanitizedProvisionReport: (state: Record<string, any>) => Record<string, any>;
+  sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
+  restoreProviderProfileSnapshot: (
+    admin: FakeProviderAdmin,
+    row: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
+  upsertProviderFixtureRows: (admin: FakeProviderAdmin, customerId: string) => Promise<void>;
 };
+
+type ProviderRow = Record<string, unknown>;
+
+class FakeProviderAdmin {
+  rows: ProviderRow[];
+  inserts: ProviderRow[] = [];
+  patches: Array<{ query: Record<string, string>; body: ProviderRow }> = [];
+
+  constructor(rows: ProviderRow[]) {
+    this.rows = rows.map((row) => Object.assign({}, row));
+  }
+
+  async select(_table: string, query: Record<string, string | number>) {
+    const rows = this.rows.filter((row) => {
+      for (const [key, value] of Object.entries(query)) {
+        if (key === 'select' || key === 'limit') continue;
+        if (typeof value === 'string' && value.startsWith('eq.') && String(row[key]) !== value.slice(3)) {
+          return false;
+        }
+      }
+      return true;
+    });
+    return rows.slice(0, Number(query.limit ?? rows.length)).map((row) => Object.assign({}, row));
+  }
+
+  async insert(_table: string, body: ProviderRow) {
+    const row = { id: body.id ?? `inserted-${this.inserts.length + 1}`, ...body };
+    this.rows.push(row);
+    this.inserts.push(row);
+    return { ...row };
+  }
+
+  async patch(_table: string, query: Record<string, string>, body: ProviderRow) {
+    this.patches.push({ query, body });
+    for (const row of this.rows) {
+      const matches = Object.entries(query).every(([key, value]) => {
+        return typeof value !== 'string' || !value.startsWith('eq.') || String(row[key]) === value.slice(3);
+      });
+      if (matches) Object.assign(row, body);
+    }
+  }
+
+  async upsert() {
+    throw new Error('unexpected composite upsert');
+  }
+}
 
 function fixtureState() {
   return {
@@ -118,5 +169,51 @@ describe('evaOS live canary fixture provisioner', () => {
         accidentallyUnsafe: 'Bearer secret_token_for_test',
       })
     ).toThrow(/unsafe material/i);
+  });
+
+  it('patches or inserts provider fixture rows without requiring a composite unique constraint', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'existing-slack',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'old',
+      },
+    ]);
+
+    await provisioner.upsertProviderFixtureRows(admin, 'golden');
+
+    expect(admin.patches).toEqual([
+      expect.objectContaining({
+        query: { customer_id: 'eq.golden', provider_key: 'eq.slack' },
+      }),
+    ]);
+    expect(admin.inserts.map((row) => String(row.provider_key)).toSorted()).toEqual(['linear', 'notion']);
+    expect(admin.rows.find((row) => row.provider_key === 'slack')?.status).toBe('connected');
+  });
+
+  it('restores provider snapshots by row id before falling back to natural-key writes', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'fixture',
+      },
+    ]);
+
+    await provisioner.restoreProviderProfileSnapshot(admin, {
+      id: 'snapshot-row',
+      customer_id: 'golden',
+      provider_key: 'slack',
+      status: 'connected',
+    });
+
+    expect(admin.patches).toEqual([
+      expect.objectContaining({
+        query: { id: 'eq.snapshot-row' },
+      }),
+    ]);
+    expect(admin.rows[0]?.status).toBe('connected');
   });
 });
