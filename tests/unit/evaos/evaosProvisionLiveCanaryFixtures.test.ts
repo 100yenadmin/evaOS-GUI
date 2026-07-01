@@ -175,7 +175,7 @@ describe('evaOS live canary fixture provisioner', () => {
       AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
     });
 
-    expect(options.approvalProviderKey).toBe('slack');
+    expect(options.approvalProviderKey).toBe('google_workspace');
   });
 
   it('rejects unsafe proof output if a secret marker is accidentally added', () => {
@@ -210,12 +210,17 @@ describe('evaOS live canary fixture provisioner', () => {
         query: { id: 'eq.existing-slack-1' },
       }),
     ]);
-    expect(admin.inserts.map((insert) => String(insert.body.provider_key)).toSorted()).toEqual(['linear', 'notion']);
+    expect(admin.inserts.map((insert) => String(insert.body.provider_key)).toSorted()).toEqual([
+      'google_workspace',
+      'linear',
+      'notion',
+    ]);
     expect(admin.inserts.map((insert) => insert.options)).toEqual([
+      { select: 'customer_id,provider_key,status', label: 'google_workspace provider fixture' },
       { select: 'customer_id,provider_key,status', label: 'linear provider fixture' },
       { select: 'customer_id,provider_key,status', label: 'notion provider fixture' },
     ]);
-    expect(admin.rows.find((row) => row.id === 'existing-slack-1')?.status).toBe('connected');
+    expect(admin.rows.find((row) => row.id === 'existing-slack-1')?.status).toBe('expired');
     expect(admin.rows.find((row) => row.id === 'existing-slack-2')?.status).toBe('duplicate-old');
   });
 
@@ -289,7 +294,11 @@ describe('evaOS live canary fixture provisioner', () => {
       { id: 'eq.snapshot-row-2' },
     ]);
     expect(admin.rows.map((row) => row.status)).toEqual(['connected', 'revoked']);
-    expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual(['eq.linear', 'eq.notion']);
+    expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual([
+      'eq.google_workspace',
+      'eq.linear',
+      'eq.notion',
+    ]);
   });
 
   it('fails closed on a stale snapshot id without overwriting a duplicate natural-key row', async () => {
