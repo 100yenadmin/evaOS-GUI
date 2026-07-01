@@ -282,7 +282,7 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(admin.deletes.map((deleted) => deleted.query.provider_key).toSorted()).toEqual(['eq.linear', 'eq.notion']);
   });
 
-  it('reinserts a missing snapshot row without overwriting a duplicate natural-key row', async () => {
+  it('fails closed on a stale snapshot id without overwriting a duplicate natural-key row', async () => {
     const admin = new FakeProviderAdmin([
       {
         id: 'duplicate-row',
@@ -292,25 +292,36 @@ describe('evaOS live canary fixture provisioner', () => {
       },
     ]);
 
-    await provisioner.restoreProviderProfileSnapshot(admin, {
-      id: 'missing-snapshot-row',
-      customer_id: 'golden',
-      provider_key: 'slack',
-      status: 'connected',
-    });
+    await expect(
+      provisioner.restoreProviderProfileSnapshot(admin, {
+        id: 'missing-snapshot-row',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'connected',
+      })
+    ).rejects.toThrow(/could not verify snapshot row missing-snapshot-row/);
 
     expect(admin.patches).toEqual([
       expect.objectContaining({
         query: { id: 'eq.missing-snapshot-row' },
       }),
     ]);
-    expect(admin.inserts.map((insert) => insert.body)).toEqual([
-      expect.objectContaining({
-        id: 'missing-snapshot-row',
-        status: 'connected',
-      }),
-    ]);
+    expect(admin.inserts).toEqual([]);
     expect(admin.rows.find((row) => row.id === 'duplicate-row')?.status).toBe('duplicate-original');
+  });
+
+  it('rejects natural-key provider fixture patches when the selected row id is missing', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        customer_id: 'golden',
+        provider_key: 'slack',
+        status: 'old',
+      },
+    ]);
+
+    await expect(provisioner.upsertProviderFixtureRows(admin, 'golden')).rejects.toThrow(
+      /slack provider fixture lookup did not return a row id/
+    );
   });
 
   it('rejects provider profile writes without customer and provider natural keys', async () => {

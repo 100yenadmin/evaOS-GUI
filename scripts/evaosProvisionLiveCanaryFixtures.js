@@ -383,8 +383,7 @@ async function restoreProviderProfileSnapshot(
       limit: 1,
     });
     if (rows[0]) return rows[0];
-    providerProfileLookup(row);
-    return admin.insert('customer_provider_profiles', row, { select, label });
+    throw new Error(`${label} restore could not verify snapshot row ${rowId}.`);
   }
   return writeProviderProfileRow(admin, row, { label });
 }
