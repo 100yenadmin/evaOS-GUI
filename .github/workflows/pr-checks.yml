@@ -69,6 +69,7 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
+        id: pr-context
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -193,6 +194,7 @@ jobs:
           persist-credentials: false
 
       - name: Resolve PR context
+        id: public-scan-context
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -211,6 +213,14 @@ jobs:
             BASE_REF="$PULL_REQUEST_BASE_REF"
           fi
           echo "PR_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted public scanner
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ steps.public-scan-context.outputs.base_ref }}
+          path: trusted-security-base
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -230,7 +240,16 @@ jobs:
         run: npm run postinstall || true
 
       - name: Run public sensitive content scan
-        run: node scripts/security/check-public-sensitive-content.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRUSTED_SCANNER="trusted-security-base/scripts/security/check-public-sensitive-content.js"
+          if [ -f "$TRUSTED_SCANNER" ]; then
+            node "$TRUSTED_SCANNER" "$PWD"
+          else
+            echo "::warning::Trusted public scanner is missing on ${PR_BASE_REF}; using PR scanner for bootstrap."
+            node scripts/security/check-public-sensitive-content.js "$PWD"
+          fi
 
       - name: Install prek
         run: npm install -g @j178/prek

@@ -22,13 +22,32 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Checkout trusted public scanner
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.base_ref }}
+          path: trusted-security-base
+          persist-credentials: false
+
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
 
       - name: Run repo-owned public scan
-        run: node scripts/security/check-public-sensitive-content.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRUSTED_SCANNER="trusted-security-base/scripts/security/check-public-sensitive-content.js"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -f "$TRUSTED_SCANNER" ]; then
+            node "$TRUSTED_SCANNER" "$PWD"
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "::warning::Trusted public scanner is missing on ${GITHUB_BASE_REF}; using PR scanner for bootstrap."
+            fi
+            node scripts/security/check-public-sensitive-content.js "$PWD"
+          fi
 
   gitleaks:
     name: Gitleaks Full History

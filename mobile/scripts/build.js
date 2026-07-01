@@ -39,6 +39,22 @@ function requireEnv(name, purpose) {
   return value;
 }
 
+const expoAppleId = process.env.EXPO_APPLE_ID || process.env.APPLE_ID || process.env.appleId;
+const expoAppleTeamId = process.env.EXPO_APPLE_TEAM_ID || process.env.TEAM_ID || process.env.teamId;
+
+if (!isLocal && directSubmit) {
+  console.error('Error: --direct-submit is only supported with --local builds.');
+  process.exit(1);
+}
+
+if (platform === 'ios' && (autoSubmit || directSubmit) && !expoAppleId) {
+  requireEnv('EXPO_APPLE_ID', 'iOS submission');
+}
+
+if (platform === 'ios' && autoSubmit && !expoAppleTeamId) {
+  requireEnv('EXPO_APPLE_TEAM_ID', 'EAS iOS submission');
+}
+
 // Read current version
 const versionPath = path.join(__dirname, '..', 'versions', 'version.json');
 let versionData;
@@ -66,11 +82,6 @@ try {
 const outputExt = platform === 'ios' ? '.ipa' : '.apk';
 const localOutputPath = path.join(projectRoot, `build-${Date.now()}${outputExt}`);
 let buildArgs = args.filter((a) => a !== '--auto-submit' && a !== '--direct-submit');
-
-if (!isLocal && directSubmit) {
-  console.error('Error: --direct-submit is only supported with --local builds.');
-  process.exit(1);
-}
 
 if (!isLocal && autoSubmit && !buildArgs.includes('--auto-submit-with-profile')) {
   buildArgs.push('--auto-submit-with-profile', profile);
@@ -103,10 +114,6 @@ if (isLocal && platform === 'ios') {
 // Build the eas command
 const easCommand = `eas build ${buildArgs.join(' ')}`;
 console.log(`\nRunning: ${easCommand}\n`);
-
-const expoAppleId = process.env.EXPO_APPLE_ID || process.env.APPLE_ID || process.env.appleId;
-const expoAppleTeamId =
-  process.env.EXPO_APPLE_TEAM_ID || process.env.TEAM_ID || process.env.teamId;
 const appleEnv = {};
 if (platform === 'ios') {
   if (expoAppleTeamId) {

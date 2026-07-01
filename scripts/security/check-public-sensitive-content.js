@@ -7,6 +7,7 @@
 
 const { execFileSync } = require('node:child_process');
 const { existsSync, readFileSync, statSync } = require('node:fs');
+const { resolve } = require('node:path');
 
 const MAX_TEXT_FILE_BYTES = 8 * 1024 * 1024;
 
@@ -24,14 +25,23 @@ function hasUnsafeLiteralAssignment(line, keys, valuePattern) {
     new RegExp(`(?:^\\s*|[{,]\\s*)["']?(?:${keyPattern})["']?\\s*:\\s*["']([^"']+)["']`, 'i')
   );
   const envAssignment = line.match(new RegExp(`(?:^|\\s)(?:${keyPattern})\\s*=\\s*["']?([^"'\\s]+)["']?`, 'i'));
-  const value = (jsonLikeAssignment?.[1] || envAssignment?.[1] || '').trim();
-  if (!value || value.startsWith('${') || value.startsWith('$')) {
-    return false;
-  }
-  if (/^(?:<|YOUR_|REPLACE_|example|test|fake|dummy)/i.test(value)) {
-    return false;
-  }
-  return valuePattern.test(value);
+  const fallbackAssignment = line.match(
+    new RegExp(`(?:${keyPattern})[^\\n]*(?:\\|\\||\\?\\?)\\s*["']([^"']+)["']`, 'i')
+  );
+  const values = [jsonLikeAssignment?.[1], envAssignment?.[1], fallbackAssignment?.[1]]
+    .map((value) => (value || '').trim())
+    .filter(Boolean);
+  return values.some((value) => {
+    if (
+      value.startsWith('${') ||
+      value.startsWith('$') ||
+      value.startsWith('process.env.') ||
+      /^(?:<|YOUR_|REPLACE_|example|test|fake|dummy)/i.test(value)
+    ) {
+      return false;
+    }
+    return valuePattern.test(value);
+  });
 }
 
 const CONTENT_RULES = [
@@ -47,7 +57,7 @@ const CONTENT_RULES = [
     test: (line) =>
       hasUnsafeLiteralAssignment(
         line,
-        ['appleTeamId', 'appleTeamID', 'EXPO_APPLE_TEAM_ID', 'APPLE_TEAM_ID'],
+        ['appleTeamId', 'appleTeamID', 'teamId', 'TEAM_ID', 'EXPO_APPLE_TEAM_ID', 'APPLE_TEAM_ID'],
         /^[A-Z0-9]{10}$/
       ),
   },
@@ -133,10 +143,24 @@ const ALLOWLIST = [
   {
     filePath: 'tests/unit/common/protocolDetector.test.ts',
     ruleIds: ['openai-api-key', 'google-api-key'],
+    patterns: [
+      exactLinePattern(["'sk-", "abc123def456ghi789jkl012'"]),
+      exactLinePattern(["'sk-proj-", "abc123def456ghi789jkl012'"]),
+      exactLinePattern(["'AIza' + 'a'.repeat(35)"]),
+    ],
   },
   {
     filePath: 'tests/unit/bootstrap/prepareEvaosDesktopBridgeResource.test.ts',
     ruleIds: ['test-fixture-secret', 'github-token-in-url'],
+    patterns: [
+      exactLinePattern(["EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN = 'super", '-secret', "-token'"]),
+      exactLinePattern([
+        'https://x-access-token:super',
+        '-secret',
+        '-token@github.com/electricsheephq/evaos-desktop-bridge.git failed',
+      ]),
+      exactLinePattern(["not.toContain('super", '-secret', "-token')"]),
+    ],
   },
 ];
 
@@ -243,7 +267,8 @@ function scanRepository({ cwd = process.cwd() } = {}) {
 }
 
 function runCli() {
-  const findings = scanRepository();
+  const cwd = process.argv[2] ? resolve(process.argv[2]) : process.cwd();
+  const findings = scanRepository({ cwd });
   if (findings.length === 0) {
     console.log('Public sensitive content check passed: no findings.');
     return;

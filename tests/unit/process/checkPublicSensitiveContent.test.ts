@@ -18,6 +18,7 @@ describe('check-public-sensitive-content', () => {
   const fakeAppleEmail = 'developer@example.com';
   const fakeAppleTeamId = 'AB12CD34EF';
   const fakeOpenAiKey = ['sk', 'abc123def456ghi789jkl012'].join('-');
+  const fakeDisallowedOpenAiKey = ['sk', 'realproviderkey1234567890'].join('-');
 
   it('flags public Apple account defaults without echoing the sensitive value', () => {
     const findings = scanner.scanText({
@@ -30,6 +31,26 @@ describe('check-public-sensitive-content', () => {
       'hardcoded-apple-team-id',
     ]);
     expect(findings.map((finding) => finding.line)).toEqual([2, 3]);
+    expect(JSON.stringify(findings)).not.toContain(fakeAppleEmail);
+    expect(JSON.stringify(findings)).not.toContain(fakeAppleTeamId);
+  });
+
+  it('flags public Apple aliases and fallback literals', () => {
+    const findings = scanner.scanText({
+      filePath: 'mobile/scripts/build.js',
+      text: [
+        `const appleId = process.env.APPLE_ID || '${fakeAppleEmail}';`,
+        `const teamId = process.env.TEAM_ID ?? '${fakeAppleTeamId}';`,
+        `TEAM_ID=${fakeAppleTeamId}`,
+      ].join('\n'),
+    });
+
+    expect(findings.map((finding) => finding.ruleId)).toEqual([
+      'hardcoded-apple-account-id',
+      'hardcoded-apple-team-id',
+      'hardcoded-apple-team-id',
+    ]);
+    expect(findings.map((finding) => finding.line)).toEqual([1, 2, 3]);
     expect(JSON.stringify(findings)).not.toContain(fakeAppleEmail);
     expect(JSON.stringify(findings)).not.toContain(fakeAppleTeamId);
   });
@@ -60,6 +81,18 @@ describe('check-public-sensitive-content', () => {
       scanner.scanText({
         filePath: 'packages/desktop/src/common/leak.ts',
         text: `export const apiKey = '${fakeOpenAiKey}';`,
+      })
+    ).toEqual([
+      expect.objectContaining({
+        line: 1,
+        ruleId: 'openai-api-key',
+      }),
+    ]);
+
+    expect(
+      scanner.scanText({
+        filePath: 'tests/unit/common/protocolDetector.test.ts',
+        text: `const accidentalRealKey = '${fakeDisallowedOpenAiKey}';`,
       })
     ).toEqual([
       expect.objectContaining({
