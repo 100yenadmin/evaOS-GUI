@@ -132,17 +132,22 @@ function summarizeProfile(raw, expectedCustomerAccountId) {
   const nested = asRecord(record.provider_profile) ?? asRecord(record.profile);
   if (nested) return summarizeProfile(nested, expectedCustomerAccountId);
 
-  const providerKey = safeText(record.provider_key ?? record.provider ?? record.key, 80);
+  const providerKey = safeText(record.provider_key ?? record.providerKey ?? record.provider ?? record.key, 80);
   const status = safeText(record.status, 80);
   const customerAccountId = safeText(record.customer_account_id ?? record.customerAccountId);
   const rawSecretsStoredInWorkbench =
     safeBoolean(
-      record.raw_secrets_stored_in_workbench ?? record.rawSecretsStoredInWorkbench ?? record.raw_secrets_present
+      record.raw_secrets_stored_in_workbench ??
+        record.rawSecretsStoredInWorkbench ??
+        record.raw_secrets_present ??
+        record.rawSecretsPresent
     ) ?? false;
   const approvalRequired =
     status === 'approval_required' || (safeBoolean(record.approval_required ?? record.approvalRequired) ?? false);
-  const hasBrokeredGrant = hasOpaqueHandle(record.grant_handle ?? record.handle);
+  const declaredBrokeredGrant = safeBoolean(record.has_brokered_grant ?? record.hasBrokeredGrant) ?? false;
+  const hasBrokeredGrant = hasOpaqueHandle(record.grant_handle ?? record.grantHandle ?? record.handle);
   const lastValidatedAt = safeText(record.last_validated_at ?? record.lastValidatedAt ?? record.validated_at);
+  const declaredConnectionProof = safeBoolean(record.has_connection_proof ?? record.hasConnectionProof) ?? false;
   const hasConnectionProof =
     status === 'connected' && !rawSecretsStoredInWorkbench && Boolean(lastValidatedAt || hasBrokeredGrant);
   const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
@@ -174,6 +179,8 @@ function summarizeProfile(raw, expectedCustomerAccountId) {
     customerAccountId,
     hasConnectionProof,
     hasBrokeredGrant,
+    declaredConnectionProof,
+    declaredBrokeredGrant,
     expiresAt: safeText(record.expires_at ?? record.expiresAt),
     lastValidatedAt,
     sourcePointer,

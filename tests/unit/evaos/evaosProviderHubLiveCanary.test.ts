@@ -98,6 +98,89 @@ describe('evaOS Provider Hub live canary', () => {
     expect(JSON.stringify(proof)).not.toMatch(/epg_|grant_handle|provider_grant|access_token|desktop_session|Bearer/i);
   });
 
+  it('accepts the normalized provider profile shape used by Workbench views', () => {
+    const proof = providerCanary.summarizeProviderHubResponse(
+      {
+        ...providerHub,
+        customerId: 'cus_123',
+        activeProviderKey: 'google_workspace',
+        sourcePointer: 'broker:provider_profiles:cus_123',
+        auditId: 'audit_provider_list',
+        provider_profiles: [
+          {
+            providerKey: 'google_workspace',
+            status: 'connected',
+            customerAccountId: 'acct_123',
+            hasConnectionProof: true,
+            hasBrokeredGrant: true,
+            lastValidatedAt: '2026-06-03T12:00:00.000Z',
+            sourcePointer: 'broker:provider_profile:google_workspace',
+            auditId: 'audit_google_workspace',
+          },
+          {
+            providerKey: 'slack',
+            status: 'needs_login',
+            customerAccountId: 'acct_123',
+            sourcePointer: 'broker:provider_profile:slack',
+            auditId: 'audit_slack',
+          },
+        ],
+      },
+      {
+        customerId: 'cus_123',
+        customerAccountId: 'acct_123',
+        requiredStates: ['connected', 'needs_login'],
+      }
+    );
+
+    expect(proof).toMatchObject({
+      schema: 'evaos-provider-hub-live-canary/v1',
+      activeProviderKey: 'google_workspace',
+      profileCount: 2,
+      statesPresent: ['connected', 'needs_login'],
+      profiles: [
+        {
+          providerKey: 'google_workspace',
+          hasConnectionProof: true,
+          hasBrokeredGrant: false,
+          declaredConnectionProof: true,
+          declaredBrokeredGrant: true,
+          lastValidatedAt: '2026-06-03T12:00:00.000Z',
+        },
+        {
+          providerKey: 'slack',
+        },
+      ],
+    });
+    expect(JSON.stringify(proof)).not.toMatch(/epg_|grantHandle|grant_handle/i);
+  });
+
+  it('does not accept bare normalized connection booleans as proof for connected providers', () => {
+    expect(() =>
+      providerCanary.summarizeProviderHubResponse(
+        {
+          ...providerHub,
+          provider_profiles: [
+            {
+              providerKey: 'google_workspace',
+              status: 'connected',
+              customerAccountId: 'acct_123',
+              hasConnectionProof: true,
+              hasBrokeredGrant: true,
+              sourcePointer: 'broker:provider_profile:google_workspace',
+              auditId: 'audit_google_workspace',
+            },
+          ],
+        },
+        {
+          customerId: 'cus_123',
+          customerAccountId: 'acct_123',
+          requiredStates: ['connected'],
+        }
+      )
+    ).toThrow(/did not include connection proof/);
+  });
+
   it('fails closed when required provider states are absent', () => {
     expect(() =>
       providerCanary.summarizeProviderHubResponse(
