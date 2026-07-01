@@ -750,6 +750,16 @@ async function provisionFixtures(options = loadOptions()) {
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
   const adminMembership = await loadAdminMembership(admin, adminProfile.id, customerAccount.id);
   const providerSnapshots = await snapshotProviderRows(admin, options.customerId);
+  // Preflight the stable admin subject before creating temporary users/sessions.
+  // The requester subject is freshly created below and is checked again before writes.
+  await assertProviderFixtureRowsWritable(
+    admin,
+    providerFixtureRows(
+      options.customerId,
+      providerFixtureScope(customerAccount.id, adminProfile.id),
+      options.ttlMinutes
+    )
+  );
   const requester = await createTemporaryRequester(admin, customerAccount.id);
   const denied = await createDeniedUser(admin);
   const adminSession = await createDesktopSession(admin, {
