@@ -6,6 +6,7 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
   assertNoUnsafeProofOutput: (value: unknown) => void;
   fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
   loadOptions: (env: Record<string, string>) => Record<string, unknown>;
+  providerFixtureSubjectsFromRows: (rows: ProviderRow[]) => string[];
   renderGithubEnvFile: (env: Record<string, string>) => string;
   sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   restoreProviderProfileSnapshot: (
@@ -249,6 +250,17 @@ describe('evaOS live canary fixture provisioner', () => {
     }
   });
 
+  it('derives the persisted provider fixture subject list exactly from written rows', () => {
+    expect(
+      provisioner.providerFixtureSubjectsFromRows([
+        { id: 'row-1', provider_subject_id: 'acct_account-one_profile_profile-one' },
+        { id: 'row-2', provider_subject_id: 'acct_account-one_profile_profile-one' },
+        { id: 'row-3', provider_subject_id: 'acct_account-one_profile_profile-two' },
+        { id: 'row-4' },
+      ])
+    ).toEqual(['acct_account-one_profile_profile-one', 'acct_account-one_profile_profile-two']);
+  });
+
   it('fails closed instead of truncating provider subject ids into collisions', async () => {
     const admin = new FakeProviderAdmin([]);
 
@@ -387,6 +399,97 @@ describe('evaOS live canary fixture provisioner', () => {
 
     expect(admin.patches.map((patch) => patch.query)).toContainEqual({ id: 'eq.snapshot-row-1' });
     expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual({ id: 'eq.fixture-row-1' });
+  });
+
+  it('deletes subject-scoped fixture rows without deleting restored snapshot subjects', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row-1',
+        customer_id: 'golden',
+        provider_key: 'slack',
+        provider_subject_id: 'legacy_customer',
+        status: 'fixture-1',
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [
+        {
+          providerKey: 'slack',
+          row: {
+            id: 'snapshot-row-1',
+            customer_id: 'golden',
+            provider_key: 'slack',
+            provider_subject_id: 'legacy_customer',
+            status: 'connected',
+          },
+        },
+      ],
+      providerFixtureRows: [
+        {
+          customer_id: 'golden',
+          provider_key: 'google_workspace',
+          provider_subject_id: 'acct_account_profile_requester',
+        },
+      ],
+      providerFixtureSubjects: ['acct_account_profile_requester', 'legacy_customer'],
+    });
+
+    expect(admin.deletes.map((deleted) => deleted.query)).toContainEqual({
+      customer_id: 'eq.golden',
+      provider_key: 'eq.google_workspace',
+      provider_subject_id: 'eq.acct_account_profile_requester',
+    });
+    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual({
+      customer_id: 'eq.golden',
+      provider_key: 'eq.slack',
+      provider_subject_id: 'eq.legacy_customer',
+    });
+  });
+
+  it('keeps restored snapshot rows out of id and subject cleanup passes', async () => {
+    const admin = new FakeProviderAdmin([
+      {
+        id: 'snapshot-row-1',
+        customer_id: 'golden',
+        provider_key: 'google_workspace',
+        provider_subject_id: 'acct_account_profile_requester',
+        status: 'fixture-1',
+      },
+    ]);
+
+    await provisioner.restoreProviderSnapshots(admin, {
+      customerId: 'golden',
+      providerSnapshots: [
+        {
+          providerKey: 'google_workspace',
+          row: {
+            id: 'snapshot-row-1',
+            customer_id: 'golden',
+            provider_key: 'google_workspace',
+            provider_subject_id: 'acct_account_profile_requester',
+            status: 'connected',
+          },
+        },
+      ],
+      providerFixtureRows: [
+        {
+          id: 'snapshot-row-1',
+          customer_id: 'golden',
+          provider_key: 'google_workspace',
+          provider_subject_id: 'acct_account_profile_requester',
+        },
+      ],
+      providerFixtureSubjects: ['acct_account_profile_requester'],
+    });
+
+    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual({ id: 'eq.snapshot-row-1' });
+    expect(admin.deletes.map((deleted) => deleted.query)).not.toContainEqual({
+      customer_id: 'eq.golden',
+      provider_key: 'eq.google_workspace',
+      provider_subject_id: 'eq.acct_account_profile_requester',
+    });
   });
 
   it('fails closed on a stale snapshot id without overwriting a duplicate natural-key row', async () => {

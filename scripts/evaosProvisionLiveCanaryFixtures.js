@@ -500,6 +500,12 @@ function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
   ];
 }
 
+function providerFixtureSubjectsFromRows(rows) {
+  return [
+    ...new Set((Array.isArray(rows) ? rows : []).map((row) => safeText(row?.provider_subject_id, 220)).filter(Boolean)),
+  ];
+}
+
 async function upsertProviderFixtureRows(
   admin,
   customerId,
@@ -766,9 +772,7 @@ async function provisionFixtures(options = loadOptions()) {
     },
     providerSnapshots,
     providerFixtureRows: writtenProviderFixtureRows,
-    providerFixtureSubjects: [
-      ...new Set(writtenProviderFixtureRows.map((row) => safeText(row?.provider_subject_id, 220)).filter(Boolean)),
-    ],
+    providerFixtureSubjects: providerFixtureSubjectsFromRows(writtenProviderFixtureRows),
     approval,
     companyBrain: {
       accountId: companyBrainAccountId,
@@ -806,7 +810,7 @@ async function restoreProviderSnapshots(admin, state) {
   const fixtureSubjects = new Set(
     [
       ...(Array.isArray(state.providerFixtureSubjects) ? state.providerFixtureSubjects : []),
-      ...fixtureRows.map((row) => row?.provider_subject_id),
+      ...providerFixtureSubjectsFromRows(fixtureRows),
     ]
       .map((subject) => safeText(subject, 220))
       .filter(Boolean)
@@ -948,6 +952,7 @@ module.exports = {
   loadOptions,
   provisionFixtures,
   providerProfileLookup,
+  providerFixtureSubjectsFromRows,
   renderGithubEnvFile,
   restoreProviderProfileSnapshot,
   restoreProviderSnapshots,
