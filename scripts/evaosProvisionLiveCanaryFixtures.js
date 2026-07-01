@@ -12,6 +12,7 @@ const DEFAULT_BUSINESS_BROWSER_TEST_URL = 'https://www.electricsheephq.com/dashb
 const DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS = 'www.electricsheephq.com';
 const DEFAULT_COMPANY_BRAIN_QUERY = 'What changed recently for this account?';
 const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
+const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -32,6 +33,23 @@ function token(prefix = 'eds') {
 
 function sha256Hex(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function externalUserIdForCustomerProfile(customerAccountId, profileId) {
+  const account = String(customerAccountId || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '-');
+  const profile = String(profileId || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '-');
+  if (!account || !profile) {
+    throw new Error('Could not derive a valid provider subject id.');
+  }
+  const externalUserId = `acct_${account}_profile_${profile}`;
+  if (externalUserId.length > 200) {
+    throw new Error('Provider subject id is too long for the live canary fixture.');
+  }
+  return externalUserId;
 }
 
 function isoAfter(minutes) {
@@ -341,24 +359,36 @@ async function snapshotProviderRows(admin, customerId) {
 function providerProfileLookup(row) {
   const customerId = safeText(row?.customer_id, 160);
   const providerKey = safeText(row?.provider_key, 80);
+  const providerSubjectId = safeText(row?.provider_subject_id, 220);
   if (!customerId || !providerKey) {
     throw new Error('Provider profile row requires customer_id and provider_key.');
   }
-  return {
+  const lookup = {
     customer_id: `eq.${customerId}`,
     provider_key: `eq.${providerKey}`,
   };
+  if (providerSubjectId) lookup.provider_subject_id = `eq.${providerSubjectId}`;
+  return lookup;
+}
+
+function isAcceptanceFixtureRow(row) {
+  const metadata = asRecord(row?.metadata);
+  return metadata?.source === FIXTURE_PROVIDER_METADATA_SOURCE && metadata?.acceptance_fixture === true;
 }
 
 async function writeProviderProfileRow(
   admin,
   row,
-  { select = 'customer_id,provider_key,status', label = 'provider profile' } = {}
+  { select = 'customer_id,provider_key,status', label = 'provider profile', allowNonFixturePatch = false } = {}
 ) {
   const lookup = providerProfileLookup(row);
-  const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id', limit: 1 });
+  const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id,metadata', limit: 20 });
   if (existing.length > 0) {
-    const selectedId = safeText(existing[0]?.id, 160);
+    const selected = existing.find(isAcceptanceFixtureRow) ?? (allowNonFixturePatch ? existing[0] : undefined);
+    if (!selected) {
+      throw new Error(`${label} found an existing non-fixture provider row; refusing to overwrite it.`);
+    }
+    const selectedId = safeText(selected?.id, 160);
     if (!selectedId) throw new Error(`${label} lookup did not return a row id.`);
     const selectedLookup = { id: `eq.${selectedId}` };
     await admin.patch('customer_provider_profiles', selectedLookup, row);
@@ -367,6 +397,17 @@ async function writeProviderProfileRow(
     return rows[0];
   }
   return admin.insert('customer_provider_profiles', row, { select, label });
+}
+
+async function assertProviderFixtureRowsWritable(admin, rows) {
+  for (const row of rows) {
+    const lookup = providerProfileLookup(row);
+    const existing = await admin.select('customer_provider_profiles', { ...lookup, select: 'id,metadata', limit: 20 });
+    if (existing.length === 0 || existing.some(isAcceptanceFixtureRow)) continue;
+    throw new Error(
+      `${row.provider_key} provider fixture found an existing non-fixture provider row; refusing to overwrite it.`
+    );
+  }
 }
 
 async function restoreProviderProfileSnapshot(
@@ -385,14 +426,24 @@ async function restoreProviderProfileSnapshot(
     if (rows[0]) return rows[0];
     throw new Error(`${label} restore could not verify snapshot row ${rowId}.`);
   }
-  return writeProviderProfileRow(admin, row, { label });
+  return writeProviderProfileRow(admin, row, { label, allowNonFixturePatch: true });
 }
 
-async function upsertProviderFixtureRows(admin, customerId) {
+function providerFixtureScope(customerAccountId, profileId) {
+  if (!customerAccountId || !profileId) return {};
+  return {
+    provider_subject_id: externalUserIdForCustomerProfile(customerAccountId, profileId),
+    customer_account_id: customerAccountId,
+  };
+}
+
+function providerFixtureRows(customerId, scope = {}, ttlMinutes = 180) {
   const now = new Date().toISOString();
-  const rows = [
+  const connectedExpiresAt = isoAfter(ttlMinutes);
+  return [
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'google_workspace',
       display_name: 'Google Workspace',
       status: 'connected',
@@ -401,17 +452,19 @@ async function upsertProviderFixtureRows(admin, customerId) {
       usage_metadata: {},
       capabilities: ['Mail', 'Calendar', 'Drive'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         identity: 'google-workspace-aionui-fixture@100yen.org',
         scopes: ['gmail.readonly'],
         server_secret_ref: `provider://acceptance-fixture/${customerId}/google_workspace`,
+        expires_at: connectedExpiresAt,
         raw_provider_token_stored: false,
       },
       last_validated_at: now,
     },
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'slack',
       display_name: 'Slack',
       status: 'expired',
@@ -420,7 +473,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
       usage_metadata: {},
       capabilities: ['Channels', 'Messages'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         identity: 'slack-aionui-fixture@100yen.org',
         scopes: ['channels:read'],
@@ -432,6 +485,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
     },
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'linear',
       display_name: 'Linear',
       status: 'revoked',
@@ -440,7 +494,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
       usage_metadata: {},
       capabilities: ['Issues', 'Project status'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         raw_provider_token_stored: false,
       },
@@ -448,6 +502,7 @@ async function upsertProviderFixtureRows(admin, customerId) {
     },
     {
       customer_id: customerId,
+      ...scope,
       provider_key: 'notion',
       display_name: 'Notion',
       status: 'needs_login',
@@ -456,20 +511,64 @@ async function upsertProviderFixtureRows(admin, customerId) {
       usage_metadata: {},
       capabilities: ['Pages', 'Databases'],
       metadata: {
-        source: 'aionui_live_canary_fixture',
+        source: FIXTURE_PROVIDER_METADATA_SOURCE,
         acceptance_fixture: true,
         raw_provider_token_stored: false,
       },
       last_validated_at: null,
     },
   ];
+}
 
-  for (const row of rows) {
-    await writeProviderProfileRow(admin, row, {
-      select: 'customer_id,provider_key,status',
+function providerFixtureSubjectsFromRows(rows) {
+  return [
+    ...new Set((Array.isArray(rows) ? rows : []).map((row) => safeText(row?.provider_subject_id, 220)).filter(Boolean)),
+  ];
+}
+
+function assertUniqueProviderFixtureSubjects(scopes) {
+  const seen = new Set();
+  for (const scope of scopes) {
+    const subject = safeText(scope?.provider_subject_id, 220);
+    if (!subject) continue;
+    if (seen.has(subject)) {
+      throw new Error(`Provider subject id collision for live canary fixture subject ${subject}.`);
+    }
+    seen.add(subject);
+  }
+}
+
+function acceptanceFixtureDeleteQuery(query) {
+  return {
+    ...query,
+    'metadata->>source': `eq.${FIXTURE_PROVIDER_METADATA_SOURCE}`,
+    'metadata->>acceptance_fixture': 'eq.true',
+  };
+}
+
+async function upsertProviderFixtureRows(
+  admin,
+  customerId,
+  { customerAccountId, profileIds = [], ttlMinutes = 180 } = {}
+) {
+  const profileList = Array.isArray(profileIds) ? [...new Set(profileIds.filter(Boolean))] : [];
+  const scopes =
+    customerAccountId && profileList.length > 0
+      ? profileList.map((profileId) => providerFixtureScope(customerAccountId, profileId))
+      : [{}];
+  assertUniqueProviderFixtureSubjects(scopes);
+  const rowsToWrite = scopes.flatMap((scope) => providerFixtureRows(customerId, scope, ttlMinutes));
+  const writtenRows = [];
+
+  await assertProviderFixtureRowsWritable(admin, rowsToWrite);
+  for (const row of rowsToWrite) {
+    const written = await writeProviderProfileRow(admin, row, {
+      select: 'id,customer_id,provider_key,provider_subject_id,status',
       label: `${row.provider_key} provider fixture`,
     });
+    writtenRows.push(written);
   }
+  return writtenRows;
 }
 
 async function createApprovalRequest(endpoint, requesterSession, customerId, providerKey) {
@@ -651,6 +750,16 @@ async function provisionFixtures(options = loadOptions()) {
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
   const adminMembership = await loadAdminMembership(admin, adminProfile.id, customerAccount.id);
   const providerSnapshots = await snapshotProviderRows(admin, options.customerId);
+  // Preflight the stable admin subject before creating temporary users/sessions.
+  // The requester subject is freshly created below and is checked again before writes.
+  await assertProviderFixtureRowsWritable(
+    admin,
+    providerFixtureRows(
+      options.customerId,
+      providerFixtureScope(customerAccount.id, adminProfile.id),
+      options.ttlMinutes
+    )
+  );
   const requester = await createTemporaryRequester(admin, customerAccount.id);
   const denied = await createDeniedUser(admin);
   const adminSession = await createDesktopSession(admin, {
@@ -672,7 +781,13 @@ async function provisionFixtures(options = loadOptions()) {
     ttlMinutes: options.ttlMinutes,
   });
 
-  await upsertProviderFixtureRows(admin, options.customerId);
+  const writtenProviderFixtureRows = await upsertProviderFixtureRows(admin, options.customerId, {
+    customerAccountId: customerAccount.id,
+    // The broker checks both the active admin session and the requester
+    // approval session, so the canary seeds provider rows for both subjects.
+    profileIds: [adminProfile.id, requester.userId],
+    ttlMinutes: options.ttlMinutes,
+  });
   const approval = await createApprovalRequest(
     options.brokerEndpoint,
     requesterSession.raw,
@@ -709,6 +824,8 @@ async function provisionFixtures(options = loadOptions()) {
       denied: deniedSession,
     },
     providerSnapshots,
+    providerFixtureRows: writtenProviderFixtureRows,
+    providerFixtureSubjects: providerFixtureSubjectsFromRows(writtenProviderFixtureRows),
     approval,
     companyBrain: {
       accountId: companyBrainAccountId,
@@ -741,6 +858,25 @@ async function provisionFixtures(options = loadOptions()) {
 
 async function restoreProviderSnapshots(admin, state) {
   const snapshots = Array.isArray(state.providerSnapshots) ? state.providerSnapshots : [];
+  const snapshotIds = new Set(snapshots.map((entry) => safeText(entry?.row?.id, 160)).filter(Boolean));
+  const fixtureRows = Array.isArray(state.providerFixtureRows) ? state.providerFixtureRows : [];
+  const fixtureSubjects = new Set(
+    [
+      ...(Array.isArray(state.providerFixtureSubjects) ? state.providerFixtureSubjects : []),
+      ...providerFixtureSubjectsFromRows(fixtureRows),
+    ]
+      .map((subject) => safeText(subject, 220))
+      .filter(Boolean)
+  );
+  const snapshotSubjectKeys = new Set(
+    snapshots
+      .map((entry) => {
+        const providerKey = safeText(entry?.providerKey ?? entry?.row?.provider_key, 80);
+        const subject = safeText(entry?.row?.provider_subject_id, 220);
+        return providerKey && subject ? `${providerKey}\0${subject}` : undefined;
+      })
+      .filter(Boolean)
+  );
   const snapshotsByKey = new Map();
   for (const entry of snapshots) {
     if (!snapshotsByKey.has(entry.providerKey)) snapshotsByKey.set(entry.providerKey, []);
@@ -755,11 +891,45 @@ async function restoreProviderSnapshots(admin, state) {
           label: `${providerKey} provider snapshot restore`,
         });
       }
-    } else {
-      await admin.deleteRows('customer_provider_profiles', {
+    }
+  }
+  for (const row of fixtureRows) {
+    const rowId = safeText(row?.id, 160);
+    if (!rowId || snapshotIds.has(rowId)) continue;
+    await admin.deleteRows('customer_provider_profiles', acceptanceFixtureDeleteQuery({ id: `eq.${rowId}` }));
+  }
+  for (const subject of fixtureSubjects) {
+    for (const providerKey of FIXTURE_PROVIDER_KEYS) {
+      if (snapshotSubjectKeys.has(`${providerKey}\0${subject}`)) continue;
+      await admin.deleteRows(
+        'customer_provider_profiles',
+        acceptanceFixtureDeleteQuery({
+          customer_id: `eq.${state.customerId}`,
+          provider_key: `eq.${providerKey}`,
+          provider_subject_id: `eq.${subject}`,
+        })
+      );
+    }
+  }
+  if (fixtureSubjects.size === 0) {
+    // Final marker-only sweep catches legacy state files that persisted neither
+    // row ids nor provider_subject_id. It is intentionally limited to old
+    // null-subject rows so it cannot delete fixture rows from another scoped
+    // canary run. Rows that lost the marker are preserved deliberately; guessing
+    // at those would risk deleting real provider state.
+    for (const providerKey of FIXTURE_PROVIDER_KEYS) {
+      const preservedSnapshotIds = (snapshotsByKey.get(providerKey) ?? [])
+        .map((row) => safeText(row?.id, 160))
+        .filter(Boolean);
+      const query = acceptanceFixtureDeleteQuery({
         customer_id: `eq.${state.customerId}`,
         provider_key: `eq.${providerKey}`,
+        provider_subject_id: 'is.null',
       });
+      if (preservedSnapshotIds.length > 0) {
+        query.id = `not.in.(${preservedSnapshotIds.join(',')})`;
+      }
+      await admin.deleteRows('customer_provider_profiles', query);
     }
   }
 }
@@ -854,6 +1024,7 @@ module.exports = {
   loadOptions,
   provisionFixtures,
   providerProfileLookup,
+  providerFixtureSubjectsFromRows,
   renderGithubEnvFile,
   restoreProviderProfileSnapshot,
   restoreProviderSnapshots,
