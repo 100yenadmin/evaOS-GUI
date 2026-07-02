@@ -24,6 +24,30 @@ const SECRET_OUTPUT_PATTERNS = [
   /\bgrant[_-]?handle\b/i,
   /\brevoke[_-]?handle\b/i,
 ];
+const SAFE_DIAGNOSTIC_KEYS = new Set([
+  'active',
+  'approvalRequired',
+  'approval_required',
+  'auditId',
+  'audit_id',
+  'customerAccountId',
+  'customer_account_id',
+  'expiresAt',
+  'expires_at',
+  'is_active',
+  'lastValidatedAt',
+  'last_validated_at',
+  'profile',
+  'provider',
+  'providerKey',
+  'provider_key',
+  'provider_profile',
+  'sourcePointer',
+  'source_pointer',
+  'state',
+  'status',
+  'validated_at',
+]);
 
 function safeText(value, maxLength = 220) {
   return typeof value === 'string' && value.trim() && value.trim().length <= maxLength ? value.trim() : undefined;
@@ -31,6 +55,27 @@ function safeText(value, maxLength = 220) {
 
 function asRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
+}
+
+function diagnosticKeyList(value) {
+  const record = asRecord(value);
+  if (!record) return [];
+  return Object.keys(record)
+    .filter((key) => /^[A-Za-z0-9_.-]{1,80}$/.test(key))
+    .filter((key) => SAFE_DIAGNOSTIC_KEYS.has(key))
+    .sort()
+    .slice(0, 24);
+}
+
+function providerProfileShape(raw) {
+  const record = asRecord(raw);
+  if (!record) {
+    return `type=${Array.isArray(raw) ? 'array' : typeof raw}`;
+  }
+  const rootKeys = diagnosticKeyList(record);
+  const nested = asRecord(record.provider_profile) ?? asRecord(record.profile);
+  const nestedKeys = nested ? diagnosticKeyList(nested) : [];
+  return `rootKeys=[${rootKeys.join(',') || 'none'}], nestedKeys=[${nestedKeys.join(',') || 'none'}]`;
 }
 
 function recordFromEnvelope(raw) {
@@ -188,6 +233,15 @@ function summarizeProfile(raw, expectedCustomerAccountId) {
   };
 }
 
+function summarizeProfileAt(raw, expectedCustomerAccountId, index) {
+  try {
+    return summarizeProfile(raw, expectedCustomerAccountId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Provider profile at index ${index} failed validation: ${message} (${providerProfileShape(raw)}).`);
+  }
+}
+
 function summarizeProviderHubResponse(raw, request) {
   const record = recordFromEnvelope(raw);
   const customerId = safeText(record.customer_id ?? record.customerId);
@@ -203,7 +257,9 @@ function summarizeProviderHubResponse(raw, request) {
     throw new Error('Provider Hub response did not include source pointer and audit proof.');
   }
 
-  const profiles = profileList(record).map((profile) => summarizeProfile(profile, request.customerAccountId));
+  const profiles = profileList(record).map((profile, index) =>
+    summarizeProfileAt(profile, request.customerAccountId, index)
+  );
   const statesPresent = [...new Set(profiles.map((profile) => profile.status))].sort();
   const missingStates = request.requiredStates.filter((state) => !statesPresent.includes(state));
   if (missingStates.length > 0) {

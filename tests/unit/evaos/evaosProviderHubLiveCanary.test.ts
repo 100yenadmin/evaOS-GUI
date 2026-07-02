@@ -181,6 +181,43 @@ describe('evaOS Provider Hub live canary', () => {
     ).toThrow(/did not include connection proof/);
   });
 
+  it('reports malformed provider profile shapes without exposing sensitive keys or values', () => {
+    let message = '';
+    try {
+      providerCanary.summarizeProviderHubResponse(
+        {
+          ...providerHub,
+          provider_profiles: [
+            {
+              state: 'connected',
+              provider_grant: 'epg_secret_grant_value_for_test',
+              access_token: 'eds_secret_desktop_session_for_test',
+              api_key: 'api_key_secret_value_for_test',
+              provider_profile: {
+                state: 'connected',
+                refresh_token: 'eyJsecret.header.payload',
+                private_key: 'private_key_secret_value_for_test',
+              },
+            },
+          ],
+        },
+        {
+          customerId: 'cus_123',
+          customerAccountId: 'acct_123',
+          requiredStates: ['connected'],
+        }
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain('Provider profile at index 0 failed validation');
+    expect(message).toContain('rootKeys=[');
+    expect(message).toContain('nestedKeys=[');
+    expect(message).toContain('state');
+    expect(message).not.toMatch(/provider_grant|access_token|api_key|refresh_token|private_key|epg_|eds_|eyJ/i);
+  });
+
   it('fails closed when required provider states are absent', () => {
     expect(() =>
       providerCanary.summarizeProviderHubResponse(
