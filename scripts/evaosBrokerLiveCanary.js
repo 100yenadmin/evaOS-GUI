@@ -216,7 +216,7 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
   const runtime = safeText(record.runtime_key ?? record.runtimeKey ?? record.runtime);
   const status = safeText(record.status);
   const launchMode = safeText(record.launch_mode ?? record.launchMode) ?? 'dashboard_surface';
-  const launchUrl = safeText(record.launch_url ?? record.runtime_launch_url ?? record.url);
+  const launchTargetPresent = Boolean(record.launch_url || record.runtime_launch_url || record.url);
   const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
   const auditId = safeText(record.audit_id ?? record.auditId);
 
@@ -255,7 +255,7 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
       assertNoDeniedNestedRuntimeState(nested, key);
     }
   }
-  if (!launchUrl) {
+  if (!launchTargetPresent) {
     throw new Error('Broker launch canary response did not include a runtime launch target.');
   }
   if (!sourcePointer || !auditId) {
