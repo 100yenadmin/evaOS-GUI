@@ -184,6 +184,39 @@ describe('evaOS Provider Hub live canary', () => {
     });
   });
 
+  it('ignores unsupported provider rows while requiring known fixture states', () => {
+    const proof = providerCanary.summarizeProviderHubResponse(
+      {
+        ...providerHub,
+        provider_profiles: [
+          {
+            provider_key: 'unsupported_provider_for_test',
+            status: 'connected',
+            active: true,
+            source_pointer: 'broker:provider_profile:unsupported',
+            audit_id: 'audit_unsupported_123',
+            last_validated_at: '2026-06-03T12:00:00.000Z',
+          },
+          providerProfile('google_workspace', 'connected'),
+          providerProfile('slack', 'expired'),
+        ],
+      },
+      {
+        customerId: 'cus_123',
+        customerAccountId: 'acct_123',
+        requiredStates: ['connected', 'expired'],
+      }
+    );
+
+    expect(proof).toMatchObject({
+      profileCount: 2,
+      ignoredUnsupportedProfileCount: 1,
+      statesPresent: ['connected', 'expired'],
+      profiles: [{ providerKey: 'google_workspace' }, { providerKey: 'slack' }],
+    });
+    expect(JSON.stringify(proof)).not.toMatch(/unsupported_provider_for_test|audit_unsupported_123/i);
+  });
+
   it('does not accept bare normalized connection booleans as proof for connected providers', () => {
     expect(() =>
       providerCanary.summarizeProviderHubResponse(
