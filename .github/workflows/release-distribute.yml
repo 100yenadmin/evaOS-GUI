@@ -25,6 +25,11 @@ on:
         description: 'Successful evaOS Live Canary Proof workflow run id for the same release commit, with broker live canaries enabled.'
         required: true
         type: string
+      live_canary_expected_customer_id:
+        description: 'Expected broker-surface canary customer id. This is intentionally separate from the Mac-control release canary target.'
+        required: false
+        default: ''
+        type: string
       trusted_manifest_run_id:
         description: 'Optional workflow run id that uploaded the trusted release manifest artifact. Required for local-signed-dmg-fallback releases.'
         required: false
@@ -304,7 +309,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LIVE_CANARY_PROOF_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
-          EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID || vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID }}
+          EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID: ${{ github.event.inputs.live_canary_expected_customer_id || vars.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID || vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID || vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID }}
           EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID }}
           EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24'
         run: |

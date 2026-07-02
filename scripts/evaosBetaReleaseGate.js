@@ -601,6 +601,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     issues
   );
   requireText(distribute, 'live_canary_proof_run_id', '.github/workflows/release-distribute.yml', issues);
+  requireText(
+    distribute,
+    'live_canary_expected_customer_id',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'broker live canary customer override input'
+  );
   requireText(distribute, 'evaOS Live Canary Proof', '.github/workflows/release-distribute.yml', issues);
   requireText(distribute, '.github/workflows/evaos-live-canary-proof.yml', '.github/workflows/release-distribute.yml', issues);
   requireText(
@@ -630,6 +637,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/release-distribute.yml',
     issues,
     'live canary expected customer binding'
+  );
+  requireText(
+    distribute,
+    'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'broker live canary customer variable binding'
   );
   requireText(
     distribute,
