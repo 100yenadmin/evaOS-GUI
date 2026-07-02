@@ -1011,6 +1011,9 @@ export class EvaosBrokerSessionClient {
     }
 
     if (!response.ok) {
+      if (response.status === 401 && session) {
+        this.clearRejectedSession(session);
+      }
       const message = await brokerHttpMessageFromResponse(response);
       throw new EvaosBrokerSessionError('broker_http_error', message, response.status);
     }
