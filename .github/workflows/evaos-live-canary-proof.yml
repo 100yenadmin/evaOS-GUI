@@ -26,6 +26,11 @@ on:
         required: false
         default: ''
         type: string
+      customer_id:
+        description: 'Optional explicit customer id for broker/runtime live proof. Leave empty to use configured staging defaults.'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -54,7 +59,7 @@ jobs:
       AIONUI_EVAOS_RELEASE_CANARY_RUNTIME_OWNER: ${{ vars.AIONUI_EVAOS_RELEASE_CANARY_RUNTIME_OWNER }}
       AIONUI_EVAOS_BROKER_ENDPOINT: ${{ vars.AIONUI_EVAOS_BROKER_ENDPOINT || secrets.AIONUI_EVAOS_BROKER_ENDPOINT }}
       AIONUI_EVAOS_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_DESKTOP_SESSION }}
-      AIONUI_EVAOS_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID }}
+      AIONUI_EVAOS_CUSTOMER_ID: ${{ github.event.inputs.customer_id || vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID }}
       AIONUI_EVAOS_RUNTIME: ${{ github.event.inputs.runtime || vars.AIONUI_EVAOS_RUNTIME }}
       AIONUI_EVAOS_BROKER_RUNTIME: ${{ github.event.inputs.runtime }}
       AIONUI_EVAOS_APPROVAL_ID: ${{ vars.AIONUI_EVAOS_APPROVAL_ID || secrets.AIONUI_EVAOS_APPROVAL_ID }}
