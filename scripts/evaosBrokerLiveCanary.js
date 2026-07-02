@@ -295,17 +295,25 @@ async function runBrokerLiveCanary(options = {}) {
   }
 
   const surfaces = [];
+  const failures = [];
   for (const surface of requestedBrokerSurfaces(env)) {
-    surfaces.push(
-      await runBrokerSurfaceCanary({
-        env,
-        fetchImpl,
-        endpoint,
-        desktopSession,
-        customerId,
-        surface,
-      })
-    );
+    try {
+      surfaces.push(
+        await runBrokerSurfaceCanary({
+          env,
+          fetchImpl,
+          endpoint,
+          desktopSession,
+          customerId,
+          surface,
+        })
+      );
+    } catch (error) {
+      failures.push(`${surface.surface}/${surface.runtime}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Broker live canary failed for ${failures.length} surface(s): ${failures.join('; ')}`);
   }
 
   return {

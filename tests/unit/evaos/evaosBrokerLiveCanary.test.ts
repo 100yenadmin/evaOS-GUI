@@ -228,6 +228,43 @@ describe('evaOS broker live canary', () => {
     });
   });
 
+  it('aggregates multi-surface failures instead of stopping at the first broken surface', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    for (const surface of liveCanary.REQUIRED_BROKER_SURFACES) {
+      fetchImpl.mockResolvedValueOnce(
+        jsonResponse({
+          customer_id: 'cus_123',
+          runtime_key: surface.runtime,
+          status: 'running',
+          audit_id: `audit_status_${surface.surface}`,
+        })
+      );
+      fetchImpl.mockResolvedValueOnce(
+        jsonResponse({
+          customer_id: 'cus_123',
+          runtime_key: surface.runtime,
+          status: ['hermes', 'terminal'].includes(surface.surface) ? 'blocked' : 'attached',
+          launch_mode: 'dashboard_surface',
+          launch_url: `https://runtime.example.test/${surface.surface}/auth/callback`,
+          source_pointer: `broker:runtime_launch:${surface.runtime}`,
+          audit_id: `audit_launch_${surface.surface}`,
+        })
+      );
+    }
+
+    await expect(
+      liveCanary.runBrokerLiveCanary({
+        env: {
+          AIONUI_EVAOS_DESKTOP_SESSION: 'eds_valid_session_for_test',
+          AIONUI_EVAOS_CUSTOMER_ID: 'cus_123',
+          AIONUI_EVAOS_BROKER_ENDPOINT: 'https://broker.example.test/runtime',
+        },
+        fetchImpl,
+      })
+    ).rejects.toThrow(/hermes\/hermes.*terminal\/terminal/s);
+    expect(fetchImpl.mock.calls.length).toBeGreaterThan(liveCanary.REQUIRED_BROKER_SURFACES.length);
+  });
+
   it('fails closed when runtime_launch returns a denied broker surface response', () => {
     expect(() =>
       liveCanary.sanitizeBrokerRuntimeLaunchCanaryResponse(
