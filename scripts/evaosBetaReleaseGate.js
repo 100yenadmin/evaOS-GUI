@@ -80,6 +80,7 @@ const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
 ];
 const RELEASE_MANIFEST_NAME = 'evaos-beta-release-manifest.json';
 const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
+const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
 const RELEASE_PROVENANCE_GITHUB_WORKFLOW = 'github-release-workflow';
 const RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK = 'local-signed-dmg-fallback';
@@ -169,6 +170,23 @@ const REQUIRED_RC_PROOF_CHECKS = [
   },
 ];
 const RC_RELEASE_ASSETS_REFERENCE_NAME = 'release-assets-reference.json';
+const REQUIRED_BROKER_LIVE_CANARY_SURFACES = Object.freeze([
+  Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
+  Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
+  Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
+  Object.freeze({ surface: 'business-browser', runtime: 'browser' }),
+  Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
+]);
+const LIVE_CANARY_SECRET_FIELD_PATTERN =
+  /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|launch[_-]?url|runtime[_-]?launch[_-]?url)$/i;
+const LIVE_CANARY_SECRET_VALUE_PATTERNS = [
+  /https?:\/\//i,
+  /\beds_[A-Za-z0-9_-]{8,}\b/,
+  /\bepg_[A-Za-z0-9_-]{8,}\b/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/,
+  /\bBearer\s+[A-Za-z0-9._-]{8,}\b/i,
+  /[?&#](?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|api[_-]?key|service[_-]?role|token|secret|password|credential)=/i,
+];
 
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
@@ -579,6 +597,29 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(
     distribute,
     'scripts/evaosBetaReleaseGate.js verify-rc-proof',
+    '.github/workflows/release-distribute.yml',
+    issues
+  );
+  requireText(distribute, 'live_canary_proof_run_id', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, 'evaOS Live Canary Proof', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, 'headSha', '.github/workflows/release-distribute.yml', issues, 'live canary head SHA binding');
+  requireText(
+    distribute,
+    'broker-runtime-status.json',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'live broker-surface proof artifact'
+  );
+  requireText(
+    distribute,
+    'business-browser.json',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'Business Browser live proof artifact'
+  );
+  requireText(
+    distribute,
+    'scripts/evaosBetaReleaseGate.js verify-live-canary-proof',
     '.github/workflows/release-distribute.yml',
     issues
   );
@@ -1390,6 +1431,116 @@ function assertConcreteBlockedReason(reason, label) {
   }
 }
 
+function assertLiveCanaryNoSecretMaterial(value, label = '$', seen = new WeakSet()) {
+  if (typeof value === 'string') {
+    if (LIVE_CANARY_SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
+      throw new Error(`Live broker canary proof contains secret material at ${label}.`);
+    }
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertLiveCanaryNoSecretMaterial(child, `${label}[${index}]`, seen));
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (LIVE_CANARY_SECRET_FIELD_PATTERN.test(key)) {
+      if (key === 'secretScan' && child === 'passed') {
+        continue;
+      }
+      if (key === 'launchUrlRedacted' && child === true) {
+        continue;
+      }
+      throw new Error(`Live broker canary proof contains secret material field at ${label}.${key}.`);
+    }
+    assertLiveCanaryNoSecretMaterial(child, `${label}.${key}`, seen);
+  }
+}
+
+function assertLiveCanarySafeText(value, label) {
+  const text = String(value || '').trim();
+  if (!text) {
+    throw new Error(`Live broker canary proof is missing ${label}.`);
+  }
+  assertLiveCanaryNoSecretMaterial(text, label);
+  return text;
+}
+
+function assertLiveCanaryNotDenied(value, label) {
+  const text = String(value || '').toLowerCase();
+  if (
+    /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/.test(
+      text
+    )
+  ) {
+    throw new Error(`Live broker canary proof has denied status for ${label}.`);
+  }
+}
+
+function verifyBrokerLiveCanaryProof(proofDir) {
+  const proofPath = requireExistingRelativeFile(proofDir, BROKER_LIVE_CANARY_PROOF_NAME, 'Live broker canary proof');
+  const proof = readManifestFile(proofPath);
+
+  assertLiveCanaryNoSecretMaterial(proof);
+  if (proof.schema !== 'evaos-broker-live-canary/v3') {
+    throw new Error(`Unexpected live broker canary schema: ${proof.schema}`);
+  }
+  assertLiveCanarySafeText(proof.customerId, 'customerId');
+  if (proof.secretScan !== 'passed') {
+    throw new Error('Live broker canary proof must pass secret scanning.');
+  }
+  if (!Array.isArray(proof.surfaces)) {
+    throw new Error('Live broker canary proof must include surfaces.');
+  }
+
+  const surfaces = new Map(proof.surfaces.map((surface) => [surface?.surface, surface]));
+  for (const required of REQUIRED_BROKER_LIVE_CANARY_SURFACES) {
+    const surface = surfaces.get(required.surface);
+    if (!surface) {
+      throw new Error(`Live broker canary proof is missing required surface: ${required.surface}`);
+    }
+    if (surface.runtime !== required.runtime) {
+      throw new Error(
+        `Live broker canary surface ${required.surface} must use runtime ${required.runtime}, got ${surface.runtime || 'missing'}.`
+      );
+    }
+    assertLiveCanaryNotDenied(surface.status, required.surface);
+    assertLiveCanarySafeText(surface.sourcePointer, `${required.surface}.sourcePointer`);
+    assertLiveCanarySafeText(surface.auditId, `${required.surface}.auditId`);
+    if (surface.secretScan !== 'passed') {
+      throw new Error(`Live broker canary surface ${required.surface} must pass secret scanning.`);
+    }
+
+    const launch = surface.launch;
+    if (!launch || typeof launch !== 'object' || Array.isArray(launch)) {
+      throw new Error(`Live broker canary surface ${required.surface} is missing launch proof.`);
+    }
+    assertLiveCanaryNotDenied(launch.status, `${required.surface}.launch`);
+    if (launch.launchMode !== 'dashboard_surface') {
+      throw new Error(`Live broker canary surface ${required.surface} must use dashboard_surface launch mode.`);
+    }
+    if (launch.launchUrlRedacted !== true) {
+      throw new Error(`Live broker canary surface ${required.surface} must redact launch URL.`);
+    }
+    assertLiveCanarySafeText(launch.sourcePointer, `${required.surface}.launch.sourcePointer`);
+    assertLiveCanarySafeText(launch.auditId, `${required.surface}.launch.auditId`);
+    if (launch.secretScan !== 'passed') {
+      throw new Error(`Live broker canary launch ${required.surface} must pass secret scanning.`);
+    }
+  }
+
+  return true;
+}
+
 function assertRcProofDoesNotEmbedReleaseAssets(proofDir) {
   const embedded = [];
 
@@ -1649,6 +1800,16 @@ function main() {
     return;
   }
 
+  if (command === 'verify-live-canary-proof') {
+    const proofDir = process.argv[3];
+    if (!proofDir) {
+      throw new Error('Usage: evaosBetaReleaseGate.js verify-live-canary-proof <proof-dir>');
+    }
+    verifyBrokerLiveCanaryProof(proofDir);
+    console.log('evaOS live broker canary proof verification passed.');
+    return;
+  }
+
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -1677,6 +1838,7 @@ module.exports = {
   releaseProvenanceFromEnv,
   RELEASE_PROVENANCE_GITHUB_WORKFLOW,
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK,
+  verifyBrokerLiveCanaryProof,
   verifyReleaseManifest,
   verifyRcProof,
   normalizeBoolean,

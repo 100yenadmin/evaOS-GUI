@@ -19,6 +19,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   releaseProvenanceFromEnv: (env: Record<string, string | undefined>) => unknown;
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK: string;
   normalizeBoolean: (value: unknown) => boolean;
+  verifyBrokerLiveCanaryProof: (proofDir: string) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
@@ -128,6 +129,47 @@ function writeMacosBridgeZip(zipPath: string, options: { extraEntryCount?: numbe
     '        archive.writestr(f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", "x\\n")',
   ].join('\n');
   execFileSync('python3', ['-c', script, zipPath, String(options.extraEntryCount || 0)]);
+}
+
+function writeBrokerLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
+  fs.mkdirSync(proofDir, { recursive: true });
+  const surfaces = [
+    ['evaos', 'openclaw'],
+    ['hermes', 'hermes'],
+    ['mission-control', 'paperclip'],
+    ['business-browser', 'browser'],
+    ['terminal', 'terminal'],
+  ].map(([surface, runtime]) => ({
+    surface,
+    runtime,
+    status: 'running',
+    sourcePointer: `broker:runtime_status:${runtime}`,
+    auditId: `audit_status_${surface}`,
+    secretScan: 'passed',
+    launch: {
+      status: 'attached',
+      launchMode: 'dashboard_surface',
+      sourcePointer: `broker:runtime_launch:${runtime}`,
+      auditId: `audit_launch_${surface}`,
+      launchUrlRedacted: true,
+      secretScan: 'passed',
+    },
+  }));
+  fs.writeFileSync(
+    path.join(proofDir, 'broker-runtime-status.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-broker-live-canary/v3',
+        customerId: 'cus_123',
+        requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'business-browser', 'terminal'],
+        surfaces,
+        secretScan: 'passed',
+        ...overrides,
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 function writeProofReleaseAssetsReference(
@@ -800,6 +842,71 @@ describe('evaOS beta release gate', () => {
 
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
+  });
+
+  it('verifies live broker-surface proof before distribution can publish', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+
+      expect(releaseGate.verifyBrokerLiveCanaryProof(proofDir)).toBe(true);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects broker proof packets that omit a required surface or contain raw launch material', () => {
+    const missingSurfaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-missing-'));
+    const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-secret-'));
+    try {
+      writeBrokerLiveCanaryProof(missingSurfaceDir, {
+        surfaces: [
+          {
+            surface: 'evaos',
+            runtime: 'openclaw',
+            status: 'running',
+            sourcePointer: 'broker:runtime_status:openclaw',
+            auditId: 'audit_status_evaos',
+            secretScan: 'passed',
+            launch: {
+              status: 'attached',
+              launchMode: 'dashboard_surface',
+              sourcePointer: 'broker:runtime_launch:openclaw',
+              auditId: 'audit_launch_evaos',
+              launchUrlRedacted: true,
+              secretScan: 'passed',
+            },
+          },
+        ],
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingSurfaceDir)).toThrow(/missing required surface/);
+
+      writeBrokerLiveCanaryProof(secretDir, {
+        surfaces: [
+          {
+            surface: 'evaos',
+            runtime: 'openclaw',
+            status: 'running',
+            sourcePointer: 'broker:runtime_status:openclaw',
+            auditId: 'audit_status_evaos',
+            secretScan: 'passed',
+            launch: {
+              status: 'attached',
+              launchMode: 'dashboard_surface',
+              launch_url: 'https://runtime.example.test/callback?desktop_session=eds_raw_secret',
+              sourcePointer: 'broker:runtime_launch:openclaw',
+              auditId: 'audit_launch_evaos',
+              launchUrlRedacted: true,
+              secretScan: 'passed',
+            },
+          },
+        ],
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(secretDir)).toThrow(/secret material|missing required surface/);
+    } finally {
+      fs.rmSync(missingSurfaceDir, { recursive: true, force: true });
+      fs.rmSync(secretDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects development beta tags for public distribution', () => {

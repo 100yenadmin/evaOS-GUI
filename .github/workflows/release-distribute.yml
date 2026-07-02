@@ -21,6 +21,10 @@ on:
         description: 'Successful evaOS Beta RC Canary workflow run id for the same tag.'
         required: true
         type: string
+      live_canary_proof_run_id:
+        description: 'Successful evaOS Live Canary Proof workflow run id for the same release commit, with broker live canaries enabled.'
+        required: true
+        type: string
       trusted_manifest_run_id:
         description: 'Optional workflow run id that uploaded the trusted release manifest artifact. Required for local-signed-dmg-fallback releases.'
         required: false
@@ -294,6 +298,59 @@ jobs:
           cp -R "$PROOF_ROOT"/. rc-proof/
 
           node scripts/evaosBetaReleaseGate.js verify-rc-proof rc-proof "$TAG"
+
+      - name: Validate live broker surface proof
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LIVE_CANARY_PROOF_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}
+          EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LIVE_CANARY_PROOF_RUN_ID" ]; then
+            echo "::error::live_canary_proof_run_id is required before public beta distribution."
+            exit 1
+          fi
+
+          RUN_JSON=$(gh run view "$LIVE_CANARY_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha)
+          node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<'NODE'
+          const run = JSON.parse(process.argv[2]);
+          const expectedHead = process.argv[3];
+          if (run.conclusion !== 'success') {
+            throw new Error(`Live canary proof run did not succeed: ${run.conclusion}`);
+          }
+          if (run.workflowName !== 'evaOS Live Canary Proof') {
+            throw new Error(`Live canary proof run used unexpected workflow: ${run.workflowName}`);
+          }
+          if (run.event !== 'workflow_dispatch') {
+            throw new Error(`Live canary proof run was not manually dispatched: ${run.event}`);
+          }
+          if (run.headSha !== expectedHead) {
+            throw new Error(`Live canary proof head ${run.headSha} does not match release commit ${expectedHead}.`);
+          }
+          NODE
+
+          rm -rf live-canary-proof-download live-canary-proof
+          mkdir -p live-canary-proof-download
+          gh run download "$LIVE_CANARY_PROOF_RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "evaos-live-canary-proof-${LIVE_CANARY_PROOF_RUN_ID}" \
+            --dir live-canary-proof-download
+
+          mapfile -t BROKER_PROOFS < <(find live-canary-proof-download -type f -name broker-runtime-status.json)
+          if [ "${#BROKER_PROOFS[@]}" -ne 1 ]; then
+            echo "::error::Live canary artifact must contain exactly one broker-runtime-status.json, found ${#BROKER_PROOFS[@]}."
+            exit 1
+          fi
+          PROOF_ROOT=$(dirname "${BROKER_PROOFS[0]}")
+          mkdir -p live-canary-proof
+          cp -R "$PROOF_ROOT"/. live-canary-proof/
+
+          if [ ! -f live-canary-proof/business-browser.json ]; then
+            echo "::error::Live canary proof must include business-browser.json."
+            exit 1
+          fi
+
+          node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof
 
       - name: Publish GitHub prerelease
         env:
