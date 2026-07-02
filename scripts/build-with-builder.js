@@ -505,7 +505,9 @@ try {
 
   // 2. Check if we can skip Vite build (incremental build)
   const skipViteBuild = shouldSkipViteBuild(skipVite, forceBuild);
-  cleanupGeneratedPackageOutputs({ preserveViteOutputs: skipViteBuild });
+  if (!packOnly) {
+    cleanupGeneratedPackageOutputs({ preserveViteOutputs: skipViteBuild });
+  }
 
   if (!skipViteBuild) {
     // Run electron-vite to build all bundles (main + preload + renderer)
