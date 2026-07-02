@@ -1936,30 +1936,125 @@ async function sanitizeRuntimeActionResult(
   });
 }
 
+const BROKER_RUNTIME_DENIAL_PATTERN =
+  /(denied|blocked|forbidden|unauthorized|not_authorized|permission|mac_connector_material_missing)/;
+
+const BROKER_RUNTIME_DENIAL_TEXT_KEYS = new Set([
+  'status',
+  'state',
+  'code',
+  'reason',
+  'message',
+  'error',
+  'health_summary',
+  'healthSummary',
+  'route_denial_reason',
+  'routeDenialReason',
+]);
+
+const BROKER_RUNTIME_DENIAL_MESSAGE_KEYS = [
+  'message',
+  'error',
+  'health_summary',
+  'healthSummary',
+  'route_denial_reason',
+  'routeDenialReason',
+  'code',
+  'reason',
+];
+
 function brokerRuntimeDeniedMessage(
   record: Record<string, unknown>,
   runtimeStatus: IEvaosRuntimeStatusView | undefined,
   runtime: IEvaosRuntimeKey
 ): string | undefined {
+  const nestedDeniedMessage = nestedBrokerRuntimeDeniedMessage(record, runtime);
   const statusText = [
     safeText(record.status, 80),
+    safeText(record.code, 80),
     safeText(record.message, 220),
     safeText(record.error, 220),
     runtimeStatus?.status,
     runtimeStatus?.healthSummary,
+    nestedDeniedMessage,
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  if (!/(denied|blocked|forbidden|unauthorized|not_authorized|permission)/.test(statusText)) {
+  if (!BROKER_RUNTIME_DENIAL_PATTERN.test(statusText)) {
     return undefined;
   }
   return (
+    nestedDeniedMessage ??
     safeText(record.message, 220) ??
     (runtime === 'terminal'
       ? 'Terminal access denied by VM shell policy.'
       : `${EVAOS_RUNTIME_LABELS[runtime]} access denied by broker policy.`)
   );
+}
+
+function nestedBrokerRuntimeDeniedMessage(
+  value: unknown,
+  runtime: IEvaosRuntimeKey,
+  seen = new Set<object>(),
+  depth = 0
+): string | undefined {
+  if (depth > 6 || value === null || value === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const message = nestedBrokerRuntimeDeniedMessage(item, runtime, seen, depth + 1);
+      if (message) {
+        return message;
+      }
+    }
+    return undefined;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  if (seen.has(record)) {
+    return undefined;
+  }
+  seen.add(record);
+
+  const statusText = Object.entries(record)
+    .flatMap(([key, nestedValue]) => {
+      if (!BROKER_RUNTIME_DENIAL_TEXT_KEYS.has(key)) {
+        return [];
+      }
+      const text = safeText(nestedValue, 220);
+      return text ? [text] : [];
+    })
+    .join(' ')
+    .toLowerCase();
+
+  if (BROKER_RUNTIME_DENIAL_PATTERN.test(statusText)) {
+    for (const key of BROKER_RUNTIME_DENIAL_MESSAGE_KEYS) {
+      const text = safeText(record[key], 220);
+      if (text) {
+        return text;
+      }
+    }
+    return runtime === 'terminal'
+      ? 'Terminal access denied by VM shell policy.'
+      : `${EVAOS_RUNTIME_LABELS[runtime]} access denied by broker policy.`;
+  }
+
+  for (const nestedValue of Object.values(record)) {
+    if (typeof nestedValue !== 'object' || nestedValue === null) {
+      continue;
+    }
+    const message = nestedBrokerRuntimeDeniedMessage(nestedValue, runtime, seen, depth + 1);
+    if (message) {
+      return message;
+    }
+  }
+
+  return undefined;
 }
 
 function terminalRuntimeMissingProofMessage(
@@ -2670,6 +2765,17 @@ function sanitizeBusinessBrowserActionResult(
         fallback.customerId
       )
     : undefined;
+  const deniedRuntimeMessage = nestedBrokerRuntimeDeniedMessage(record, 'browser');
+  if (deniedRuntimeMessage) {
+    return stripUndefined({
+      status: 'denied',
+      message: deniedRuntimeMessage,
+      browser,
+      sourcePointer,
+      auditId,
+      backendEnforced,
+    });
+  }
   const runtimeSurface = createBusinessBrowserRuntimeSurface(record, fallback, options, browser);
 
   return stripUndefined({
