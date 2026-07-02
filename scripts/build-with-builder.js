@@ -44,6 +44,8 @@ function walkFiles(dir, acc = []) {
 function computeSourceHash() {
   const hash = crypto.createHash('md5');
   const rootDir = path.resolve(__dirname, '..');
+  const sourceCommit = resolveBuildSourceCommit();
+  hash.update(`source-commit:${sourceCommit || 'unknown'}:`);
   const filesToHash = [
     'package.json',
     'package-lock.json',
@@ -74,10 +76,8 @@ function computeSourceHash() {
 
     for (const relPath of files) {
       const absolutePath = path.resolve(rootDir, relPath);
-      const stat = fs.statSync(absolutePath);
       hash.update(relPath + ':');
-      hash.update(String(stat.size));
-      hash.update(String(stat.mtimeMs));
+      hash.update(fs.readFileSync(absolutePath));
     }
   }
 
@@ -226,6 +226,92 @@ function withNodeHeapOptions(extraEnv = {}) {
     NODE_OPTIONS: nodeOptions,
     ...extraEnv,
   };
+}
+
+function resolveBuildSourceCommit() {
+  const envCommit = [
+    process.env.EVAOS_APP_COMMIT,
+    process.env.AIONUI_APP_COMMIT,
+    process.env.SOURCE_COMMIT,
+    process.env.WORKBENCH_SOURCE_SHA,
+  ].find((value) => value?.trim())?.trim();
+  if (envCommit) return envCommit;
+
+  try {
+    return execSync('git rev-parse HEAD', {
+      cwd: path.resolve(__dirname, '..'),
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function ensureBuildSourceCommitEnv() {
+  const sourceCommit = resolveBuildSourceCommit();
+  if (!sourceCommit) return '';
+
+  for (const name of ['EVAOS_APP_COMMIT', 'AIONUI_APP_COMMIT', 'SOURCE_COMMIT', 'WORKBENCH_SOURCE_SHA']) {
+    if (!process.env[name]) {
+      process.env[name] = sourceCommit;
+    }
+  }
+
+  return sourceCommit;
+}
+
+function cleanupGeneratedPackageOutputs({ preserveViteOutputs = false } = {}) {
+  if (process.env.EVAOS_SKIP_BUILD_CLEANUP === '1') {
+    console.log('🧹 Skipping generated output cleanup (EVAOS_SKIP_BUILD_CLEANUP=1)');
+    return;
+  }
+
+  const rootDir = path.resolve(__dirname, '..');
+  const outDir = path.join(rootDir, 'out');
+  const removed = [];
+
+  function removeTarget(relativePath) {
+    const targetPath = path.join(rootDir, relativePath);
+    if (!fs.existsSync(targetPath)) return;
+    fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    removed.push(relativePath);
+  }
+
+  if (!preserveViteOutputs) {
+    for (const relativePath of ['out/main', 'out/preload', 'out/renderer', INCREMENTAL_CACHE_FILE]) {
+      removeTarget(relativePath);
+    }
+  }
+
+  for (const relativePath of [
+    'out/mac',
+    'out/mac-arm64',
+    'out/mac-x64',
+    'out/mac-universal',
+    'out/win-unpacked',
+    'out/win-arm64-unpacked',
+    'out/win-x64-unpacked',
+    'out/linux-unpacked',
+    'resources/bundled-aioncore',
+    'resources/hub',
+    'resources/Bridge',
+  ]) {
+    removeTarget(relativePath);
+  }
+
+  if (fs.existsSync(outDir)) {
+    for (const entry of fs.readdirSync(outDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      if (/\.(?:dmg|zip|blockmap|yml|yaml|exe|msi|deb|rpm|AppImage)$/i.test(entry.name)) {
+        removeTarget(path.join('out', entry.name));
+      }
+    }
+  }
+
+  if (removed.length > 0) {
+    console.log(`🧹 Cleaned generated package outputs: ${removed.join(', ')}`);
+  }
 }
 
 // Create DMG using electron-builder --prepackaged with .app path
@@ -398,6 +484,8 @@ if (archArgs.length > 1) {
 console.log(`🔨 Building for architecture: ${targetArch}`);
 console.log(`📋 Builder arguments: ${builderArgs || '(none)'}`);
 console.log(`📦 Managed resources bundle: ${process.env.AIONUI_MANAGED_RESOURCES_BUNDLE || 'full'}`);
+const sourceCommit = ensureBuildSourceCommitEnv();
+if (sourceCommit) console.log(`📌 Source commit: ${sourceCommit.slice(0, 12)}`);
 if (skipVite) console.log('⚡ --skip-vite: Will skip Vite compilation if output exists');
 if (skipNative) console.log('⚡ --skip-native: Will skip native module rebuilding');
 if (packOnly) console.log('⚡ --pack-only: Will skip electron-builder distributable creation');
@@ -415,6 +503,7 @@ try {
 
   // 2. Check if we can skip Vite build (incremental build)
   const skipViteBuild = shouldSkipViteBuild(skipVite, forceBuild);
+  cleanupGeneratedPackageOutputs({ preserveViteOutputs: skipViteBuild });
 
   if (!skipViteBuild) {
     // Run electron-vite to build all bundles (main + preload + renderer)

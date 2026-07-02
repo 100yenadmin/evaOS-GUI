@@ -17,7 +17,15 @@ const rootPackageJson = JSON.parse(readFileSync(resolve(__dirname, '../../packag
 };
 
 function getBuildCommit(): string {
-  const envSha = process.env.GITHUB_SHA?.trim();
+  const envSha = [
+    process.env.EVAOS_APP_COMMIT,
+    process.env.AIONUI_APP_COMMIT,
+    process.env.SOURCE_COMMIT,
+    process.env.WORKBENCH_SOURCE_SHA,
+    process.env.GITHUB_SHA,
+  ]
+    .find((value) => value?.trim())
+    ?.trim();
   if (envSha) return envSha.slice(0, 12);
   try {
     return execSync('git rev-parse --short=12 HEAD', { encoding: 'utf-8' }).trim();
@@ -152,6 +160,7 @@ export default defineConfig(({ mode }) => {
       ],
       resolve: { alias: mainAliases, extensions: ['.ts', '.tsx', '.js', '.json'] },
       build: {
+        emptyOutDir: true,
         sourcemap: enableSentrySourceMaps ? 'hidden' : isDevelopment,
         reportCompressedSize: false,
         rollupOptions: {
@@ -188,6 +197,7 @@ export default defineConfig(({ mode }) => {
         extensions: ['.ts', '.tsx', '.js', '.json'],
       },
       build: {
+        emptyOutDir: true,
         sourcemap: false,
         reportCompressedSize: false,
         rollupOptions: {
@@ -257,6 +267,7 @@ export default defineConfig(({ mode }) => {
         ...(enableSentrySourceMaps ? [sentryVitePlugin(sentryPluginOptions)] : []),
       ],
       build: {
+        emptyOutDir: true,
         target: 'es2022',
         sourcemap: enableSentrySourceMaps ? 'hidden' : isDevelopment,
         minify: !isDevelopment,

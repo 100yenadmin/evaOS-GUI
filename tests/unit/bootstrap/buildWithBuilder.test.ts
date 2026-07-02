@@ -95,14 +95,27 @@ childProcess.execSync = function mockedExecSync(command) {
         env: {
           ...process.env,
           AIONUI_PREPARE_CALLS_FILE: callsPath,
+          EVAOS_APP_COMMIT: 'test-candidate-sha',
+          EVAOS_SKIP_BUILD_CLEANUP: '1',
           NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${hookPath}`].filter(Boolean).join(' '),
         },
       });
 
       expect(result.status, result.stderr || result.stdout).toBe(0);
 
-      const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{ arch?: string } | null>;
+      const calls = JSON.parse(readFileSync(callsPath, 'utf8')) as Array<{
+        arch?: string;
+        env?: Record<string, string | undefined>;
+      } | null>;
       expect(calls).toContainEqual(expect.objectContaining({ arch: expectedArch }));
+      expect(calls).toContainEqual(
+        expect.objectContaining({
+          env: expect.objectContaining({
+            EVAOS_APP_COMMIT: 'test-candidate-sha',
+            AIONUI_APP_COMMIT: 'test-candidate-sha',
+          }),
+        })
+      );
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

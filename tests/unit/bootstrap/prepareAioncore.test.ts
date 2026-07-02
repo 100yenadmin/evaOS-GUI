@@ -34,6 +34,13 @@ const { applyManagedResourcesBundle, getManagedResourcesRuntimePlan, normalizeMa
   normalizeManagedResourcesBundle: (value?: string) => 'full' | 'no-acp';
 };
 
+const { getBuildRunId, getBuildSourceSha } = require(
+  resolve(__dirname, '../../../packages/shared-scripts/src/prepare-aioncore.js')
+) as {
+  getBuildRunId: (env?: Record<string, string | undefined>) => string | null;
+  getBuildSourceSha: (env?: Record<string, string | undefined>) => string | null;
+};
+
 const tempDirs: string[] = [];
 
 function makeTempDir(): string {
@@ -96,5 +103,21 @@ describe('prepareAioncore managed resources bundle', () => {
     expect(result.prunedResources).toEqual(['acp/claude-agent-acp/', 'acp/codex-acp/']);
     expect(result.keptResources).toContain('node/');
     expect(result.keptResources).toContain('node/node-v24.11.0-darwin-arm64/bin/node');
+  });
+});
+
+describe('prepareAioncore source provenance', () => {
+  it('prefers the checked-out app commit over the workflow commit', () => {
+    expect(
+      getBuildSourceSha({
+        EVAOS_APP_COMMIT: 'candidate-sha',
+        GITHUB_SHA: 'workflow-sha',
+      })
+    ).toBe('candidate-sha');
+  });
+
+  it('falls back to GitHub workflow metadata when no candidate override exists', () => {
+    expect(getBuildSourceSha({ GITHUB_SHA: 'workflow-sha' })).toBe('workflow-sha');
+    expect(getBuildRunId({ GITHUB_RUN_ID: '12345' })).toBe('12345');
   });
 });
