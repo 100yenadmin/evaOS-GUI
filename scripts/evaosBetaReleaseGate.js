@@ -602,6 +602,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(distribute, 'live_canary_proof_run_id', '.github/workflows/release-distribute.yml', issues);
   requireText(distribute, 'evaOS Live Canary Proof', '.github/workflows/release-distribute.yml', issues);
+  requireText(distribute, '.github/workflows/evaos-live-canary-proof.yml', '.github/workflows/release-distribute.yml', issues);
   requireText(
     distribute,
     'headSha',

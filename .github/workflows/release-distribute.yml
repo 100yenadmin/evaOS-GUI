@@ -321,7 +321,11 @@ jobs:
           if (run.conclusion !== 'success') {
             throw new Error(`Live canary proof run did not succeed: ${run.conclusion}`);
           }
-          if (run.workflowName !== 'evaOS Live Canary Proof') {
+          const expectedWorkflowNames = new Set([
+            'evaOS Live Canary Proof',
+            '.github/workflows/evaos-live-canary-proof.yml',
+          ]);
+          if (!expectedWorkflowNames.has(run.workflowName)) {
             throw new Error(`Live canary proof run used unexpected workflow: ${run.workflowName}`);
           }
           if (run.event !== 'workflow_dispatch') {
