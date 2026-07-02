@@ -24,6 +24,7 @@ const MANIFEST_SCHEMA = 'aioncore-bundle/v2';
 const VALID_MANAGED_RESOURCES_BUNDLES = new Set(['full', 'no-acp']);
 const DEFAULT_MANAGED_RESOURCES_BUNDLE = 'full';
 const ACP_MANAGED_RESOURCE_RE = /(^|[-_])(?:claude|codex)(?:$|[-_])/i;
+const SOURCE_SHA_ENV_NAMES = ['EVAOS_APP_COMMIT', 'AIONUI_APP_COMMIT', 'SOURCE_COMMIT', 'WORKBENCH_SOURCE_SHA'];
 
 const ACTIONS_ARTIFACT_TARGETS = {
   'darwin-arm64': {
@@ -80,6 +81,22 @@ function ensureExecutableMode(filePath) {
 
 function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf-8');
+}
+
+function firstNonEmptyEnv(env, names) {
+  for (const name of names) {
+    const value = String(env?.[name] || '').trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function getBuildSourceSha(env = process.env) {
+  return firstNonEmptyEnv(env, SOURCE_SHA_ENV_NAMES) || firstNonEmptyEnv(env, ['GITHUB_SHA']);
+}
+
+function getBuildRunId(env = process.env) {
+  return firstNonEmptyEnv(env, ['EVAOS_APP_RUN_ID', 'AIONUI_APP_RUN_ID', 'SOURCE_RUN_ID', 'GITHUB_RUN_ID']);
 }
 
 function getBinaryName(platform) {
@@ -760,8 +777,8 @@ function prepareAioncore(options) {
       requestedVersion: version,
       generatedAt: new Date().toISOString(),
       github: {
-        runId: env.GITHUB_RUN_ID || null,
-        sha: env.GITHUB_SHA || null,
+        runId: getBuildRunId(env),
+        sha: getBuildSourceSha(env),
         repository: env.GITHUB_REPOSITORY || null,
       },
       managedResourcesBundle,
@@ -806,6 +823,8 @@ module.exports = {
   applyManagedResourcesBundle,
   getActionsArtifactMissingMessage,
   getActionsArtifactName,
+  getBuildRunId,
+  getBuildSourceSha,
   getManagedResourcesRuntimePlan,
   normalizeManagedResourcesBundle,
   prepareAioncore,

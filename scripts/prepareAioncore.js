@@ -18,6 +18,7 @@
  */
 
 const path = require('path');
+const { execSync } = require('child_process');
 const { prepareAioncore } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
 
@@ -26,6 +27,38 @@ const platform = process.platform;
 // Support cross-compilation: AIONUI_BACKEND_ARCH > npm_config_target_arch > process.arch
 const arch = process.env.AIONUI_BACKEND_ARCH || process.env.npm_config_target_arch || process.arch;
 const version = resolveAioncoreVersion(projectRoot);
+
+function ensureBuildSourceCommitEnv() {
+  const existing = [
+    process.env.EVAOS_APP_COMMIT,
+    process.env.AIONUI_APP_COMMIT,
+    process.env.SOURCE_COMMIT,
+    process.env.WORKBENCH_SOURCE_SHA,
+  ]
+    .find((value) => value?.trim())
+    ?.trim();
+  let sourceCommit = existing || '';
+
+  if (!sourceCommit) {
+    try {
+      sourceCommit = execSync('git rev-parse HEAD', {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {}
+  }
+
+  if (!sourceCommit) return;
+
+  for (const name of ['EVAOS_APP_COMMIT', 'AIONUI_APP_COMMIT', 'SOURCE_COMMIT', 'WORKBENCH_SOURCE_SHA']) {
+    if (!process.env[name]) {
+      process.env[name] = sourceCommit;
+    }
+  }
+}
+
+ensureBuildSourceCommitEnv();
 
 try {
   prepareAioncore({ projectRoot, platform, arch, version });
