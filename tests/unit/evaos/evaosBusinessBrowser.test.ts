@@ -417,6 +417,48 @@ describe('EvaosBrokerSessionClient Business Browser', () => {
     expect(JSON.stringify(result)).not.toMatch(/launch_url|eds_runtime_secret|desktop_session|token=raw|Bearer/i);
   });
 
+  it('maps nested denied Business Browser surface metadata before creating an opaque surface', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'attached',
+        customer_id: 'david-poku',
+        message: 'Browser attached.',
+        launch_url: 'https://runtime.example.test/browser?desktop_session=eds_runtime_secret&token=raw',
+        source_pointer: 'broker:runtime_launch:browser',
+        audit_id: 'audit_launch_nested_forbidden',
+        backend_enforced: true,
+        browser: browserRuntimeResponse({
+          source_pointer: 'broker:runtime_status:browser',
+          audit_id: 'audit_browser_after_launch',
+        }),
+        runtime_surface: {
+          status: 'forbidden',
+          message: 'forbidden for selected browser',
+          code: 'forbidden',
+        },
+      })
+    );
+    const client = authenticatedClient(fetchImpl);
+
+    const result = await client.launchBusinessBrowser({ customerId: 'david-poku' }, { createRuntimeSurface });
+
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'denied',
+      message: 'forbidden for selected browser',
+      sourcePointer: 'broker:runtime_launch:browser',
+      auditId: 'audit_launch_nested_forbidden',
+      backendEnforced: true,
+      browser: {
+        customerId: 'david-poku',
+        status: 'running',
+      },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/launch_url|eds_runtime_secret|desktop_session|token=raw|Bearer/i);
+  });
+
   it('fails closed when a brokered Business Browser action omits the runtime surface target', async () => {
     const fetchImpl = fetchMock();
     const createRuntimeSurface = vi.fn();
