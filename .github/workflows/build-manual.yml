@@ -44,6 +44,10 @@ on:
           - full
         default: 'no-acp'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.branch || github.ref }}-${{ github.event.inputs.platform || 'all' }}
+  cancel-in-progress: false
+
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
 
