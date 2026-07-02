@@ -105,6 +105,19 @@ function requireActionAck(env) {
   }
 }
 
+function positiveIntegerEnv(env, key, fallback) {
+  const raw = env[key];
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw.trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseAllowedHosts(value) {
   return String(value || '')
     .split(',')
@@ -210,6 +223,54 @@ async function requiredOkAction(fetchImpl, endpoint, session, body, label) {
     throw new Error(`${label} failed HTTP ${result.httpStatus}.`);
   }
   return result.body;
+}
+
+async function readBrowserRuntimeStatus(fetchImpl, endpoint, session, request, label) {
+  const raw = await requiredOkAction(
+    fetchImpl,
+    endpoint,
+    session,
+    {
+      action: 'runtime_status',
+      customer_id: request.customerId,
+      runtime: 'browser',
+    },
+    label
+  );
+  return summarizeBrowserRuntime(raw, {
+    customerAccountId: request.customerAccountId,
+    customerId: request.customerId,
+  });
+}
+
+async function waitForStoppedBrowserRuntime(fetchImpl, endpoint, session, request, options) {
+  const attempts = positiveIntegerEnv(options.env, 'AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_ATTEMPTS', 4);
+  const delayMs = positiveIntegerEnv(options.env, 'AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_DELAY_MS', 1500);
+  const sleepImpl = options.sleepImpl ?? sleep;
+  let last;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    last = await readBrowserRuntimeStatus(
+      fetchImpl,
+      endpoint,
+      session,
+      request,
+      attempt === 1 ? 'Business Browser runtime after stop' : `Business Browser runtime after stop retry ${attempt}`
+    );
+    if (last.status === 'stopped') {
+      return {
+        ...last,
+        stopSettleAttempts: attempt,
+      };
+    }
+    if (attempt < attempts) {
+      await sleepImpl(delayMs);
+    }
+  }
+
+  throw new Error(
+    `Business Browser post-stop runtime status must be stopped; last status was ${last?.status || 'missing'}.`
+  );
 }
 
 function summarizePolicy(raw, customerId) {
@@ -528,24 +589,19 @@ async function runBusinessBrowserLiveCanary(options = {}) {
     customerId,
   });
 
-  const afterStopRaw = await requiredOkAction(
+  const afterStop = await waitForStoppedBrowserRuntime(
     fetchImpl,
     endpoint,
     desktopSession,
     {
-      action: 'runtime_status',
-      customer_id: customerId,
-      runtime: 'browser',
+      customerAccountId: policy.customerAccountId,
+      customerId,
     },
-    'Business Browser runtime after stop'
+    {
+      env,
+      sleepImpl: options.sleepImpl,
+    }
   );
-  const afterStop = summarizeBrowserRuntime(afterStopRaw, {
-    customerAccountId: policy.customerAccountId,
-    customerId,
-  });
-  if (afterStop.status !== 'stopped') {
-    throw new Error('Business Browser post-stop runtime status must be stopped.');
-  }
 
   const acceptanceProof =
     !negativeFixture.allowNoNegative && Boolean(negativeFixture.wrongCustomerId && negativeFixture.deniedSession);
