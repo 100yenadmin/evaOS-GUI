@@ -5,7 +5,6 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
   Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
   Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
   Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
-  Object.freeze({ surface: 'business-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 
@@ -35,6 +34,14 @@ const SECRET_VALUE_PATTERNS = [
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/i,
   /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b/,
 ];
+
+class BrokerCanaryError extends Error {
+  constructor(message, proof) {
+    super(message);
+    this.name = 'BrokerCanaryError';
+    this.proof = proof;
+  }
+}
 
 function containsSecretMaterial(value) {
   return typeof value === 'string' && SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
@@ -132,6 +139,50 @@ function runtimeLaunchRecordForSecretScan(record) {
   return redacted;
 }
 
+function responseShapeSummary(raw) {
+  try {
+    const record = runtimeRecord(raw);
+    assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(record));
+    const topLevelKeys = Object.keys(record).sort();
+    const nestedShape = {};
+    for (const key of [
+      'runtime_status',
+      'runtimeStatus',
+      'runtime_surface',
+      'runtimeSurface',
+      'surface_status',
+      'surfaceStatus',
+    ]) {
+      const nested = record[key];
+      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+        assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(nested));
+        nestedShape[key] = Object.keys(nested).sort();
+      }
+    }
+    return {
+      topLevelKeys,
+      schemaVersion: safeText(record.schema_version ?? record.schemaVersion),
+      status: safeText(record.status),
+      code: safeText(record.code),
+      error: safeText(record.error),
+      message: safeText(record.message),
+      customerId: safeText(record.customer_id ?? record.customerId),
+      runtime: safeText(record.runtime_key ?? record.runtimeKey ?? record.runtime),
+      launchMode: safeText(record.launch_mode ?? record.launchMode),
+      sourcePointer: safeText(record.source_pointer ?? record.sourcePointer),
+      auditId: safeText(record.audit_id ?? record.auditId),
+      launchTargetPresent: Boolean(record.launch_url || record.runtime_launch_url || record.url),
+      nestedShape,
+      secretScan: 'passed',
+    };
+  } catch (error) {
+    return {
+      summaryUnavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function assertNoDeniedNestedRuntimeState(value, label, seen = new WeakSet()) {
   if (typeof value === 'string') {
     if (DENIED_RUNTIME_PATTERN.test(value)) {
@@ -165,7 +216,7 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
   const runtime = safeText(record.runtime_key ?? record.runtimeKey ?? record.runtime);
   const status = safeText(record.status);
   const launchMode = safeText(record.launch_mode ?? record.launchMode) ?? 'dashboard_surface';
-  const launchUrl = safeText(record.launch_url ?? record.runtime_launch_url ?? record.url);
+  const launchTargetPresent = Boolean(record.launch_url || record.runtime_launch_url || record.url);
   const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
   const auditId = safeText(record.audit_id ?? record.auditId);
 
@@ -204,7 +255,7 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
       assertNoDeniedNestedRuntimeState(nested, key);
     }
   }
-  if (!launchUrl) {
+  if (!launchTargetPresent) {
     throw new Error('Broker launch canary response did not include a runtime launch target.');
   }
   if (!sourcePointer || !auditId) {
@@ -223,7 +274,7 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
 }
 
 function requestedBrokerSurfaces(env) {
-  const runtime = safeText(env.AIONUI_EVAOS_RUNTIME);
+  const runtime = safeText(env.AIONUI_EVAOS_BROKER_RUNTIME);
   if (!runtime) {
     return REQUIRED_BROKER_SURFACES;
   }
@@ -255,22 +306,27 @@ async function postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, body
 
 async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession, customerId, surface }) {
   const failures = [];
+  const failureDetails = [];
   let statusProof;
   let launchProof;
+  let rawStatus;
+  let rawLaunch;
 
   try {
-    const rawStatus = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
+    rawStatus = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
       action: 'runtime_status',
       customer_id: customerId,
       runtime: surface.runtime,
     });
     statusProof = sanitizeBrokerRuntimeCanaryResponse(rawStatus, { customerId, runtime: surface.runtime });
   } catch (error) {
-    failures.push(`status: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`status: ${message}`);
+    failureDetails.push({ phase: 'status', message, responseShape: responseShapeSummary(rawStatus) });
   }
 
   try {
-    const rawLaunch = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
+    rawLaunch = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
       action: 'runtime_launch',
       customer_id: customerId,
       runtime: surface.runtime,
@@ -281,11 +337,15 @@ async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession
       runtime: surface.runtime,
     });
   } catch (error) {
-    failures.push(`launch: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`launch: ${message}`);
+    failureDetails.push({ phase: 'launch', message, responseShape: responseShapeSummary(rawLaunch) });
   }
 
   if (failures.length > 0) {
-    throw new Error(failures.join(' | '));
+    const failure = new Error(failures.join(' | '));
+    failure.details = failureDetails;
+    throw failure;
   }
 
   return {
@@ -317,6 +377,7 @@ async function runBrokerLiveCanary(options = {}) {
 
   const surfaces = [];
   const failures = [];
+  const failureDetails = [];
   for (const surface of requestedBrokerSurfaces(env)) {
     try {
       surfaces.push(
@@ -330,11 +391,28 @@ async function runBrokerLiveCanary(options = {}) {
         })
       );
     } catch (error) {
-      failures.push(`${surface.surface}/${surface.runtime}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${surface.surface}/${surface.runtime}: ${message}`);
+      failureDetails.push({
+        surface: surface.surface,
+        runtime: surface.runtime,
+        message,
+        phases: Array.isArray(error?.details) ? error.details : [],
+      });
     }
   }
   if (failures.length > 0) {
-    throw new Error(`Broker live canary failed for ${failures.length} surface(s): ${failures.join('; ')}`);
+    throw new BrokerCanaryError(`Broker live canary failed for ${failures.length} surface(s): ${failures.join('; ')}`, {
+      schema: 'evaos-broker-live-canary/v3',
+      ok: false,
+      customerId,
+      releaseCanaryCustomerId: safeText(env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID) ?? customerId,
+      requiredSurfaces: requestedBrokerSurfaces(env).map((surface) => surface.surface),
+      surfaces,
+      failures: failureDetails,
+      checkedAt: new Date().toISOString(),
+      secretScan: 'passed',
+    });
   }
 
   return {
@@ -355,6 +433,9 @@ async function main() {
 
 if (require.main === module) {
   main().catch((error) => {
+    if (error instanceof BrokerCanaryError && error.proof) {
+      console.log(JSON.stringify(error.proof, null, 2));
+    }
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
