@@ -1161,7 +1161,9 @@ describe('EvaosBrokerSessionClient', () => {
       auditId: 'audit_openclaw_forbidden',
       backendEnforced: true,
     });
-    expect(JSON.stringify(result)).not.toMatch(/runtime\\.example\\.test|launch_url|desktop_session|eds_|Bearer|token=bad/i);
+    expect(JSON.stringify(result)).not.toMatch(
+      /runtime\\.example\\.test|launch_url|desktop_session|eds_|Bearer|token=bad/i
+    );
   });
 
   it('fails Terminal runtime launch closed when VM shell proof is missing', async () => {

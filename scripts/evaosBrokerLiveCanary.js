@@ -142,7 +142,9 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
     );
   }
   if (!runtime || runtime !== request.runtime) {
-    throw new Error(`Broker launch canary runtime proof mismatch: expected ${request.runtime}, got ${runtime || 'missing'}.`);
+    throw new Error(
+      `Broker launch canary runtime proof mismatch: expected ${request.runtime}, got ${runtime || 'missing'}.`
+    );
   }
   if (!status) {
     throw new Error('Broker launch canary response did not include a safe runtime status.');

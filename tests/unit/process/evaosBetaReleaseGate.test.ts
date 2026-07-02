@@ -902,7 +902,9 @@ describe('evaOS beta release gate', () => {
           },
         ],
       });
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(secretDir)).toThrow(/secret material|missing required surface/);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(secretDir)).toThrow(
+        /secret material|missing required surface/
+      );
     } finally {
       fs.rmSync(missingSurfaceDir, { recursive: true, force: true });
       fs.rmSync(secretDir, { recursive: true, force: true });

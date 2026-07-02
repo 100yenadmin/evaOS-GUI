@@ -182,7 +182,9 @@ describe('evaOS broker live canary', () => {
         }),
       ]),
     });
-    expect(JSON.stringify(proof)).not.toMatch(/eds_valid_session_for_test|callback_secret_for_test|launch_url|runtime\\.example\\.test/);
+    expect(JSON.stringify(proof)).not.toMatch(
+      /eds_valid_session_for_test|callback_secret_for_test|launch_url|runtime\\.example\\.test/
+    );
   });
 
   it('can run a focused single-runtime canary for debugging without satisfying distribution proof shape', async () => {
