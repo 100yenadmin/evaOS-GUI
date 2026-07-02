@@ -247,6 +247,40 @@ describe('evaOS Provider Hub live canary', () => {
     expect(message).not.toMatch(/provider_grant|access_token|api_key|refresh_token|private_key|epg_|eds_|eyJ/i);
   });
 
+  it('reports provider key/status validation dimensions without exposing invalid values', () => {
+    let message = '';
+    try {
+      providerCanary.summarizeProviderHubResponse(
+        {
+          ...providerHub,
+          provider_profiles: [
+            {
+              provider_key: 'private_provider_value_for_test',
+              status: 'private_status_value_for_test',
+              active: true,
+              access_token: 'eds_secret_desktop_session_for_test',
+              source_pointer: 'broker:provider_profile:private',
+              audit_id: 'audit_private',
+            },
+          ],
+        },
+        {
+          customerId: 'cus_123',
+          customerAccountId: 'acct_123',
+          requiredStates: ['connected'],
+        }
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain('providerKeyPresent=true');
+    expect(message).toContain('providerKeyAccepted=false');
+    expect(message).toContain('statusPresent=true');
+    expect(message).toContain('statusAccepted=false');
+    expect(message).not.toMatch(/private_provider_value_for_test|private_status_value_for_test|access_token|eds_/i);
+  });
+
   it('fails closed when required provider states are absent', () => {
     expect(() =>
       providerCanary.summarizeProviderHubResponse(
