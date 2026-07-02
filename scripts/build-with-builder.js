@@ -234,7 +234,9 @@ function resolveBuildSourceCommit() {
     process.env.AIONUI_APP_COMMIT,
     process.env.SOURCE_COMMIT,
     process.env.WORKBENCH_SOURCE_SHA,
-  ].find((value) => value?.trim())?.trim();
+  ]
+    .find((value) => value?.trim())
+    ?.trim();
   if (envCommit) return envCommit;
 
   try {
