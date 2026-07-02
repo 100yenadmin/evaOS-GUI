@@ -131,8 +131,100 @@ function writeMacosBridgeZip(zipPath: string, options: { extraEntryCount?: numbe
   execFileSync('python3', ['-c', script, zipPath, String(options.extraEntryCount || 0)]);
 }
 
-function writeBrokerLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
+function writeBusinessBrowserLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
+  const customerId = String(overrides.customerId || 'cus_123');
+  const checkedAt = String(overrides.checkedAt || new Date().toISOString());
+  const runtimeProof = (status: string, auditId: string) => ({
+    customerId,
+    customerAccountId: 'customer_account_123',
+    runtime: 'browser',
+    status,
+    controlSessionActive: true,
+    canOpenUrl: true,
+    canStop: true,
+    actionCount: 2,
+    sourcePointer: 'broker:runtime_status:browser',
+    auditId,
+  });
+  const actionProof = (action: string, status: string, auditId: string) => ({
+    action,
+    customerId,
+    customerAccountId: 'customer_account_123',
+    status,
+    backendEnforced: true,
+    sourcePointer: `broker:${action}:${customerId}`,
+    auditId,
+  });
+  const deniedProof = (actor: string) => ({
+    runtime: {
+      actor: `${actor}:runtime`,
+      backendDenied: true,
+      httpStatus: 403,
+      code: 'forbidden',
+      sourcePointer: `broker:business_browser_denial:${actor}:runtime`,
+      auditId: `audit_${actor}_runtime_denied`,
+    },
+    open: {
+      actor: `${actor}:open`,
+      backendDenied: true,
+      httpStatus: 403,
+      code: 'forbidden',
+      sourcePointer: `broker:business_browser_denial:${actor}:open`,
+      auditId: `audit_${actor}_open_denied`,
+    },
+    stop: {
+      actor: `${actor}:stop`,
+      backendDenied: true,
+      httpStatus: 403,
+      code: 'forbidden',
+      sourcePointer: `broker:business_browser_denial:${actor}:stop`,
+      auditId: `audit_${actor}_stop_denied`,
+    },
+  });
+
+  fs.writeFileSync(
+    path.join(proofDir, 'business-browser.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-business-browser-live-proof/v1',
+        customerId,
+        checkedAt,
+        dryRun: false,
+        acceptanceProof: true,
+        customerIsolation: 'passed',
+        negativeBoundary: 'required',
+        policy: {
+          customerId,
+          customerAccountId: 'customer_account_123',
+          membershipId: 'membership_123',
+          membershipRole: 'admin',
+          hasOpenBusinessBrowser: true,
+          backendEnforced: true,
+          auditId: 'audit_business_browser_policy',
+        },
+        before: runtimeProof('running', 'audit_browser_before'),
+        open: actionProof('browser_open_url', 'opened', 'audit_browser_open'),
+        afterOpen: runtimeProof('running', 'audit_browser_after_open'),
+        stop: actionProof('browser_stop', 'stopped', 'audit_browser_stop'),
+        afterStop: runtimeProof('stopped', 'audit_browser_after_stop'),
+        wrongCustomer: deniedProof('wrong_customer'),
+        deniedMember: deniedProof('denied_member'),
+        sensitiveOutput: 'passed',
+        ...overrides,
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+function writeBrokerLiveCanaryProof(
+  proofDir: string,
+  overrides: Record<string, unknown> = {},
+  businessBrowserOverrides: Record<string, unknown> = {}
+) {
   fs.mkdirSync(proofDir, { recursive: true });
+  const checkedAt = String(overrides.checkedAt || new Date().toISOString());
   const surfaces = [
     ['evaos', 'openclaw'],
     ['hermes', 'hermes'],
@@ -145,6 +237,7 @@ function writeBrokerLiveCanaryProof(proofDir: string, overrides: Record<string, 
     status: 'running',
     sourcePointer: `broker:runtime_status:${runtime}`,
     auditId: `audit_status_${surface}`,
+    checkedAt,
     secretScan: 'passed',
     launch: {
       status: 'attached',
@@ -152,6 +245,7 @@ function writeBrokerLiveCanaryProof(proofDir: string, overrides: Record<string, 
       sourcePointer: `broker:runtime_launch:${runtime}`,
       auditId: `audit_launch_${surface}`,
       launchUrlRedacted: true,
+      checkedAt,
       secretScan: 'passed',
     },
   }));
@@ -161,8 +255,10 @@ function writeBrokerLiveCanaryProof(proofDir: string, overrides: Record<string, 
       {
         schema: 'evaos-broker-live-canary/v3',
         customerId: 'cus_123',
+        releaseCanaryCustomerId: 'cus_123',
         requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'business-browser', 'terminal'],
         surfaces,
+        checkedAt,
         secretScan: 'passed',
         ...overrides,
       },
@@ -170,6 +266,11 @@ function writeBrokerLiveCanaryProof(proofDir: string, overrides: Record<string, 
       2
     )}\n`
   );
+  writeBusinessBrowserLiveCanaryProof(proofDir, {
+    customerId: String(overrides.customerId || 'cus_123'),
+    checkedAt,
+    ...businessBrowserOverrides,
+  });
 }
 
 function writeProofReleaseAssetsReference(
@@ -867,6 +968,7 @@ describe('evaOS beta release gate', () => {
             status: 'running',
             sourcePointer: 'broker:runtime_status:openclaw',
             auditId: 'audit_status_evaos',
+            checkedAt: new Date().toISOString(),
             secretScan: 'passed',
             launch: {
               status: 'attached',
@@ -874,6 +976,7 @@ describe('evaOS beta release gate', () => {
               sourcePointer: 'broker:runtime_launch:openclaw',
               auditId: 'audit_launch_evaos',
               launchUrlRedacted: true,
+              checkedAt: new Date().toISOString(),
               secretScan: 'passed',
             },
           },
@@ -889,6 +992,7 @@ describe('evaOS beta release gate', () => {
             status: 'running',
             sourcePointer: 'broker:runtime_status:openclaw',
             auditId: 'audit_status_evaos',
+            checkedAt: new Date().toISOString(),
             secretScan: 'passed',
             launch: {
               status: 'attached',
@@ -897,6 +1001,7 @@ describe('evaOS beta release gate', () => {
               sourcePointer: 'broker:runtime_launch:openclaw',
               auditId: 'audit_launch_evaos',
               launchUrlRedacted: true,
+              checkedAt: new Date().toISOString(),
               secretScan: 'passed',
             },
           },
@@ -908,6 +1013,56 @@ describe('evaOS beta release gate', () => {
     } finally {
       fs.rmSync(missingSurfaceDir, { recursive: true, force: true });
       fs.rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects live proof packets with missing or non-acceptance Business Browser proof', () => {
+    const missingBrowserDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-missing-'));
+    const dryRunDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-dry-run-'));
+    try {
+      writeBrokerLiveCanaryProof(missingBrowserDir);
+      fs.rmSync(path.join(missingBrowserDir, 'business-browser.json'));
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingBrowserDir)).toThrow(
+        /Business Browser live canary proof/
+      );
+
+      writeBrokerLiveCanaryProof(
+        dryRunDir,
+        {},
+        {
+          dryRun: true,
+          acceptanceProof: false,
+          customerIsolation: 'not-run',
+          negativeBoundary: 'not-run',
+        }
+      );
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(dryRunDir)).toThrow(/non-dry-run acceptance proof/);
+    } finally {
+      fs.rmSync(missingBrowserDir, { recursive: true, force: true });
+      fs.rmSync(dryRunDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects stale or cross-customer live broker proof packets', () => {
+    const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-stale-'));
+    const mismatchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-mismatch-'));
+    try {
+      writeBrokerLiveCanaryProof(staleDir, {
+        checkedAt: '2020-01-01T00:00:00.000Z',
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(staleDir)).toThrow(/stale/);
+
+      writeBrokerLiveCanaryProof(
+        mismatchDir,
+        {},
+        {
+          customerId: 'different_customer',
+        }
+      );
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(mismatchDir)).toThrow(/customer mismatch/);
+    } finally {
+      fs.rmSync(staleDir, { recursive: true, force: true });
+      fs.rmSync(mismatchDir, { recursive: true, force: true });
     }
   });
 

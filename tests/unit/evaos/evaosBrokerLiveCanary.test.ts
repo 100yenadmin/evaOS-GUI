@@ -245,4 +245,25 @@ describe('evaOS broker live canary', () => {
       )
     ).toThrow(/denied runtime_launch/);
   });
+
+  it('fails closed when runtime_launch hides denial in nested runtime surface state', () => {
+    expect(() =>
+      liveCanary.sanitizeBrokerRuntimeLaunchCanaryResponse(
+        {
+          customer_id: 'cus_123',
+          runtime_key: 'openclaw',
+          status: 'attached',
+          launch_mode: 'dashboard_surface',
+          launch_url: 'https://runtime.example.test/auth/callback',
+          source_pointer: 'broker:runtime_launch:openclaw',
+          audit_id: 'audit_launch_nested_forbidden',
+          runtime_surface: {
+            status: 'forbidden',
+            message: 'forbidden for selected customer',
+          },
+        },
+        { customerId: 'cus_123', runtime: 'openclaw' }
+      )
+    ).toThrow(/denied runtime_launch/);
+  });
 });

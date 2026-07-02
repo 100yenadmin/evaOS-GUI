@@ -9,6 +9,8 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 
+const DENIED_RUNTIME_PATTERN =
+  /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/i;
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
 const SAFE_FALSE_SECRET_ASSERTION_FIELDS = new Set([
@@ -125,6 +127,32 @@ function runtimeLaunchRecordForSecretScan(record) {
   return redacted;
 }
 
+function assertNoDeniedNestedRuntimeState(value, label, seen = new WeakSet()) {
+  if (typeof value === 'string') {
+    if (DENIED_RUNTIME_PATTERN.test(value)) {
+      throw new Error(`Broker canary received denied runtime_launch response at ${label}.`);
+    }
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertNoDeniedNestedRuntimeState(child, `${label}[${index}]`, seen));
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    assertNoDeniedNestedRuntimeState(child, `${label}.${key}`, seen);
+  }
+}
+
 function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
   const record = runtimeRecord(raw);
   assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(record));
@@ -159,12 +187,17 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-  if (
-    /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/.test(
-      statusText
-    )
-  ) {
+  if (DENIED_RUNTIME_PATTERN.test(statusText)) {
     throw new Error('Broker canary received denied runtime_launch response.');
+  }
+  for (const [key, nested] of [
+    ['runtime_status', record.runtime_status ?? record.runtimeStatus],
+    ['runtime_surface', record.runtime_surface ?? record.runtimeSurface],
+    ['surface_status', record.surface_status ?? record.surfaceStatus],
+  ]) {
+    if (nested) {
+      assertNoDeniedNestedRuntimeState(nested, key);
+    }
   }
   if (!launchUrl) {
     throw new Error('Broker launch canary response did not include a runtime launch target.');
@@ -278,6 +311,7 @@ async function runBrokerLiveCanary(options = {}) {
   return {
     schema: 'evaos-broker-live-canary/v3',
     customerId,
+    releaseCanaryCustomerId: safeText(env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID) ?? customerId,
     requiredSurfaces: surfaces.map((surface) => surface.surface),
     surfaces,
     checkedAt: new Date().toISOString(),
