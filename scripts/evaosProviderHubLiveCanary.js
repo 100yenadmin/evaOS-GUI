@@ -78,6 +78,31 @@ function diagnosticKeyList(value) {
     .slice(0, 24);
 }
 
+function scalarPresent(value) {
+  return typeof value === 'string' ? Boolean(value.trim()) : value !== undefined && value !== null;
+}
+
+function providerProfileValidationRecord(raw) {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  return asRecord(record.provider_profile) ?? asRecord(record.profile) ?? record;
+}
+
+function providerProfileValueDiagnostics(raw) {
+  const record = providerProfileValidationRecord(raw);
+  if (!record) return '';
+  const providerKeyValue = record.provider_key ?? record.providerKey ?? record.provider ?? record.key;
+  const statusValue = record.status;
+  const providerKeyPresent = scalarPresent(providerKeyValue);
+  const statusPresent = scalarPresent(statusValue);
+  return [
+    `providerKeyPresent=${providerKeyPresent}`,
+    `providerKeyAccepted=${Boolean(normalizeProviderKeyValue(providerKeyValue))}`,
+    `statusPresent=${statusPresent}`,
+    `statusAccepted=${Boolean(normalizeProviderStatusValue(statusValue))}`,
+  ].join(', ');
+}
+
 function providerProfileShape(raw) {
   const record = asRecord(raw);
   if (!record) {
@@ -86,7 +111,14 @@ function providerProfileShape(raw) {
   const rootKeys = diagnosticKeyList(record);
   const nested = asRecord(record.provider_profile) ?? asRecord(record.profile);
   const nestedKeys = nested ? diagnosticKeyList(nested) : [];
-  return `rootKeys=[${rootKeys.join(',') || 'none'}], nestedKeys=[${nestedKeys.join(',') || 'none'}]`;
+  const valueDiagnostics = providerProfileValueDiagnostics(record);
+  return [
+    `rootKeys=[${rootKeys.join(',') || 'none'}]`,
+    `nestedKeys=[${nestedKeys.join(',') || 'none'}]`,
+    valueDiagnostics,
+  ]
+    .filter(Boolean)
+    .join(', ');
 }
 
 function recordFromEnvelope(raw) {
