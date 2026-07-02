@@ -277,6 +277,13 @@ function writeBrokerLiveCanaryProof(
   });
 }
 
+function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<string, unknown>) => void) {
+  const proofPath = path.join(proofDir, 'broker-runtime-status.json');
+  const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+  mutator(proof);
+  fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+}
+
 function writeProofReleaseAssetsReference(
   proofDir: string,
   tag: string,
@@ -1019,6 +1026,61 @@ describe('evaOS beta release gate', () => {
     } finally {
       fs.rmSync(missingSurfaceDir, { recursive: true, force: true });
       fs.rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects malformed live broker proof packets before scanning nested fields', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-malformed-'));
+    try {
+      writeBusinessBrowserLiveCanaryProof(proofDir);
+      fs.writeFileSync(path.join(proofDir, 'broker-runtime-status.json'), '[]\n');
+
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toThrow(
+        /Unexpected live broker canary proof schema/
+      );
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects malformed Business Browser proof packets before scanning nested fields', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-malformed-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+      fs.writeFileSync(path.join(proofDir, 'business-browser.json'), '[]\n');
+
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toThrow(
+        /Unexpected Business Browser live proof schema/
+      );
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects live broker proof packets that omit launch proof or do not redact launch URLs', () => {
+    const missingLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-launch-missing-'));
+    const unredactedLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-launch-unredacted-'));
+    try {
+      writeBrokerLiveCanaryProof(missingLaunchDir);
+      mutateBrokerLiveCanaryProof(missingLaunchDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, unknown>>;
+        delete surfaces[0].launch;
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingLaunchDir, liveCanaryProofEnv)).toThrow(
+        /missing launch proof/
+      );
+
+      writeBrokerLiveCanaryProof(unredactedLaunchDir);
+      mutateBrokerLiveCanaryProof(unredactedLaunchDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, Record<string, unknown>>>;
+        surfaces[0].launch.launchUrlRedacted = false;
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(unredactedLaunchDir, liveCanaryProofEnv)).toThrow(
+        /redact launch URL/
+      );
+    } finally {
+      fs.rmSync(missingLaunchDir, { recursive: true, force: true });
+      fs.rmSync(unredactedLaunchDir, { recursive: true, force: true });
     }
   });
 

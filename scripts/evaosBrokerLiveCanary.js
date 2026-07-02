@@ -254,23 +254,39 @@ async function postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, body
 }
 
 async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession, customerId, surface }) {
-  const rawStatus = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
-    action: 'runtime_status',
-    customer_id: customerId,
-    runtime: surface.runtime,
-  });
-  const statusProof = sanitizeBrokerRuntimeCanaryResponse(rawStatus, { customerId, runtime: surface.runtime });
+  const failures = [];
+  let statusProof;
+  let launchProof;
 
-  const rawLaunch = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
-    action: 'runtime_launch',
-    customer_id: customerId,
-    runtime: surface.runtime,
-    launch_mode: 'dashboard_surface',
-  });
-  const launchProof = sanitizeBrokerRuntimeLaunchCanaryResponse(rawLaunch, {
-    customerId,
-    runtime: surface.runtime,
-  });
+  try {
+    const rawStatus = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
+      action: 'runtime_status',
+      customer_id: customerId,
+      runtime: surface.runtime,
+    });
+    statusProof = sanitizeBrokerRuntimeCanaryResponse(rawStatus, { customerId, runtime: surface.runtime });
+  } catch (error) {
+    failures.push(`status: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const rawLaunch = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
+      action: 'runtime_launch',
+      customer_id: customerId,
+      runtime: surface.runtime,
+      launch_mode: 'dashboard_surface',
+    });
+    launchProof = sanitizeBrokerRuntimeLaunchCanaryResponse(rawLaunch, {
+      customerId,
+      runtime: surface.runtime,
+    });
+  } catch (error) {
+    failures.push(`launch: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(failures.join(' | '));
+  }
 
   return {
     surface: surface.surface,

@@ -255,7 +255,7 @@ describe('evaOS broker live canary', () => {
           runtime_key: surface.runtime,
           status: 'running',
           source_pointer: `broker:runtime_status:${surface.runtime}`,
-          audit_id: `audit_status_${surface.surface}`,
+          ...(surface.surface === 'hermes' ? {} : { audit_id: `audit_status_${surface.surface}` }),
         })
       );
       fetchImpl.mockResolvedValueOnce(
@@ -280,8 +280,10 @@ describe('evaOS broker live canary', () => {
         },
         fetchImpl,
       })
-    ).rejects.toThrow(/hermes\/hermes.*terminal\/terminal/s);
-    expect(fetchImpl.mock.calls.length).toBeGreaterThan(liveCanary.REQUIRED_BROKER_SURFACES.length);
+    ).rejects.toThrow(
+      /hermes\/hermes: status: .*source and audit evidence.*launch: .*denied runtime_launch.*terminal\/terminal/s
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(liveCanary.REQUIRED_BROKER_SURFACES.length * 2);
   });
 
   it('fails closed when runtime_launch returns a denied broker surface response', () => {

@@ -178,6 +178,7 @@ const REQUIRED_BROKER_LIVE_CANARY_SURFACES = Object.freeze([
   Object.freeze({ surface: 'business-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
+// Suffix-based by design: launch URLs must be represented only by explicit redaction booleans.
 const LIVE_CANARY_SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle|launch[_-]?url|runtime[_-]?launch[_-]?url)$/i;
 const LIVE_CANARY_SECRET_VALUE_PATTERNS = [
@@ -636,6 +637,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/release-distribute.yml',
     issues,
     'live canary proof freshness binding'
+  );
+  requireText(
+    distribute,
+    'Run live canaries: true',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'live canary run input binding'
   );
   requireText(
     distribute,
@@ -1495,6 +1503,13 @@ function assertLiveCanarySafeText(value, label) {
   return text;
 }
 
+function assertLiveCanaryPlainObject(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Unexpected ${label} schema: not an object`);
+  }
+  return value;
+}
+
 function optionalLiveCanarySafeText(value, label) {
   const text = String(value || '').trim();
   if (!text) {
@@ -1614,10 +1629,11 @@ function verifyBusinessBrowserLiveCanaryProof(proofDir, customerId, options) {
   );
   const proof = readManifestFile(proofPath);
 
-  assertLiveCanaryNoSecretMaterial(proof);
+  assertLiveCanaryPlainObject(proof, 'Business Browser live proof');
   if (proof.schema !== 'evaos-business-browser-live-proof/v1') {
     throw new Error(`Unexpected Business Browser live proof schema: ${proof.schema}`);
   }
+  assertLiveCanaryNoSecretMaterial(proof);
   assertLiveCanaryCustomerId(proof.customerId, 'businessBrowser.customerId', customerId);
   assertLiveCanaryFresh(proof.checkedAt, 'businessBrowser.checkedAt', options);
   if (proof.dryRun === true || proof.acceptanceProof !== true) {
@@ -1654,10 +1670,11 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
   const proofPath = requireExistingRelativeFile(proofDir, BROKER_LIVE_CANARY_PROOF_NAME, 'Live broker canary proof');
   const proof = readManifestFile(proofPath);
 
-  assertLiveCanaryNoSecretMaterial(proof);
+  assertLiveCanaryPlainObject(proof, 'live broker canary proof');
   if (proof.schema !== 'evaos-broker-live-canary/v3') {
     throw new Error(`Unexpected live broker canary schema: ${proof.schema}`);
   }
+  assertLiveCanaryNoSecretMaterial(proof);
   const proofCustomerId = assertLiveCanaryCustomerId(proof.customerId, 'customerId', options.expectedCustomerId);
   if (proof.releaseCanaryCustomerId) {
     assertLiveCanaryCustomerId(proof.releaseCanaryCustomerId, 'releaseCanaryCustomerId', proofCustomerId);

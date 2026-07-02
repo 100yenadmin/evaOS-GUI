@@ -351,6 +351,10 @@ jobs:
             echo "::error::Live canary proof must include business-browser.json."
             exit 1
           fi
+          if ! grep -Fq "Run live canaries: true" live-canary-proof/proof-run.md; then
+            echo "::error::Live canary proof run did not record run_live_canaries=true."
+            exit 1
+          fi
 
           node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof
 
