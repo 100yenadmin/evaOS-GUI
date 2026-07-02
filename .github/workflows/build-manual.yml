@@ -30,6 +30,18 @@ on:
         required: false
         type: boolean
         default: false
+      managed_resources_bundle:
+        description: 'AionCore managed resources bundle mode'
+        required: false
+        type: choice
+        options:
+          - no-acp
+          - full
+        default: 'no-acp'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.branch || github.ref }}-${{ github.event.inputs.platform || 'all' }}
+  cancel-in-progress: false
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -82,6 +94,7 @@ jobs:
       matrix: ${{ needs.prepare-matrix.outputs.matrix }}
       ref: ${{ inputs.branch }}
       skip_code_quality: ${{ inputs.skip_code_quality }}
+      managed_resources_bundle: ${{ inputs.managed_resources_bundle }}
       append_commit_hash: true
       upload_installers_only: true
     secrets: inherit
