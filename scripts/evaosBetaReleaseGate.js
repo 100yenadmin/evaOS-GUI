@@ -633,6 +633,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     distribute,
+    'EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'live canary expected release-customer binding'
+  );
+  requireText(
+    distribute,
     'EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS',
     '.github/workflows/release-distribute.yml',
     issues,
@@ -1539,11 +1546,16 @@ function liveCanaryVerificationOptions(env = process.env) {
       env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID,
     'expectedCustomerId'
   );
+  const expectedReleaseCanaryCustomerId = optionalLiveCanarySafeText(
+    env.EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID || env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID,
+    'expectedReleaseCanaryCustomerId'
+  );
   if (!expectedCustomerId) {
     throw new Error('Live broker canary proof requires EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID.');
   }
   return {
     expectedCustomerId,
+    expectedReleaseCanaryCustomerId,
     maxAgeHours: Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24,
     now: new Date(),
   };
@@ -1676,9 +1688,11 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
   }
   assertLiveCanaryNoSecretMaterial(proof);
   const proofCustomerId = assertLiveCanaryCustomerId(proof.customerId, 'customerId', options.expectedCustomerId);
-  if (proof.releaseCanaryCustomerId) {
-    assertLiveCanaryCustomerId(proof.releaseCanaryCustomerId, 'releaseCanaryCustomerId', proofCustomerId);
-  }
+  assertLiveCanaryCustomerId(
+    proof.releaseCanaryCustomerId,
+    'releaseCanaryCustomerId',
+    options.expectedReleaseCanaryCustomerId || proofCustomerId
+  );
   assertLiveCanaryFresh(proof.checkedAt, 'checkedAt', options);
   if (proof.secretScan !== 'passed') {
     throw new Error('Live broker canary proof must pass secret scanning.');
@@ -1687,7 +1701,19 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
     throw new Error('Live broker canary proof must include surfaces.');
   }
 
-  const surfaces = new Map(proof.surfaces.map((surface) => [surface?.surface, surface]));
+  const requiredSurfaceNames = new Set(REQUIRED_BROKER_LIVE_CANARY_SURFACES.map((surface) => surface.surface));
+  const surfaces = new Map();
+  for (const surface of proof.surfaces) {
+    assertLiveCanaryPlainObject(surface, 'live broker canary surface');
+    const surfaceName = assertLiveCanarySafeText(surface.surface, 'surface.surface');
+    if (!requiredSurfaceNames.has(surfaceName)) {
+      throw new Error(`Live broker canary proof includes unknown surface: ${surfaceName}`);
+    }
+    if (surfaces.has(surfaceName)) {
+      throw new Error(`Live broker canary proof includes duplicate surface: ${surfaceName}`);
+    }
+    surfaces.set(surfaceName, surface);
+  }
   for (const required of REQUIRED_BROKER_LIVE_CANARY_SURFACES) {
     const surface = surfaces.get(required.surface);
     if (!surface) {

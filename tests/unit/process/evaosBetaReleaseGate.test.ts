@@ -1116,6 +1116,9 @@ describe('evaOS beta release gate', () => {
   it('rejects stale or cross-customer live broker proof packets', () => {
     const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-stale-'));
     const mismatchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-mismatch-'));
+    const releaseCanaryMismatchDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'evaos-live-broker-proof-release-canary-mismatch-')
+    );
     try {
       writeBrokerLiveCanaryProof(staleDir, {
         checkedAt: '2020-01-01T00:00:00.000Z',
@@ -1132,9 +1135,62 @@ describe('evaOS beta release gate', () => {
       expect(() => releaseGate.verifyBrokerLiveCanaryProof(mismatchDir, liveCanaryProofEnv)).toThrow(
         /customer mismatch/
       );
+
+      writeBrokerLiveCanaryProof(releaseCanaryMismatchDir, {
+        releaseCanaryCustomerId: 'release_canary_a',
+      });
+      expect(() =>
+        releaseGate.verifyBrokerLiveCanaryProof(releaseCanaryMismatchDir, {
+          ...liveCanaryProofEnv,
+          EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID: 'release_canary_b',
+        })
+      ).toThrow(/releaseCanaryCustomerId/);
     } finally {
       fs.rmSync(staleDir, { recursive: true, force: true });
       fs.rmSync(mismatchDir, { recursive: true, force: true });
+      fs.rmSync(releaseCanaryMismatchDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects duplicate or unknown live broker proof surfaces', () => {
+    const duplicateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-duplicate-surface-'));
+    const unknownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-unknown-surface-'));
+    try {
+      writeBrokerLiveCanaryProof(duplicateDir);
+      mutateBrokerLiveCanaryProof(duplicateDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, unknown>>;
+        surfaces[1] = { ...surfaces[0] };
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(duplicateDir, liveCanaryProofEnv)).toThrow(
+        /duplicate surface/
+      );
+
+      writeBrokerLiveCanaryProof(unknownDir);
+      mutateBrokerLiveCanaryProof(unknownDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, unknown>>;
+        surfaces.push({
+          surface: 'unknown-dashboard',
+          runtime: 'unknown',
+          status: 'running',
+          sourcePointer: 'broker:runtime_status:unknown',
+          auditId: 'audit_status_unknown',
+          checkedAt: new Date().toISOString(),
+          secretScan: 'passed',
+          launch: {
+            status: 'attached',
+            launchMode: 'dashboard_surface',
+            sourcePointer: 'broker:runtime_launch:unknown',
+            auditId: 'audit_launch_unknown',
+            launchUrlRedacted: true,
+            checkedAt: new Date().toISOString(),
+            secretScan: 'passed',
+          },
+        });
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(unknownDir, liveCanaryProofEnv)).toThrow(/unknown surface/);
+    } finally {
+      fs.rmSync(duplicateDir, { recursive: true, force: true });
+      fs.rmSync(unknownDir, { recursive: true, force: true });
     }
   });
 

@@ -305,6 +305,7 @@ jobs:
           LIVE_CANARY_PROOF_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID || vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID }}
+          EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID }}
           EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24'
         run: |
           set -euo pipefail
