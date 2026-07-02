@@ -244,12 +244,13 @@ async function readBrowserRuntimeStatus(fetchImpl, endpoint, session, request, l
 }
 
 async function waitForStoppedBrowserRuntime(fetchImpl, endpoint, session, request, options) {
-  const attempts = positiveIntegerEnv(options.env, 'AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_ATTEMPTS', 4);
-  const delayMs = positiveIntegerEnv(options.env, 'AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_DELAY_MS', 1500);
+  const attempts = positiveIntegerEnv(options.env, 'AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_ATTEMPTS', 3);
+  const delayMs = positiveIntegerEnv(options.env, 'AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_DELAY_MS', 1000);
   const sleepImpl = options.sleepImpl ?? sleep;
   let last;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    // Retry only eventual post-stop status staleness. Bad-shape broker payloads remain hard failures.
     last = await readBrowserRuntimeStatus(
       fetchImpl,
       endpoint,

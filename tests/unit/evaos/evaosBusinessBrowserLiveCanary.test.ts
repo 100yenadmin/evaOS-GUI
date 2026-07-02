@@ -424,6 +424,7 @@ describe('evaOS Business Browser live canary', () => {
     });
 
     expect(sleepImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(13);
     expect(proof).toMatchObject({
       afterStop: {
         status: 'stopped',
