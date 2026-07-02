@@ -63,17 +63,22 @@ on:
         default: ''
         type: string
       source_ci_run_id:
-        description: 'Build and Release run id that produced the staged macOS artifacts.'
+        description: 'Workflow run id that produced the staged macOS artifacts.'
         required: false
         default: ''
         type: string
+      source_ci_workflow:
+        description: 'Workflow name that produced the staged macOS artifacts.'
+        required: false
+        default: 'Build and Release'
+        type: string
       source_ci_head_sha:
-        description: 'Commit SHA used by the staged Build and Release run.'
+        description: 'Commit SHA used by the staged artifact run.'
         required: false
         default: ''
         type: string
       source_ci_conclusion:
-        description: 'Conclusion of the staged Build and Release run.'
+        description: 'Conclusion of the staged artifact run.'
         required: false
         default: success
         type: choice
@@ -82,7 +87,7 @@ on:
           - cancelled
           - success
       source_ci_head_branch:
-        description: 'Branch used by the staged Build and Release run.'
+        description: 'Branch used by the staged artifact run.'
         required: false
         default: evaos/beta-rc-20260612
         type: string
@@ -642,7 +647,7 @@ jobs:
           EVAOS_BETA_RELEASE_COMMIT: ${{ github.event.inputs.source_ci_head_sha }}
           EVAOS_BETA_RELEASE_BRANCH: ${{ github.event.inputs.source_ci_head_branch }}
           EVAOS_BETA_LOCAL_DMG_SOURCE_RUN_ID: ${{ github.event.inputs.source_ci_run_id }}
-          EVAOS_BETA_LOCAL_DMG_SOURCE_WORKFLOW: Build and Release
+          EVAOS_BETA_LOCAL_DMG_SOURCE_WORKFLOW: ${{ github.event.inputs.source_ci_workflow }}
           EVAOS_BETA_LOCAL_DMG_SOURCE_CONCLUSION: ${{ github.event.inputs.source_ci_conclusion }}
           EVAOS_BETA_LOCAL_DMG_SOURCE_SHA: ${{ github.event.inputs.source_ci_head_sha }}
           EVAOS_BETA_LOCAL_DMG_SOURCE_BRANCH: ${{ github.event.inputs.source_ci_head_branch }}

@@ -719,6 +719,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     localSignedDmgManifest,
+    'source_ci_workflow',
+    '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
+    issues,
+    'local-signed DMG provenance should record the actual source workflow'
+  );
+  requireText(
+    localSignedDmgManifest,
     'scripts/evaosBetaReleaseGate.js verify-manifest',
     '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml',
     issues
