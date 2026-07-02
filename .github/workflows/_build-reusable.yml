@@ -396,6 +396,29 @@ jobs:
           rm -f /tmp/*.dmg 2>/dev/null || true
           echo "Cleanup complete"
 
+      - name: Install evaOS Mac-control helper (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+          PEEKABOO_VERSION="v3.5.2"
+          PEEKABOO_SHA256="ba60251b759b8dfa564ae71bc6f543aa8269cf8939cd9289921e993bd116edef"
+          PEEKABOO_ARCHIVE="${RUNNER_TEMP}/peekaboo-macos-universal.tar.gz"
+          PEEKABOO_DIR="${RUNNER_TEMP}/peekaboo-${PEEKABOO_VERSION}"
+          curl -fsSL \
+            -o "$PEEKABOO_ARCHIVE" \
+            "https://github.com/openclaw/Peekaboo/releases/download/${PEEKABOO_VERSION}/peekaboo-macos-universal.tar.gz"
+          echo "${PEEKABOO_SHA256}  ${PEEKABOO_ARCHIVE}" | shasum -a 256 -c -
+          mkdir -p "$PEEKABOO_DIR"
+          tar -xzf "$PEEKABOO_ARCHIVE" -C "$PEEKABOO_DIR"
+          PEEKABOO_BIN="${PEEKABOO_DIR}/peekaboo-macos-universal/peekaboo"
+          if [ -z "$PEEKABOO_BIN" ] || [ ! -x "$PEEKABOO_BIN" ]; then
+            echo "::error::Peekaboo helper was not installed as an executable binary."
+            exit 1
+          fi
+          file "$PEEKABOO_BIN"
+          echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN" >> "$GITHUB_ENV"
+
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only
       # macOS: 构建并公证 - DMG 失败 = CI 失败，公证失败 = 仅警告
       - name: Build with electron-builder (macOS)
