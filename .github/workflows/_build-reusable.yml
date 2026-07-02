@@ -23,6 +23,10 @@ on:
         description: 'Only upload primary installers (exe/msi/dmg/deb), skip zip/yml/blockmap'
         type: boolean
         default: false
+      managed_resources_bundle:
+        description: 'AionCore managed resources bundle mode: full or no-acp'
+        type: string
+        default: full
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -311,6 +315,7 @@ jobs:
           # Version is pinned in repo-root package.json (aioncoreVersion).
           # Set AIONUI_BACKEND_VERSION here only to override for ad-hoc builds.
           AIONUI_BACKEND_ARCH: ${{ matrix.arch }}
+          AIONUI_MANAGED_RESOURCES_BUNDLE: ${{ inputs.managed_resources_bundle }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -340,6 +345,7 @@ jobs:
           }
         env:
           WINDOWS_BUILD_COMMAND: ${{ matrix.command }}
+          AIONUI_MANAGED_RESOURCES_BUNDLE: ${{ inputs.managed_resources_bundle }}
           # Node.js memory limit for vite bundling (prevents OOM during build)
           # Node.js 内存限制，防止 vite 打包时内存不足
           NODE_OPTIONS: '--max-old-space-size=8192'
@@ -389,6 +395,29 @@ jobs:
           # Clean up any temporary DMG files
           rm -f /tmp/*.dmg 2>/dev/null || true
           echo "Cleanup complete"
+
+      - name: Install evaOS Mac-control helper (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+          PEEKABOO_VERSION="v3.5.2"
+          PEEKABOO_SHA256="ba60251b759b8dfa564ae71bc6f543aa8269cf8939cd9289921e993bd116edef"
+          PEEKABOO_ARCHIVE="${RUNNER_TEMP}/peekaboo-macos-universal.tar.gz"
+          PEEKABOO_DIR="${RUNNER_TEMP}/peekaboo-${PEEKABOO_VERSION}"
+          curl -fsSL \
+            -o "$PEEKABOO_ARCHIVE" \
+            "https://github.com/openclaw/Peekaboo/releases/download/${PEEKABOO_VERSION}/peekaboo-macos-universal.tar.gz"
+          echo "${PEEKABOO_SHA256}  ${PEEKABOO_ARCHIVE}" | shasum -a 256 -c -
+          mkdir -p "$PEEKABOO_DIR"
+          tar -xzf "$PEEKABOO_ARCHIVE" -C "$PEEKABOO_DIR"
+          PEEKABOO_BIN="${PEEKABOO_DIR}/peekaboo-macos-universal/peekaboo"
+          if [ -z "$PEEKABOO_BIN" ] || [ ! -x "$PEEKABOO_BIN" ]; then
+            echo "::error::Peekaboo helper was not installed as an executable binary."
+            exit 1
+          fi
+          file "$PEEKABOO_BIN"
+          echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN" >> "$GITHUB_ENV"
 
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only
       # macOS: 构建并公证 - DMG 失败 = CI 失败，公证失败 = 仅警告
@@ -440,6 +469,7 @@ jobs:
           echo "notarization_status=build_failed" >> $GITHUB_OUTPUT
           exit 1
         env:
+          AIONUI_MANAGED_RESOURCES_BUNDLE: ${{ inputs.managed_resources_bundle }}
           NODE_OPTIONS: '--max-old-space-size=8192'
           npm_config_arch: ${{ matrix.arch }}
           APP_ID: ${{ secrets.APP_ID }}
@@ -450,6 +480,8 @@ jobs:
           CSC_NAME: ${{ secrets.IDENTITY }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: 'true'
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || github.token }}
           npm_config_cache: ${{ runner.temp }}/.npm
           ELECTRON_CACHE: ${{ runner.temp }}/.cache/electron
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/.cache/electron-builder
@@ -477,6 +509,7 @@ jobs:
           retry_wait_seconds: 60
           command: ${{ matrix.command }}
         env:
+          AIONUI_MANAGED_RESOURCES_BUNDLE: ${{ inputs.managed_resources_bundle }}
           NODE_OPTIONS: '--max-old-space-size=8192'
           npm_config_arch: ${{ matrix.arch }}
           npm_config_cache: ${{ runner.temp }}/.npm
