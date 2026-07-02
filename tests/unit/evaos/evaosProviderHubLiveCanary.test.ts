@@ -155,6 +155,35 @@ describe('evaOS Provider Hub live canary', () => {
     expect(JSON.stringify(proof)).not.toMatch(/epg_|grantHandle|grant_handle/i);
   });
 
+  it('uses the same provider key/status normalizers as Workbench broker views', () => {
+    const proof = providerCanary.summarizeProviderHubResponse(
+      {
+        ...providerHub,
+        provider_profiles: [
+          providerProfile('google_workspace', 'needs_auth'),
+          providerProfile('slack', 'disconnected'),
+          providerProfile('notion', 'coming_soon'),
+          providerProfile('linear', 'failed'),
+        ],
+      },
+      {
+        customerId: 'cus_123',
+        customerAccountId: 'acct_123',
+        requiredStates: ['needs_login', 'revoked', 'planned', 'error'],
+      }
+    );
+
+    expect(proof).toMatchObject({
+      statesPresent: ['error', 'needs_login', 'planned', 'revoked'],
+      profiles: [
+        { providerKey: 'google_workspace', status: 'needs_login' },
+        { providerKey: 'slack', status: 'revoked' },
+        { providerKey: 'notion', status: 'planned' },
+        { providerKey: 'linear', status: 'error' },
+      ],
+    });
+  });
+
   it('does not accept bare normalized connection booleans as proof for connected providers', () => {
     expect(() =>
       providerCanary.summarizeProviderHubResponse(
