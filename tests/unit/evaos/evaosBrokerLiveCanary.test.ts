@@ -100,11 +100,27 @@ describe('evaOS broker live canary', () => {
             subtitle: 'No raw provider secrets in the Mac app.',
           },
         ],
+        source_pointer: 'broker:runtime_status:browser',
+        audit_id: 'audit_safe_copy',
       },
       { customerId: 'cus_123', runtime: 'browser' }
     );
 
     expect(proof.secretScan).toBe('passed');
+  });
+
+  it('fails fast when runtime_status omits source or audit evidence', () => {
+    expect(() =>
+      liveCanary.sanitizeBrokerRuntimeCanaryResponse(
+        {
+          customer_id: 'cus_123',
+          runtime_key: 'browser',
+          status: 'running',
+          source_pointer: 'broker:runtime_status:browser',
+        },
+        { customerId: 'cus_123', runtime: 'browser' }
+      )
+    ).toThrow(/source and audit evidence/);
   });
 
   it('dispatches status and dashboard launch for every required broker surface without leaking sessions', async () => {
@@ -116,6 +132,7 @@ describe('evaOS broker live canary', () => {
             customer_id: 'cus_123',
             runtime_key: surface.runtime,
             status: 'running',
+            source_pointer: `broker:runtime_status:${surface.runtime}`,
             audit_id: `audit_status_${surface.surface}`,
           })
         )
@@ -195,6 +212,7 @@ describe('evaOS broker live canary', () => {
           customer_id: 'cus_123',
           runtime_key: 'hermes',
           status: 'running',
+          source_pointer: 'broker:runtime_status:hermes',
           audit_id: 'audit_status_hermes',
         })
       )
@@ -236,6 +254,7 @@ describe('evaOS broker live canary', () => {
           customer_id: 'cus_123',
           runtime_key: surface.runtime,
           status: 'running',
+          source_pointer: `broker:runtime_status:${surface.runtime}`,
           audit_id: `audit_status_${surface.surface}`,
         })
       );

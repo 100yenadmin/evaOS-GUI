@@ -1518,13 +1518,17 @@ function assertLiveCanaryNotDenied(value, label) {
 function liveCanaryVerificationOptions(env = process.env) {
   const maxAgeRaw = String(env.EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS || '24').trim();
   const maxAgeHours = Number.parseFloat(maxAgeRaw);
+  const expectedCustomerId = optionalLiveCanarySafeText(
+    env.EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID ||
+      env.AIONUI_EVAOS_CUSTOMER_ID ||
+      env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID,
+    'expectedCustomerId'
+  );
+  if (!expectedCustomerId) {
+    throw new Error('Live broker canary proof requires EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID.');
+  }
   return {
-    expectedCustomerId: optionalLiveCanarySafeText(
-      env.EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID ||
-        env.AIONUI_EVAOS_CUSTOMER_ID ||
-        env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID,
-      'expectedCustomerId'
-    ),
+    expectedCustomerId,
     maxAgeHours: Number.isFinite(maxAgeHours) && maxAgeHours > 0 ? maxAgeHours : 24,
     now: new Date(),
   };

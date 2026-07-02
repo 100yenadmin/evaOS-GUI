@@ -19,7 +19,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   releaseProvenanceFromEnv: (env: Record<string, string | undefined>) => unknown;
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK: string;
   normalizeBoolean: (value: unknown) => boolean;
-  verifyBrokerLiveCanaryProof: (proofDir: string) => boolean;
+  verifyBrokerLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
@@ -83,6 +83,10 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
 };
 
 const repoRoot = path.resolve(__dirname, '../../..');
+const liveCanaryProofEnv = {
+  EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID: 'cus_123',
+  EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+};
 
 function writeArm64TrustEvidence(proofDir: string) {
   fs.writeFileSync(path.join(proofDir, 'codesign-dmg-macos-arm64.txt'), 'evaOS Workbench.dmg: valid on disk\n');
@@ -950,7 +954,7 @@ describe('evaOS beta release gate', () => {
     try {
       writeBrokerLiveCanaryProof(proofDir);
 
-      expect(releaseGate.verifyBrokerLiveCanaryProof(proofDir)).toBe(true);
+      expect(releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toBe(true);
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
@@ -982,7 +986,9 @@ describe('evaOS beta release gate', () => {
           },
         ],
       });
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingSurfaceDir)).toThrow(/missing required surface/);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingSurfaceDir, liveCanaryProofEnv)).toThrow(
+        /missing required surface/
+      );
 
       writeBrokerLiveCanaryProof(secretDir, {
         surfaces: [
@@ -1007,7 +1013,7 @@ describe('evaOS beta release gate', () => {
           },
         ],
       });
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(secretDir)).toThrow(
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(secretDir, liveCanaryProofEnv)).toThrow(
         /secret material|missing required surface/
       );
     } finally {
@@ -1022,7 +1028,7 @@ describe('evaOS beta release gate', () => {
     try {
       writeBrokerLiveCanaryProof(missingBrowserDir);
       fs.rmSync(path.join(missingBrowserDir, 'business-browser.json'));
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingBrowserDir)).toThrow(
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingBrowserDir, liveCanaryProofEnv)).toThrow(
         /Business Browser live canary proof/
       );
 
@@ -1036,7 +1042,9 @@ describe('evaOS beta release gate', () => {
           negativeBoundary: 'not-run',
         }
       );
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(dryRunDir)).toThrow(/non-dry-run acceptance proof/);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(dryRunDir, liveCanaryProofEnv)).toThrow(
+        /non-dry-run acceptance proof/
+      );
     } finally {
       fs.rmSync(missingBrowserDir, { recursive: true, force: true });
       fs.rmSync(dryRunDir, { recursive: true, force: true });
@@ -1050,7 +1058,7 @@ describe('evaOS beta release gate', () => {
       writeBrokerLiveCanaryProof(staleDir, {
         checkedAt: '2020-01-01T00:00:00.000Z',
       });
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(staleDir)).toThrow(/stale/);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(staleDir, liveCanaryProofEnv)).toThrow(/stale/);
 
       writeBrokerLiveCanaryProof(
         mismatchDir,
@@ -1059,10 +1067,22 @@ describe('evaOS beta release gate', () => {
           customerId: 'different_customer',
         }
       );
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(mismatchDir)).toThrow(/customer mismatch/);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(mismatchDir, liveCanaryProofEnv)).toThrow(
+        /customer mismatch/
+      );
     } finally {
       fs.rmSync(staleDir, { recursive: true, force: true });
       fs.rmSync(mismatchDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires an explicit expected customer id for live broker proof verification', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-unbound-customer-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, {})).toThrow(/EXPECTED_CUSTOMER_ID/);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
     }
   });
 

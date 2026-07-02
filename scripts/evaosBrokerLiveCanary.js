@@ -105,6 +105,11 @@ function sanitizeBrokerRuntimeCanaryResponse(raw, request) {
   if (!status) {
     throw new Error('Broker canary response did not include a safe runtime status.');
   }
+  const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
+  const auditId = safeText(record.audit_id ?? record.auditId);
+  if (!sourcePointer || !auditId) {
+    throw new Error('Broker canary response did not include source and audit evidence.');
+  }
 
   return {
     schema: 'evaos-broker-live-canary/v1',
@@ -112,8 +117,8 @@ function sanitizeBrokerRuntimeCanaryResponse(raw, request) {
     runtime,
     status,
     displayLabel: safeText(record.display_label ?? record.displayLabel),
-    sourcePointer: safeText(record.source_pointer ?? record.sourcePointer),
-    auditId: safeText(record.audit_id ?? record.auditId),
+    sourcePointer,
+    auditId,
     checkedAt: new Date().toISOString(),
     secretScan: 'passed',
   };
