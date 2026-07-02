@@ -130,6 +130,37 @@ Commit format: `<type>(<scope>): <subject>` in English. Types: feat, fix, refact
 
 For pull request creation, see the `oss-pr` skill (`.claude/skills/oss-pr/SKILL.md`).
 
+## Shared Owned-Repo Policy
+
+This evaOS fork follows the shared owned-repo operating policy maintained in
+`100yenadmin/codex-operating-kit`. Keep this file as a pointer plus
+repo-specific Workbench gates; do not copy the full shared runbooks here.
+
+- Track meaningful work in GitHub issues, epics, milestones, or sprint trackers
+  before implementation. Link implementation PRs to the issue and to the shared
+  rollout tracker when the work is policy-only.
+- Before claiming PR readiness, query current-head `reviewThreads` and report
+  `total`, `currentActionable`, and `outdated`. Treat top-level bot comments,
+  skipped-review notices, rate-limit notices, and check annotations as separate
+  status inputs, not resolvable review threads.
+- P0-P2 current actionable review threads block merge, release, and readiness
+  claims unless fixed, proven false-positive, or explicitly escalated. P3
+  advisory threads still need a terminal disposition before closeout.
+- Release and prerelease notes must be human-readable first: open with the
+  user/operator outcome, group highlights/changes/fixes, then add compact
+  verification and evidence. Operator proof packets may be linked from the
+  release note, but should not replace the visible GitHub release narrative.
+- Repo-specific Workbench release gates remain local. Do not flatten the proof
+  ladder for signed installed-app proof, TCC identity, bridge/resource proof,
+  signing/notarization, appcast, or public distribution into the shared policy.
+- Docs, PR-template, issue-comment, and changelog-only changes do not require a
+  local Swift rebuild, signing, notarization, appcast, or installed-app proof.
+  Use `git diff --check` plus GitHub CI unless Swift source, packaging
+  contracts, bridge/resource behavior, or release workflows changed.
+- Preserve the current release blockers and stop rules: #501 is the
+  known-good Mac connector RC changelog/release-note blocker, #480 is the
+  Mac-control sprint tracker, and PR #410 is a separate runtime-gate PR.
+
 ## Skills Index
 
 | Skill             | Purpose                                                                               | Triggers                                                                                   |
