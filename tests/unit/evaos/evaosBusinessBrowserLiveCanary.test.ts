@@ -14,6 +14,7 @@ const browserCanary = require('../../../scripts/evaosBusinessBrowserLiveCanary.j
   runBusinessBrowserLiveCanary: (options: {
     env: Record<string, string | undefined>;
     fetchImpl: typeof fetch;
+    sleepImpl?: (ms: number) => Promise<void>;
   }) => Promise<Record<string, unknown>>;
   summarizeBrowserActionResult: (
     raw: unknown,
@@ -377,6 +378,102 @@ describe('evaOS Business Browser live canary', () => {
       sensitiveOutput: 'passed',
     });
     expect(JSON.stringify(proof)).not.toMatch(/eds_|access_token|desktop_session|Bearer/i);
+  });
+
+  it('waits for the post-stop runtime status to settle before failing the live proof', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const sleepImpl = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(policy))
+      .mockResolvedValueOnce(jsonResponse(runtime))
+      .mockResolvedValueOnce(jsonResponse(openResult))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...runtime,
+          audit_id: 'audit_runtime_after_open',
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse(stopResult))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...runtime,
+          audit_id: 'audit_runtime_after_stop_stale',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...runtime,
+          status: 'stopped',
+          audit_id: 'audit_runtime_after_stop',
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse(denied, { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse(denied, { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse(denied, { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse(denied, { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse(denied, { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse(denied, { status: 403 }));
+
+    const proof = await browserCanary.runBusinessBrowserLiveCanary({
+      env: {
+        ...env,
+        AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_DELAY_MS: '1',
+      },
+      fetchImpl,
+      sleepImpl,
+    });
+
+    expect(sleepImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(13);
+    expect(proof).toMatchObject({
+      afterStop: {
+        status: 'stopped',
+        stopSettleAttempts: 2,
+      },
+    });
+  });
+
+  it('fails the live proof when post-stop runtime status never settles', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const sleepImpl = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(policy))
+      .mockResolvedValueOnce(jsonResponse(runtime))
+      .mockResolvedValueOnce(jsonResponse(openResult))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...runtime,
+          audit_id: 'audit_runtime_after_open',
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse(stopResult))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...runtime,
+          audit_id: 'audit_runtime_after_stop_stale_1',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...runtime,
+          audit_id: 'audit_runtime_after_stop_stale_2',
+        })
+      );
+
+    await expect(
+      browserCanary.runBusinessBrowserLiveCanary({
+        env: {
+          ...env,
+          AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_ATTEMPTS: '2',
+          AIONUI_EVAOS_BUSINESS_BROWSER_STOP_STATUS_DELAY_MS: '1',
+        },
+        fetchImpl,
+        sleepImpl,
+      })
+    ).rejects.toThrow(/post-stop runtime status must be stopped; last status was running/);
+
+    expect(sleepImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(7);
   });
 
   it('labels explicit no-negative bypass output as dry-run only', async () => {
