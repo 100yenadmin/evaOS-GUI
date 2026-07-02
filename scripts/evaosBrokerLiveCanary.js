@@ -145,7 +145,14 @@ function responseShapeSummary(raw) {
     assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(record));
     const topLevelKeys = Object.keys(record).sort();
     const nestedShape = {};
-    for (const key of ['runtime_status', 'runtimeStatus', 'runtime_surface', 'runtimeSurface', 'surface_status', 'surfaceStatus']) {
+    for (const key of [
+      'runtime_status',
+      'runtimeStatus',
+      'runtime_surface',
+      'runtimeSurface',
+      'surface_status',
+      'surfaceStatus',
+    ]) {
       const nested = record[key];
       if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
         assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(nested));
