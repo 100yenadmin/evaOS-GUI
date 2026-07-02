@@ -3,6 +3,17 @@
 const { DEFAULT_ENDPOINT } = require('./evaosBrokerLiveCanary.js');
 
 const DEFAULT_REQUIRED_STATES = ['connected', 'needs_login', 'expired', 'revoked', 'approval_required'];
+const VALID_PROVIDER_KEYS = new Set([
+  'openai_codex',
+  'openclaw',
+  'hermes',
+  'google_workspace',
+  'pipedream',
+  'slack',
+  'notion',
+  'linear',
+  'github',
+]);
 const VALID_PROVIDER_STATUSES = new Set([
   'connected',
   'needs_login',
@@ -88,6 +99,27 @@ function recordFromEnvelope(raw) {
 
 function safeBoolean(value) {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function normalizeProviderKeyValue(value) {
+  const text = safeText(value, 120);
+  return text && VALID_PROVIDER_KEYS.has(text) ? text : undefined;
+}
+
+function normalizeProviderStatusValue(value) {
+  const text = safeText(value, 80)?.toLowerCase();
+  if (!text) return undefined;
+  const aliases = {
+    needs_auth: 'needs_login',
+    needs_input: 'needs_login',
+    unavailable: 'planned',
+    coming_soon: 'planned',
+    disconnected: 'revoked',
+    blocked: 'error',
+    failed: 'error',
+  };
+  const normalized = aliases[text] ?? text;
+  return VALID_PROVIDER_STATUSES.has(normalized) ? normalized : undefined;
 }
 
 function requireEnv(env, key) {
@@ -177,8 +209,10 @@ function summarizeProfile(raw, expectedCustomerAccountId) {
   const nested = asRecord(record.provider_profile) ?? asRecord(record.profile);
   if (nested) return summarizeProfile(nested, expectedCustomerAccountId);
 
-  const providerKey = safeText(record.provider_key ?? record.providerKey ?? record.provider ?? record.key, 80);
-  const status = safeText(record.status, 80);
+  const providerKey = normalizeProviderKeyValue(
+    record.provider_key ?? record.providerKey ?? record.provider ?? record.key
+  );
+  const status = normalizeProviderStatusValue(record.status);
   const customerAccountId = safeText(record.customer_account_id ?? record.customerAccountId);
   const rawSecretsStoredInWorkbench =
     safeBoolean(
@@ -198,7 +232,7 @@ function summarizeProfile(raw, expectedCustomerAccountId) {
   const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
   const auditId = safeText(record.audit_id ?? record.auditId);
 
-  if (!providerKey || !status || !VALID_PROVIDER_STATUSES.has(status)) {
+  if (!providerKey || !status) {
     throw new Error('Provider profile did not include a valid provider key and status.');
   }
   if (expectedCustomerAccountId && customerAccountId && customerAccountId !== expectedCustomerAccountId) {
