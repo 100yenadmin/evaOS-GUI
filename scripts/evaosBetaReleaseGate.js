@@ -175,7 +175,6 @@ const REQUIRED_BROKER_LIVE_CANARY_SURFACES = Object.freeze([
   Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
   Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
   Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
-  Object.freeze({ surface: 'business-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 // Suffix-based by design: launch URLs must be represented only by explicit redaction booleans.

@@ -233,7 +233,6 @@ function writeBrokerLiveCanaryProof(
     ['evaos', 'openclaw'],
     ['hermes', 'hermes'],
     ['mission-control', 'paperclip'],
-    ['business-browser', 'browser'],
     ['terminal', 'terminal'],
   ].map(([surface, runtime]) => ({
     surface,
@@ -260,7 +259,7 @@ function writeBrokerLiveCanaryProof(
         schema: 'evaos-broker-live-canary/v3',
         customerId: 'cus_123',
         releaseCanaryCustomerId: 'cus_123',
-        requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'business-browser', 'terminal'],
+        requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'terminal'],
         surfaces,
         checkedAt,
         secretScan: 'passed',

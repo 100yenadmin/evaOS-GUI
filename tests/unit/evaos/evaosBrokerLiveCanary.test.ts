@@ -173,14 +173,13 @@ describe('evaOS broker live canary', () => {
     expect(proof).toMatchObject({
       schema: 'evaos-broker-live-canary/v3',
       customerId: 'cus_123',
-      requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'business-browser', 'terminal'],
+      requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'terminal'],
       secretScan: 'passed',
     });
     expect((proof.surfaces as Array<Record<string, unknown>>).map((surface) => surface.surface)).toEqual([
       'evaos',
       'hermes',
       'mission-control',
-      'business-browser',
       'terminal',
     ]);
     expect(proof).toMatchObject({
@@ -232,7 +231,7 @@ describe('evaOS broker live canary', () => {
       env: {
         AIONUI_EVAOS_DESKTOP_SESSION: 'eds_valid_session_for_test',
         AIONUI_EVAOS_CUSTOMER_ID: 'cus_123',
-        AIONUI_EVAOS_RUNTIME: 'hermes',
+        AIONUI_EVAOS_BROKER_RUNTIME: 'hermes',
         AIONUI_EVAOS_BROKER_ENDPOINT: 'https://broker.example.test/runtime',
       },
       fetchImpl,

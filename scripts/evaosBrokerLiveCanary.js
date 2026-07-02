@@ -5,7 +5,6 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
   Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
   Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
   Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
-  Object.freeze({ surface: 'business-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 
@@ -223,7 +222,7 @@ function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
 }
 
 function requestedBrokerSurfaces(env) {
-  const runtime = safeText(env.AIONUI_EVAOS_RUNTIME);
+  const runtime = safeText(env.AIONUI_EVAOS_BROKER_RUNTIME);
   if (!runtime) {
     return REQUIRED_BROKER_SURFACES;
   }
