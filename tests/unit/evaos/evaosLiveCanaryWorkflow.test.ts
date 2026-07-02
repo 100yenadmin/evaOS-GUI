@@ -46,6 +46,8 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID');
     expect(workflow).toContain('vars.AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND');
     expect(workflow).toContain('vars.AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL');
+    expect(workflow).toContain('AIONUI_EVAOS_CUSTOMER_ID: ${{ inputs.customer_id || vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID');
+    expect(workflow).toContain('AIONUI_EVAOS_FIXTURE_CUSTOMER_ID: ${{ inputs.customer_id || vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID');
     expect(workflow).toContain('vars.AIONUI_EVAOS_CUSTOMER_ID');
     expect(workflow).toContain('secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY');
     expect(workflow).toContain('AIONUI_EVAOS_APPROVAL_DENY_ACK: evaos-deny-test');
