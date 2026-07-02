@@ -170,6 +170,43 @@ describe('EvaosBrokerSessionClient', () => {
     });
   });
 
+  it('clears stale desktop session state when broker runtime auth is rejected', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(jsonResponse({ error: 'desktop_session_expired' }, { status: 401 }));
+    const store = memorySessionStore({
+      accessToken: 'eds_stale_runtime_session_secret_for_test',
+      userEmail: 'admin@100yen.org',
+      expiresAt: FUTURE,
+    });
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+      sessionStore: store,
+    });
+
+    await expect(client.customerTargets()).rejects.toMatchObject({
+      code: 'broker_http_error',
+      status: 401,
+    });
+
+    expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBe(
+      'Bearer eds_stale_runtime_session_secret_for_test'
+    );
+    expect(store.cleared).toBe(1);
+    expect(client.getSessionStatus()).toMatchObject({
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+    });
+
+    await expect(client.runtimeStatus({ customerId: 'golden', runtime: 'openclaw' })).rejects.toMatchObject({
+      code: 'missing_session',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed without calling the broker when the desktop session is expired', async () => {
     const fetchImpl = fetchMock();
     const client = new EvaosBrokerSessionClient({
