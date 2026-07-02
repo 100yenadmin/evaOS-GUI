@@ -282,6 +282,11 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
         if (response.data.runtimeStatus) {
           setStatusView(response.data.runtimeStatus);
         }
+        if (runtimeActionNeedsBlockerUi(response.data)) {
+          setRuntimeSurface(null);
+          setActionError(runtimeActionSummary(response.data));
+          return;
+        }
         if (runtimeSurfaceMatches(response.data.runtimeSurface, selectedCustomerId, runtimeKey)) {
           setRuntimeSurface(response.data.runtimeSurface);
         } else if (response.data.runtimeSurface) {
@@ -289,11 +294,6 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
           setActionError(`${title} broker returned an invalid runtime surface handle.`);
           return;
         } else if (action === 'attach') {
-          if (runtimeActionNeedsBlockerUi(response.data)) {
-            setRuntimeSurface(null);
-            setActionError(runtimeActionSummary(response.data));
-            return;
-          }
           setRuntimeSurface(null);
           setActionError(missingRuntimeSurfaceMessage(runtimeKey, title));
           return;

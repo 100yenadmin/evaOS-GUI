@@ -214,6 +214,63 @@ describe('RuntimeDashboardPage', () => {
     }
   );
 
+  it('refuses a denied broker action even when it includes a runtime surface handle', async () => {
+    evaosBrokerMock.runtimeAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        status: 'forbidden',
+        runtimeKey: 'openclaw',
+        customerId: 'fixture-customer-acme',
+        message: 'forbidden',
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-openclaw-forbidden',
+          surfaceUri: 'evaos-runtime-surface://surface-openclaw-forbidden/',
+          partition: 'evaos-runtime-openclaw-forbidden',
+          customerId: 'fixture-customer-acme',
+          runtimeKey: 'openclaw',
+          displayLabel: 'evaOS',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:openclaw',
+          auditId: 'audit-runtime-launch-forbidden',
+        },
+        runtimeStatus: {
+          schemaVersion: 'evaos.runtime_status.v1',
+          customerId: 'fixture-customer-acme',
+          runtimeKey: 'openclaw',
+          displayLabel: 'evaOS',
+          status: 'forbidden',
+          healthSummary: 'OpenClaw dashboard authorization denied.',
+          actions: [],
+          sourcePointer: 'broker:runtime_status:openclaw',
+          auditId: 'audit-runtime-status-forbidden',
+        },
+        backendEnforced: true,
+      },
+    });
+
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    await waitFor(() =>
+      expect(evaosBrokerMock.runtimeAction).toHaveBeenCalledWith({
+        customerId: 'fixture-customer-acme',
+        runtime: 'openclaw',
+        action: 'attach',
+        launchMode: 'dashboard_surface',
+      })
+    );
+    expect(await screen.findByText(/forbidden/)).toBeInTheDocument();
+    expect(screen.queryByTestId('evaos-runtime-surface-openclaw')).not.toBeInTheDocument();
+    expect((await screen.findAllByText('denied')).length).toBeGreaterThan(0);
+  });
+
   it('clears the attached runtime surface when switching broker runtime routes', async () => {
     localStorage.clear();
     evaosBrokerMock.runtimeStatus.mockResolvedValueOnce({

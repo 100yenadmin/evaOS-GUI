@@ -19,6 +19,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   releaseProvenanceFromEnv: (env: Record<string, string | undefined>) => unknown;
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK: string;
   normalizeBoolean: (value: unknown) => boolean;
+  verifyBrokerLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
@@ -82,6 +83,10 @@ const macDmgFinalizer = require('../../../scripts/evaosFinalizeMacDmg.js') as {
 };
 
 const repoRoot = path.resolve(__dirname, '../../..');
+const liveCanaryProofEnv = {
+  EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID: 'cus_123',
+  EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+};
 
 function writeArm64TrustEvidence(proofDir: string) {
   fs.writeFileSync(path.join(proofDir, 'codesign-dmg-macos-arm64.txt'), 'evaOS Workbench.dmg: valid on disk\n');
@@ -128,6 +133,155 @@ function writeMacosBridgeZip(zipPath: string, options: { extraEntryCount?: numbe
     '        archive.writestr(f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", "x\\n")',
   ].join('\n');
   execFileSync('python3', ['-c', script, zipPath, String(options.extraEntryCount || 0)]);
+}
+
+function writeBusinessBrowserLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
+  const customerId = String(overrides.customerId || 'cus_123');
+  const checkedAt = String(overrides.checkedAt || new Date().toISOString());
+  const runtimeProof = (status: string, auditId: string) => ({
+    customerId,
+    customerAccountId: 'customer_account_123',
+    runtime: 'browser',
+    status,
+    controlSessionActive: true,
+    canOpenUrl: true,
+    canStop: true,
+    actionCount: 2,
+    sourcePointer: 'broker:runtime_status:browser',
+    auditId,
+  });
+  const actionProof = (action: string, status: string, auditId: string) => ({
+    action,
+    customerId,
+    customerAccountId: 'customer_account_123',
+    status,
+    backendEnforced: true,
+    sourcePointer: `broker:${action}:${customerId}`,
+    auditId,
+  });
+  const deniedProof = (actor: string) => ({
+    runtime: {
+      actor: `${actor}:runtime`,
+      backendDenied: true,
+      httpStatus: 403,
+      code: 'forbidden',
+      sourcePointer: `broker:business_browser_denial:${actor}:runtime`,
+      auditId: `audit_${actor}_runtime_denied`,
+    },
+    open: {
+      actor: `${actor}:open`,
+      backendDenied: true,
+      httpStatus: 403,
+      code: 'forbidden',
+      sourcePointer: `broker:business_browser_denial:${actor}:open`,
+      auditId: `audit_${actor}_open_denied`,
+    },
+    stop: {
+      actor: `${actor}:stop`,
+      backendDenied: true,
+      httpStatus: 403,
+      code: 'forbidden',
+      sourcePointer: `broker:business_browser_denial:${actor}:stop`,
+      auditId: `audit_${actor}_stop_denied`,
+    },
+  });
+
+  fs.writeFileSync(
+    path.join(proofDir, 'business-browser.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-business-browser-live-proof/v1',
+        customerId,
+        checkedAt,
+        dryRun: false,
+        acceptanceProof: true,
+        customerIsolation: 'passed',
+        negativeBoundary: 'required',
+        policy: {
+          customerId,
+          customerAccountId: 'customer_account_123',
+          membershipId: 'membership_123',
+          membershipRole: 'admin',
+          hasOpenBusinessBrowser: true,
+          backendEnforced: true,
+          auditId: 'audit_business_browser_policy',
+        },
+        before: runtimeProof('running', 'audit_browser_before'),
+        open: actionProof('browser_open_url', 'opened', 'audit_browser_open'),
+        afterOpen: runtimeProof('running', 'audit_browser_after_open'),
+        stop: actionProof('browser_stop', 'stopped', 'audit_browser_stop'),
+        afterStop: runtimeProof('stopped', 'audit_browser_after_stop'),
+        wrongCustomer: deniedProof('wrong_customer'),
+        deniedMember: deniedProof('denied_member'),
+        sensitiveOutput: 'passed',
+        ...overrides,
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
+function writeBrokerLiveCanaryProof(
+  proofDir: string,
+  overrides: Record<string, unknown> = {},
+  businessBrowserOverrides: Record<string, unknown> = {}
+) {
+  fs.mkdirSync(proofDir, { recursive: true });
+  const checkedAt = String(overrides.checkedAt || new Date().toISOString());
+  const surfaces = [
+    ['evaos', 'openclaw'],
+    ['hermes', 'hermes'],
+    ['mission-control', 'paperclip'],
+    ['business-browser', 'browser'],
+    ['terminal', 'terminal'],
+  ].map(([surface, runtime]) => ({
+    surface,
+    runtime,
+    status: 'running',
+    sourcePointer: `broker:runtime_status:${runtime}`,
+    auditId: `audit_status_${surface}`,
+    checkedAt,
+    secretScan: 'passed',
+    launch: {
+      status: 'attached',
+      launchMode: 'dashboard_surface',
+      sourcePointer: `broker:runtime_launch:${runtime}`,
+      auditId: `audit_launch_${surface}`,
+      launchUrlRedacted: true,
+      checkedAt,
+      secretScan: 'passed',
+    },
+  }));
+  fs.writeFileSync(
+    path.join(proofDir, 'broker-runtime-status.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-broker-live-canary/v3',
+        customerId: 'cus_123',
+        releaseCanaryCustomerId: 'cus_123',
+        requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'business-browser', 'terminal'],
+        surfaces,
+        checkedAt,
+        secretScan: 'passed',
+        ...overrides,
+      },
+      null,
+      2
+    )}\n`
+  );
+  writeBusinessBrowserLiveCanaryProof(proofDir, {
+    customerId: String(overrides.customerId || 'cus_123'),
+    checkedAt,
+    ...businessBrowserOverrides,
+  });
+}
+
+function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<string, unknown>) => void) {
+  const proofPath = path.join(proofDir, 'broker-runtime-status.json');
+  const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+  mutator(proof);
+  fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
 }
 
 function writeProofReleaseAssetsReference(
@@ -800,6 +954,254 @@ describe('evaOS beta release gate', () => {
 
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
+  });
+
+  it('verifies live broker-surface proof before distribution can publish', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+
+      expect(releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toBe(true);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects broker proof packets that omit a required surface or contain raw launch material', () => {
+    const missingSurfaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-missing-'));
+    const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-secret-'));
+    try {
+      writeBrokerLiveCanaryProof(missingSurfaceDir, {
+        surfaces: [
+          {
+            surface: 'evaos',
+            runtime: 'openclaw',
+            status: 'running',
+            sourcePointer: 'broker:runtime_status:openclaw',
+            auditId: 'audit_status_evaos',
+            checkedAt: new Date().toISOString(),
+            secretScan: 'passed',
+            launch: {
+              status: 'attached',
+              launchMode: 'dashboard_surface',
+              sourcePointer: 'broker:runtime_launch:openclaw',
+              auditId: 'audit_launch_evaos',
+              launchUrlRedacted: true,
+              checkedAt: new Date().toISOString(),
+              secretScan: 'passed',
+            },
+          },
+        ],
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingSurfaceDir, liveCanaryProofEnv)).toThrow(
+        /missing required surface/
+      );
+
+      writeBrokerLiveCanaryProof(secretDir, {
+        surfaces: [
+          {
+            surface: 'evaos',
+            runtime: 'openclaw',
+            status: 'running',
+            sourcePointer: 'broker:runtime_status:openclaw',
+            auditId: 'audit_status_evaos',
+            checkedAt: new Date().toISOString(),
+            secretScan: 'passed',
+            launch: {
+              status: 'attached',
+              launchMode: 'dashboard_surface',
+              launch_url: 'https://runtime.example.test/callback?desktop_session=eds_raw_secret',
+              sourcePointer: 'broker:runtime_launch:openclaw',
+              auditId: 'audit_launch_evaos',
+              launchUrlRedacted: true,
+              checkedAt: new Date().toISOString(),
+              secretScan: 'passed',
+            },
+          },
+        ],
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(secretDir, liveCanaryProofEnv)).toThrow(
+        /secret material|missing required surface/
+      );
+    } finally {
+      fs.rmSync(missingSurfaceDir, { recursive: true, force: true });
+      fs.rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects malformed live broker proof packets before scanning nested fields', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-malformed-'));
+    try {
+      writeBusinessBrowserLiveCanaryProof(proofDir);
+      fs.writeFileSync(path.join(proofDir, 'broker-runtime-status.json'), '[]\n');
+
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toThrow(
+        /Unexpected live broker canary proof schema/
+      );
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects malformed Business Browser proof packets before scanning nested fields', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-malformed-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+      fs.writeFileSync(path.join(proofDir, 'business-browser.json'), '[]\n');
+
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toThrow(
+        /Unexpected Business Browser live proof schema/
+      );
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects live broker proof packets that omit launch proof or do not redact launch URLs', () => {
+    const missingLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-launch-missing-'));
+    const unredactedLaunchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-launch-unredacted-'));
+    try {
+      writeBrokerLiveCanaryProof(missingLaunchDir);
+      mutateBrokerLiveCanaryProof(missingLaunchDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, unknown>>;
+        delete surfaces[0].launch;
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingLaunchDir, liveCanaryProofEnv)).toThrow(
+        /missing launch proof/
+      );
+
+      writeBrokerLiveCanaryProof(unredactedLaunchDir);
+      mutateBrokerLiveCanaryProof(unredactedLaunchDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, Record<string, unknown>>>;
+        surfaces[0].launch.launchUrlRedacted = false;
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(unredactedLaunchDir, liveCanaryProofEnv)).toThrow(
+        /redact launch URL/
+      );
+    } finally {
+      fs.rmSync(missingLaunchDir, { recursive: true, force: true });
+      fs.rmSync(unredactedLaunchDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects live proof packets with missing or non-acceptance Business Browser proof', () => {
+    const missingBrowserDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-missing-'));
+    const dryRunDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-dry-run-'));
+    try {
+      writeBrokerLiveCanaryProof(missingBrowserDir);
+      fs.rmSync(path.join(missingBrowserDir, 'business-browser.json'));
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingBrowserDir, liveCanaryProofEnv)).toThrow(
+        /Business Browser live canary proof/
+      );
+
+      writeBrokerLiveCanaryProof(
+        dryRunDir,
+        {},
+        {
+          dryRun: true,
+          acceptanceProof: false,
+          customerIsolation: 'not-run',
+          negativeBoundary: 'not-run',
+        }
+      );
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(dryRunDir, liveCanaryProofEnv)).toThrow(
+        /non-dry-run acceptance proof/
+      );
+    } finally {
+      fs.rmSync(missingBrowserDir, { recursive: true, force: true });
+      fs.rmSync(dryRunDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects stale or cross-customer live broker proof packets', () => {
+    const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-stale-'));
+    const mismatchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-mismatch-'));
+    const releaseCanaryMismatchDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'evaos-live-broker-proof-release-canary-mismatch-')
+    );
+    try {
+      writeBrokerLiveCanaryProof(staleDir, {
+        checkedAt: '2020-01-01T00:00:00.000Z',
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(staleDir, liveCanaryProofEnv)).toThrow(/stale/);
+
+      writeBrokerLiveCanaryProof(
+        mismatchDir,
+        {},
+        {
+          customerId: 'different_customer',
+        }
+      );
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(mismatchDir, liveCanaryProofEnv)).toThrow(
+        /customer mismatch/
+      );
+
+      writeBrokerLiveCanaryProof(releaseCanaryMismatchDir, {
+        releaseCanaryCustomerId: 'release_canary_a',
+      });
+      expect(() =>
+        releaseGate.verifyBrokerLiveCanaryProof(releaseCanaryMismatchDir, {
+          ...liveCanaryProofEnv,
+          EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID: 'release_canary_b',
+        })
+      ).toThrow(/releaseCanaryCustomerId/);
+    } finally {
+      fs.rmSync(staleDir, { recursive: true, force: true });
+      fs.rmSync(mismatchDir, { recursive: true, force: true });
+      fs.rmSync(releaseCanaryMismatchDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects duplicate or unknown live broker proof surfaces', () => {
+    const duplicateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-duplicate-surface-'));
+    const unknownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-unknown-surface-'));
+    try {
+      writeBrokerLiveCanaryProof(duplicateDir);
+      mutateBrokerLiveCanaryProof(duplicateDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, unknown>>;
+        surfaces[1] = { ...surfaces[0] };
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(duplicateDir, liveCanaryProofEnv)).toThrow(
+        /duplicate surface/
+      );
+
+      writeBrokerLiveCanaryProof(unknownDir);
+      mutateBrokerLiveCanaryProof(unknownDir, (proof) => {
+        const surfaces = proof.surfaces as Array<Record<string, unknown>>;
+        surfaces.push({
+          surface: 'unknown-dashboard',
+          runtime: 'unknown',
+          status: 'running',
+          sourcePointer: 'broker:runtime_status:unknown',
+          auditId: 'audit_status_unknown',
+          checkedAt: new Date().toISOString(),
+          secretScan: 'passed',
+          launch: {
+            status: 'attached',
+            launchMode: 'dashboard_surface',
+            sourcePointer: 'broker:runtime_launch:unknown',
+            auditId: 'audit_launch_unknown',
+            launchUrlRedacted: true,
+            checkedAt: new Date().toISOString(),
+            secretScan: 'passed',
+          },
+        });
+      });
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(unknownDir, liveCanaryProofEnv)).toThrow(/unknown surface/);
+    } finally {
+      fs.rmSync(duplicateDir, { recursive: true, force: true });
+      fs.rmSync(unknownDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires an explicit expected customer id for live broker proof verification', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-unbound-customer-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, {})).toThrow(/EXPECTED_CUSTOMER_ID/);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects development beta tags for public distribution', () => {

@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 
 const DEFAULT_ENDPOINT = 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session';
+const REQUIRED_BROKER_SURFACES = Object.freeze([
+  Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
+  Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
+  Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
+  Object.freeze({ surface: 'business-browser', runtime: 'browser' }),
+  Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
+]);
 
+const DENIED_RUNTIME_PATTERN =
+  /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/i;
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
 const SAFE_FALSE_SECRET_ASSERTION_FIELDS = new Set([
@@ -96,6 +105,11 @@ function sanitizeBrokerRuntimeCanaryResponse(raw, request) {
   if (!status) {
     throw new Error('Broker canary response did not include a safe runtime status.');
   }
+  const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
+  const auditId = safeText(record.audit_id ?? record.auditId);
+  if (!sourcePointer || !auditId) {
+    throw new Error('Broker canary response did not include source and audit evidence.');
+  }
 
   return {
     schema: 'evaos-broker-live-canary/v1',
@@ -103,10 +117,187 @@ function sanitizeBrokerRuntimeCanaryResponse(raw, request) {
     runtime,
     status,
     displayLabel: safeText(record.display_label ?? record.displayLabel),
-    sourcePointer: safeText(record.source_pointer ?? record.sourcePointer),
-    auditId: safeText(record.audit_id ?? record.auditId),
+    sourcePointer,
+    auditId,
     checkedAt: new Date().toISOString(),
     secretScan: 'passed',
+  };
+}
+
+function runtimeLaunchRecordForSecretScan(record) {
+  const redacted = { ...record };
+  delete redacted.launch_url;
+  delete redacted.runtime_launch_url;
+  delete redacted.url;
+  return redacted;
+}
+
+function assertNoDeniedNestedRuntimeState(value, label, seen = new WeakSet()) {
+  if (typeof value === 'string') {
+    if (DENIED_RUNTIME_PATTERN.test(value)) {
+      throw new Error(`Broker canary received denied runtime_launch response at ${label}.`);
+    }
+    return;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertNoDeniedNestedRuntimeState(child, `${label}[${index}]`, seen));
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    assertNoDeniedNestedRuntimeState(child, `${label}.${key}`, seen);
+  }
+}
+
+function sanitizeBrokerRuntimeLaunchCanaryResponse(raw, request) {
+  const record = runtimeRecord(raw);
+  assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(record));
+  const customerId = safeText(record.customer_id ?? record.customerId);
+  const runtime = safeText(record.runtime_key ?? record.runtimeKey ?? record.runtime);
+  const status = safeText(record.status);
+  const launchMode = safeText(record.launch_mode ?? record.launchMode) ?? 'dashboard_surface';
+  const launchUrl = safeText(record.launch_url ?? record.runtime_launch_url ?? record.url);
+  const sourcePointer = safeText(record.source_pointer ?? record.sourcePointer);
+  const auditId = safeText(record.audit_id ?? record.auditId);
+
+  if (!customerId || customerId !== request.customerId) {
+    throw new Error(
+      `Broker launch canary customer proof mismatch: expected ${request.customerId}, got ${customerId || 'missing'}.`
+    );
+  }
+  if (!runtime || runtime !== request.runtime) {
+    throw new Error(
+      `Broker launch canary runtime proof mismatch: expected ${request.runtime}, got ${runtime || 'missing'}.`
+    );
+  }
+  if (!status) {
+    throw new Error('Broker launch canary response did not include a safe runtime status.');
+  }
+  const statusText = [
+    status,
+    safeText(record.message),
+    safeText(record.error),
+    safeText(record.code),
+    safeText(record.health_summary ?? record.healthSummary),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (DENIED_RUNTIME_PATTERN.test(statusText)) {
+    throw new Error('Broker canary received denied runtime_launch response.');
+  }
+  for (const [key, nested] of [
+    ['runtime_status', record.runtime_status ?? record.runtimeStatus],
+    ['runtime_surface', record.runtime_surface ?? record.runtimeSurface],
+    ['surface_status', record.surface_status ?? record.surfaceStatus],
+  ]) {
+    if (nested) {
+      assertNoDeniedNestedRuntimeState(nested, key);
+    }
+  }
+  if (!launchUrl) {
+    throw new Error('Broker launch canary response did not include a runtime launch target.');
+  }
+  if (!sourcePointer || !auditId) {
+    throw new Error('Broker launch canary response did not include source and audit evidence.');
+  }
+
+  return {
+    status,
+    launchMode,
+    sourcePointer,
+    auditId,
+    launchUrlRedacted: true,
+    checkedAt: new Date().toISOString(),
+    secretScan: 'passed',
+  };
+}
+
+function requestedBrokerSurfaces(env) {
+  const runtime = safeText(env.AIONUI_EVAOS_RUNTIME);
+  if (!runtime) {
+    return REQUIRED_BROKER_SURFACES;
+  }
+
+  const surface = REQUIRED_BROKER_SURFACES.find((candidate) => candidate.runtime === runtime);
+  if (surface) {
+    return [surface];
+  }
+
+  return [Object.freeze({ surface: runtime, runtime })];
+}
+
+async function postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, body) {
+  const response = await fetchImpl(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${desktopSession}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Broker canary failed HTTP ${response.status}.`);
+  }
+
+  return response.json();
+}
+
+async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession, customerId, surface }) {
+  const failures = [];
+  let statusProof;
+  let launchProof;
+
+  try {
+    const rawStatus = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
+      action: 'runtime_status',
+      customer_id: customerId,
+      runtime: surface.runtime,
+    });
+    statusProof = sanitizeBrokerRuntimeCanaryResponse(rawStatus, { customerId, runtime: surface.runtime });
+  } catch (error) {
+    failures.push(`status: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const rawLaunch = await postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, {
+      action: 'runtime_launch',
+      customer_id: customerId,
+      runtime: surface.runtime,
+      launch_mode: 'dashboard_surface',
+    });
+    launchProof = sanitizeBrokerRuntimeLaunchCanaryResponse(rawLaunch, {
+      customerId,
+      runtime: surface.runtime,
+    });
+  } catch (error) {
+    failures.push(`launch: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(failures.join(' | '));
+  }
+
+  return {
+    surface: surface.surface,
+    runtime: surface.runtime,
+    status: statusProof.status,
+    displayLabel: statusProof.displayLabel,
+    sourcePointer: statusProof.sourcePointer,
+    auditId: statusProof.auditId,
+    checkedAt: statusProof.checkedAt,
+    secretScan: statusProof.secretScan,
+    launch: launchProof,
   };
 }
 
@@ -116,7 +307,6 @@ async function runBrokerLiveCanary(options = {}) {
   const endpoint = env.AIONUI_EVAOS_BROKER_ENDPOINT || DEFAULT_ENDPOINT;
   const desktopSession = env.AIONUI_EVAOS_DESKTOP_SESSION;
   const customerId = env.AIONUI_EVAOS_CUSTOMER_ID;
-  const runtime = env.AIONUI_EVAOS_RUNTIME || 'browser';
 
   if (!desktopSession) {
     throw new Error('Missing AIONUI_EVAOS_DESKTOP_SESSION for live broker canary.');
@@ -125,25 +315,37 @@ async function runBrokerLiveCanary(options = {}) {
     throw new Error('Missing AIONUI_EVAOS_CUSTOMER_ID for live broker canary.');
   }
 
-  const response = await fetchImpl(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${desktopSession}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      action: 'runtime_status',
-      customer_id: customerId,
-      runtime,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Broker canary failed HTTP ${response.status}.`);
+  const surfaces = [];
+  const failures = [];
+  for (const surface of requestedBrokerSurfaces(env)) {
+    try {
+      surfaces.push(
+        await runBrokerSurfaceCanary({
+          env,
+          fetchImpl,
+          endpoint,
+          desktopSession,
+          customerId,
+          surface,
+        })
+      );
+    } catch (error) {
+      failures.push(`${surface.surface}/${surface.runtime}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Broker live canary failed for ${failures.length} surface(s): ${failures.join('; ')}`);
   }
 
-  const raw = await response.json();
-  return sanitizeBrokerRuntimeCanaryResponse(raw, { customerId, runtime });
+  return {
+    schema: 'evaos-broker-live-canary/v3',
+    customerId,
+    releaseCanaryCustomerId: safeText(env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID) ?? customerId,
+    requiredSurfaces: surfaces.map((surface) => surface.surface),
+    surfaces,
+    checkedAt: new Date().toISOString(),
+    secretScan: 'passed',
+  };
 }
 
 async function main() {
@@ -160,7 +362,9 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_ENDPOINT,
+  REQUIRED_BROKER_SURFACES,
   assertNoSecretMaterial,
   runBrokerLiveCanary,
   sanitizeBrokerRuntimeCanaryResponse,
+  sanitizeBrokerRuntimeLaunchCanaryResponse,
 };

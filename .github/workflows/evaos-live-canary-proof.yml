@@ -110,6 +110,7 @@ jobs:
             echo "Repository: ${{ github.repository }}"
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "Environment: evaos-staging"
+            echo "Run live canaries: ${{ github.event.inputs.run_live_canaries }}"
           } > "$PROOF_DIR/proof-run.md"
 
       - name: Provision reusable live canary fixtures

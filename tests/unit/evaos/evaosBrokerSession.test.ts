@@ -1104,6 +1104,68 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/ecs\\.electricsheephq\\.com|launch_url|desktop_session|eds_|Bearer/i);
   });
 
+  it('maps denied dashboard runtime launch responses before creating an opaque surface', async () => {
+    const fetchImpl = fetchMock();
+    const createRuntimeSurface = vi.fn();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'forbidden',
+          runtime: 'openclaw',
+          customer_id: 'cus_123',
+          message: 'forbidden',
+          launch_url: 'https://runtime.example.test/openclaw?desktop_session=eds_runtime_launch_secret#token=bad',
+          source_pointer: 'broker:runtime_launch:openclaw',
+          audit_id: 'audit_openclaw_forbidden',
+          backend_enforced: true,
+          runtime_status: {
+            runtime: 'openclaw',
+            customer_id: 'cus_123',
+            status: 'forbidden',
+            health_summary: 'OpenClaw dashboard authorization denied.',
+            source_pointer: 'broker:runtime_status:openclaw',
+            audit_id: 'audit_openclaw_status_forbidden',
+          },
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const result = await client.runtimeAction(
+      { customerId: 'cus_123', runtime: 'openclaw', action: 'launch' },
+      { createRuntimeSurface }
+    );
+
+    expect(createRuntimeSurface).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'denied',
+      runtimeKey: 'openclaw',
+      customerId: 'cus_123',
+      message: 'forbidden',
+      runtimeStatus: {
+        runtimeKey: 'openclaw',
+        customerId: 'cus_123',
+        status: 'forbidden',
+      },
+      sourcePointer: 'broker:runtime_launch:openclaw',
+      auditId: 'audit_openclaw_forbidden',
+      backendEnforced: true,
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /runtime\\.example\\.test|launch_url|desktop_session|eds_|Bearer|token=bad/i
+    );
+  });
+
   it('fails Terminal runtime launch closed when VM shell proof is missing', async () => {
     const fetchImpl = fetchMock();
     const createRuntimeSurface = vi.fn();
