@@ -121,6 +121,23 @@ function providerProfileShape(raw) {
     .join(', ');
 }
 
+function isUnsupportedProviderKeyProfile(raw, expectedCustomerAccountId) {
+  const record = providerProfileValidationRecord(raw);
+  if (!record) return false;
+  const providerKeyValue = record.provider_key ?? record.providerKey ?? record.provider ?? record.key;
+  if (!scalarPresent(providerKeyValue) || normalizeProviderKeyValue(providerKeyValue)) {
+    return false;
+  }
+  if (!normalizeProviderStatusValue(record.status)) {
+    return false;
+  }
+  const customerAccountId = safeText(record.customer_account_id ?? record.customerAccountId);
+  if (customerAccountId && expectedCustomerAccountId && customerAccountId !== expectedCustomerAccountId) {
+    return false;
+  }
+  return true;
+}
+
 function recordFromEnvelope(raw) {
   const record = asRecord(raw);
   if (!record) {
@@ -323,9 +340,19 @@ function summarizeProviderHubResponse(raw, request) {
     throw new Error('Provider Hub response did not include source pointer and audit proof.');
   }
 
-  const profiles = profileList(record).map((profile, index) =>
-    summarizeProfileAt(profile, request.customerAccountId, index)
-  );
+  const rawProfiles = profileList(record);
+  let ignoredUnsupportedProfileCount = 0;
+  const profiles = [];
+  rawProfiles.forEach((profile, index) => {
+    try {
+      profiles.push(summarizeProfileAt(profile, request.customerAccountId, index));
+    } catch (error) {
+      if (!isUnsupportedProviderKeyProfile(profile, request.customerAccountId)) {
+        throw error;
+      }
+      ignoredUnsupportedProfileCount += 1;
+    }
+  });
   const statesPresent = [...new Set(profiles.map((profile) => profile.status))].sort();
   const missingStates = request.requiredStates.filter((state) => !statesPresent.includes(state));
   if (missingStates.length > 0) {
@@ -343,6 +370,7 @@ function summarizeProviderHubResponse(raw, request) {
     requiredStates: request.requiredStates,
     statesPresent,
     profileCount: profiles.length,
+    ignoredUnsupportedProfileCount,
     profiles,
     sensitiveOutput: 'passed',
   };

@@ -246,6 +246,39 @@ describe('EvaosBrokerSessionClient provider hub', () => {
     );
   });
 
+  it('ignores unsupported provider rows without dropping known provider evidence', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(accountPayload))
+      .mockResolvedValueOnce(jsonResponse(policyPayload(['manage_integrations'])))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          providerProfilesResponse([
+            {
+              provider_key: 'unsupported_provider_for_test',
+              status: 'connected',
+              active: true,
+              source_pointer: 'broker:provider_profile:unsupported',
+              audit_id: 'audit_unsupported_123',
+              last_validated_at: '2026-06-03T11:55:00.000Z',
+            },
+            connectedGoogleProfile,
+          ])
+        )
+      );
+    const client = authenticatedClient(fetchImpl);
+
+    const hub = await client.providerHub({ customerId: 'david-poku' });
+
+    expect(hub.routeDenied).toBe(false);
+    expect(hub.profiles).toHaveLength(1);
+    expect(hub.profiles[0]).toMatchObject({
+      providerKey: 'google_workspace',
+      status: 'connected',
+    });
+    expect(JSON.stringify(hub)).not.toMatch(/unsupported_provider_for_test|audit_unsupported_123/i);
+  });
+
   it('fails closed when provider profile list lacks broker enforcement proof', async () => {
     const fetchImpl = fetchMock();
     fetchImpl

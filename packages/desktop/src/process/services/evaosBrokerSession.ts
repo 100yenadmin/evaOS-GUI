@@ -3226,13 +3226,18 @@ function safeProviderProfiles(value: unknown, expectedCustomerAccountId?: string
     return [];
   }
 
-  return value.map((item): IEvaosProviderProfileView => {
+  const profiles: IEvaosProviderProfileView[] = [];
+  for (const item of value) {
     const profile = sanitizeSingleProviderProfile(item, expectedCustomerAccountId);
-    if (!profile) {
+    if (profile) {
+      profiles.push(profile);
+      continue;
+    }
+    if (!isUnsupportedProviderKeyProfile(item, expectedCustomerAccountId)) {
       throw new EvaosBrokerSessionError('broker_invalid_response', 'The evaOS broker returned an invalid response.');
     }
-    return profile;
-  });
+  }
+  return profiles;
 }
 
 function sanitizeSingleProviderProfile(
@@ -3294,6 +3299,29 @@ function sanitizeSingleProviderProfile(
     hasBrokeredGrant,
     summaryText: providerSummaryText({ status, rawSecretsStoredInWorkbench, approvalRequired, hasConnectionProof }),
   });
+}
+
+function providerProfileValidationRecord(raw: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  return asRecord(record.provider_profile) ?? asRecord(record.profile) ?? record;
+}
+
+function isUnsupportedProviderKeyProfile(raw: unknown, expectedCustomerAccountId?: string): boolean {
+  const record = providerProfileValidationRecord(raw);
+  if (!record) return false;
+  const providerKeyValue = record.provider_key ?? record.provider ?? record.key;
+  if (!safeText(providerKeyValue, 120) || normalizeProviderKeyValue(providerKeyValue)) {
+    return false;
+  }
+  if (!normalizeProviderStatusValue(record.status)) {
+    return false;
+  }
+  const customerAccountId = safeText(record.customer_account_id);
+  if (customerAccountId && expectedCustomerAccountId && customerAccountId !== expectedCustomerAccountId) {
+    return false;
+  }
+  return true;
 }
 
 function providerSummaryText(profile: {
