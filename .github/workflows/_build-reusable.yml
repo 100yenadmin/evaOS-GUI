@@ -23,6 +23,14 @@ on:
         description: 'Only upload primary installers (exe/msi/dmg/deb), skip zip/yml/blockmap'
         type: boolean
         default: false
+      aioncore_run_id:
+        description: 'Optional AionCore Manual Build workflow run id to bundle instead of the pinned release'
+        type: string
+        default: ''
+      managed_resources_bundle:
+        description: 'AionCore managed resources bundle mode: full or no-acp'
+        type: string
+        default: full
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -311,6 +319,8 @@ jobs:
           # Version is pinned in repo-root package.json (aioncoreVersion).
           # Set AIONUI_BACKEND_VERSION here only to override for ad-hoc builds.
           AIONUI_BACKEND_ARCH: ${{ matrix.arch }}
+          AIONUI_BACKEND_RUN_ID: ${{ inputs.aioncore_run_id }}
+          AIONUI_MANAGED_RESOURCES_BUNDLE: ${{ inputs.managed_resources_bundle }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -450,6 +460,8 @@ jobs:
           CSC_NAME: ${{ secrets.IDENTITY }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: 'true'
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
+          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || github.token }}
           npm_config_cache: ${{ runner.temp }}/.npm
           ELECTRON_CACHE: ${{ runner.temp }}/.cache/electron
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/.cache/electron-builder
