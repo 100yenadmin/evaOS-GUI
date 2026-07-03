@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_followup_canaries:
+        description: 'Also run non-release-blocking follow-up/admin canaries for trust surfaces, provider hub, people approvals, and Company Brain.'
+        required: false
+        default: false
+        type: boolean
       provision_fixtures:
         description: 'Provision fresh short-lived staging fixtures before strict readiness and live canaries.'
         required: false
@@ -120,6 +125,7 @@ jobs:
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "Environment: evaos-staging"
             echo "Run live canaries: ${{ github.event.inputs.run_live_canaries }}"
+            echo "Run follow-up canaries: ${{ github.event.inputs.run_followup_canaries }}"
           } > "$PROOF_DIR/proof-run.md"
 
       - name: Provision reusable live canary fixtures
@@ -147,11 +153,16 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/evaosBrokerLiveCanary.js > "$PROOF_DIR/broker-runtime-status.json"
+          node scripts/evaosBusinessBrowserLiveCanary.js > "$PROOF_DIR/business-browser.json"
+
+      - name: Run follow-up live canaries
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true'
+        run: |
+          set -euo pipefail
           node scripts/evaosTrustSurfaceLiveCanary.js > "$PROOF_DIR/trust-surface.json"
           node scripts/evaosProviderHubLiveCanary.js > "$PROOF_DIR/provider-hub.json"
           node scripts/evaosPeopleApprovalLiveCanary.js > "$PROOF_DIR/people-approval-deny.json"
           node scripts/evaosCompanyBrainLiveCanary.js > "$PROOF_DIR/company-brain.json"
-          node scripts/evaosBusinessBrowserLiveCanary.js > "$PROOF_DIR/business-browser.json"
 
       - name: Cleanup reusable live canary fixtures
         if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
@@ -168,6 +179,7 @@ jobs:
             echo "- Environment: \`evaos-staging\`"
             echo "- Proof artifact: \`evaos-live-canary-proof-${{ github.run_id }}\`"
             echo "- Individual canaries requested: \`${{ github.event.inputs.run_live_canaries }}\`"
+            echo "- Follow-up canaries requested: \`${{ github.event.inputs.run_followup_canaries }}\`"
             echo "- Fixture provisioning requested: \`${{ github.event.inputs.provision_fixtures }}\`"
             echo ""
             if [ -f "$PROOF_DIR/readiness.md" ]; then
