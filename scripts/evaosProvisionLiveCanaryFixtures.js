@@ -723,6 +723,18 @@ function fixtureEnvFromProvision(state) {
   };
 }
 
+function coreBrokerFixtureEnvFromProvision(state) {
+  const desktopSession = state.sessions.admin.raw;
+  return {
+    AIONUI_EVAOS_BROKER_ENDPOINT: state.brokerEndpoint,
+    AIONUI_EVAOS_DESKTOP_SESSION: desktopSession,
+    AIONUI_EVAOS_CUSTOMER_ID: state.customerId,
+    AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: desktopSession,
+    AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: state.customerId,
+    AIONUI_EVAOS_RUNTIME: safeText(state.runtime, 80) || 'browser',
+  };
+}
+
 function renderGithubEnvFile(env) {
   return `${Object.entries(env)
     .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, '')}`)
@@ -733,6 +745,7 @@ function maskSecretsForGithub(env) {
   if (!process.env.GITHUB_ACTIONS) return;
   for (const key of [
     'AIONUI_EVAOS_DESKTOP_SESSION',
+    'AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION',
     'AIONUI_EVAOS_REQUESTER_SESSION',
     'AIONUI_EVAOS_APPROVER_SESSION',
     'AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION',
@@ -789,6 +802,30 @@ function sanitizedProvisionReport(state) {
   return report;
 }
 
+function sanitizedCoreBrokerProvisionReport(state) {
+  const report = {
+    schema: 'evaos-live-canary-core-broker-fixture-provision/v1',
+    checkedAt: new Date().toISOString(),
+    customerId: state.customerId,
+    customerAccountId: state.customerAccountId,
+    admin: {
+      email: state.admin.email,
+      membershipRole: state.admin.membershipRole,
+    },
+    runtimeTarget: {
+      customerId: state.customerId,
+      status: safeText(state.customerVmFixture?.status, 80) || 'active',
+      fixtureManaged: state.customerVmFixture?.managed === true,
+      fixtureCreated: state.customerVmFixture?.created === true,
+      source: 'customer_vms',
+    },
+    expiresAt: state.sessions.admin.expiresAt,
+    sensitiveOutput: 'passed',
+  };
+  assertNoUnsafeProofOutput(report);
+  return report;
+}
+
 function loadOptions(env = process.env) {
   const supabaseUrl = optionalEnv(env, 'AIONUI_EVAOS_FIXTURE_SUPABASE_URL', env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
   return {
@@ -828,6 +865,78 @@ function loadOptions(env = process.env) {
     githubEnvPath: optionalEnv(env, 'GITHUB_ENV', undefined),
     proofDir: optionalEnv(env, 'PROOF_DIR', undefined),
   };
+}
+
+function loadCoreBrokerOptions(env = process.env) {
+  const options = loadOptions(env);
+  return {
+    ...options,
+    customerId: optionalEnv(env, 'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID', options.customerId),
+  };
+}
+
+async function provisionCoreBrokerFixtures(options = loadCoreBrokerOptions()) {
+  if (!options.serviceKey) {
+    throw new Error('Missing AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.');
+  }
+  const admin = new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
+  const adminProfile = await loadAdminProfile(admin, options.adminEmail);
+  const customerAccount = await loadCustomerAccount(admin, options.customerId);
+  const adminMembership = await loadAdminMembership(admin, adminProfile.id, customerAccount.id);
+  const adminSession = await createDesktopSession(admin, {
+    userId: adminProfile.id,
+    email: adminProfile.email,
+    source: 'aionui-live-canary-core-broker',
+    ttlMinutes: options.ttlMinutes,
+  });
+  const customerVmFixture = await ensureCustomerVmFixture(admin, options.customerId, {
+    ttlMinutes: options.ttlMinutes,
+  });
+
+  const state = {
+    schema: 'evaos-live-canary-core-broker-fixture-state/v1',
+    createdAt: new Date().toISOString(),
+    supabaseUrl: options.supabaseUrl,
+    brokerEndpoint: options.brokerEndpoint,
+    customerId: options.customerId,
+    runtime: options.runtime,
+    customerAccountId: customerAccount.id,
+    admin: {
+      id: adminProfile.id,
+      email: adminProfile.email,
+      membershipId: adminMembership.id,
+      membershipRole: adminMembership.role,
+    },
+    sessions: {
+      admin: adminSession,
+    },
+    customerVmSnapshot: customerVmFixture.snapshot,
+    customerVmFixture: {
+      id: customerVmFixture.row?.id,
+      customerId: customerVmFixture.row?.customer_id || options.customerId,
+      status: customerVmFixture.row?.status || 'active',
+      managed: customerVmFixture.managed,
+      created: customerVmFixture.created,
+    },
+  };
+
+  fs.mkdirSync(path.dirname(options.statePath), { recursive: true });
+  fs.writeFileSync(options.statePath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+
+  const env = coreBrokerFixtureEnvFromProvision(state);
+  maskSecretsForGithub(env);
+  if (options.githubEnvPath) {
+    fs.appendFileSync(options.githubEnvPath, renderGithubEnvFile(env));
+  }
+  if (options.proofDir) {
+    fs.mkdirSync(options.proofDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(options.proofDir, 'core-broker-fixture-provisioning.json'),
+      `${JSON.stringify(sanitizedCoreBrokerProvisionReport(state), null, 2)}\n`
+    );
+  }
+
+  return { state, env, report: sanitizedCoreBrokerProvisionReport(state) };
 }
 
 async function provisionFixtures(options = loadOptions()) {
@@ -1034,6 +1143,21 @@ async function restoreProviderSnapshots(admin, state) {
   }
 }
 
+function providerCleanupReportFromState(state) {
+  const providerSnapshots = Array.isArray(state.providerSnapshots) ? state.providerSnapshots : [];
+  const providerFixtureRows = Array.isArray(state.providerFixtureRows) ? state.providerFixtureRows : [];
+  const providerFixtureSubjects = Array.isArray(state.providerFixtureSubjects) ? state.providerFixtureSubjects : [];
+  const providerFixturesInState =
+    providerSnapshots.length > 0 || providerFixtureRows.length > 0 || providerFixtureSubjects.length > 0;
+  return {
+    providerFixturesRestored: providerFixturesInState,
+    providerFixtureSnapshotCount: providerSnapshots.length,
+    providerFixtureRowCount: providerFixtureRows.length,
+    providerFixtureSubjectCount: providerFixtureSubjects.length,
+    providerCleanupScope: providerFixturesInState ? 'provider-fixtures' : 'no-provider-fixtures-in-state',
+  };
+}
+
 async function restoreCustomerVmFixture(admin, state) {
   const fixture = asRecord(state?.customerVmFixture);
   if (!fixture || fixture.managed !== true) return false;
@@ -1106,7 +1230,7 @@ async function cleanupFixtures(options = loadOptions()) {
     checkedAt: new Date().toISOString(),
     customerId: state.customerId,
     customerVmRestored,
-    providerFixturesRestored: true,
+    ...providerCleanupReportFromState(state),
     sessionsRevoked: sessionIds.length,
     temporaryUsersDeleted: [state.requester?.userId, state.denied?.userId].filter(Boolean).length,
     sensitiveOutput: 'passed',
@@ -1126,12 +1250,17 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
+  if (mode === 'provision-core-broker') {
+    const { report } = await provisionCoreBrokerFixtures();
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
   if (mode === 'cleanup') {
     const report = await cleanupFixtures();
     console.log(JSON.stringify(report, null, 2));
     return;
   }
-  throw new Error(`Unknown mode ${mode}. Use provision or cleanup.`);
+  throw new Error(`Unknown mode ${mode}. Use provision, provision-core-broker, or cleanup.`);
 }
 
 if (require.main === module) {
@@ -1146,16 +1275,21 @@ module.exports = {
   SupabaseRestAdmin,
   assertNoUnsafeProofOutput,
   cleanupFixtures,
+  coreBrokerFixtureEnvFromProvision,
   ensureCustomerVmFixture,
   fixtureEnvFromProvision,
+  loadCoreBrokerOptions,
   loadOptions,
+  provisionCoreBrokerFixtures,
   provisionFixtures,
+  providerCleanupReportFromState,
   providerProfileLookup,
   providerFixtureSubjectsFromRows,
   renderGithubEnvFile,
   restoreCustomerVmFixture,
   restoreProviderProfileSnapshot,
   restoreProviderSnapshots,
+  sanitizedCoreBrokerProvisionReport,
   sanitizedProvisionReport,
   upsertProviderFixtureRows,
   writeProviderProfileRow,
