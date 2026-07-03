@@ -10,7 +10,7 @@ import { Button, Input, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Browser, CloseOne, Open, Refresh, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
-import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
+import { canShowEvaosSupportDiagnostics } from '@/renderer/evaos/supportDiagnostics';
 import {
   evaosBusinessBrowser,
   type IEvaosBusinessBrowserActionResult,
@@ -129,7 +129,7 @@ const BusinessBrowserPage: React.FC = () => {
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<'launch' | 'openUrl' | 'stop' | null>(null);
-  const { customerContext } = useEvaosBrokeredCustomerContext();
+  const { brokerSession, brokerAuthenticated, customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const previousSelectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
@@ -138,7 +138,12 @@ const BusinessBrowserPage: React.FC = () => {
   const autoLoadKeyRef = useRef<string | null>(null);
   const autoLaunchKeyRef = useRef<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
+  const showDiagnostics = canShowEvaosSupportDiagnostics({
+    authenticated: brokerAuthenticated,
+    userEmail: brokerSession?.userEmail,
+    roles: customerContext.roles,
+    isOperator: customerContext.isOperator,
+  });
 
   useEffect(() => {
     const nextSelectedCustomerId = customerContext.selectedCustomerId;

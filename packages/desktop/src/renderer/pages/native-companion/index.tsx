@@ -29,7 +29,7 @@ import type {
   IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
-import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
+import { canShowEvaosSupportDiagnostics } from '@/renderer/evaos/supportDiagnostics';
 import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 import {
   canCreateNativeCompanionPairingPrompt,
@@ -142,7 +142,12 @@ const NativeCompanionPage: React.FC = () => {
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
   });
-  const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
+  const showDiagnostics = canShowEvaosSupportDiagnostics({
+    authenticated: brokerAuthenticated,
+    userEmail: brokerSession?.userEmail,
+    roles: customerContext.roles,
+    isOperator,
+  });
   const agentPairingStatus = effectiveAgentPairingStatus(status, currentActionResult);
   const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(currentActionResult);

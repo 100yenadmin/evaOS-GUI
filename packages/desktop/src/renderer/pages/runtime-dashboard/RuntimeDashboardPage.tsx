@@ -10,7 +10,7 @@ import { Button, Spin, Tag } from '@arco-design/web-react';
 import { Attention, Comment, Open, Refresh, Robot, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
-import { isEvaosSupportDiagnosticsEnabled } from '@/renderer/evaos/supportDiagnostics';
+import { canShowEvaosSupportDiagnostics } from '@/renderer/evaos/supportDiagnostics';
 import { openEvaosSupportEmail } from '@/renderer/utils/platform';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
 import type {
@@ -150,12 +150,17 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<IEvaosRuntimeActionType | null>(null);
   const [runtimeSurface, setRuntimeSurface] = useState<IEvaosRuntimeSurfaceView | null>(null);
-  const { customerContext } = useEvaosBrokeredCustomerContext();
+  const { brokerSession, brokerAuthenticated, customerContext } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
   const autoAttachKeyRef = useRef<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const showDiagnostics = isEvaosSupportDiagnosticsEnabled();
+  const showDiagnostics = canShowEvaosSupportDiagnostics({
+    authenticated: brokerAuthenticated,
+    userEmail: brokerSession?.userEmail,
+    roles: customerContext.roles,
+    isOperator: customerContext.isOperator,
+  });
 
   const clearRuntimeEvidence = useCallback(() => {
     autoAttachKeyRef.current = null;

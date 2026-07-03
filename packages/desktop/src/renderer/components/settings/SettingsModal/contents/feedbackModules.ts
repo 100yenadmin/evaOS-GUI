@@ -17,6 +17,11 @@ export type FeedbackModule = {
 
 export const FEEDBACK_MODULES: readonly FeedbackModule[] = [
   {
+    i18nKey: 'settings.contactMe',
+    descriptionI18nKey: 'settings.bugReportModuleSystemSettingsDescription',
+    tag: 'evaos-support',
+  },
+  {
     i18nKey: 'settings.bugReportModulePermission',
     descriptionI18nKey: 'settings.bugReportModulePermissionDescription',
     tag: 'agent-detection',
