@@ -286,6 +286,63 @@ async function loadAdminMembership(admin, adminProfileId, customerAccountId) {
   );
 }
 
+async function loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount) {
+  const rows = await admin.select('customer_account_memberships', {
+    profile_id: `eq.${adminProfile.id}`,
+    customer_account_id: `eq.${customerAccount.id}`,
+    select: 'id,role,status,accepted_at,removed_at,metadata',
+    limit: 1,
+  });
+  const existing = rows[0];
+  if (existing?.status === 'active') {
+    return {
+      id: existing.id,
+      role: existing.role,
+      status: existing.status,
+      temporary: false,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const role = safeText(existing?.role, 80) || 'technical_admin';
+  const body = {
+    customer_account_id: customerAccount.id,
+    profile_id: adminProfile.id,
+    invited_email: adminProfile.email,
+    role,
+    status: 'active',
+    accepted_at: now,
+    removed_at: null,
+    metadata: {
+      ...(asRecord(existing?.metadata) ?? {}),
+      source: 'aionui-live-canary-core-broker',
+      temporary: true,
+    },
+  };
+
+  if (existing?.id) {
+    await admin.patch('customer_account_memberships', { id: `eq.${existing.id}` }, body);
+    return {
+      id: existing.id,
+      role,
+      status: 'active',
+      temporary: true,
+      snapshot: { row: existing },
+    };
+  }
+
+  const inserted = await admin.insert('customer_account_memberships', body, {
+    select: 'id,role,status,metadata',
+    label: 'core broker admin customer-account membership',
+  });
+  return {
+    id: inserted.id,
+    role: inserted.role,
+    status: inserted.status,
+    temporary: true,
+  };
+}
+
 async function createTemporaryRequester(admin, customerAccountId) {
   const suffix = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   const email = `aionui-deny-requester-${suffix}@100yen.org`;
@@ -882,7 +939,7 @@ async function provisionCoreBrokerFixtures(options = loadCoreBrokerOptions()) {
   const admin = new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
   const adminProfile = await loadAdminProfile(admin, options.adminEmail);
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
-  const adminMembership = await loadAdminMembership(admin, adminProfile.id, customerAccount.id);
+  const adminMembership = await loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount);
   const adminSession = await createDesktopSession(admin, {
     userId: adminProfile.id,
     email: adminProfile.email,
@@ -906,7 +963,9 @@ async function provisionCoreBrokerFixtures(options = loadCoreBrokerOptions()) {
       email: adminProfile.email,
       membershipId: adminMembership.id,
       membershipRole: adminMembership.role,
+      membershipTemporary: adminMembership.temporary === true,
     },
+    adminMembershipSnapshot: adminMembership.snapshot,
     sessions: {
       admin: adminSession,
     },
@@ -1182,6 +1241,33 @@ async function restoreCustomerVmFixture(admin, state) {
   return false;
 }
 
+async function restoreAdminMembershipFixture(admin, state) {
+  const adminState = asRecord(state?.admin);
+  if (!adminState || adminState.membershipTemporary !== true) return false;
+  const snapshot = asRecord(state?.adminMembershipSnapshot)?.row;
+  if (snapshot?.id) {
+    await admin.patch('customer_account_memberships', { id: `eq.${snapshot.id}` }, snapshot);
+    return true;
+  }
+
+  const membershipId = safeText(adminState.membershipId, 160);
+  if (!membershipId) return false;
+  await admin.patch(
+    'customer_account_memberships',
+    { id: `eq.${membershipId}` },
+    {
+      status: 'removed',
+      removed_at: new Date().toISOString(),
+      metadata: {
+        source: 'aionui-live-canary-core-broker',
+        temporary: true,
+        cleaned_up: true,
+      },
+    }
+  );
+  return true;
+}
+
 async function cleanupFixtures(options = loadOptions()) {
   if (!options.serviceKey) {
     throw new Error('Missing AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.');
@@ -1193,6 +1279,7 @@ async function cleanupFixtures(options = loadOptions()) {
   const admin = new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
   const now = new Date().toISOString();
   const customerVmRestored = await restoreCustomerVmFixture(admin, state);
+  const adminMembershipRestored = await restoreAdminMembershipFixture(admin, state);
   await restoreProviderSnapshots(admin, state);
   const sessionIds = [state.sessions?.admin?.id, state.sessions?.requester?.id, state.sessions?.denied?.id].filter(
     Boolean
@@ -1230,6 +1317,7 @@ async function cleanupFixtures(options = loadOptions()) {
     checkedAt: new Date().toISOString(),
     customerId: state.customerId,
     customerVmRestored,
+    adminMembershipRestored,
     ...providerCleanupReportFromState(state),
     sessionsRevoked: sessionIds.length,
     temporaryUsersDeleted: [state.requester?.userId, state.denied?.userId].filter(Boolean).length,
@@ -1279,6 +1367,7 @@ module.exports = {
   ensureCustomerVmFixture,
   fixtureEnvFromProvision,
   loadCoreBrokerOptions,
+  loadOrCreateTemporaryAdminMembership,
   loadOptions,
   provisionCoreBrokerFixtures,
   provisionFixtures,
@@ -1287,6 +1376,7 @@ module.exports = {
   providerFixtureSubjectsFromRows,
   renderGithubEnvFile,
   restoreCustomerVmFixture,
+  restoreAdminMembershipFixture,
   restoreProviderProfileSnapshot,
   restoreProviderSnapshots,
   sanitizedCoreBrokerProvisionReport,
