@@ -51,6 +51,26 @@ describe('evaOS live canary readiness', () => {
     expect(rendered).not.toMatch(/eds_|Bearer|desktop_session|approval_123|workspace\\.example/);
   });
 
+  it('keeps follow-up canaries out of strict readiness when release proof disables them', () => {
+    const report = readiness.inspectLiveCanaryReadiness({
+      AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',
+      AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'support-vm-customer',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: 'Support VM',
+      AIONUI_EVAOS_DESKTOP_SESSION: 'eds_live_session_for_test',
+      AIONUI_EVAOS_CUSTOMER_ID: 'cus_123',
+      AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: 'false',
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.blockers).toEqual([]);
+    expect(report.followupCanariesIncluded).toBe(false);
+    expect(report.canaries.map((canary) => canary.name)).toEqual([
+      'release-support-vm-target',
+      'broker-runtime-status',
+    ]);
+  });
+
   it('requires exact mutation acknowledgements before approval and browser canaries are ready', () => {
     const report = readiness.inspectLiveCanaryReadiness({
       ...requiredEnv,
@@ -101,6 +121,7 @@ describe('evaOS live canary readiness', () => {
 
     expect(markdown).toContain('node scripts/evaosBrokerLiveCanary.js');
     expect(markdown).toContain('node scripts/evaosMacControlDoctor.js');
+    expect(markdown).toContain('Follow-up canaries included: yes');
     expect(markdown).toContain('AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND');
     expect(markdown).toContain('AIONUI_EVAOS_DESKTOP_SESSION');
     expect(markdown).toContain('AIONUI_EVAOS_COMPANY_BRAIN_WRONG_CUSTOMER_ID');

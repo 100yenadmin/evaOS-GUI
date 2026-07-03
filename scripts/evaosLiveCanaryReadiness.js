@@ -32,18 +32,21 @@ const CANARIES = [
   {
     name: 'trust-surface',
     command: 'node scripts/evaosTrustSurfaceLiveCanary.js',
+    followUp: true,
     required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT'],
   },
   {
     name: 'provider-hub',
     command: 'node scripts/evaosProviderHubLiveCanary.js',
+    followUp: true,
     required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_PROVIDER_REQUIRED_STATES'],
   },
   {
     name: 'people-approval-deny',
     command: 'AIONUI_EVAOS_APPROVAL_DENY_ACK=evaos-deny-test node scripts/evaosPeopleApprovalLiveCanary.js',
+    followUp: true,
     required: [
       'AIONUI_EVAOS_APPROVAL_DENY_ACK',
       'AIONUI_EVAOS_CUSTOMER_ID',
@@ -64,6 +67,7 @@ const CANARIES = [
   {
     name: 'company-brain',
     command: 'node scripts/evaosCompanyBrainLiveCanary.js',
+    followUp: true,
     required: [
       'AIONUI_EVAOS_DESKTOP_SESSION',
       'AIONUI_EVAOS_CUSTOMER_ID',
@@ -77,6 +81,7 @@ const CANARIES = [
     name: 'business-browser',
     command:
       'AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK=evaos-browser-test node scripts/evaosBusinessBrowserLiveCanary.js',
+    followUp: true,
     required: [
       'AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK',
       'AIONUI_EVAOS_DESKTOP_SESSION',
@@ -94,6 +99,21 @@ const CANARIES = [
 
 function hasEnv(env, name) {
   return typeof env[name] === 'string' && env[name].trim() !== '';
+}
+
+function truthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
+function includeFollowupCanaries(env) {
+  if (!hasEnv(env, 'AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES')) {
+    return true;
+  }
+  return truthyEnv(env.AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES);
 }
 
 function inspectCanary(canary, env) {
@@ -154,12 +174,16 @@ function blockerLines(canary) {
 }
 
 function inspectLiveCanaryReadiness(env = process.env) {
-  const canaries = CANARIES.map((canary) => inspectCanary(canary, env));
+  const includeFollowups = includeFollowupCanaries(env);
+  const canaries = CANARIES.filter((canary) => includeFollowups || canary.followUp !== true).map((canary) =>
+    inspectCanary(canary, env)
+  );
   const blockers = canaries.flatMap(blockerLines);
 
   return {
     schema: 'evaos-live-canary-readiness/v1',
     checkedAt: new Date().toISOString(),
+    followupCanariesIncluded: includeFollowups,
     ready: blockers.length === 0,
     blockers,
     canaries,
@@ -173,6 +197,7 @@ function renderMarkdown(report) {
     `Checked: ${report.checkedAt}`,
     '',
     `Overall: ${report.ready ? 'ready' : 'blocked'}`,
+    `Follow-up canaries included: ${report.followupCanariesIncluded ? 'yes' : 'no'}`,
     '',
   ];
 

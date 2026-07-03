@@ -29,9 +29,15 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain("grep -q '^::add-mask::'");
     expect(workflow).toContain('node scripts/evaosLiveCanaryReadiness.js --strict');
     expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js');
-    expect(workflow).toContain('node scripts/evaosBusinessBrowserLiveCanary.js');
     expect(workflow).toContain('Run follow-up live canaries');
     expect(workflow).toContain("github.event.inputs.run_followup_canaries == 'true'");
+    const coreBlock = workflow.slice(
+      workflow.indexOf('- name: Run live canaries'),
+      workflow.indexOf('- name: Run follow-up live canaries')
+    );
+    const followUpBlock = workflow.slice(workflow.indexOf('- name: Run follow-up live canaries'));
+    expect(coreBlock).not.toContain('node scripts/evaosBusinessBrowserLiveCanary.js');
+    expect(followUpBlock).toContain('node scripts/evaosBusinessBrowserLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosTrustSurfaceLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosProviderHubLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosPeopleApprovalLiveCanary.js');
@@ -65,6 +71,11 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY');
     expect(workflow).toContain('AIONUI_EVAOS_APPROVAL_DENY_ACK: evaos-deny-test');
     expect(workflow).toContain('AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK: evaos-browser-test');
+    expect(workflow).toContain('AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: ${{ github.event.inputs.run_followup_canaries }}');
+    expect(workflow).toContain(
+      'Core broker surfaces: evaOS/openclaw, Hermes/hermes, Mission Control/paperclip, Shared Browser/browser, Terminal/terminal'
+    );
+    expect(workflow).toContain('Business Browser action canary: follow-up only unless run_followup_canaries=true');
     expect(workflow).not.toContain('printenv');
     expect(workflow).not.toContain('set -x');
   });

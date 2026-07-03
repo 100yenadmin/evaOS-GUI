@@ -357,10 +357,6 @@ jobs:
           mkdir -p live-canary-proof
           cp -R "$PROOF_ROOT"/. live-canary-proof/
 
-          if [ ! -f live-canary-proof/business-browser.json ]; then
-            echo "::error::Live canary proof must include business-browser.json."
-            exit 1
-          fi
           if ! grep -Fq "Run live canaries: true" live-canary-proof/proof-run.md; then
             echo "::error::Live canary proof run did not record run_live_canaries=true."
             exit 1

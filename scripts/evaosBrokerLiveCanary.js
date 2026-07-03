@@ -5,6 +5,7 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
   Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
   Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
   Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
+  Object.freeze({ surface: 'shared-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 

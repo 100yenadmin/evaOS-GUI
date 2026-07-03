@@ -175,6 +175,7 @@ const REQUIRED_BROKER_LIVE_CANARY_SURFACES = Object.freeze([
   Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
   Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
   Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
+  Object.freeze({ surface: 'shared-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 // Suffix-based by design: launch URLs must be represented only by explicit redaction booleans.
@@ -628,13 +629,6 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/release-distribute.yml',
     issues,
     'live broker-surface proof artifact'
-  );
-  requireText(
-    distribute,
-    'business-browser.json',
-    '.github/workflows/release-distribute.yml',
-    issues,
-    'Business Browser live proof artifact'
   );
   requireText(
     distribute,
@@ -1778,7 +1772,10 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
     }
   }
 
-  verifyBusinessBrowserLiveCanaryProof(proofDir, proofCustomerId, options);
+  const businessBrowserProofPath = path.join(proofDir, BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME);
+  if (fs.existsSync(businessBrowserProofPath)) {
+    verifyBusinessBrowserLiveCanaryProof(proofDir, proofCustomerId, options);
+  }
 
   return true;
 }

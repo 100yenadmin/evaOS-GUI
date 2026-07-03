@@ -173,13 +173,14 @@ describe('evaOS broker live canary', () => {
     expect(proof).toMatchObject({
       schema: 'evaos-broker-live-canary/v3',
       customerId: 'cus_123',
-      requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'terminal'],
+      requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'shared-browser', 'terminal'],
       secretScan: 'passed',
     });
     expect((proof.surfaces as Array<Record<string, unknown>>).map((surface) => surface.surface)).toEqual([
       'evaos',
       'hermes',
       'mission-control',
+      'shared-browser',
       'terminal',
     ]);
     expect(proof).toMatchObject({
