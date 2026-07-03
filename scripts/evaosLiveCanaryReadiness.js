@@ -26,7 +26,11 @@ const CANARIES = [
   {
     name: 'broker-runtime-status',
     command: 'node scripts/evaosBrokerLiveCanary.js',
-    required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
+    required: [],
+    anyOf: [
+      ['AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION', 'AIONUI_EVAOS_DESKTOP_SESSION'],
+      ['AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID', 'AIONUI_EVAOS_CUSTOMER_ID'],
+    ],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_BROKER_RUNTIME'],
   },
   {

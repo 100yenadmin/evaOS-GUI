@@ -956,6 +956,14 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
   });
 
+  it('does not require optional Business Browser action proof in the release workflow config audit', () => {
+    const issues = releaseGate.collectReleaseConfigIssues(repoRoot);
+
+    expect(
+      issues.filter((issue: string) => /business-browser\.json|Business Browser live proof artifact/i.test(issue))
+    ).toEqual([]);
+  });
+
   it('verifies live broker-surface proof before distribution can publish', () => {
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-'));
     try {
