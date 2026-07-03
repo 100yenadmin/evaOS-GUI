@@ -5,6 +5,7 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
   Object.freeze({ surface: 'evaos', runtime: 'openclaw' }),
   Object.freeze({ surface: 'hermes', runtime: 'hermes' }),
   Object.freeze({ surface: 'mission-control', runtime: 'paperclip' }),
+  Object.freeze({ surface: 'shared-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
 
@@ -82,6 +83,55 @@ function assertNoSecretMaterial(value, path = '$', seen = new WeakSet()) {
 
 function safeText(value) {
   return typeof value === 'string' && value.trim() && !containsSecretMaterial(value) ? value.trim() : undefined;
+}
+
+function envText(env, name) {
+  return typeof env[name] === 'string' && env[name].trim() ? env[name].trim() : '';
+}
+
+function resolveBrokerCanaryCredentials(env) {
+  const brokerDesktopSession = envText(env, 'AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION');
+  const brokerCustomerId = envText(env, 'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID');
+  const defaultDesktopSession = envText(env, 'AIONUI_EVAOS_DESKTOP_SESSION');
+  const defaultCustomerId = envText(env, 'AIONUI_EVAOS_CUSTOMER_ID');
+  const brokerPairPresent = Boolean(brokerDesktopSession || brokerCustomerId);
+
+  if (brokerPairPresent) {
+    const missing = [];
+    if (!brokerDesktopSession) {
+      missing.push('AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION');
+    }
+    if (!brokerCustomerId) {
+      missing.push('AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID');
+    }
+    if (missing.length > 0) {
+      throw new Error(`Incomplete broker-specific canary credential pair: missing ${missing.join(', ')}.`);
+    }
+    return {
+      desktopSession: brokerDesktopSession,
+      customerId: brokerCustomerId,
+      credentialSource: 'broker-specific',
+    };
+  }
+
+  const missing = [];
+  if (!defaultDesktopSession) {
+    missing.push('AIONUI_EVAOS_DESKTOP_SESSION');
+  }
+  if (!defaultCustomerId) {
+    missing.push('AIONUI_EVAOS_CUSTOMER_ID');
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing one complete broker canary credential pair. Set AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION + AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID or AIONUI_EVAOS_DESKTOP_SESSION + AIONUI_EVAOS_CUSTOMER_ID. Missing ${missing.join(', ')}.`
+    );
+  }
+
+  return {
+    desktopSession: defaultDesktopSession,
+    customerId: defaultCustomerId,
+    credentialSource: 'default',
+  };
 }
 
 function runtimeRecord(raw) {
@@ -365,19 +415,7 @@ async function runBrokerLiveCanary(options = {}) {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? fetch;
   const endpoint = env.AIONUI_EVAOS_BROKER_ENDPOINT || DEFAULT_ENDPOINT;
-  const desktopSession = env.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION || env.AIONUI_EVAOS_DESKTOP_SESSION;
-  const customerId = env.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID || env.AIONUI_EVAOS_CUSTOMER_ID;
-
-  if (!desktopSession) {
-    throw new Error(
-      'Missing AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION or AIONUI_EVAOS_DESKTOP_SESSION for live broker canary.'
-    );
-  }
-  if (!customerId) {
-    throw new Error(
-      'Missing AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID or AIONUI_EVAOS_CUSTOMER_ID for live broker canary.'
-    );
-  }
+  const { desktopSession, customerId, credentialSource } = resolveBrokerCanaryCredentials(env);
 
   const surfaces = [];
   const failures = [];
@@ -410,6 +448,7 @@ async function runBrokerLiveCanary(options = {}) {
       schema: 'evaos-broker-live-canary/v3',
       ok: false,
       customerId,
+      credentialSource,
       releaseCanaryCustomerId: safeText(env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID) ?? customerId,
       requiredSurfaces: requestedBrokerSurfaces(env).map((surface) => surface.surface),
       surfaces,
@@ -422,6 +461,7 @@ async function runBrokerLiveCanary(options = {}) {
   return {
     schema: 'evaos-broker-live-canary/v3',
     customerId,
+    credentialSource,
     releaseCanaryCustomerId: safeText(env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID) ?? customerId,
     requiredSurfaces: surfaces.map((surface) => surface.surface),
     surfaces,
@@ -452,4 +492,5 @@ module.exports = {
   runBrokerLiveCanary,
   sanitizeBrokerRuntimeCanaryResponse,
   sanitizeBrokerRuntimeLaunchCanaryResponse,
+  resolveBrokerCanaryCredentials,
 };

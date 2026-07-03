@@ -26,24 +26,37 @@ const CANARIES = [
   {
     name: 'broker-runtime-status',
     command: 'node scripts/evaosBrokerLiveCanary.js',
-    required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
+    required: [],
+    pairAlternatives: [
+      {
+        label: 'broker-specific',
+        required: ['AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION', 'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID'],
+      },
+      {
+        label: 'default',
+        required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
+      },
+    ],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_BROKER_RUNTIME'],
   },
   {
     name: 'trust-surface',
     command: 'node scripts/evaosTrustSurfaceLiveCanary.js',
+    followUp: true,
     required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT'],
   },
   {
     name: 'provider-hub',
     command: 'node scripts/evaosProviderHubLiveCanary.js',
+    followUp: true,
     required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_PROVIDER_REQUIRED_STATES'],
   },
   {
     name: 'people-approval-deny',
     command: 'AIONUI_EVAOS_APPROVAL_DENY_ACK=evaos-deny-test node scripts/evaosPeopleApprovalLiveCanary.js',
+    followUp: true,
     required: [
       'AIONUI_EVAOS_APPROVAL_DENY_ACK',
       'AIONUI_EVAOS_CUSTOMER_ID',
@@ -64,6 +77,7 @@ const CANARIES = [
   {
     name: 'company-brain',
     command: 'node scripts/evaosCompanyBrainLiveCanary.js',
+    followUp: true,
     required: [
       'AIONUI_EVAOS_DESKTOP_SESSION',
       'AIONUI_EVAOS_CUSTOMER_ID',
@@ -77,6 +91,7 @@ const CANARIES = [
     name: 'business-browser',
     command:
       'AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK=evaos-browser-test node scripts/evaosBusinessBrowserLiveCanary.js',
+    followUp: true,
     required: [
       'AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK',
       'AIONUI_EVAOS_DESKTOP_SESSION',
@@ -94,6 +109,21 @@ const CANARIES = [
 
 function hasEnv(env, name) {
   return typeof env[name] === 'string' && env[name].trim() !== '';
+}
+
+function truthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
+function includeFollowupCanaries(env) {
+  if (!hasEnv(env, 'AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES')) {
+    return true;
+  }
+  return truthyEnv(env.AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES);
 }
 
 function inspectCanary(canary, env) {
@@ -120,8 +150,32 @@ function inspectCanary(canary, env) {
     }
   }
 
+  const pairAlternatives = canary.pairAlternatives ?? [];
+  const completePairAlternatives = [];
+  const partialPairAlternatives = [];
+  for (const alternative of pairAlternatives) {
+    const present = alternative.required.filter((name) => hasEnv(env, name));
+    if (present.length === alternative.required.length) {
+      completePairAlternatives.push(alternative.label);
+    } else if (present.length > 0) {
+      partialPairAlternatives.push({
+        label: alternative.label,
+        missing: alternative.required.filter((name) => !hasEnv(env, name)),
+      });
+    }
+  }
+  const missingPairAlternatives =
+    pairAlternatives.length > 0 && completePairAlternatives.length === 0 ? pairAlternatives : [];
+  for (const partial of partialPairAlternatives) {
+    invalidRequired.push(`${partial.label} credential pair is incomplete; missing ${partial.missing.join(', ')}`);
+  }
+
   const presentOptional = (canary.optional ?? []).filter((name) => hasEnv(env, name));
-  const ready = missingRequired.length === 0 && invalidRequired.length === 0 && missingAnyOf.length === 0;
+  const ready =
+    missingRequired.length === 0 &&
+    invalidRequired.length === 0 &&
+    missingAnyOf.length === 0 &&
+    missingPairAlternatives.length === 0;
 
   return {
     name: canary.name,
@@ -129,10 +183,12 @@ function inspectCanary(canary, env) {
     ready,
     required: canary.required,
     anyOf: canary.anyOf ?? [],
+    pairAlternatives,
     optional: canary.optional ?? [],
     missingRequired,
     invalidRequired,
     missingAnyOf,
+    missingPairAlternatives,
     presentOptional,
   };
 }
@@ -149,17 +205,27 @@ function blockerLines(canary) {
   for (const group of canary.missingAnyOf) {
     blockers.push(`${canary.name}: missing one of ${group.join(', ')}`);
   }
+  if ((canary.missingPairAlternatives ?? []).length > 0) {
+    const groups = canary.missingPairAlternatives.map(
+      (alternative) => `${alternative.label} (${alternative.required.join(', ')})`
+    );
+    blockers.push(`${canary.name}: missing one complete credential pair: ${groups.join('; ')}`);
+  }
 
   return blockers;
 }
 
 function inspectLiveCanaryReadiness(env = process.env) {
-  const canaries = CANARIES.map((canary) => inspectCanary(canary, env));
+  const includeFollowups = includeFollowupCanaries(env);
+  const canaries = CANARIES.filter((canary) => includeFollowups || canary.followUp !== true).map((canary) =>
+    inspectCanary(canary, env)
+  );
   const blockers = canaries.flatMap(blockerLines);
 
   return {
     schema: 'evaos-live-canary-readiness/v1',
     checkedAt: new Date().toISOString(),
+    followupCanariesIncluded: includeFollowups,
     ready: blockers.length === 0,
     blockers,
     canaries,
@@ -173,6 +239,7 @@ function renderMarkdown(report) {
     `Checked: ${report.checkedAt}`,
     '',
     `Overall: ${report.ready ? 'ready' : 'blocked'}`,
+    `Follow-up canaries included: ${report.followupCanariesIncluded ? 'yes' : 'no'}`,
     '',
   ];
 
@@ -194,6 +261,12 @@ function renderMarkdown(report) {
       const groups = canary.anyOf.map((group) => group.map((name) => `\`${name}\``).join(' or '));
       lines.push(`- Required one-of: ${groups.join('; ')}`);
     }
+    if ((canary.pairAlternatives ?? []).length > 0) {
+      const groups = canary.pairAlternatives.map(
+        (alternative) => `${alternative.label}: ${alternative.required.map((name) => `\`${name}\``).join(' + ')}`
+      );
+      lines.push(`- Required credential pair: ${groups.join('; ')}`);
+    }
     if (canary.optional.length > 0) {
       lines.push(`- Optional: ${canary.optional.map((name) => `\`${name}\``).join(', ')}`);
     }
@@ -206,6 +279,12 @@ function renderMarkdown(report) {
     if (canary.missingAnyOf.length > 0) {
       const groups = canary.missingAnyOf.map((group) => group.map((name) => `\`${name}\``).join(' or '));
       lines.push(`- Missing one-of: ${groups.join('; ')}`);
+    }
+    if ((canary.missingPairAlternatives ?? []).length > 0) {
+      const groups = canary.missingPairAlternatives.map(
+        (alternative) => `${alternative.label}: ${alternative.required.map((name) => `\`${name}\``).join(' + ')}`
+      );
+      lines.push(`- Missing credential pair: ${groups.join('; ')}`);
     }
     if (canary.presentOptional.length > 0) {
       lines.push(`- Optional present: ${canary.presentOptional.map((name) => `\`${name}\``).join(', ')}`);

@@ -233,6 +233,7 @@ function writeBrokerLiveCanaryProof(
     ['evaos', 'openclaw'],
     ['hermes', 'hermes'],
     ['mission-control', 'paperclip'],
+    ['shared-browser', 'browser'],
     ['terminal', 'terminal'],
   ].map(([surface, runtime]) => ({
     surface,
@@ -259,7 +260,7 @@ function writeBrokerLiveCanaryProof(
         schema: 'evaos-broker-live-canary/v3',
         customerId: 'cus_123',
         releaseCanaryCustomerId: 'cus_123',
-        requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'terminal'],
+        requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'shared-browser', 'terminal'],
         surfaces,
         checkedAt,
         secretScan: 'passed',
@@ -955,6 +956,20 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
   });
 
+  it('does not require optional Business Browser action proof in the release workflow config audit', () => {
+    const issues = releaseGate.collectReleaseConfigIssues(repoRoot);
+
+    expect(
+      issues.filter((issue: string) => /business-browser\.json|Business Browser live proof artifact/i.test(issue))
+    ).toEqual([]);
+  });
+
+  it('requires the release workflow to record follow-up canary disposition', () => {
+    const issues = releaseGate.collectReleaseConfigIssues(repoRoot);
+
+    expect(issues.filter((issue: string) => /follow-up canary disposition/i.test(issue))).toEqual([]);
+  });
+
   it('verifies live broker-surface proof before distribution can publish', () => {
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-'));
     try {
@@ -1100,16 +1115,20 @@ describe('evaOS beta release gate', () => {
     }
   });
 
-  it('rejects live proof packets with missing or non-acceptance Business Browser proof', () => {
+  it('accepts broker surface proof without deeper Business Browser action proof', () => {
     const missingBrowserDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-missing-'));
-    const dryRunDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-dry-run-'));
     try {
       writeBrokerLiveCanaryProof(missingBrowserDir);
       fs.rmSync(path.join(missingBrowserDir, 'business-browser.json'));
-      expect(() => releaseGate.verifyBrokerLiveCanaryProof(missingBrowserDir, liveCanaryProofEnv)).toThrow(
-        /Business Browser live canary proof/
-      );
+      expect(releaseGate.verifyBrokerLiveCanaryProof(missingBrowserDir, liveCanaryProofEnv)).toBe(true);
+    } finally {
+      fs.rmSync(missingBrowserDir, { recursive: true, force: true });
+    }
+  });
 
+  it('rejects non-acceptance Business Browser action proof when the optional packet is present', () => {
+    const dryRunDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-browser-dry-run-'));
+    try {
       writeBrokerLiveCanaryProof(
         dryRunDir,
         {},
@@ -1124,7 +1143,6 @@ describe('evaOS beta release gate', () => {
         /non-dry-run acceptance proof/
       );
     } finally {
-      fs.rmSync(missingBrowserDir, { recursive: true, force: true });
       fs.rmSync(dryRunDir, { recursive: true, force: true });
     }
   });
