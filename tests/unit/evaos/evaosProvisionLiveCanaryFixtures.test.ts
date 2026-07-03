@@ -11,12 +11,18 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
   ) => Promise<Record<string, unknown>>;
   coreBrokerFixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
   fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
+  loadOrCreateTemporaryAdminMembership: (
+    admin: FakeMembershipAdmin,
+    adminProfile: { id: string; email: string },
+    customerAccount: { id: string }
+  ) => Promise<Record<string, unknown>>;
   loadCoreBrokerOptions: (env: Record<string, string>) => Record<string, unknown>;
   loadOptions: (env: Record<string, string>) => Record<string, unknown>;
   providerCleanupReportFromState: (state: Record<string, unknown>) => Record<string, unknown>;
   providerFixtureSubjectsFromRows: (rows: ProviderRow[]) => string[];
   renderGithubEnvFile: (env: Record<string, string>) => string;
   restoreCustomerVmFixture: (admin: FakeCustomerVmAdmin, state: Record<string, unknown>) => Promise<boolean>;
+  restoreAdminMembershipFixture: (admin: FakeMembershipAdmin, state: Record<string, unknown>) => Promise<boolean>;
   sanitizedCoreBrokerProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   restoreProviderProfileSnapshot: (
@@ -225,6 +231,43 @@ class FakeCustomerVmAdmin {
   }
 }
 
+class FakeMembershipAdmin {
+  rows: ProviderRow[];
+  inserts: Array<{ body: ProviderRow; options: Record<string, unknown> }> = [];
+  patches: Array<{ query: Record<string, string>; body: ProviderRow }> = [];
+
+  constructor(rows: ProviderRow[]) {
+    this.rows = rows.map((row) => Object.assign({}, row));
+  }
+
+  async select(table: string, query: Record<string, string | number>) {
+    if (table !== 'customer_account_memberships') throw new Error(`unexpected table ${table}`);
+    const rows = this.rows.filter((row) => {
+      const filteredQuery = Object.fromEntries(
+        Object.entries(query).filter(([key]) => key !== 'select' && key !== 'limit')
+      ) as Record<string, string>;
+      return rowMatchesQuery(row, filteredQuery);
+    });
+    return rows.slice(0, Number(query.limit ?? rows.length)).map((row) => Object.assign({}, row));
+  }
+
+  async insert(table: string, body: ProviderRow, options: Record<string, unknown> = {}) {
+    if (table !== 'customer_account_memberships') throw new Error(`unexpected table ${table}`);
+    const row = { id: body.id ?? `membership-inserted-${this.inserts.length + 1}`, ...body };
+    this.rows.push(row);
+    this.inserts.push({ body: row, options });
+    return { ...row };
+  }
+
+  async patch(table: string, query: Record<string, string>, body: ProviderRow) {
+    if (table !== 'customer_account_memberships') throw new Error(`unexpected table ${table}`);
+    this.patches.push({ query, body });
+    for (const row of this.rows) {
+      if (rowMatchesQuery(row, query)) Object.assign(row, body);
+    }
+  }
+}
+
 function fixtureState() {
   return {
     brokerEndpoint: 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session',
@@ -353,6 +396,98 @@ describe('evaOS live canary fixture provisioner', () => {
     });
 
     expect(options.customerId).toBe('customer-under-proof');
+  });
+
+  it('reuses an existing active admin membership for core broker provisioning', async () => {
+    const admin = new FakeMembershipAdmin([
+      {
+        id: 'membership-existing',
+        customer_account_id: 'account-id',
+        profile_id: 'admin-profile-id',
+        role: 'owner',
+        status: 'active',
+      },
+    ]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-existing',
+      role: 'owner',
+      temporary: false,
+    });
+    expect(admin.inserts).toHaveLength(0);
+    expect(admin.patches).toHaveLength(0);
+  });
+
+  it('temporarily activates and restores an inactive admin membership', async () => {
+    const inactive = {
+      id: 'membership-inactive',
+      customer_account_id: 'account-id',
+      profile_id: 'admin-profile-id',
+      role: 'technical_admin',
+      status: 'removed',
+      accepted_at: null,
+      removed_at: '2026-01-01T00:00:00.000Z',
+      metadata: { previous: true },
+    };
+    const admin = new FakeMembershipAdmin([inactive]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-inactive',
+      temporary: true,
+      snapshot: { row: inactive },
+    });
+    expect(admin.patches[0].body).toMatchObject({
+      status: 'active',
+      metadata: { source: 'aionui-live-canary-core-broker', temporary: true },
+    });
+
+    const restored = await provisioner.restoreAdminMembershipFixture(admin, {
+      admin: { membershipId: 'membership-inactive', membershipTemporary: true },
+      adminMembershipSnapshot: { row: inactive },
+    });
+
+    expect(restored).toBe(true);
+    expect(admin.patches.at(-1)?.body).toMatchObject({
+      status: 'removed',
+      metadata: { previous: true },
+    });
+  });
+
+  it('marks an inserted temporary admin membership removed during cleanup', async () => {
+    const admin = new FakeMembershipAdmin([]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-inserted-1',
+      temporary: true,
+    });
+
+    const restored = await provisioner.restoreAdminMembershipFixture(admin, {
+      admin: { membershipId: 'membership-inserted-1', membershipTemporary: true },
+    });
+
+    expect(restored).toBe(true);
+    expect(admin.patches.at(-1)?.body).toMatchObject({
+      status: 'removed',
+      metadata: { source: 'aionui-live-canary-core-broker', cleaned_up: true },
+    });
   });
 
   it('does not claim provider fixture restoration for a core broker cleanup state', () => {
