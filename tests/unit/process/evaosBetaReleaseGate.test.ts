@@ -964,6 +964,12 @@ describe('evaOS beta release gate', () => {
     ).toEqual([]);
   });
 
+  it('requires the release workflow to record follow-up canary disposition', () => {
+    const issues = releaseGate.collectReleaseConfigIssues(repoRoot);
+
+    expect(issues.filter((issue: string) => /follow-up canary disposition/i.test(issue))).toEqual([]);
+  });
+
   it('verifies live broker-surface proof before distribution can publish', () => {
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-'));
     try {

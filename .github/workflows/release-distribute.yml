@@ -361,6 +361,10 @@ jobs:
             echo "::error::Live canary proof run did not record run_live_canaries=true."
             exit 1
           fi
+          if ! grep -Fq "Run follow-up canaries:" live-canary-proof/proof-run.md; then
+            echo "::error::Live canary proof run did not record the follow-up canary disposition."
+            exit 1
+          fi
 
           node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof
 

@@ -667,6 +667,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     distribute,
+    'Run follow-up canaries:',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'live canary follow-up disposition marker'
+  );
+  requireText(
+    distribute,
     'scripts/evaosBetaReleaseGate.js verify-live-canary-proof',
     '.github/workflows/release-distribute.yml',
     issues
