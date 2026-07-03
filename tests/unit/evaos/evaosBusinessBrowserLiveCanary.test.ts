@@ -380,6 +380,86 @@ describe('evaOS Business Browser live canary', () => {
     expect(JSON.stringify(proof)).not.toMatch(/eds_|access_token|desktop_session|Bearer/i);
   });
 
+  it('prefers the dedicated broker canary customer and session for release proof alignment', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const brokerPolicy = {
+      ...policy,
+      customer_id: 'broker-customer',
+      customer_account_id: 'acct_broker',
+      audit_id: 'audit_policy_broker',
+    };
+    const brokerRuntime = {
+      ...runtime,
+      customer_id: 'broker-customer',
+      customer_account_id: 'acct_broker',
+      audit_id: 'audit_runtime_broker',
+    };
+    const brokerOpenResult = {
+      ...openResult,
+      customer_id: 'broker-customer',
+      customer_account_id: 'acct_broker',
+      source_pointer: 'broker:browser_open_url:broker-customer',
+      audit_id: 'audit_open_broker',
+      browser: {
+        ...brokerRuntime,
+        audit_id: 'audit_runtime_after_open_broker',
+      },
+    };
+    const brokerStopResult = {
+      ...stopResult,
+      customer_id: 'broker-customer',
+      customer_account_id: 'acct_broker',
+      source_pointer: 'broker:browser_stop:broker-customer',
+      audit_id: 'audit_stop_broker',
+    };
+
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(brokerPolicy))
+      .mockResolvedValueOnce(jsonResponse(brokerRuntime))
+      .mockResolvedValueOnce(jsonResponse(brokerOpenResult))
+      .mockResolvedValueOnce(jsonResponse({ ...brokerRuntime, audit_id: 'audit_runtime_after_open_broker' }))
+      .mockResolvedValueOnce(jsonResponse(brokerStopResult))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...brokerRuntime,
+          status: 'stopped',
+          audit_id: 'audit_runtime_after_stop_broker',
+        })
+      );
+
+    const proof = await browserCanary.runBusinessBrowserLiveCanary({
+      env: {
+        ...env,
+        AIONUI_EVAOS_DESKTOP_SESSION: 'eds_fixture_browser_session_for_test',
+        AIONUI_EVAOS_CUSTOMER_ID: 'fixture-customer',
+        AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'broker-customer',
+        AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_broker_browser_session_for_test',
+        AIONUI_EVAOS_BUSINESS_BROWSER_ALLOW_NO_NEGATIVE: '1',
+        AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID: undefined,
+        AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION: undefined,
+      },
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(fetchImpl.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: 'Bearer eds_broker_browser_session_for_test',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toMatchObject({
+      action: 'current_customer_account_permissions',
+      customer_id: 'broker-customer',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[2][1]?.body))).toMatchObject({
+      action: 'browser_open_url',
+      customer_id: 'broker-customer',
+    });
+    expect(proof).toMatchObject({
+      customerId: 'broker-customer',
+      dryRun: true,
+      acceptanceProof: false,
+    });
+  });
+
   it('waits for the post-stop runtime status to settle before failing the live proof', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const sleepImpl = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);

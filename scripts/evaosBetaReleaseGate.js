@@ -609,7 +609,12 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'broker live canary customer override input'
   );
   requireText(distribute, 'evaOS Live Canary Proof', '.github/workflows/release-distribute.yml', issues);
-  requireText(distribute, '.github/workflows/evaos-live-canary-proof.yml', '.github/workflows/release-distribute.yml', issues);
+  requireText(
+    distribute,
+    '.github/workflows/evaos-live-canary-proof.yml',
+    '.github/workflows/release-distribute.yml',
+    issues
+  );
   requireText(
     distribute,
     'headSha',
@@ -1563,6 +1568,7 @@ function liveCanaryVerificationOptions(env = process.env) {
   const maxAgeHours = Number.parseFloat(maxAgeRaw);
   const expectedCustomerId = optionalLiveCanarySafeText(
     env.EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID ||
+      env.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID ||
       env.AIONUI_EVAOS_CUSTOMER_ID ||
       env.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID,
     'expectedCustomerId'

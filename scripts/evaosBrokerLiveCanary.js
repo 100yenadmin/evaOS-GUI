@@ -365,14 +365,18 @@ async function runBrokerLiveCanary(options = {}) {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? fetch;
   const endpoint = env.AIONUI_EVAOS_BROKER_ENDPOINT || DEFAULT_ENDPOINT;
-  const desktopSession = env.AIONUI_EVAOS_DESKTOP_SESSION;
-  const customerId = env.AIONUI_EVAOS_CUSTOMER_ID;
+  const desktopSession = env.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION || env.AIONUI_EVAOS_DESKTOP_SESSION;
+  const customerId = env.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID || env.AIONUI_EVAOS_CUSTOMER_ID;
 
   if (!desktopSession) {
-    throw new Error('Missing AIONUI_EVAOS_DESKTOP_SESSION for live broker canary.');
+    throw new Error(
+      'Missing AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION or AIONUI_EVAOS_DESKTOP_SESSION for live broker canary.'
+    );
   }
   if (!customerId) {
-    throw new Error('Missing AIONUI_EVAOS_CUSTOMER_ID for live broker canary.');
+    throw new Error(
+      'Missing AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID or AIONUI_EVAOS_CUSTOMER_ID for live broker canary.'
+    );
   }
 
   const surfaces = [];

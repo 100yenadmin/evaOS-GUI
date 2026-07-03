@@ -245,6 +245,63 @@ describe('evaOS broker live canary', () => {
     });
   });
 
+  it('prefers the dedicated broker canary customer and session over fixture values', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          customer_id: 'broker-customer',
+          runtime_key: 'hermes',
+          status: 'running',
+          source_pointer: 'broker:runtime_status:hermes',
+          audit_id: 'audit_status_hermes',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          customer_id: 'broker-customer',
+          runtime_key: 'hermes',
+          status: 'attached',
+          launch_mode: 'dashboard_surface',
+          launch_url: 'https://runtime.example.test/hermes/auth/callback',
+          source_pointer: 'broker:runtime_launch:hermes',
+          audit_id: 'audit_launch_hermes',
+        })
+      );
+
+    const proof = await liveCanary.runBrokerLiveCanary({
+      env: {
+        AIONUI_EVAOS_DESKTOP_SESSION: 'eds_fixture_session_for_test',
+        AIONUI_EVAOS_CUSTOMER_ID: 'fixture-customer',
+        AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'fixture-customer',
+        AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'broker-customer',
+        AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_broker_session_for_test',
+        AIONUI_EVAOS_BROKER_RUNTIME: 'hermes',
+        AIONUI_EVAOS_BROKER_ENDPOINT: 'https://broker.example.test/runtime',
+      },
+      fetchImpl,
+    });
+
+    expect(fetchImpl.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: 'Bearer eds_broker_session_for_test',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toMatchObject({
+      action: 'runtime_status',
+      customer_id: 'broker-customer',
+      runtime: 'hermes',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[1][1]?.body))).toMatchObject({
+      action: 'runtime_launch',
+      customer_id: 'broker-customer',
+      runtime: 'hermes',
+    });
+    expect(proof).toMatchObject({
+      customerId: 'broker-customer',
+      releaseCanaryCustomerId: 'fixture-customer',
+      requiredSurfaces: ['hermes'],
+    });
+  });
+
   it('accepts session-bearing broker launch targets without leaking the target URL', () => {
     const proof = liveCanary.sanitizeBrokerRuntimeLaunchCanaryResponse(
       {

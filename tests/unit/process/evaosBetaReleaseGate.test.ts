@@ -966,6 +966,23 @@ describe('evaOS beta release gate', () => {
     }
   });
 
+  it('uses the broker canary customer as the expected live broker proof customer when configured', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-broker-customer-'));
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+
+      expect(
+        releaseGate.verifyBrokerLiveCanaryProof(proofDir, {
+          AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'cus_123',
+          AIONUI_EVAOS_CUSTOMER_ID: 'fixture-customer',
+          EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects broker proof packets that omit a required surface or contain raw launch material', () => {
     const missingSurfaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-missing-'));
     const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-secret-'));
