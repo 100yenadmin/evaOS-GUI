@@ -142,6 +142,20 @@ jobs:
           test -s "$PROOF_DIR/fixture-provisioning.stdout.json"
           if grep -q '^::add-mask::' "$PROOF_DIR/fixture-provisioning.stdout.json"; then
             echo "::error::Fixture proof artifact contains GitHub mask commands."
+              exit 1
+            fi
+
+      - name: Provision core broker live canary credentials
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries != 'true' && github.event.inputs.provision_fixtures == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosProvisionLiveCanaryFixtures.js provision-core-broker | awk -v out="$PROOF_DIR/core-broker-fixture-provisioning.stdout.json" '
+            /^::add-mask::/ { print; next }
+            { print > out }
+          '
+          test -s "$PROOF_DIR/core-broker-fixture-provisioning.stdout.json"
+          if grep -q '^::add-mask::' "$PROOF_DIR/core-broker-fixture-provisioning.stdout.json"; then
+            echo "::error::Core broker fixture proof artifact contains GitHub mask commands."
             exit 1
           fi
 
@@ -172,6 +186,12 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/evaosProvisionLiveCanaryFixtures.js cleanup > "$PROOF_DIR/fixture-cleanup.stdout.json"
+
+      - name: Cleanup core broker live canary credentials
+        if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries != 'true' && github.event.inputs.provision_fixtures == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosProvisionLiveCanaryFixtures.js cleanup > "$PROOF_DIR/core-broker-fixture-cleanup.stdout.json"
 
       - name: Write summary
         if: always()

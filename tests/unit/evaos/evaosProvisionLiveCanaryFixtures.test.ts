@@ -9,11 +9,15 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
     customerId: string,
     options?: Record<string, unknown>
   ) => Promise<Record<string, unknown>>;
+  coreBrokerFixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
   fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
+  loadCoreBrokerOptions: (env: Record<string, string>) => Record<string, unknown>;
   loadOptions: (env: Record<string, string>) => Record<string, unknown>;
+  providerCleanupReportFromState: (state: Record<string, unknown>) => Record<string, unknown>;
   providerFixtureSubjectsFromRows: (rows: ProviderRow[]) => string[];
   renderGithubEnvFile: (env: Record<string, string>) => string;
   restoreCustomerVmFixture: (admin: FakeCustomerVmAdmin, state: Record<string, unknown>) => Promise<boolean>;
+  sanitizedCoreBrokerProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   restoreProviderProfileSnapshot: (
     admin: FakeProviderAdmin,
@@ -302,6 +306,84 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(env.AIONUI_EVAOS_DESKTOP_SESSION).toBe('eds_admin_session_for_test');
     expect(env.AIONUI_EVAOS_REQUESTER_SESSION).toBe('eds_requester_session_for_test');
     expect(env.AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION).toBe('eds_denied_session_for_test');
+  });
+
+  it('exports a complete core broker credential pair without follow-up fixture variables', () => {
+    const env = provisioner.coreBrokerFixtureEnvFromProvision(fixtureState());
+
+    expect(env).toMatchObject({
+      AIONUI_EVAOS_BROKER_ENDPOINT: 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session',
+      AIONUI_EVAOS_DESKTOP_SESSION: 'eds_admin_session_for_test',
+      AIONUI_EVAOS_CUSTOMER_ID: 'golden',
+      AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_admin_session_for_test',
+      AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'golden',
+      AIONUI_EVAOS_RUNTIME: 'openclaw',
+    });
+    expect(env).not.toHaveProperty('AIONUI_EVAOS_REQUESTER_SESSION');
+    expect(env).not.toHaveProperty('AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION');
+    expect(env).not.toHaveProperty('AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION');
+  });
+
+  it('keeps core broker provisioning proof free of desktop sessions and service-role markers', () => {
+    const report = provisioner.sanitizedCoreBrokerProvisionReport(fixtureState());
+    const text = JSON.stringify(report);
+
+    expect(report).toMatchObject({
+      schema: 'evaos-live-canary-core-broker-fixture-provision/v1',
+      customerId: 'golden',
+      runtimeTarget: {
+        customerId: 'golden',
+        fixtureManaged: true,
+        fixtureCreated: true,
+        source: 'customer_vms',
+      },
+      sensitiveOutput: 'passed',
+    });
+    expect(text).not.toMatch(/eds_(admin|requester|denied)/);
+    expect(text).not.toMatch(/service[_-]?role/i);
+    expect(text).not.toMatch(/desktop[_-]?session/i);
+  });
+
+  it('uses the broker canary customer id for core broker provisioning when present', () => {
+    const options = provisioner.loadCoreBrokerOptions({
+      AIONUI_EVAOS_FIXTURE_SUPABASE_URL: 'https://example.supabase.co',
+      AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
+      AIONUI_EVAOS_FIXTURE_CUSTOMER_ID: 'release-support',
+      AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'customer-under-proof',
+    });
+
+    expect(options.customerId).toBe('customer-under-proof');
+  });
+
+  it('does not claim provider fixture restoration for a core broker cleanup state', () => {
+    const report = provisioner.providerCleanupReportFromState({
+      schema: 'evaos-live-canary-core-broker-fixture-state/v1',
+      customerId: 'golden',
+      sessions: { admin: { id: 'admin-session-id' } },
+    });
+
+    expect(report).toMatchObject({
+      providerFixturesRestored: false,
+      providerFixtureSnapshotCount: 0,
+      providerFixtureRowCount: 0,
+      providerFixtureSubjectCount: 0,
+      providerCleanupScope: 'no-provider-fixtures-in-state',
+    });
+  });
+
+  it('reports provider fixture cleanup only when provider fixture state exists', () => {
+    const report = provisioner.providerCleanupReportFromState({
+      providerSnapshots: [{ providerKey: 'github', row: { id: 'snapshot-row' } }],
+      providerFixtureRows: [{ id: 'fixture-row' }],
+      providerFixtureSubjects: ['fixture-subject'],
+    });
+
+    expect(report).toMatchObject({
+      providerFixturesRestored: true,
+      providerCleanupScope: 'provider-fixtures',
+    });
+    expect(Number(report.providerFixtureSnapshotCount)).toBeGreaterThan(0);
+    expect(Number(report.providerFixtureRowCount)).toBeGreaterThan(0);
   });
 
   it('writes GitHub env lines without shell commands or multiline values', () => {

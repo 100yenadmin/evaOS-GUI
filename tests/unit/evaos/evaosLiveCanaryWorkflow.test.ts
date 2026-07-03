@@ -28,7 +28,12 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain(
       "github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'"
     );
+    expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision-core-broker');
+    expect(workflow).toContain(
+      "github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries != 'true' && github.event.inputs.provision_fixtures == 'true'"
+    );
     expect(workflow).toContain('awk -v out="$PROOF_DIR/fixture-provisioning.stdout.json"');
+    expect(workflow).toContain('awk -v out="$PROOF_DIR/core-broker-fixture-provisioning.stdout.json"');
     expect(workflow).toContain("grep -q '^::add-mask::'");
     expect(workflow).toContain('node scripts/evaosLiveCanaryReadiness.js --strict');
     expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js');
@@ -46,6 +51,7 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('node scripts/evaosPeopleApprovalLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosCompanyBrainLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js cleanup');
+    expect(workflow).toContain('core-broker-fixture-cleanup.stdout.json');
     expect(workflow).toContain('actions/upload-artifact@v4');
     expect(workflow).toContain('if-no-files-found: error');
   });
