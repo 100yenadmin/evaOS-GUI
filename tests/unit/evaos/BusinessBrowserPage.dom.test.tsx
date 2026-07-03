@@ -143,7 +143,7 @@ function deferred<T>() {
 }
 
 async function openDiagnostics(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Diagnostics' }));
+  await user.click(await screen.findByRole('button', { name: 'Diagnostics' }));
 }
 
 describe('BusinessBrowserPage', () => {
@@ -309,6 +309,72 @@ describe('BusinessBrowserPage', () => {
     expect(screen.queryByText(/Attached Shared Browser/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/audit-browser-launch/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Attached runtime surface/i)).not.toBeInTheDocument();
+  });
+
+  it('hides Shared Browser diagnostics from non-admin customer users even when support mode is toggled locally', async () => {
+    brokerMocks.getSessionStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        userEmail: 'member@example.test',
+        expiresAt: '2026-06-06T12:00:00.000Z',
+        source: 'callback',
+        message: 'Session active',
+      },
+    });
+    brokerMocks.getCustomerTargets.mockResolvedValueOnce({
+      success: true,
+      data: {
+        roles: ['member'],
+        isOperator: false,
+        defaultCustomerId: 'david-poku',
+        selectedCustomerId: 'david-poku',
+        customers: [
+          {
+            customerId: 'david-poku',
+            displayName: 'David Poku Co',
+            status: 'active',
+            healthStatus: 'ready',
+            isDefault: true,
+          },
+        ],
+        summaryText: '1 customer target loaded',
+      },
+    });
+    browserMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: browserView({ actions: [] }),
+    });
+    browserMocks.launch.mockResolvedValue({
+      success: true,
+      data: {
+        status: 'attached',
+        message: 'Attached Shared Browser.',
+        browser: browserView({ currentUrlDisplay: 'workspace.example.test/app' }),
+        runtimeSurface: {
+          schemaVersion: 'evaos.runtime_surface.v1',
+          surfaceId: 'surface-browser-fixture',
+          surfaceUri: 'evaos-runtime-surface://surface-browser-fixture/',
+          partition: 'evaos-runtime-browser-fixture',
+          customerId: 'david-poku',
+          runtimeKey: 'browser',
+          displayLabel: 'Shared Browser',
+          status: 'attached',
+          sourcePointer: 'broker:runtime_launch:browser',
+          auditId: 'audit-browser-launch',
+        },
+        backendEnforced: true,
+      },
+    });
+
+    render(<BusinessBrowserPage />);
+
+    expect(await screen.findByTestId('evaos-business-browser-surface')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Diagnostics' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'David Poku Co' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/audit-browser-launch/i)).not.toBeInTheDocument();
   });
 
   it('mounts an embedded Shared Browser surface from an opaque broker handle', async () => {

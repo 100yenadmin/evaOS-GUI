@@ -62,6 +62,8 @@ const customerContextMock = vi.hoisted(() => ({
       },
     ] as IEvaosCustomerTargetView[],
     isOperator: false,
+    roles: ['admin'] as string[],
+    scopes: ['access_technical_diagnostics'] as string[],
     loading: false,
     loaded: true,
     refreshTargets: vi.fn(),
@@ -160,6 +162,8 @@ describe('NativeCompanionPage', () => {
       },
     ];
     customerContextMock.customerContext.isOperator = false;
+    customerContextMock.customerContext.roles = ['admin'];
+    customerContextMock.customerContext.scopes = ['access_technical_diagnostics'];
     customerContextMock.customerContext.refreshTargets.mockResolvedValue(undefined);
     bridgeMocks.getDiagnosticPacket.mockResolvedValue({
       success: true,
@@ -296,6 +300,80 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getByRole('button', { name: /Open released Workbench fallback/i }));
 
     await waitFor(() => expect(bridgeMocks.openReleasedWorkbench).toHaveBeenCalledTimes(1));
+  });
+
+  it('hides Mac & iPhone diagnostics from non-admin customer users even when support mode is toggled locally', async () => {
+    localStorage.setItem('evaos.supportDiagnostics', '1');
+    customerContextMock.brokerSession = {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      sessionKey: 'evaos-session-member',
+      source: 'beta-storage',
+      userEmail: 'member@example.test',
+      message: 'Authenticated',
+    };
+    customerContextMock.customerContext.roles = ['member'];
+    customerContextMock.customerContext.scopes = ['access_technical_diagnostics'];
+    customerContextMock.customerContext.isOperator = false;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-06-07T03:45:00.000Z',
+        readiness: 'ready',
+        summaryText: 'Native bridge ready from read-only adapter proof.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: true,
+        releasedWorkbench: {
+          installed: true,
+          running: false,
+          path: '/Applications/evaOS Workbench.app',
+          version: '0.6.28',
+        },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge',
+          readOnly: true,
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        connectorService: {
+          status: 'ready',
+          running: true,
+          reachable: true,
+        },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac',
+          deviceLabel: 'EVAs-Mac-mini.local',
+          permissions: {
+            accessibility: 'granted',
+            screenRecording: 'granted',
+          },
+        },
+        iPhone: {
+          status: 'available',
+          auditId: 'audit-iphone',
+          installed: true,
+          running: false,
+        },
+        audit: {
+          status: 'ready',
+          auditIds: ['audit-mac', 'audit-iphone'],
+        },
+      },
+    });
+
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+    expect(screen.queryByText('Advanced diagnostics')).not.toBeInTheDocument();
+    expect(screen.queryByText('EVAs-Mac-mini.local')).not.toBeInTheDocument();
+    expect(screen.queryByText('audit-mac, audit-iphone')).not.toBeInTheDocument();
   });
 
   it('shows an agent setup blocker without failing local Mac Access', async () => {
@@ -521,7 +599,7 @@ describe('NativeCompanionPage', () => {
     });
     const payload = feedbackMocks.openFeedback.mock.calls[0][0];
     expect(payload).toMatchObject({
-      module: 'other',
+      module: 'evaos-support',
       autoScreenshot: true,
       tags: expect.objectContaining({
         support_surface: 'native_companion_mac_control',

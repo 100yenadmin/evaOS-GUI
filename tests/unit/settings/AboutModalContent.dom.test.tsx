@@ -34,7 +34,11 @@ vi.mock('@/renderer/utils/platform', () => ({
 }));
 
 vi.mock('@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal', () => ({
-  default: ({ visible }: { visible: boolean }) => <div data-testid='feedback-modal'>{String(visible)}</div>,
+  default: ({ visible, defaultModule }: { visible: boolean; defaultModule?: string }) => (
+    <div data-testid='feedback-modal'>
+      {String(visible)}:{defaultModule ?? 'none'}
+    </div>
+  ),
 }));
 
 function renderAbout() {
@@ -85,18 +89,15 @@ describe('AboutModalContent evaOS beta identity', () => {
     expect(screen.queryByText(/github\.com\/100yenadmin\//i)).not.toBeInTheDocument();
   });
 
-  it('routes About support links to evaOS-owned release surfaces only', async () => {
+  it('routes About website links to evaOS-owned release surfaces only', async () => {
     const user = userEvent.setup();
     renderAbout();
 
     expect(Object.values(EVAOS_BETA_ABOUT_LINKS).join(' ')).not.toMatch(/AionUi|iOfficeAI|aionui\.com/i);
 
     await user.click(screen.getByLabelText('Open ElectricSheep'));
-    await user.click(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.supportRoute));
-    await user.click(screen.getByText('settings.contactMe'));
 
     expect(platformMocks.openEvaosExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.website);
-    expect(platformMocks.openEvaosExternalUrl).toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.support);
     expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('docs'));
     expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('releases'));
     expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('iOfficeAI/AionUi'));
@@ -111,7 +112,20 @@ describe('AboutModalContent evaOS beta identity', () => {
 
     await user.click(screen.getByText('settings.bugReport'));
 
-    expect(screen.getByTestId('feedback-modal')).toHaveTextContent('true');
+    expect(screen.getByTestId('feedback-modal')).toHaveTextContent('true:none');
     expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(expect.stringContaining('github.com'));
+  });
+
+  it('opens Support Issue and the support notice through the in-app report modal', async () => {
+    const user = userEvent.setup();
+    renderAbout();
+
+    await user.click(screen.getByText(EVAOS_BETA_SUPPORT_NOTICE.supportRoute));
+    expect(screen.getByTestId('feedback-modal')).toHaveTextContent('true:evaos-support');
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.support);
+
+    await user.click(screen.getByText('settings.contactMe'));
+    expect(screen.getByTestId('feedback-modal')).toHaveTextContent('true:evaos-support');
+    expect(platformMocks.openEvaosExternalUrl).not.toHaveBeenCalledWith(EVAOS_BETA_ABOUT_LINKS.support);
   });
 });

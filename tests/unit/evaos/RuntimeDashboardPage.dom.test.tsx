@@ -18,6 +18,18 @@ const supportEmailMock = vi.hoisted(() => ({
   openEvaosSupportEmail: vi.fn(),
 }));
 
+const brokerSessionMock = vi.hoisted(() => ({
+  brokerAuthenticated: true,
+  brokerSession: {
+    state: 'authenticated',
+    authenticated: true,
+    expired: false,
+    userEmail: 'admin@100yen.org',
+    source: 'callback',
+    message: 'Session active',
+  },
+}));
+
 const customerContextMock = vi.hoisted(() => ({
   selectedCustomerId: 'fixture-customer-acme',
   selectedTarget: {
@@ -32,6 +44,9 @@ const customerContextMock = vi.hoisted(() => ({
       isDefault: true,
     },
   ],
+  roles: ['admin'],
+  scopes: ['access_technical_diagnostics'],
+  isOperator: true,
   loading: false,
   loaded: true,
   summaryText: '1 customer target loaded',
@@ -45,6 +60,8 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 
 vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   useEvaosBrokeredCustomerContext: () => ({
+    brokerSession: brokerSessionMock.brokerSession,
+    brokerAuthenticated: brokerSessionMock.brokerAuthenticated,
     customerContext: customerContextMock,
   }),
 }));
@@ -69,6 +86,18 @@ describe('RuntimeDashboardPage', () => {
     vi.clearAllMocks();
     localStorage.setItem('evaos.supportDiagnostics', '1');
     window.location.hash = '#/evaos';
+    brokerSessionMock.brokerAuthenticated = true;
+    brokerSessionMock.brokerSession = {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      userEmail: 'admin@100yen.org',
+      source: 'callback',
+      message: 'Session active',
+    };
+    customerContextMock.roles = ['admin'];
+    customerContextMock.scopes = ['access_technical_diagnostics'];
+    customerContextMock.isOperator = true;
     evaosBrokerMock.runtimeStatus.mockResolvedValue({
       success: true,
       data: {
@@ -135,6 +164,30 @@ describe('RuntimeDashboardPage', () => {
     expect(await screen.findByText(/evaOS broker attach did not return a runtime surface handle/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Diagnostics' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Customer context/)).not.toBeInTheDocument();
+  });
+
+  it('hides advanced diagnostics for non-admin customer users even when support mode is toggled locally', async () => {
+    brokerSessionMock.brokerSession = {
+      ...brokerSessionMock.brokerSession,
+      userEmail: 'member@example.test',
+    };
+    customerContextMock.roles = ['member'];
+    customerContextMock.scopes = ['access_technical_diagnostics'];
+    customerContextMock.isOperator = false;
+
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#181'
+      />
+    );
+
+    expect(await screen.findByText(/evaOS broker attach did not return a runtime surface handle/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Diagnostics' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Customer context/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/audit-runtime-status/)).not.toBeInTheDocument();
   });
 
   it.each([

@@ -34,7 +34,7 @@ describe('EvaosSupportBubble', () => {
 
     expect(feedbackMocks.openFeedback).toHaveBeenCalledWith(
       expect.objectContaining({
-        module: 'other',
+        module: 'evaos-support',
         autoScreenshot: true,
         tags: expect.objectContaining({
           evaos_product: 'workbench_beta',

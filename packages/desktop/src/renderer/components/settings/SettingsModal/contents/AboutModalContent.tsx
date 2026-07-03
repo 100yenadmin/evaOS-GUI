@@ -39,7 +39,7 @@ export const EVAOS_BETA_RELEASE_CONTROL_REPO = 'https://github.com/100yenadmin/e
 export const EVAOS_BETA_SUPPORT_NOTICE = {
   title: 'Support',
   body: 'Use Report Issue or email support. The app will include route, version, and screenshot context when you send a report.',
-  supportRoute: 'Email support@electricsheephq.com',
+  supportRoute: 'Open support report',
   diagnostics: 'Diagnostics stay hidden unless support mode is enabled; reports never include desktop-session secrets.',
 } as const;
 
@@ -66,6 +66,7 @@ const AboutModalContent: React.FC = () => {
 
   const [includePrerelease, setIncludePrerelease] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackModule, setFeedbackModule] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const saved = localStorage.getItem('update.includePrerelease');
@@ -85,15 +86,20 @@ const AboutModalContent: React.FC = () => {
     }
   };
 
+  const openFeedbackReport = (module?: string) => {
+    setFeedbackModule(module);
+    setShowFeedbackModal(true);
+  };
+
   const linkItems: LinkItem[] = [
     {
       title: t('settings.bugReport'),
-      onClick: () => setShowFeedbackModal(true),
+      onClick: () => openFeedbackReport(),
       icon: <Right theme='outline' size='16' />,
     },
     {
       title: t('settings.contactMe'),
-      url: EVAOS_BETA_ABOUT_LINKS.support,
+      onClick: () => openFeedbackReport('evaos-support'),
       icon: <Right theme='outline' size='16' />,
     },
   ];
@@ -159,11 +165,7 @@ const AboutModalContent: React.FC = () => {
               </Typography.Text>
               <Typography.Text
                 className='text-12px text-brand cursor-pointer hover:opacity-80'
-                onClick={() =>
-                  openLink(EVAOS_BETA_ABOUT_LINKS.support).catch((error) =>
-                    console.error('Failed to open support link:', error)
-                  )
-                }
+                onClick={() => openFeedbackReport('evaos-support')}
               >
                 {EVAOS_BETA_SUPPORT_NOTICE.supportRoute}
               </Typography.Text>
@@ -208,7 +210,11 @@ const AboutModalContent: React.FC = () => {
           </div>
         </div>
       </div>
-      <FeedbackReportModal visible={showFeedbackModal} onCancel={() => setShowFeedbackModal(false)} />
+      <FeedbackReportModal
+        visible={showFeedbackModal}
+        onCancel={() => setShowFeedbackModal(false)}
+        defaultModule={feedbackModule}
+      />
     </div>
   );
 };

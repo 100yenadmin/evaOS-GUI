@@ -55,7 +55,7 @@ export function buildEvaosSupportReportContext(input: EvaosSupportReportInput): 
   const customer = buildCustomerContext(input.customer);
 
   return {
-    module: 'other',
+    module: 'evaos-support',
     autoScreenshot: true,
     tags: compactTags({
       support_surface: surface,

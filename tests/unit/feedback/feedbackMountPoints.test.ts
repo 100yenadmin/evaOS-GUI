@@ -54,11 +54,17 @@ describe('FeedbackButton mount points — source-level wiring', () => {
     expect(src).toMatch(/<FeedbackButton\s+module=['"]mcp-tools['"]/);
   });
 
+  it('evaOS sidebar Support opens the first-party report modal instead of a mailto/browser target', () => {
+    const src = read('packages/desktop/src/renderer/components/layout/Sider/index.tsx');
+    expect(src).toMatch(/openFeedback\(\{\s*module:\s*['"]evaos-support['"]/s);
+    expect(src).not.toContain('openEvaosSupportEmail');
+  });
+
   it('each referenced module tag exists in FEEDBACK_MODULES', () => {
     const modulesSrc = read(
       'packages/desktop/src/renderer/components/settings/SettingsModal/contents/feedbackModules.ts'
     );
-    const referencedTags = ['conversation-session', 'agent-detection', 'system-settings', 'mcp-tools'];
+    const referencedTags = ['conversation-session', 'agent-detection', 'system-settings', 'mcp-tools', 'evaos-support'];
     for (const tag of referencedTags) {
       expect(modulesSrc).toContain(`tag: '${tag}'`);
     }
