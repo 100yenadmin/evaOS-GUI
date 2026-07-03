@@ -66,7 +66,7 @@ jobs:
       AIONUI_EVAOS_BROKER_ENDPOINT: ${{ vars.AIONUI_EVAOS_BROKER_ENDPOINT || secrets.AIONUI_EVAOS_BROKER_ENDPOINT }}
       AIONUI_EVAOS_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_DESKTOP_SESSION }}
       AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: ${{ inputs.customer_id || vars.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID }}
-      AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION || secrets.AIONUI_EVAOS_DESKTOP_SESSION }}
+      AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION }}
       AIONUI_EVAOS_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_CUSTOMER_ID || secrets.AIONUI_EVAOS_CUSTOMER_ID || vars.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID || secrets.AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID }}
       AIONUI_EVAOS_RUNTIME: ${{ inputs.runtime || vars.AIONUI_EVAOS_RUNTIME }}
       AIONUI_EVAOS_BROKER_RUNTIME: ${{ inputs.runtime }}
@@ -132,7 +132,7 @@ jobs:
           } > "$PROOF_DIR/proof-run.md"
 
       - name: Provision reusable live canary fixtures
-        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
         run: |
           set -euo pipefail
           node scripts/evaosProvisionLiveCanaryFixtures.js provision | awk -v out="$PROOF_DIR/fixture-provisioning.stdout.json" '
@@ -168,7 +168,7 @@ jobs:
           node scripts/evaosCompanyBrainLiveCanary.js > "$PROOF_DIR/company-brain.json"
 
       - name: Cleanup reusable live canary fixtures
-        if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
+        if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'
         run: |
           set -euo pipefail
           node scripts/evaosProvisionLiveCanaryFixtures.js cleanup > "$PROOF_DIR/fixture-cleanup.stdout.json"

@@ -25,6 +25,9 @@ describe('evaOS live canary proof workflow', () => {
     const workflow = readWorkflow();
 
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision');
+    expect(workflow).toContain(
+      "github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true' && github.event.inputs.provision_fixtures == 'true'"
+    );
     expect(workflow).toContain('awk -v out="$PROOF_DIR/fixture-provisioning.stdout.json"');
     expect(workflow).toContain("grep -q '^::add-mask::'");
     expect(workflow).toContain('node scripts/evaosLiveCanaryReadiness.js --strict');
@@ -61,6 +64,9 @@ describe('evaOS live canary proof workflow', () => {
       'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: ${{ inputs.customer_id || vars.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID'
     );
     expect(workflow).toContain(
+      'AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION }}'
+    );
+    expect(workflow).not.toContain(
       'AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: ${{ secrets.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION || secrets.AIONUI_EVAOS_DESKTOP_SESSION }}'
     );
     expect(workflow).not.toContain('AIONUI_EVAOS_CUSTOMER_ID: ${{ inputs.customer_id');

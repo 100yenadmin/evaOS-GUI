@@ -46,10 +46,7 @@ describe('evaOS live canary readiness', () => {
     expect(report.ready).toBe(false);
     expect(report.blockers).toContain('release-support-vm-target: missing AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL');
     expect(report.blockers).toContain(
-      'broker-runtime-status: missing one of AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION, AIONUI_EVAOS_DESKTOP_SESSION'
-    );
-    expect(report.blockers).toContain(
-      'broker-runtime-status: missing one of AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID, AIONUI_EVAOS_CUSTOMER_ID'
+      'broker-runtime-status: missing one complete credential pair: broker-specific (AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION, AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID); default (AIONUI_EVAOS_DESKTOP_SESSION, AIONUI_EVAOS_CUSTOMER_ID)'
     );
     expect(report.blockers).toContain('people-approval-deny: missing AIONUI_EVAOS_APPROVAL_DENY_ACK');
     expect(report.blockers).toContain('business-browser: missing AIONUI_EVAOS_BUSINESS_BROWSER_ACTION_ACK');
@@ -91,6 +88,23 @@ describe('evaOS live canary readiness', () => {
     expect(report.blockers).toEqual([]);
     expect(report.followupCanariesIncluded).toBe(false);
     expect(report.canaries.find((canary) => canary.name === 'broker-runtime-status')?.ready).toBe(true);
+  });
+
+  it('rejects mixed broker-specific and default credential pairs for broker readiness', () => {
+    const report = readiness.inspectLiveCanaryReadiness({
+      AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',
+      AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'support-vm-customer',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: 'Support VM',
+      AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_broker_session_for_test',
+      AIONUI_EVAOS_CUSTOMER_ID: 'cus_default',
+      AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: 'false',
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.blockers).toContain(
+      'broker-runtime-status: broker-specific credential pair is incomplete; missing AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID'
+    );
   });
 
   it('requires exact mutation acknowledgements before approval and browser canaries are ready', () => {

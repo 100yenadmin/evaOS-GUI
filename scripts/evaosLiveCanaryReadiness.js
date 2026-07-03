@@ -27,9 +27,15 @@ const CANARIES = [
     name: 'broker-runtime-status',
     command: 'node scripts/evaosBrokerLiveCanary.js',
     required: [],
-    anyOf: [
-      ['AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION', 'AIONUI_EVAOS_DESKTOP_SESSION'],
-      ['AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID', 'AIONUI_EVAOS_CUSTOMER_ID'],
+    pairAlternatives: [
+      {
+        label: 'broker-specific',
+        required: ['AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION', 'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID'],
+      },
+      {
+        label: 'default',
+        required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
+      },
     ],
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_BROKER_RUNTIME'],
   },
@@ -144,8 +150,32 @@ function inspectCanary(canary, env) {
     }
   }
 
+  const pairAlternatives = canary.pairAlternatives ?? [];
+  const completePairAlternatives = [];
+  const partialPairAlternatives = [];
+  for (const alternative of pairAlternatives) {
+    const present = alternative.required.filter((name) => hasEnv(env, name));
+    if (present.length === alternative.required.length) {
+      completePairAlternatives.push(alternative.label);
+    } else if (present.length > 0) {
+      partialPairAlternatives.push({
+        label: alternative.label,
+        missing: alternative.required.filter((name) => !hasEnv(env, name)),
+      });
+    }
+  }
+  const missingPairAlternatives =
+    pairAlternatives.length > 0 && completePairAlternatives.length === 0 ? pairAlternatives : [];
+  for (const partial of partialPairAlternatives) {
+    invalidRequired.push(`${partial.label} credential pair is incomplete; missing ${partial.missing.join(', ')}`);
+  }
+
   const presentOptional = (canary.optional ?? []).filter((name) => hasEnv(env, name));
-  const ready = missingRequired.length === 0 && invalidRequired.length === 0 && missingAnyOf.length === 0;
+  const ready =
+    missingRequired.length === 0 &&
+    invalidRequired.length === 0 &&
+    missingAnyOf.length === 0 &&
+    missingPairAlternatives.length === 0;
 
   return {
     name: canary.name,
@@ -153,10 +183,12 @@ function inspectCanary(canary, env) {
     ready,
     required: canary.required,
     anyOf: canary.anyOf ?? [],
+    pairAlternatives,
     optional: canary.optional ?? [],
     missingRequired,
     invalidRequired,
     missingAnyOf,
+    missingPairAlternatives,
     presentOptional,
   };
 }
@@ -172,6 +204,12 @@ function blockerLines(canary) {
   }
   for (const group of canary.missingAnyOf) {
     blockers.push(`${canary.name}: missing one of ${group.join(', ')}`);
+  }
+  if ((canary.missingPairAlternatives ?? []).length > 0) {
+    const groups = canary.missingPairAlternatives.map(
+      (alternative) => `${alternative.label} (${alternative.required.join(', ')})`
+    );
+    blockers.push(`${canary.name}: missing one complete credential pair: ${groups.join('; ')}`);
   }
 
   return blockers;
@@ -223,6 +261,12 @@ function renderMarkdown(report) {
       const groups = canary.anyOf.map((group) => group.map((name) => `\`${name}\``).join(' or '));
       lines.push(`- Required one-of: ${groups.join('; ')}`);
     }
+    if ((canary.pairAlternatives ?? []).length > 0) {
+      const groups = canary.pairAlternatives.map(
+        (alternative) => `${alternative.label}: ${alternative.required.map((name) => `\`${name}\``).join(' + ')}`
+      );
+      lines.push(`- Required credential pair: ${groups.join('; ')}`);
+    }
     if (canary.optional.length > 0) {
       lines.push(`- Optional: ${canary.optional.map((name) => `\`${name}\``).join(', ')}`);
     }
@@ -235,6 +279,12 @@ function renderMarkdown(report) {
     if (canary.missingAnyOf.length > 0) {
       const groups = canary.missingAnyOf.map((group) => group.map((name) => `\`${name}\``).join(' or '));
       lines.push(`- Missing one-of: ${groups.join('; ')}`);
+    }
+    if ((canary.missingPairAlternatives ?? []).length > 0) {
+      const groups = canary.missingPairAlternatives.map(
+        (alternative) => `${alternative.label}: ${alternative.required.map((name) => `\`${name}\``).join(' + ')}`
+      );
+      lines.push(`- Missing credential pair: ${groups.join('; ')}`);
     }
     if (canary.presentOptional.length > 0) {
       lines.push(`- Optional present: ${canary.presentOptional.map((name) => `\`${name}\``).join(', ')}`);

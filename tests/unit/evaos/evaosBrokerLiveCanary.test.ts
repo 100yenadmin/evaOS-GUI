@@ -24,6 +24,11 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
     raw: unknown,
     request: { customerId: string; runtime: string }
   ) => Record<string, unknown>;
+  resolveBrokerCanaryCredentials: (env: Record<string, string | undefined>) => {
+    desktopSession: string;
+    customerId: string;
+    credentialSource: string;
+  };
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -173,6 +178,7 @@ describe('evaOS broker live canary', () => {
     expect(proof).toMatchObject({
       schema: 'evaos-broker-live-canary/v3',
       customerId: 'cus_123',
+      credentialSource: 'default',
       requiredSurfaces: ['evaos', 'hermes', 'mission-control', 'shared-browser', 'terminal'],
       secretScan: 'passed',
     });
@@ -298,9 +304,19 @@ describe('evaOS broker live canary', () => {
     });
     expect(proof).toMatchObject({
       customerId: 'broker-customer',
+      credentialSource: 'broker-specific',
       releaseCanaryCustomerId: 'fixture-customer',
       requiredSurfaces: ['hermes'],
     });
+  });
+
+  it('rejects mixed broker-specific and default credential pairs', () => {
+    expect(() =>
+      liveCanary.resolveBrokerCanaryCredentials({
+        AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_broker_session_for_test',
+        AIONUI_EVAOS_CUSTOMER_ID: 'fixture-customer',
+      })
+    ).toThrow(/Incomplete broker-specific canary credential pair/);
   });
 
   it('accepts session-bearing broker launch targets without leaking the target URL', () => {
