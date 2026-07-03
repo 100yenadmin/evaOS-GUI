@@ -502,8 +502,12 @@ async function runBusinessBrowserLiveCanary(options = {}) {
   const endpoint = env.AIONUI_EVAOS_BROKER_ENDPOINT || DEFAULT_ENDPOINT;
 
   requireActionAck(env);
-  const desktopSession = requireEnv(env, 'AIONUI_EVAOS_DESKTOP_SESSION');
-  const customerId = requireEnv(env, 'AIONUI_EVAOS_CUSTOMER_ID');
+  const desktopSession =
+    env.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION || requireEnv(env, 'AIONUI_EVAOS_DESKTOP_SESSION');
+  const customerId =
+    env.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID ||
+    env.AIONUI_EVAOS_BUSINESS_BROWSER_CUSTOMER_ID ||
+    requireEnv(env, 'AIONUI_EVAOS_CUSTOMER_ID');
   const testUrl = normalizeTestUrl(
     env.AIONUI_EVAOS_BUSINESS_BROWSER_TEST_URL,
     env.AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS
