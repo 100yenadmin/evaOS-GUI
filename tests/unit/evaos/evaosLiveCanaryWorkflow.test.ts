@@ -16,11 +16,12 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('live_canary_ack');
     expect(workflow).toContain('evaos-live-canary');
     expect(workflow).toContain('provision_fixtures');
+    expect(workflow).toContain('run_followup_canaries');
     expect(workflow).toContain('environment: evaos-staging');
     expect(workflow).toContain('proof_ref');
   });
 
-  it('runs strict readiness before optional live canaries and uploads sanitized proof', () => {
+  it('runs strict readiness before required release canaries and optional follow-up canaries', () => {
     const workflow = readWorkflow();
 
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision');
@@ -28,11 +29,13 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain("grep -q '^::add-mask::'");
     expect(workflow).toContain('node scripts/evaosLiveCanaryReadiness.js --strict');
     expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js');
+    expect(workflow).toContain('node scripts/evaosBusinessBrowserLiveCanary.js');
+    expect(workflow).toContain('Run follow-up live canaries');
+    expect(workflow).toContain("github.event.inputs.run_followup_canaries == 'true'");
     expect(workflow).toContain('node scripts/evaosTrustSurfaceLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosProviderHubLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosPeopleApprovalLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosCompanyBrainLiveCanary.js');
-    expect(workflow).toContain('node scripts/evaosBusinessBrowserLiveCanary.js');
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js cleanup');
     expect(workflow).toContain('actions/upload-artifact@v4');
     expect(workflow).toContain('if-no-files-found: error');
