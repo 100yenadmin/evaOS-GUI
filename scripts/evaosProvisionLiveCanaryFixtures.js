@@ -13,6 +13,7 @@ const DEFAULT_BUSINESS_BROWSER_ALLOWED_HOSTS = 'www.electricsheephq.com';
 const DEFAULT_COMPANY_BRAIN_QUERY = 'What changed recently for this account?';
 const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
 const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
+const FIXTURE_VM_DISPLAY_NAME = 'AionUi Live Canary Support VM';
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -546,6 +547,87 @@ function acceptanceFixtureDeleteQuery(query) {
   };
 }
 
+function isCustomerVmFixtureRow(row) {
+  const metadata = asRecord(row?.metadata);
+  return metadata?.source === FIXTURE_PROVIDER_METADATA_SOURCE && metadata?.acceptance_fixture === true;
+}
+
+async function loadCustomerVmRows(admin, customerId, select = '*') {
+  return admin.select('customer_vms', {
+    customer_id: `eq.${customerId}`,
+    select,
+    limit: 20,
+  });
+}
+
+async function ensureCustomerVmFixture(admin, customerId, { ttlMinutes = 180 } = {}) {
+  const existingRows = await loadCustomerVmRows(admin, customerId);
+  if (existingRows.length > 1) {
+    throw new Error(`customer_vms fixture target ${customerId} returned multiple rows; refusing to choose one.`);
+  }
+  const existing = existingRows[0];
+  if (existing && !isCustomerVmFixtureRow(existing)) {
+    if (String(existing.status || '').toLowerCase() !== 'active') {
+      throw new Error(
+        `customer_vms target ${customerId} exists but is not active; refusing to overwrite real VM state.`
+      );
+    }
+    return {
+      row: existing,
+      snapshot: null,
+      managed: false,
+      created: false,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const metadata = {
+    ...(asRecord(existing?.metadata) || {}),
+    source: FIXTURE_PROVIDER_METADATA_SOURCE,
+    acceptance_fixture: true,
+    runtime_canary: true,
+    display_name: FIXTURE_VM_DISPLAY_NAME,
+    expires_at: isoAfter(ttlMinutes),
+    raw_runtime_secret_stored: false,
+  };
+  const row = {
+    customer_id: customerId,
+    tier: existing?.tier || 'biz',
+    status: 'active',
+    health_status: 'healthy',
+    activated_at: existing?.activated_at || now,
+    last_health_check: now,
+    lifecycle_stage: 'ready',
+    lifecycle_updated_at: now,
+    ready_at: existing?.ready_at || now,
+    metadata,
+  };
+
+  if (existing?.id) {
+    const lookup = { id: `eq.${existing.id}` };
+    await admin.patch('customer_vms', lookup, row);
+    const rows = await admin.select('customer_vms', { ...lookup, select: '*', limit: 1 });
+    if (!rows[0]) throw new Error(`customer_vms fixture ${customerId} patch did not return a verifiable row.`);
+    return {
+      row: rows[0],
+      snapshot: { row: existing },
+      managed: true,
+      created: false,
+    };
+  }
+
+  const inserted = await admin.insert('customer_vms', row, {
+    select: '*',
+    label: `customer_vms fixture for ${customerId}`,
+  });
+  return {
+    row: inserted,
+    snapshot: null,
+    managed: true,
+    created: true,
+  };
+}
+
 async function upsertProviderFixtureRows(
   admin,
   customerId,
@@ -681,6 +763,13 @@ function sanitizedProvisionReport(state) {
       requiredStates: ['connected', 'needs_login', 'expired', 'revoked'],
       strategy: 'short-lived canary fixture rows with snapshot/restore cleanup',
     },
+    runtimeTarget: {
+      customerId: state.customerId,
+      status: safeText(state.customerVmFixture?.status, 80) || 'active',
+      fixtureManaged: state.customerVmFixture?.managed === true,
+      fixtureCreated: state.customerVmFixture?.created === true,
+      source: 'customer_vms',
+    },
     companyBrain: {
       accountId: state.companyBrain.accountId,
       query: state.companyBrain.query,
@@ -800,6 +889,9 @@ async function provisionFixtures(options = loadOptions()) {
     options.customerId,
     options.preferredCompanyBrainAccountId
   );
+  const customerVmFixture = await ensureCustomerVmFixture(admin, options.customerId, {
+    ttlMinutes: options.ttlMinutes,
+  });
 
   const state = {
     schema: 'evaos-live-canary-fixture-state/v1',
@@ -826,6 +918,14 @@ async function provisionFixtures(options = loadOptions()) {
     providerSnapshots,
     providerFixtureRows: writtenProviderFixtureRows,
     providerFixtureSubjects: providerFixtureSubjectsFromRows(writtenProviderFixtureRows),
+    customerVmSnapshot: customerVmFixture.snapshot,
+    customerVmFixture: {
+      id: customerVmFixture.row?.id,
+      customerId: customerVmFixture.row?.customer_id || options.customerId,
+      status: customerVmFixture.row?.status || 'active',
+      managed: customerVmFixture.managed,
+      created: customerVmFixture.created,
+    },
     approval,
     companyBrain: {
       accountId: companyBrainAccountId,
@@ -934,6 +1034,30 @@ async function restoreProviderSnapshots(admin, state) {
   }
 }
 
+async function restoreCustomerVmFixture(admin, state) {
+  const fixture = asRecord(state?.customerVmFixture);
+  if (!fixture || fixture.managed !== true) return false;
+  const snapshot = asRecord(state?.customerVmSnapshot)?.row;
+  if (snapshot?.id) {
+    await admin.patch('customer_vms', { id: `eq.${snapshot.id}` }, snapshot);
+    return true;
+  }
+
+  const fixtureId = safeText(fixture.id, 160);
+  if (fixtureId) {
+    await admin.deleteRows('customer_vms', acceptanceFixtureDeleteQuery({ id: `eq.${fixtureId}` }));
+    return true;
+  }
+
+  const customerId = safeText(fixture.customerId ?? state?.customerId, 160);
+  if (customerId) {
+    await admin.deleteRows('customer_vms', acceptanceFixtureDeleteQuery({ customer_id: `eq.${customerId}` }));
+    return true;
+  }
+
+  return false;
+}
+
 async function cleanupFixtures(options = loadOptions()) {
   if (!options.serviceKey) {
     throw new Error('Missing AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.');
@@ -944,6 +1068,7 @@ async function cleanupFixtures(options = loadOptions()) {
   const state = JSON.parse(fs.readFileSync(options.statePath, 'utf8'));
   const admin = new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
   const now = new Date().toISOString();
+  const customerVmRestored = await restoreCustomerVmFixture(admin, state);
   await restoreProviderSnapshots(admin, state);
   const sessionIds = [state.sessions?.admin?.id, state.sessions?.requester?.id, state.sessions?.denied?.id].filter(
     Boolean
@@ -980,6 +1105,7 @@ async function cleanupFixtures(options = loadOptions()) {
     schema: 'evaos-live-canary-fixture-cleanup/v1',
     checkedAt: new Date().toISOString(),
     customerId: state.customerId,
+    customerVmRestored,
     providerFixturesRestored: true,
     sessionsRevoked: sessionIds.length,
     temporaryUsersDeleted: [state.requester?.userId, state.denied?.userId].filter(Boolean).length,
@@ -1020,12 +1146,14 @@ module.exports = {
   SupabaseRestAdmin,
   assertNoUnsafeProofOutput,
   cleanupFixtures,
+  ensureCustomerVmFixture,
   fixtureEnvFromProvision,
   loadOptions,
   provisionFixtures,
   providerProfileLookup,
   providerFixtureSubjectsFromRows,
   renderGithubEnvFile,
+  restoreCustomerVmFixture,
   restoreProviderProfileSnapshot,
   restoreProviderSnapshots,
   sanitizedProvisionReport,

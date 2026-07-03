@@ -4,10 +4,16 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.js') as {
   assertNoUnsafeProofOutput: (value: unknown) => void;
+  ensureCustomerVmFixture: (
+    admin: FakeCustomerVmAdmin,
+    customerId: string,
+    options?: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
   fixtureEnvFromProvision: (state: Record<string, unknown>) => Record<string, string>;
   loadOptions: (env: Record<string, string>) => Record<string, unknown>;
   providerFixtureSubjectsFromRows: (rows: ProviderRow[]) => string[];
   renderGithubEnvFile: (env: Record<string, string>) => string;
+  restoreCustomerVmFixture: (admin: FakeCustomerVmAdmin, state: Record<string, unknown>) => Promise<boolean>;
   sanitizedProvisionReport: (state: Record<string, unknown>) => Record<string, unknown>;
   restoreProviderProfileSnapshot: (
     admin: FakeProviderAdmin,
@@ -38,10 +44,60 @@ const CUSTOMER_PROVIDER_PROFILE_COLUMNS = new Set([
   'pipedream_app_name',
 ]);
 
+const CUSTOMER_VM_COLUMNS = new Set([
+  'id',
+  'customer_id',
+  'user_id',
+  'tier',
+  'hetzner_server_id',
+  'hetzner_server_name',
+  'public_ip',
+  'tailnet_ip',
+  'headscale_node_id',
+  'openclaw_port',
+  'paperclip_port',
+  'region',
+  'status',
+  'health_status',
+  'last_health_check',
+  'created_at',
+  'updated_at',
+  'activated_at',
+  'suspended_at',
+  'metadata',
+  'lifecycle_stage',
+  'lifecycle_updated_at',
+  'queued_at',
+  'hydrating_started_at',
+  'verifying_started_at',
+  'ready_at',
+  'failed_at',
+  'manual_attention_at',
+  'manual_attention_reason',
+  'manual_attention_note',
+  'runtime_assigned_at',
+  'runtime_home',
+  'runtime_provider',
+  'runtime_instance_id',
+  'runtime_hostname',
+  'runtime_assignment',
+  'verification_status',
+  'verification_summary',
+  'last_verified_at',
+]);
+
 function assertCustomerProviderProfileColumns(row: ProviderRow) {
   for (const key of Object.keys(row)) {
     if (!CUSTOMER_PROVIDER_PROFILE_COLUMNS.has(key)) {
       throw new Error(`Unknown customer_provider_profiles column in fixture test: ${key}`);
+    }
+  }
+}
+
+function assertCustomerVmColumns(row: ProviderRow) {
+  for (const key of Object.keys(row)) {
+    if (!CUSTOMER_VM_COLUMNS.has(key)) {
+      throw new Error(`Unknown customer_vms column in fixture test: ${key}`);
     }
   }
 }
@@ -118,6 +174,53 @@ class FakeProviderAdmin {
   }
 }
 
+class FakeCustomerVmAdmin {
+  rows: ProviderRow[];
+  deletes: Array<{ query: Record<string, string> }> = [];
+  inserts: Array<{ body: ProviderRow; options: Record<string, unknown> }> = [];
+  patches: Array<{ query: Record<string, string>; body: ProviderRow }> = [];
+
+  constructor(rows: ProviderRow[]) {
+    rows.forEach(assertCustomerVmColumns);
+    this.rows = rows.map((row) => Object.assign({}, row));
+  }
+
+  async select(table: string, query: Record<string, string | number>) {
+    if (table !== 'customer_vms') throw new Error(`unexpected table ${table}`);
+    const rows = this.rows.filter((row) => {
+      const filteredQuery = Object.fromEntries(
+        Object.entries(query).filter(([key]) => key !== 'select' && key !== 'limit')
+      ) as Record<string, string>;
+      return rowMatchesQuery(row, filteredQuery);
+    });
+    return rows.slice(0, Number(query.limit ?? rows.length)).map((row) => Object.assign({}, row));
+  }
+
+  async insert(table: string, body: ProviderRow, options: Record<string, unknown> = {}) {
+    if (table !== 'customer_vms') throw new Error(`unexpected table ${table}`);
+    const row = { id: body.id ?? `vm-inserted-${this.inserts.length + 1}`, ...body };
+    assertCustomerVmColumns(row);
+    this.rows.push(row);
+    this.inserts.push({ body: row, options });
+    return { ...row };
+  }
+
+  async patch(table: string, query: Record<string, string>, body: ProviderRow) {
+    if (table !== 'customer_vms') throw new Error(`unexpected table ${table}`);
+    assertCustomerVmColumns(body);
+    this.patches.push({ query, body });
+    for (const row of this.rows) {
+      if (rowMatchesQuery(row, query)) Object.assign(row, body);
+    }
+  }
+
+  async deleteRows(table: string, query: Record<string, string>) {
+    if (table !== 'customer_vms') throw new Error(`unexpected table ${table}`);
+    this.deletes.push({ query });
+    this.rows = this.rows.filter((row) => !rowMatchesQuery(row, query));
+  }
+}
+
 function fixtureState() {
   return {
     brokerEndpoint: 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session',
@@ -173,6 +276,13 @@ function fixtureState() {
       testUrl: 'https://www.electricsheephq.com/dashboard/',
       allowedHosts: 'www.electricsheephq.com',
     },
+    customerVmFixture: {
+      id: 'vm-fixture-row',
+      customerId: 'golden',
+      status: 'active',
+      managed: true,
+      created: true,
+    },
   };
 }
 
@@ -213,6 +323,12 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(report).toMatchObject({
       schema: 'evaos-live-canary-fixture-provision/v1',
       customerId: 'golden',
+      runtimeTarget: {
+        customerId: 'golden',
+        fixtureManaged: true,
+        fixtureCreated: true,
+        source: 'customer_vms',
+      },
       sensitiveOutput: 'passed',
     });
     expect(text).not.toMatch(/eds_(admin|requester|denied)/);
@@ -227,6 +343,118 @@ describe('evaOS live canary fixture provisioner', () => {
     });
 
     expect(options.approvalProviderKey).toBe('google_workspace');
+  });
+
+  it('inserts an active marked customer VM fixture when the runtime target is missing', async () => {
+    const admin = new FakeCustomerVmAdmin([]);
+
+    const result = await provisioner.ensureCustomerVmFixture(admin, 'evaos-support', { ttlMinutes: 30 });
+
+    expect(result).toMatchObject({
+      managed: true,
+      created: true,
+      row: {
+        id: 'vm-inserted-1',
+        customer_id: 'evaos-support',
+        tier: 'biz',
+        status: 'active',
+        health_status: 'healthy',
+        lifecycle_stage: 'ready',
+      },
+    });
+    expect(admin.inserts).toHaveLength(1);
+    expect(admin.inserts[0]?.body.metadata).toMatchObject({
+      source: 'aionui_live_canary_fixture',
+      acceptance_fixture: true,
+      runtime_canary: true,
+      raw_runtime_secret_stored: false,
+    });
+  });
+
+  it('leaves a genuine active customer VM untouched', async () => {
+    const admin = new FakeCustomerVmAdmin([
+      {
+        id: 'real-vm',
+        customer_id: 'evaos-support',
+        tier: 'biz',
+        status: 'active',
+        health_status: 'healthy',
+        metadata: { source: 'real_runtime' },
+      },
+    ]);
+
+    const result = await provisioner.ensureCustomerVmFixture(admin, 'evaos-support');
+
+    expect(result).toMatchObject({
+      managed: false,
+      created: false,
+      row: { id: 'real-vm', status: 'active' },
+    });
+    expect(admin.inserts).toEqual([]);
+    expect(admin.patches).toEqual([]);
+  });
+
+  it('refuses to overwrite genuine inactive customer VM state', async () => {
+    const admin = new FakeCustomerVmAdmin([
+      {
+        id: 'real-vm',
+        customer_id: 'evaos-support',
+        tier: 'biz',
+        status: 'suspended',
+        health_status: 'degraded',
+        metadata: { source: 'real_runtime' },
+      },
+    ]);
+
+    await expect(provisioner.ensureCustomerVmFixture(admin, 'evaos-support')).rejects.toThrow(
+      /refusing to overwrite real VM state/
+    );
+
+    expect(admin.inserts).toEqual([]);
+    expect(admin.patches).toEqual([]);
+  });
+
+  it('deletes only marked customer VM fixture rows during cleanup', async () => {
+    const admin = new FakeCustomerVmAdmin([
+      {
+        id: 'vm-fixture',
+        customer_id: 'evaos-support',
+        tier: 'biz',
+        status: 'active',
+        health_status: 'healthy',
+        metadata: { source: 'aionui_live_canary_fixture', acceptance_fixture: true },
+      },
+      {
+        id: 'real-vm',
+        customer_id: 'real-customer',
+        tier: 'biz',
+        status: 'active',
+        health_status: 'healthy',
+        metadata: { source: 'real_runtime' },
+      },
+    ]);
+
+    await expect(
+      provisioner.restoreCustomerVmFixture(admin, {
+        customerVmFixture: {
+          id: 'vm-fixture',
+          customerId: 'evaos-support',
+          managed: true,
+          created: true,
+        },
+      })
+    ).resolves.toBe(true);
+
+    expect(admin.deletes).toEqual([
+      {
+        query: {
+          id: 'eq.vm-fixture',
+          'metadata->>source': 'eq.aionui_live_canary_fixture',
+          'metadata->>acceptance_fixture': 'eq.true',
+        },
+      },
+    ]);
+    expect(admin.rows.map((row) => row.id)).toEqual(['real-vm']);
   });
 
   it('rejects unsafe proof output if a secret marker is accidentally added', () => {
