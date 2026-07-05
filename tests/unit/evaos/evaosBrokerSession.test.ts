@@ -1698,6 +1698,73 @@ describe('EvaosBrokerSessionClient', () => {
     });
   });
 
+  it('preserves the v2.1.26 target selector payload without exposing stale terminated rows', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          desktop_session: 'eds_created_session_secret_for_test',
+          desktop_session_expires_at: FUTURE,
+          email: 'admin@electricsheephq.com',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          roles: ['admin', 'support'],
+          scopes: ['access_openclaw_dashboard', 'access_hermes_dashboard', 'access_terminal'],
+          is_operator: true,
+          default_customer_id: 'operations-services',
+          selected_customer_id: 'operations-services',
+          customers: [
+            {
+              customer_id: 'operations-services',
+              target_kind: 'customer_vm',
+              display_name: 'Operations Services',
+              status: 'active',
+              health_status: 'ready',
+              is_default: true,
+            },
+            {
+              customer_id: 'golden',
+              target_kind: 'customer_vm',
+              display_name: 'Golden Test VM',
+              status: 'active',
+              health_status: 'ready',
+              is_default: false,
+            },
+            {
+              customer_id: 'tarzan-sharif',
+              target_kind: 'customer_vm',
+              display_name: 'Tarzan Sharif',
+              status: 'active',
+              health_status: 'ready',
+              is_default: false,
+            },
+          ],
+        })
+      );
+    const client = new EvaosBrokerSessionClient({
+      fetchImpl,
+      env: {},
+      now: () => NOW,
+    });
+
+    await client.claimDeviceCode('ab-123');
+    const targets = await client.customerTargets();
+
+    expect(targets.defaultCustomerId).toBe('operations-services');
+    expect(targets.selectedCustomerId).toBe('operations-services');
+    expect(targets.customers.map((target) => target.displayName)).toEqual([
+      'Operations Services',
+      'Golden Test VM',
+      'Tarzan Sharif',
+    ]);
+    expect(targets.customers.map((target) => target.customerId)).not.toContain(
+      'founding-0f4f3c52-7cfc-4100-bc2c-add76168c565'
+    );
+    expect(JSON.stringify(targets)).not.toMatch(/\b(?:eds|epg)_[A-Za-z0-9_-]{4,}\b|desktop_session|access_token/i);
+  });
+
   it('fails closed when runtime_status is malformed', async () => {
     const fetchImpl = fetchMock();
     fetchImpl

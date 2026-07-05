@@ -114,6 +114,55 @@ describe('SiderFooter auth controls', () => {
     expect(onCustomerChange).toHaveBeenCalledWith('support-vm');
   });
 
+  it('renders the v2.1.26 target selector contract without stale terminated customer options', async () => {
+    const user = userEvent.setup();
+    const onCustomerChange = vi.fn();
+
+    render(
+      <SiderFooter
+        {...baseProps}
+        accountLabel='admin@electricsheephq.com'
+        selectedCustomerId='operations-services'
+        customerTargets={[
+          {
+            customerId: 'operations-services',
+            targetKind: 'customer_vm',
+            displayName: 'Operations Services',
+            status: 'active',
+            healthStatus: 'ready',
+          },
+          {
+            customerId: 'golden',
+            targetKind: 'customer_vm',
+            displayName: 'Golden Test VM',
+            status: 'active',
+            healthStatus: 'ready',
+          },
+          {
+            customerId: 'tarzan-sharif',
+            targetKind: 'customer_vm',
+            displayName: 'Tarzan Sharif',
+            status: 'active',
+            healthStatus: 'ready',
+          },
+        ]}
+        canSwitchCustomers
+        onCustomerChange={onCustomerChange}
+      />
+    );
+
+    const customerSelect = screen.getByLabelText('Selected customer');
+    expect(customerSelect).toHaveValue('operations-services');
+    expect(screen.getByRole('option', { name: 'Operations Services' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Golden Test VM' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Tarzan Sharif' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /founding-0f4f3c52/i })).not.toBeInTheDocument();
+
+    await user.selectOptions(customerSelect, 'tarzan-sharif');
+
+    expect(onCustomerChange).toHaveBeenCalledWith('tarzan-sharif');
+  });
+
   it('starts broker sign-in from a footer-coordinate event when the event target is not the button', () => {
     const onSignInClick = vi.fn();
 
