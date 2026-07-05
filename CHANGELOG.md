@@ -1,5 +1,19 @@
 # Changelog
 
+## evaOS Workbench 2.1.26 (2026-07-05)
+
+### Admin Module Readiness
+
+- Added release guardrails for the native Connected Apps and People & Access pages so Workbench verifies the broker-backed in-app views instead of stale dashboard handoff paths.
+- Tightened customer switching proof for operator sessions, including the Electric Sheep support VM target, the 100yen Golden target, and corrected customer display labels.
+- Clarified reduced employee mode versus broker-scoped operator access so employee accounts stay limited unless the broker explicitly grants broader evaOS module access.
+
+### Release Safety
+
+- Keeps the working evaOS, Hermes, Mission Control, Shared Browser, Design Workspace, Creative Studio, Terminal, and Mac & iPhone release paths separate from unfinished admin-module follow-up work.
+- Preserves the direct Mac-control connector path and broker/proxy module split from 2.1.25.
+- Leaves deeper employee-policy rollout, Company Brain parity, TryCUA priority, ACP/chat Mac-control, desktop pet replacement, and upstream runtime sync for later releases.
+
 ## evaOS Workbench 2.1.25 (2026-07-05)
 
 ### Customer-Facing Fixes
