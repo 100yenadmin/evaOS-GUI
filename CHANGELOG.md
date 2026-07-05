@@ -1,5 +1,18 @@
 # Changelog
 
+## evaOS Workbench 2.1.27 (2026-07-06)
+
+### Mac Control
+
+- Makes TryCUA the preferred Mac-control engine when it is available, so supported desktop observation and actions can run through the background CUA driver first.
+- Keeps Peekaboo bundled as the first recovery fallback and preserves the existing helper, Accessibility, and System Events fallback path.
+- Adds installed-candidate proof that the bundled bridge reports `cua_driver` as the active primary engine and that `desktop_see` succeeds through CUA.
+
+### Release Boundary
+
+- Preserves the working broker/proxy modules from 2.1.26: evaOS, Hermes, Mission Control, Shared Browser, Design Workspace, Creative Studio, Terminal, and Mac & iPhone.
+- Does not change ACP/chat Mac-control, Connected Apps, People & Access, Company Brain parity, AionCore runtime sync, or desktop pet replacement lanes.
+
 ## evaOS Workbench 2.1.26 (2026-07-05)
 
 ### Admin Module Readiness
