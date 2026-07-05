@@ -102,6 +102,46 @@ function memberCustomerTargets() {
   };
 }
 
+function releaseCandidateOperatorTargets(userEmail = 'admin@electricsheephq.com') {
+  const isElectricSheepAdmin = userEmail === 'admin@electricsheephq.com';
+  return {
+    success: true,
+    data: {
+      roles: ['admin', 'support'],
+      isOperator: true,
+      defaultCustomerId: isElectricSheepAdmin ? 'operations-services' : 'golden',
+      selectedCustomerId: isElectricSheepAdmin ? 'operations-services' : 'golden',
+      customers: [
+        {
+          customerId: 'operations-services',
+          targetKind: 'customer_vm',
+          displayName: 'Operations Services',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: isElectricSheepAdmin,
+        },
+        {
+          customerId: 'golden',
+          targetKind: 'customer_vm',
+          displayName: 'Golden Test VM',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: !isElectricSheepAdmin,
+        },
+        {
+          customerId: 'tarzan-sharif',
+          targetKind: 'customer_vm',
+          displayName: 'Tarzan Sharif',
+          status: 'active',
+          healthStatus: 'ready',
+          isDefault: false,
+        },
+      ],
+      summaryText: '3 customer targets loaded',
+    },
+  };
+}
+
 function brokerSession(userEmail = 'admin@100yen.org') {
   return {
     success: true,
@@ -212,6 +252,36 @@ describe('EvaosCustomerContext', () => {
     });
 
     const { result } = renderHook(() => useEvaosCustomerContext(true));
+
+    await waitFor(() => expect(result.current.selectedCustomerId).toBe('golden'));
+    expect(result.current.selectedTarget).toMatchObject({
+      customerId: 'golden',
+      targetKind: 'customer_vm',
+      displayName: 'Golden Test VM',
+    });
+  });
+
+  it('selects the Electric Sheep support VM target from the broker default without stale terminated rows', async () => {
+    brokerMocks.getCustomerTargets.mockResolvedValue(releaseCandidateOperatorTargets('admin@electricsheephq.com'));
+
+    const { result } = renderHook(() => useEvaosCustomerContext(true, 'admin@electricsheephq.com'));
+
+    await waitFor(() => expect(result.current.selectedCustomerId).toBe('operations-services'));
+    expect(result.current.selectedTarget).toMatchObject({
+      customerId: 'operations-services',
+      targetKind: 'customer_vm',
+      displayName: 'Operations Services',
+    });
+    expect(result.current.targets.map((target) => target.displayName)).toContain('Tarzan Sharif');
+    expect(result.current.targets.map((target) => target.customerId)).not.toContain(
+      'founding-0f4f3c52-7cfc-4100-bc2c-add76168c565'
+    );
+  });
+
+  it('keeps the 100yen admin session on the Golden target when the broker marks it default', async () => {
+    brokerMocks.getCustomerTargets.mockResolvedValue(releaseCandidateOperatorTargets('admin@100yen.org'));
+
+    const { result } = renderHook(() => useEvaosCustomerContext(true, 'admin@100yen.org'));
 
     await waitFor(() => expect(result.current.selectedCustomerId).toBe('golden'));
     expect(result.current.selectedTarget).toMatchObject({
