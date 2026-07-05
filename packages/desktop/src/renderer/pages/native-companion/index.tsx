@@ -80,6 +80,8 @@ const NativeCompanionPage: React.FC = () => {
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const [authUrl, setAuthUrl] = React.useState<string | null>(null);
+  const [takeoverCue, setTakeoverCue] = React.useState<string | null>(null);
+  const [takeoverCueWarning, setTakeoverCueWarning] = React.useState<string | null>(null);
   const [actionResultCustomerId, setActionResultCustomerId] = React.useState<string | undefined>();
   const brokerSessionKey = evaosBrokerSessionKey(brokerSession);
   const lastBrokerSessionKeyRef = React.useRef<string | undefined>(brokerSessionKey);
@@ -96,6 +98,8 @@ const NativeCompanionPage: React.FC = () => {
     setCopyMessage(null);
     setHandoffMessage(null);
     setAuthUrl(null);
+    setTakeoverCue(null);
+    setTakeoverCueWarning(null);
   }, [brokerSessionKey]);
   React.useEffect(() => {
     const handleDesktopSessionImported = () => {
@@ -104,6 +108,8 @@ const NativeCompanionPage: React.FC = () => {
       setCopyMessage(null);
       setHandoffMessage(null);
       setAuthUrl(null);
+      setTakeoverCue(null);
+      setTakeoverCueWarning(null);
     };
     window.addEventListener(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT, handleDesktopSessionImported);
     return () => {
@@ -117,6 +123,8 @@ const NativeCompanionPage: React.FC = () => {
     setCopyMessage(null);
     setHandoffMessage(null);
     setAuthUrl(null);
+    setTakeoverCue(null);
+    setTakeoverCueWarning(null);
   }, [selectedPairingCustomerId]);
   const currentActionResult = React.useMemo(
     () =>
@@ -182,6 +190,7 @@ const NativeCompanionPage: React.FC = () => {
     async (request: IEvaosNativeCompanionActionRequest) => {
       setActionInFlight(request.action);
       setCopyMessage(null);
+      setTakeoverCueWarning(null);
       const targetsMacControlCustomer =
         request.action === 'create_pairing_prompt' ||
         request.action === 'ensure_customer_mac_connector_grant' ||
@@ -192,6 +201,12 @@ const NativeCompanionPage: React.FC = () => {
         setLockedPairingCustomerId(requestCustomerId);
       }
       try {
+        if (request.action === 'control_start') {
+          const cueResult = await runMacControlTakeoverCue(setTakeoverCue);
+          if (cueResult.warning) {
+            setTakeoverCueWarning(cueResult.warning);
+          }
+        }
         const result = await runAction({
           ...request,
           customerId: requestCustomerId,
@@ -214,6 +229,7 @@ const NativeCompanionPage: React.FC = () => {
           await refresh();
         }
       } finally {
+        setTakeoverCue(null);
         setActionInFlight(null);
       }
     },
@@ -334,6 +350,14 @@ const NativeCompanionPage: React.FC = () => {
         ...report,
         extra: {
           ...report.extra,
+          ...(takeoverCueWarning
+            ? {
+                takeover_cue: {
+                  status: 'warning',
+                  warning: takeoverCueWarning,
+                },
+              }
+            : {}),
           mac_control_diagnostic_packet:
             diagnosticPacket ?? diagnosticPacketCollectionFailed(status, currentActionResult),
         },
@@ -352,6 +376,7 @@ const NativeCompanionPage: React.FC = () => {
     selectedPairingTarget?.displayName,
     selectedTarget?.displayName,
     status,
+    takeoverCueWarning,
     viewModel.state,
     viewModel.statusLabel,
     viewModel.summary,
@@ -401,6 +426,22 @@ const NativeCompanionPage: React.FC = () => {
                 </p>
               )}
               {handoffMessage && <p className='m-0 mt-6px text-12px leading-18px text-t-secondary'>{handoffMessage}</p>}
+              {takeoverCue ? (
+                <p
+                  data-testid='native-companion-takeover-cue'
+                  className='m-0 mt-6px rounded-6px bg-warning-1 px-10px py-6px text-12px font-semibold leading-18px text-warning-7'
+                >
+                  {takeoverCue}
+                </p>
+              ) : null}
+              {takeoverCueWarning ? (
+                <p
+                  data-testid='native-companion-takeover-cue-warning'
+                  className='m-0 mt-6px text-12px leading-18px text-warning-7'
+                >
+                  Takeover cue warning: {takeoverCueWarning}
+                </p>
+              ) : null}
               {authUrl && (
                 <div className='mt-8px flex flex-wrap gap-8px'>
                   <Button size='mini' onClick={handleOpenAuthUrl}>
@@ -1215,3 +1256,53 @@ function safeFeedbackDiagnosticText(value: string | undefined): string | undefin
 }
 
 export default NativeCompanionPage;
+
+type WebAudioWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
+type TakeoverCueResult = {
+  warning?: string;
+};
+
+async function runMacControlTakeoverCue(onStep: (message: string | null) => void): Promise<TakeoverCueResult> {
+  let warning: string | undefined;
+  const steps = ['3', '2', '1'];
+  for (const step of steps) {
+    onStep(`Agent control starting in ${step}...`);
+    try {
+      await playTakeoverBeep(step === '1' ? 1046 : 784);
+    } catch {
+      warning = warning ?? 'takeover_sound_unavailable';
+      await waitForCueStep(180);
+    }
+  }
+  onStep('Agent control starting now.');
+  await waitForCueStep(220);
+  return { warning };
+}
+
+async function playTakeoverBeep(frequency: number): Promise<void> {
+  const AudioContextCtor =
+    typeof AudioContext !== 'undefined' ? AudioContext : (window as WebAudioWindow).webkitAudioContext;
+  if (!AudioContextCtor) {
+    throw new Error('audio_context_unavailable');
+  }
+  const audioContext = new AudioContextCtor();
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = 'sine';
+  oscillator.frequency.value = frequency;
+  gain.gain.value = 0.08;
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.14);
+  await waitForCueStep(180);
+  await audioContext.close();
+}
+
+function waitForCueStep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
