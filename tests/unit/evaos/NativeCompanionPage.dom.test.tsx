@@ -1923,6 +1923,9 @@ describe('NativeCompanionPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Ask Permission' }));
 
+    expect(await screen.findByTestId('native-companion-takeover-cue-warning')).toHaveTextContent(
+      'takeover_sound_unavailable'
+    );
     expect(await screen.findByTestId('native-companion-action-result')).toHaveTextContent(
       'Agent control could not start.'
     );
