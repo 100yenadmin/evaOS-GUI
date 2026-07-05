@@ -10,7 +10,7 @@ import { resolveLocaleKey } from '@/common/utils';
 import type { Assistant, AssistantDetail } from '@/common/types/agent/assistantTypes';
 
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
-import { openExternalUrl, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import { openEvaosExternalUrl, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { CUSTOM_AVATAR_IMAGE_MAP } from './constants';
 import AgentPillBar from './components/AgentPillBar';
 import AssistantSelectionArea from './components/AssistantSelectionArea';
@@ -60,7 +60,7 @@ const GuidPage: React.FC = () => {
   // Open external link
   const openLink = useCallback(async (url: string) => {
     try {
-      await openExternalUrl(url);
+      await openEvaosExternalUrl(url);
     } catch (error) {
       console.error('Failed to open external link:', error);
     }
