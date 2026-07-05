@@ -1,5 +1,20 @@
 # Changelog
 
+## evaOS Workbench 2.1.25 (2026-07-05)
+
+### Customer-Facing Fixes
+
+- Support actions now open the in-app Report Issue flow instead of launching a blank browser target.
+- New Chat quick-action links now route through the safe external-link handler so user-facing Electric Sheep links can open correctly.
+- Mac-control takeover now shows a visible countdown before control starts, with an audio cue when the browser audio policy allows it.
+- The native companion installed-app proof now checks the current Mac & iPhone ready-state copy instead of stale proof text.
+
+### Release Guardrails
+
+- Preserves the working broker/proxy modules as separate from the native Mac & iPhone connector.
+- Functional Smoke and live broker-surface canary are required before distribution proof.
+- `Connected Apps`, `People & Access`, `Company Brain`, TryCUA priority, ACP/chat Mac-control, and the desktop pet replacement remain follow-up release lanes.
+
 ## evaOS Workbench Stable R&D (unreleased)
 
 ### Mac Connector RC Preservation
