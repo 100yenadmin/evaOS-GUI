@@ -151,7 +151,7 @@ function renderSider(path = '/guid', options: { collapsed?: boolean } = {}) {
   );
 }
 
-function employeeScopes() {
+function scopedOperatorRuntimeScopes() {
   return [
     'assign_agents',
     'manage_integrations',
@@ -632,10 +632,10 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
   });
 
-  it('shows scoped employee Workbench surfaces while hiding People Access and Company Brain', () => {
+  it('shows broker-scoped employee operator Workbench surfaces while hiding People Access and Company Brain', () => {
     customerContextMock.roles = ['employee'];
     customerContextMock.isOperator = false;
-    customerContextMock.scopes = employeeScopes();
+    customerContextMock.scopes = scopedOperatorRuntimeScopes();
     customerContextMock.selectedCustomerId = 'benjamin-kennedy';
     customerContextMock.targets = [
       {
@@ -754,8 +754,8 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByLabelText('Selected customer')).not.toBeInTheDocument();
   });
 
-  it('lets employees reach Mac & iPhone setup without exposing technical runtimes', async () => {
-    customerContextMock.roles = ['member'];
+  it('lets reduced employees reach Mac & iPhone setup without exposing runtime or admin routes', async () => {
+    customerContextMock.roles = ['employee'];
     customerContextMock.isOperator = false;
     customerContextMock.scopes = [];
     brokerSessionMock.session = {
