@@ -350,20 +350,22 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'people-access-loaded-fixture'
     );
     expect(peopleAccessLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(peopleAccessLoaded?.action).toBeUndefined();
+    expect(peopleAccessLoaded?.action).toBe('click-load-default-customer');
     expect(peopleAccessLoaded?.expected).toEqual(
       expect.arrayContaining([
         'People & Access',
         'Team permissions',
-        'Website handoff',
-        'https://www.electricsheephq.com/dashboard/invites',
+        'Account access',
+        'Fixture Owner',
+        'pending-member@example.test',
+        'fixture-audit-people-policy',
       ])
     );
     expect(peopleAccessLoaded?.forbidden).toEqual(
       expect.arrayContaining([
-        'Fixture Owner',
-        'pending-member@example.test',
-        'fixture-audit-people-policy',
+        'Website handoff',
+        'https://www.electricsheephq.com/dashboard/invites',
+        'Open dashboard',
         'desktop_session',
         'provider_grant',
         'grant_handle',
@@ -374,17 +376,26 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'connected-apps-loaded-fixture'
     );
     expect(connectedAppsLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(connectedAppsLoaded?.action).toBeUndefined();
+    expect(connectedAppsLoaded?.action).toBe('click-load-default-customer');
     expect(connectedAppsLoaded?.expected).toEqual(
       expect.arrayContaining([
         'Connected Apps',
         'Provider access',
-        'Website handoff',
-        'https://www.electricsheephq.com/dashboard/providers',
+        'Google Workspace',
+        'Slack',
+        'Brokered grant',
+        'fixture-audit-providers',
       ])
     );
     expect(connectedAppsLoaded?.forbidden).toEqual(
-      expect.arrayContaining(['desktop_session', 'provider_grant', 'grant_handle'])
+      expect.arrayContaining([
+        'Website handoff',
+        'https://www.electricsheephq.com/dashboard/providers',
+        'Open dashboard',
+        'desktop_session',
+        'provider_grant',
+        'grant_handle',
+      ])
     );
 
     const approvalCenterDeny = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
@@ -642,7 +653,7 @@ describe('evaOS local shell smoke', () => {
         expect.objectContaining({
           name: 'connected-apps-employee-loaded-fixture',
           hash: '/connected-apps',
-          expected: expect.arrayContaining(['Connected Apps', 'Open dashboard']),
+          expected: expect.arrayContaining(['Connected Apps', 'Google Workspace']),
           forbidden: expect.arrayContaining(['People & Access', 'Company Brain']),
         }),
         expect.objectContaining({
