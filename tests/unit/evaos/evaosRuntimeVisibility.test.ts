@@ -16,7 +16,7 @@ import {
 } from '@/renderer/evaos/evaosRuntimeVisibility';
 
 describe('evaosRuntimeVisibility', () => {
-  const employeeScopes = [
+  const scopedOperatorRuntimeScopes = [
     'assign_agents',
     'manage_integrations',
     'open_business_browser',
@@ -209,11 +209,11 @@ describe('evaosRuntimeVisibility', () => {
     expect(evaosRuntimeRouteDecision('/company-brain', context)).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 
-  it('pins scoped employees to Workbench tools without People Access or Company Brain', () => {
+  it('pins broker-scoped employee operators to granted Workbench tools without People Access or Company Brain', () => {
     const context = {
       authenticated: true,
       roles: ['employee'],
-      scopes: [...employeeScopes],
+      scopes: [...scopedOperatorRuntimeScopes],
       userEmail: 'employee@example.test',
     };
 
@@ -443,32 +443,35 @@ describe('evaosRuntimeVisibility', () => {
     ).toEqual({ allowed: true, fallbackPath: '/guid' });
   });
 
-  it('lets authenticated employees reach Mac & iPhone repair without opening admin/runtime surfaces', () => {
-    const employeeContext = {
+  it('lets reduced employees reach Mac & iPhone repair without opening runtime or admin surfaces', () => {
+    const reducedEmployeeContext = {
       authenticated: true,
-      roles: ['member'],
+      roles: ['employee'],
       scopes: [] as const,
       userEmail: 'employee@example.test',
     };
 
-    expect(evaosRuntimeRouteDecision('/native-companion', employeeContext)).toEqual({
+    expect(evaosRuntimeRouteDecision('/native-companion', reducedEmployeeContext)).toEqual({
       allowed: true,
       fallbackPath: '/guid',
     });
-    expect(evaosRuntimeRouteDecision('/evaos', employeeContext)).toEqual({
-      allowed: false,
-      fallbackPath: '/guid',
-      reason: 'scope_required',
-    });
-    expect(evaosRuntimeRouteDecision('/hermes', employeeContext)).toEqual({
-      allowed: false,
-      fallbackPath: '/guid',
-      reason: 'scope_required',
-    });
-    expect(evaosRuntimeRouteDecision('/terminal', employeeContext)).toEqual({
-      allowed: false,
-      fallbackPath: '/guid',
-      reason: 'scope_required',
-    });
+    for (const routePath of [
+      '/evaos',
+      '/hermes',
+      '/mission-control',
+      '/terminal',
+      '/business-browser',
+      '/design-workspace',
+      '/creative-studio',
+      '/connected-apps',
+      '/people-access',
+      '/company-brain',
+    ]) {
+      expect(evaosRuntimeRouteDecision(routePath, reducedEmployeeContext)).toEqual({
+        allowed: false,
+        fallbackPath: '/guid',
+        reason: 'scope_required',
+      });
+    }
   });
 });

@@ -179,7 +179,7 @@ function renderGuardedRoute(routePath = '/mission-control') {
   );
 }
 
-function employeeScopes() {
+function scopedOperatorRuntimeScopes() {
   return [
     'assign_agents',
     'manage_integrations',
@@ -397,8 +397,8 @@ describe('EvaosRuntimeRouteGuard', () => {
     expect(screen.getByText('Native companion loaded')).toBeInTheDocument();
   });
 
-  it('allows native companion repair but denies direct evaOS and Hermes for employees', async () => {
-    customerContextMock.roles = ['member'];
+  it('allows reduced employee native companion repair while denying runtime and admin routes', async () => {
+    customerContextMock.roles = ['employee'];
     customerContextMock.scopes = [];
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
@@ -408,12 +408,26 @@ describe('EvaosRuntimeRouteGuard', () => {
     const { unmount } = renderGuardedRoute('/native-companion');
 
     expect(screen.getByText('Native companion loaded')).toBeInTheDocument();
-
     unmount();
-    renderGuardedRoute('/evaos');
 
-    await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
-    expect(screen.queryByText('evaOS loaded')).not.toBeInTheDocument();
+    for (const [routePath, loadedText] of [
+      ['/evaos', 'evaOS loaded'],
+      ['/hermes', 'Hermes loaded'],
+      ['/mission-control', 'Mission Control loaded'],
+      ['/terminal', 'Terminal loaded'],
+      ['/business-browser', 'Shared Browser loaded'],
+      ['/design-workspace', 'Design Workspace loaded'],
+      ['/creative-studio', 'Creative Studio loaded'],
+      ['/connected-apps', 'Connected Apps loaded'],
+      ['/people-access', 'People Access loaded'],
+      ['/company-brain', 'Company Brain loaded'],
+    ] as const) {
+      const deniedView = renderGuardedRoute(routePath);
+
+      await waitFor(() => expect(screen.getByText('Guid fallback')).toBeInTheDocument());
+      expect(screen.queryByText(loadedText)).not.toBeInTheDocument();
+      deniedView.unmount();
+    }
   });
 
   it('allows People Access only with the account policy scope or admin override', async () => {
@@ -443,9 +457,9 @@ describe('EvaosRuntimeRouteGuard', () => {
     expect(screen.getByText('People Access loaded')).toBeInTheDocument();
   });
 
-  it('allows scoped employees into Workbench tools while denying People Access and Company Brain direct routes', async () => {
+  it('allows broker-scoped employee operators into granted Workbench tools while denying People Access and Company Brain', async () => {
     customerContextMock.roles = ['employee'];
-    customerContextMock.scopes = employeeScopes();
+    customerContextMock.scopes = scopedOperatorRuntimeScopes();
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
       userEmail: 'employee@example.test',
@@ -503,8 +517,8 @@ describe('EvaosRuntimeRouteGuard', () => {
     expect(screen.getByText('Company Brain loaded')).toBeInTheDocument();
   });
 
-  it('denies Team mode deep links for employees without assign-agent policy', async () => {
-    customerContextMock.roles = ['member'];
+  it('denies Team mode deep links for reduced employees without assign-agent policy', async () => {
+    customerContextMock.roles = ['employee'];
     customerContextMock.scopes = [];
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
@@ -517,8 +531,8 @@ describe('EvaosRuntimeRouteGuard', () => {
     expect(screen.queryByText('Team loaded')).not.toBeInTheDocument();
   });
 
-  it('allows Team mode deep links when broker policy grants assign-agent scope', () => {
-    customerContextMock.roles = ['member'];
+  it('allows Team mode deep links for scoped employees when broker policy grants assign-agent scope', () => {
+    customerContextMock.roles = ['employee'];
     customerContextMock.scopes = ['assign_agents'];
     brokerSessionMock.session = {
       ...brokerSessionMock.session,
