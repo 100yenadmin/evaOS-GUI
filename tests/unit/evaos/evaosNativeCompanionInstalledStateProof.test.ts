@@ -57,6 +57,13 @@ describe('evaOS native companion installed state proof', () => {
     }
   });
 
+  it('uses current ready-state fixture copy instead of stale native-companion wording', () => {
+    const ready = stateProof.STATE_MATRIX.find((entry) => entry.state === 'ready');
+    expect(ready?.markers).toEqual(expect.arrayContaining(['ready', 'Workbench connector ready from fixture proof']));
+    expect(ready?.markers).not.toContain('Mac & iPhone are ready');
+    expect(ready?.markers).not.toContain('Native companion proof is ready');
+  });
+
   it('builds a one-route installed-app proof plan per native state', () => {
     const notPaired = stateProof.STATE_MATRIX.find((entry) => entry.state === 'not_paired');
     expect(notPaired).toBeTruthy();

@@ -21,8 +21,8 @@ const STATE_MATRIX = [
     screenshot: 'native-companion-ready.png',
     markers: [
       'Mac & iPhone',
-      'Mac & iPhone are ready',
-      'Native companion proof is ready',
+      'ready',
+      'Workbench connector ready from fixture proof',
       'LOCAL FIXTURE - NOT LIVE BETA PROOF',
       'Boundary clean',
     ],
