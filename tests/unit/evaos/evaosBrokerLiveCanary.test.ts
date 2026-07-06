@@ -392,6 +392,55 @@ describe('evaOS broker live canary', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(liveCanary.REQUIRED_BROKER_SURFACES.length * 2);
   });
 
+  it('preserves redacted broker error details for non-OK responses', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: 'VM not found',
+            code: 'wrong_customer',
+            route_denied: true,
+            launch_url: 'https://runtime.example.test/auth/callback?desktop_session=eds_secret_for_test',
+          },
+          { status: 404 }
+        )
+      )
+      .mockResolvedValueOnce(new Response('Internal Server Error', { status: 500 }));
+
+    try {
+      await liveCanary.runBrokerLiveCanary({
+        env: {
+          AIONUI_EVAOS_DESKTOP_SESSION: 'eds_valid_session_for_test',
+          AIONUI_EVAOS_CUSTOMER_ID: 'cus_123',
+          AIONUI_EVAOS_BROKER_RUNTIME: 'openclaw',
+          AIONUI_EVAOS_BROKER_ENDPOINT: 'https://broker.example.test/runtime',
+        },
+        fetchImpl,
+      });
+      throw new Error('Expected broker live canary to fail.');
+    } catch (error) {
+      const proof = (error as { proof?: Record<string, unknown> }).proof as {
+        failures: Array<{ phases: Array<{ responseShape: Record<string, unknown> }> }>;
+      };
+      expect(proof.failures[0].phases[0].responseShape).toMatchObject({
+        httpStatus: 404,
+        contentType: 'application/json',
+        responseShape: {
+          topLevelKeys: ['code', 'error', 'launch_url', 'route_denied'],
+          code: 'wrong_customer',
+          error: 'VM not found',
+          launchTargetPresent: true,
+        },
+      });
+      expect(proof.failures[0].phases[1].responseShape).toMatchObject({
+        httpStatus: 500,
+        bodyClass: 'internal_server_error',
+      });
+      expect(JSON.stringify(proof)).not.toMatch(/eds_secret_for_test|runtime\\.example\\.test/);
+    }
+  });
+
   it('fails closed when runtime_launch returns a denied broker surface response', () => {
     expect(() =>
       liveCanary.sanitizeBrokerRuntimeLaunchCanaryResponse(

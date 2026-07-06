@@ -233,6 +233,46 @@ function responseShapeSummary(raw) {
   }
 }
 
+function classifyNonJsonResponseBody(text) {
+  const value = typeof text === 'string' ? text.trim().toLowerCase() : '';
+  if (!value) return 'empty';
+  if (containsSecretMaterial(value)) return 'redacted_secret_like';
+  if (/\bnot\s+found\b|^404\b/.test(value)) return 'not_found';
+  if (/\bforbidden\b|^403\b/.test(value)) return 'forbidden';
+  if (/\bunauthorized\b|^401\b/.test(value)) return 'unauthorized';
+  if (/\binternal\s+server\s+error\b|^500\b/.test(value)) return 'internal_server_error';
+  if (/\bbad\s+request\b|^400\b/.test(value)) return 'bad_request';
+  return 'non_json';
+}
+
+async function nonOkResponseShapeSummary(response) {
+  const contentType = response.headers.get('content-type') || '';
+  const summary = {
+    httpStatus: response.status,
+    contentType: contentType.split(';', 1)[0].trim().toLowerCase() || 'unknown',
+  };
+
+  if (/json/i.test(contentType)) {
+    try {
+      summary.responseShape = responseShapeSummary(await response.json());
+      return summary;
+    } catch (error) {
+      summary.responseShape = {
+        summaryUnavailable: true,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+      return summary;
+    }
+  }
+
+  try {
+    summary.bodyClass = classifyNonJsonResponseBody(await response.text());
+  } catch {
+    summary.bodyClass = 'unreadable';
+  }
+  return summary;
+}
+
 function assertNoDeniedNestedRuntimeState(value, label, seen = new WeakSet()) {
   if (typeof value === 'string') {
     if (DENIED_RUNTIME_PATTERN.test(value)) {
@@ -348,7 +388,9 @@ async function postBrokerRuntimeAction(fetchImpl, endpoint, desktopSession, body
   });
 
   if (!response.ok) {
-    throw new Error(`Broker canary failed HTTP ${response.status}.`);
+    const error = new Error(`Broker canary failed HTTP ${response.status}.`);
+    error.responseShape = await nonOkResponseShapeSummary(response);
+    throw error;
   }
 
   return response.json();
@@ -372,7 +414,11 @@ async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     failures.push(`status: ${message}`);
-    failureDetails.push({ phase: 'status', message, responseShape: responseShapeSummary(rawStatus) });
+    failureDetails.push({
+      phase: 'status',
+      message,
+      responseShape: error?.responseShape ?? responseShapeSummary(rawStatus),
+    });
   }
 
   try {
@@ -389,7 +435,11 @@ async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     failures.push(`launch: ${message}`);
-    failureDetails.push({ phase: 'launch', message, responseShape: responseShapeSummary(rawLaunch) });
+    failureDetails.push({
+      phase: 'launch',
+      message,
+      responseShape: error?.responseShape ?? responseShapeSummary(rawLaunch),
+    });
   }
 
   if (failures.length > 0) {
@@ -493,4 +543,5 @@ module.exports = {
   sanitizeBrokerRuntimeCanaryResponse,
   sanitizeBrokerRuntimeLaunchCanaryResponse,
   resolveBrokerCanaryCredentials,
+  nonOkResponseShapeSummary,
 };
