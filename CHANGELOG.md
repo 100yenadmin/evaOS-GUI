@@ -1,5 +1,17 @@
 # Changelog
 
+## evaOS Workbench 2.1.28 (2026-07-06)
+
+### Customer Polish
+
+- Prevents the updater from briefly showing a failed update state while a manual "Check for updates" request is still resolving.
+- Preserves the working Support/Report Issue flow, Visit ElectricSheep link handling, non-admin diagnostics hiding, and evaOS module icon presentation verified after 2.1.27.
+
+### Release Boundary
+
+- Keeps the working broker/proxy modules and native Mac & iPhone connector path unchanged.
+- Requires the same release proof chain before distribution: Functional Smoke, live broker canary, signed installed-app proof, and direct Mac-control non-regression.
+
 ## evaOS Workbench 2.1.27 (2026-07-06)
 
 ### Mac Control
