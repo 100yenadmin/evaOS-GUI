@@ -65,6 +65,9 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('vars.AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND');
     expect(workflow).toContain('vars.AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL');
     expect(workflow).toContain('AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID');
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET: ${{ github.event.inputs.run_live_canaries }}'
+    );
     expect(workflow).toContain('AIONUI_EVAOS_FIXTURE_ADMIN_EMAIL: ${{ vars.AIONUI_EVAOS_FIXTURE_ADMIN_EMAIL');
     expect(workflow).toContain(
       'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: ${{ inputs.customer_id || vars.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID'
