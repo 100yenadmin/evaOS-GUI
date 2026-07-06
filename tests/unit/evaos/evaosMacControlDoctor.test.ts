@@ -269,6 +269,158 @@ describe('evaOS Mac control doctor', () => {
     expect(gate.message).toContain('structured');
   });
 
+  it('classifies ACP empty turns as visible-agent no-tool dispatch', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate(
+      [
+        'Release proof: call the active evaOS/OpenClaw Mac-control tools.',
+        'session_info_update',
+        'available_commands_update',
+        'user_message_chunk',
+        'ACP_EMPTY_TURN',
+        'This request produced no visible reply.',
+      ].join('\n')
+    );
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'visible_agent_no_tool_dispatch',
+      data: {
+        failureKind: 'incomplete',
+        missingTools: doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+      },
+    });
+    expect(gate.message).toContain('did not dispatch');
+  });
+
+  it('classifies session-metadata-only ACP evidence as visible-agent no-tool dispatch', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      acpEvents: [
+        { type: 'session_info_update', sessionId: 'redacted-session' },
+        { type: 'available_commands_update', commands: ['new_chat', 'settings'] },
+        { type: 'user_message_chunk', text: 'Release proof prompt accepted.' },
+        { type: 'session_info_update', status: 'idle' },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'visible_agent_no_tool_dispatch',
+      data: {
+        failureKind: 'incomplete',
+        missingTools: doctor.REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+      },
+    });
+  });
+
+  it('does not over-classify explanatory prose as no-tool dispatch', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate('I made no tool calls because the connector was not ready.');
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+  });
+
+  it('does not over-classify concatenated no-tool-dispatch prose', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate('The agent reported no Mac-control tooldispatch.');
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+  });
+
+  it('does not over-classify narrative prose about a prior no-visible-reply attempt', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate(
+      'The prior attempt produced no visible reply, so we restarted the connector.'
+    );
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+  });
+
+  it('does not classify standalone no-visible-reply prose without an ACP empty-turn marker', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate('no visible reply.');
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+  });
+
+  it('keeps no-tool dispatch evidence constrained to known ACP event names', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      acpEvents: [
+        { type: 'session_info_update' },
+        { type: 'unknown-user-controlled-event-type' },
+        { type: 'available_commands_update' },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'visible_agent_no_tool_dispatch',
+      data: {
+        observedAcpEvents: ['session_info_update', 'available_commands_update'],
+      },
+    });
+  });
+
+  it('does not call mixed ACP agent-message evidence a metadata-only dispatch miss', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      acpEvents: [
+        { type: 'session_info_update' },
+        { type: 'user_message_chunk' },
+        { type: 'agent_message_chunk', text: 'I need connector readiness before running tools.' },
+      ],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'agent_cli_config_invalid',
+    });
+  });
+
+  it('does not treat tool-adjacent ACP metadata as a real tool dispatch event', () => {
+    const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+      acpEvents: [{ type: 'session_info_update' }, { type: 'user_message_chunk' }, { type: 'tool_list_updated' }],
+    });
+
+    expect(gate).toMatchObject({
+      id: 'visible_agent_mac_tools',
+      status: 'failed',
+      reasonCode: 'visible_agent_no_tool_dispatch',
+    });
+  });
+
+  it('does not call assistant/model/reply ACP evidence a metadata-only dispatch miss', () => {
+    for (const eventType of ['assistant_message_chunk', 'model_message_chunk', 'reply_chunk']) {
+      const gate = doctor.runVisibleAgentMacToolEvidenceGate({
+        acpEvents: [
+          { type: 'session_info_update' },
+          { type: 'user_message_chunk' },
+          { type: eventType, text: 'I need connector readiness before running tools.' },
+        ],
+      });
+
+      expect(gate).toMatchObject({
+        id: 'visible_agent_mac_tools',
+        status: 'failed',
+        reasonCode: 'agent_cli_config_invalid',
+      });
+    }
+  });
+
   it('requires structured visible tool results including low-impact, stop, and kill-switch proof', () => {
     const proseOnly = doctor.runVisibleAgentMacToolEvidenceGate(
       [

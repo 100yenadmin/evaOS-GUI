@@ -69,6 +69,15 @@ const VISIBLE_AGENT_MAC_TOOL_PROMPT = [
 
 const VISIBLE_AGENT_FAILURE_PATTERN =
   /USER_AGENT_STARTUP_FAILED|agent type is no longer supported|selected agent failed to start|transport parse error|Invalid message \{|ACP parse|parse ACP|could not parse|Doctor warnings|Left plugin install index|broker-boundary|generic broker-boundary failure|mac_connector_material_missing/i;
+const VISIBLE_AGENT_NO_TOOL_DISPATCH_PATTERN =
+  /(?:^|\n)\s*(?:ACP_EMPTY_TURN|no Mac-control tool(?:_|\s|-)dispatch\.?)\s*(?:\n|$)/i;
+const VISIBLE_AGENT_RESPONSE_ACP_EVENT_PATTERN =
+  /tool(?:_|\s|-)?(?:call|result|dispatch|invocation|use|request|response|message|chunk)|agent(?:_|\s|-)message|assistant(?:_|\s|-)message|model(?:_|\s|-)message|reply/i;
+const VISIBLE_AGENT_NON_TOOL_ACP_EVENTS = new Set([
+  'available_commands_update',
+  'session_info_update',
+  'user_message_chunk',
+]);
 const OS_PERMISSION_PROMPT_PATTERN =
   /"?(?:node|osascript|System Events)"?\s+wants access to control\s+"?System Events"?|System Events.*would like to control/i;
 const FORBIDDEN_PROOF_COMMAND_PATTERN =
@@ -873,6 +882,48 @@ function collectVisibleAgentToolRecords(payload, records = [], depth = 0) {
   return records;
 }
 
+function collectVisibleAgentAcpEventTypes(payload, eventTypes = [], depth = 0) {
+  if (!payload || depth > 6) return eventTypes;
+  if (Array.isArray(payload)) {
+    for (const entry of payload) collectVisibleAgentAcpEventTypes(entry, eventTypes, depth + 1);
+    return eventTypes;
+  }
+  if (typeof payload !== 'object') return eventTypes;
+
+  const type = payload.type || payload.event || payload.kind;
+  if (typeof type === 'string' && type.trim()) {
+    eventTypes.push(type.trim());
+  }
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (/^(?:acp)?events?$|chunks?|messages?|updates?$/i.test(key) && value && typeof value === 'object') {
+      collectVisibleAgentAcpEventTypes(value, eventTypes, depth + 1);
+    }
+  }
+
+  return eventTypes;
+}
+
+function visibleAgentNoToolDispatchData(text, payloads) {
+  if (VISIBLE_AGENT_NO_TOOL_DISPATCH_PATTERN.test(text)) {
+    return { dispatchEvidence: 'empty_turn_text' };
+  }
+
+  const eventTypes = Array.from(
+    new Set(payloads.flatMap((payload) => collectVisibleAgentAcpEventTypes(payload)).filter(Boolean))
+  );
+  const hasUserPromptOrSession = eventTypes.some((type) => VISIBLE_AGENT_NON_TOOL_ACP_EVENTS.has(type));
+  const hasToolOrAgentEvent = eventTypes.some((type) => VISIBLE_AGENT_RESPONSE_ACP_EVENT_PATTERN.test(type));
+  if (hasUserPromptOrSession && !hasToolOrAgentEvent) {
+    return {
+      dispatchEvidence: 'acp_metadata_only',
+      observedAcpEvents: eventTypes.filter((type) => VISIBLE_AGENT_NON_TOOL_ACP_EVENTS.has(type)).slice(0, 16),
+    };
+  }
+
+  return null;
+}
+
 function visibleAgentToolName(record) {
   if (!record || typeof record !== 'object') return undefined;
   const direct =
@@ -984,15 +1035,23 @@ function runVisibleAgentMacToolEvidenceGate(evidence) {
     );
   }
 
-  const records = payloadsFromVisibleAgentEvidence(evidence).flatMap((payload) =>
-    collectVisibleAgentToolRecords(payload)
-  );
+  const payloads = payloadsFromVisibleAgentEvidence(evidence);
+  const records = payloads.flatMap((payload) => collectVisibleAgentToolRecords(payload));
   if (records.length === 0) {
+    const noDispatchData = visibleAgentNoToolDispatchData(text, payloads);
     return failedGate(
       'visible_agent_mac_tools',
-      'agent_cli_config_invalid',
-      'Visible Workbench agent proof must include structured Mac-control tool results.',
-      { data: { failureKind: 'incomplete', missingTools: REQUIRED_VISIBLE_AGENT_MAC_TOOLS } }
+      noDispatchData ? 'visible_agent_no_tool_dispatch' : 'agent_cli_config_invalid',
+      noDispatchData
+        ? 'Visible Workbench agent accepted the proof prompt but did not dispatch Mac-control tools.'
+        : 'Visible Workbench agent proof must include structured Mac-control tool results.',
+      {
+        data: {
+          failureKind: 'incomplete',
+          missingTools: REQUIRED_VISIBLE_AGENT_MAC_TOOLS,
+          ...noDispatchData,
+        },
+      }
     );
   }
 
