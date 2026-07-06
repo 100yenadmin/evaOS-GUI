@@ -319,6 +319,35 @@ describe('evaOS broker live canary', () => {
     ).toThrow(/Incomplete broker-specific canary credential pair/);
   });
 
+  it('requires an explicit broker canary target for release proof instead of falling back to default credentials', () => {
+    expect(() =>
+      liveCanary.resolveBrokerCanaryCredentials({
+        AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET: 'true',
+        AIONUI_EVAOS_DESKTOP_SESSION: 'eds_default_session_for_test',
+        AIONUI_EVAOS_CUSTOMER_ID: 'evaos-support',
+      })
+    ).toThrow(/requires AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION \+ AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID/);
+  });
+
+  it('rejects internal support or golden VM targets before issuing broker requests', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    await expect(
+      liveCanary.runBrokerLiveCanary({
+        env: {
+          AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET: 'true',
+          AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_broker_session_for_test',
+          AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'evaos-support',
+          AIONUI_EVAOS_BROKER_RUNTIME: 'openclaw',
+          AIONUI_EVAOS_BROKER_ENDPOINT: 'https://broker.example.test/runtime',
+        },
+        fetchImpl,
+      })
+    ).rejects.toThrow(/internal support or golden VM target/);
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('accepts session-bearing broker launch targets without leaking the target URL', () => {
     const proof = liveCanary.sanitizeBrokerRuntimeLaunchCanaryResponse(
       {

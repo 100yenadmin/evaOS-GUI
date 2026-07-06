@@ -26,7 +26,7 @@ on:
         required: true
         type: string
       live_canary_expected_customer_id:
-        description: 'Expected broker-surface canary customer id. This is intentionally separate from the Mac-control release canary target.'
+        description: 'Expected non-internal broker-surface canary customer id. This is intentionally separate from the Mac-control release canary target; do not use evaos-support/golden/internal targets.'
         required: false
         default: ''
         type: string

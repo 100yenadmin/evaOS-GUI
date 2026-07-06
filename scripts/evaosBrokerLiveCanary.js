@@ -11,6 +11,7 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
 
 const DENIED_RUNTIME_PATTERN =
   /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/i;
+const INTERNAL_BROKER_CANARY_CUSTOMER_IDS = new Set(['evaos-support', 'golden', 'internal', 'support', 'support-vm']);
 const SECRET_FIELD_PATTERN =
   /(authorization|bearer|token|secret|password|credential|desktop[_-]?session|access[_-]?token|refresh[_-]?token|api[_-]?key|service[_-]?role|provider[_-]?grant|grant[_-]?handle)/i;
 const SAFE_FALSE_SECRET_ASSERTION_FIELDS = new Set([
@@ -89,11 +90,30 @@ function envText(env, name) {
   return typeof env[name] === 'string' && env[name].trim() ? env[name].trim() : '';
 }
 
+function truthyEnv(env, name) {
+  return /^(1|true|yes|on)$/i.test(envText(env, name));
+}
+
+function assertAllowedBrokerCanaryCustomerId(customerId) {
+  const normalized = customerId.trim().toLowerCase();
+  if (
+    INTERNAL_BROKER_CANARY_CUSTOMER_IDS.has(normalized) ||
+    /^evaos[-_]?support\b/.test(normalized) ||
+    /^golden\b/.test(normalized) ||
+    /^internal\b/.test(normalized)
+  ) {
+    throw new Error(
+      `Live broker canary target ${customerId} is an internal support or golden VM target. Use a dedicated non-internal broker proof customer.`
+    );
+  }
+}
+
 function resolveBrokerCanaryCredentials(env) {
   const brokerDesktopSession = envText(env, 'AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION');
   const brokerCustomerId = envText(env, 'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID');
   const defaultDesktopSession = envText(env, 'AIONUI_EVAOS_DESKTOP_SESSION');
   const defaultCustomerId = envText(env, 'AIONUI_EVAOS_CUSTOMER_ID');
+  const requireBrokerSpecificTarget = truthyEnv(env, 'AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET');
   const brokerPairPresent = Boolean(brokerDesktopSession || brokerCustomerId);
 
   if (brokerPairPresent) {
@@ -107,11 +127,18 @@ function resolveBrokerCanaryCredentials(env) {
     if (missing.length > 0) {
       throw new Error(`Incomplete broker-specific canary credential pair: missing ${missing.join(', ')}.`);
     }
+    assertAllowedBrokerCanaryCustomerId(brokerCustomerId);
     return {
       desktopSession: brokerDesktopSession,
       customerId: brokerCustomerId,
       credentialSource: 'broker-specific',
     };
+  }
+
+  if (requireBrokerSpecificTarget) {
+    throw new Error(
+      'Live broker canary release proof requires AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION + AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID. Refusing to fall back to release/default customer credentials.'
+    );
   }
 
   const missing = [];
