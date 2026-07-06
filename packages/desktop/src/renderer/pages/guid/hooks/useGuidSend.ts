@@ -5,7 +5,12 @@
  */
 
 import { ipcBridge } from '@/common';
-import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
+import {
+  BUILTIN_EVAOS_MAC_CONTROL_ID,
+  BUILTIN_EVAOS_MAC_CONTROL_NAME,
+  type IMcpServer,
+  type TProviderWithModel,
+} from '@/common/config/storage';
 import { buildAgentConversationParams } from '@/common/utils/buildAgentConversationParams';
 import { toSessionMcpServer } from '@/renderer/hooks/mcp/catalog';
 import { emitter } from '@/renderer/utils/emitter';
@@ -18,6 +23,58 @@ import type { EvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeA
 import { mutate as swrMutate } from 'swr';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
 import type { AcpModelInfo, AvailableAgent, EffectiveAgentInfo } from '../types';
+
+const EVAOS_MAC_CONTROL_AGENT_PATTERN = /(evaos|openclaw)/i;
+
+function isBuiltinEvaosMacControlServer(server: IMcpServer): boolean {
+  return (
+    server.builtin === true &&
+    server.enabled !== false &&
+    (server.name === BUILTIN_EVAOS_MAC_CONTROL_NAME || server.id === BUILTIN_EVAOS_MAC_CONTROL_ID)
+  );
+}
+
+function isEvaosMacControlAgent(params: {
+  selectedAgent: string;
+  selectedAgentKey: string;
+  selectedAgentInfo: AvailableAgent | undefined;
+  effectiveAgentType: string;
+}): boolean {
+  const { selectedAgent, selectedAgentKey, selectedAgentInfo, effectiveAgentType } = params;
+  const candidates = [
+    selectedAgent,
+    selectedAgentKey,
+    effectiveAgentType,
+    selectedAgentInfo?.id,
+    selectedAgentInfo?.name,
+    selectedAgentInfo?.agent_type,
+    selectedAgentInfo?.backend,
+    selectedAgentInfo?.custom_agent_id,
+  ];
+  return candidates.some((candidate) => EVAOS_MAC_CONTROL_AGENT_PATTERN.test(String(candidate || '')));
+}
+
+function appendEvaosMacControlMcpId(
+  ids: string[] | undefined,
+  availableMcpServers: IMcpServer[],
+  shouldAttach: boolean
+): string[] | undefined {
+  const baseIds = ids ? [...ids] : ids;
+  if (!shouldAttach) {
+    return baseIds;
+  }
+
+  const macControlServer = availableMcpServers.find(isBuiltinEvaosMacControlServer);
+  if (!macControlServer) {
+    return baseIds;
+  }
+
+  const nextIds = baseIds ? [...baseIds] : [];
+  if (!nextIds.includes(macControlServer.id)) {
+    nextIds.push(macControlServer.id);
+  }
+  return nextIds;
+}
 
 export type GuidSendDeps = {
   // Input state
@@ -149,7 +206,17 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     const excludeBuiltinSkills =
       guidDisabledBuiltinSkills ??
       (is_presetAgent ? assistantDefaultDisabledBuiltinSkillIds : resolveDisabledBuiltinSkills(agentInfo));
-    const selectedAllMcpServerIds = selectedMcpServerIds ?? [];
+    const shouldAttachEvaosMacControl = isEvaosMacControlAgent({
+      selectedAgent,
+      selectedAgentKey,
+      selectedAgentInfo: agentInfo,
+      effectiveAgentType,
+    });
+    const selectedAllMcpServerIds = appendEvaosMacControlMcpId(
+      selectedMcpServerIds ?? [],
+      availableMcpServers,
+      shouldAttachEvaosMacControl
+    )!;
     const selectedMcpServerIdSet = new Set(selectedAllMcpServerIds);
     const selectedUserMcpServerIds = availableMcpServers
       .filter((server) => selectedMcpServerIdSet.has(server.id) && server.builtin !== true)
@@ -160,7 +227,11 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     const selectedSessionMcpServers = availableMcpServers
       .filter((server) => selectedMcpServerIdSet.has(server.id) && server.builtin === true)
       .map((server) => toSessionMcpServer(server));
-    const defaultSelectedMcpServerIds = assistantDefaultMcpIds;
+    const defaultSelectedMcpServerIds = appendEvaosMacControlMcpId(
+      assistantDefaultMcpIds,
+      availableMcpServers,
+      shouldAttachEvaosMacControl
+    );
     const defaultSelectedUserMcpServerIds = availableMcpServers
       .filter((server) => (defaultSelectedMcpServerIds ?? []).includes(server.id) && server.builtin !== true)
       .map((server) => server.id);

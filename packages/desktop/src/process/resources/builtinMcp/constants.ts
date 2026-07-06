@@ -9,6 +9,9 @@
 export const BUILTIN_IMAGE_GEN_ID = 'builtin-image-gen';
 export const BUILTIN_IMAGE_GEN_NAME = 'aionui-image-generation';
 export const BUILTIN_IMAGE_GEN_LEGACY_NAMES = ['AionUi Image Generation', BUILTIN_IMAGE_GEN_ID] as const;
+export const BUILTIN_EVAOS_MAC_CONTROL_ID = 'builtin-evaos-mac-control';
+export const BUILTIN_EVAOS_MAC_CONTROL_NAME = 'evaos-mac-control';
+export const BUILTIN_EVAOS_MAC_CONTROL_LEGACY_NAMES = [BUILTIN_EVAOS_MAC_CONTROL_ID] as const;
 
 export function isBuiltinImageGenName(name?: string | null): boolean {
   if (!name) return false;
@@ -28,4 +31,12 @@ export function isBuiltinImageGenTransport(transport?: {
   }
 
   return (transport.args || []).some((arg) => typeof arg === 'string' && arg.includes('builtin-mcp-image-gen.js'));
+}
+
+export function isBuiltinEvaosMacControlName(name?: string | null): boolean {
+  if (!name) return false;
+  return (
+    name === BUILTIN_EVAOS_MAC_CONTROL_NAME ||
+    BUILTIN_EVAOS_MAC_CONTROL_LEGACY_NAMES.includes(name as (typeof BUILTIN_EVAOS_MAC_CONTROL_LEGACY_NAMES)[number])
+  );
 }

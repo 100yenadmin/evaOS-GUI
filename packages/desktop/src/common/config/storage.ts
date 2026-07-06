@@ -626,6 +626,10 @@ export interface IConversationMcpStatus {
 export const BUILTIN_IMAGE_GEN_ID = 'builtin-image-gen';
 export const BUILTIN_IMAGE_GEN_NAME = 'aionui-image-generation';
 export const BUILTIN_IMAGE_GEN_LEGACY_NAMES = ['AionUi Image Generation', BUILTIN_IMAGE_GEN_ID] as const;
+/** Stable ID for the built-in evaOS Mac-control MCP server */
+export const BUILTIN_EVAOS_MAC_CONTROL_ID = 'builtin-evaos-mac-control';
+export const BUILTIN_EVAOS_MAC_CONTROL_NAME = 'evaos-mac-control';
+export const BUILTIN_EVAOS_MAC_CONTROL_LEGACY_NAMES = [BUILTIN_EVAOS_MAC_CONTROL_ID] as const;
 
 export interface IMcpTool {
   name: string;

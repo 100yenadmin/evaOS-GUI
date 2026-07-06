@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IMAGE_GEN_ENV_KEYS } from '@/common/config/imageGenerationMcpEnv';
-import { BUILTIN_IMAGE_GEN_NAME, type IMcpServer, type IProvider } from '@/common/config/storage';
+import {
+  BUILTIN_EVAOS_MAC_CONTROL_NAME,
+  BUILTIN_IMAGE_GEN_NAME,
+  type IMcpServer,
+  type IProvider,
+} from '@/common/config/storage';
 import { resolveImageGenerationMigrationConfig, runBackendMigrations } from '@/process/utils/runBackendMigrations';
 
 const {
@@ -96,6 +101,35 @@ const imageServer = (): IMcpServer => ({
   ),
 });
 
+const macControlServer = (): IMcpServer => ({
+  id: 'mac-control-server-id',
+  name: BUILTIN_EVAOS_MAC_CONTROL_NAME,
+  description: 'Built-in evaOS Mac-control tools backed by the installed desktop bridge.',
+  enabled: true,
+  builtin: true,
+  transport: {
+    type: 'stdio',
+    command: 'node',
+    args: ['/mock/builtin-mcp-evaos-mac-control.js'],
+    env: {},
+  },
+  created_at: 1,
+  updated_at: 1,
+  original_json: JSON.stringify(
+    {
+      mcpServers: {
+        [BUILTIN_EVAOS_MAC_CONTROL_NAME]: {
+          command: 'node',
+          args: ['/mock/builtin-mcp-evaos-mac-control.js'],
+          env: {},
+        },
+      },
+    },
+    null,
+    2
+  ),
+});
+
 const configFile = {
   get: configFileGetMock,
   set: configFileSetMock,
@@ -150,7 +184,7 @@ describe('resolveImageGenerationMigrationConfig', () => {
 describe('runBackendMigrations', () => {
   it('does not sync the built-in image MCP server when bootstrap makes no effective change', async () => {
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    listServersMock.mockResolvedValue([imageServer()]);
+    listServersMock.mockResolvedValue([imageServer(), macControlServer()]);
 
     await runBackendMigrations(configFile as never);
 
@@ -185,5 +219,30 @@ describe('runBackendMigrations', () => {
       'yes',
       'yes'
     );
+  });
+
+  it('bootstraps the built-in evaOS Mac-control MCP server without connector material in env', async () => {
+    listServersMock.mockResolvedValue([imageServer()]);
+
+    await runBackendMigrations(configFile as never);
+
+    const importedServers = batchImportServersMock.mock.calls[0][0].servers as IMcpServer[];
+    const importedMacServer = importedServers.find((server) => server.name === BUILTIN_EVAOS_MAC_CONTROL_NAME);
+    expect(importedMacServer).toEqual(
+      expect.objectContaining({
+        name: BUILTIN_EVAOS_MAC_CONTROL_NAME,
+        enabled: true,
+        builtin: true,
+        transport: expect.objectContaining({
+          type: 'stdio',
+          command: 'node',
+          args: ['/mock/builtin-mcp-evaos-mac-control.js'],
+          env: {},
+        }),
+      })
+    );
+    expect(importedMacServer?.original_json).toContain('/mock/builtin-mcp-evaos-mac-control.js');
+    expect(importedMacServer?.original_json).not.toContain('connector_url');
+    expect(importedMacServer?.original_json).not.toContain('token');
   });
 });
