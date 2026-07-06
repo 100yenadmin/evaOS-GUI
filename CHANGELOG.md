@@ -1,5 +1,30 @@
 # Changelog
 
+## evaOS Workbench 2.1.30 (2026-07-06)
+
+### Release Guardrails
+
+- Adds a test-backed module taxonomy so evaOS, Hermes, Mission Control, Shared Browser, Design Workspace, Creative Studio, and Terminal stay separated from the native Mac & iPhone connector.
+- Documents Connected Apps, People & Access, and Company Brain as evaOS admin follow-up modules for later releases rather than v2.1.30 release blockers.
+- Keeps the v2.1.30 scope intentionally narrow: customer polish and proof rerun only, with no broker refactor, Mac connector redesign, AionCore bump, or ACP/chat Mac-control change.
+
+### Release Boundary
+
+- Requires the same proof chain before distribution: Functional Smoke, live broker canary, signed installed-app proof, direct Mac-control non-regression, and distribution gate.
+- Preserves the v2.1.29 working broker/proxy modules and native Mac-control path.
+
+## evaOS Workbench 2.1.29 (2026-07-06)
+
+### Release Proof
+
+- Published the v2.1.29 beta prerelease from `b1e279d25067a1ebffd8044a7d44396d189cad88`.
+- Passed the customer-facing release proof chain: Workbench Functional Smoke, build/release artifact generation, manifest proof, RC canary, live broker canary, and distribution workflow.
+- Preserved the working core modules: evaOS, Hermes, Mission Control, Shared Browser, Design Workspace, Creative Studio, Terminal, and Mac & iPhone.
+
+### Release Boundary
+
+- Keeps ACP/chat Mac-control, Connected Apps, People & Access, Company Brain parity, AionCore/runtime sync, and desktop pet replacement in staged follow-up releases.
+
 ## evaOS Workbench 2.1.28 (2026-07-06)
 
 ### Customer Polish
