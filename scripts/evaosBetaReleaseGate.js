@@ -464,6 +464,20 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(builder, 'resources/evaos-beta/app.png', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'resources/evaos-beta/app.icns', 'packages/desktop/electron-builder.yml', issues);
   requireText(builder, 'resources/evaos-beta/app.ico', 'packages/desktop/electron-builder.yml', issues);
+  requireText(
+    builder,
+    'out/main/builtin-mcp-image-gen.js',
+    'packages/desktop/electron-builder.yml',
+    issues,
+    'builtin image MCP script unpacked'
+  );
+  requireText(
+    builder,
+    'out/main/builtin-mcp-evaos-mac-control.js',
+    'packages/desktop/electron-builder.yml',
+    issues,
+    'builtin evaOS Mac-control MCP script unpacked'
+  );
 
   requireText(buildRelease, 'workflow_dispatch:', '.github/workflows/build-and-release.yml', issues);
   requireText(buildRelease, "beta_release_ack == 'evaos-beta'", '.github/workflows/build-and-release.yml', issues);

@@ -6,7 +6,7 @@
 
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IMcpServer } from '@/common/config/storage';
+import { BUILTIN_EVAOS_MAC_CONTROL_NAME, type IMcpServer } from '@/common/config/storage';
 import { useGuidSend, type GuidSendDeps } from '@/renderer/pages/guid/hooks/useGuidSend';
 
 const createConversationInvokeMock = vi.fn();
@@ -138,6 +138,61 @@ describe('useGuidSend', () => {
     expect(payload.extra.cli_path).toBe('/opt/evaos/openclaw');
     expect(sessionStorage.getItem('openclaw_initial_message_conv-1')).toBeNull();
     expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBe(JSON.stringify({ input: 'hello' }));
+  });
+
+  it('auto-attaches built-in Mac-control tools to evaOS/OpenClaw ACP conversations', async () => {
+    const deps = createDeps();
+    deps.selectedAgent = 'openclaw-gateway';
+    deps.selectedAgentKey = 'openclaw-gateway';
+    deps.selectedAgentInfo = {
+      id: 'openclaw-gateway',
+      key: 'openclaw-gateway',
+      name: 'evaOS',
+      agent_type: 'openclaw-gateway',
+      backend: 'openclaw-gateway',
+      cli_path: '/opt/evaos/openclaw',
+      isExtension: false,
+    } as never;
+    deps.is_presetAgent = false;
+    deps.getEffectiveAgentType = vi.fn(() => ({
+      agent_type: 'openclaw-gateway',
+      isAvailable: true,
+    }));
+    deps.availableMcpServers = [
+      { id: 'mcp-user', name: 'User MCP', enabled: true, builtin: false } as IMcpServer,
+      { id: 'mac-control-mcp', name: BUILTIN_EVAOS_MAC_CONTROL_NAME, enabled: true, builtin: true } as IMcpServer,
+    ];
+    deps.selectedMcpServerIds = [];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.extra.selected_mcp_server_ids).toEqual([]);
+    expect(payload.extra.selected_session_mcp_servers).toEqual([
+      expect.objectContaining({ id: 'mac-control-mcp', name: BUILTIN_EVAOS_MAC_CONTROL_NAME }),
+    ]);
+  });
+
+  it('does not auto-attach Mac-control tools to unrelated ACP conversations', async () => {
+    const deps = createDeps();
+    deps.availableMcpServers = [
+      { id: 'mac-control-mcp', name: BUILTIN_EVAOS_MAC_CONTROL_NAME, enabled: true, builtin: true } as IMcpServer,
+    ];
+    deps.selectedMcpServerIds = [];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.assistant?.conversation_overrides?.mcp_ids).toEqual([]);
+    expect(payload.extra.selected_session_mcp_servers).toEqual([]);
   });
 
   it('passes selected mode into assistant conversation overrides when creating a preset ACP conversation', async () => {

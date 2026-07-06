@@ -14,7 +14,12 @@ import {
   resolveImageGenerationMcpEnv,
   type ImageGenerationMcpEnvResolveResult,
 } from '@/common/config/imageGenerationMcpEnv';
-import { BUILTIN_IMAGE_GEN_NAME, type IMcpServer, type IProvider } from '@/common/config/storage';
+import {
+  BUILTIN_EVAOS_MAC_CONTROL_NAME,
+  BUILTIN_IMAGE_GEN_NAME,
+  type IMcpServer,
+  type IProvider,
+} from '@/common/config/storage';
 import { getBuiltinMcpScriptPath, type ProcessConfig as ProcessConfigType } from './initStorage';
 import { migrateAssistantsToBackend } from './migrateAssistants';
 
@@ -133,6 +138,29 @@ function buildBuiltinImageGenerationServer(
       env,
     },
     original_json: JSON.stringify({ mcpServers: { [BUILTIN_IMAGE_GEN_NAME]: serverConfig } }, null, 2),
+  };
+}
+
+function buildBuiltinEvaosMacControlServer(): McpImportServer {
+  const scriptPath = getBuiltinMcpScriptPath('builtin-mcp-evaos-mac-control');
+  const serverConfig = {
+    command: 'node',
+    args: [scriptPath],
+    env: {},
+  };
+
+  return {
+    name: BUILTIN_EVAOS_MAC_CONTROL_NAME,
+    description: 'Built-in evaOS Mac-control tools backed by the installed desktop bridge.',
+    enabled: true,
+    builtin: true,
+    transport: {
+      type: 'stdio',
+      command: serverConfig.command,
+      args: serverConfig.args,
+      env: serverConfig.env,
+    },
+    original_json: JSON.stringify({ mcpServers: { [BUILTIN_EVAOS_MAC_CONTROL_NAME]: serverConfig } }, null, 2),
   };
 }
 
@@ -267,8 +295,11 @@ async function ensureBootstrapMcpServersInDb(configFile: ConfigFile): Promise<vo
   const imageEnvResolution = resolveImageGenerationMcpEnv(imageConfig, providers, existingImageEnv);
   logImageGenerationEnvResolution(imageEnvResolution, 'bootstrap');
   const imageServer = buildBuiltinImageGenerationServer(imageEnvResolution, imageConfig);
+  const evaosMacControlServer = buildBuiltinEvaosMacControlServer();
   const defaultServers = buildDefaultMcpServers();
-  const missing = [...defaultServers, imageServer].filter((server) => !existingByName.has(server.name));
+  const missing = [...defaultServers, imageServer, evaosMacControlServer].filter(
+    (server) => !existingByName.has(server.name)
+  );
   let imageServerUpdated = false;
 
   if (missing.length > 0) {
