@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Progress, Message } from '@arco-design/web-react';
 import { CheckOne, Download, FolderOpen, Refresh, CloseOne, Install } from '@icon-park/react';
 import { ipcBridge } from '@/common';
@@ -32,6 +32,7 @@ const UpdateModal: React.FC = () => {
   // Whether electron-updater auto-update is available (determined automatically, not user-controllable)
   const [autoUpdateAvailable, setAutoUpdateAvailable] = useState(false);
   const [autoUpdateInfo, setAutoUpdateInfo] = useState<{ version: string; releaseNotes?: string } | null>(null);
+  const manualUpdateCheckInFlightRef = useRef(false);
 
   const resetState = () => {
     setStatus('checking');
@@ -57,6 +58,7 @@ const UpdateModal: React.FC = () => {
   };
 
   const checkForUpdates = async () => {
+    manualUpdateCheckInFlightRef.current = true;
     setStatus('checking');
     try {
       // Try auto-update (electron-updater) first
@@ -113,6 +115,8 @@ const UpdateModal: React.FC = () => {
       console.error('Update check failed:', err);
       setErrorMsg(msg);
       setStatus('error');
+    } finally {
+      manualUpdateCheckInFlightRef.current = false;
     }
   };
 
@@ -212,6 +216,7 @@ const UpdateModal: React.FC = () => {
           setVisible(true);
           break;
         case 'not-available':
+          if (manualUpdateCheckInFlightRef.current) break;
           setStatus('upToDate');
           break;
         case 'downloading':
@@ -228,6 +233,7 @@ const UpdateModal: React.FC = () => {
           setStatus('downloaded');
           break;
         case 'error':
+          if (manualUpdateCheckInFlightRef.current) break;
           setStatus('error');
           setErrorMsg(evt.error || t('update.downloadFailed'));
           break;
