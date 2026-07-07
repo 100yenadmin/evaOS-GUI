@@ -53,6 +53,25 @@ describe('classifyBackendStartupFailure', () => {
     });
   });
 
+  it('classifies recoverable database corruption separately from generic startup failures', () => {
+    const error = new Error('aioncore exited before health check passed') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'early_exit',
+      backendBoundaryCode: 'BOOTSTRAP_DATA_INIT_FAILED',
+      backendBoundaryStage: 'database.recoverable_corruption',
+      stderrTail:
+        'BOOTSTRAP_DATA_INIT_FAILED stage=database.recoverable_corruption: local database can be backed up and rebuilt',
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_recoverable_database_corruption',
+      backendBoundaryCode: 'BOOTSTRAP_DATA_INIT_FAILED',
+      backendBoundaryStage: 'database.recoverable_corruption',
+    });
+  });
+
   it('classifies packaged macOS architecture mismatches separately from generic startup failures', () => {
     const error = new Error('evaOS Workbench package architecture does not match this Mac') as Error & {
       details?: Record<string, unknown>;
