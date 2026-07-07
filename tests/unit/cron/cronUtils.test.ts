@@ -5,7 +5,12 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createCronSchedule, getCurrentCronTimeZone } from '@/renderer/pages/cron/cronUtils';
+import {
+  createCronSchedule,
+  formatCronRunConversationTitle,
+  getCurrentCronTimeZone,
+  resolveCronJobId,
+} from '@/renderer/pages/cron/cronUtils';
 
 const originalDateTimeFormat = Intl.DateTimeFormat;
 
@@ -37,5 +42,17 @@ describe('cronUtils', () => {
     }) as unknown as typeof Intl.DateTimeFormat;
 
     expect(getCurrentCronTimeZone()).toBe('UTC');
+  });
+
+  it('formats new cron run conversation titles with the execution date', () => {
+    const localRunAtMs = new Date(2026, 6, 1, 12, 0, 0).getTime();
+
+    expect(formatCronRunConversationTitle('Daily report', localRunAtMs)).toBe('Daily report 01-07-26');
+  });
+
+  it('resolves cron job ids from snake_case and camelCase conversation extras', () => {
+    expect(resolveCronJobId({ cron_job_id: 'cron-1' } as never)).toBe('cron-1');
+    expect(resolveCronJobId({ cronJobId: 'cron-2' } as never)).toBe('cron-2');
+    expect(resolveCronJobId({} as never)).toBeUndefined();
   });
 });

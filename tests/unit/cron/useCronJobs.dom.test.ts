@@ -33,6 +33,7 @@ vi.mock('@/common', () => ({
     },
     conversation: {
       listByCronJob: { invoke: vi.fn() },
+      update: { invoke: vi.fn() },
       listChanged: { on: vi.fn() },
     },
   },
@@ -46,22 +47,44 @@ vi.mock('@/renderer/utils/emitter', () => ({
   },
 }));
 
-const mockJob = (overrides?: Partial<ICronJob>): ICronJob => ({
-  id: 'job-1',
-  enabled: true,
-  schedule: { kind: 'cron', expr: '0 9 * * *', tz: 'Asia/Shanghai', description: 'Daily at 9 AM' },
-  action: { command: 'test' },
-  state: {
-    last_status: 'success',
-    last_run_at_ms: Date.now(),
-    next_run_at_ms: Date.now() + 86400000,
-  },
-  metadata: {
-    conversation_id: 'conv-1',
-    created_at_ms: Date.now(),
-  },
-  ...overrides,
-});
+type CronJobOverrides = Partial<Omit<ICronJob, 'metadata' | 'schedule' | 'state' | 'target'>> & {
+  metadata?: Partial<ICronJob['metadata']>;
+  schedule?: Partial<ICronJob['schedule']>;
+  state?: Partial<ICronJob['state']>;
+  target?: Partial<ICronJob['target']>;
+};
+
+const mockJob = (overrides?: CronJobOverrides): ICronJob => {
+  const base = {
+    id: 'job-1',
+    name: 'Daily report',
+    enabled: true,
+    schedule: { kind: 'cron', expr: '0 9 * * *', tz: 'Asia/Shanghai', description: 'Daily at 9 AM' },
+    action: { command: 'test' },
+    target: {
+      execution_mode: 'existing',
+      payload: { kind: 'message', text: 'test' },
+    },
+    state: {
+      last_status: 'success',
+      last_run_at_ms: Date.now(),
+      next_run_at_ms: Date.now() + 86400000,
+    },
+    metadata: {
+      conversation_id: 'conv-1',
+      created_at_ms: Date.now(),
+    },
+  } as ICronJob;
+
+  return {
+    ...base,
+    ...overrides,
+    metadata: { ...base.metadata, ...overrides?.metadata },
+    schedule: { ...base.schedule, ...overrides?.schedule },
+    state: { ...base.state, ...overrides?.state },
+    target: { ...base.target, ...overrides?.target },
+  } as ICronJob;
+};
 
 const mockConversation = (id: string): TChatConversation => ({
   id,
@@ -80,6 +103,8 @@ describe('useCronJobs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    vi.mocked(ipcBridge.conversation.listByCronJob.invoke).mockResolvedValue([]);
+    vi.mocked(ipcBridge.conversation.update.invoke).mockResolvedValue(true);
     Intl.DateTimeFormat = vi.fn(
       () =>
         ({
@@ -117,7 +142,7 @@ describe('useCronJobs', () => {
 
   it('repairs missing cron timezone on conversation fetch', async () => {
     const jobWithoutTz = mockJob({
-      schedule: { kind: 'cron', expr: '0 9 * * *', description: 'Daily at 9 AM' },
+      schedule: { kind: 'cron', expr: '0 9 * * *', tz: undefined, description: 'Daily at 9 AM' },
     });
     const repairedJob = mockJob();
     vi.mocked(ipcBridge.cron.listJobsByConversation.invoke).mockResolvedValue([jobWithoutTz]);
@@ -173,7 +198,7 @@ describe('useCronJobs', () => {
   });
 
   it('detects error status in jobs', async () => {
-    const jobs = [mockJob({ state: { last_status: 'error' } as any })];
+    const jobs = [mockJob({ state: { last_status: 'error' } })];
     vi.mocked(ipcBridge.cron.listJobsByConversation.invoke).mockResolvedValue(jobs);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
     vi.mocked(ipcBridge.cron.onJobUpdated.on).mockReturnValue(() => {});
@@ -363,7 +388,7 @@ describe('useAllCronJobs', () => {
   });
 
   it('fetches all jobs on mount', async () => {
-    const jobs = [mockJob(), mockJob({ id: 'job-2', metadata: { conversation_id: 'conv-2' } } as any)];
+    const jobs = [mockJob(), mockJob({ id: 'job-2', metadata: { conversation_id: 'conv-2' } })];
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue(jobs);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
     vi.mocked(ipcBridge.cron.onJobUpdated.on).mockReturnValue(() => {});
@@ -384,7 +409,7 @@ describe('useAllCronJobs', () => {
 
   it('repairs missing cron timezone on all-jobs fetch', async () => {
     const jobWithoutTz = mockJob({
-      schedule: { kind: 'cron', expr: '0 9 * * *', description: 'Daily at 9 AM' },
+      schedule: { kind: 'cron', expr: '0 9 * * *', tz: undefined, description: 'Daily at 9 AM' },
     });
     const repairedJob = mockJob();
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue([jobWithoutTz]);
@@ -424,7 +449,7 @@ describe('useAllCronJobs', () => {
   });
 
   it('detects error status across all jobs', async () => {
-    const jobs = [mockJob(), mockJob({ id: 'job-2', state: { last_status: 'missed' } as any })];
+    const jobs = [mockJob(), mockJob({ id: 'job-2', state: { last_status: 'missed' } })];
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue(jobs);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
     vi.mocked(ipcBridge.cron.onJobUpdated.on).mockReturnValue(() => {});
@@ -489,9 +514,9 @@ describe('useCronJobsMap', () => {
 
   it('fetches and groups jobs by conversation', async () => {
     const jobs = [
-      mockJob({ id: 'job-1', metadata: { conversation_id: 'conv-1' } } as any),
-      mockJob({ id: 'job-2', metadata: { conversation_id: 'conv-1' } } as any),
-      mockJob({ id: 'job-3', metadata: { conversation_id: 'conv-2' } } as any),
+      mockJob({ id: 'job-1', metadata: { conversation_id: 'conv-1' } }),
+      mockJob({ id: 'job-2', metadata: { conversation_id: 'conv-1' } }),
+      mockJob({ id: 'job-3', metadata: { conversation_id: 'conv-2' } }),
     ];
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue(jobs);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
@@ -509,13 +534,13 @@ describe('useCronJobsMap', () => {
 
   it('returns correct job status for conversation', async () => {
     const jobs = [
-      mockJob({ id: 'job-1', metadata: { conversation_id: 'conv-active' }, enabled: true } as any),
+      mockJob({ id: 'job-1', metadata: { conversation_id: 'conv-active' }, enabled: true }),
       mockJob({
         id: 'job-2',
         metadata: { conversation_id: 'conv-error' },
         state: { last_status: 'error' },
-      } as any),
-      mockJob({ id: 'job-3', metadata: { conversation_id: 'conv-paused' }, enabled: false } as any),
+      }),
+      mockJob({ id: 'job-3', metadata: { conversation_id: 'conv-paused' }, enabled: false }),
     ];
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue(jobs);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
@@ -538,7 +563,7 @@ describe('useCronJobsMap', () => {
       id: 'job-1',
       metadata: { conversation_id: 'conv-1' },
       state: { last_run_at_ms: 1000 },
-    } as any);
+    });
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue([job]);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
     vi.mocked(ipcBridge.cron.onJobUpdated.on).mockImplementation((handler) => {
@@ -555,11 +580,64 @@ describe('useCronJobsMap', () => {
       id: 'job-1',
       metadata: { conversation_id: 'conv-1' },
       state: { last_run_at_ms: 2000 },
-    } as any);
+    });
     onJobUpdatedHandler!(updatedJob);
 
     await waitFor(() => expect(result.current.hasUnread('conv-1')).toBe(true));
     expect(result.current.getJobStatus('conv-1')).toBe('unread');
+  });
+
+  it('renames the latest new-conversation run when a scheduled task executes', async () => {
+    let onJobUpdatedHandler: ((job: ICronJob) => void) | null = null;
+    const localRunAtMs = new Date(2026, 6, 1, 12, 0, 0).getTime();
+    const initialJob = mockJob({
+      id: 'job-1',
+      name: 'Daily report',
+      metadata: { conversation_id: 'conv-1' },
+      target: {
+        execution_mode: 'new_conversation',
+        payload: { kind: 'message', text: 'report' },
+      },
+      state: { last_run_at_ms: 1000 },
+    });
+    vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue([initialJob]);
+    vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
+    vi.mocked(ipcBridge.cron.onJobUpdated.on).mockImplementation((handler) => {
+      onJobUpdatedHandler = handler;
+      return () => {};
+    });
+    vi.mocked(ipcBridge.cron.onJobRemoved.on).mockReturnValue(() => {});
+    vi.mocked(ipcBridge.conversation.listByCronJob.invoke).mockResolvedValue([
+      {
+        ...mockConversation('conv-run'),
+        name: 'Daily report',
+        created_at: localRunAtMs,
+      } as TChatConversation,
+    ]);
+
+    const { result } = renderHook(() => useCronJobsMap());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    onJobUpdatedHandler!(
+      mockJob({
+        id: 'job-1',
+        name: 'Daily report',
+        metadata: { conversation_id: 'conv-1' },
+        target: {
+          execution_mode: 'new_conversation',
+          payload: { kind: 'message', text: 'report' },
+        },
+        state: { last_run_at_ms: localRunAtMs },
+      })
+    );
+
+    await waitFor(() =>
+      expect(ipcBridge.conversation.update.invoke).toHaveBeenCalledWith({
+        id: 'conv-run',
+        updates: { name: 'Daily report 01-07-26' },
+      })
+    );
   });
 
   it('does not mark as unread if active conversation', async () => {
@@ -568,7 +646,7 @@ describe('useCronJobsMap', () => {
       id: 'job-1',
       metadata: { conversation_id: 'conv-1' },
       state: { last_run_at_ms: 1000 },
-    } as any);
+    });
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue([job]);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
     vi.mocked(ipcBridge.cron.onJobUpdated.on).mockImplementation((handler) => {
@@ -587,14 +665,14 @@ describe('useCronJobsMap', () => {
       id: 'job-1',
       metadata: { conversation_id: 'conv-1' },
       state: { last_run_at_ms: 2000 },
-    } as any);
+    });
     onJobUpdatedHandler!(updatedJob);
 
     await waitFor(() => expect(result.current.hasUnread('conv-1')).toBe(false));
   });
 
   it('marks conversation as read', async () => {
-    const jobs = [mockJob({ id: 'job-1', metadata: { conversation_id: 'conv-1' } } as any)];
+    const jobs = [mockJob({ id: 'job-1', metadata: { conversation_id: 'conv-1' } })];
     vi.mocked(ipcBridge.cron.listJobs.invoke).mockResolvedValue(jobs);
     vi.mocked(ipcBridge.cron.onJobCreated.on).mockReturnValue(() => {});
     vi.mocked(ipcBridge.cron.onJobUpdated.on).mockReturnValue(() => {});
@@ -633,7 +711,7 @@ describe('useCronJobsMap', () => {
       /* wait for initial fetch */
     });
 
-    const newJob = mockJob({ id: 'job-new', metadata: { conversation_id: 'conv-1' } } as any);
+    const newJob = mockJob({ id: 'job-new', metadata: { conversation_id: 'conv-1' } });
     onJobCreatedHandler!(newJob);
 
     await waitFor(() => expect(emitter.emit).toHaveBeenCalledWith('chat.history.refresh'));
