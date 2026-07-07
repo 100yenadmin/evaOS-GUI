@@ -22,7 +22,7 @@ import AddMcpServerModal from '@/renderer/pages/settings/components/AddMcpServer
 import McpServerItem from '@/renderer/pages/settings/ToolsSettings/McpServerItem';
 import { useMcpServers, useMcpConnection, useMcpModal, useMcpServerCRUD, useMcpOAuth } from '@/renderer/hooks/mcp';
 import classNames from 'classnames';
-import { useSettingsViewMode } from '../settingsViewContext';
+import { useSettingsTabNavigate, useSettingsViewMode } from '../settingsViewContext';
 import VoiceInputSection from './VoiceInputSection';
 
 type MessageInstance = ReturnType<typeof Message.useMessage>[0];
@@ -313,10 +313,11 @@ const ToolsModalContent: React.FC = () => {
   const imageGenerationModelList = useMemo(() => {
     if (!data) return [];
     return (data || [])
-      .map((provider) => ({
-        ...provider,
-        models: provider.models.filter((modelName) => isImageGenSupported(provider, modelName)),
-      }))
+      .map((provider) =>
+        Object.assign({}, provider, {
+          models: provider.models.filter((modelName) => isImageGenSupported(provider, modelName)),
+        })
+      )
       .filter((provider) => provider.models.length > 0);
   }, [data]);
 
@@ -511,6 +512,7 @@ const ToolsModalContent: React.FC = () => {
 
   const viewMode = useSettingsViewMode();
   const isPageMode = viewMode === 'page';
+  const navigateToSettingsTab = useSettingsTabNavigate();
   const isImageGenerationModelUnavailable = !imageGenerationModelList.length || !imageGenerationModel?.use_model;
 
   return (
@@ -603,6 +605,16 @@ const ToolsModalContent: React.FC = () => {
                 ) : (
                   <div className='text-t-secondary flex items-center'>
                     {t('settings.noAvailable')}
+                    {navigateToSettingsTab ? (
+                      <a
+                        className='text-inherit underline underline-offset-2 cursor-pointer'
+                        onClick={() => navigateToSettingsTab('model')}
+                      >
+                        {t('settings.goToModelSettings')}
+                      </a>
+                    ) : (
+                      t('settings.goToModelSettings')
+                    )}
                     <Tooltip
                       content={
                         <div>
