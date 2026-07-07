@@ -1023,7 +1023,7 @@ async function provisionFixtures(options = loadOptions()) {
   const admin = new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
   const adminProfile = await loadAdminProfile(admin, options.adminEmail);
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
-  const adminMembership = await loadAdminMembership(admin, adminProfile.id, customerAccount.id);
+  const adminMembership = await loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount);
   const providerSnapshots = await snapshotProviderRows(admin, options.customerId);
   // Preflight the stable admin subject before creating temporary users/sessions.
   // The requester subject is freshly created below and is checked again before writes.
