@@ -5,6 +5,9 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 type LogLevel = string | false;
 
@@ -14,6 +17,10 @@ type LogMock = {
       fileName: string;
       level: LogLevel;
       maxSize: number;
+      resolvePathFn?: (
+        variables: { libraryDefaultDir: string; fileName: string },
+        message?: { date?: Date | number | string }
+      ) => string;
     };
     console: {
       level: LogLevel;
@@ -81,6 +88,7 @@ const loadConfigureConsoleLog = async (isPackaged: boolean): Promise<LogMock> =>
 describe('configureConsoleLog', () => {
   afterEach(() => {
     Object.assign(console, originalConsole);
+    vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
   });
@@ -97,5 +105,27 @@ describe('configureConsoleLog', () => {
     const log = await loadConfigureConsoleLog(false);
 
     expect(log.transports.console.level).toBe('silly');
+  });
+
+  it('routes cross-day frontend log writes into the matching date directory', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 2, 23, 59));
+    const log = await loadConfigureConsoleLog(false);
+    const logsRoot = mkdtempSync(path.join(os.tmpdir(), 'aionui-log-test-'));
+
+    try {
+      expect(log.transports.file.fileName).toBe('2026/07/02/2026-07-02.log');
+      const resolvedPath = log.transports.file.resolvePathFn?.(
+        {
+          libraryDefaultDir: logsRoot,
+          fileName: '2026/07/02/2026-07-02.log',
+        },
+        { date: new Date(2026, 6, 3, 0, 1) }
+      );
+
+      expect(resolvedPath).toBe(path.join(logsRoot, '2026/07/03/2026-07-03.log'));
+    } finally {
+      rmSync(logsRoot, { recursive: true, force: true });
+    }
   });
 });
