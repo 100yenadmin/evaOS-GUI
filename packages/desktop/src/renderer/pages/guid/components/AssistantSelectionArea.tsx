@@ -7,8 +7,8 @@
 import {
   getEvaosAssistantDisplayDescription,
   getEvaosAssistantDisplayName,
-  isEvaosAssistantVisibleInRc,
 } from '@/renderer/evaos/evaosAssistantPresentation';
+import { selectableEvaosAssistants } from '@/renderer/utils/model/assistantSelection';
 import { CUSTOM_AVATAR_IMAGE_MAP } from '../constants';
 import styles from '../index.module.css';
 import type { AvailableAgent, EffectiveAgentInfo } from '../types';
@@ -62,7 +62,7 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [agentMessage, agentMessageContext] = Message.useMessage({ maxCount: 10 });
+  const [agentMessage, _agentMessageContext] = Message.useMessage({ maxCount: 10 });
 
   const resolveOpenAssistantId = (): string | null => {
     if (selectedAgentInfo?.custom_agent_id) return selectedAgentInfo.custom_agent_id;
@@ -118,6 +118,7 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
 
   const scrollWrapRef = useRef<HTMLDivElement>(null);
   const [isScrollable, setIsScrollable] = useState(false);
+  const selectableAssistantCards = useMemo(() => selectableEvaosAssistants(assistants), [assistants]);
 
   useEffect(() => {
     const el = scrollWrapRef.current;
@@ -211,47 +212,40 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
         className={`${styles.assistantCardScrollWrap} ${isScrollable ? styles.assistantCardScrollWrapScrollable : ''}`}
       >
         <div className={styles.assistantCardGrid}>
-          {assistants
-            .filter((a) => a.enabled !== false && isEvaosAssistantVisibleInRc(a))
-            .toSorted((a, b) => {
-              if (a.id === 'cowork') return -1;
-              if (b.id === 'cowork') return 1;
-              return 0;
-            })
-            .map((assistant) => {
-              const avatarValue = assistant.avatar?.trim();
-              const mappedAvatar = avatarValue ? CUSTOM_AVATAR_IMAGE_MAP[avatarValue] : undefined;
-              const resolvedAvatar = avatarValue ? resolveExtensionAssetUrl(avatarValue) : undefined;
-              const avatarImage = mappedAvatar || resolvedAvatar;
-              const isImageAvatar = Boolean(
-                avatarImage &&
-                (/\.(svg|png|jpe?g|webp|gif)$/i.test(avatarImage) || /^(https?:|file:\/\/|data:|\/)/i.test(avatarImage))
-              );
-              const name = getEvaosAssistantDisplayName(assistant, localeKey);
-              const description = getEvaosAssistantDisplayDescription(assistant, localeKey);
-              return (
-                <div
-                  key={assistant.id}
-                  data-testid={`preset-pill-${assistant.id}`}
-                  className={styles.assistantCard}
-                  onClick={() => onSelectAssistant(`custom:${assistant.id}`)}
-                >
-                  <div className={styles.assistantCardAvatar}>
-                    {isImageAvatar ? (
-                      <img src={avatarImage} alt='' />
-                    ) : avatarValue ? (
-                      <span className={styles.assistantCardEmoji}>{avatarValue}</span>
-                    ) : (
-                      <Robot theme='outline' size={18} />
-                    )}
-                  </div>
-                  <div className={styles.assistantCardMeta}>
-                    <div className={styles.assistantCardName}>{name}</div>
-                    {description && <div className={styles.assistantCardDesc}>{description}</div>}
-                  </div>
+          {selectableAssistantCards.map((assistant) => {
+            const avatarValue = assistant.avatar?.trim();
+            const mappedAvatar = avatarValue ? CUSTOM_AVATAR_IMAGE_MAP[avatarValue] : undefined;
+            const resolvedAvatar = avatarValue ? resolveExtensionAssetUrl(avatarValue) : undefined;
+            const avatarImage = mappedAvatar || resolvedAvatar;
+            const isImageAvatar = Boolean(
+              avatarImage &&
+              (/\.(svg|png|jpe?g|webp|gif)$/i.test(avatarImage) || /^(https?:|file:\/\/|data:|\/)/i.test(avatarImage))
+            );
+            const name = getEvaosAssistantDisplayName(assistant, localeKey);
+            const description = getEvaosAssistantDisplayDescription(assistant, localeKey);
+            return (
+              <div
+                key={assistant.id}
+                data-testid={`preset-pill-${assistant.id}`}
+                className={styles.assistantCard}
+                onClick={() => onSelectAssistant(`custom:${assistant.id}`)}
+              >
+                <div className={styles.assistantCardAvatar}>
+                  {isImageAvatar ? (
+                    <img src={avatarImage} alt='' />
+                  ) : avatarValue ? (
+                    <span className={styles.assistantCardEmoji}>{avatarValue}</span>
+                  ) : (
+                    <Robot theme='outline' size={18} />
+                  )}
                 </div>
-              );
-            })}
+                <div className={styles.assistantCardMeta}>
+                  <div className={styles.assistantCardName}>{name}</div>
+                  {description && <div className={styles.assistantCardDesc}>{description}</div>}
+                </div>
+              </div>
+            );
+          })}
           <div
             data-testid='btn-add-preset'
             className={styles.assistantCardAdd}

@@ -7,6 +7,7 @@
 import useSWR from 'swr';
 import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
+import { selectableEvaosAssistants } from '@/renderer/utils/model/assistantSelection';
 import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents } from '@/renderer/utils/model/agentTypes';
 import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
 
@@ -40,7 +41,7 @@ export const useConversationAgents = (): UseConversationAgentsResult => {
   const { data: presetAssistants, isLoading: isLoadingPresets } = useSWR('assistants.presets', async () => {
     try {
       const list = await ipcBridge.assistants.list.invoke();
-      return list.filter((assistant) => assistant.enabled !== false);
+      return selectableEvaosAssistants(list);
     } catch (error) {
       console.error('Failed to load assistants for conversation selector:', error);
       return [] as Assistant[];
