@@ -1014,7 +1014,10 @@
     "nativeRepairSummary": "{{displayName}} chat is available. Mac control tools need pairing before this agent can use this Mac.",
     "nativeRepairAction": "Repair in Mac & iPhone",
     "nativeRepairBadge": "Repair",
-    "nativeRepairTitle": "{{displayName}} Mac control needs pairing"
+    "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
+    "filterAll": "All",
+    "filterAvailable": "Available",
+    "filterSetupNeeded": "Needs setup"
   },
   "remoteAgent": {
     "title": "遠端 Agent",

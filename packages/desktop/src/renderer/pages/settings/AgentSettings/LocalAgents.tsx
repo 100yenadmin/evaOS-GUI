@@ -10,7 +10,7 @@ import AionModal from '@/renderer/components/base/AionModal';
 import { useManagedAgents } from '@/renderer/hooks/agent/useAgents';
 import { Button, Typography } from '@arco-design/web-react';
 import { Home, Plus } from '@icon-park/react';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import AgentCard from './AgentCard';
@@ -20,25 +20,47 @@ import { getAgentKey } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import { sortEvaosDetectedAgentsForPresentation } from '@/renderer/evaos/evaosAgentPresentation';
 import {
   applyEvaosNativeCompanionStatusToAgent,
+  type EvaosNativeAgentAvailability,
   getEvaosNativeAgentAvailability,
 } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
+
+type AgentAvailabilityFilter = 'all' | 'available' | 'setup';
+
+type DetectedAgentCard = {
+  agent: AgentMetadata;
+  nativeAvailability: EvaosNativeAgentAvailability;
+};
+
+function needsSetup({ agent, nativeAvailability }: DetectedAgentCard): boolean {
+  if (agent.available === false) return true;
+  if (!nativeAvailability.isNativeDependent) return false;
+  return nativeAvailability.statusLabelKey !== 'settings.agentManagement.nativePaired';
+}
 
 const LocalAgents: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [hubModalVisible, setHubModalVisible] = useState(false);
+  const [agentFilter, setAgentFilter] = useState<AgentAvailabilityFilter>('all');
   const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus();
 
   // Settings management view includes disabled custom agents so they remain
   // visible and can be re-enabled; chat/team pickers still use useAgents().
   const { agents: allAgents, revalidate: mutateAgents } = useManagedAgents();
 
-  const detectedAgents = allAgents
-    .filter((a) => a.agent_type !== 'remote' && a.agent_source !== 'custom')
-    .map((agent) => applyEvaosNativeCompanionStatusToAgent(agent, nativeCompanionStatus));
+  const detectedAgents = useMemo(
+    () =>
+      allAgents
+        .filter((a) => a.agent_type !== 'remote' && a.agent_source !== 'custom')
+        .map((agent) => applyEvaosNativeCompanionStatusToAgent(agent, nativeCompanionStatus)),
+    [allAgents, nativeCompanionStatus]
+  );
 
-  const customAgents: AgentMetadata[] = allAgents.filter((a) => a.agent_source === 'custom');
+  const customAgents: AgentMetadata[] = useMemo(
+    () => allAgents.filter((a) => a.agent_source === 'custom'),
+    [allAgents]
+  );
 
   const [editorVisible, setEditorVisible] = useState(false);
   const [editingAgent, setEditingAgent] = useState<AgentMetadata | null>(null);
@@ -94,7 +116,59 @@ const LocalAgents: React.FC = () => {
     [mutateAgents]
   );
 
-  const orderedDetectedAgents = sortEvaosDetectedAgentsForPresentation(detectedAgents);
+  const orderedDetectedAgents = useMemo(() => sortEvaosDetectedAgentsForPresentation(detectedAgents), [detectedAgents]);
+
+  const detectedAgentCards = useMemo<DetectedAgentCard[]>(
+    () =>
+      orderedDetectedAgents.map((agent) => ({
+        agent,
+        nativeAvailability: getEvaosNativeAgentAvailability(agent),
+      })),
+    [orderedDetectedAgents]
+  );
+
+  const filterStats = useMemo(
+    () =>
+      detectedAgentCards.reduce(
+        (stats, card) => {
+          if (needsSetup(card)) {
+            stats.setup += 1;
+          } else {
+            stats.available += 1;
+          }
+          return stats;
+        },
+        { all: detectedAgentCards.length, available: 0, setup: 0 }
+      ),
+    [detectedAgentCards]
+  );
+
+  const visibleDetectedAgentCards = useMemo(() => {
+    if (agentFilter === 'available') return detectedAgentCards.filter((card) => !needsSetup(card));
+    if (agentFilter === 'setup') return detectedAgentCards.filter(needsSetup);
+    return detectedAgentCards;
+  }, [agentFilter, detectedAgentCards]);
+
+  const renderFilterTab = (key: AgentAvailabilityFilter, label: string, count: number) => (
+    <button
+      type='button'
+      data-testid={`agent-filter-${key}`}
+      onClick={() => setAgentFilter(key)}
+      className={`relative inline-flex cursor-pointer items-center border-none bg-transparent px-2px pb-12px text-14px leading-none transition-colors ${
+        agentFilter === key ? 'font-600 text-t-primary' : 'font-500 text-t-tertiary hover:text-t-secondary'
+      }`}
+    >
+      <span>{label}</span>
+      <span
+        className={`ml-6px inline-flex h-16px min-w-16px items-center justify-center rounded-999px px-5px text-10px font-500 leading-none ${
+          agentFilter === key ? 'bg-primary-1 text-primary-6' : 'bg-fill-2 text-t-quaternary'
+        }`}
+      >
+        {count}
+      </span>
+      {agentFilter === key ? <span className='absolute inset-x-0 -bottom-1px h-2px rounded-2px bg-primary-6' /> : null}
+    </button>
+  );
 
   const openCustomAgentEditor = useCallback(() => {
     setEditingAgent(null);
@@ -168,18 +242,33 @@ const LocalAgents: React.FC = () => {
           {t('settings.agentManagement.detected')}
         </Typography.Text>
       </div>
+      {detectedAgentCards.length > 0 && (
+        <div className='flex gap-26px px-16px' data-testid='agent-availability-filter'>
+          {renderFilterTab('all', t('settings.agentManagement.filterAll', { defaultValue: 'All' }), filterStats.all)}
+          {renderFilterTab(
+            'available',
+            t('settings.agentManagement.filterAvailable', { defaultValue: 'Available' }),
+            filterStats.available
+          )}
+          {renderFilterTab(
+            'setup',
+            t('settings.agentManagement.filterSetupNeeded', { defaultValue: 'Needs setup' }),
+            filterStats.setup
+          )}
+        </div>
+      )}
       <div className='grid grid-cols-2 gap-10px px-16px md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'>
-        {orderedDetectedAgents.map((agent) => (
+        {visibleDetectedAgentCards.map(({ agent, nativeAvailability }) => (
           <AgentCard
             key={agent.backend || agent.agent_type}
             type='detected'
             agent={agent}
-            nativeAvailability={getEvaosNativeAgentAvailability(agent)}
+            nativeAvailability={nativeAvailability}
             onGoToChat={() => goToChatWithAgent(agent)}
           />
         ))}
       </div>
-      {(!detectedAgents || detectedAgents.length === 0) && (
+      {(!detectedAgents || detectedAgents.length === 0 || visibleDetectedAgentCards.length === 0) && (
         <Typography.Text type='secondary' className='block px-16px py-16px text-center text-12px'>
           {t('settings.agentManagement.localAgentsEmpty')}
         </Typography.Text>
