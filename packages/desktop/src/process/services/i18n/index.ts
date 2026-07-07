@@ -25,6 +25,8 @@ import trTR from '@renderer/services/i18n/locales/tr-TR/index';
 import ruRU from '@renderer/services/i18n/locales/ru-RU/index';
 import ukUA from '@renderer/services/i18n/locales/uk-UA/index';
 import ptBR from '@renderer/services/i18n/locales/pt-BR/index';
+import esES from '@renderer/services/i18n/locales/es-ES/index';
+import faIR from '@renderer/services/i18n/locales/fa-IR/index';
 
 // All locale data keyed by language code.
 // NOTE: When adding a new language, add a static import above and an entry here.
@@ -40,6 +42,8 @@ const localeData: LocaleData = {
   'ru-RU': ruRU,
   'uk-UA': ukUA,
   'pt-BR': ptBR,
+  'es-ES': esES,
+  'fa-IR': faIR,
 };
 
 const fallbackData = localeData[DEFAULT_LANGUAGE] ?? {};
