@@ -37,6 +37,10 @@ const CANARIES = [
         required: ['AIONUI_EVAOS_DESKTOP_SESSION', 'AIONUI_EVAOS_CUSTOMER_ID'],
       },
     ],
+    requirePairWhenEnvTruthy: {
+      env: 'AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET',
+      label: 'broker-specific',
+    },
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_BROKER_RUNTIME'],
   },
   {
@@ -168,6 +172,10 @@ function inspectCanary(canary, env) {
     pairAlternatives.length > 0 && completePairAlternatives.length === 0 ? pairAlternatives : [];
   for (const partial of partialPairAlternatives) {
     invalidRequired.push(`${partial.label} credential pair is incomplete; missing ${partial.missing.join(', ')}`);
+  }
+  const requiredPair = canary.requirePairWhenEnvTruthy;
+  if (requiredPair && truthyEnv(env[requiredPair.env]) && !completePairAlternatives.includes(requiredPair.label)) {
+    invalidRequired.push(`${requiredPair.label} credential pair is required when ${requiredPair.env} is true`);
   }
 
   const presentOptional = (canary.optional ?? []).filter((name) => hasEnv(env, name));

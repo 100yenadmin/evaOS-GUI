@@ -349,6 +349,26 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(env.AIONUI_EVAOS_DESKTOP_SESSION).toBe('eds_admin_session_for_test');
     expect(env.AIONUI_EVAOS_REQUESTER_SESSION).toBe('eds_requester_session_for_test');
     expect(env.AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION).toBe('eds_denied_session_for_test');
+    expect(env).not.toHaveProperty('AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION');
+    expect(env).not.toHaveProperty('AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID');
+  });
+
+  it('exports broker-specific credentials from full fixtures for non-internal broker proof targets', () => {
+    const state = {
+      ...fixtureState(),
+      customerId: 'customer-under-proof',
+      customerVmFixture: {
+        ...fixtureState().customerVmFixture,
+        customerId: 'customer-under-proof',
+      },
+    };
+    const env = provisioner.fixtureEnvFromProvision(state);
+
+    expect(env).toMatchObject({
+      AIONUI_EVAOS_CUSTOMER_ID: 'customer-under-proof',
+      AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'customer-under-proof',
+      AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_admin_session_for_test',
+    });
   });
 
   it('exports a complete core broker credential pair without follow-up fixture variables', () => {
