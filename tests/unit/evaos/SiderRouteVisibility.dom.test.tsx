@@ -7,7 +7,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Sider from '@/renderer/components/layout/Sider';
 import packageJson from '../../../package.json';
@@ -147,6 +147,20 @@ function renderSider(path = '/guid', options: { collapsed?: boolean } = {}) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Sider collapsed={options.collapsed} />
+    </MemoryRouter>
+  );
+}
+
+const LocationProbe: React.FC = () => {
+  const location = useLocation();
+  return <div data-testid='route-path'>{location.pathname}</div>;
+};
+
+function renderSiderWithLocation(path = '/guid') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Sider />
+      <LocationProbe />
     </MemoryRouter>
   );
 }
@@ -860,5 +874,16 @@ describe('Sider runtime route visibility', () => {
       expect.stringContaining('admin@100yen.org'),
       undefined
     );
+  });
+
+  it('opens Settings on the Agents tab from non-Settings routes', async () => {
+    const user = userEvent.setup();
+    renderSiderWithLocation('/guid');
+
+    expect(screen.getByTestId('route-path')).toHaveTextContent('/guid');
+
+    await user.click(screen.getByRole('button', { name: 'common.settings' }));
+
+    await waitFor(() => expect(screen.getByTestId('route-path')).toHaveTextContent('/settings/agent'));
   });
 });
