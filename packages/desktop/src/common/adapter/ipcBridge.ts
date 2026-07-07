@@ -1975,6 +1975,8 @@ interface IBridgeResponse<D = {}> {
   success: boolean;
   data?: D;
   msg?: string;
+  errorCode?: string;
+  status?: number;
 }
 
 // ---------------------------------------------------------------------------

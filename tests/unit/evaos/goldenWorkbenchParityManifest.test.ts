@@ -144,7 +144,7 @@ describe('goldenWorkbenchParityManifest', () => {
     const installedProofMarkerOverrides = new Map([
       ['connected-apps', ['Connected Apps', 'Customer context']],
       ['people-access', ['People & Access', 'Customer context']],
-      ['company-brain', ['Company Brain', 'Website handoff', 'Open dashboard']],
+      ['company-brain', ['Company Brain', 'Customer context', 'Company Brain directory']],
       ['evaos-dashboard', ['evaOS']],
       ['hermes-dashboard', ['Hermes']],
       ['mission-control', ['Mission Control']],

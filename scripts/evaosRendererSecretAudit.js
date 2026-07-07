@@ -12,6 +12,7 @@ const TRUST_SURFACE_FILES = [
 ];
 
 const SHARED_SAFE_TEXT_HELPER = 'packages/desktop/src/renderer/utils/evaosSafeText.ts';
+const BROKER_BLOCKER_HELPER = 'packages/desktop/src/renderer/utils/evaosBrokerBlocker.ts';
 
 const FORBIDDEN_STORAGE_OR_URL_PATTERNS = [
   /\blocalStorage\b/,
@@ -49,8 +50,13 @@ function auditRendererTrustSurfaces(rootDir = process.cwd()) {
   const issues = [];
   const helperPath = path.join(rootDir, SHARED_SAFE_TEXT_HELPER);
   const helperText = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
+  const blockerHelperPath = path.join(rootDir, BROKER_BLOCKER_HELPER);
+  const blockerHelperText = fs.existsSync(blockerHelperPath) ? fs.readFileSync(blockerHelperPath, 'utf8') : '';
   const hasSharedSafeTextHelper =
     helperText.includes('SECRET_TEXT_PATTERN') && helperText.includes('function safeEvaosUiText');
+  const hasSafeBrokerBlockerHelper =
+    blockerHelperText.includes('function evaosBrokerBlockerText') &&
+    blockerHelperText.includes('safeEvaosUiText(response?.msg');
 
   if (helperText && !hasSharedSafeTextHelper) {
     issues.push(`${SHARED_SAFE_TEXT_HELPER}: shared evaOS renderer sanitizer is missing its secret guard`);
@@ -63,6 +69,7 @@ function auditRendererTrustSurfaces(rootDir = process.cwd()) {
     const usesSharedSafeText = text.includes('safeEvaosUiText');
     const usesLocalSafeText = text.includes('SECRET_TEXT_PATTERN') && text.includes('function safeUiText');
     const safeTextCallPattern = usesSharedSafeText ? 'safeEvaosUiText(response.msg' : 'safeUiText(response.msg';
+    const usesSafeBrokerBlocker = text.includes('evaosBrokerBlockerText(') && hasSafeBrokerBlockerHelper;
 
     if (!usesLocalSafeText && !(usesSharedSafeText && hasSharedSafeTextHelper)) {
       issues.push(`${relativePath}: missing SECRET_TEXT_PATTERN guard`);
@@ -70,7 +77,7 @@ function auditRendererTrustSurfaces(rootDir = process.cwd()) {
     if (!usesLocalSafeText && !usesSharedSafeText) {
       issues.push(`${relativePath}: missing safeUiText renderer sanitizer`);
     }
-    if (!text.includes(safeTextCallPattern)) {
+    if (!text.includes(safeTextCallPattern) && !usesSafeBrokerBlocker) {
       issues.push(
         `${relativePath}: broker error messages must pass through ${usesSharedSafeText ? 'safeEvaosUiText' : 'safeUiText'}`
       );

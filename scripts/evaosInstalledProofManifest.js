@@ -45,7 +45,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     screenshot: '16-company-brain.png',
     artifactName: 'screenshots/16-company-brain.png',
     closeoutState: 'loaded',
-    settledMarkers: ['Company Brain', 'Website handoff', 'Open dashboard'],
+    settledMarkers: ['Company Brain', 'Customer context', 'Company Brain directory'],
   },
   {
     manifestRowId: 'evaos-dashboard',

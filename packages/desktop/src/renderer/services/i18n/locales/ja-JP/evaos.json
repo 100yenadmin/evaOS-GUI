@@ -10,7 +10,16 @@
     "needsBackendProof": "バックエンド証明が必要",
     "refreshTargets": "ターゲットを更新",
     "routeDenied": "ルートが拒否されました",
-    "unknown": "不明"
+    "unknown": "不明",
+    "blockers": {
+      "signInRequired": "Sign in to evaOS, then try again.",
+      "chooseCustomer": "Choose a customer before loading this module.",
+      "policyDenied": "Your account policy does not allow this action for the selected customer.",
+      "backendContractIncomplete": "The evaOS broker returned incomplete proof. Try again after support updates the backend.",
+      "brokerUnavailable": "The evaOS broker is temporarily unavailable.",
+      "endpointMissing": "The evaOS broker endpoint was not found.",
+      "brokerRejected": "The evaOS broker rejected the request."
+    }
   },
   "connectedApps": {
     "actionDenied": "アカウントポリシーにより操作が拒否されました。",
@@ -102,10 +111,52 @@
     },
     "title": "ユーザーとアクセス",
     "unlimited": "無制限",
-    "yourRole": "あなたのロール"
+    "yourRole": "あなたのロール",
+    "backendProofRequired": "Backend proof is required before inviting members."
   },
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here."
+  },
+  "companyBrain": {
+    "accountFailedClosed": "Company Brain account proof failed closed.",
+    "accountRequestFailed": "Company Brain account request failed closed.",
+    "accounts": "Accounts",
+    "backendProofRequired": "Backend proof is required before querying Company Brain.",
+    "chooseCustomer": "Choose a customer before loading Company Brain.",
+    "denied": "Company Brain is denied for this customer account.",
+    "description": "Review customer account intelligence and broker-enforced Company Brain evidence.",
+    "differentEvidence": "Company Brain broker returned evidence for a different customer or account.",
+    "directory": "Company Brain directory",
+    "directoryLoaded": "Company Brain directory loaded.",
+    "emptyAccounts": "No Company Brain accounts returned for this customer.",
+    "emptyTimeline": "No recent activity returned for this account.",
+    "exceptions": "{{count}} exceptions",
+    "exceptionsLabel": "Exceptions",
+    "failedClosed": "Company Brain failed closed.",
+    "ingestion": {
+      "ready": "Ready",
+      "empty": "Empty",
+      "ingesting": "Ingesting",
+      "error": "Error"
+    },
+    "loading": "Loading Company Brain...",
+    "noAnswer": "No answer returned.",
+    "noBrief": "No account brief returned yet.",
+    "noCustomerSelected": "No customer selected",
+    "query": "Ask Company Brain",
+    "queryFailedClosed": "Company Brain query failed closed.",
+    "queryPlaceholder": "Ask about this account...",
+    "queryRequestFailed": "Company Brain query request failed closed.",
+    "queryRequired": "Enter a question before querying Company Brain.",
+    "queryRequiresAccount": "Load an account before querying Company Brain.",
+    "queryResult": "Query result",
+    "recentActivity": "Recent activity",
+    "requestFailed": "Company Brain broker request failed closed.",
+    "runQuery": "Run query",
+    "scopedSummary": "{{summary}}. Company Brain stays scoped to the selected customer.",
+    "selectAccount": "Select an account to view Account 360.",
+    "timeline": "Timeline",
+    "title": "Company Brain"
   }
 }
