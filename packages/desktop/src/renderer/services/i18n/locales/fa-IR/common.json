@@ -61,10 +61,10 @@
   "more": "بیشتر",
   "refresh": "بازخوانی",
   "readOnly": "فقط خواندنی",
-  "tray.showWindow": "نمایش AionUi",
+  "tray.showWindow": "Show evaOS Workbench",
   "tray.newChat": "چت جدید",
   "tray.closeToTray": "مخفی کردن در سینی",
-  "tray.about": "درباره AionUi",
+  "tray.about": "About evaOS Workbench",
   "tray.restart": "راه‌اندازی مجدد برنامه",
   "tray.quit": "خروج",
   "tray.runningTasks": "وظایف در حال اجرا",
@@ -75,26 +75,26 @@
   "backendStartup": {
     "incompatibleRuntime": {
       "title": "این سیستم توسط بک‌اند همراه پشتیبانی نمی‌شود",
-      "description": "AionUi باز شد، اما بک‌اند محلی AionCore نمی‌تواند روی این نسخه لینوکس اجرا شود. لطفاً به یک توزیع لینوکس پشتیبانی‌شده ارتقا دهید و AionUi را مجدداً راه‌اندازی کنید.",
+      "description": "evaOS Workbench opened, but the local managed runtime backend cannot run on this Linux version. Please upgrade to a supported Linux distribution and restart evaOS Workbench.",
       "requiredVersions": "نمادهای زمان اجرای مورد نیاز: {{versions}}"
     },
     "incompleteInstallation": {
-      "title": "نصب AionUi ناقص است",
-      "description": "این نصب فاقد منابع محلی مورد نیاز است، بنابراین AionCore نمی‌تواند شروع شود. لطفاً آخرین نسخه AionUi را دانلود و مجدداً نصب کنید. اگر مشکل پس از نصب مجدد تکرار شد، بررسی کنید آیا نرم‌افزار امنیتی یا آنتی‌ویروس AionCore را قرنطینه کرده است.",
+      "title": "evaOS Workbench installation is incomplete",
+      "description": "This installation is missing required local resources, so managed runtime cannot start. Please download and reinstall the latest evaOS Workbench. If the issue returns after reinstalling, check whether security or antivirus software quarantined managed runtime.",
       "downloadLatest": "دانلود آخرین نسخه",
       "sendDiagnostics": "ارسال گزارش تشخیصی",
       "diagnosticsSent": "گزارش تشخیصی ارسال شد",
       "diagnosticsReportSuccess": "گزارش تشخیصی ارسال شد",
       "diagnosticsReportFailed": "ارسال گزارش تشخیصی ناموفق بود",
-      "runtimeComponentDescription": "این نصب فاقد مؤلفه‌های زمان اجرای همراه مورد نیاز است، بنابراین {{resource}} نمی‌تواند شروع شود. آخرین بسته AionUi را مجدداً نصب کنید. اگر پس از نصب مجدد همچنان رخ داد، بررسی کنید آیا نرم‌افزار امنیتی یا آنتی‌ویروس مؤلفه‌های AionUi را قرنطینه کرده است."
+      "runtimeComponentDescription": "این نصب فاقد مؤلفه‌های زمان اجرای همراه مورد نیاز است، بنابراین {{resource}} نمی‌تواند شروع شود. آخرین بسته evaOS Workbench را مجدداً نصب کنید. اگر پس از نصب مجدد همچنان رخ داد، بررسی کنید آیا نرم‌افزار امنیتی یا آنتی‌ویروس مؤلفه‌های evaOS Workbench را قرنطینه کرده است."
     },
     "packageArchitectureMismatch": {
-      "title": "عدم تطابق معماری بسته AionUi",
-      "description": "این بسته AionUi برای {{packageArch}} است، اما این مک {{deviceArch}} است. ممکن است بسته اشتباهی را دانلود کرده باشید. لطفاً بسته {{expectedArch}} را دانلود و نصب کنید."
+      "title": "evaOS Workbench package architecture mismatch",
+      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     },
     "dataMigration": {
       "title": "مهاجرت داده‌های محلی ناموفق بود",
-      "description": "AionUi باز شد، اما AionCore هنگام مقداردهی اولیه داده‌های محلی متوقف شد. نصب مجدد AionUi ممکن است این مشکل را رفع نکند. گزارش تشخیصی بفرستید یا با پشتیبانی تماس بگیرید تا مهاجرت پایگاه داده محلی بررسی شود.",
+      "description": "evaOS Workbench باز شد، اما local backend هنگام مقداردهی اولیه داده‌های محلی متوقف شد. نصب مجدد evaOS Workbench ممکن است این مشکل را رفع نکند. گزارش تشخیصی بفرستید یا با پشتیبانی تماس بگیرید تا مهاجرت پایگاه داده محلی بررسی شود.",
       "sendDiagnostics": "ارسال گزارش تشخیصی",
       "diagnosticsSent": "گزارش تشخیصی ارسال شد",
       "diagnosticsReportSuccess": "گزارش تشخیصی ارسال شد",
@@ -102,7 +102,7 @@
     },
     "localDataRepair": {
       "title": "ترمیم داده‌های محلی ناموفق بود",
-      "description": "AionUi باز شد، اما AionCore هنگام ترمیم داده‌های کش ایجنت محلی متوقف شد. نصب مجدد AionUi ممکن است این مشکل را رفع نکند. گزارش تشخیصی بفرستید یا با پشتیبانی تماس بگیرید تا پایگاه داده محلی بررسی شود.",
+      "description": "evaOS Workbench باز شد، اما local backend هنگام ترمیم داده‌های کش ایجنت محلی متوقف شد. نصب مجدد evaOS Workbench ممکن است این مشکل را رفع نکند. گزارش تشخیصی بفرستید یا با پشتیبانی تماس بگیرید تا پایگاه داده محلی بررسی شود.",
       "sendDiagnostics": "ارسال گزارش تشخیصی",
       "diagnosticsSent": "گزارش تشخیصی ارسال شد",
       "diagnosticsReportSuccess": "گزارش تشخیصی ارسال شد",
@@ -110,7 +110,7 @@
     },
     "recoverableDatabaseCorruption": {
       "title": "داده‌های محلی خراب شده‌اند",
-      "description": "AionUi تشخیص داد پایگاه داده محلی خراب است و نمی‌تواند راه‌اندازی را ادامه دهد. پس از تأیید، AionUi از پایگاه داده قدیمی نسخه پشتیبان می‌گیرد و یک پایگاه داده محلی جدید می‌سازد تا راه‌اندازی ادامه پیدا کند. فعلاً داده‌های تاریخی محلی نمایش داده نمی‌شوند و پایگاه داده قدیمی به‌عنوان نسخه پشتیبان نگه داشته می‌شود.",
+      "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",
       "confirmRebuild": "پشتیبان‌گیری از DB قدیمی و ساخت DB جدید",
       "sendDiagnostics": "ارسال گزارش تشخیصی",
       "diagnosticsHint": "ارسال گزارش تشخیصی پایگاه داده محلی را تغییر نمی‌دهد.",
