@@ -8,6 +8,7 @@ import { getSendBoxDraftHook } from '@renderer/hooks/chat/useSendBoxDraft';
 import { getAgentLogo } from '@renderer/utils/model/agentLogo';
 import { usePresetAssistantInfo } from '@renderer/hooks/agent/usePresetAssistantInfo';
 import { resolveBackendAssetUrl } from '@renderer/utils/platform';
+import { Robot } from '@icon-park/react';
 
 const useAcpDraft = getSendBoxDraftHook('acp', { _type: 'acp', atPath: [], content: '', uploadFile: [] });
 const useOpenClawDraft = getSendBoxDraftHook('openclaw-gateway', {
@@ -116,6 +117,13 @@ const TeamChatEmptyState: React.FC<Props> = ({ conversation_id, icon, isLeader =
 
   const renderAvatar = () => {
     if (presetInfo) {
+      if (presetInfo.isFallback) {
+        return (
+          <span className='w-48px h-48px rounded-8px flex items-center justify-center bg-fill-2 text-t-secondary'>
+            <Robot theme='outline' size='24' />
+          </span>
+        );
+      }
       if (presetInfo.isEmoji) {
         return (
           <span className='w-48px h-48px rounded-8px flex items-center justify-center text-32px leading-none bg-fill-2'>

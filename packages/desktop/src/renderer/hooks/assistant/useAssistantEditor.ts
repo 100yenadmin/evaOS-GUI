@@ -9,6 +9,7 @@ import type {
   SkillInfo,
 } from '@/renderer/pages/settings/AssistantSettings/types';
 import { ensureBackendMcpCatalog } from '@/renderer/hooks/mcp/catalog';
+import { emitter } from '@/renderer/utils/emitter';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { mutate as swrMutate } from 'swr';
@@ -468,6 +469,7 @@ export const useAssistantEditor = ({
 
         await refreshAssistantCatalog();
         await refreshAssistantDetailCaches(activeAssistant.id);
+        emitter.emit('chat.history.refresh');
         message.success(t('common.saveSuccess', { defaultValue: 'Saved successfully' }));
       }
 

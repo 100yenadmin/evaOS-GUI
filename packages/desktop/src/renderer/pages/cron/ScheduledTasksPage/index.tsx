@@ -18,6 +18,7 @@ import { useConversationAgents } from '@renderer/pages/conversation/hooks/useCon
 import CronStatusTag from './CronStatusTag';
 import CreateTaskDialog from './CreateTaskDialog';
 import { getJobAgentMeta } from './jobAgentMeta';
+import { Robot } from '@icon-park/react';
 
 const ScheduledTasksPage: React.FC = () => {
   const layout = useLayoutContext();
@@ -203,6 +204,8 @@ const ScheduledTasksPage: React.FC = () => {
                               <span className='flex h-16px w-16px items-center justify-center text-12px'>
                                 {agentMeta.emoji}
                               </span>
+                            ) : agentMeta.assistantFallback ? (
+                              <Robot size='16' className='shrink-0 text-t-secondary' />
                             ) : (
                               <span className='flex h-16px w-16px items-center justify-center rounded-50% text-10px font-medium text-t-secondary'>
                                 {agentMeta.name.slice(0, 1)}

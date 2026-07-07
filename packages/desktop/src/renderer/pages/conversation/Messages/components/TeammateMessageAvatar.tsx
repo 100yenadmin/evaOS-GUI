@@ -8,6 +8,7 @@ import React from 'react';
 import useSWR from 'swr';
 import { usePresetAssistantInfo } from '@renderer/hooks/agent/usePresetAssistantInfo';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
+import { Robot } from '@icon-park/react';
 
 type Props = {
   senderName: string;
@@ -31,6 +32,13 @@ const TeammateMessageAvatar: React.FC<Props> = ({ senderName, senderConversation
   const { info: presetInfo } = usePresetAssistantInfo(conversation ?? undefined);
 
   if (presetInfo) {
+    if (presetInfo.isFallback) {
+      return (
+        <span className='w-20px h-20px rounded-full flex items-center justify-center bg-fill-2 text-t-secondary'>
+          <Robot theme='outline' size='14' />
+        </span>
+      );
+    }
     if (presetInfo.isEmoji) {
       return (
         <span className='w-20px h-20px rounded-full flex items-center justify-center text-14px leading-none bg-fill-2'>

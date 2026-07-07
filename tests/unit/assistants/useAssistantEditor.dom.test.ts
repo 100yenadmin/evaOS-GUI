@@ -58,6 +58,7 @@ import { useAssistantEditor } from '@/renderer/hooks/assistant/useAssistantEdito
 import { ipcBridge } from '@/common';
 import type { AssistantListItem } from '@/renderer/pages/settings/AssistantSettings/types';
 import { mutate as swrMutate } from 'swr';
+import { emitter } from '@/renderer/utils/emitter';
 
 describe('useAssistantEditor', () => {
   const mockAssistantDetail = {
@@ -369,6 +370,7 @@ describe('useAssistantEditor', () => {
   });
 
   it('calls handleSave for updating existing assistant', async () => {
+    const emitSpy = vi.spyOn(emitter, 'emit');
     const assistant: AssistantListItem = {
       id: 'a1',
       name: 'Existing',
@@ -407,6 +409,9 @@ describe('useAssistantEditor', () => {
     expect(swrMutate).toHaveBeenCalledWith('assistants.list');
     expect(swrMutate).toHaveBeenCalledWith('assistants');
     expect(swrMutate).toHaveBeenCalledWith('guid.assistant.detail.a1.en');
+    expect(emitSpy).toHaveBeenCalledWith('chat.history.refresh');
+
+    emitSpy.mockRestore();
   });
 
   it('clears model and permission defaults when the main agent changes', async () => {

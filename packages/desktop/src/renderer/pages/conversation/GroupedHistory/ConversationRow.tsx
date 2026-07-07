@@ -11,7 +11,7 @@ import { CronJobIndicator } from '@/renderer/pages/cron';
 import { cleanupSiderTooltips, getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { Checkbox, Dropdown, Menu, Spin, Tooltip } from '@arco-design/web-react';
-import { DeleteOne, EditOne, Export, MessageOne, MoreOne, Pushpin } from '@icon-park/react';
+import { DeleteOne, EditOne, Export, MessageOne, MoreOne, Pushpin, Robot } from '@icon-park/react';
 import classNames from 'classnames';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -64,6 +64,15 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
     const composedClass = classNames(pinnedHoverFade);
 
     if (assistantInfo) {
+      if (assistantInfo.isFallback) {
+        return (
+          <Robot
+            theme='outline'
+            size='16'
+            className={classNames('line-height-0 flex-shrink-0 text-t-secondary', composedClass)}
+          />
+        );
+      }
       if (assistantInfo.isEmoji) {
         return (
           <span className={classNames('text-16px leading-none flex-shrink-0', composedClass)}>

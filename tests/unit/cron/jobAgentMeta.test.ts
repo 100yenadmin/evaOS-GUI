@@ -79,7 +79,7 @@ describe('getJobAgentMeta', () => {
     });
   });
 
-  it('falls back to preset backend logo when the assistant has no custom avatar', () => {
+  it('marks preset scheduled tasks with empty assistant avatars as assistant fallbacks', () => {
     const assistants = [
       assistant({
         id: 'assistant-codex',
@@ -101,7 +101,8 @@ describe('getJobAgentMeta', () => {
     );
 
     expect(meta.name).toBe('Codex Assistant');
-    expect(meta.logo).toBeTruthy();
+    expect(meta.logo).toBeUndefined();
+    expect(meta.assistantFallback).toBe(true);
   });
 });
 

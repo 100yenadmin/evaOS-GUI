@@ -4,6 +4,7 @@ import { getAgentLogo } from '@renderer/utils/model/agentLogo';
 import { usePresetAssistantInfo } from '@renderer/hooks/agent/usePresetAssistantInfo';
 import { resolveBackendAssetUrl } from '@renderer/utils/platform';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
+import { Robot } from '@icon-park/react';
 
 type Props = {
   agent_name: string;
@@ -48,6 +49,13 @@ const TeamAgentIdentity: React.FC<Props> = ({
 
   const renderAvatar = () => {
     if (presetInfo) {
+      if (presetInfo.isFallback) {
+        return (
+          <span className={resolvedAvatarClassName}>
+            <Robot theme='outline' size='14' />
+          </span>
+        );
+      }
       if (presetInfo.isEmoji) {
         return <span className={resolvedAvatarClassName}>{presetInfo.logo}</span>;
       }
