@@ -15,6 +15,8 @@ import AcpModelSelector from '@/renderer/components/agent/AcpModelSelector';
 import AionrsModelSelector from '@/renderer/pages/conversation/platforms/aionrs/AionrsModelSelector';
 import { useAionrsModelSelection } from '@/renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
 import { saveAionrsDefaultModel } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
+import { CronJobManager } from '@/renderer/pages/cron';
+import { resolveCronJobId } from '@/renderer/pages/cron/cronUtils';
 import TeamTabs from './components/TeamTabs';
 import TeamChatView from './components/TeamChatView';
 import TeamAgentIdentity from './components/TeamAgentIdentity';
@@ -23,6 +25,7 @@ import { TeamPermissionProvider } from './hooks/TeamPermissionContext';
 import { useTeamSession } from './hooks/useTeamSession';
 import { useTeamRunView, type TeamRunViewState } from './hooks/useTeamRunView';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
+import { removeTeamAssistantWithCronCleanup } from './utils/removeTeamAssistantWithCronCleanup';
 
 type Props = {
   team: TTeam;
@@ -73,6 +76,7 @@ const AgentChatSlot: React.FC<{
   const initialModelId = (conversation?.extra as { current_model_id?: string })?.current_model_id;
   const isAcpLike =
     agent.conversation_type === 'acp' || agent.conversation_type === 'codex' || conversation?.type === 'acp';
+  const cronJobId = resolveCronJobId(conversation?.extra);
 
   return (
     <div
@@ -104,6 +108,7 @@ const AgentChatSlot: React.FC<{
           nameClassName='text-13px text-[color:var(--color-text-2)] font-medium'
         />
         <div className='flex items-center gap-8px shrink-0'>
+          {conversation && <CronJobManager conversation_id={conversation.id} cron_job_id={cronJobId} />}
           {!isMobile && agent.conversation_id && !isAionrs && isAcpLike && (
             <div className='min-w-0 max-w-140px [&_button]:max-w-full [&_button_span]:truncate'>
               <AcpModelSelector
@@ -181,7 +186,13 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onRenameTeam })
   const doRemoveAgent = useCallback(
     async (slot_id: string) => {
       try {
-        await ipcBridge.team.removeAgent.invoke({ team_id: team.id, slot_id });
+        await removeTeamAssistantWithCronCleanup({
+          team,
+          slot_id,
+          getConversation: getConversationOrNull,
+          removeCronJob: (job_id) => ipcBridge.cron.removeJob.invoke({ job_id }),
+          removeAgent: (params) => ipcBridge.team.removeAgent.invoke(params),
+        });
         Message.success(t('common.deleteSuccess'));
         // Only switch tab when removing the currently active tab
         if (slot_id === activeSlotId && leadAgent?.slot_id) switchTab(leadAgent.slot_id);
@@ -191,7 +202,7 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({ team, onRenameTeam })
         Message.error(String(error));
       }
     },
-    [team.id, activeSlotId, leadAgent?.slot_id, switchTab, fullscreenSlotId, t]
+    [team, activeSlotId, leadAgent?.slot_id, switchTab, fullscreenSlotId, t]
   );
 
   const handleRemoveAgent = useCallback(
