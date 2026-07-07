@@ -138,6 +138,22 @@ const fetchConfigOptions = async ([, conversation_id]: AcpConfigOptionsKey): Pro
   }
 };
 
+const configOptionsInFlight = new Map<string, Promise<AcpConfigOptionDto[] | null>>();
+
+function fetchConfigOptionsOnce(key: AcpConfigOptionsKey): Promise<AcpConfigOptionDto[] | null> {
+  const [, conversation_id] = key;
+  const existing = configOptionsInFlight.get(conversation_id);
+  if (existing) return existing;
+
+  const promise = fetchConfigOptions(key).finally(() => {
+    if (configOptionsInFlight.get(conversation_id) === promise) {
+      configOptionsInFlight.delete(conversation_id);
+    }
+  });
+  configOptionsInFlight.set(conversation_id, promise);
+  return promise;
+}
+
 export function useAcpConfigOptions({
   conversation_id,
   prepareRuntime,
@@ -179,7 +195,7 @@ export function useAcpConfigOptions({
   const reload = useCallback(async () => {
     if (!enabled || !conversation_id) return null;
     await prepareRuntime?.();
-    const next = await fetchConfigOptions(key);
+    const next = await fetchConfigOptionsOnce(key);
     replaceSnapshot(next);
     return next;
   }, [conversation_id, enabled, key, prepareRuntime, replaceSnapshot]);
