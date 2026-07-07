@@ -18,9 +18,14 @@
   "readyToInstall": "準備安裝",
   "readyToInstallDesc": "更新已下載完成，點擊下方按鈕重新啟動應用程式並安裝更新。",
   "installNow": "立即安裝並重新啟動",
+  "preparingInstall": "準備中...",
   "installWarning": "安裝期間請勿手動開啟應用程式，應用程式將自動重新啟動。",
   "autoUpdateMode": "自動更新模式",
   "showInFolder": "在資料夾中顯示",
   "openFile": "開啟檔案",
-  "errorTitle": "更新失敗"
+  "errorTitle": "更新失敗",
+  "errors": {
+    "prepareInstallTimeout": "準備安裝逾時，請稍後再試。",
+    "prepareInstallFailed": "準備安裝失敗，請稍後再試。"
+  }
 }

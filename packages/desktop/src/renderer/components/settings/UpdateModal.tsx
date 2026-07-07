@@ -14,9 +14,31 @@ import type { UpdateDownloadProgressEvent, UpdateReleaseInfo, AutoUpdateStatus }
 import { useTranslation } from 'react-i18next';
 import { openEvaosExternalUrl } from '@/renderer/utils/platform';
 
-type UpdateStatus = 'checking' | 'upToDate' | 'available' | 'downloading' | 'downloaded' | 'success' | 'error';
+type UpdateStatus =
+  | 'checking'
+  | 'upToDate'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'preparingInstall'
+  | 'success'
+  | 'error';
 
 type UpdateInfo = UpdateReleaseInfo;
+
+const formatSpeed = (bytesPerSecond: number) => {
+  if (bytesPerSecond > 1024 * 1024) {
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+  }
+  return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+};
+
+const formatSize = (bytes: number) => {
+  if (bytes > 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+};
 
 const UpdateModal: React.FC = () => {
   const { t } = useTranslation();
@@ -159,27 +181,17 @@ const UpdateModal: React.FC = () => {
   };
 
   const quitAndInstall = async () => {
+    setStatus('preparingInstall');
+    setErrorMsg('');
     try {
       await ipcBridge.autoUpdate.quitAndInstall.invoke();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('Install failed:', err);
+      setErrorMsg(msg);
+      setStatus('error');
       Message.error(msg);
     }
-  };
-
-  const formatSpeed = (bytesPerSecond: number) => {
-    if (bytesPerSecond > 1024 * 1024) {
-      return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-    }
-    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes > 1024 * 1024) {
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    }
-    return `${(bytes / 1024).toFixed(1)} KB`;
   };
 
   const handleOpenUpdateModal = () => {
@@ -231,6 +243,16 @@ const UpdateModal: React.FC = () => {
           break;
         case 'downloaded':
           setStatus('downloaded');
+          break;
+        case 'preparing-install':
+          if (evt.version) {
+            setAutoUpdateInfo((current) => ({
+              version: evt.version || current?.version || '',
+              releaseNotes: current?.releaseNotes,
+            }));
+          }
+          setVisible(true);
+          setStatus('preparingInstall');
           break;
         case 'error':
           if (manualUpdateCheckInFlightRef.current) break;
@@ -428,6 +450,8 @@ const UpdateModal: React.FC = () => {
         );
 
       case 'downloaded':
+      case 'preparingInstall': {
+        const isPreparingInstall = status === 'preparingInstall';
         return (
           <div className='flex flex-col items-center justify-center py-48px px-32px'>
             <div className='w-56px h-56px bg-[rgb(var(--success-6))]/12 rounded-full flex items-center justify-center mb-20px'>
@@ -441,13 +465,16 @@ const UpdateModal: React.FC = () => {
               type='primary'
               size='small'
               onClick={quitAndInstall}
+              loading={isPreparingInstall}
+              disabled={isPreparingInstall}
               icon={<Install size='14' />}
               className='!px-16px'
             >
-              {t('update.installNow')}
+              {t(isPreparingInstall ? 'update.preparingInstall' : 'update.installNow')}
             </Button>
           </div>
         );
+      }
 
       case 'success':
         return (
