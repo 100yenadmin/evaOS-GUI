@@ -946,7 +946,15 @@
     "step4": "承認後、WeCom から AI アシスタントとチャットできます",
     "waitingConnection": "WeCom がコールバックに到達できるよう WebUI を実行してください",
     "agent": "エージェント",
-    "agentDesc": "WeCom の会話に使用"
+    "agentDesc": "WeCom の会話に使用",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "agentManagement": {
     "localAgents": "ローカルエージェント",
@@ -1029,7 +1037,9 @@
     "pendingApprovalHint": "OpenClaw Gatewayでこのデバイスを承認してください",
     "pendingTimeout": "承認リクエストの期限が切れました（5分）。再試行してください。",
     "pendingCancel": "キャンセル",
-    "pendingTimeRemaining": "残り時間：{{time}}"
+    "pendingTimeRemaining": "残り時間：{{time}}",
+    "betaDisabled": "Remote-agent pairing is deferred in evaOS beta.",
+    "allowInsecureBetaDisabled": "Disabled in evaOS beta."
   },
   "mcpEditNameLocked": "編集中は MCP 名を変更できません。最上位のサーバー名は「{{name}}」のままにしてください。",
   "mcpCheckedAtLabel": "確認時刻:",
@@ -1069,5 +1079,6 @@
     "acpTool": "the managed ACP tool",
     "codexAcp": "the Codex ACP runtime component",
     "claudeAgentAcp": "the Claude ACP runtime component"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }

@@ -946,7 +946,15 @@
     "step4": "승인 후 WeCom에서 AI 어시스턴트와 채팅할 수 있습니다",
     "waitingConnection": "WeCom이 콜백에 도달할 수 있도록 WebUI가 실행 중인지 확인하세요",
     "agent": "에이전트",
-    "agentDesc": "WeCom 대화에 사용"
+    "agentDesc": "WeCom 대화에 사용",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "agentManagement": {
     "localAgents": "로컬 에이전트",
@@ -1029,7 +1037,9 @@
     "pendingApprovalHint": "OpenClaw Gateway에서 이 기기를 승인해주세요",
     "pendingTimeout": "승인 요청이 만료되었습니다 (5분). 다시 시도해주세요.",
     "pendingCancel": "취소",
-    "pendingTimeRemaining": "남은 시간: {{time}}"
+    "pendingTimeRemaining": "남은 시간: {{time}}",
+    "betaDisabled": "Remote-agent pairing is deferred in evaOS beta.",
+    "allowInsecureBetaDisabled": "Disabled in evaOS beta."
   },
   "mcpEditNameLocked": "편집 중에는 MCP 이름을 변경할 수 없습니다. 최상위 서버 이름은 \"{{name}}\"으로 유지하세요.",
   "mcpCheckedAtLabel": "확인 시각:",
@@ -1069,5 +1079,6 @@
     "acpTool": "the managed ACP tool",
     "codexAcp": "the Codex ACP runtime component",
     "claudeAgentAcp": "the Claude ACP runtime component"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }

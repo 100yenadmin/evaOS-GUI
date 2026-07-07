@@ -936,7 +936,15 @@
     "step4": "После одобрения можно общаться с AI-ассистентом через WeCom",
     "waitingConnection": "Убедитесь, что WebUI запущен, чтобы WeCom мог достучаться до обратного вызова",
     "agent": "Агент",
-    "agentDesc": "Для диалогов WeCom"
+    "agentDesc": "Для диалогов WeCom",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "addAssistant": "Добавить ассистента",
   "agentManagement": {
@@ -1020,7 +1028,9 @@
     "pendingApprovalHint": "Пожалуйста, одобрите это устройство на шлюзе OpenClaw",
     "pendingTimeout": "Запрос на одобрение истёк (5 минут). Попробуйте снова.",
     "pendingCancel": "Отмена",
-    "pendingTimeRemaining": "Осталось времени: {{time}}"
+    "pendingTimeRemaining": "Осталось времени: {{time}}",
+    "betaDisabled": "Remote-agent pairing is deferred in evaOS beta.",
+    "allowInsecureBetaDisabled": "Disabled in evaOS beta."
   },
   "groupAiCore": "Ядро ИИ",
   "groupApp": "Приложение",
@@ -1069,5 +1079,6 @@
     "acpTool": "the managed ACP tool",
     "codexAcp": "the Codex ACP runtime component",
     "claudeAgentAcp": "the Claude ACP runtime component"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }

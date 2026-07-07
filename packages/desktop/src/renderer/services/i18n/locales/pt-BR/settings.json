@@ -956,7 +956,15 @@
     "step4": "Uma vez aprovado, você pode conversar com o assistente de IA através do WeCom.",
     "waitingConnection": "Certifique-se de que a WebUI esteja sendo executada para que o WeCom possa alcançar a URL de callback.",
     "agent": "Agente",
-    "agentDesc": "Usado para conversas no WeCom"
+    "agentDesc": "Usado para conversas no WeCom",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "agentManagement": {
     "localAgents": "Agentes Locais",
@@ -1039,7 +1047,9 @@
     "pendingApprovalHint": "Por favor, aprove este dispositivo no Gateway OpenClaw",
     "pendingTimeout": "O pedido de aprovação expirou (5 minutos). Por favor, tente novamente.",
     "pendingCancel": "Cancelar",
-    "pendingTimeRemaining": "Tempo restante: {{time}}"
+    "pendingTimeRemaining": "Tempo restante: {{time}}",
+    "betaDisabled": "Remote-agent pairing is deferred in evaOS beta.",
+    "allowInsecureBetaDisabled": "Disabled in evaOS beta."
   },
   "retry": "Tentar novamente",
   "runtimeStatus": {
@@ -1070,5 +1080,6 @@
   },
   "cdP": {
     "title": "CDP (Chrome DevTools Protocol)"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }

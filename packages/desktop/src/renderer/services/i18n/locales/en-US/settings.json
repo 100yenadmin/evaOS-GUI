@@ -956,7 +956,15 @@
     "step4": "Once approved, you can chat with the AI assistant through WeCom.",
     "waitingConnection": "Ensure WebUI is running so WeCom can reach the callback URL.",
     "agent": "Agent",
-    "agentDesc": "Used for WeCom conversations"
+    "agentDesc": "Used for WeCom conversations",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "agentManagement": {
     "localAgents": "Local Agents",
@@ -1069,5 +1077,6 @@
     "conversation": "Conversation",
     "mcp": "MCP",
     "customAgent": "Custom Agent"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }

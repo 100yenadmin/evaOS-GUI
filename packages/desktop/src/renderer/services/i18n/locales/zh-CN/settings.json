@@ -956,7 +956,15 @@
     "step4": "授权成功后，即可通过企业微信与 AI 助手对话",
     "waitingConnection": "请确保 WebUI 已运行，以便企微能访问回调地址",
     "agent": "对话 Agent",
-    "agentDesc": "用于企业微信对话"
+    "agentDesc": "用于企业微信对话",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "addAssistant": "添加助手",
   "agentManagement": {
@@ -1040,7 +1048,9 @@
     "pendingApprovalHint": "请在 OpenClaw Gateway 上批准此设备",
     "pendingTimeout": "审批请求已过期（5 分钟）。请重试。",
     "pendingCancel": "取消",
-    "pendingTimeRemaining": "剩余时间：{{time}}"
+    "pendingTimeRemaining": "剩余时间：{{time}}",
+    "betaDisabled": "Remote-agent pairing is deferred in evaOS beta.",
+    "allowInsecureBetaDisabled": "Disabled in evaOS beta."
   },
   "retry": "重试",
   "runtimeStatus": {
@@ -1068,5 +1078,6 @@
     "conversation": "对话",
     "mcp": "MCP",
     "customAgent": "自定义 Agent"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }
