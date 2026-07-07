@@ -10,7 +10,7 @@ import { SWRConfig } from 'swr';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import { BackendHttpError } from '@/common/adapter/httpBridge';
-import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
+import type { AcpConfigOptionDto, AcpModelInfo } from '@/common/types/platform/acpTypes';
 import { useAcpModelInfo } from '@/renderer/hooks/agent/useAcpModelInfo';
 
 const {
@@ -81,6 +81,19 @@ const buildModelInfo = (overrides: Partial<AcpModelInfo> = {}): AcpModelInfo => 
   ],
   ...overrides,
 });
+
+const buildConfigOptions = (): AcpConfigOptionDto[] => [
+  {
+    id: 'model',
+    category: 'model',
+    type: 'select',
+    current_value: 'sonnet-4',
+    options: [
+      { value: 'sonnet-4', label: 'Claude Sonnet 4' },
+      { value: 'opus-4', label: 'Claude Opus 4' },
+    ],
+  },
+];
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -375,6 +388,35 @@ describe('useAcpModelInfo', () => {
     ]);
     expect(result.current.thoughtLevel?.currentValue).toBe('high');
     expect(result.current.canSwitch).toBe(true);
+  });
+
+  it('deduplicates initial config option loads across hook instances for the same conversation', async () => {
+    const configOptionsDeferred = deferred<{ config_options: AcpConfigOptionDto[] }>();
+    getConfigOptionsInvokeMock.mockReturnValue(configOptionsDeferred.promise);
+    const wrapper = createSwrWrapper();
+
+    const first = renderHook(
+      () => useAcpModelInfo({ conversation_id: 'conv-1', backend: 'claude', initialModelId: 'sonnet-4' }),
+      { wrapper }
+    );
+    const second = renderHook(
+      () => useAcpModelInfo({ conversation_id: 'conv-1', backend: 'claude', initialModelId: 'sonnet-4' }),
+      { wrapper }
+    );
+
+    await waitFor(() => {
+      expect(getConfigOptionsInvokeMock).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      configOptionsDeferred.resolve({ config_options: buildConfigOptions() });
+      await configOptionsDeferred.promise;
+    });
+
+    await waitFor(() => {
+      expect(first.result.current.canSwitch).toBe(true);
+      expect(second.result.current.canSwitch).toBe(true);
+    });
   });
 
   it('sets runtime-observed model through config options without global persistence when disabled', async () => {
