@@ -41,6 +41,10 @@ export function normalizeLanguageCode(language: string): SupportedLanguage {
       return 'uk-UA';
     case 'pt':
       return 'pt-BR';
+    case 'es':
+      return 'es-ES';
+    case 'fa':
+      return 'fa-IR';
     default:
       return DEFAULT_LANGUAGE;
   }
