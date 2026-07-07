@@ -31,6 +31,8 @@ type AssistantListPanelProps = {
   onHighlightConsumed?: () => void;
 };
 
+type AssistantHomeTab = 'mine' | 'official';
+
 type SortableAssistantCardProps = {
   assistant: AssistantListItem;
   localeKey: string;
@@ -187,6 +189,7 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
   const { t } = useTranslation();
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
+  const [activeTab, setActiveTab] = useState<AssistantHomeTab>('mine');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sensors = useSensors(
@@ -208,6 +211,14 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
   // Uses a short delay to ensure the page layout is fully settled on first mount.
   useEffect(() => {
     if (!highlightId || assistants.length === 0) return;
+    const highlightedAssistant = assistants.find((assistant) => assistant.id === highlightId);
+    if (!highlightedAssistant) return;
+    const targetTab: AssistantHomeTab = highlightedAssistant.source === 'builtin' ? 'official' : 'mine';
+    if (targetTab !== activeTab) {
+      setActiveTab(targetTab);
+      return;
+    }
+
     const el = cardRefs.current[highlightId];
     if (!el) return;
 
@@ -221,9 +232,33 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [highlightId, assistants, onHighlightConsumed]);
-  const listAssistants = useMemo(() => assistants, [assistants]);
-  const sortingEnabled = true;
+  }, [highlightId, assistants, activeTab, onHighlightConsumed]);
+
+  const tabCounts = useMemo(
+    () =>
+      assistants.reduce(
+        (counts, assistant) => {
+          if (assistant.source === 'builtin') {
+            counts.official += 1;
+          } else {
+            counts.mine += 1;
+          }
+          return counts;
+        },
+        { mine: 0, official: 0 }
+      ),
+    [assistants]
+  );
+
+  const listAssistants = useMemo(
+    () =>
+      activeTab === 'official'
+        ? assistants.filter((assistant) => assistant.source === 'builtin')
+        : assistants.filter((assistant) => assistant.source !== 'builtin'),
+    [assistants, activeTab]
+  );
+
+  const sortingEnabled = activeTab === 'mine';
 
   const renderSourceTag = (assistant: AssistantListItem) => {
     if (assistant.source === 'builtin') {
@@ -259,6 +294,27 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
       void onReorder(String(active.id), String(over.id));
     },
     [onReorder, sortingEnabled]
+  );
+
+  const tabButton = (key: AssistantHomeTab, label: string, count: number) => (
+    <button
+      type='button'
+      data-testid={`assistant-tab-${key}`}
+      onClick={() => setActiveTab(key)}
+      className={`relative inline-flex cursor-pointer items-center border-none bg-transparent px-2px pb-12px text-14px leading-none transition-colors ${
+        activeTab === key ? 'font-600 text-t-primary' : 'font-500 text-t-tertiary hover:text-t-secondary'
+      }`}
+    >
+      <span>{label}</span>
+      <span
+        className={`ml-6px inline-flex h-16px min-w-16px items-center justify-center rounded-999px px-5px text-10px font-500 leading-none ${
+          activeTab === key ? 'bg-primary-1 text-primary-6' : 'bg-fill-2 text-t-quaternary'
+        }`}
+      >
+        {count}
+      </span>
+      {activeTab === key ? <span className='absolute inset-x-0 -bottom-1px h-2px rounded-2px bg-primary-6' /> : null}
+    </button>
   );
 
   const renderList = (sectionAssistants: AssistantListItem[]) => {
@@ -325,6 +381,14 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
               </Button>
             </div>
           </div>
+          <div className='mt-16px flex gap-26px' data-testid='assistant-management-tabs'>
+            {tabButton('mine', t('settings.assistantTabMine', { defaultValue: 'My Assistants' }), tabCounts.mine)}
+            {tabButton(
+              'official',
+              t('settings.assistantTabOfficial', { defaultValue: 'Official' }),
+              tabCounts.official
+            )}
+          </div>
         </div>
       </div>
 
@@ -333,13 +397,28 @@ const AssistantListPanel: React.FC<AssistantListPanelProps> = ({
         className={`min-h-0 flex-1 overflow-auto ${isMobile ? 'px-8px pt-0 pb-12px' : 'px-18px pt-0 pb-24px'}`}
       >
         <div className='mx-auto w-full max-w-760px'>
+          <p className='my-14px text-12px leading-18px text-t-tertiary'>
+            {activeTab === 'official'
+              ? t('settings.officialAssistantsHintShort', {
+                  defaultValue:
+                    'Official assistants bundled with evaOS Workbench, maintained and updated with each release; duplicate one as My Assistant to customize it freely.',
+                })
+              : t('settings.myAssistantsHintShort', {
+                  defaultValue:
+                    'Assistants you created or duplicated, plus local assistant entries. Drag to change the order they appear in assistant pickers.',
+                })}
+          </p>
           {listAssistants.length > 0 ? (
             renderList(listAssistants)
           ) : (
             <div className='py-12px text-center text-t-secondary'>
-              {t('settings.assistantNoMatch', {
-                defaultValue: 'No assistants match the current filters.',
-              })}
+              {activeTab === 'official'
+                ? t('settings.assistantNoOfficialAssistants', {
+                    defaultValue: 'No official assistants are available.',
+                  })
+                : t('settings.assistantNoMyAssistants', {
+                    defaultValue: 'No personal assistants yet. Create one or duplicate an official assistant.',
+                  })}
             </div>
           )}
         </div>

@@ -26,7 +26,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('./AssistantAvatar', () => ({
-  default: ({ assistant }: any) => <div data-testid='avatar'>{assistant.name}</div>,
+  default: ({ assistant }: { assistant: { name: string } }) => <div data-testid='avatar'>{assistant.name}</div>,
 }));
 
 import AssistantListPanel from '@/renderer/pages/settings/AssistantSettings/AssistantListPanel';
@@ -67,7 +67,11 @@ describe('AssistantListPanel', () => {
     expect(screen.getByTestId('assistant-list-shell')).toBeInTheDocument();
     expect(screen.getByTestId('assistant-list-header')).toBeInTheDocument();
     expect(screen.getByTestId('assistant-list-body')).toBeInTheDocument();
-    expect(screen.getByTestId('assistant-card-1')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant-management-tabs')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant-tab-mine')).toHaveTextContent('settings.assistantTabMine');
+    expect(screen.getByTestId('assistant-tab-official')).toHaveTextContent('settings.assistantTabOfficial');
+    expect(screen.getByTestId('assistant-card-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-card-1')).not.toBeInTheDocument();
   });
 
   it('renders with empty assistants list (props branch)', () => {
@@ -92,11 +96,11 @@ describe('AssistantListPanel', () => {
     const onEditSpy = vi.fn();
     renderWithProviders(<AssistantListPanel {...defaultProps} onEdit={onEditSpy} />);
 
-    const editButton = screen.getByTestId('btn-edit-1');
+    const editButton = screen.getByTestId('btn-edit-2');
     await user.click(editButton);
 
     expect(onEditSpy).toHaveBeenCalledTimes(1);
-    expect(onEditSpy).toHaveBeenCalledWith(mockAssistants[0]);
+    expect(onEditSpy).toHaveBeenCalledWith(mockAssistants[1]);
   });
 
   it('calls onToggleEnabled when switch is toggled (callback spy)', async () => {
@@ -104,7 +108,7 @@ describe('AssistantListPanel', () => {
     const onToggleSpy = vi.fn();
     renderWithProviders(<AssistantListPanel {...defaultProps} onToggleEnabled={onToggleSpy} />);
 
-    const switchEl = screen.getByTestId('switch-enabled-1');
+    const switchEl = screen.getByTestId('switch-enabled-2');
     await user.click(switchEl);
 
     expect(onToggleSpy).toHaveBeenCalledTimes(1);
@@ -128,6 +132,7 @@ describe('AssistantListPanel', () => {
     const onDuplicateSpy = vi.fn();
     renderWithProviders(<AssistantListPanel {...defaultProps} onDuplicate={onDuplicateSpy} />);
 
+    await user.click(screen.getByTestId('assistant-tab-official'));
     const duplicateButton = screen.getByTestId('btn-duplicate-1');
     expect(screen.queryByTestId('btn-duplicate-2')).not.toBeInTheDocument();
     await user.click(duplicateButton);
@@ -136,12 +141,19 @@ describe('AssistantListPanel', () => {
     expect(onDuplicateSpy).toHaveBeenCalledWith(mockAssistants[0]);
   });
 
-  it('renders the single-list layout without legacy filter tabs', () => {
+  it('switches between My and Official assistant tabs', async () => {
+    const user = userEvent.setup();
     renderWithProviders(<AssistantListPanel {...defaultProps} />);
-    expect(screen.queryByText('settings.assistantFilterAll')).not.toBeInTheDocument();
-    expect(screen.queryByText('settings.assistantSectionEnabled')).not.toBeInTheDocument();
-    expect(screen.getByTestId('btn-duplicate-1')).toBeInTheDocument();
-    expect(screen.queryByTestId('btn-duplicate-2')).not.toBeInTheDocument();
+
+    expect(screen.getByTestId('assistant-card-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-card-1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('assistant-reorder-handle-2')).not.toBeDisabled();
+
+    await user.click(screen.getByTestId('assistant-tab-official'));
+
+    expect(screen.getByTestId('assistant-card-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('assistant-card-2')).not.toBeInTheDocument();
+    expect(screen.getByTestId('assistant-reorder-handle-1')).toBeDisabled();
   });
 
   it('does not render the legacy reorder hint copy', () => {
@@ -154,8 +166,17 @@ describe('AssistantListPanel', () => {
   it('uses smaller action button typography on the right-side action rail', () => {
     renderWithProviders(<AssistantListPanel {...defaultProps} />);
 
+    expect(screen.getByTestId('btn-edit-2')).toHaveClass('!h-30px', '!rounded-8px', '!text-12px', '!font-500');
+    expect(screen.getByTestId('btn-delete-2')).toHaveClass('!h-30px', '!rounded-8px', '!text-12px', '!font-500');
+  });
+
+  it('shows official assistant action typography after switching tabs', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AssistantListPanel {...defaultProps} />);
+
+    await user.click(screen.getByTestId('assistant-tab-official'));
+
     expect(screen.getByTestId('btn-edit-1')).toHaveClass('!h-30px', '!rounded-8px', '!text-12px', '!font-500');
     expect(screen.getByTestId('btn-duplicate-1')).toHaveClass('!h-30px', '!rounded-8px', '!text-12px', '!font-500');
-    expect(screen.getByTestId('btn-delete-2')).toHaveClass('!h-30px', '!rounded-8px', '!text-12px', '!font-500');
   });
 });

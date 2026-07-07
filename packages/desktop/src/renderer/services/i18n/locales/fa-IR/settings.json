@@ -153,6 +153,8 @@
   "officialAssistantsHintShort": "دستیارهای رسمی داخلی evaOS Workbench که با هر نسخه نگهداری و به‌روزرسانی می‌شوند؛ برای شخصی‌سازی آزادانه، آن‌ها را به‌عنوان «دستیار من» تکثیر کنید.",
   "reorderCoachTitle": "برای تغییر ترتیب بکشید",
   "reorderCoachBody": "دستیارهای محبوب خود را به بالا بکشید؛ این ترتیب مشخص می‌کند آن‌ها در محل‌های انتخاب دستیار چگونه نمایش داده شوند (خانه، تیم‌ها، کارهای زمان‌بندی‌شده).",
+  "assistantNoMyAssistants": "No personal assistants yet. Create one or duplicate an official assistant.",
+  "assistantNoOfficialAssistants": "No official assistants are available.",
   "assistantFilter": {
     "all": "همه",
     "enabled": "فعال",
