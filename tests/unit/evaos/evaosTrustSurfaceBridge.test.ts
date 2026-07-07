@@ -73,6 +73,7 @@ describe('evaOS trust-surface bridge renderer secret boundary', () => {
 
     expect(response).toEqual({
       success: false,
+      errorCode: 'broker_invalid_response',
       msg: 'The evaOS broker response included renderer-visible secret material at $.profiles[0].access_token.',
     });
   });
@@ -127,6 +128,7 @@ describe('evaOS trust-surface bridge renderer secret boundary', () => {
 
     await expect(handler({ customerId: 'cus_123' })).resolves.toEqual({
       success: false,
+      errorCode: 'broker_invalid_response',
       msg: 'The evaOS broker response included renderer-visible secret material at $.profiles[0].grant_handle.',
     });
   });

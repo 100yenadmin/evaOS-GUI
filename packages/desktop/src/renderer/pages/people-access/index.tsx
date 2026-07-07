@@ -11,6 +11,7 @@ import { AddUser, Peoples, Refresh } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { evaosBrokerBlockerText } from '@renderer/utils/evaosBrokerBlocker';
 import { safeEvaosUiText } from '@renderer/utils/evaosSafeText';
 import {
   evaosPeopleAccess,
@@ -201,7 +202,7 @@ const PeopleAccessPage: React.FC = () => {
         }
         if (!response.success || !response.data) {
           setPolicy(null);
-          setPolicyError(safeEvaosUiText(response.msg, t('evaos.peopleAccess.failedClosed')));
+          setPolicyError(evaosBrokerBlockerText(t, response, t('evaos.peopleAccess.failedClosed')));
           return;
         }
         if (response.data.selectedCustomerId !== selectedCustomerId) {
@@ -242,6 +243,8 @@ const PeopleAccessPage: React.FC = () => {
     if (
       !policy ||
       policy.routeDenied ||
+      !policy.backendEnforced ||
+      !policy.auditId ||
       !selectedCustomerId ||
       policy.selectedCustomerId !== selectedCustomerId ||
       !sameAccount(expectedCustomerAccountId, policy.customerAccountId)
@@ -266,7 +269,7 @@ const PeopleAccessPage: React.FC = () => {
         return;
       }
       if (!response.success || !response.data) {
-        setInviteError(safeEvaosUiText(response.msg, t('evaos.peopleAccess.inviteFailedClosed')));
+        setInviteError(evaosBrokerBlockerText(t, response, t('evaos.peopleAccess.inviteFailedClosed')));
         return;
       }
       setInviteEmail('');
@@ -295,6 +298,7 @@ const PeopleAccessPage: React.FC = () => {
     selectedTarget?.displayName,
     selectedCustomerId ?? t('evaos.peopleAccess.noCustomerSelected')
   );
+  const policyMutationProofReady = Boolean(policy && !policy.routeDenied && policy.backendEnforced && policy.auditId);
 
   return (
     <div
@@ -408,18 +412,16 @@ const PeopleAccessPage: React.FC = () => {
                   })}
                 </p>
               </div>
-              {policy.auditId ? (
-                <div className='text-12px leading-18px text-t-secondary'>
-                  {t('evaos.shared.audit', {
-                    auditId: safeEvaosUiText(policy.auditId, t('evaos.shared.available')),
-                  })}
-                </div>
-              ) : null}
             </div>
 
             {policy.routeDenied ? (
               <div className='mt-14px rounded-8px border border-solid border-[rgb(var(--warning-6))] bg-[rgb(var(--warning-1))] p-14px text-13px leading-20px text-t-primary'>
                 {safeEvaosUiText(policy.routeDenialReason, t('evaos.peopleAccess.denied'))}
+              </div>
+            ) : null}
+            {!policy.routeDenied && !policyMutationProofReady ? (
+              <div className='mt-14px rounded-8px border border-solid border-[rgb(var(--warning-6))] bg-[rgb(var(--warning-1))] p-14px text-13px leading-20px text-t-primary'>
+                {t('evaos.peopleAccess.backendProofRequired')}
               </div>
             ) : null}
 
@@ -460,7 +462,7 @@ const PeopleAccessPage: React.FC = () => {
               <p className='m-0 mt-12px text-13px leading-20px text-[rgb(var(--warning-6))]'>{inviteError}</p>
             ) : null}
 
-            {!policy.routeDenied ? (
+            {policyMutationProofReady ? (
               <div className='mt-14px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-12px'>
                 <div className='mb-10px flex items-center gap-8px text-14px font-semibold leading-20px text-t-primary'>
                   <AddUser theme='outline' size='16' /> {t('evaos.peopleAccess.inviteMember')}

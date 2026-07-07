@@ -31,6 +31,7 @@ import type {
   IEvaosPeopleAccessPolicyView,
 } from '@/common/evaos/bridgeTypes';
 import {
+  EvaosBrokerSessionError,
   evaosBrokerErrorMessage,
   getDefaultEvaosBrokerSessionClient,
   type EvaosBrokerSessionClient,
@@ -56,6 +57,8 @@ interface BridgeResponse<D = {}> {
   success: boolean;
   data?: D;
   msg?: string;
+  errorCode?: string;
+  status?: number;
 }
 
 export function initEvaosPeopleAccessBridge(
@@ -234,9 +237,13 @@ async function toBridgeResponse<D>(operation: () => D | Promise<D>): Promise<Bri
       data,
     };
   } catch (error) {
-    return {
+    const brokerError = error instanceof EvaosBrokerSessionError ? error : null;
+    const response: BridgeResponse<D> = {
       success: false,
       msg: evaosBrokerErrorMessage(error),
     };
+    if (brokerError?.code) response.errorCode = brokerError.code;
+    if (brokerError?.status) response.status = brokerError.status;
+    return response;
   }
 }

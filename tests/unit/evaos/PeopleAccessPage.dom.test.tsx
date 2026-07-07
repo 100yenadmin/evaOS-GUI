@@ -32,6 +32,7 @@ vi.mock('react-i18next', () => ({
         'common.refresh': 'Refresh',
         'common.status': 'status',
         'evaos.peopleAccess.actionDenied': 'Action denied by account policy.',
+        'evaos.peopleAccess.backendProofRequired': 'Backend proof is required before inviting members.',
         'evaos.peopleAccess.chooseCustomer': 'Choose a customer before loading People & Access.',
         'evaos.peopleAccess.differentAccount':
           'People & Access broker returned evidence for a different customer account.',
@@ -62,6 +63,8 @@ vi.mock('react-i18next', () => ({
         'evaos.shared.load': 'Load',
         'evaos.shared.refreshTargets': 'Refresh targets',
         'evaos.shared.routeDenied': 'Route denied',
+        'evaos.shared.blockers.policyDenied':
+          'Your account policy does not allow this action for the selected customer.',
       };
       return labels[key] ?? key;
     },
@@ -311,6 +314,47 @@ describe('PeopleAccessPage', () => {
 
     expect(await screen.findByText('backend denial for invite')).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/eds_|epg_|access_token|desktop_session|provider_grant|Bearer/i);
+  });
+
+  it('hides invite mutation controls when backend proof is missing', async () => {
+    const user = userEvent.setup();
+    peopleAccessMocks.getPolicy.mockResolvedValue({
+      success: true,
+      data: {
+        ...peoplePolicy(false),
+        backendEnforced: false,
+        auditId: undefined,
+      },
+    });
+
+    render(<PeopleAccessPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(await screen.findByText('Backend proof is required before inviting members.')).toBeInTheDocument();
+    expect(screen.getByText('Admin Owner')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^send invite$/i })).not.toBeInTheDocument();
+    expect(peopleAccessMocks.inviteMember).not.toHaveBeenCalled();
+  });
+
+  it('uses typed blockers for broker policy denial failures', async () => {
+    const user = userEvent.setup();
+    peopleAccessMocks.getPolicy.mockResolvedValue({
+      success: false,
+      errorCode: 'action_denied',
+      msg: 'desktop_session=eds_secret denied',
+    });
+
+    const { container } = render(<PeopleAccessPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(
+      await screen.findByText('Your account policy does not allow this action for the selected customer.')
+    ).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/eds_|desktop_session|Bearer/i);
   });
 
   it('shows getPolicy failures without exposing secret-bearing broker output', async () => {

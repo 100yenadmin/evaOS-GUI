@@ -11,6 +11,7 @@ import { Attention, LinkCloud, Refresh, Shield, Success } from '@icon-park/react
 import { useTranslation } from 'react-i18next';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
+import { evaosBrokerBlockerText } from '@renderer/utils/evaosBrokerBlocker';
 import { safeEvaosUiText } from '@renderer/utils/evaosSafeText';
 import {
   evaosProviderHub,
@@ -155,7 +156,7 @@ const ConnectedAppsPage: React.FC = () => {
         }
         if (!response.success || !response.data) {
           setHub(null);
-          setHubError(safeEvaosUiText(response.msg, t('evaos.connectedApps.failedClosed')));
+          setHubError(evaosBrokerBlockerText(t, response, t('evaos.connectedApps.failedClosed')));
           return;
         }
         if (response.data.customerId !== selectedCustomerId) {
@@ -229,7 +230,7 @@ const ConnectedAppsPage: React.FC = () => {
           return;
         }
         if (!response.success || !response.data) {
-          setActionError(safeEvaosUiText(response.msg, t('evaos.connectedApps.actionFailed')));
+          setActionError(evaosBrokerBlockerText(t, response, t('evaos.connectedApps.actionFailed')));
           return;
         }
         setActionStatus(
@@ -379,13 +380,6 @@ const ConnectedAppsPage: React.FC = () => {
                   {safeEvaosUiText(hub.summaryText, t('evaos.connectedApps.providerProfilesLoaded'))}
                 </p>
               </div>
-              {hub.auditId || hub.policyAuditId ? (
-                <div className='text-12px leading-18px text-t-secondary'>
-                  {t('evaos.shared.audit', {
-                    auditId: safeEvaosUiText(hub.auditId ?? hub.policyAuditId, t('evaos.shared.available')),
-                  })}
-                </div>
-              ) : null}
             </div>
 
             {hub.routeDenied ? (

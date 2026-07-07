@@ -59,6 +59,8 @@ vi.mock('react-i18next', () => ({
         'evaos.shared.load': 'Load',
         'evaos.shared.refreshTargets': 'Refresh targets',
         'evaos.shared.routeDenied': 'Route denied',
+        'evaos.shared.blockers.backendContractIncomplete':
+          'The evaOS broker returned incomplete proof. Try again after support updates the backend.',
       };
       return labels[key] ?? key;
     },
@@ -329,5 +331,26 @@ describe('ConnectedAppsPage', () => {
       })
     );
     expect(await screen.findByText('Google Workspace')).toBeInTheDocument();
+  });
+
+  it('uses typed blockers for incomplete broker proof failures', async () => {
+    const user = userEvent.setup();
+    providerHubMocks.getProfiles.mockResolvedValue({
+      success: false,
+      errorCode: 'broker_invalid_response',
+      msg: 'provider_grant=epg_secret invalid response',
+    });
+
+    const { container } = render(<ConnectedAppsPage />);
+
+    expect((await screen.findAllByText('David Poku Co')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /^load$/i }));
+
+    expect(
+      await screen.findByText(
+        'The evaOS broker returned incomplete proof. Try again after support updates the backend.'
+      )
+    ).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/epg_|provider_grant|Bearer/i);
   });
 });

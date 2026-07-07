@@ -521,19 +521,19 @@ describe('evaOS local shell smoke', () => {
       (check) => check.name === 'company-brain-loaded-fixture'
     );
     expect(companyBrainLoaded?.proofStage).toBe(localShellSmoke.PROOF_STAGES.PRODUCT_LOADED_STATE);
-    expect(companyBrainLoaded?.action).toBeUndefined();
+    expect(companyBrainLoaded?.action).toBe('click-load-default-customer');
     expect(companyBrainLoaded?.expected).toEqual(
       expect.arrayContaining([
         'Company Brain',
-        'Company intelligence',
-        'Website handoff',
-        'https://www.electricsheephq.com/dashboard/company-brain',
-        'not yet a finished native Workbench surface',
+        'Customer context',
+        'Company Brain directory',
+        'Northstar Fixture Account',
+        'Renewal fixture brief',
       ])
     );
     expect(companyBrainLoaded?.loadedStateRequiredMarkers).toEqual([
-      'company brain dashboard handoff',
-      'dashboard company-brain url',
+      'company brain native directory',
+      'account 360 brief',
     ]);
 
     const terminalLoaded = localShellSmoke.LOCAL_PRODUCT_ROUTE_CHECKS.find(
