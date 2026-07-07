@@ -21,6 +21,39 @@ const electronShellMock = vi.hoisted(() => ({
   showItemInFolder: vi.fn(),
 }));
 
+const nativeAutoUpdaterMock = vi.hoisted(() => ({
+  on: vi.fn(),
+  removeListener: vi.fn(),
+}));
+
+const electronAutoUpdaterMock = vi.hoisted(() => ({
+  logger: null as unknown,
+  autoDownload: false,
+  autoInstallOnAppQuit: true,
+  allowPrerelease: false,
+  allowDowngrade: false,
+  setFeedURL: vi.fn(),
+  on: vi.fn(),
+  removeListener: vi.fn(),
+  checkForUpdates: vi.fn(),
+  downloadUpdate: vi.fn(),
+  quitAndInstall: vi.fn(),
+  checkForUpdatesAndNotify: vi.fn(),
+  currentVersion: { version: '1.0.0' },
+}));
+
+const builderUtilRuntimeMock = vi.hoisted(() => {
+  class CancellationError extends Error {}
+  class CancellationToken {
+    cancel = vi.fn();
+  }
+
+  return {
+    CancellationError,
+    CancellationToken,
+  };
+});
+
 vi.mock('@office-ai/platform', () => ({
   bridge: {
     buildProvider: vi.fn(() => {
@@ -49,27 +82,16 @@ vi.mock('@office-ai/platform', () => ({
   },
 }));
 
+vi.mock('builder-util-runtime', () => builderUtilRuntimeMock);
+
 vi.mock('electron', () => ({
   app: electronAppMock,
+  autoUpdater: nativeAutoUpdaterMock,
   shell: electronShellMock,
 }));
 
 vi.mock('electron-updater', () => ({
-  autoUpdater: {
-    logger: null,
-    autoDownload: false,
-    autoInstallOnAppQuit: true,
-    allowPrerelease: false,
-    allowDowngrade: false,
-    setFeedURL: vi.fn(),
-    on: vi.fn(),
-    removeListener: vi.fn(),
-    checkForUpdates: vi.fn(),
-    downloadUpdate: vi.fn(),
-    quitAndInstall: vi.fn(),
-    checkForUpdatesAndNotify: vi.fn(),
-    currentVersion: { version: '1.0.0' },
-  },
+  autoUpdater: electronAutoUpdaterMock,
 }));
 
 vi.mock('electron-log', () => ({
@@ -80,6 +102,13 @@ vi.mock('electron-log', () => ({
     error: vi.fn(),
     warn: vi.fn(),
   },
+}));
+
+vi.mock('@process/services/i18n', () => ({
+  default: {
+    t: (key: string) => key,
+  },
+  i18nReady: Promise.resolve(),
 }));
 
 const makeGitHubReleaseResponse = () => [
@@ -221,6 +250,15 @@ const makeDeferred = () => {
     reject = promiseReject;
   });
   return { promise, resolve, reject };
+};
+
+const originalPlatform = process.platform;
+
+const setPlatform = (platform: NodeJS.Platform): void => {
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: platform,
+  });
 };
 
 describe('updateBridge CDN URL rewriting', () => {
@@ -633,10 +671,29 @@ describe('updateBridge manual download reliability', () => {
 });
 
 describe('autoUpdate quitAndInstall lifecycle', () => {
+  const getUpdateDownloadedHandler = (): ((info: { version: string }) => void) => {
+    const entry = electronAutoUpdaterMock.on.mock.calls.find(([event]) => event === 'update-downloaded');
+    if (!entry) throw new Error('update-downloaded handler not registered');
+    return entry[1] as (info: { version: string }) => void;
+  };
+
+  const getNativeUpdateDownloadedHandler = (): (() => void) => {
+    const entry = nativeAutoUpdaterMock.on.mock.calls.find(([event]) => event === 'update-downloaded');
+    if (!entry) throw new Error('native update-downloaded handler not registered');
+    return entry[1] as () => void;
+  };
+
+  const getNativeErrorHandler = (): ((error: Error) => void) => {
+    const entry = nativeAutoUpdaterMock.on.mock.calls.find(([event]) => event === 'error');
+    if (!entry) throw new Error('native error handler not registered');
+    return entry[1] as (error: Error) => void;
+  };
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.useFakeTimers();
+    setPlatform('win32');
     electronAppMock.isPackaged = true;
     process.env.AIONUI_EVAOS_BETA = '1';
     process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE = '1';
@@ -649,6 +706,7 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
     delete process.env.AIONUI_EVAOS_BETA;
     delete process.env.AIONUI_EVAOS_BETA_ALLOW_AUTO_UPDATE;
     delete process.env.AIONUI_EVAOS_BETA_UPDATE_REPO;
+    setPlatform(originalPlatform);
   });
 
   it('waits for the pre-install cleanup before starting the installer', async () => {
@@ -720,6 +778,59 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
 
     await expect(handler()).rejects.toThrow('backend did not stop');
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it('waits on macOS until the native updater reports install readiness', async () => {
+    setPlatform('darwin');
+    const cleanup = vi.fn();
+    const statuses: Array<{ status: string; error?: string; version?: string }> = [];
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.initialize((status) => statuses.push(status));
+    autoUpdaterService.setBeforeQuitAndInstall(cleanup);
+    getUpdateDownloadedHandler()({ version: '2.2.0' });
+
+    const installPromise = autoUpdaterService.quitAndInstall();
+    await Promise.resolve();
+
+    expect(statuses).toContainEqual(
+      expect.objectContaining({
+        status: 'preparing-install',
+        version: '2.2.0',
+      })
+    );
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    getNativeUpdateDownloadedHandler()();
+    await installPromise;
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(true, true);
+  });
+
+  it('rejects macOS install when native updater readiness fails', async () => {
+    setPlatform('darwin');
+    const statuses: Array<{ status: string; error?: string }> = [];
+    const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
+    const { autoUpdater } = await import('electron-updater');
+
+    autoUpdaterService.resetForTest();
+    autoUpdaterService.initialize((status) => statuses.push(status));
+    getUpdateDownloadedHandler()({ version: '2.2.0' });
+
+    const installPromise = autoUpdaterService.quitAndInstall();
+    await Promise.resolve();
+    getNativeErrorHandler()(new Error('native failed'));
+
+    await expect(installPromise).rejects.toThrow('update.errors.prepareInstallFailed');
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(statuses.at(-1)).toEqual({
+      status: 'error',
+      error: 'update.errors.prepareInstallFailed',
+    });
   });
 });
 

@@ -18,9 +18,14 @@
   "readyToInstall": "Pronto para instalar",
   "readyToInstallDesc": "A atualização foi baixada. Clique no botão abaixo para reiniciar e instalar a atualização.",
   "installNow": "Instalar e reiniciar",
+  "preparingInstall": "Preparando...",
   "installWarning": "Não reabra o aplicativo durante a instalação. Ele reiniciará automaticamente.",
   "autoUpdateMode": "Modo de atualização automática",
   "showInFolder": "Mostrar na pasta",
   "openFile": "Abrir arquivo",
-  "errorTitle": "A atualização falhou"
+  "errorTitle": "A atualização falhou",
+  "errors": {
+    "prepareInstallTimeout": "A preparação da instalação expirou. Tente novamente mais tarde.",
+    "prepareInstallFailed": "Falha ao preparar a instalação. Tente novamente mais tarde."
+  }
 }

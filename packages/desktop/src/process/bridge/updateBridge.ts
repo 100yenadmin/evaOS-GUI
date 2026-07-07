@@ -857,16 +857,11 @@ export function initUpdateBridge(): void {
   });
 
   ipcBridge.autoUpdate.quitAndInstall.provider(async (): Promise<void> => {
-    try {
-      if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
-        console.warn(`[updateBridge] ${EVAOS_BETA_UPDATE_DISABLED_MESSAGE}`);
-        return;
-      }
-
-      await autoUpdaterService.quitAndInstall();
-    } catch (err: unknown) {
-      console.error('quitAndInstall failed:', err);
-      throw err;
+    if (shouldDisableAutoUpdate(process.env, updaterRuntime())) {
+      console.warn(`[updateBridge] ${EVAOS_BETA_UPDATE_DISABLED_MESSAGE}`);
+      return;
     }
+
+    await autoUpdaterService.quitAndInstall();
   });
 }

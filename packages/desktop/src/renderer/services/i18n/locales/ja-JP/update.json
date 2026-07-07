@@ -18,9 +18,14 @@
   "readyToInstall": "インストール準備完了",
   "readyToInstallDesc": "更新のダウンロードが完了しました。下のボタンをクリックして再起動し、更新をインストールしてください。",
   "installNow": "今すぐインストール",
+  "preparingInstall": "準備中...",
   "installWarning": "インストール中はアプリを手動で開かないでください。自動的に再起動されます。",
   "autoUpdateMode": "自動更新モード",
   "showInFolder": "フォルダーで表示",
   "openFile": "ファイルを開く",
-  "errorTitle": "更新に失敗しました"
+  "errorTitle": "更新に失敗しました",
+  "errors": {
+    "prepareInstallTimeout": "インストールの準備がタイムアウトしました。後でもう一度お試しください。",
+    "prepareInstallFailed": "インストールの準備に失敗しました。後でもう一度お試しください。"
+  }
 }

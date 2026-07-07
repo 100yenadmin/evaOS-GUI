@@ -18,9 +18,14 @@
   "readyToInstall": "설치 준비 완료",
   "readyToInstallDesc": "업데이트가 다운로드되었습니다. 아래 버튼을 클릭하여 재시작하고 업데이트를 설치하세요.",
   "installNow": "지금 설치 및 재시작",
+  "preparingInstall": "준비 중...",
   "installWarning": "설치 중에는 앱을 수동으로 열지 마세요. 앱이 자동으로 재시작됩니다.",
   "autoUpdateMode": "자동 업데이트 모드",
   "showInFolder": "폴더에서 보기",
   "openFile": "파일 열기",
-  "errorTitle": "업데이트 실패"
+  "errorTitle": "업데이트 실패",
+  "errors": {
+    "prepareInstallTimeout": "설치 준비 시간이 초과되었습니다. 나중에 다시 시도하세요.",
+    "prepareInstallFailed": "설치 준비에 실패했습니다. 나중에 다시 시도하세요."
+  }
 }

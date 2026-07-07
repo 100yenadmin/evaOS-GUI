@@ -18,9 +18,14 @@
   "readyToInstall": "Yüklemeye hazır",
   "readyToInstallDesc": "Güncelleme indirildi. Yeniden başlatmak ve güncellemeyi yüklemek için aşağıdaki düğmeye tıklayın.",
   "installNow": "Şimdi yükle ve yeniden başlat",
+  "preparingInstall": "Hazırlanıyor...",
   "installWarning": "Kurulum sırasında uygulamayı manuel olarak açmayın. Uygulama otomatik olarak yeniden başlayacaktır.",
   "autoUpdateMode": "Otomatik güncelleme modu",
   "showInFolder": "Klasörde göster",
   "openFile": "Dosyayı aç",
-  "errorTitle": "Güncelleme başarısız"
+  "errorTitle": "Güncelleme başarısız",
+  "errors": {
+    "prepareInstallTimeout": "Yükleme hazırlığı zaman aşımına uğradı. Lütfen daha sonra tekrar deneyin.",
+    "prepareInstallFailed": "Yükleme hazırlığı başarısız oldu. Lütfen daha sonra tekrar deneyin."
+  }
 }
