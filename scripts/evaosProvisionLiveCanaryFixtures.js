@@ -299,7 +299,39 @@ async function loadAdminMembership(admin, adminProfileId, customerAccountId) {
   );
 }
 
-async function loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount) {
+function temporaryMembershipSnapshot(existing) {
+  const metadata = asRecord(existing?.metadata) ?? {};
+  const previousRole = safeText(metadata.previous_role, 80);
+  const previousMetadata = asRecord(metadata.previous_metadata);
+  if (previousRole || previousMetadata) {
+    return {
+      row: {
+        ...existing,
+        ...(previousRole ? { role: previousRole } : {}),
+        ...(previousMetadata ? { metadata: previousMetadata } : {}),
+      },
+    };
+  }
+  if (metadata.temporary === true) {
+    const cleanMetadata = { ...metadata };
+    delete cleanMetadata.temporary;
+    delete cleanMetadata.previous_role;
+    delete cleanMetadata.previous_metadata;
+    if (cleanMetadata.source === 'aionui-live-canary-core-broker') {
+      delete cleanMetadata.source;
+    }
+    return {
+      row: {
+        ...existing,
+        metadata: cleanMetadata,
+      },
+    };
+  }
+  return { row: existing };
+}
+
+async function loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount, options = {}) {
+  const requiredRole = safeText(options.requiredRole, 80);
   const rows = await admin.select('customer_account_memberships', {
     profile_id: `eq.${adminProfile.id}`,
     customer_account_id: `eq.${customerAccount.id}`,
@@ -307,17 +339,23 @@ async function loadOrCreateTemporaryAdminMembership(admin, adminProfile, custome
     limit: 1,
   });
   const existing = rows[0];
-  if (existing?.status === 'active') {
+  const existingMetadata = asRecord(existing?.metadata) ?? {};
+  const existingIsTemporary = existingMetadata.temporary === true;
+  const baselineSnapshot = existingIsTemporary ? temporaryMembershipSnapshot(existing) : { row: existing };
+  const baselineRow = asRecord(baselineSnapshot.row) ?? existing;
+  const baselineMetadata = asRecord(baselineRow?.metadata) ?? {};
+  if (existing?.status === 'active' && (!requiredRole || existing.role === requiredRole)) {
     return {
       id: existing.id,
       role: existing.role,
       status: existing.status,
-      temporary: false,
+      temporary: existingIsTemporary,
+      ...(existingIsTemporary ? { snapshot: baselineSnapshot } : {}),
     };
   }
 
   const now = new Date().toISOString();
-  const role = safeText(existing?.role, 80) || 'technical_admin';
+  const role = requiredRole || safeText(baselineRow?.role, 80) || safeText(existing?.role, 80) || 'technical_admin';
   const body = {
     customer_account_id: customerAccount.id,
     profile_id: adminProfile.id,
@@ -327,9 +365,11 @@ async function loadOrCreateTemporaryAdminMembership(admin, adminProfile, custome
     accepted_at: now,
     removed_at: null,
     metadata: {
-      ...(asRecord(existing?.metadata) ?? {}),
+      ...baselineMetadata,
       source: 'aionui-live-canary-core-broker',
       temporary: true,
+      previous_role: safeText(baselineRow?.role, 80),
+      previous_metadata: baselineMetadata,
     },
   };
 
@@ -340,7 +380,7 @@ async function loadOrCreateTemporaryAdminMembership(admin, adminProfile, custome
       role,
       status: 'active',
       temporary: true,
-      snapshot: { row: existing },
+      snapshot: baselineSnapshot,
     };
   }
 
@@ -1023,7 +1063,9 @@ async function provisionFixtures(options = loadOptions()) {
   const admin = new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
   const adminProfile = await loadAdminProfile(admin, options.adminEmail);
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
-  const adminMembership = await loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount);
+  const adminMembership = await loadOrCreateTemporaryAdminMembership(admin, adminProfile, customerAccount, {
+    requiredRole: 'owner',
+  });
   const providerSnapshots = await snapshotProviderRows(admin, options.customerId);
   // Preflight the stable admin subject before creating temporary users/sessions.
   // The requester subject is freshly created below and is checked again before writes.
@@ -1093,7 +1135,9 @@ async function provisionFixtures(options = loadOptions()) {
       email: adminProfile.email,
       membershipId: adminMembership.id,
       membershipRole: adminMembership.role,
+      membershipTemporary: adminMembership.temporary === true,
     },
+    adminMembershipSnapshot: adminMembership.snapshot,
     requester,
     denied,
     sessions: {

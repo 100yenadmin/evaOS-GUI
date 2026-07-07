@@ -14,7 +14,8 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
   loadOrCreateTemporaryAdminMembership: (
     admin: FakeMembershipAdmin,
     adminProfile: { id: string; email: string },
-    customerAccount: { id: string }
+    customerAccount: { id: string },
+    options?: Record<string, unknown>
   ) => Promise<Record<string, unknown>>;
   loadCoreBrokerOptions: (env: Record<string, string>) => Record<string, unknown>;
   loadOptions: (env: Record<string, string>) => Record<string, unknown>;
@@ -481,6 +482,206 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(restored).toBe(true);
     expect(admin.patches.at(-1)?.body).toMatchObject({
       status: 'removed',
+      metadata: { previous: true },
+    });
+  });
+
+  it('temporarily upgrades and restores an active admin membership for approval canaries', async () => {
+    const active = {
+      id: 'membership-active-technical-admin',
+      customer_account_id: 'account-id',
+      profile_id: 'admin-profile-id',
+      role: 'technical_admin',
+      status: 'active',
+      accepted_at: '2026-01-01T00:00:00.000Z',
+      removed_at: null,
+      metadata: { previous: true },
+    };
+    const admin = new FakeMembershipAdmin([active]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' },
+      { requiredRole: 'owner' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-active-technical-admin',
+      role: 'owner',
+      temporary: true,
+      snapshot: { row: active },
+    });
+    expect(admin.patches[0].body).toMatchObject({
+      role: 'owner',
+      status: 'active',
+      metadata: {
+        previous: true,
+        source: 'aionui-live-canary-core-broker',
+        temporary: true,
+        previous_role: 'technical_admin',
+        previous_metadata: { previous: true },
+      },
+    });
+
+    const restored = await provisioner.restoreAdminMembershipFixture(admin, {
+      admin: { membershipId: 'membership-active-technical-admin', membershipTemporary: true },
+      adminMembershipSnapshot: { row: active },
+    });
+
+    expect(restored).toBe(true);
+    expect(admin.patches.at(-1)?.body).toMatchObject({
+      role: 'technical_admin',
+      status: 'active',
+      metadata: { previous: true },
+    });
+  });
+
+  it('keeps interrupted temporary role upgrades cleanup-obligated on reprovision', async () => {
+    const leftoverTemporary = {
+      id: 'membership-leftover-owner',
+      customer_account_id: 'account-id',
+      profile_id: 'admin-profile-id',
+      role: 'owner',
+      status: 'active',
+      accepted_at: '2026-01-01T00:00:00.000Z',
+      removed_at: null,
+      metadata: {
+        source: 'aionui-live-canary-core-broker',
+        temporary: true,
+        previous_role: 'technical_admin',
+        previous_metadata: { previous: true },
+      },
+    };
+    const admin = new FakeMembershipAdmin([leftoverTemporary]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' },
+      { requiredRole: 'owner' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-leftover-owner',
+      role: 'owner',
+      temporary: true,
+      snapshot: { row: { role: 'technical_admin', metadata: { previous: true } } },
+    });
+    expect(admin.patches).toHaveLength(0);
+
+    const restored = await provisioner.restoreAdminMembershipFixture(admin, {
+      admin: { membershipId: 'membership-leftover-owner', membershipTemporary: true },
+      adminMembershipSnapshot: membership.snapshot,
+    });
+
+    expect(restored).toBe(true);
+    expect(admin.patches.at(-1)?.body).toMatchObject({
+      role: 'technical_admin',
+      status: 'active',
+      metadata: { previous: true },
+    });
+  });
+
+  it('keeps core broker reprovision of a leftover temporary owner cleanup-obligated', async () => {
+    const leftoverTemporary = {
+      id: 'membership-leftover-owner-core',
+      customer_account_id: 'account-id',
+      profile_id: 'admin-profile-id',
+      role: 'owner',
+      status: 'active',
+      accepted_at: '2026-01-01T00:00:00.000Z',
+      removed_at: null,
+      metadata: {
+        source: 'aionui-live-canary-core-broker',
+        temporary: true,
+        previous_role: 'technical_admin',
+        previous_metadata: { previous: true },
+      },
+    };
+    const admin = new FakeMembershipAdmin([leftoverTemporary]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-leftover-owner-core',
+      role: 'owner',
+      temporary: true,
+      snapshot: { row: { role: 'technical_admin', metadata: { previous: true } } },
+    });
+    expect(admin.patches).toHaveLength(0);
+
+    const restored = await provisioner.restoreAdminMembershipFixture(admin, {
+      admin: { membershipId: 'membership-leftover-owner-core', membershipTemporary: true },
+      adminMembershipSnapshot: membership.snapshot,
+    });
+
+    expect(restored).toBe(true);
+    expect(admin.patches.at(-1)?.body).toMatchObject({
+      role: 'technical_admin',
+      status: 'active',
+      metadata: { previous: true },
+    });
+  });
+
+  it('does not nest temporary metadata when re-upgrading an interrupted temporary membership', async () => {
+    const leftoverTemporary = {
+      id: 'membership-leftover-rewrap',
+      customer_account_id: 'account-id',
+      profile_id: 'admin-profile-id',
+      role: 'technical_admin',
+      status: 'active',
+      accepted_at: '2026-01-01T00:00:00.000Z',
+      removed_at: null,
+      metadata: {
+        source: 'aionui-live-canary-core-broker',
+        temporary: true,
+        previous_role: 'billing_admin',
+        previous_metadata: { previous: true },
+      },
+    };
+    const admin = new FakeMembershipAdmin([leftoverTemporary]);
+
+    const membership = await provisioner.loadOrCreateTemporaryAdminMembership(
+      admin,
+      { id: 'admin-profile-id', email: 'admin@electricsheephq.com' },
+      { id: 'account-id' },
+      { requiredRole: 'owner' }
+    );
+
+    expect(membership).toMatchObject({
+      id: 'membership-leftover-rewrap',
+      role: 'owner',
+      temporary: true,
+      snapshot: { row: { role: 'billing_admin', metadata: { previous: true } } },
+    });
+    expect(admin.patches[0].body).toMatchObject({
+      role: 'owner',
+      metadata: {
+        previous: true,
+        source: 'aionui-live-canary-core-broker',
+        temporary: true,
+        previous_role: 'billing_admin',
+        previous_metadata: { previous: true },
+      },
+    });
+    expect(admin.patches[0].body.metadata).not.toMatchObject({
+      previous_metadata: expect.objectContaining({ temporary: true }),
+    });
+
+    const restored = await provisioner.restoreAdminMembershipFixture(admin, {
+      admin: { membershipId: 'membership-leftover-rewrap', membershipTemporary: true },
+      adminMembershipSnapshot: membership.snapshot,
+    });
+
+    expect(restored).toBe(true);
+    expect(admin.patches.at(-1)?.body).toMatchObject({
+      role: 'billing_admin',
+      status: 'active',
       metadata: { previous: true },
     });
   });
