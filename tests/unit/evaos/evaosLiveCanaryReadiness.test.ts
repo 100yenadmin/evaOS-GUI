@@ -90,6 +90,24 @@ describe('evaOS live canary readiness', () => {
     expect(report.canaries.find((canary) => canary.name === 'broker-runtime-status')?.ready).toBe(true);
   });
 
+  it('requires broker-specific credentials when release proof forbids default broker fallback', () => {
+    const report = readiness.inspectLiveCanaryReadiness({
+      AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',
+      AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'support-vm-customer',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: 'Support VM',
+      AIONUI_EVAOS_DESKTOP_SESSION: 'eds_live_session_for_test',
+      AIONUI_EVAOS_CUSTOMER_ID: 'cus_123',
+      AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET: 'true',
+      AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: 'false',
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.blockers).toContain(
+      'broker-runtime-status: broker-specific credential pair is required when AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET is true'
+    );
+  });
+
   it('rejects mixed broker-specific and default credential pairs for broker readiness', () => {
     const report = readiness.inspectLiveCanaryReadiness({
       AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',

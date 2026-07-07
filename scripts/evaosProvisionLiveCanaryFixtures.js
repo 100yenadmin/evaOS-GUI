@@ -14,6 +14,7 @@ const DEFAULT_COMPANY_BRAIN_QUERY = 'What changed recently for this account?';
 const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
 const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
 const FIXTURE_VM_DISPLAY_NAME = 'AionUi Live Canary Support VM';
+const INTERNAL_BROKER_CANARY_CUSTOMER_IDS = new Set(['evaos-support', 'golden', 'internal', 'support', 'support-vm']);
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -76,6 +77,18 @@ function optionalEnv(env, key, fallback) {
 
 function safeText(value, maxLength = 220) {
   return typeof value === 'string' && value.trim() && value.trim().length <= maxLength ? value.trim() : undefined;
+}
+
+function isInternalBrokerCanaryCustomerId(customerId) {
+  const normalized = String(customerId || '')
+    .trim()
+    .toLowerCase();
+  return (
+    INTERNAL_BROKER_CANARY_CUSTOMER_IDS.has(normalized) ||
+    /^evaos[-_]?support\b/.test(normalized) ||
+    /^golden\b/.test(normalized) ||
+    /^internal\b/.test(normalized)
+  );
 }
 
 function asRecord(value) {
@@ -756,7 +769,7 @@ async function selectCompanyBrainAccount(endpoint, desktopSession, customerId, p
 }
 
 function fixtureEnvFromProvision(state) {
-  return {
+  const env = {
     AIONUI_EVAOS_BROKER_ENDPOINT: state.brokerEndpoint,
     AIONUI_EVAOS_DESKTOP_SESSION: state.sessions.admin.raw,
     AIONUI_EVAOS_CUSTOMER_ID: state.customerId,
@@ -778,6 +791,11 @@ function fixtureEnvFromProvision(state) {
     AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID: state.wrongCustomerId,
     AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION: state.sessions.denied.raw,
   };
+  if (!isInternalBrokerCanaryCustomerId(state.customerId)) {
+    env.AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION = state.sessions.admin.raw;
+    env.AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID = state.customerId;
+  }
+  return env;
 }
 
 function coreBrokerFixtureEnvFromProvision(state) {
