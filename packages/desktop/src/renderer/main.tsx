@@ -52,7 +52,7 @@ import { ThemeProvider } from './hooks/context/ThemeContext';
 import { PreviewProvider } from './pages/conversation/Preview/context/PreviewContext';
 
 // Arco Design
-import { Button, ConfigProvider, Modal, Typography } from '@arco-design/web-react';
+import { ConfigProvider, Modal } from '@arco-design/web-react';
 // Configure Arco Design to use React 18's createRoot, fixing Message component's CopyReactDOM.render error
 import '@arco-design/web-react/es/_util/react-19-adapter';
 import '@arco-design/web-react/dist/css/arco.css';
@@ -90,13 +90,14 @@ import { repairAllCronJobTimeZonesOnce } from '@renderer/pages/cron/repairCronJo
 import Layout from './components/layout/Layout';
 import Router from './components/layout/Router';
 import Sider from './components/layout/Sider';
+import {
+  BackendStartupFailureDialog,
+  shouldShowBackendStartupFailureDialog,
+} from './components/layout/BackendStartupFailureDialog';
 import { useAuth } from './hooks/context/AuthContext';
 import { ConversationHistoryProvider } from './hooks/context/ConversationHistoryContext';
 import HOC from './utils/ui/HOC';
-import type { BackendStartupFailureInfo } from '@/common/types/platform/electron';
 import type { IRuntimeStatusEvent } from '@/common/adapter/ipcBridge';
-
-const EVAOS_BETA_DOWNLOAD_URL = 'https://github.com/100yenadmin/evaOS-GUI/releases';
 
 // Patch Korean locale with missing properties from English locale
 const koKRComplete = {
@@ -234,69 +235,11 @@ const Main = () => {
 
 const App = HOC.Wrapper(Config)(Main);
 
-const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFailureInfo }> = ({ failure }) => {
-  const { t } = useTranslation();
-
-  const isIncompatibleRuntime = failure.reason === 'backend_incompatible_runtime';
-  const isPackageArchitectureMismatch = failure.reason === 'backend_package_architecture_mismatch';
-  const title = isIncompatibleRuntime
-    ? t('common.backendStartup.incompatibleRuntime.title')
-    : isPackageArchitectureMismatch
-      ? t('common.backendStartup.packageArchitectureMismatch.title')
-      : t('common.backendStartup.incompleteInstallation.title');
-  const description = isIncompatibleRuntime
-    ? t('common.backendStartup.incompatibleRuntime.description')
-    : isPackageArchitectureMismatch
-      ? t('common.backendStartup.packageArchitectureMismatch.description', {
-          packageArch: failure.packageArch ?? 'x64',
-          deviceArch: failure.deviceArch ?? 'arm64',
-          expectedArch: failure.expectedDownloadArch ?? 'arm64',
-        })
-      : t('common.backendStartup.incompleteInstallation.description');
-  const requiredVersions = failure.requiredVersions?.map((version) => `GLIBC_${version}`).join(', ');
-
-  const handleDownload = () => {
-    window.open(EVAOS_BETA_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
-  };
-
-  return (
-    <div className='min-h-screen bg-bg-1'>
-      <Modal
-        visible
-        closable={false}
-        maskClosable={false}
-        footer={
-          isIncompatibleRuntime ? null : (
-            <Button type='primary' onClick={handleDownload}>
-              {t('common.backendStartup.incompleteInstallation.downloadLatest')}
-            </Button>
-          )
-        }
-        title={title}
-      >
-        <div className='text-t-1'>
-          <Typography.Paragraph className='mb-0 text-t-secondary'>{description}</Typography.Paragraph>
-          {requiredVersions ? (
-            <Typography.Paragraph className='mt-12px mb-0 text-12px text-t-tertiary'>
-              {t('common.backendStartup.incompatibleRuntime.requiredVersions', { versions: requiredVersions })}
-            </Typography.Paragraph>
-          ) : null}
-        </div>
-      </Modal>
-    </div>
-  );
-};
-
 void registerPwa();
 
 const root = createRoot(document.getElementById('root')!);
 const backendStartupFailure = window.__backendStartupFailure;
-const shouldShowBackendStartupFailureDialog =
-  backendStartupFailure?.reason === 'backend_incompatible_runtime' ||
-  backendStartupFailure?.reason === 'backend_incomplete_installation' ||
-  backendStartupFailure?.reason === 'backend_package_architecture_mismatch' ||
-  backendStartupFailure?.reason === 'backend_startup_failed';
-if (backendStartupFailure && shouldShowBackendStartupFailureDialog) {
+if (backendStartupFailure && shouldShowBackendStartupFailureDialog(backendStartupFailure)) {
   root.render(
     <Config>
       <BackendStartupFailureDialog failure={backendStartupFailure} />

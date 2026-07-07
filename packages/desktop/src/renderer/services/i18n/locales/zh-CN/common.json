@@ -87,6 +87,14 @@
     "packageArchitectureMismatch": {
       "title": "evaOS Workbench 安装包架构不匹配",
       "description": "当前 evaOS Workbench 安装包是 {{packageArch}}，但这台 Mac 是 {{deviceArch}}。你可能下载了错误的安装包，请重新下载并安装 {{expectedArch}} 版本。"
+    },
+    "recoverableDatabaseCorruption": {
+      "title": "本地数据需要修复",
+      "description": "evaOS Workbench 检测到本地数据库已损坏，无法继续启动。经你确认后，evaOS Workbench 会让 managed runtime 备份旧数据库并创建新的本地数据库。",
+      "confirmRebuild": "备份并重建数据库",
+      "diagnosticsHint": "发送诊断或取消都不会修改本地数据库。",
+      "cancelHint": "未修改数据库。准备好恢复时，请重新启动 evaOS Workbench。",
+      "rebuildFailed": "备份并重建数据库失败"
     }
   },
   "fileAttach.addFiles": "添加文件",

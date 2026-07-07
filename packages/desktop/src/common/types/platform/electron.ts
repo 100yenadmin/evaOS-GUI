@@ -21,12 +21,14 @@ export interface ElectronBridgeAPI {
   captureFeedbackScreenshot?: () => Promise<{ filename: string; data: number[] } | null>;
   // Feedback diagnostics event forwarding / 反馈诊断事件转发
   logFeedbackEvent?: (payload: { details?: unknown; level?: 'info' | 'warn' | 'error'; message: string }) => void;
+  recoverCorruptedDatabase?: () => Promise<void>;
 }
 
 export type BackendStartupFailureReason =
   | 'backend_incompatible_runtime'
   | 'backend_incomplete_installation'
   | 'backend_package_architecture_mismatch'
+  | 'backend_recoverable_database_corruption'
   | 'backend_startup_failed';
 
 export type BackendIncompleteInstallationKind = 'missing_backend_binary' | 'missing_directory_resources';
