@@ -1,5 +1,5 @@
 import { ipcBridge } from '@/common';
-import type { IProvider, TChatConversation, TProviderWithModel } from '@/common/config/storage';
+import type { IConversationMcpStatus, IProvider, TChatConversation, TProviderWithModel } from '@/common/config/storage';
 import { Spin } from '@arco-design/web-react';
 import React, { Suspense, useCallback } from 'react';
 import { useAionrsModelSelection } from '@/renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
@@ -18,6 +18,11 @@ const RemoteChat = React.lazy(() => import('@/renderer/pages/conversation/platfo
 // Narrow to Aionrs conversations so model field is always available
 type AionrsConversation = Extract<TChatConversation, { type: 'aionrs' }>;
 type TeamSendOverride = (payload: { input: string; files: string[] }) => Promise<void>;
+type TeamConversationCapabilitySnapshot = {
+  skills?: string[];
+  mcp_servers?: string[];
+  mcp_statuses?: IConversationMcpStatus[];
+};
 const EMPTY_TEAM_RUN_VIEW: TeamRunViewState = {
   activeRun: undefined,
   childTurnsBySlot: {},
@@ -30,7 +35,19 @@ const AionrsTeamChat: React.FC<{
   agent_name?: string;
   teamSendMessage?: TeamSendOverride;
   teamRuntime?: ReturnType<typeof buildTeamSendRuntime>;
-}> = ({ conversation, emptySlot, agent_name, teamSendMessage, teamRuntime }) => {
+  loadedSkills?: string[];
+  loadedMcpServers?: string[];
+  loadedMcpStatuses?: IConversationMcpStatus[];
+}> = ({
+  conversation,
+  emptySlot,
+  agent_name,
+  teamSendMessage,
+  teamRuntime,
+  loadedSkills,
+  loadedMcpServers,
+  loadedMcpStatuses,
+}) => {
   const onSelectModel = useCallback(
     async (_provider: IProvider, modelName: string) => {
       const selected = { ..._provider, use_model: modelName } as TProviderWithModel;
@@ -52,6 +69,9 @@ const AionrsTeamChat: React.FC<{
       agent_name={agent_name}
       teamSendMessage={teamSendMessage}
       teamRuntime={teamRuntime}
+      loadedSkills={loadedSkills}
+      loadedMcpServers={loadedMcpServers}
+      loadedMcpStatuses={loadedMcpStatuses}
     />
   );
 };
@@ -84,6 +104,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
   teamRunView = EMPTY_TEAM_RUN_VIEW,
   onTeamRunAck,
 }) => {
+  const capabilitySnapshot = conversation.extra as TeamConversationCapabilitySnapshot | undefined;
   // Single source of truth for the team greeting. Each *Chat simply forwards `emptySlot`
   // to MessageList; the empty state itself reads team_id / backend / preset info from the
   // shared SWR-cached conversation record, so none of that needs to flow through props.
@@ -145,6 +166,9 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
             emptySlot={emptySlot}
             teamSendMessage={teamSendMessageOverride}
             teamRuntime={teamRuntime}
+            loadedSkills={capabilitySnapshot?.skills}
+            loadedMcpServers={capabilitySnapshot?.mcp_servers}
+            loadedMcpStatuses={capabilitySnapshot?.mcp_statuses}
           />
         );
       case 'codex': // Legacy: codex now uses ACP protocol
@@ -159,6 +183,9 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
             emptySlot={emptySlot}
             teamSendMessage={teamSendMessageOverride}
             teamRuntime={teamRuntime}
+            loadedSkills={capabilitySnapshot?.skills}
+            loadedMcpServers={capabilitySnapshot?.mcp_servers}
+            loadedMcpStatuses={capabilitySnapshot?.mcp_statuses}
           />
         );
       case 'aionrs':
@@ -170,6 +197,9 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
             agent_name={agent_name}
             teamSendMessage={teamSendMessageOverride}
             teamRuntime={teamRuntime}
+            loadedSkills={capabilitySnapshot?.skills}
+            loadedMcpServers={capabilitySnapshot?.mcp_servers}
+            loadedMcpStatuses={capabilitySnapshot?.mcp_statuses}
           />
         );
       case 'openclaw-gateway':
