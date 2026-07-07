@@ -958,7 +958,15 @@
     "step4": "授權成功後，即可透過企業微信與 AI 助手對話",
     "waitingConnection": "請確保 WebUI 已執行，以便企微能存取回調位址",
     "agent": "對話 Agent",
-    "agentDesc": "用於企業微信對話"
+    "agentDesc": "用於企業微信對話",
+    "wsTitle": "WeCom WebSocket connection",
+    "wsHint": "Use the WeCom Intelligent Bot “Long Connection (WebSocket)” mode. No callback URL, domain, or public IP is required.",
+    "botId": "Bot ID",
+    "botIdDesc": "Bot ID from WeCom Intelligent Bot (Long Connection mode)",
+    "secret": "Secret",
+    "secretDesc": "Secret from WeCom Intelligent Bot (Long Connection mode)",
+    "callbackPublic": "Public",
+    "callbackRecommendation": "Recommendation: use a reverse proxy with a certificate, or map to this machine with Cloudflare Tunnel / ngrok."
   },
   "agentManagement": {
     "localAgents": "本機 Agents",
@@ -1041,7 +1049,9 @@
     "pendingApprovalHint": "請在 OpenClaw Gateway 上批准此裝置",
     "pendingTimeout": "審批請求已過期（5 分鐘）。請重試。",
     "pendingCancel": "取消",
-    "pendingTimeRemaining": "剩餘時間：{{time}}"
+    "pendingTimeRemaining": "剩餘時間：{{time}}",
+    "betaDisabled": "Remote-agent pairing is deferred in evaOS beta.",
+    "allowInsecureBetaDisabled": "Disabled in evaOS beta."
   },
   "retry": "重試",
   "runtimeStatus": {
@@ -1069,5 +1079,6 @@
     "acpTool": "受管 ACP 執行元件",
     "codexAcp": "Codex ACP 執行元件",
     "claudeAgentAcp": "Claude ACP 執行元件"
-  }
+  },
+  "providerIdConflict": "Provider ID already exists. Please try again."
 }
