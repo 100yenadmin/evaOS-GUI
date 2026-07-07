@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 /**
  * 节流 Hook
@@ -35,6 +35,15 @@ function useThrottle<T extends (...args: any[]) => any>(callback: T, delay: numb
     },
     [delay, ...deps]
   );
+
+  useEffect(() => {
+    return () => {
+      if (timeoutId.current) {
+        clearTimeout(timeoutId.current);
+        timeoutId.current = null;
+      }
+    };
+  }, []);
 
   return throttledFunction as T;
 }
