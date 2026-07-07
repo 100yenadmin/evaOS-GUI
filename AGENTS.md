@@ -2,6 +2,25 @@
 
 All contributors (human and AI) must follow [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. ([Chinese version](CONTRIBUTING.zh.md))
 
+## Fork identity
+
+This repo (`electricsheephq`/`100yenadmin`) is **our fork** of
+[AionUi](https://github.com/iOfficeAI/AionUi) (upstream, by iOfficeAI,
+Apache-2.0) — the evaOS desktop GUI, one of the three surfaces customers use
+to reach their Eva agent. Read `VISION.md` first for why this fork exists and
+how it fits the rest of the evaOS product. Everything else in this file is
+the (largely upstream) AI-agent contributor guide, and it still applies to
+this fork as-is — this section is the only fork-specific addition.
+
+**Known fork-identity gap (tracked, not fixed here):** `readme.md`'s "Download
+Latest Release" badge/link still points at `iOfficeAI/AionUi/releases`
+(upstream), and root `package.json`'s `"name"` is still `"AionUi"`. Verified:
+this fork already cuts `evaos-beta-*` release tags (30+ as of this writing),
+but every one is `draft: true` + `prerelease: true` — there is no published,
+non-draft release yet (`GET /releases/latest` 404s), so there's nothing of
+our own to safely repoint the badge to. Repoint both the badge and the
+`package.json` name once the first non-draft `evaos-beta-*` release ships.
+
 ## Code Conventions
 
 ### File & Directory Structure
