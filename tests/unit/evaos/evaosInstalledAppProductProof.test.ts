@@ -500,6 +500,36 @@ describe('evaOS installed app product proof', () => {
     await expect(installedAppProof.runProofPlanAction(fakePage, 'unknown-action')).rejects.toThrow(/unknown-action/);
   });
 
+  it('loads Company Brain before waiting for lazy directory proof markers', async () => {
+    const events: string[] = [];
+    const fakePage = {
+      getByRole(role: string, roleOptions: { name: RegExp }) {
+        events.push(`${role}:${roleOptions.name.source}`);
+        return {
+          first() {
+            events.push('first');
+            return {
+              async waitFor(waitOptions: { state: string; timeout: number }) {
+                events.push(`button-wait:${waitOptions.state}:${waitOptions.timeout}`);
+              },
+              async click() {
+                events.push('click');
+              },
+            };
+          },
+        };
+      },
+      async waitForFunction(predicate: () => boolean, _args: unknown, options: { timeout: number }) {
+        expect(predicate()).toBe(false);
+        events.push(`wait:${options.timeout}`);
+      },
+    };
+
+    await installedAppProof.runProofPlanAction(fakePage, 'click-company-brain-load');
+
+    expect(events).toEqual(['button:^Load$', 'first', 'button-wait:visible:25000', 'click', 'wait:25000']);
+  });
+
   it('reads the installed app plist identity without shelling through raw strings', () => {
     const calls: string[][] = [];
     const fakeExec = (_command: string, args: string[]) => {

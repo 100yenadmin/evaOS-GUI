@@ -44,6 +44,7 @@ const GOLDEN_WORKBENCH_INSTALLED_PROOF_MANIFEST = [
     route: '/company-brain',
     screenshot: '16-company-brain.png',
     artifactName: 'screenshots/16-company-brain.png',
+    action: 'click-company-brain-load',
     closeoutState: 'loaded',
     settledMarkers: ['Company Brain', 'Customer context', 'Company Brain directory'],
   },
