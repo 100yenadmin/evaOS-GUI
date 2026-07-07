@@ -4,17 +4,55 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { TChatConversation } from '@/common/config/storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useConversationHistoryContext } from '@/renderer/hooks/context/ConversationHistoryContext';
+import type { TimelineSection } from '../types';
 import {
   dispatchWorkspaceExpansionChange,
   readExpandedWorkspaces,
   WORKSPACE_EXPANSION_STORAGE_KEY,
 } from './useWorkspaceExpansionState';
 
+const COLLAPSED_SECTIONS_KEY = 'grouped-history-collapsed-sections';
+
+const readCollapsedSections = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+};
+
+type ConversationLocation = { section: 'pinned' | 'projects' | 'conversations'; workspace?: string };
+
+const locateConversation = (
+  id: string,
+  pinned: TChatConversation[],
+  sections: TimelineSection[]
+): ConversationLocation | null => {
+  if (pinned.some((conversation) => conversation.id === id)) return { section: 'pinned' };
+  for (const section of sections) {
+    for (const item of section.items) {
+      if (item.type === 'workspace' && item.workspaceGroup) {
+        if (item.workspaceGroup.conversations.some((conversation) => conversation.id === id)) {
+          return { section: 'projects', workspace: item.workspaceGroup.workspace };
+        }
+      } else if (item.type === 'conversation' && item.conversation?.id === id) {
+        return { section: 'conversations' };
+      }
+    }
+  }
+  return null;
+};
+
 export const useConversations = () => {
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<string[]>(() => readExpandedWorkspaces());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => readCollapsedSections());
   const { id } = useParams();
   const {
     conversations,
@@ -24,22 +62,52 @@ export const useConversations = () => {
     setActiveConversation,
     groupedHistory,
   } = useConversationHistoryContext();
+  const { pinnedConversations, timelineSections } = groupedHistory;
 
   // Track whether auto-expand has already been performed to avoid
   // re-expanding workspaces after a user manually collapses them (#1156)
   const hasAutoExpandedRef = useRef(false);
+  const revealedIdRef = useRef<string | null>(null);
 
-  // Scroll active conversation into view.
-  // Use double-RAF to wait for async sibling content (e.g. CronJobSiderSection)
-  // to finish rendering before calculating scroll position.
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // Reveal and scroll the active conversation into view. The grouped data can
+  // arrive after route hydration, so wait until the target can be located.
   useEffect(() => {
     if (!id) {
       setActiveConversation(null);
+      revealedIdRef.current = null;
       return;
     }
 
     setActiveConversation(id);
     clearCompletionUnread(id);
+
+    if (revealedIdRef.current === id) return;
+
+    const location = locateConversation(id, pinnedConversations, timelineSections);
+    if (!location) return;
+    revealedIdRef.current = id;
+
+    setCollapsedSections((prev) => {
+      if (!prev.has(location.section)) return prev;
+      const next = new Set(prev);
+      next.delete(location.section);
+      return next;
+    });
+
+    if (location.workspace) {
+      const workspace = location.workspace;
+      setExpandedWorkspaces((prev) => (prev.includes(workspace) ? prev : [...prev, workspace]));
+    }
+
     let cancelled = false;
     let outerRafId: number;
     let innerRafId: number;
@@ -57,7 +125,7 @@ export const useConversations = () => {
       cancelAnimationFrame(outerRafId);
       cancelAnimationFrame(innerRafId);
     };
-  }, [clearCompletionUnread, id, setActiveConversation]);
+  }, [clearCompletionUnread, id, pinnedConversations, setActiveConversation, timelineSections]);
 
   // Persist expansion state
   useEffect(() => {
@@ -70,7 +138,13 @@ export const useConversations = () => {
     dispatchWorkspaceExpansionChange(expandedWorkspaces);
   }, [expandedWorkspaces]);
 
-  const { pinnedConversations, timelineSections } = groupedHistory;
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...collapsedSections]));
+    } catch {
+      // ignore
+    }
+  }, [collapsedSections]);
 
   // Auto-expand all workspaces on first load only (#1156)
   useEffect(() => {
@@ -127,5 +201,7 @@ export const useConversations = () => {
     pinnedConversations,
     timelineSections,
     handleToggleWorkspace,
+    collapsedSections,
+    toggleSection,
   };
 };
