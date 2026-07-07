@@ -2,6 +2,8 @@
 
 All contributors (human and AI) must follow [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. ([Chinese version](CONTRIBUTING.zh.md))
 
+When opening a PR, fill in [.github/pull_request_template.md](.github/pull_request_template.md) and complete its checklists honestly. Only check items you actually ran or verified.
+
 ## Code Conventions
 
 ### File & Directory Structure
@@ -124,7 +126,7 @@ The `oss-pr` skill runs this automatically during PR creation.
 
 ### Commit & PR Format
 
-Commit format: `<type>(<scope>): <subject>` in English. Types: feat, fix, refactor, chore, docs, test, style, perf.
+Commit format: `<type>(<scope>): <subject>` in English. Types: feat, fix, perf, refactor, docs, style, chore, test, ci, build.
 
 **NEVER add AI signatures** (Co-Authored-By, Generated with, etc.).
 
