@@ -5,7 +5,7 @@
  */
 
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
-import type { AgentSource } from '@/renderer/utils/model/agentTypes';
+import type { AgentHandshake, AgentSource } from '@/renderer/utils/model/agentTypes';
 
 /**
  * Available agent entry returned by the backend.
@@ -38,6 +38,7 @@ export type AvailableAgent = {
   presetAgentType?: string;
   isExtension?: boolean;
   extensionName?: string;
+  handshake?: AgentHandshake;
 };
 
 /**

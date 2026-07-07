@@ -7,6 +7,8 @@
 import { ipcBridge } from '@/common';
 import { DEFAULT_CODEX_MODELS } from '@/common/types/codex/codexModels';
 import { CODEX_MODE_NATIVE_FULL_ACCESS, normalizeCodexMode } from '@/common/types/codex/codexModes';
+import { mapAgentAvailableCommandsToSlashCommands } from '@/common/chat/slash/guidSlashCommands';
+import type { SlashCommandItem } from '@/common/chat/slash/types';
 import type { IProvider } from '@/common/config/storage';
 import { configService } from '@/common/config/configService';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
@@ -49,6 +51,7 @@ export type GuidAgentSelectionResult = {
   selectedAcpModel: string | null;
   setSelectedAcpModel: (model: React.SetStateAction<string | null>, options?: { persistPreference?: boolean }) => void;
   currentAcpCachedModelInfo: AcpModelInfo | null;
+  currentAgentAvailableCommands: SlashCommandItem[];
   currentEffectiveAgentInfo: EffectiveAgentInfo;
   getAgentKey: (agent: {
     agent_type: string;
@@ -541,6 +544,21 @@ export const useGuidAgentSelection = ({
     return null;
   }, [selectedAgentKey, is_presetAgent, currentEffectiveAgentInfo.agent_type, availableAgentsData]);
 
+  const currentAgentAvailableCommands = useMemo(() => {
+    const metadataAgents = availableAgentsData as unknown as AgentMetadata[] | undefined;
+    const effectiveAgentType = is_presetAgent ? currentEffectiveAgentInfo.agent_type : selectedAgent;
+    const matched = metadataAgents?.find((agent) => {
+      if (selectedAgentInfo?.id && agent.id === selectedAgentInfo.id) {
+        return true;
+      }
+      return (agent.backend ?? agent.agent_type) === effectiveAgentType;
+    });
+
+    return mapAgentAvailableCommandsToSlashCommands(
+      selectedAgentInfo?.handshake?.available_commands ?? matched?.handshake?.available_commands
+    );
+  }, [availableAgentsData, currentEffectiveAgentInfo.agent_type, is_presetAgent, selectedAgent, selectedAgentInfo]);
+
   // Key of the first non-preset CLI agent (used as fallback when leaving preset mode)
   const defaultAgentKey = useMemo(() => {
     const firstCliAgent = availableAgents?.find((a) => !a.is_preset);
@@ -562,6 +580,7 @@ export const useGuidAgentSelection = ({
     selectedAcpModel,
     setSelectedAcpModel,
     currentAcpCachedModelInfo,
+    currentAgentAvailableCommands,
     currentEffectiveAgentInfo,
     getAgentKey,
     findAgentByKey,
