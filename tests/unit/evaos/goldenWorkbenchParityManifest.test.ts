@@ -151,6 +151,7 @@ describe('goldenWorkbenchParityManifest', () => {
       ['native-companion', ['Mac & iPhone', 'Mac control', 'Native companion status matrix', 'Boundary clean']],
     ]);
     const installedProofActionOverrides = new Map([
+      ['company-brain', 'click-company-brain-load'],
       ['native-companion', 'click-native-companion-advanced-diagnostics'],
       ['branding', 'click-settings-about'],
     ]);

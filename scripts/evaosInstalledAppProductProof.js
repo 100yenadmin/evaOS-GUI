@@ -1091,6 +1091,18 @@ async function runProofPlanAction(page, action, timeout = DEFAULT_TIMEOUT_MS) {
     return;
   }
 
+  if (action === 'click-company-brain-load') {
+    const loadButton = page.getByRole('button', { name: /^Load$/i }).first();
+    await loadButton.waitFor({ state: 'visible', timeout });
+    await loadButton.click();
+    await page.waitForFunction(
+      () => Boolean(globalThis.document?.body?.innerText?.includes('Company Brain directory')),
+      undefined,
+      { timeout }
+    );
+    return;
+  }
+
   throw new Error(`Installed app proof action is not allowlisted: ${action}`);
 }
 
