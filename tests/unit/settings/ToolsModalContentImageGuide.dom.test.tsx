@@ -7,6 +7,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ConfigProvider } from '@arco-design/web-react';
 import { SettingsTabNavigateProvider } from '@/renderer/components/settings/SettingsModal/settingsViewContext';
 
 const hooks = vi.hoisted(() => ({
@@ -105,6 +106,10 @@ vi.mock('@/common/adapter/ipcBridge', () => ({
 
 import ToolsModalContent from '@/renderer/components/settings/SettingsModal/contents/ToolsModalContent';
 
+function renderToolsModalContent(children: React.ReactNode) {
+  return render(<ConfigProvider>{children}</ConfigProvider>);
+}
+
 describe('ToolsModalContent image model guide', () => {
   beforeEach(() => {
     hooks.modelListWithImage = [];
@@ -130,7 +135,7 @@ describe('ToolsModalContent image model guide', () => {
 
   it('renders a clickable configure link that navigates to the model tab', async () => {
     const navigateToTab = vi.fn();
-    render(
+    renderToolsModalContent(
       <SettingsTabNavigateProvider value={navigateToTab}>
         <ToolsModalContent />
       </SettingsTabNavigateProvider>
@@ -144,7 +149,7 @@ describe('ToolsModalContent image model guide', () => {
   });
 
   it('renders the configure hint as plain text when no Settings host provides navigation', async () => {
-    const { container } = render(<ToolsModalContent />);
+    const { container } = renderToolsModalContent(<ToolsModalContent />);
 
     await waitFor(() => expect(container.textContent).toContain('settings.goToModelSettings'));
     const links = Array.from(container.querySelectorAll('a')).filter(
