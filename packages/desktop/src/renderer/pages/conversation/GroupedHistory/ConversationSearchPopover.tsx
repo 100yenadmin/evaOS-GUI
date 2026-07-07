@@ -11,7 +11,7 @@ import { usePresetAssistantInfo } from '@/renderer/hooks/agent/usePresetAssistan
 import { getAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { blockMobileInputFocus, blurActiveElement } from '@/renderer/utils/ui/focus';
 import { Empty, Spin, Typography } from '@arco-design/web-react';
-import { Close, CloseSmall, MessageOne, Search } from '@icon-park/react';
+import { Close, CloseSmall, MessageOne, Robot, Search } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -102,6 +102,16 @@ const ConversationAgentMark: React.FC<{ conversation: IMessageSearchItem['conver
   const { info: assistantInfo } = usePresetAssistantInfo(conversation);
 
   if (assistantInfo) {
+    if (assistantInfo.isFallback) {
+      return (
+        <Robot
+          theme='outline'
+          size='18'
+          title={assistantInfo.name}
+          className='line-height-0 flex-shrink-0 text-t-secondary'
+        />
+      );
+    }
     if (assistantInfo.isEmoji) {
       return (
         <span className='text-18px leading-none flex-shrink-0' title={assistantInfo.name}>

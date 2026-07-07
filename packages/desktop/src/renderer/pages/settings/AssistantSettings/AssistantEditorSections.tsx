@@ -24,8 +24,6 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
   const [newPromptDraft, setNewPromptDraft] = useState('');
   const [editingPromptIndex, setEditingPromptIndex] = useState<number | null>(null);
   const [editingPromptDraft, setEditingPromptDraft] = useState('');
-  const [skillsPopupVisible, setSkillsPopupVisible] = useState(false);
-  const [mcpPopupVisible, setMcpPopupVisible] = useState(false);
 
   const { isCreating, profile, agent, prompts, defaults, rules, skills, actions } = editor;
   const editName = profile.name;
@@ -321,7 +319,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
           <div className='text-14px font-500 text-t-primary'>
             {t('settings.assistantEngineSection', { defaultValue: 'Engine' })}
           </div>
-          <span className='rounded-6px border border-success-8 bg-success-8 px-8px py-2px text-10px font-600 text-white'>
+          <span className='rounded-6px border border-warning-8 bg-warning-8 px-8px py-2px text-10px font-600 text-white'>
             {t('settings.assistantOnlyNewConversation', { defaultValue: 'New conversations only' })}
           </span>
         </div>

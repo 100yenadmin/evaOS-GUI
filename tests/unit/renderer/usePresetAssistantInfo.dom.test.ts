@@ -32,6 +32,7 @@ vi.mock('@/common', () => ({
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
+  resolveBackendAssetUrl: (value: string | undefined) => value,
   resolveExtensionAssetUrl: (value: string | undefined) => value,
 }));
 
@@ -136,6 +137,53 @@ describe('usePresetAssistantInfo', () => {
       name: 'Generic Runtime',
       logo: '🧩',
       isEmoji: true,
+    });
+  });
+
+  it('marks catalog assistants with empty avatars as assistant fallback icons', () => {
+    useSWRMock.mockImplementation((key: unknown) => {
+      if (key === 'assistants') {
+        return {
+          data: [
+            {
+              id: 'assistant-empty-avatar',
+              source: 'user',
+              name: 'Empty Avatar',
+              avatar: '',
+              name_i18n: {},
+              description_i18n: {},
+              enabled: true,
+              sort_order: 0,
+              preset_agent_type: 'codex',
+              enabled_skills: [],
+              custom_skill_names: [],
+              disabled_builtin_skills: [],
+              context_i18n: {},
+              prompts: [],
+              prompts_i18n: {},
+              models: [],
+            },
+          ],
+          isLoading: false,
+        };
+      }
+      if (key === 'extensions.acpAdapters') return { data: [], isLoading: false };
+      if (key === 'agents.detected') return { data: [], isLoading: false };
+      return { data: undefined, isLoading: false };
+    });
+
+    const conversation = makeConversation({
+      preset_assistant_id: 'assistant-empty-avatar',
+      backend: 'codex',
+    });
+
+    const { result } = renderHook(() => usePresetAssistantInfo(conversation));
+
+    expect(result.current.info).toEqual({
+      name: 'Empty Avatar',
+      logo: '',
+      isEmoji: false,
+      isFallback: true,
     });
   });
 });

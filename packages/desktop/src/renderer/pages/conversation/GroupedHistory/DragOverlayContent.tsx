@@ -5,8 +5,9 @@
  */
 
 import type { TChatConversation } from '@/common/config/storage';
+import { usePresetAssistantInfo } from '@/renderer/hooks/agent/usePresetAssistantInfo';
 import { getAgentLogo } from '@/renderer/utils/model/agentLogo';
-import { MessageOne } from '@icon-park/react';
+import { MessageOne, Robot } from '@icon-park/react';
 import React from 'react';
 
 import { getBackendKeyFromConversation } from './utils/exportHelpers';
@@ -16,6 +17,8 @@ type DragOverlayContentProps = {
 };
 
 const DragOverlayContent: React.FC<DragOverlayContentProps> = ({ conversation }) => {
+  const { info: assistantInfo } = usePresetAssistantInfo(conversation);
+
   if (!conversation) return null;
 
   const backendKey = getBackendKeyFromConversation(conversation);
@@ -31,7 +34,13 @@ const DragOverlayContent: React.FC<DragOverlayContentProps> = ({ conversation })
         transform: 'scale(1.02)',
       }}
     >
-      {logo ? (
+      {assistantInfo?.isFallback ? (
+        <Robot theme='outline' size='20' className='line-height-0 flex-shrink-0' />
+      ) : assistantInfo?.isEmoji ? (
+        <span className='text-18px leading-none flex-shrink-0'>{assistantInfo.logo}</span>
+      ) : assistantInfo?.logo ? (
+        <img src={assistantInfo.logo} alt={assistantInfo.name} className='w-18px h-18px rounded-50% flex-shrink-0' />
+      ) : logo ? (
         <img src={logo} alt={`${backendKey || 'agent'} logo`} className='w-18px h-18px rounded-50% flex-shrink-0' />
       ) : (
         <MessageOne theme='outline' size='20' className='line-height-0 flex-shrink-0' />

@@ -10,14 +10,14 @@ import type { TChatConversation } from '@/common/config/storage';
 import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import { getEvaosAssistantDisplayName } from '@/renderer/evaos/evaosAssistantPresentation';
-import CoworkLogo from '@/renderer/assets/icons/cowork.svg';
-import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
+import { resolveAssistantAvatar } from '@/renderer/utils/model/assistantAvatar';
 import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents, type AgentMetadata } from '@/renderer/utils/model/agentTypes';
 import useSWR from 'swr';
 export interface PresetAssistantInfo {
   name: string;
   logo: string;
   isEmoji: boolean;
+  isFallback?: boolean;
 }
 
 /**
@@ -51,12 +51,10 @@ export function resolvePresetId(conversation: TChatConversation): string | null 
     assistant_id?: unknown;
     preset_assistant_id?: unknown;
     custom_agent_id?: unknown;
-    enabled_skills?: unknown;
   };
   const assistant_id = typeof extra?.assistant_id === 'string' ? extra.assistant_id.trim() : '';
   const preset_assistant_id = typeof extra?.preset_assistant_id === 'string' ? extra.preset_assistant_id.trim() : '';
   const custom_agent_id = typeof extra?.custom_agent_id === 'string' ? extra.custom_agent_id.trim() : '';
-  const enabled_skills = Array.isArray(extra?.enabled_skills) ? extra.enabled_skills : [];
 
   if (assistant_id) {
     return assistant_id.replace('builtin-', '');
@@ -80,29 +78,20 @@ export function resolvePresetId(conversation: TChatConversation): string | null 
 }
 
 /**
- * 规范化头像：支持 emoji / 内置 svg / 扩展资源 URL
+ * 规范化头像：支持 emoji / 内置 svg / 显式 fallback
  * Normalize avatar to either emoji text or a renderable image URL
  */
-function normalizeAvatar(avatar: string | undefined): { logo: string; isEmoji: boolean } {
-  const value = (avatar || '').trim();
-  if (!value) return { logo: '🤖', isEmoji: true };
-
-  if (value === 'cowork.svg') {
-    return { logo: CoworkLogo, isEmoji: false };
+function normalizeAvatar(avatar: string | undefined): { logo: string; isEmoji: boolean; isFallback?: boolean } {
+  const resolved = resolveAssistantAvatar(avatar);
+  if (resolved.kind === 'image') {
+    return { logo: resolved.value, isEmoji: false };
   }
 
-  const resolved = resolveExtensionAssetUrl(value) || value;
-  const isImage = /\.(svg|png|jpe?g|webp|gif)$/i.test(resolved) || /^(https?:|file:\/\/|data:|\/)/i.test(resolved);
-  if (isImage) {
-    return { logo: resolved, isEmoji: false };
+  if (resolved.kind === 'fallback') {
+    return { logo: '', isEmoji: false, isFallback: true };
   }
 
-  // Unknown svg identifiers fallback to default emoji to avoid broken icons.
-  if (value.endsWith('.svg')) {
-    return { logo: '🤖', isEmoji: true };
-  }
-
-  return { logo: value, isEmoji: true };
+  return { logo: resolved.value, isEmoji: true };
 }
 
 function normalizeAssistantLabel(value: string | undefined): string {
@@ -176,7 +165,7 @@ function buildPresetInfoFromAssistant(assistant: Assistant, locale: string): Pre
   const name = getEvaosAssistantDisplayName(assistant, localeKey || locale);
   const avatar = typeof assistant.avatar === 'string' ? assistant.avatar : '';
   const normalized = normalizeAvatar(avatar);
-  return { name, logo: normalized.logo, isEmoji: normalized.isEmoji };
+  return { name, logo: normalized.logo, isEmoji: normalized.isEmoji, isFallback: normalized.isFallback };
 }
 
 function inferLegacyAssistantInfo(
@@ -250,7 +239,12 @@ export function usePresetAssistantInfo(conversation: TChatConversation | undefin
       if (remoteAgent) {
         const normalized = normalizeAvatar(remoteAgent.avatar);
         return {
-          info: { name: remoteAgent.name, logo: normalized.logo, isEmoji: normalized.isEmoji },
+          info: {
+            name: remoteAgent.name,
+            logo: normalized.logo,
+            isEmoji: normalized.isEmoji,
+            isFallback: normalized.isFallback,
+          },
           isLoading: false,
         };
       }
@@ -274,7 +268,15 @@ export function usePresetAssistantInfo(conversation: TChatConversation | undefin
         const row = detectedAgents.find((a) => a.id === rowAgentId && a.agent_source === 'custom');
         if (row) {
           const normalized = normalizeAvatar(row.icon);
-          return { info: { name: row.name, logo: normalized.logo, isEmoji: normalized.isEmoji }, isLoading: false };
+          return {
+            info: {
+              name: row.name,
+              logo: normalized.logo,
+              isEmoji: normalized.isEmoji,
+              isFallback: normalized.isFallback,
+            },
+            isLoading: false,
+          };
         }
       }
     }
@@ -318,7 +320,15 @@ export function usePresetAssistantInfo(conversation: TChatConversation | undefin
           const name = typeof adapter.name === 'string' ? adapter.name : adapterId;
           const avatar = typeof adapter.avatar === 'string' ? adapter.avatar : '';
           const normalized = normalizeAvatar(avatar);
-          return { info: { name, logo: normalized.logo, isEmoji: normalized.isEmoji }, isLoading: false };
+          return {
+            info: {
+              name,
+              logo: normalized.logo,
+              isEmoji: normalized.isEmoji,
+              isFallback: normalized.isFallback,
+            },
+            isLoading: false,
+          };
         }
       }
     }
