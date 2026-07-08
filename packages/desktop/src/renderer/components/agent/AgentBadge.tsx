@@ -70,7 +70,7 @@ const AgentBadge: React.FC<AgentBadgeProps> = ({
   const navigate = useNavigate();
   const handleClick = useCallback(() => {
     if (!assistantId) return;
-    navigate(`/settings/assistants?highlight=${encodeURIComponent(assistantId)}`);
+    navigate(`/assistants?highlight=${encodeURIComponent(assistantId)}`);
   }, [assistantId, navigate]);
 
   return (

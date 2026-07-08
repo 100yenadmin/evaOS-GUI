@@ -103,7 +103,7 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
       console.error('[AssistantSelectionArea] Failed to persist assistant open intent:', error);
     }
 
-    navigate('/settings/assistants', {
+    navigate('/assistants', {
       state: {
         openAssistantId: targetAssistant.id,
         openAssistantEditor: true,
@@ -246,11 +246,7 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
               </div>
             );
           })}
-          <div
-            data-testid='btn-add-preset'
-            className={styles.assistantCardAdd}
-            onClick={() => navigate('/settings/assistants')}
-          >
+          <div data-testid='btn-add-preset' className={styles.assistantCardAdd} onClick={() => navigate('/assistants')}>
             <Plus theme='outline' size={20} />
           </div>
         </div>

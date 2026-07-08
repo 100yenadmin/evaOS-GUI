@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -281,6 +281,7 @@ describe('Sider runtime route visibility', () => {
     expect(screen.getByText('Hermes')).toBeInTheDocument();
     expect(screen.getByText('Mission Control')).toBeInTheDocument();
     expect(screen.getByText('Shared Browser')).toBeInTheDocument();
+    expect(screen.getByText('settings.assistants')).toBeInTheDocument();
     expect(screen.getByText('cron.scheduledTasks')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
     expect(screen.getByText('Support')).toBeInTheDocument();
@@ -294,6 +295,8 @@ describe('Sider runtime route visibility', () => {
     expect(content.indexOf('Hermes')).toBeLessThan(content.indexOf('Mission Control'));
     expect(content.indexOf('Mission Control')).toBeLessThan(content.indexOf('Shared Browser'));
     expect(content.indexOf('Shared Browser')).toBeLessThan(content.indexOf('Design'));
+    expect(content.indexOf('Design')).toBeLessThan(content.indexOf('settings.assistants'));
+    expect(content.indexOf('settings.assistants')).toBeLessThan(content.indexOf('cron.scheduledTasks'));
     expect(content.indexOf('cron.scheduledTasks')).toBeLessThan(content.indexOf('Terminal'));
     expect(content.indexOf('Terminal')).toBeLessThan(content.indexOf('Support'));
     expect(content.indexOf('Support')).toBeLessThan(content.indexOf('Admin'));
@@ -326,6 +329,25 @@ describe('Sider runtime route visibility', () => {
     expect(screen.queryByText('- Company Brain')).not.toBeInTheDocument();
     expect(screen.queryByText('Shared Browser')).not.toBeInTheDocument();
     expect(screen.getByText('- Mac & iPhone')).toBeInTheDocument();
+  });
+
+  it('keeps Assistants as a top-level sidebar route outside the Settings sidebar', async () => {
+    customerContextMock.roles = ['owner'];
+
+    const { unmount } = renderSiderWithLocation('/guid');
+
+    fireEvent.click(screen.getByTestId('sider-assistants-entry'), { clientX: -1, clientY: -1 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('route-path')).toHaveTextContent('/assistants');
+    });
+    expect(screen.queryByTestId('mock-settings-sider')).not.toBeInTheDocument();
+
+    unmount();
+    renderSiderWithLocation('/assistants');
+
+    expect(screen.getByText('settings.assistants')).toBeInTheDocument();
+    expect(screen.queryByTestId('mock-settings-sider')).not.toBeInTheDocument();
   });
 
   it('shows product routes only when the broker policy grants the matching scopes', async () => {

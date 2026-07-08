@@ -28,6 +28,11 @@ describe('evaOS beta WebUI guardrail', () => {
     expect(getBuiltinSettingsNavItems(true, t).map((item) => item.id)).not.toContain('webui');
   });
 
+  it('keeps Assistants out of Settings navigation after promotion to the top-level sidebar', () => {
+    expect(BUILTIN_TAB_IDS).not.toContain('assistants');
+    expect(getBuiltinSettingsNavItems(true, t).map((item) => item.id)).not.toContain('assistants');
+  });
+
   it('blocks direct WebUI route rendering by default', () => {
     expect(evaosBetaWebUIRouteElement('allowed', 'blocked')).toBe('blocked');
   });

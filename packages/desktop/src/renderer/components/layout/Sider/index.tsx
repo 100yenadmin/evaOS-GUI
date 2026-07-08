@@ -24,7 +24,13 @@ import { useEvaosSidebarState } from '@renderer/evaos/useEvaosSidebarState';
 import { SiderTerminalEntry } from '@renderer/evaos/sidebar';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
-import { SiderScheduledEntry, SiderSearchEntry, SiderSupportEntry, SiderToolbar } from './SiderNav';
+import {
+  SiderAssistantsEntry,
+  SiderScheduledEntry,
+  SiderSearchEntry,
+  SiderSupportEntry,
+  SiderToolbar,
+} from './SiderNav';
 import SiderFooter from './SiderFooter';
 import CronJobSiderSection from './CronJobSiderSection';
 import TeamSiderSection from './TeamSiderSection';
@@ -119,6 +125,19 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     closePreview();
     setIsBatchMode(false);
     Promise.resolve(navigate('/scheduled')).catch((error) => {
+      console.error('Navigation failed:', error);
+    });
+    if (onSessionClick) {
+      onSessionClick();
+    }
+  };
+
+  const handleAssistantsClick = () => {
+    cleanupSiderTooltips();
+    blurActiveElement();
+    closePreview();
+    setIsBatchMode(false);
+    Promise.resolve(navigate('/assistants')).catch((error) => {
       console.error('Navigation failed:', error);
     });
     if (onSessionClick) {
@@ -370,6 +389,13 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
               canSeeCompanyBrain={evaosSidebarState.canSeeCompanyBrain}
               canSeeNativeCompanion={evaosSidebarState.canSeeNativeCompanion}
               onNavigate={handleEvaosNavigate}
+            />
+            <SiderAssistantsEntry
+              isMobile={isMobile}
+              isActive={pathname === '/assistants'}
+              collapsed={collapsed}
+              siderTooltipProps={siderTooltipProps}
+              onClick={handleAssistantsClick}
             />
             {/* Scheduled tasks nav entry - fixed above scroll */}
             <SiderScheduledEntry

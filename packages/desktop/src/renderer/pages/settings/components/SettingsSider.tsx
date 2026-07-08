@@ -12,7 +12,6 @@ import {
   Lightning,
   LinkCloud,
   Puzzle,
-  Robot,
   Speed,
   System,
 } from '@icon-park/react';
@@ -28,7 +27,6 @@ import { isEvaosBetaSettingsTabVisible } from '@renderer/evaos/evaosBetaShellPol
 export const BUILTIN_TAB_IDS = [
   'agent',
   'model',
-  'assistants',
   'capabilities',
   'display',
   'webui',
@@ -43,6 +41,7 @@ export const BUILTIN_TAB_IDS = [
  * This keeps older extensions working without requiring them to update.
  */
 export const LEGACY_ANCHOR_REMAP: Record<string, string> = {
+  assistants: 'agent',
   'skills-hub': 'capabilities',
   tools: 'capabilities',
 };
@@ -83,12 +82,6 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
     // Build builtin items
     const builtinMap: Record<string, SiderItem> = {
       model: { id: 'model', label: t('settings.model'), icon: <LinkCloud />, path: 'model' },
-      assistants: {
-        id: 'assistants',
-        label: t('settings.assistants', { defaultValue: 'Assistants' }),
-        icon: <Robot />,
-        path: 'assistants',
-      },
       agent: {
         id: 'agent',
         label: t('settings.agents', { defaultValue: 'Agents' }),

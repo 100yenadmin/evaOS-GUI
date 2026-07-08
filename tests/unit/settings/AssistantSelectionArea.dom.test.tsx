@@ -6,8 +6,8 @@
 
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { ConfigProvider, Message } from '@arco-design/web-react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { ConfigProvider } from '@arco-design/web-react';
 import AssistantSelectionArea from '@/renderer/pages/guid/components/AssistantSelectionArea';
 
 const mockNavigate = vi.fn();
@@ -172,7 +172,7 @@ describe('AssistantSelectionArea', () => {
 
     openDetails?.();
 
-    expect(mockNavigate).toHaveBeenCalledWith('/settings/assistants', {
+    expect(mockNavigate).toHaveBeenCalledWith('/assistants', {
       state: {
         openAssistantId: 'cowork',
         openAssistantEditor: true,
@@ -247,6 +247,50 @@ describe('AssistantSelectionArea', () => {
       .map((element) => element.getAttribute('data-testid')?.replace('preset-pill-', ''));
 
     expect(presetCards).toEqual(['cowork', 'writer']);
+  });
+
+  it('opens the top-level Assistants route from the New Chat add tile', () => {
+    render(
+      <ConfigProvider>
+        <AssistantSelectionArea
+          is_presetAgent={false}
+          selectedAgentInfo={undefined}
+          assistants={[
+            {
+              id: 'cowork',
+              source: 'builtin',
+              name: 'Cowork',
+              name_i18n: {},
+              description_i18n: {},
+              enabled: true,
+              sort_order: 1,
+              preset_agent_type: 'claude',
+              enabled_skills: [],
+              custom_skill_names: [],
+              disabled_builtin_skills: [],
+              context_i18n: {},
+              prompts: [],
+              prompts_i18n: {},
+              models: [],
+            },
+          ]}
+          localeKey='en-US'
+          currentEffectiveAgentInfo={{
+            agent_type: 'acp',
+            isFallback: false,
+            originalType: 'acp',
+            isAvailable: true,
+          }}
+          onSelectAssistant={vi.fn()}
+          onSetInput={vi.fn()}
+          onFocusInput={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+
+    fireEvent.click(screen.getByTestId('btn-add-preset'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/assistants');
   });
 
   it('hides retired release-catalog assistants from the New Chat grid', () => {
