@@ -29,7 +29,9 @@
     "customPathLabel": "Путь к директории навыков",
     "customPathPlaceholder": "например, C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "Поиск навыков...",
-    "noSearchResults": "Навыки не найдены"
+    "noSearchResults": "Навыки не найдены",
+    "customHint": "Импортируйте папку навыка, родительскую папку или zip-архив; импорт с тем же именем обновляет существующий навык.",
+    "extensionHint": "Навыки, предоставленные установленными расширениями, сгруппированы здесь, чтобы их источник был понятен."
   },
   "authMethod": "Аутентификация",
   "geminiApiKey": "API-ключ Gemini",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "Расширение",
   "autoInjectedSkills": "Автоматически добавленные навыки",
   "autoInjectedSkillsBadge": "Авто",
+  "autoInjectedSkillsHint": "Автоматически загружаются в каждый диалог; включать не нужно; агент сам решает, когда их использовать.",
   "skillFolderPath": "Путь к папке навыков",
   "skillPathPlaceholder": "Введите или выберите пути к папкам навыков, разделённые запятыми",
   "pleaseSelectSkillPath": "Выберите путь к папке навыков",

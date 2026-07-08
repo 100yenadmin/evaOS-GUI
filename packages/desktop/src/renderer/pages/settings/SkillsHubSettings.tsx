@@ -228,6 +228,13 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
             </div>
           </div>
 
+          <p data-testid='skills-hub-my-hint' className='m-0 mb-16px text-12px leading-relaxed text-t-tertiary'>
+            {t('settings.skillsHub.customHint', {
+              defaultValue:
+                'Import a skill folder, parent folder, or zip archive; importing the same name updates the existing skill.',
+            })}
+          </p>
+
           {/* Path Display moved below the toolbar */}
           {skillPaths && (
             <div className='flex items-center gap-8px text-12px text-t-tertiary font-mono bg-transparent py-4px mb-16px relative z-10 pt-4px border-t border-t-transparent'>
@@ -258,20 +265,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                   </div>
 
                   <div className='flex-1 min-w-0 flex flex-col justify-center gap-6px'>
-                    <div className='flex items-center gap-10px flex-wrap'>
-                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>
-                        {skill.evaosDisplayName}
-                      </h3>
-                      {skill.source === 'custom' ? (
-                        <span className='bg-[rgba(var(--orange-6),0.08)] text-orange-6 border border-[rgba(var(--orange-6),0.2)] text-11px px-6px py-1px rd-4px font-medium'>
-                          {t('settings.skillsHub.custom', { defaultValue: 'Custom' })}
-                        </span>
-                      ) : (
-                        <span className='bg-[rgba(var(--blue-6),0.08)] text-blue-6 border border-[rgba(var(--blue-6),0.2)] text-11px px-6px py-1px rd-4px font-medium'>
-                          {t('settings.skillsHub.builtin', { defaultValue: 'Built-in' })}
-                        </span>
-                      )}
-                    </div>
+                    <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.evaosDisplayName}</h3>
                     {skill.evaosDisplayDescription && (
                       <p
                         className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'
@@ -335,10 +329,19 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                 {extensionSkills.length}
               </span>
             </div>
+            <p
+              data-testid='skills-hub-extension-hint'
+              className='m-0 mb-16px text-12px leading-relaxed text-t-tertiary'
+            >
+              {t('settings.skillsHub.extensionHint', {
+                defaultValue: 'Skills provided by installed extensions stay grouped here so their origin is clear.',
+              })}
+            </p>
             <div className='w-full flex flex-col gap-6px'>
               {extensionSkills.map((skill) => (
                 <div
                   key={skill.name}
+                  data-testid={`extension-skill-card-${normalizeTestId(skill.name)}`}
                   ref={(el) => {
                     skillRefs.current[skill.name] = el;
                   }}
@@ -350,14 +353,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                     </div>
                   </div>
                   <div className='flex-1 min-w-0 flex flex-col justify-center gap-4px'>
-                    <div className='flex items-center gap-10px'>
-                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>
-                        {skill.evaosDisplayName}
-                      </h3>
-                      <span className='bg-[rgba(var(--primary-6),0.08)] text-primary-6 border border-[rgba(var(--primary-6),0.2)] text-10px px-6px py-1px rd-4px font-medium uppercase'>
-                        {t('settings.extensionSkillsBadge', { defaultValue: 'Extension' })}
-                      </span>
-                    </div>
+                    <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.evaosDisplayName}</h3>
                     {skill.evaosDisplayDescription && (
                       <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'>
                         {skill.evaosDisplayDescription}
@@ -385,10 +381,17 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                 {betaVisibleBuiltinAutoSkills.length}
               </span>
             </div>
+            <p data-testid='skills-hub-auto-hint' className='m-0 mb-16px text-12px leading-relaxed text-t-tertiary'>
+              {t('settings.autoInjectedSkillsHint', {
+                defaultValue:
+                  'Loaded automatically into every conversation; no need to enable them; the agent decides when to use them.',
+              })}
+            </p>
             <div className='w-full flex flex-col gap-6px'>
               {betaVisibleBuiltinAutoSkills.map((skill) => (
                 <div
                   key={skill.name}
+                  data-testid={`auto-skill-card-${normalizeTestId(skill.name)}`}
                   ref={(el) => {
                     skillRefs.current[skill.name] = el;
                   }}
@@ -400,14 +403,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                     </div>
                   </div>
                   <div className='flex-1 min-w-0 flex flex-col justify-center gap-4px'>
-                    <div className='flex items-center gap-10px'>
-                      <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>
-                        {skill.evaosDisplayName}
-                      </h3>
-                      <span className='bg-[rgba(var(--success-6),0.08)] text-[rgb(var(--success-6))] border border-[rgba(var(--success-6),0.2)] text-10px px-6px py-1px rd-4px font-medium uppercase'>
-                        {t('settings.autoInjectedSkillsBadge')}
-                      </span>
-                    </div>
+                    <h3 className='text-14px font-semibold text-t-primary/90 truncate m-0'>{skill.evaosDisplayName}</h3>
                     {skill.evaosDisplayDescription && (
                       <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0'>
                         {skill.evaosDisplayDescription}

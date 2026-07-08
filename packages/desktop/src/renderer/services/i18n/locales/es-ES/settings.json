@@ -30,6 +30,8 @@
     "customPathPlaceholder": "Ej. C:\\Users\\yo\\.misherramientas\\skills",
     "searchPlaceholder": "Buscar habilidades...",
     "noSearchResults": "No se encontraron habilidades coincidentes",
+    "customHint": "Importa una carpeta de habilidad, carpeta superior o archivo zip; importar el mismo nombre actualiza la habilidad existente.",
+    "extensionHint": "Las habilidades proporcionadas por extensiones instaladas se agrupan aquí para que su origen quede claro.",
     "importPartialSuccess": "Imported {{successCount}} skill(s), {{failureCount}} failed: {{failures}}",
     "importAllFailed": "Failed to import {{failureCount}} skill(s): {{failures}}",
     "importFailureFileSizeDetail": "{{path}} is {{actual}}; limit is {{limit}}",
@@ -84,7 +86,6 @@
     "tabOfficial": "Habilidades oficiales",
     "officialSkillsTitle": "Habilidades oficiales",
     "officialSkillsEmpty": "No hay habilidades oficiales disponibles.",
-    "customHint": "Importa una carpeta de habilidad, carpeta superior o zip; hasta {{maxFileSize}} por archivo y {{maxTotalSize}} por habilidad; importar el mismo nombre sobrescribe la habilidad existente.",
     "officialHint": "Habilidades oficiales incluidas en evaOS Workbench: listas para usar, de solo lectura y actualizadas con cada versión."
   },
   "authMethod": "Autenticación",
@@ -232,6 +233,7 @@
   "extensionSkillsBadge": "Extensión",
   "autoInjectedSkills": "Habilidades inyectadas automáticamente",
   "autoInjectedSkillsBadge": "Auto",
+  "autoInjectedSkillsHint": "Se cargan automáticamente en cada conversación; no hace falta activarlas; el agente decide cuándo usarlas.",
   "skillFolderPath": "Ruta de la carpeta de habilidades",
   "skillPathPlaceholder": "Ingresa o explora rutas de carpetas de habilidades, separadas por coma",
   "pleaseSelectSkillPath": "Por favor selecciona una ruta de carpeta de habilidades",
@@ -1262,7 +1264,6 @@
     }
   },
   "providerIdConflict": "El ID del proveedor ya existe. Inténtalo de nuevo.",
-  "autoInjectedSkillsHint": "Se cargan automáticamente en cada conversación: no hace falta activarlas; el agente decide cuándo usarlas.",
   "cssSettings": "CSS Settings",
   "fontSize": "Scale",
   "fontSizeDescription": "Adjust the UI zoom level so the entire interface matches your preferred size.",

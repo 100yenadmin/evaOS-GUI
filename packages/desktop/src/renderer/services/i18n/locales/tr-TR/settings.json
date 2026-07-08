@@ -29,7 +29,9 @@
     "customPathLabel": "Beceri Dizin Yolu",
     "customPathPlaceholder": "Örn: C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "Beceri ara...",
-    "noSearchResults": "İlgili beceri bulunamadı"
+    "noSearchResults": "İlgili beceri bulunamadı",
+    "customHint": "Bir beceri klasörü, üst klasör veya zip arşivi içe aktarın; aynı adla içe aktarmak mevcut beceriyi günceller.",
+    "extensionHint": "Yüklü uzantıların sağladığı beceriler, kökenleri net kalsın diye burada gruplanır."
   },
   "authMethod": "Kimlik Doğrulama",
   "geminiApiKey": "Gemini API Anahtarı",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "Uzantı",
   "autoInjectedSkills": "Otomatik Eklenen Beceriler",
   "autoInjectedSkillsBadge": "Otomatik",
+  "autoInjectedSkillsHint": "Her sohbete otomatik olarak yüklenir; etkinleştirmeye gerek yoktur; aracı bunları ne zaman kullanacağına karar verir.",
   "skillFolderPath": "Yetenek Klasör Yolu",
   "skillPathPlaceholder": "Yetenek klasör yolunu girin veya göz atın (virgülle ayırın)",
   "pleaseSelectSkillPath": "Lütfen bir yetenek klasör yolu seçin",

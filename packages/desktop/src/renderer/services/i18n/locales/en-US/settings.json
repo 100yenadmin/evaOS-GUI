@@ -29,7 +29,9 @@
     "customPathLabel": "Skill Directory Path",
     "customPathPlaceholder": "e.g. C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "Search skills...",
-    "noSearchResults": "No matching skills found"
+    "noSearchResults": "No matching skills found",
+    "customHint": "Import a skill folder, parent folder, or zip archive; importing the same name updates the existing skill.",
+    "extensionHint": "Skills provided by installed extensions stay grouped here so their origin is clear."
   },
   "authMethod": "Authentication",
   "geminiApiKey": "Gemini API Key",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "Extension",
   "autoInjectedSkills": "Auto-injected Skills",
   "autoInjectedSkillsBadge": "Auto",
+  "autoInjectedSkillsHint": "Loaded automatically into every conversation; no need to enable them; the agent decides when to use them.",
   "skillFolderPath": "Skill Folder Path",
   "skillPathPlaceholder": "Enter or browse skill folder path(s), separated by comma",
   "pleaseSelectSkillPath": "Please select a skill folder path",
