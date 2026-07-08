@@ -878,7 +878,7 @@ export const fs = {
       skills.filter(isAutoInjectSkill).map((skill) => ({
         name: skill.name,
         description: skill.description,
-        location: skill.location,
+        location: skill.relative_location || skill.location,
       }))
   ),
   materializeSkillsForAgent: httpPost<

@@ -245,19 +245,29 @@ async function listBuiltinAutoSkills(page: import('@playwright/test').Page): Pro
   return page.evaluate(async () => {
     const port = (window as unknown as { __backendPort?: number }).__backendPort;
     if (!port) throw new Error('window.__backendPort is not available');
-    const res = await fetch(`http://127.0.0.1:${port}/api/skills/builtin-auto`);
+    const res = await fetch(`http://127.0.0.1:${port}/api/skills`);
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`GET /api/skills/builtin-auto failed (${res.status}): ${body}`);
+      throw new Error(`GET /api/skills failed (${res.status}): ${body}`);
     }
     const json = (await res.json()) as
-      | { data?: Array<{ name: string }> }
-      | Array<{ name: string }>
-      | { items?: Array<{ name: string }> };
-    if (Array.isArray(json)) return json;
-    if (Array.isArray(json.data)) return json.data;
-    if (Array.isArray(json.items)) return json.items;
-    return [];
+      | { data?: Array<{ name: string; location?: string; relative_location?: string; is_auto_inject?: boolean }> }
+      | Array<{ name: string; location?: string; relative_location?: string; is_auto_inject?: boolean }>
+      | { items?: Array<{ name: string; location?: string; relative_location?: string; is_auto_inject?: boolean }> };
+    const skills = Array.isArray(json)
+      ? json
+      : Array.isArray(json.data)
+        ? json.data
+        : Array.isArray(json.items)
+          ? json.items
+          : [];
+    return skills.filter(
+      (skill) =>
+        skill.is_auto_inject === true ||
+        skill.relative_location?.startsWith('auto-inject/') === true ||
+        skill.location?.startsWith('auto-inject/') === true ||
+        skill.location?.includes('/auto-inject/') === true
+    );
   });
 }
 

@@ -160,7 +160,7 @@ describe('evaOS IPC bridge provider wrapper', () => {
       {
         name: 'cron',
         description: 'Auto cron skill',
-        location: '/bundle/auto-inject/cron/SKILL.md',
+        location: 'auto-inject/cron/SKILL.md',
       },
     ]);
     expect(fetchSpy).toHaveBeenCalledWith(

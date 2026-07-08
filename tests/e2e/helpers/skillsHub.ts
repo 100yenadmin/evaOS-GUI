@@ -30,6 +30,9 @@ export interface Skill {
   description?: string;
   source: SkillSource;
   location?: string;
+  relative_location?: string;
+  is_auto_inject?: boolean;
+  is_custom?: boolean;
 }
 
 export interface ExternalSource {
@@ -37,6 +40,15 @@ export interface ExternalSource {
   path: string;
   count: number;
   skills: Skill[];
+}
+
+export function isAutoInjectSkill(skill: Skill): boolean {
+  return (
+    skill.is_auto_inject === true ||
+    skill.relative_location?.startsWith('auto-inject/') === true ||
+    skill.location?.startsWith('auto-inject/') === true ||
+    skill.location?.includes('/auto-inject/') === true
+  );
 }
 
 // ============================================================================
@@ -133,11 +145,11 @@ export async function getExternalSources(page: Page): Promise<ExternalSource[]> 
 }
 
 /**
- * Get auto-injected builtin skills (GET /api/skills/builtin-auto).
+ * Get auto-injected builtin skills from the unified skill catalog.
  */
 export async function getAutoSkills(page: Page): Promise<Skill[]> {
-  const skills = await httpGet<Skill[]>(page, '/api/skills/builtin-auto');
-  return skills ?? [];
+  const skills = await getMySkills(page);
+  return skills.filter(isAutoInjectSkill);
 }
 
 /**
@@ -191,11 +203,11 @@ export async function createTempExternalSourceDir(): Promise<{ path: string; cle
 }
 
 /**
- * Import a skill via HTTP bridge (POST /api/skills/import-symlink) for test setup.
+ * Import a skill via HTTP bridge (POST /api/skills/import) for test setup.
  */
 export async function importSkillViaBridge(page: Page, skillPath: string): Promise<{ success: boolean; msg?: string }> {
   try {
-    await httpPost(page, '/api/skills/import-symlink', { skillPath });
+    await httpPost(page, '/api/skills/import', { skill_path: skillPath });
     return { success: true };
   } catch (err) {
     return { success: false, msg: err instanceof Error ? err.message : String(err) };
