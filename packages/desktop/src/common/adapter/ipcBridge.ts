@@ -91,6 +91,7 @@ import {
   httpPost,
   httpPut,
   httpRequest,
+  isBackendHttpError,
   stubProvider,
   withResponseMap,
   wsEmitter,
@@ -108,6 +109,19 @@ import {
 
 const EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS = 15000;
 const EVAOS_RUNTIME_SURFACE_PROTOCOL = 'evaos-runtime-surface:';
+const AGENT_MANAGEMENT_PATH = '/api/agents/management';
+const LEGACY_MANAGED_AGENTS_PATH = '/api/agents?include_disabled=true';
+
+async function listManagedAgentsCompat(): Promise<AgentMetadata[]> {
+  try {
+    return await httpRequest<AgentMetadata[]>('GET', AGENT_MANAGEMENT_PATH, undefined, { silentStatuses: [404] });
+  } catch (error) {
+    if (!isBackendHttpError(error) || error.status !== 404) {
+      throw error;
+    }
+    return httpRequest<AgentMetadata[]>('GET', LEGACY_MANAGED_AGENTS_PATH, undefined, { silentStatuses: [404] });
+  }
+}
 
 type EvaosElectronBridgeAPI = {
   emit: (name: string, data: unknown) => Promise<unknown> | void;
@@ -1071,7 +1085,10 @@ export const acpConversation = {
   sendMessage: conversation.sendMessage,
   responseStream: conversation.responseStream,
   getAvailableAgents: httpGet<AgentMetadata[], void>('/api/agents'),
-  getManagedAgents: httpGet<AgentMetadata[], void>('/api/agents?include_disabled=true'),
+  getManagedAgents: {
+    provider: () => {},
+    invoke: listManagedAgentsCompat,
+  },
   refreshCustomAgents: httpPost<void, void>('/api/agents/refresh'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },

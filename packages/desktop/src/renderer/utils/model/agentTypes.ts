@@ -23,6 +23,8 @@ export type AgentType = 'acp' | 'remote' | 'aionrs' | 'openclaw-gateway' | 'nano
 /** Source tier of an agent row, mirroring backend `agent_source` enum. */
 export type AgentSource = 'internal' | 'builtin' | 'extension' | 'custom';
 
+export type AgentManagementStatus = 'online' | 'offline' | 'missing' | 'unchecked';
+
 /** Source-specific bookkeeping (how to probe, how to upgrade). */
 export type AgentSourceInfo = {
   binary_name?: string;
@@ -90,6 +92,13 @@ export type AgentMetadata = {
   enabled: boolean;
   /** True iff the backend resolved the spawn command on `$PATH` at hydrate time. */
   available: boolean;
+  /** v0.1.43 management endpoint equivalent for command presence. */
+  installed?: boolean;
+  /** v0.1.43 management endpoint diagnostic status. */
+  status?: AgentManagementStatus;
+  last_check_error_code?: string;
+  last_check_error_message?: string;
+  last_check_guidance?: string;
   /** True when the agent supports team mode (MCP stdio capable). Computed by backend. */
   team_capable?: boolean;
 
@@ -109,12 +118,43 @@ export type AgentMetadata = {
   handshake?: AgentHandshake;
 };
 
+const MANAGED_AGENT_AVAILABLE_STATUSES = new Set<AgentManagementStatus>(['online', 'unchecked']);
+
+export function normalizeManagedAgentAvailability(agent: AgentMetadata): AgentMetadata {
+  const status = agent.status;
+  const available =
+    agent.available ??
+    (agent.installed === false
+      ? false
+      : status
+        ? MANAGED_AGENT_AVAILABLE_STATUSES.has(status)
+        : agent.installed === true);
+
+  return {
+    ...agent,
+    available,
+  };
+}
+
+export function managedAgentsToDetectedAgents(agents: AgentMetadata[]): AgentMetadata[] {
+  return agents.map(normalizeManagedAgentAvailability).filter((agent) => agent.enabled !== false && agent.available);
+}
+
 /** Shared fetcher for DETECTED_AGENTS_SWR_KEY — single source of truth. */
 export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
   try {
     const agents = await ipcBridge.acpConversation.getAvailableAgents.invoke();
     if (Array.isArray(agents)) {
-      return agents as AgentMetadata[];
+      return agents.map(normalizeManagedAgentAvailability) as AgentMetadata[];
+    }
+  } catch {
+    // Fall back below for AionCore v0.1.43+, where /api/agents moved to
+    // /api/agents/management and rows carry installed/status diagnostics.
+  }
+  try {
+    const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
+    if (Array.isArray(agents)) {
+      return managedAgentsToDetectedAgents(agents as AgentMetadata[]);
     }
   } catch {
     // fallback to empty
@@ -127,7 +167,7 @@ export async function fetchManagedAgents(): Promise<AgentMetadata[]> {
   try {
     const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
     if (Array.isArray(agents)) {
-      return agents as AgentMetadata[];
+      return agents.map(normalizeManagedAgentAvailability) as AgentMetadata[];
     }
   } catch {
     // fallback to empty
