@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RuntimeDashboardPage from '@/renderer/pages/runtime-dashboard/RuntimeDashboardPage';
 
 const evaosBrokerMock = vi.hoisted(() => ({
+  beginDesktopAuth: vi.fn(),
+  claimDeviceCode: vi.fn(),
   runtimeStatus: vi.fn(),
   runtimeAction: vi.fn(),
 }));
@@ -19,6 +21,8 @@ const supportEmailMock = vi.hoisted(() => ({
 }));
 
 const brokerSessionMock = vi.hoisted(() => ({
+  brokerSessionLoading: false,
+  brokerSessionError: null as string | null,
   brokerAuthenticated: true,
   brokerSession: {
     state: 'authenticated',
@@ -61,8 +65,11 @@ vi.mock('@renderer/hooks/context/LayoutContext', () => ({
 vi.mock('@renderer/hooks/context/EvaosCustomerContext', () => ({
   useEvaosBrokeredCustomerContext: () => ({
     brokerSession: brokerSessionMock.brokerSession,
+    brokerSessionLoading: brokerSessionMock.brokerSessionLoading,
+    brokerSessionError: brokerSessionMock.brokerSessionError,
     brokerAuthenticated: brokerSessionMock.brokerAuthenticated,
     customerContext: customerContextMock,
+    refreshBrokerSession: vi.fn(),
   }),
 }));
 
@@ -72,6 +79,12 @@ vi.mock('@/renderer/utils/platform', () => ({
 
 vi.mock('@/common/adapter/ipcBridge', () => ({
   evaosBroker: {
+    beginDesktopAuth: {
+      invoke: evaosBrokerMock.beginDesktopAuth,
+    },
+    claimDeviceCode: {
+      invoke: evaosBrokerMock.claimDeviceCode,
+    },
     runtimeStatus: {
       invoke: evaosBrokerMock.runtimeStatus,
     },
@@ -87,6 +100,8 @@ describe('RuntimeDashboardPage', () => {
     localStorage.setItem('evaos.supportDiagnostics', '1');
     window.location.hash = '#/evaos';
     brokerSessionMock.brokerAuthenticated = true;
+    brokerSessionMock.brokerSessionLoading = false;
+    brokerSessionMock.brokerSessionError = null;
     brokerSessionMock.brokerSession = {
       state: 'authenticated',
       authenticated: true,
@@ -125,6 +140,59 @@ describe('RuntimeDashboardPage', () => {
         backendEnforced: true,
       },
     });
+    evaosBrokerMock.beginDesktopAuth.mockResolvedValue({
+      success: true,
+      data: {
+        authUrl: 'https://www.electricsheephq.com/auth/desktop?request=redacted',
+        callbackUrl: 'evaos-workbench://auth/callback?desktop_session=eds_callback_secret_for_test',
+        fallbackDeviceCode: 'AB-123',
+        message: 'Continue evaOS sign-in in the browser, then return here.',
+      },
+    });
+    evaosBrokerMock.claimDeviceCode.mockResolvedValue({
+      success: true,
+      data: {
+        state: 'authenticated',
+        authenticated: true,
+        expired: false,
+        userEmail: 'admin@100yen.org',
+        source: 'memory',
+        message: 'evaOS desktop session is active.',
+      },
+    });
+  });
+
+  it('offers desktop broker sign-in recovery instead of retrying runtime launch without a session', async () => {
+    brokerSessionMock.brokerAuthenticated = false;
+    brokerSessionMock.brokerSession = {
+      state: 'missing',
+      authenticated: false,
+      expired: false,
+      source: 'none',
+      message: 'Sign in to evaOS to connect this desktop shell.',
+    };
+
+    render(
+      <RuntimeDashboardPage
+        runtimeKey='openclaw'
+        title='evaOS'
+        subtitle='Primary evaOS agent workspace.'
+        issueRef='#619'
+      />
+    );
+
+    expect(await screen.findAllByText('Sign in to evaOS to connect this desktop shell.')).toHaveLength(2);
+    expect(evaosBrokerMock.runtimeStatus).not.toHaveBeenCalled();
+    expect(evaosBrokerMock.runtimeAction).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[0]);
+
+    await waitFor(() => expect(evaosBrokerMock.beginDesktopAuth).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Continue evaOS sign-in in the browser, then return here.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Backup code')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(
+      /desktop_session|eds_|Bearer|token=|callback|request=redacted|AB-123/i
+    );
   });
 
   it('fails closed when brokered runtime attach omits an opaque surface handle', async () => {
