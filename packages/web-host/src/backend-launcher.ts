@@ -9,7 +9,9 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
+import { join } from 'node:path';
 import { cleanupRegisteredAgentProcesses } from './agent-process-registry.js';
 import type { AppMetadata, BackendBinaryResolver } from './types.js';
 
@@ -69,7 +71,14 @@ type SpawnConfig = {
   workDir?: string;
   appVersion: string;
   isPackaged: boolean;
+  managedResourcesMode?: ManagedResourcesMode;
   recoverCorruptedDatabase?: boolean;
+};
+
+export type ManagedResourcesMode = 'bundled' | 'download';
+
+type AioncoreBundleManifest = {
+  managedResourcesBundle?: unknown;
 };
 
 export type BackendLaunchFlags = {
@@ -184,6 +193,26 @@ export class BackendStartupCancelledError extends Error {
   }
 }
 
+function getRuntimeKey(platform = process.platform, arch = process.arch): string {
+  return `${platform}-${arch}`;
+}
+
+export function resolveManagedResourcesModeForPackagedApp(appMeta: AppMetadata): ManagedResourcesMode | undefined {
+  if (!appMeta.isPackaged) return undefined;
+
+  const manifestPath = join(appMeta.resourcesPath, 'bundled-aioncore', getRuntimeKey(), 'manifest.json');
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as AioncoreBundleManifest;
+    if (manifest.managedResourcesBundle === 'no-acp') {
+      return 'download';
+    }
+  } catch {
+    // Missing/unreadable manifests fall back to the historical packaged mode.
+  }
+
+  return 'bundled';
+}
+
 export function buildSpawnArgs(config: SpawnConfig): string[] {
   const logLevel = process.env.AIONUI_LOG_LEVEL || (config.isPackaged ? 'info' : 'debug');
   const args = [
@@ -197,7 +226,7 @@ export function buildSpawnArgs(config: SpawnConfig): string[] {
     '--app-version',
     config.appVersion,
   ];
-  if (config.isPackaged) args.push('--managed-resources-mode', 'bundled');
+  if (config.isPackaged) args.push('--managed-resources-mode', config.managedResourcesMode ?? 'bundled');
   if (config.logDir) args.push('--log-dir', config.logDir);
   if (config.workDir) args.push('--work-dir', config.workDir);
   if (config.local) args.push('--local');
@@ -575,6 +604,7 @@ export class BackendLifecycleManager {
       workDir: dirs?.workDir,
       appVersion,
       isPackaged: this.appMeta.isPackaged,
+      managedResourcesMode: resolveManagedResourcesModeForPackagedApp(this.appMeta),
       recoverCorruptedDatabase: launchFlags.recoverCorruptedDatabase === true,
     });
     console.log(`[aioncore] starting: ${binaryPath} ${args.join(' ')}`);

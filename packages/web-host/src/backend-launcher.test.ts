@@ -6,6 +6,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import type { Socket } from 'node:net';
 
@@ -26,7 +29,13 @@ vi.mock('./agent-process-registry.js', () => ({
 import { spawn } from 'node:child_process';
 import { connect, createServer } from 'node:net';
 import { cleanupRegisteredAgentProcesses } from './agent-process-registry.js';
-import { buildSpawnArgs, buildSpawnEnv, findAvailablePort, BackendLifecycleManager } from './backend-launcher.js';
+import {
+  buildSpawnArgs,
+  buildSpawnEnv,
+  findAvailablePort,
+  BackendLifecycleManager,
+  resolveManagedResourcesModeForPackagedApp,
+} from './backend-launcher.js';
 import type { AppMetadata } from './types.js';
 
 const APP_META: AppMetadata = {
@@ -167,6 +176,20 @@ describe('buildSpawnArgs', () => {
     expect(args).toContain('bundled');
   });
 
+  it('passes requested managed resources mode when packaged', () => {
+    const args = buildSpawnArgs({
+      port: 1,
+      dbPath: '/d',
+      local: false,
+      appVersion: '0.0.1',
+      isPackaged: true,
+      managedResourcesMode: 'download',
+    });
+
+    expect(args).toContain('--managed-resources-mode');
+    expect(args).toContain('download');
+  });
+
   it('passes parent pid when provided', () => {
     const args = buildSpawnArgs({
       port: 1,
@@ -210,6 +233,54 @@ describe('buildSpawnArgs', () => {
       if (prev === undefined) delete process.env.AIONUI_LOG_LEVEL;
       else process.env.AIONUI_LOG_LEVEL = prev;
     }
+  });
+});
+
+describe('resolveManagedResourcesModeForPackagedApp', () => {
+  it('uses download mode for no-acp packaged manifests', () => {
+    const root = mkdtempSync(join(tmpdir(), 'evaos-managed-mode-'));
+    try {
+      const runtimeDir = join(root, 'bundled-aioncore', `${process.platform}-${process.arch}`);
+      mkdirSync(runtimeDir, { recursive: true });
+      writeFileSync(join(runtimeDir, 'manifest.json'), JSON.stringify({ managedResourcesBundle: 'no-acp' }));
+
+      expect(
+        resolveManagedResourcesModeForPackagedApp({
+          ...APP_META_PACKAGED,
+          resourcesPath: root,
+        })
+      ).toBe('download');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps bundled mode for full or unreadable packaged manifests', () => {
+    const root = mkdtempSync(join(tmpdir(), 'evaos-managed-mode-'));
+    try {
+      const runtimeDir = join(root, 'bundled-aioncore', `${process.platform}-${process.arch}`);
+      mkdirSync(runtimeDir, { recursive: true });
+      writeFileSync(join(runtimeDir, 'manifest.json'), JSON.stringify({ managedResourcesBundle: 'full' }));
+
+      expect(
+        resolveManagedResourcesModeForPackagedApp({
+          ...APP_META_PACKAGED,
+          resourcesPath: root,
+        })
+      ).toBe('bundled');
+      expect(
+        resolveManagedResourcesModeForPackagedApp({
+          ...APP_META_PACKAGED,
+          resourcesPath: join(root, 'missing'),
+        })
+      ).toBe('bundled');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not force a managed resources mode for unpackaged apps', () => {
+    expect(resolveManagedResourcesModeForPackagedApp(APP_META)).toBeUndefined();
   });
 });
 
@@ -342,6 +413,43 @@ describe('BackendLifecycleManager.start (success path)', () => {
     ]);
 
     fetchSpy.mockRestore();
+  });
+
+  it('spawns no-acp packaged apps with download managed resources mode', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evaos-managed-mode-start-'));
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('ok', { status: 200 }) as unknown as Response);
+    try {
+      const runtimeDir = join(root, 'bundled-aioncore', `${process.platform}-${process.arch}`);
+      mkdirSync(runtimeDir, { recursive: true });
+      writeFileSync(join(runtimeDir, 'manifest.json'), JSON.stringify({ managedResourcesBundle: 'no-acp' }));
+
+      const child = makeFakeChild();
+      vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+
+      const mgr = new BackendLifecycleManager(
+        {
+          ...APP_META_PACKAGED,
+          resourcesPath: root,
+        },
+        () => '/abs/path/aioncore'
+      );
+      const startPromise = mgr.start('/db/path', '/log/dir', {
+        cacheDir: '/c',
+        workDir: '/w',
+        logDir: '/l',
+      });
+      await Promise.resolve();
+      emitListening(child, 55555);
+
+      await expect(startPromise).resolves.toBe(55555);
+      expect(vi.mocked(spawn).mock.calls[0][1]).toContain('--managed-resources-mode');
+      expect(vi.mocked(spawn).mock.calls[0][1]).toContain('download');
+    } finally {
+      fetchSpy.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('spawns with correct args, waits for /health, reports running', async () => {
