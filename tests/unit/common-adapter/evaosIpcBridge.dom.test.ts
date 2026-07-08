@@ -122,4 +122,78 @@ describe('evaOS IPC bridge provider wrapper', () => {
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('derives builtin auto skills from the v0.1.43 unified skills catalog', async () => {
+    (window as Window & { __backendPort?: number }).__backendPort = 25943;
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: async () => ({
+        success: true,
+        data: [
+          {
+            name: 'cron',
+            description: 'Auto cron skill',
+            location: '/bundle/auto-inject/cron/SKILL.md',
+            relative_location: 'auto-inject/cron/SKILL.md',
+            is_auto_inject: true,
+            is_custom: false,
+            source: 'builtin',
+          },
+          {
+            name: 'mermaid',
+            description: 'Opt-in mermaid skill',
+            location: '/bundle/mermaid/SKILL.md',
+            relative_location: 'mermaid/SKILL.md',
+            is_auto_inject: false,
+            is_custom: false,
+            source: 'builtin',
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { fs } = await import('@/common/adapter/ipcBridge');
+
+    await expect(fs.listBuiltinAutoSkills.invoke()).resolves.toEqual([
+      {
+        name: 'cron',
+        description: 'Auto cron skill',
+        location: '/bundle/auto-inject/cron/SKILL.md',
+      },
+    ]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://127.0.0.1:25943/api/skills',
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(fetchSpy).not.toHaveBeenCalledWith('http://127.0.0.1:25943/api/skills/builtin-auto', expect.anything());
+  });
+
+  it('keeps the legacy importSkillWithSymlink bridge name on the v0.1.43 import endpoint', async () => {
+    (window as Window & { __backendPort?: number }).__backendPort = 25943;
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: async () => ({
+        success: true,
+        data: { skill_name: 'codex-runtime-spike-skill' },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { fs } = await import('@/common/adapter/ipcBridge');
+
+    await expect(
+      fs.importSkillWithSymlink.invoke({ skill_path: '/proof/custom-source/codex-runtime-spike-skill' })
+    ).resolves.toEqual({ skill_name: 'codex-runtime-spike-skill' });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://127.0.0.1:25943/api/skills/import',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ skill_path: '/proof/custom-source/codex-runtime-spike-skill' }),
+      })
+    );
+    expect(fetchSpy).not.toHaveBeenCalledWith('http://127.0.0.1:25943/api/skills/import-symlink', expect.anything());
+  });
 });

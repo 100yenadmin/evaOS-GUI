@@ -802,6 +802,24 @@ export const dialog = {
 // File System — routed to /api/fs/* and /api/skills/*
 // ---------------------------------------------------------------------------
 
+type SkillCatalogEntry = {
+  name: string;
+  description: string;
+  location: string;
+  relative_location?: string;
+  is_auto_inject?: boolean;
+  is_custom: boolean;
+  source: 'builtin' | 'custom' | 'cron' | 'extension';
+};
+
+function isAutoInjectSkill(skill: SkillCatalogEntry): boolean {
+  return (
+    skill.is_auto_inject === true ||
+    skill.relative_location?.startsWith('auto-inject/') === true ||
+    skill.location.includes('/auto-inject/')
+  );
+}
+
 export const fs = {
   getFilesByDir: httpPost<Array<IDirOrFile>, { dir: string; root: string }>('/api/fs/dir'),
   listWorkspaceFiles: withResponseMap(
@@ -854,8 +872,14 @@ export const fs = {
     }>,
     void
   >('/api/skills'),
-  listBuiltinAutoSkills: httpGet<Array<{ name: string; description: string; location: string }>, void>(
-    '/api/skills/builtin-auto'
+  listBuiltinAutoSkills: withResponseMap(
+    httpGet<SkillCatalogEntry[], void>('/api/skills'),
+    (skills): Array<{ name: string; description: string; location: string }> =>
+      skills.filter(isAutoInjectSkill).map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        location: skill.location,
+      }))
   ),
   materializeSkillsForAgent: httpPost<
     { skills: Array<{ name: string; source_path: string }> },
@@ -876,9 +900,22 @@ export const fs = {
     }>,
     void
   >('/api/skills/detect-external'),
-  importSkillWithSymlink: httpPost<{ skill_name: string; skill_names?: string[] }, { skill_path: string }>(
-    '/api/skills/import-symlink'
-  ),
+  importSkillWithSymlink: httpPost<
+    {
+      skill_name: string;
+      skill_names?: string[];
+      failed?: Array<{
+        source_name: string;
+        code: string;
+        error_path?: string;
+        actual_bytes?: number;
+        limit_bytes?: number;
+        line?: number;
+        column?: number;
+      }>;
+    },
+    { skill_path: string }
+  >('/api/skills/import'),
   deleteSkill: httpDelete<void, { skill_name: string }>((p) => `/api/skills/${p.skill_name}`),
   getSkillPaths: httpGet<{ user_skills_dir: string; builtin_skills_dir: string }, void>('/api/skills/paths'),
   getCustomExternalPaths: httpGet<Array<{ name: string; path: string }>, void>('/api/skills/external-paths'),
