@@ -6,14 +6,15 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { Button, Spin, Tag } from '@arco-design/web-react';
-import { Attention, Comment, Open, Refresh, Robot, Shield } from '@icon-park/react';
+import { Button, Input, Spin, Tag } from '@arco-design/web-react';
+import { Attention, Comment, Login, Open, Refresh, Robot, Shield } from '@icon-park/react';
 import { useEvaosBrokeredCustomerContext } from '@renderer/hooks/context/EvaosCustomerContext';
 import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { canShowEvaosSupportDiagnostics } from '@/renderer/evaos/supportDiagnostics';
 import { openEvaosSupportEmail } from '@/renderer/utils/platform';
 import { evaosBroker, type IEvaosRuntimeStatusView } from '@/common/adapter/ipcBridge';
 import type {
+  IEvaosBrokerBeginDesktopAuthResult,
   IEvaosRuntimeActionResult,
   IEvaosRuntimeActionType,
   IEvaosRuntimeKey,
@@ -150,7 +151,21 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<IEvaosRuntimeActionType | null>(null);
   const [runtimeSurface, setRuntimeSurface] = useState<IEvaosRuntimeSurfaceView | null>(null);
-  const { brokerSession, brokerAuthenticated, customerContext } = useEvaosBrokeredCustomerContext();
+  const [startingAuth, setStartingAuth] = useState(false);
+  const [authHandoff, setAuthHandoff] = useState<IEvaosBrokerBeginDesktopAuthResult | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [deviceCode, setDeviceCode] = useState('');
+  const [deviceCodeError, setDeviceCodeError] = useState<string | null>(null);
+  const [deviceCodeStatus, setDeviceCodeStatus] = useState<string | null>(null);
+  const [claimingDeviceCode, setClaimingDeviceCode] = useState(false);
+  const {
+    brokerSession,
+    brokerSessionLoading,
+    brokerSessionError,
+    brokerAuthenticated,
+    customerContext,
+    refreshBrokerSession,
+  } = useEvaosBrokeredCustomerContext();
   const selectedCustomerRef = useRef<string | undefined>(customerContext.selectedCustomerId);
   const requestEpochRef = useRef(0);
   const autoAttachKeyRef = useRef<string | null>(null);
@@ -173,11 +188,89 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     setLoadingStatus(false);
   }, []);
 
+  const desktopSessionRequired = !brokerSessionLoading && !brokerAuthenticated;
+  const desktopSessionRequiredMessage = safeUiText(
+    brokerSessionError ?? brokerSession?.message,
+    'Sign in to evaOS before checking runtime status.'
+  );
+  const showDesktopSessionRecovery =
+    desktopSessionRequired || /sign in to evaos before/i.test([runtimeError, actionError].filter(Boolean).join(' '));
+
+  const beginDesktopAuth = useCallback(async () => {
+    setStartingAuth(true);
+    setAuthHandoff(null);
+    setAuthError(null);
+    setDeviceCode('');
+    setDeviceCodeError(null);
+    setDeviceCodeStatus(null);
+    try {
+      const response = await evaosBroker.beginDesktopAuth.invoke();
+      if (!response.success || !response.data) {
+        setAuthHandoff(null);
+        setAuthError(safeUiText(response.msg, 'evaOS sign-in could not start safely.'));
+        return;
+      }
+      setAuthHandoff(response.data);
+    } catch {
+      setAuthHandoff(null);
+      setAuthError('evaOS sign-in could not start safely.');
+    } finally {
+      setStartingAuth(false);
+    }
+  }, []);
+
+  const claimBrowserDeviceCode = useCallback(async () => {
+    const nextDeviceCode = deviceCode.trim();
+    setDeviceCodeError(null);
+    setDeviceCodeStatus(null);
+    if (!nextDeviceCode) {
+      setDeviceCodeError('Enter the browser backup code.');
+      return;
+    }
+
+    setClaimingDeviceCode(true);
+    try {
+      const response = await evaosBroker.claimDeviceCode.invoke({ deviceCode: nextDeviceCode });
+      if (!response.success || !response.data) {
+        setDeviceCodeError(safeUiText(response.msg, 'The evaOS broker could not claim that backup code.'));
+        return;
+      }
+      if (response.data.authenticated && !response.data.expired) {
+        setAuthHandoff(null);
+        setAuthError(null);
+        setDeviceCode('');
+        setDeviceCodeStatus('Backup code connected.');
+        await refreshBrokerSession();
+        return;
+      }
+      setDeviceCodeError(safeUiText(response.data.message, 'The backup code was rejected safely.'));
+    } catch {
+      setDeviceCodeError('The evaOS broker could not claim that backup code.');
+    } finally {
+      setClaimingDeviceCode(false);
+    }
+  }, [deviceCode, refreshBrokerSession]);
+
   useEffect(() => {
     selectedCustomerRef.current = customerContext.selectedCustomerId;
     requestEpochRef.current += 1;
     clearRuntimeEvidence();
   }, [clearRuntimeEvidence, customerContext.selectedCustomerId, runtimeKey]);
+
+  useEffect(() => {
+    if (!desktopSessionRequired) {
+      return;
+    }
+    requestEpochRef.current += 1;
+    selectedCustomerRef.current = customerContext.selectedCustomerId;
+    setStatusView(null);
+    setRuntimeSurface(null);
+    setActionStatus(null);
+    setActionError(null);
+    setActionTarget(null);
+    setLoadingStatus(false);
+    setRuntimeError(desktopSessionRequiredMessage);
+  }, [customerContext.selectedCustomerId, desktopSessionRequired, desktopSessionRequiredMessage]);
 
   const isCurrentRequest = useCallback((epoch: number, customerId: string) => {
     return requestEpochRef.current === epoch && selectedCustomerRef.current === customerId;
@@ -204,6 +297,12 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
     const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
     setActionStatus(null);
     setActionError(null);
+    if (desktopSessionRequired) {
+      setStatusView(null);
+      setRuntimeSurface(null);
+      setRuntimeError(desktopSessionRequiredMessage);
+      return;
+    }
     if (!selectedCustomerId) {
       setStatusView(null);
       setRuntimeError(`Choose a customer before loading ${title} runtime evidence.`);
@@ -245,20 +344,43 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
         setLoadingStatus(false);
       }
     }
-  }, [customerContext.selectedCustomerId, isCurrentRequest, runtimeKey, title]);
+  }, [
+    customerContext.selectedCustomerId,
+    desktopSessionRequired,
+    desktopSessionRequiredMessage,
+    isCurrentRequest,
+    runtimeKey,
+    title,
+  ]);
 
   useEffect(() => {
-    if (customerContext.loading || !customerContext.selectedCustomerId) {
+    if (
+      brokerSessionLoading ||
+      desktopSessionRequired ||
+      customerContext.loading ||
+      !customerContext.selectedCustomerId
+    ) {
       return;
     }
     void loadRuntimeStatus();
-  }, [customerContext.loading, customerContext.selectedCustomerId, loadRuntimeStatus]);
+  }, [
+    brokerSessionLoading,
+    customerContext.loading,
+    customerContext.selectedCustomerId,
+    desktopSessionRequired,
+    loadRuntimeStatus,
+  ]);
 
   const runRuntimeAction = useCallback(
     async (action: IEvaosRuntimeActionType) => {
       const selectedCustomerId = selectedCustomerRef.current ?? customerContext.selectedCustomerId;
       setActionStatus(null);
       setActionError(null);
+      if (desktopSessionRequired) {
+        setRuntimeSurface(null);
+        setActionError('Sign in to evaOS before opening a runtime workspace.');
+        return;
+      }
       if (!selectedCustomerId) {
         setActionError(`Choose a customer before opening ${title}.`);
         return;
@@ -313,7 +435,7 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
         }
       }
     },
-    [customerContext.selectedCustomerId, isCurrentRequest, runtimeKey, title]
+    [customerContext.selectedCustomerId, desktopSessionRequired, isCurrentRequest, runtimeKey, title]
   );
 
   const selectedCustomerLabel =
@@ -429,12 +551,24 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
               {actionError || runtimeError ? (
                 <Button
                   type='primary'
-                  icon={<Refresh theme='outline' size='16' />}
-                  loading={loadingStatus || actionTarget !== null}
-                  disabled={!customerContext.selectedCustomerId}
-                  onClick={() => (currentRuntimeSurface ? void runRuntimeAction('attach') : void loadRuntimeStatus())}
+                  icon={
+                    showDesktopSessionRecovery ? (
+                      <Login theme='outline' size='16' />
+                    ) : (
+                      <Refresh theme='outline' size='16' />
+                    )
+                  }
+                  loading={showDesktopSessionRecovery ? startingAuth : loadingStatus || actionTarget !== null}
+                  disabled={!showDesktopSessionRecovery && !customerContext.selectedCustomerId}
+                  onClick={() =>
+                    showDesktopSessionRecovery
+                      ? void beginDesktopAuth()
+                      : currentRuntimeSurface
+                        ? void runRuntimeAction('attach')
+                        : void loadRuntimeStatus()
+                  }
                 >
-                  Retry
+                  {showDesktopSessionRecovery ? 'Sign in' : 'Retry'}
                 </Button>
               ) : null}
               {showDiagnostics ? (
@@ -480,7 +614,58 @@ const RuntimeDashboardPage: React.FC<RuntimeDashboardPageProps> = ({ runtimeKey,
                       ? `Opening ${title}. The app will attach automatically when this workspace is available.`
                       : `Choose a customer before opening ${title}.`)}
                 </p>
-                {canAttachRuntime || canOpenRuntime || actionError || runtimeError ? (
+                {showDesktopSessionRecovery ? (
+                  <div className='mt-14px flex flex-col items-center gap-10px'>
+                    <Button
+                      type='primary'
+                      icon={<Login theme='outline' size='15' />}
+                      loading={startingAuth}
+                      onClick={() => void beginDesktopAuth()}
+                    >
+                      Sign in
+                    </Button>
+                    {authError || authHandoff || deviceCodeError || deviceCodeStatus ? (
+                      <div className='w-full max-w-420px rounded-8px bg-fill-2 px-10px py-9px text-left text-12px leading-18px text-t-secondary'>
+                        <div>
+                          {authError ??
+                            deviceCodeStatus ??
+                            safeUiText(authHandoff?.message, 'Continue evaOS sign-in in the browser.')}
+                        </div>
+                        {authHandoff ? (
+                          <>
+                            <div className='mt-4px flex flex-wrap items-center gap-6px'>
+                              <span>Backup code:</span>
+                              <span className='text-t-secondary'>Paste the short code shown on the browser page.</span>
+                            </div>
+                            <div className='mt-8px flex flex-col gap-6px sm:flex-row'>
+                              <Input
+                                aria-label='Backup code'
+                                value={deviceCode}
+                                placeholder='Paste backup code'
+                                disabled={claimingDeviceCode}
+                                onChange={setDeviceCode}
+                                onPressEnter={() => void claimBrowserDeviceCode()}
+                              />
+                              <Button
+                                type='primary'
+                                loading={claimingDeviceCode}
+                                disabled={!deviceCode.trim()}
+                                onClick={() => void claimBrowserDeviceCode()}
+                              >
+                                Claim backup code
+                              </Button>
+                            </div>
+                          </>
+                        ) : null}
+                        {deviceCodeError ? (
+                          <div className='mt-6px text-12px leading-18px text-[rgb(var(--warning-6))]'>
+                            {deviceCodeError}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : canAttachRuntime || canOpenRuntime || actionError || runtimeError ? (
                   <div className='mt-14px flex justify-center gap-8px'>
                     <Button
                       type='primary'
