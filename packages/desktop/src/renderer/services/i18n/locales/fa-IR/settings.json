@@ -30,6 +30,8 @@
     "customPathPlaceholder": "مثلاً C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "جستجوی مهارت‌ها...",
     "noSearchResults": "مهارت منطبقی یافت نشد",
+    "customHint": "یک پوشه مهارت، پوشه والد یا فایل zip را وارد کنید؛ وارد کردن همان نام، مهارت موجود را به‌روزرسانی می‌کند.",
+    "extensionHint": "مهارت‌های ارائه‌شده توسط افزونه‌های نصب‌شده اینجا گروه‌بندی می‌شوند تا منشأ آن‌ها روشن باشد.",
     "importPartialSuccess": "{{successCount}} مهارت وارد شد، {{failureCount}} مورد ناموفق بود: {{failures}}",
     "importAllFailed": "وارد کردن {{failureCount}} مهارت ناموفق بود: {{failures}}",
     "importFailureFileSizeDetail": "{{path}} برابر {{actual}} است؛ محدودیت {{limit}} است",
@@ -84,7 +86,6 @@
     "tabOfficial": "مهارت‌های رسمی",
     "officialSkillsTitle": "مهارت‌های رسمی",
     "officialSkillsEmpty": "هیچ مهارت رسمی در دسترس نیست.",
-    "customHint": "یک پوشه مهارت، پوشه والد یا zip را وارد کنید؛ حداکثر {{maxFileSize}} برای هر فایل و {{maxTotalSize}} برای هر مهارت؛ وارد کردن نام تکراری مهارت موجود را بازنویسی می‌کند.",
     "officialHint": "مهارت‌های رسمی همراه evaOS Workbench — آماده استفاده، فقط‌خواندنی و با هر نسخه به‌روزرسانی می‌شوند."
   },
   "authMethod": "احراز هویت",
@@ -234,6 +235,7 @@
   "extensionSkillsBadge": "افزونه",
   "autoInjectedSkills": "مهارت‌های تزریق خودکار",
   "autoInjectedSkillsBadge": "خودکار",
+  "autoInjectedSkillsHint": "در هر گفتگو به‌طور خودکار بارگذاری می‌شوند؛ نیازی به فعال‌سازی نیست؛ عامل تصمیم می‌گیرد چه زمانی از آن‌ها استفاده کند.",
   "skillFolderPath": "مسیر پوشه مهارت",
   "skillPathPlaceholder": "مسیر پوشه مهارت را وارد کنید یا انتخاب کنید (با کاما جدا کنید)",
   "pleaseSelectSkillPath": "لطفاً مسیر پوشه مهارت را انتخاب کنید",
@@ -1262,7 +1264,6 @@
     }
   },
   "providerIdConflict": "شناسه ارائه‌دهنده از قبل وجود دارد. دوباره تلاش کنید.",
-  "autoInjectedSkillsHint": "در هر گفتگو به‌طور خودکار بارگذاری می‌شوند — نیازی به فعال‌سازی نیست؛ عامل تصمیم می‌گیرد چه زمانی از آن‌ها استفاده کند.",
   "cssSettings": "CSS Settings",
   "fontSize": "Scale",
   "fontSizeDescription": "Adjust the UI zoom level so the entire interface matches your preferred size.",

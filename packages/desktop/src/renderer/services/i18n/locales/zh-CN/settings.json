@@ -29,7 +29,9 @@
     "customPathLabel": "技能目录路径",
     "customPathPlaceholder": "例如：C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "搜索技能...",
-    "noSearchResults": "未找到相关技能"
+    "noSearchResults": "未找到相关技能",
+    "customHint": "支持导入技能目录、父目录或 zip 归档；同名导入会更新现有技能。",
+    "extensionHint": "已安装扩展提供的技能会集中显示在这里，便于识别来源。"
   },
   "authMethod": "认证",
   "geminiApiKey": "Gemini API 密钥",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "扩展",
   "autoInjectedSkills": "自动注入技能",
   "autoInjectedSkillsBadge": "自动",
+  "autoInjectedSkillsHint": "每次对话都会自动加载；无需手动启用；由智能体自行决定何时调用。",
   "skillFolderPath": "技能文件夹路径",
   "skillPathPlaceholder": "输入或浏览技能文件夹路径，多个路径请用逗号分隔",
   "pleaseSelectSkillPath": "请选择技能文件夹路径",

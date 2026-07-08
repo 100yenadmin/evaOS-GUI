@@ -29,7 +29,9 @@
     "customPathLabel": "Caminho do Diretório",
     "customPathPlaceholder": "ex: C:\\Usuarios\\eu\\.minhasferramentas\\habilidades",
     "searchPlaceholder": "Pesquisar habilidades...",
-    "noSearchResults": "Nenhuma habilidade correspondente encontrada"
+    "noSearchResults": "Nenhuma habilidade correspondente encontrada",
+    "customHint": "Importe uma pasta de habilidade, pasta principal ou arquivo zip; importar o mesmo nome atualiza a habilidade existente.",
+    "extensionHint": "As habilidades fornecidas por extensões instaladas ficam agrupadas aqui para deixar a origem clara."
   },
   "authMethod": "Autenticação",
   "geminiApiKey": "Chave de API Gemini",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "Extensão",
   "autoInjectedSkills": "Habilidades Injetadas Automaticamente",
   "autoInjectedSkillsBadge": "Auto",
+  "autoInjectedSkillsHint": "Carregadas automaticamente em cada conversa; não é preciso ativá-las; o agente decide quando usá-las.",
   "skillFolderPath": "Caminho da Pasta da Habilidade",
   "skillPathPlaceholder": "Insira ou navegue pelos caminhos da pasta da habilidade, separados por vírgula",
   "pleaseSelectSkillPath": "Por favor, selecione o caminho de uma pasta de habilidade",

@@ -29,7 +29,9 @@
     "customPathLabel": "スキルディレクトリパス",
     "customPathPlaceholder": "例：C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "スキルを検索...",
-    "noSearchResults": "関連するスキルが見つかりません"
+    "noSearchResults": "関連するスキルが見つかりません",
+    "customHint": "スキルフォルダ、親フォルダ、または zip アーカイブをインポートできます。同じ名前でインポートすると既存のスキルを更新します。",
+    "extensionHint": "インストール済み拡張機能が提供するスキルは、出所が分かるようにここにまとめられます。"
   },
   "authMethod": "認証",
   "geminiApiKey": "Gemini API キー",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "拡張",
   "autoInjectedSkills": "自動注入スキル",
   "autoInjectedSkillsBadge": "自動",
+  "autoInjectedSkillsHint": "すべての会話に自動的に読み込まれます。有効化は不要で、エージェントが使用するタイミングを判断します。",
   "skillFolderPath": "スキルフォルダパス",
   "skillPathPlaceholder": "スキルフォルダパスを入力または参照",
   "pleaseSelectSkillPath": "スキルフォルダパスを選択してください",

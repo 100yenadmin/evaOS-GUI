@@ -29,7 +29,9 @@
     "customPathLabel": "Шлях до директорії навичок",
     "customPathPlaceholder": "напр. C:\\Users\\me\\.mytools\\skills",
     "searchPlaceholder": "Пошук навичок...",
-    "noSearchResults": "Відповідних навичок не знайдено"
+    "noSearchResults": "Відповідних навичок не знайдено",
+    "customHint": "Імпортуйте теку навички, батьківську теку або zip-архів; імпорт з тією самою назвою оновлює наявну навичку.",
+    "extensionHint": "Навички, надані встановленими розширеннями, згруповані тут, щоб їхнє походження було зрозумілим."
   },
   "authMethod": "Автентифікація",
   "geminiApiKey": "API-ключ Gemini",
@@ -152,6 +154,7 @@
   "extensionSkillsBadge": "Розширення",
   "autoInjectedSkills": "Автоматично додані навички",
   "autoInjectedSkillsBadge": "Авто",
+  "autoInjectedSkillsHint": "Автоматично завантажуються в кожну розмову; вмикати не потрібно; агент сам вирішує, коли їх використовувати.",
   "skillFolderPath": "Шлях до папки з навичками",
   "skillPathPlaceholder": "Введіть або виберіть шлях(и) до папок з навичками, розділені комами",
   "pleaseSelectSkillPath": "Будь ласка, виберіть шлях до папки з навичками",
