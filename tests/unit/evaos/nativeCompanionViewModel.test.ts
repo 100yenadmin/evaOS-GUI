@@ -151,6 +151,34 @@ describe('nativeCompanionViewModel', () => {
     );
   });
 
+  it('guides users to add the Workbench app row for a missing macOS permission', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        bridgeCli: {
+          installed: true,
+          status: 'permission_needed',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'missing' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'permission_needed',
+          permissions: { accessibility: 'granted', screenRecording: 'missing' },
+        },
+      }),
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'repair',
+      repairAction: 'screen_recording',
+      label: 'Open Screen Recording',
+      detail:
+        'Grant the missing macOS permission to evaOS Workbench.app. If it is not listed, drag evaOS Workbench.app into the app list. Then return here and refresh status.',
+    });
+  });
+
   it('does not overclaim agent pairing when local Mac control is ready', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({

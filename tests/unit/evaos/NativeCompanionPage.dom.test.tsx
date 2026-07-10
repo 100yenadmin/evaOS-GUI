@@ -523,6 +523,8 @@ describe('NativeCompanionPage', () => {
 
     const repairCard = screen.getByTestId('native-companion-repair-card');
     expect(within(repairCard).getByTestId('native-companion-next-action')).toHaveTextContent('Open Screen Recording');
+    expect(within(repairCard).getByText(/drag evaOS Workbench\.app into the app list/i)).toBeInTheDocument();
+    expect(within(repairCard).getByText(/return here and refresh status/i)).toBeInTheDocument();
     expect(within(repairCard).queryByRole('button', { name: 'Open Accessibility' })).not.toBeInTheDocument();
 
     await user.click(within(repairCard).getByRole('button', { name: 'Open Screen Recording' }));

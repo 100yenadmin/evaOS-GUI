@@ -340,7 +340,8 @@ function nextActionForState(
       repairAction,
       label: repairAction === 'screen_recording' ? 'Open Screen Recording' : 'Open Accessibility',
       title: 'Allow screen and control',
-      detail: 'Grant the missing macOS permission, then return here and refresh status.',
+      detail:
+        'Grant the missing macOS permission to evaOS Workbench.app. If it is not listed, drag evaOS Workbench.app into the app list. Then return here and refresh status.',
       step: 2,
       totalSteps,
       disabled: false,
