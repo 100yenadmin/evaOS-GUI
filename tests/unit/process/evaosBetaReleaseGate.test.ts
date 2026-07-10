@@ -440,6 +440,12 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('3.8.0');
   });
 
+  it('runs functional smoke on Sequoia so the pinned Peekaboo binary can execute', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/workbench-functional-smoke.yml'), 'utf8');
+
+    expect(workflow).toContain('runs-on: macos-15');
+  });
+
   it('detects strict public beta release mode', () => {
     expect(releaseGate.normalizeBoolean('true')).toBe(true);
     expect(releaseGate.normalizeBoolean('evaos-beta')).toBe(true);

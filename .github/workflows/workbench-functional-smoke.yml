@@ -47,7 +47,7 @@ env:
 jobs:
   macos-arm64-app:
     name: macOS arm64 unpacked app
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
 
     steps:

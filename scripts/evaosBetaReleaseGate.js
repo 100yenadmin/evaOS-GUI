@@ -540,6 +540,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'manual macOS packaging must use a Sequoia runner for the native control helper'
   );
   requireText(
+    functionalSmoke,
+    'runs-on: macos-15',
+    '.github/workflows/workbench-functional-smoke.yml',
+    issues,
+    'functional smoke must use a Sequoia runner for the native Peekaboo helper'
+  );
+  requireText(
     buildRelease,
     'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
     '.github/workflows/build-and-release.yml',
