@@ -118,21 +118,76 @@ function writeScriptFixture(filePath: string) {
   fs.chmodSync(filePath, 0o755);
 }
 
-function writeMacosBridgeZip(zipPath: string, options: { extraEntryCount?: number } = {}) {
+function writeMacosBridgeZip(
+  zipPath: string,
+  options: {
+    extraEntryCount?: number;
+    omitPeekaboo?: boolean;
+    omitLicense?: boolean;
+    sourceSha256?: string;
+    manifestLicenseSha256?: string;
+  } = {}
+) {
   const script = [
+    'import hashlib',
+    'import json',
     'import pathlib',
     'import sys',
     'import zipfile',
     'zip_path = pathlib.Path(sys.argv[1])',
     'extra_entry_count = int(sys.argv[2]) if len(sys.argv) > 2 else 0',
+    'omit_peekaboo = sys.argv[3] == "1"',
+    'omit_license = sys.argv[4] == "1"',
+    'source_sha256 = sys.argv[5]',
+    'manifest_license_sha256 = sys.argv[6]',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
+    'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
+    'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
+    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}}}',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", "{\\"placeholder\\":false}\\n")',
+    '    if not omit_peekaboo:',
+    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/peekaboo", bytes.fromhex("cafebabe00000000"))',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
+    '    if not omit_license:',
+    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt", license_bytes)',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", json.dumps(manifest) + "\\n")',
     '    for index in range(extra_entry_count):',
     '        archive.writestr(f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", "x\\n")',
   ].join('\n');
-  execFileSync('python3', ['-c', script, zipPath, String(options.extraEntryCount || 0)]);
+  execFileSync('python3', [
+    '-c',
+    script,
+    zipPath,
+    String(options.extraEntryCount || 0),
+    options.omitPeekaboo ? '1' : '0',
+    options.omitLicense ? '1' : '0',
+    options.sourceSha256 || '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
+    options.manifestLicenseSha256 || '',
+  ]);
+}
+
+function writeMacosArm64ReleaseFixture(
+  dir: string,
+  zipOptions: Parameters<typeof writeMacosBridgeZip>[1] = {}
+): string {
+  const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
+  const zipName = 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip';
+  fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
+  writeMacosBridgeZip(path.join(dir, zipName), zipOptions);
+  fs.writeFileSync(path.join(dir, 'latest-arm64-mac.yml'), `path: ${zipName}\n`);
+  releaseGate.createReleaseManifest(dir, tag, {
+    GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+    GITHUB_WORKFLOW: 'PR Checks',
+    EVAOS_BETA_RELEASE_WORKFLOW: 'Build and Release',
+    GITHUB_RUN_ID: '12345',
+    GITHUB_RUN_ATTEMPT: '1',
+    EVAOS_BETA_RELEASE_COMMIT: 'abc123',
+    EVAOS_BETA_RELEASE_BRANCH: 'evaos/release-public-beta',
+    EVAOS_BETA_RELEASE_PUBLISH_ENABLED: 'true',
+    EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+  });
+  return tag;
 }
 
 function writeBusinessBrowserLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
@@ -1323,6 +1378,48 @@ describe('evaOS beta release gate', () => {
       ).toThrow(/checksum/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects macOS release ZIPs without exact Peekaboo package proof', () => {
+    const cases = [
+      {
+        name: 'missing binary',
+        options: { omitPeekaboo: true },
+        expected: /Peekaboo binary/,
+      },
+      {
+        name: 'missing license',
+        options: { omitLicense: true },
+        expected: /Peekaboo license/,
+      },
+      {
+        name: 'mismatched license digest',
+        options: { manifestLicenseSha256: '0'.repeat(64) },
+        expected: /license digest/,
+      },
+      {
+        name: 'mismatched source digest',
+        options: { sourceSha256: '0'.repeat(64) },
+        expected: /source digest/,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-beta-peekaboo-${testCase.name.replaceAll(' ', '-')}-`));
+      try {
+        const tag = writeMacosArm64ReleaseFixture(dir, testCase.options);
+        expect(() =>
+          releaseGate.verifyReleaseManifest(dir, tag, {
+            GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+            EXPECTED_RELEASE_COMMIT: 'abc123',
+            EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+            EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          })
+        ).toThrow(testCase.expected);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     }
   });
 

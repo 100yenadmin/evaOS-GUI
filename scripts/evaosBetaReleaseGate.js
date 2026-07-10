@@ -86,6 +86,9 @@ const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.ym
 const RELEASE_PROVENANCE_GITHUB_WORKFLOW = 'github-release-workflow';
 const RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK = 'local-signed-dmg-fallback';
 const LOCAL_SIGNED_DMG_FALLBACK_ACK = 'evaos-local-signed-dmg';
+const PEEKABOO_PACKAGE_VERSION = '3.8.0';
+const PEEKABOO_SOURCE_SHA256 = '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383';
+const PEEKABOO_LICENSE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'macos-arm64-dmg-codesign',
@@ -1410,27 +1413,56 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
 
 function inspectMacosZipBridgePayload(zipPath) {
   const script = [
+    'import hashlib',
     'import json',
     'import pathlib',
     'import sys',
     'import zipfile',
     'path = pathlib.Path(sys.argv[1])',
-    'def has_bridge_entry(name, suffix):',
+    `expected_source_sha256 = "${PEEKABOO_SOURCE_SHA256}"`,
+    `expected_version = "${PEEKABOO_PACKAGE_VERSION}"`,
+    `expected_license_path = "${PEEKABOO_LICENSE_PATH}"`,
+    'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf"}',
+    'def bridge_entry_suffix(name):',
     '    parts = name.split("/")',
-    '    expected = ["Contents", "Resources", "Bridge", suffix]',
     '    for index, part in enumerate(parts):',
-    '        if part.endswith(".app") and parts[index + 1:index + 5] == expected and index + 5 == len(parts):',
-    '            return True',
-    '    return False',
-    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False}',
+    '        if part.endswith(".app") and parts[index + 1:index + 4] == ["Contents", "Resources", "Bridge"]:',
+    '            return "/".join(parts[index + 4:])',
+    '    return None',
+    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
+    'entries = {}',
     'with zipfile.ZipFile(path) as archive:',
     '    for name in archive.namelist():',
-    '        if not result["hasBridgeExecutable"] and has_bridge_entry(name, "evaos-desktop-bridge"):',
-    '            result["hasBridgeExecutable"] = True',
-    '        if not result["hasBridgeManifest"] and has_bridge_entry(name, "manifest.json"):',
-    '            result["hasBridgeManifest"] = True',
-    '        if result["hasBridgeExecutable"] and result["hasBridgeManifest"]:',
-    '            break',
+    '        suffix = bridge_entry_suffix(name)',
+    '        if suffix in {"evaos-desktop-bridge", "manifest.json", "bin/peekaboo", "bin/evaos-connector-helper", expected_license_path}:',
+    '            entries[suffix] = name',
+    '    result["hasBridgeExecutable"] = "evaos-desktop-bridge" in entries',
+    '    result["hasBridgeManifest"] = "manifest.json" in entries',
+    '    result["hasPeekaboo"] = "bin/peekaboo" in entries',
+    '    result["hasConnectorHelper"] = "bin/evaos-connector-helper" in entries',
+    '    result["hasPeekabooLicense"] = expected_license_path in entries',
+    '    manifest = {}',
+    '    if result["hasBridgeManifest"]:',
+    '        try:',
+    '            manifest = json.loads(archive.read(entries["manifest.json"]))',
+    '        except (json.JSONDecodeError, UnicodeDecodeError):',
+    '            manifest = {}',
+    '    peekaboo = manifest.get("bundledTools", {}).get("peekaboo", {}) if isinstance(manifest, dict) else {}',
+    '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
+    '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
+    '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
+    '    if result["hasPeekaboo"]:',
+    '        result["peekabooMachO"] = archive.read(entries["bin/peekaboo"], pwd=None)[:4].hex() in macho_magics',
+    '    if result["hasConnectorHelper"]:',
+    '        result["connectorHelperMachO"] = archive.read(entries["bin/evaos-connector-helper"], pwd=None)[:4].hex() in macho_magics',
+    '    if result["hasPeekabooLicense"]:',
+    '        license_bytes = archive.read(entries[expected_license_path], pwd=None)',
+    '        result["licenseDigestValid"] = hashlib.sha256(license_bytes).hexdigest() == peekaboo.get("licenseSha256")',
+    '        try:',
+    '            license_text = license_bytes.decode("utf-8")',
+    '        except UnicodeDecodeError:',
+    '            license_text = ""',
+    '        result["licenseNoticeValid"] = license_text.startswith("MIT License") and "Permission is hereby granted" in license_text',
     'print(json.dumps(result))',
   ].join('\n');
   try {
@@ -1443,7 +1475,7 @@ function inspectMacosZipBridgePayload(zipPath) {
 
 function assertZipBridgeProbe(probe, key, zipName, label) {
   if (!probe[key]) {
-    throw new Error(`${zipName} is missing bundled evaOS desktop bridge ${label}.`);
+    throw new Error(`${zipName} is missing or has invalid bundled evaOS desktop bridge ${label}.`);
   }
 }
 
@@ -1466,6 +1498,16 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
     const probe = inspectMacosZipBridgePayload(path.join(outputDir, zipName));
     assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
     assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
+    assertZipBridgeProbe(probe, 'hasPeekaboo', zipName, 'Peekaboo binary');
+    assertZipBridgeProbe(probe, 'peekabooMachO', zipName, 'Peekaboo binary Mach-O shape');
+    assertZipBridgeProbe(probe, 'hasConnectorHelper', zipName, 'connector helper');
+    assertZipBridgeProbe(probe, 'connectorHelperMachO', zipName, 'connector helper Mach-O shape');
+    assertZipBridgeProbe(probe, 'hasPeekabooLicense', zipName, 'Peekaboo license');
+    assertZipBridgeProbe(probe, 'manifestPlaceholderFalse', zipName, 'non-placeholder manifest');
+    assertZipBridgeProbe(probe, 'manifestSourceDigestValid', zipName, 'Peekaboo source digest');
+    assertZipBridgeProbe(probe, 'manifestLicenseMetadataValid', zipName, 'Peekaboo license metadata');
+    assertZipBridgeProbe(probe, 'licenseDigestValid', zipName, 'Peekaboo license digest');
+    assertZipBridgeProbe(probe, 'licenseNoticeValid', zipName, 'Peekaboo license notice');
   }
 }
 
