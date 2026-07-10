@@ -36,6 +36,11 @@ env:
   EVAOS_DMG_CODESIGN: 'false'
   ELECTRON_BUILDER_COMPRESSION_LEVEL: '1'
   NODE_OPTIONS: '--max-old-space-size=8192'
+  PEEKABOO_VERSION: '3.8.0'
+  PEEKABOO_ASSET: 'peekaboo-macos-universal.tar.gz'
+  PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'
+  PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'
+  PEEKABOO_LICENSE_SHA256: '62316704df7426e5a79d2827ff8aca36e9abb3a73b8e68557030749ebefec667'
   WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref || vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
   WORKBENCH_SMOKE_REF: ${{ inputs.ref }}
 
@@ -107,6 +112,43 @@ jobs:
           ELECTRON_CACHE: ${{ runner.temp }}/.cache/electron
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/.cache/electron-builder
 
+      - name: Install pinned Peekaboo fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="${RUNNER_TEMP}/${PEEKABOO_ASSET}"
+          TOOL_DIR="${RUNNER_TEMP}/peekaboo-${PEEKABOO_VERSION}"
+          URL="https://github.com/openclaw/Peekaboo/releases/download/v${PEEKABOO_VERSION}/${PEEKABOO_ASSET}"
+          curl --fail --location --retry 3 --output "$ARCHIVE" "$URL"
+          printf '%s  %s\n' "$PEEKABOO_SHA256" "$ARCHIVE" | shasum -a 256 -c -
+          mkdir -p "$TOOL_DIR"
+          tar -xzf "$ARCHIVE" -C "$TOOL_DIR"
+          PEEKABOO_BIN="$(find "$TOOL_DIR" -type f -name peekaboo -perm -111 -print -quit)"
+          PEEKABOO_LICENSE="$(find "$TOOL_DIR" -type f -name LICENSE -print -quit)"
+          if [ -z "$PEEKABOO_BIN" ] || [ ! -x "$PEEKABOO_BIN" ]; then
+            echo "::error::Pinned Peekaboo helper asset did not contain an executable binary."
+            exit 1
+          fi
+          if [ -z "$PEEKABOO_LICENSE" ] || [ ! -f "$PEEKABOO_LICENSE" ]; then
+            echo "::error::Pinned Peekaboo helper asset did not contain its license notice."
+            exit 1
+          fi
+          printf '%s  %s\n' "$PEEKABOO_BINARY_SHA256" "$PEEKABOO_BIN" | shasum -a 256 -c -
+          printf '%s  %s\n' "$PEEKABOO_LICENSE_SHA256" "$PEEKABOO_LICENSE" | shasum -a 256 -c -
+          case "$("$PEEKABOO_BIN" --version)" in
+            "Peekaboo ${PEEKABOO_VERSION}"*) ;;
+            *)
+              echo "::error::Pinned Peekaboo helper reported an unexpected version."
+              exit 1
+              ;;
+          esac
+          {
+            echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN"
+            echo "EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE"
+            echo "EVAOS_REQUIRED_PEEKABOO_VERSION=$PEEKABOO_VERSION"
+            echo "EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256"
+          } >> "$GITHUB_ENV"
+
       - name: evaOS guardrail audit
         if: ${{ inputs.run_guardrails }}
         shell: bash
@@ -144,6 +186,7 @@ jobs:
           BRIDGE="$APP_PATH/Contents/Resources/Bridge/evaos-desktop-bridge"
           BRIDGE_PEEKABOO="$APP_PATH/Contents/Resources/Bridge/bin/peekaboo"
           BRIDGE_HELPER="$APP_PATH/Contents/Resources/Bridge/bin/evaos-connector-helper"
+          BRIDGE_PEEKABOO_LICENSE="$APP_PATH/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt"
           BRIDGE_MANIFEST="$APP_PATH/Contents/Resources/Bridge/manifest.json"
           AIONCORE_DIR="$APP_PATH/Contents/Resources/bundled-aioncore"
           HUB_DIR="$APP_PATH/Contents/Resources/hub"
@@ -151,6 +194,7 @@ jobs:
           test -x "$BRIDGE"
           test -x "$BRIDGE_PEEKABOO"
           test -x "$BRIDGE_HELPER"
+          test -f "$BRIDGE_PEEKABOO_LICENSE"
           test -f "$BRIDGE_MANIFEST"
           test -d "$AIONCORE_DIR"
           test -d "$HUB_DIR"
@@ -158,9 +202,40 @@ jobs:
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
           BRIDGE_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.sourceCommit || m.commit || m.version || 'unknown')" "$BRIDGE_MANIFEST")"
+          BUNDLED_PEEKABOO_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.peekaboo?.version || 'unknown')" "$BRIDGE_MANIFEST")"
+          BUNDLED_PEEKABOO_SOURCE_SHA256="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.peekaboo?.sourceSha256 || 'unknown')" "$BRIDGE_MANIFEST")"
+          BUNDLED_PEEKABOO_LICENSE="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.peekaboo?.license || 'unknown')" "$BRIDGE_MANIFEST")"
+          BUNDLED_PEEKABOO_LICENSE_PATH="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.peekaboo?.licensePath || 'unknown')" "$BRIDGE_MANIFEST")"
+          BUNDLED_PEEKABOO_LICENSE_SHA256="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.peekaboo?.licenseSha256 || 'unknown')" "$BRIDGE_MANIFEST")"
+          PACKAGED_PEEKABOO_SHA256="$(shasum -a 256 "$BRIDGE_PEEKABOO" | awk '{print $1}')"
+          ACTUAL_PEEKABOO_LICENSE_SHA256="$(shasum -a 256 "$BRIDGE_PEEKABOO_LICENSE" | awk '{print $1}')"
 
           if [ "$BRIDGE_VERSION" != "$WORKBENCH_SMOKE_BRIDGE_REF" ]; then
             echo "::error::Bundled bridge manifest ($BRIDGE_VERSION) does not match requested bridge ref ($WORKBENCH_SMOKE_BRIDGE_REF)"
+            exit 1
+          fi
+          if [ "$BUNDLED_PEEKABOO_VERSION" != "$PEEKABOO_VERSION" ]; then
+            echo "::error::Bundled Peekaboo version ($BUNDLED_PEEKABOO_VERSION) does not match expected version ($PEEKABOO_VERSION)"
+            exit 1
+          fi
+          case "$("$BRIDGE_PEEKABOO" --version)" in
+            "Peekaboo ${PEEKABOO_VERSION}"*) ;;
+            *)
+              echo "::error::Packaged Peekaboo helper reported an unexpected version."
+              exit 1
+              ;;
+          esac
+          codesign --verify --strict "$BRIDGE_PEEKABOO"
+          if [ "$BUNDLED_PEEKABOO_SOURCE_SHA256" != "$PEEKABOO_BINARY_SHA256" ]; then
+            echo "::error::Bundled Peekaboo source digest does not match the pinned release binary."
+            exit 1
+          fi
+          if [ "$BUNDLED_PEEKABOO_LICENSE" != "MIT" ] || [ "$BUNDLED_PEEKABOO_LICENSE_PATH" != "licenses/Peekaboo-LICENSE.txt" ]; then
+            echo "::error::Bundled Peekaboo license metadata is missing or unexpected."
+            exit 1
+          fi
+          if [ "$BUNDLED_PEEKABOO_LICENSE_SHA256" != "$ACTUAL_PEEKABOO_LICENSE_SHA256" ]; then
+            echo "::error::Bundled Peekaboo license digest does not match the bridge manifest."
             exit 1
           fi
 
@@ -179,6 +254,10 @@ jobs:
             echo "- Bundle ID: \`$BUNDLE_ID\`"
             echo "- Bridge manifest: \`$BRIDGE_VERSION\`"
             echo "- Requested bridge ref: \`$WORKBENCH_SMOKE_BRIDGE_REF\`"
+            echo "- Bundled Peekaboo: \`$BUNDLED_PEEKABOO_VERSION\`"
+            echo "- Peekaboo pinned-source SHA-256: \`$BUNDLED_PEEKABOO_SOURCE_SHA256\`"
+            echo "- Peekaboo packaged SHA-256: \`$PACKAGED_PEEKABOO_SHA256\`"
+            echo "- Bundled Peekaboo license: \`$BUNDLED_PEEKABOO_LICENSE\` (\`$BUNDLED_PEEKABOO_LICENSE_SHA256\`)"
             echo
             echo "This artifact is intentionally unsigned/unnotarized and contains no DMG or release metadata."
             echo "Use it for functional proof only. Public release still requires the normal signed/notarized gate."
