@@ -2,7 +2,9 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+type PeekabooVersionRunner = (filePath: string, args: string[], options: Record<string, unknown>) => string;
 
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   bridgeManifest: (input: {
@@ -37,7 +39,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     binaryPath?: string,
     resourceDir?: string
   ) => { peekaboo: Record<string, string> } | undefined;
-  peekabooIdentity: (filePath: string) => { version: string; sourceSha256: string };
+  peekabooIdentity: (filePath: string, execute?: PeekabooVersionRunner) => { version: string; sourceSha256: string };
   shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
 };
@@ -166,17 +168,18 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('derives the bundled Peekaboo version and digest from the copied executable', () => {
     const dir = mkdtempSync(join(tmpdir(), 'evaos-peekaboo-identity-'));
     const executable = join(dir, 'peekaboo');
-    const contents = '#!/bin/sh\necho "Peekaboo 3.8.0 (main/ad01285)"\n';
+    const contents = 'portable-test-peekaboo-3.8.0';
+    const execute = vi.fn<PeekabooVersionRunner>().mockReturnValue('Peekaboo 3.8.0 (main/ad01285)\n');
     const previousRequiredVersion = process.env.EVAOS_REQUIRED_PEEKABOO_VERSION;
     try {
       writeFileSync(executable, contents);
-      chmodSync(executable, 0o755);
       process.env.EVAOS_REQUIRED_PEEKABOO_VERSION = '3.8.0';
 
-      expect(bridgeResource.peekabooIdentity(executable)).toEqual({
+      expect(bridgeResource.peekabooIdentity(executable, execute)).toEqual({
         version: '3.8.0',
         sourceSha256: createHash('sha256').update(contents).digest('hex'),
       });
+      expect(execute).toHaveBeenCalledWith(executable, ['--version'], expect.objectContaining({ encoding: 'utf8' }));
     } finally {
       restoreEnv('EVAOS_REQUIRED_PEEKABOO_VERSION', previousRequiredVersion);
       rmSync(dir, { force: true, recursive: true });
@@ -186,13 +189,15 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('rejects a bundled Peekaboo version that differs from the release pin', () => {
     const dir = mkdtempSync(join(tmpdir(), 'evaos-peekaboo-version-'));
     const executable = join(dir, 'peekaboo');
+    const execute = vi.fn<PeekabooVersionRunner>().mockReturnValue('Peekaboo 3.7.1\n');
     const previousRequiredVersion = process.env.EVAOS_REQUIRED_PEEKABOO_VERSION;
     try {
-      writeFileSync(executable, '#!/bin/sh\necho "Peekaboo 3.7.1"\n');
-      chmodSync(executable, 0o755);
+      writeFileSync(executable, 'portable-test-peekaboo-3.7.1');
       process.env.EVAOS_REQUIRED_PEEKABOO_VERSION = '3.8.0';
 
-      expect(() => bridgeResource.peekabooIdentity(executable)).toThrow(/does not match required version 3\.8\.0/);
+      expect(() => bridgeResource.peekabooIdentity(executable, execute)).toThrow(
+        /does not match required version 3\.8\.0/
+      );
     } finally {
       restoreEnv('EVAOS_REQUIRED_PEEKABOO_VERSION', previousRequiredVersion);
       rmSync(dir, { force: true, recursive: true });
@@ -202,13 +207,15 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('rejects a copied Peekaboo binary that differs from the pinned source digest', () => {
     const dir = mkdtempSync(join(tmpdir(), 'evaos-peekaboo-digest-'));
     const executable = join(dir, 'peekaboo');
+    const execute = vi.fn<PeekabooVersionRunner>().mockReturnValue('Peekaboo 3.8.0\n');
     const previousRequiredDigest = process.env.EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256;
     try {
-      writeFileSync(executable, '#!/bin/sh\necho "Peekaboo 3.8.0"\n');
-      chmodSync(executable, 0o755);
+      writeFileSync(executable, 'portable-test-peekaboo-wrong-digest');
       process.env.EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256 = '0'.repeat(64);
 
-      expect(() => bridgeResource.peekabooIdentity(executable)).toThrow(/does not match required source digest/);
+      expect(() => bridgeResource.peekabooIdentity(executable, execute)).toThrow(
+        /does not match required source digest/
+      );
     } finally {
       restoreEnv('EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256', previousRequiredDigest);
       rmSync(dir, { force: true, recursive: true });

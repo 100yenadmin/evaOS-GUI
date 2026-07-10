@@ -375,8 +375,8 @@ function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-function peekabooIdentity(filePath) {
-  const output = execFileSync(filePath, ['--version'], {
+function peekabooIdentity(filePath, execute = execFileSync) {
+  const output = execute(filePath, ['--version'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
