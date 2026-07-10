@@ -1,6 +1,6 @@
 # Changelog
 
-## evaOS Workbench 2.1.32 (unreleased)
+## evaOS Workbench 2.1.32 (2026-07-11)
 
 ### Upstream Runtime And Workbench UX Sync
 
@@ -24,8 +24,8 @@
 
 ### Release Boundary
 
-- This section describes merged source and candidate scope; it is not a release, distribution, or customer-readiness claim.
-- A v2.1.32 release still requires exact-candidate signing and notarization, installed-app permission and Mac-control proof, CUA-primary and fallback proof, stop/revoke and kill-switch checks, RC canary, distribution/public URL proof, and customer gates.
+- Published the Apple Silicon beta prerelease from `408ee2bee0b52ceebf511896302f8a8f4108932a` after exact-source build, Developer ID signing, Apple notarization, stapling, mounted no-ACP inspection, trusted-manifest verification, RC canary, staging live broker canary, distribution, public-URL checks, and canonical `/Applications` install/launch proof passed.
+- The published proof applies only to the macOS arm64 prerelease and its exact artifacts. This Mac's existing Workbench setup has no broker endpoint configured, so local dashboard attachment, CUA-primary and fallback execution, stop/revoke and kill-switch checks, permission setup, and customer setup proof remain open before a customer-readiness claim.
 
 ## evaOS Workbench 2.1.31 (2026-07-07)
 
