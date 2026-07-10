@@ -23,7 +23,6 @@ const GITHUB_REPO = 'AionCore';
 const MANIFEST_SCHEMA = 'aioncore-bundle/v2';
 const VALID_MANAGED_RESOURCES_BUNDLES = new Set(['full', 'no-acp']);
 const DEFAULT_MANAGED_RESOURCES_BUNDLE = 'full';
-const ACP_MANAGED_RESOURCE_RE = /(^|[-_])(?:claude|codex)(?:$|[-_])/i;
 const SOURCE_SHA_ENV_NAMES = ['EVAOS_APP_COMMIT', 'AIONUI_APP_COMMIT', 'SOURCE_COMMIT', 'WORKBENCH_SOURCE_SHA'];
 
 const ACTIONS_ARTIFACT_TARGETS = {
@@ -177,15 +176,10 @@ function getPathSegments(relativePath) {
 
 function isPrunableAcpManagedResourcePath(relativePath) {
   const segments = getPathSegments(relativePath);
-  const hasAcpContext = segments.some((segment) => {
+  return segments.some((segment) => {
     const normalized = segment.toLowerCase().replace(/[_-]/g, '');
     return normalized === 'acp' || normalized === 'acpadapter' || normalized === 'acpadapters';
   });
-  const hasClaudeOrCodex = segments.some((segment) => {
-    const stem = segment.toLowerCase().replace(/\.[^.]+$/, '');
-    return ACP_MANAGED_RESOURCE_RE.test(stem);
-  });
-  return hasAcpContext && hasClaudeOrCodex;
 }
 
 function listDirectoryRelativeEntries(rootDir, relativeDir = '') {

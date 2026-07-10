@@ -73,15 +73,10 @@ function normalizeResourceEntry(entry) {
 
 function isPrunedAcpPath(relativePath) {
   const segments = getPathSegments(normalizeResourceEntry(relativePath));
-  const hasAcpContext = segments.some((segment) => {
+  return segments.some((segment) => {
     const normalized = segment.toLowerCase().replace(/[_-]/g, '');
     return normalized === 'acp' || normalized === 'acpadapter' || normalized === 'acpadapters';
   });
-  const hasClaudeOrCodex = segments.some((segment) => {
-    const stem = segment.toLowerCase().replace(/\.[^.]+$/, '');
-    return /(^|[-_])(?:claude|codex)(?:$|[-_])/i.test(stem);
-  });
-  return hasAcpContext && hasClaudeOrCodex;
 }
 
 function listPackagedManagedResourceEntries(rootDir, relativeDir = '') {
