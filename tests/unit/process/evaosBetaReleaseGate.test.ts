@@ -11,6 +11,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   assertPublicBetaReleaseSigningEnv: (env: Record<string, string | undefined>) => void;
   assertPublicDistributionTag: (tag: string) => void;
   assertReleaseConfig: (rootDir: string) => boolean;
+  collectFunctionalSmokeConfigIssues: (workflow: string) => string[];
   collectReleaseConfigIssues: (rootDir: string) => string[];
   createReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => unknown;
   isLocalSignedDmgFallbackManifest: (manifest: unknown) => boolean;
@@ -438,6 +439,20 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('BUNDLED_PEEKABOO_SOURCE_SHA256');
     expect(workflow).toContain('BUNDLED_PEEKABOO_LICENSE_SHA256');
     expect(workflow).toContain('3.8.0');
+  });
+
+  it('requires the functional-smoke app job itself to run on Sequoia', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/workbench-functional-smoke.yml'), 'utf8');
+
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(workflow)).toEqual([]);
+
+    const decoyWorkflow = workflow
+      .replace('    runs-on: macos-15', '    runs-on: macos-14')
+      .concat('\n# runs-on: macos-15\n  unrelated-job:\n    runs-on: macos-15\n');
+
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(decoyWorkflow)).toEqual([
+      '.github/workflows/workbench-functional-smoke.yml: macos-arm64-app must run on macos-15',
+    ]);
   });
 
   it('detects strict public beta release mode', () => {

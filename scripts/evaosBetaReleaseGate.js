@@ -373,6 +373,35 @@ function getTopLevelYamlSection(text, sectionName) {
   return section.join('\n');
 }
 
+function getWorkflowJobRunner(workflow, jobName) {
+  const lines = String(workflow || '').split(/\r?\n/);
+  const jobStart = lines.findIndex((line) => line === `  ${jobName}:`);
+  if (jobStart === -1) {
+    return '';
+  }
+
+  for (let index = jobStart + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^  [A-Za-z0-9_-]+:\s*(?:#.*)?$/.test(line)) {
+      break;
+    }
+    const runner = line.match(/^ {4}runs-on:\s*['"]?([^'"\s#]+)['"]?\s*(?:#.*)?$/);
+    if (runner) {
+      return runner[1];
+    }
+  }
+
+  return '';
+}
+
+function collectFunctionalSmokeConfigIssues(workflow) {
+  const jobs = getTopLevelYamlSection(workflow, 'jobs');
+  if (getWorkflowJobRunner(jobs, 'macos-arm64-app') === 'macos-15') {
+    return [];
+  }
+  return ['.github/workflows/workbench-functional-smoke.yml: macos-arm64-app must run on macos-15'];
+}
+
 function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const issues = [];
   const packageJson = readJson(rootDir, 'package.json');
@@ -539,6 +568,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     issues,
     'manual macOS packaging must use a Sequoia runner for the native control helper'
   );
+  issues.push(...collectFunctionalSmokeConfigIssues(functionalSmoke));
   requireText(
     buildRelease,
     'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
@@ -2180,6 +2210,7 @@ module.exports = {
   assertPublicBetaReleaseSigningEnv,
   assertReleaseConfig,
   assertPublicDistributionTag,
+  collectFunctionalSmokeConfigIssues,
   collectReleaseConfigIssues,
   createReleaseManifest,
   getEnvValue,
