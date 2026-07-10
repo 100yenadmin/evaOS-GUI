@@ -439,6 +439,10 @@ const REQUIRED_MARKERS = Object.freeze([
     markers: [
       { label: 'release workflow keeps beta acknowledgement', text: 'beta_release_ack' },
       {
+        label: 'release workflow forces no-ACP managed resources',
+        text: 'managed_resources_bundle: no-acp',
+      },
+      {
         label: 'release workflow keeps Apple Silicon-only artifact pattern',
         text: 'macos-arm64)\n              patterns=(\n                --pattern "*arm64*.dmg"',
       },

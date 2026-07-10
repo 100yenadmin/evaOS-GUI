@@ -562,6 +562,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'macOS release packaging must use a Sequoia runner for the native control helper'
   );
   requireText(
+    buildRelease,
+    'managed_resources_bundle: no-acp',
+    '.github/workflows/build-and-release.yml',
+    issues,
+    'beta release workflow must fail closed on the no-ACP managed resource profile'
+  );
+  requireText(
     buildManual,
     '"os":"macos-15"',
     '.github/workflows/build-manual.yml',

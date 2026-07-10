@@ -1057,6 +1057,12 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
   });
 
+  it('forces the no-ACP managed resource profile in the beta release workflow', () => {
+    const buildRelease = fs.readFileSync(path.join(repoRoot, '.github/workflows/build-and-release.yml'), 'utf8');
+
+    expect(buildRelease).toContain('managed_resources_bundle: no-acp');
+  });
+
   it('does not require optional Business Browser action proof in the release workflow config audit', () => {
     const issues = releaseGate.collectReleaseConfigIssues(repoRoot);
 
