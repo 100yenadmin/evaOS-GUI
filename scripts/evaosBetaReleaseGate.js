@@ -894,6 +894,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     reusableBuild,
+    '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'Peekaboo 3.8.0 extracted binary source digest'
+  );
+  requireText(
+    reusableBuild,
     'shasum -a 256 -c',
     '.github/workflows/_build-reusable.yml',
     issues,
@@ -905,6 +912,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/_build-reusable.yml',
     issues,
     'Peekaboo license notice exported for packaging'
+  );
+  requireText(
+    reusableBuild,
+    'EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'Peekaboo source digest exported for packaging verification'
   );
   requireText(
     functionalSmoke,

@@ -14,7 +14,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     bundledTools?: {
       peekaboo: {
         version: string;
-        sha256: string;
+        sourceSha256: string;
         license?: string;
         licensePath?: string;
         licenseSha256?: string;
@@ -37,7 +37,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     binaryPath?: string,
     resourceDir?: string
   ) => { peekaboo: Record<string, string> } | undefined;
-  peekabooIdentity: (filePath: string) => { version: string; sha256: string };
+  peekabooIdentity: (filePath: string) => { version: string; sourceSha256: string };
   shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
 };
@@ -142,7 +142,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       bundledTools: {
         peekaboo: {
           version: '3.8.0',
-          sha256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620',
+          sourceSha256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
         },
       },
     });
@@ -151,7 +151,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       bundledTools: {
         peekaboo: {
           version: '3.8.0',
-          sha256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620',
+          sourceSha256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
         },
       },
     });
@@ -175,7 +175,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
       expect(bridgeResource.peekabooIdentity(executable)).toEqual({
         version: '3.8.0',
-        sha256: createHash('sha256').update(contents).digest('hex'),
+        sourceSha256: createHash('sha256').update(contents).digest('hex'),
       });
     } finally {
       restoreEnv('EVAOS_REQUIRED_PEEKABOO_VERSION', previousRequiredVersion);
@@ -195,6 +195,22 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       expect(() => bridgeResource.peekabooIdentity(executable)).toThrow(/does not match required version 3\.8\.0/);
     } finally {
       restoreEnv('EVAOS_REQUIRED_PEEKABOO_VERSION', previousRequiredVersion);
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a copied Peekaboo binary that differs from the pinned source digest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-peekaboo-digest-'));
+    const executable = join(dir, 'peekaboo');
+    const previousRequiredDigest = process.env.EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256;
+    try {
+      writeFileSync(executable, '#!/bin/sh\necho "Peekaboo 3.8.0"\n');
+      chmodSync(executable, 0o755);
+      process.env.EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256 = '0'.repeat(64);
+
+      expect(() => bridgeResource.peekabooIdentity(executable)).toThrow(/does not match required source digest/);
+    } finally {
+      restoreEnv('EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256', previousRequiredDigest);
       rmSync(dir, { force: true, recursive: true });
     }
   });

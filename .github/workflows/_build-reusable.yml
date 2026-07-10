@@ -42,6 +42,7 @@ env:
   PEEKABOO_VERSION: '3.8.0'
   PEEKABOO_ASSET: 'peekaboo-macos-universal.tar.gz'
   PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'
+  PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'
   PEEKABOO_LICENSE_SHA256: '62316704df7426e5a79d2827ff8aca36e9abb3a73b8e68557030749ebefec667'
 
 jobs:
@@ -647,6 +648,7 @@ jobs:
             echo "::error::Pinned Peekaboo helper asset did not contain its license notice."
             exit 1
           fi
+          printf '%s  %s\n' "$PEEKABOO_BINARY_SHA256" "$PEEKABOO_BIN" | shasum -a 256 -c -
           printf '%s  %s\n' "$PEEKABOO_LICENSE_SHA256" "$PEEKABOO_LICENSE" | shasum -a 256 -c -
           PEEKABOO_VERSION_OUTPUT="$("$PEEKABOO_BIN" --version)"
           case "$PEEKABOO_VERSION_OUTPUT" in
@@ -661,6 +663,7 @@ jobs:
             echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN"
             echo "EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE"
             echo "EVAOS_REQUIRED_PEEKABOO_VERSION=$PEEKABOO_VERSION"
+            echo "EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256"
           } >> "$GITHUB_ENV"
 
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only

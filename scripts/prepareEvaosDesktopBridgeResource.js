@@ -389,9 +389,16 @@ function peekabooIdentity(filePath) {
   if (requiredVersion && version !== requiredVersion) {
     throw new Error(`Bundled Peekaboo version ${version} does not match required version ${requiredVersion}.`);
   }
+  const sourceSha256 = sha256File(filePath);
+  const requiredSourceSha256 = String(process.env.EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256 || '')
+    .trim()
+    .toLowerCase();
+  if (requiredSourceSha256 && sourceSha256 !== requiredSourceSha256) {
+    throw new Error(`Bundled Peekaboo source digest ${sourceSha256} does not match required source digest.`);
+  }
   return {
     version,
-    sha256: sha256File(filePath),
+    sourceSha256,
   };
 }
 

@@ -360,6 +360,9 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain("PEEKABOO_VERSION: '3.8.0'");
     expect(workflow).toContain("PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'");
     expect(workflow).toContain(
+      "PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'"
+    );
+    expect(workflow).toContain(
       "PEEKABOO_LICENSE_SHA256: '62316704df7426e5a79d2827ff8aca36e9abb3a73b8e68557030749ebefec667'"
     );
     expect(workflow).toContain('peekaboo-macos-universal.tar.gz');
@@ -370,13 +373,14 @@ describe('evaOS beta release gate', () => {
 
     expect(workflow).toContain('shasum -a 256 -c');
     expect(workflow).toContain('EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN');
+    expect(workflow).toContain('EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256');
     expect(workflow).toContain('EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE');
   });
 
   it('requires functional smoke to verify the packaged Peekaboo version', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/workbench-functional-smoke.yml'), 'utf8');
 
-    expect(workflow).toContain('BUNDLED_PEEKABOO_VERSION');
+    expect(workflow).toContain('BUNDLED_PEEKABOO_SOURCE_SHA256');
     expect(workflow).toContain('BUNDLED_PEEKABOO_LICENSE_SHA256');
     expect(workflow).toContain('3.8.0');
   });
