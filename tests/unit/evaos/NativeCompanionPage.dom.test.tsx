@@ -32,6 +32,12 @@ const brokerMocks = vi.hoisted(() => ({
   beginDesktopAuth: vi.fn(),
 }));
 
+const i18nMocks = vi.hoisted(() => ({
+  t: vi.fn((key: string) =>
+    key === 'evaos.nativeCompanion.permissionGuideDetail' ? 'Localized permission guidance.' : key
+  ),
+}));
+
 const customerContextMock = vi.hoisted(() => ({
   brokerAuthenticated: true as boolean | undefined,
   brokerSession: {
@@ -122,6 +128,10 @@ vi.mock('@renderer/hooks/context/FeedbackContext', () => ({
   useFeedback: () => ({
     openFeedback: feedbackMocks.openFeedback,
   }),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: i18nMocks.t }),
 }));
 
 function renderNativeCompanion() {
@@ -523,6 +533,8 @@ describe('NativeCompanionPage', () => {
 
     const repairCard = screen.getByTestId('native-companion-repair-card');
     expect(within(repairCard).getByTestId('native-companion-next-action')).toHaveTextContent('Open Screen Recording');
+    expect(within(repairCard).getByText('Localized permission guidance.')).toBeInTheDocument();
+    expect(i18nMocks.t).toHaveBeenCalledWith('evaos.nativeCompanion.permissionGuideDetail');
     expect(within(repairCard).queryByRole('button', { name: 'Open Accessibility' })).not.toBeInTheDocument();
 
     await user.click(within(repairCard).getByRole('button', { name: 'Open Screen Recording' }));

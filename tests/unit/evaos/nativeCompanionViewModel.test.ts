@@ -6,10 +6,21 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  getNativeCompanionRepairViewModel,
+  getNativeCompanionRepairViewModel as buildNativeCompanionRepairViewModel,
+  type NativeCompanionRepairViewModelInput,
   type NativeCompanionUserState,
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import type { IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
+
+type TestViewModelInput = Omit<NativeCompanionRepairViewModelInput, 'permissionGuideDetail'> & {
+  permissionGuideDetail?: string;
+};
+
+const getNativeCompanionRepairViewModel = (input: TestViewModelInput) =>
+  buildNativeCompanionRepairViewModel({
+    ...input,
+    permissionGuideDetail: input.permissionGuideDetail ?? 'Localized permission guidance.',
+  });
 
 const baseStatus = (overrides: Partial<IEvaosNativeCompanionStatusView> = {}): IEvaosNativeCompanionStatusView => ({
   schemaVersion: 'evaos.native_companion_status.v1',
@@ -149,6 +160,34 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.repairSteps.join(' ')).not.toMatch(
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );
+  });
+
+  it('guides users to add the Workbench app row for a missing macOS permission', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        bridgeCli: {
+          installed: true,
+          status: 'permission_needed',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'missing' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'permission_needed',
+          permissions: { accessibility: 'granted', screenRecording: 'missing' },
+        },
+      }),
+      loading: false,
+      error: null,
+      permissionGuideDetail: 'Localized permission guidance.',
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'repair',
+      repairAction: 'screen_recording',
+      label: 'Open Screen Recording',
+      detail: 'Localized permission guidance.',
+    });
   });
 
   it('does not overclaim agent pairing when local Mac control is ready', () => {

@@ -83,6 +83,7 @@ export interface NativeCompanionRepairViewModelInput {
   brokerSessionLoading?: boolean;
   actionResult?: IEvaosNativeCompanionActionResult | null;
   pairingPromptCopied?: boolean;
+  permissionGuideDetail: string;
 }
 
 const PAIRING_PATTERN = /\b(?:not[_ -]?paired|pairing[_ -]?required|pairing required|device identity changed)\b/i;
@@ -340,7 +341,7 @@ function nextActionForState(
       repairAction,
       label: repairAction === 'screen_recording' ? 'Open Screen Recording' : 'Open Accessibility',
       title: 'Allow screen and control',
-      detail: 'Grant the missing macOS permission, then return here and refresh status.',
+      detail: input.permissionGuideDetail,
       step: 2,
       totalSteps,
       disabled: false,

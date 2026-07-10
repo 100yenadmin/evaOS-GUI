@@ -116,7 +116,8 @@
   },
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
-    "desktopAuthContinue": "Continue sign-in in the browser, then return here."
+    "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
+    "permissionGuideDetail": "مجوز macOS موردنیاز را به evaOS Workbench.app بدهید. اگر در فهرست نیست، evaOS Workbench.app را به فهرست برنامه‌ها بکشید. سپس به اینجا برگردید و وضعیت را تازه‌سازی کنید."
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",
