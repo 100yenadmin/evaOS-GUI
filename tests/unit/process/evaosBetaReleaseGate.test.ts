@@ -12,6 +12,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   assertPublicDistributionTag: (tag: string) => void;
   assertReleaseConfig: (rootDir: string) => boolean;
   collectFunctionalSmokeConfigIssues: (workflow: string) => string[];
+  collectBuildReleaseWorkflowIssues: (workflow: string) => string[];
   collectReleaseConfigIssues: (rootDir: string) => string[];
   createReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => unknown;
   isLocalSignedDmgFallbackManifest: (manifest: unknown) => boolean;
@@ -1055,6 +1056,22 @@ describe('evaOS beta release gate', () => {
 
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
+  });
+
+  it('forces the no-ACP managed resource profile in the beta release workflow', () => {
+    const buildRelease = fs.readFileSync(path.join(repoRoot, '.github/workflows/build-and-release.yml'), 'utf8');
+
+    expect(releaseGate.collectBuildReleaseWorkflowIssues(buildRelease)).toEqual([]);
+
+    const driftedWithDecoys = buildRelease
+      .replace('      managed_resources_bundle: no-acp', '      managed_resources_bundle: full')
+      .concat(
+        '\n# managed_resources_bundle: no-acp\n  decoy-job:\n    with:\n      managed_resources_bundle: no-acp\n'
+      );
+
+    expect(releaseGate.collectBuildReleaseWorkflowIssues(driftedWithDecoys)).toEqual([
+      '.github/workflows/build-and-release.yml: jobs.build-pipeline.with.managed_resources_bundle must be exactly no-acp',
+    ]);
   });
 
   it('does not require optional Business Browser action proof in the release workflow config audit', () => {

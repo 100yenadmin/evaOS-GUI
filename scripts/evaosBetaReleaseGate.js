@@ -355,6 +355,46 @@ function rejectText(text, needle, relativePath, issues, reason) {
   }
 }
 
+function getWorkflowCallInputValues(workflowText, jobId, inputName) {
+  const lines = String(workflowText || '').split(/\r?\n/);
+  const jobHeader = new RegExp(`^  ${jobId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:\\s*(?:#.*)?$`);
+  const nextJobHeader = /^  [A-Za-z0-9_-]+:\s*(?:#.*)?$/;
+  const withHeader = /^    with:\s*(?:#.*)?$/;
+  const escapedInputName = inputName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const inputLine = new RegExp(`^      ${escapedInputName}:\\s*([^#]*?)\\s*(?:#.*)?$`);
+  const jobStart = lines.findIndex((line) => jobHeader.test(line));
+  if (jobStart === -1) return [];
+
+  let jobEnd = lines.length;
+  for (let index = jobStart + 1; index < lines.length; index += 1) {
+    if (nextJobHeader.test(lines[index])) {
+      jobEnd = index;
+      break;
+    }
+  }
+
+  const withStart = lines.findIndex((line, index) => index > jobStart && index < jobEnd && withHeader.test(line));
+  if (withStart === -1) return [];
+
+  const values = [];
+  for (let index = withStart + 1; index < jobEnd; index += 1) {
+    const line = lines[index];
+    if (/^    \S/.test(line) && !/^    #/.test(line)) break;
+    const match = line.match(inputLine);
+    if (!match) continue;
+    values.push(match[1].trim().replace(/^(['"])(.*)\1$/, '$2'));
+  }
+  return values;
+}
+
+function collectBuildReleaseWorkflowIssues(workflowText) {
+  const values = getWorkflowCallInputValues(workflowText, 'build-pipeline', 'managed_resources_bundle');
+  if (values.length === 1 && values[0] === 'no-acp') return [];
+  return [
+    '.github/workflows/build-and-release.yml: jobs.build-pipeline.with.managed_resources_bundle must be exactly no-acp',
+  ];
+}
+
 function getTopLevelYamlSection(text, sectionName) {
   const lines = String(text || '').split(/\r?\n/);
   const start = lines.findIndex((line) => line === `${sectionName}:`);
@@ -561,6 +601,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     issues,
     'macOS release packaging must use a Sequoia runner for the native control helper'
   );
+  issues.push(...collectBuildReleaseWorkflowIssues(buildRelease));
   requireText(
     buildManual,
     '"os":"macos-15"',
@@ -2211,6 +2252,7 @@ module.exports = {
   assertReleaseConfig,
   assertPublicDistributionTag,
   collectFunctionalSmokeConfigIssues,
+  collectBuildReleaseWorkflowIssues,
   collectReleaseConfigIssues,
   createReleaseManifest,
   getEnvValue,

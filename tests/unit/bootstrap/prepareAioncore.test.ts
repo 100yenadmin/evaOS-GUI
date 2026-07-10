@@ -5,7 +5,7 @@
  */
 
 import { createRequire } from 'node:module';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -87,20 +87,25 @@ describe('prepareAioncore managed resources bundle', () => {
     expect(() => normalizeManagedResourcesBundle('thin-shell')).toThrow(/Invalid AIONUI_MANAGED_RESOURCES_BUNDLE/);
   });
 
-  it('prunes only Claude/Codex ACP managed resources in no-acp mode', () => {
+  it('prunes every ACP managed resource in no-acp mode', () => {
     const targetDir = makeTempDir();
     mkdirSync(resolve(targetDir, 'managed-resources', 'acp', 'codex-acp', '0.14.0'), { recursive: true });
     mkdirSync(resolve(targetDir, 'managed-resources', 'acp', 'claude-agent-acp', '0.39.0'), { recursive: true });
+    mkdirSync(resolve(targetDir, 'managed-resources', 'acp', 'gemini-acp', '1.0.0'), { recursive: true });
+    mkdirSync(resolve(targetDir, 'managed-resources', 'acp', 'qwen-acp', '1.0.0'), { recursive: true });
     mkdirSync(resolve(targetDir, 'managed-resources', 'node', 'node-v24.11.0-darwin-arm64', 'bin'), {
       recursive: true,
     });
     writeFileSync(resolve(targetDir, 'managed-resources', 'acp', 'codex-acp', '0.14.0', 'package.json'), '{}');
     writeFileSync(resolve(targetDir, 'managed-resources', 'acp', 'claude-agent-acp', '0.39.0', 'package.json'), '{}');
+    writeFileSync(resolve(targetDir, 'managed-resources', 'acp', 'gemini-acp', '1.0.0', 'package.json'), '{}');
+    writeFileSync(resolve(targetDir, 'managed-resources', 'acp', 'qwen-acp', '1.0.0', 'package.json'), '{}');
     writeFileSync(resolve(targetDir, 'managed-resources', 'node', 'node-v24.11.0-darwin-arm64', 'bin', 'node'), '');
 
     const result = applyManagedResourcesBundle({ targetDir, mode: 'no-acp' });
 
-    expect(result.prunedResources).toEqual(['acp/claude-agent-acp/', 'acp/codex-acp/']);
+    expect(result.prunedResources).toEqual(['acp/']);
+    expect(existsSync(resolve(targetDir, 'managed-resources', 'acp'))).toBe(false);
     expect(result.keptResources).toContain('node/');
     expect(result.keptResources).toContain('node/node-v24.11.0-darwin-arm64/bin/node');
   });
