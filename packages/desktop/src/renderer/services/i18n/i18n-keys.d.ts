@@ -823,6 +823,7 @@ export type I18nKey =
   | 'evaos.connectedApps.unsafeSecretState'
   | 'evaos.nativeCompanion.desktopAuthContinue'
   | 'evaos.nativeCompanion.desktopAuthStartFailed'
+  | 'evaos.nativeCompanion.permissionGuideDetail'
   | 'evaos.peopleAccess.accountAccess'
   | 'evaos.peopleAccess.actionDenied'
   | 'evaos.peopleAccess.activeSeats'

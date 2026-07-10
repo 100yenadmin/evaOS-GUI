@@ -6,10 +6,21 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  getNativeCompanionRepairViewModel,
+  getNativeCompanionRepairViewModel as buildNativeCompanionRepairViewModel,
+  type NativeCompanionRepairViewModelInput,
   type NativeCompanionUserState,
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import type { IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
+
+type TestViewModelInput = Omit<NativeCompanionRepairViewModelInput, 'permissionGuideDetail'> & {
+  permissionGuideDetail?: string;
+};
+
+const getNativeCompanionRepairViewModel = (input: TestViewModelInput) =>
+  buildNativeCompanionRepairViewModel({
+    ...input,
+    permissionGuideDetail: input.permissionGuideDetail ?? 'Localized permission guidance.',
+  });
 
 const baseStatus = (overrides: Partial<IEvaosNativeCompanionStatusView> = {}): IEvaosNativeCompanionStatusView => ({
   schemaVersion: 'evaos.native_companion_status.v1',
@@ -168,14 +179,14 @@ describe('nativeCompanionViewModel', () => {
       }),
       loading: false,
       error: null,
+      permissionGuideDetail: 'Localized permission guidance.',
     });
 
     expect(viewModel.nextAction).toMatchObject({
       kind: 'repair',
       repairAction: 'screen_recording',
       label: 'Open Screen Recording',
-      detail:
-        'Grant the missing macOS permission to evaOS Workbench.app. If it is not listed, drag evaOS Workbench.app into the app list. Then return here and refresh status.',
+      detail: 'Localized permission guidance.',
     });
   });
 

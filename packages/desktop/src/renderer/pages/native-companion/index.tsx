@@ -138,6 +138,7 @@ const NativeCompanionPage: React.FC = () => {
     setCopyMessage(null);
     setHandoffMessage(null);
   }, [actionResult, currentActionResult]);
+  const permissionGuideDetail = t('evaos.nativeCompanion.permissionGuideDetail');
   const viewModel = getNativeCompanionRepairViewModel({
     status,
     loading,
@@ -149,6 +150,7 @@ const NativeCompanionPage: React.FC = () => {
     brokerSessionLoading,
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
+    permissionGuideDetail,
   });
   const showDiagnostics = canShowEvaosSupportDiagnostics({
     authenticated: brokerAuthenticated,
@@ -170,6 +172,7 @@ const NativeCompanionPage: React.FC = () => {
     brokerSessionLoading,
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
+    permissionGuideDetail,
   });
   const guidedSetupReady = agentPairingStatus === 'agent_paired' || currentActionResult?.connectorGrant?.ok === true;
 
