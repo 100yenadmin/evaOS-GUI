@@ -981,6 +981,43 @@ jobs:
           EOF
           echo "Generated latest-arm64-mac.yml from macOS arm64 ZIP: ${base}"
 
+      - name: Write macOS x64 updater metadata
+        if: >-
+          success() &&
+          matrix.platform == 'macos-x64' &&
+          inputs.macos_dmg_finalization == 'local' &&
+          steps.macos-build.outputs.notarization_status == 'dmg_staged_for_local_finalization'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(out/*-mac-x64.zip)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS x64 ZIP for latest-mac.yml, found ${#zips[@]}."
+            ls -lh out || true
+            exit 1
+          fi
+
+          zip="${zips[0]}"
+          base="$(basename "$zip")"
+          version="$(node -p "require('./package.json').version")"
+          sha512="$(openssl dgst -sha512 -binary "$zip" | openssl base64 -A)"
+          size="$(wc -c < "$zip" | tr -d '[:space:]')"
+          release_date="$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")"
+
+          cat > out/latest-mac.yml <<EOF
+          version: ${version}
+          minimumSystemVersion: '24.0.0'
+          files:
+            - url: ${base}
+              sha512: ${sha512}
+              size: ${size}
+          path: ${base}
+          sha512: ${sha512}
+          releaseDate: '${release_date}'
+          EOF
+          echo "Generated latest-mac.yml from macOS x64 ZIP: ${base}"
+
       # Upload artifacts when:
       # - Build succeeded (all platforms)
       # - macOS: notarization timeout but artifacts exist (handled in build step)
