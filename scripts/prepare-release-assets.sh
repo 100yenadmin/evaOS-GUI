@@ -277,6 +277,7 @@ write_macos_zip_metadata() {
 
   cat > "$OUTPUT_DIR/$output_name" <<EOF
 version: ${version}
+minimumSystemVersion: '24.0.0'
 files:
   - url: ${base}
     sha512: ${sha512}

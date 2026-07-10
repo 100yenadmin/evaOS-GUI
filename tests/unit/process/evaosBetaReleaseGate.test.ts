@@ -10,6 +10,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   assertPublicBetaNotarizationEnv: (env: Record<string, string | undefined>) => void;
   assertPublicBetaReleaseSigningEnv: (env: Record<string, string | undefined>) => void;
   assertPublicDistributionTag: (tag: string) => void;
+  assertMacosAutoUpdateMetadata: (outputDir: string, releaseTargetPlatforms: string) => void;
   assertReleaseConfig: (rootDir: string) => boolean;
   collectFunctionalSmokeConfigIssues: (workflow: string) => string[];
   collectBuildReleaseWorkflowIssues: (workflow: string) => string[];
@@ -177,7 +178,7 @@ function writeMacosArm64ReleaseFixture(
   const zipName = 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip';
   fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
   writeMacosBridgeZip(path.join(dir, zipName), zipOptions);
-  fs.writeFileSync(path.join(dir, 'latest-arm64-mac.yml'), `path: ${zipName}\n`);
+  fs.writeFileSync(path.join(dir, 'latest-arm64-mac.yml'), `minimumSystemVersion: '24.0.0'\npath: ${zipName}\n`);
   releaseGate.createReleaseManifest(dir, tag, {
     GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
     GITHUB_WORKFLOW: 'PR Checks',
@@ -355,7 +356,7 @@ function writeProofReleaseAssetsReference(
   writeMacosBridgeZip(path.join(sourceReleaseAssetsDir, `evaOS Workbench-${version}-mac-arm64.zip`));
   fs.writeFileSync(
     path.join(sourceReleaseAssetsDir, 'latest-arm64-mac.yml'),
-    `path: evaOS Workbench-${version}-mac-arm64.zip\n`
+    `minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-${version}-mac-arm64.zip\n`
   );
 
   releaseGate.createReleaseManifest(sourceReleaseAssetsDir, tag, {
@@ -1368,6 +1369,21 @@ describe('evaOS beta release gate', () => {
     expect(() => releaseGate.assertPublicDistributionTag('v2.1.10')).toThrow(/non-evaOS beta tag/);
   });
 
+  it('requires the macOS 15 Darwin kernel floor in arm64 updater metadata', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-updater-system-floor-'));
+    try {
+      const zipName = 'evaOS.Workbench-2.1.32-mac-arm64.zip';
+      fs.writeFileSync(path.join(dir, zipName), 'zip');
+      fs.writeFileSync(path.join(dir, 'latest-arm64-mac.yml'), `version: 2.1.32\npath: ${zipName}\n`);
+
+      expect(() => releaseGate.assertMacosAutoUpdateMetadata(dir, 'macos-arm64')).toThrow(
+        /minimumSystemVersion.*24\.0\.0/
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('writes and verifies release manifests with exact asset checksums', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-release-'));
     try {
@@ -1375,7 +1391,7 @@ describe('evaOS beta release gate', () => {
       writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n"
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -1464,7 +1480,7 @@ describe('evaOS beta release gate', () => {
       });
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n"
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -1498,7 +1514,7 @@ describe('evaOS beta release gate', () => {
       fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac');
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg\n'
+        "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg\n"
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
@@ -1572,9 +1588,12 @@ describe('evaOS beta release gate', () => {
       writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n"
       );
-      fs.writeFileSync(path.join(dir, 'latest-mac.yml'), 'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip\n');
+      fs.writeFileSync(
+        path.join(dir, 'latest-mac.yml'),
+        "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip\n"
+      );
 
       const manifest = releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {
         GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
@@ -1635,7 +1654,7 @@ describe('evaOS beta release gate', () => {
       writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'));
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
-        'path: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n'
+        "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n"
       );
 
       releaseGate.createReleaseManifest(dir, 'evaos-beta-v2.1.10-evaos-beta.0', {

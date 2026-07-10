@@ -79,6 +79,7 @@ const REQUIRED_PUBLIC_BETA_SIGNING_ENV = [
   ...REQUIRED_APPLE_ID_NOTARIZATION_ENV,
 ];
 const RELEASE_MANIFEST_NAME = 'evaos-beta-release-manifest.json';
+const MACOS_UPDATE_MINIMUM_SYSTEM_VERSION = '24.0.0';
 const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME = 'business-browser.json';
@@ -600,6 +601,27 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/build-and-release.yml',
     issues,
     'macOS release packaging must use a Sequoia runner for the native control helper'
+  );
+  requireText(
+    reusableBuild,
+    "minimumSystemVersion: '24.0.0'",
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'macOS updater metadata must gate on the Darwin 24 kernel floor for macOS 15'
+  );
+  requireText(
+    reusableBuild,
+    'Write macOS x64 updater metadata',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'staged macOS x64 updater metadata must declare the supported system floor'
+  );
+  requireText(
+    prepareAssets,
+    "minimumSystemVersion: '24.0.0'",
+    'scripts/prepare-release-assets.sh',
+    issues,
+    'prepared macOS updater metadata must preserve the Darwin 24 kernel floor for macOS 15'
   );
   issues.push(...collectBuildReleaseWorkflowIssues(buildRelease));
   requireText(
@@ -1416,13 +1438,16 @@ function assertReleaseManifestAssetList(manifest, env = process.env) {
   }
 }
 
-function metadataAssetRefs(outputDir, metadataName) {
+function metadataAssetRefs(outputDir, metadataName, metadataText) {
   const metadataPath = path.join(outputDir, metadataName);
-  if (!fs.existsSync(metadataPath)) {
-    throw new Error(`Release manifest verification is missing updater metadata: ${metadataName}.`);
+  let text = metadataText;
+  if (text === undefined) {
+    if (!fs.existsSync(metadataPath)) {
+      throw new Error(`Release manifest verification is missing updater metadata: ${metadataName}.`);
+    }
+    text = fs.readFileSync(metadataPath, 'utf8');
   }
   const refs = [];
-  const text = fs.readFileSync(metadataPath, 'utf8');
   for (const line of text.split(/\r?\n/)) {
     const match = line.match(/^\s*(?:-\s*)?(?:path|url):\s*(.+?)\s*$/);
     if (!match) continue;
@@ -1443,7 +1468,20 @@ function metadataAssetRefs(outputDir, metadataName) {
 }
 
 function assertUpdaterMetadataRefs(outputDir, metadataName, options = {}) {
-  const refs = metadataAssetRefs(outputDir, metadataName);
+  const metadataPath = path.join(outputDir, metadataName);
+  if (!fs.existsSync(metadataPath)) {
+    throw new Error(`Release manifest verification is missing updater metadata: ${metadataName}.`);
+  }
+  const metadataText = fs.readFileSync(metadataPath, 'utf8');
+  if (options.minimumSystemVersion) {
+    const match = metadataText.match(/^minimumSystemVersion:\s*['"]?([^'"\s]+)['"]?\s*$/m);
+    if (!match || match[1] !== options.minimumSystemVersion) {
+      throw new Error(
+        `${metadataName} must declare minimumSystemVersion ${options.minimumSystemVersion} for the supported macOS floor.`
+      );
+    }
+  }
+  const refs = metadataAssetRefs(outputDir, metadataName, metadataText);
   for (const ref of refs) {
     if (options.requiredExtension && !ref.endsWith(options.requiredExtension)) {
       throw new Error(
@@ -1467,6 +1505,7 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
     assertUpdaterMetadataRefs(outputDir, 'latest-mac.yml', {
       requiredExtension: '.zip',
       namePattern: /(mac-x64|darwin-x64|x64)/,
+      minimumSystemVersion: MACOS_UPDATE_MINIMUM_SYSTEM_VERSION,
     });
   }
 
@@ -1478,6 +1517,7 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
     assertUpdaterMetadataRefs(outputDir, 'latest-arm64-mac.yml', {
       requiredExtension: '.zip',
       namePattern: /(mac-arm64|darwin-arm64|arm64)/,
+      minimumSystemVersion: MACOS_UPDATE_MINIMUM_SYSTEM_VERSION,
     });
   }
 }
@@ -2246,6 +2286,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  assertMacosAutoUpdateMetadata,
   REQUIRED_PUBLIC_BETA_SIGNING_ENV,
   assertPublicBetaNotarizationEnv,
   assertPublicBetaReleaseSigningEnv,
@@ -2259,6 +2300,7 @@ module.exports = {
   isLocalSignedDmgFallbackManifest,
   isStrictPublicBetaReleaseEnv,
   LOCAL_SIGNED_DMG_FALLBACK_ACK,
+  MACOS_UPDATE_MINIMUM_SYSTEM_VERSION,
   metadataAssetRefs,
   releaseProvenanceFromEnv,
   RELEASE_PROVENANCE_GITHUB_WORKFLOW,
