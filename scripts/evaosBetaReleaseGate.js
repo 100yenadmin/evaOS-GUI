@@ -384,6 +384,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const rcCanary = readText(rootDir, '.github/workflows/evaos-beta-rc-canary.yml');
   const localSignedDmgManifest = readText(rootDir, '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml');
   const reusableBuild = readText(rootDir, '.github/workflows/_build-reusable.yml');
+  const functionalSmoke = readText(rootDir, '.github/workflows/workbench-functional-smoke.yml');
   const afterSign = readText(rootDir, 'scripts/afterSign.js');
   const dmgFinalizer = readText(rootDir, 'scripts/evaosFinalizeMacDmg.js');
   const prepareAssets = readText(rootDir, 'scripts/prepare-release-assets.sh');
@@ -876,6 +877,41 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/_build-reusable.yml',
     issues,
     'macOS release build exports the native Peekaboo helper for packaging'
+  );
+  requireText(
+    reusableBuild,
+    "PEEKABOO_VERSION: '3.8.0'",
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'stable Peekaboo fallback version pin'
+  );
+  requireText(
+    reusableBuild,
+    '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'published Peekaboo 3.8.0 asset digest'
+  );
+  requireText(
+    reusableBuild,
+    'shasum -a 256 -c',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'Peekaboo asset digest verification before packaging'
+  );
+  requireText(
+    reusableBuild,
+    'EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE',
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'Peekaboo license notice exported for packaging'
+  );
+  requireText(
+    functionalSmoke,
+    'BUNDLED_PEEKABOO_LICENSE_SHA256',
+    '.github/workflows/workbench-functional-smoke.yml',
+    issues,
+    'functional smoke validates packaged Peekaboo identity and license notice'
   );
   requireText(distribute, 'local_signed_dmg_fallback_ack', '.github/workflows/release-distribute.yml', issues);
   requireText(rcCanary, 'local_signed_dmg_fallback_ack', '.github/workflows/evaos-beta-rc-canary.yml', issues);

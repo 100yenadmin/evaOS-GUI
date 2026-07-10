@@ -39,6 +39,10 @@ on:
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
   AIONUI_HUB_TAG: 'dist-ebc6a2b'
+  PEEKABOO_VERSION: '3.8.0'
+  PEEKABOO_ASSET: 'peekaboo-macos-universal.tar.gz'
+  PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'
+  PEEKABOO_LICENSE_SHA256: '62316704df7426e5a79d2827ff8aca36e9abb3a73b8e68557030749ebefec667'
 
 jobs:
   code-quality:
@@ -623,18 +627,41 @@ jobs:
       - name: Install evaOS Mac-control helper (macOS only)
         if: startsWith(matrix.platform, 'macos')
         shell: bash
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
         run: |
           set -euo pipefail
-          brew install steipete/tap/peekaboo
-          PEEKABOO_BIN="$(command -v peekaboo)"
+          ARCHIVE="${RUNNER_TEMP}/${PEEKABOO_ASSET}"
+          TOOL_DIR="${RUNNER_TEMP}/peekaboo-${PEEKABOO_VERSION}"
+          URL="https://github.com/openclaw/Peekaboo/releases/download/v${PEEKABOO_VERSION}/${PEEKABOO_ASSET}"
+          curl --fail --location --retry 3 --output "$ARCHIVE" "$URL"
+          printf '%s  %s\n' "$PEEKABOO_SHA256" "$ARCHIVE" | shasum -a 256 -c -
+          rm -rf "$TOOL_DIR"
+          mkdir -p "$TOOL_DIR"
+          tar -xzf "$ARCHIVE" -C "$TOOL_DIR"
+          PEEKABOO_BIN="$(find "$TOOL_DIR" -type f -name peekaboo -perm -111 -print -quit)"
+          PEEKABOO_LICENSE="$(find "$TOOL_DIR" -type f -name LICENSE -print -quit)"
           if [ -z "$PEEKABOO_BIN" ] || [ ! -x "$PEEKABOO_BIN" ]; then
-            echo "::error::Peekaboo helper was not installed as an executable binary."
+            echo "::error::Pinned Peekaboo helper asset did not contain an executable binary."
             exit 1
           fi
+          if [ -z "$PEEKABOO_LICENSE" ] || [ ! -f "$PEEKABOO_LICENSE" ]; then
+            echo "::error::Pinned Peekaboo helper asset did not contain its license notice."
+            exit 1
+          fi
+          printf '%s  %s\n' "$PEEKABOO_LICENSE_SHA256" "$PEEKABOO_LICENSE" | shasum -a 256 -c -
+          PEEKABOO_VERSION_OUTPUT="$("$PEEKABOO_BIN" --version)"
+          case "$PEEKABOO_VERSION_OUTPUT" in
+            "Peekaboo ${PEEKABOO_VERSION}"*) ;;
+            *)
+              echo "::error::Pinned Peekaboo helper reported an unexpected version."
+              exit 1
+              ;;
+          esac
           file "$PEEKABOO_BIN"
-          echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN" >> "$GITHUB_ENV"
+          {
+            echo "EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN"
+            echo "EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE"
+            echo "EVAOS_REQUIRED_PEEKABOO_VERSION=$PEEKABOO_VERSION"
+          } >> "$GITHUB_ENV"
 
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only
       # macOS: 构建并公证 - DMG 失败 = CI 失败，公证失败 = 仅警告

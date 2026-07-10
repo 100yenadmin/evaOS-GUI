@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -10,6 +11,7 @@ const bridgeSourceCacheDir = path.join(projectRoot, '.cache', 'evaos-desktop-bri
 const defaultBridgeSourceRepo = 'https://github.com/electricsheephq/evaos-desktop-bridge.git';
 const defaultBridgeSourceRef = 'main';
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
+const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
@@ -350,7 +352,7 @@ function writeManifest(manifest) {
   fs.writeFileSync(path.join(bridgeResourceDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-function bridgeManifest({ sourcePath, sourceCommit, sourceBranch, placeholder, placeholderReason }) {
+function bridgeManifest({ sourcePath, sourceCommit, sourceBranch, placeholder, placeholderReason, bundledTools }) {
   const manifest = {
     schema: 'evaos-desktop-bridge-resource/v1',
     requestedSourceRef: selectedBridgeSourceRef(),
@@ -360,10 +362,62 @@ function bridgeManifest({ sourcePath, sourceCommit, sourceBranch, placeholder, p
     placeholder,
     generatedAt: new Date().toISOString(),
   };
+  if (bundledTools !== undefined) {
+    manifest.bundledTools = bundledTools;
+  }
   if (placeholderReason !== undefined) {
     manifest.placeholderReason = placeholderReason;
   }
   return manifest;
+}
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function peekabooIdentity(filePath) {
+  const output = execFileSync(filePath, ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  const match = output.match(/\bPeekaboo\s+([0-9]+\.[0-9]+\.[0-9]+)\b/i);
+  if (!match) {
+    throw new Error('Bundled Peekaboo did not report a semantic version.');
+  }
+  const version = match[1];
+  const requiredVersion = String(process.env.EVAOS_REQUIRED_PEEKABOO_VERSION || '').trim();
+  if (requiredVersion && version !== requiredVersion) {
+    throw new Error(`Bundled Peekaboo version ${version} does not match required version ${requiredVersion}.`);
+  }
+  return {
+    version,
+    sha256: sha256File(filePath),
+  };
+}
+
+function installPeekabooLicense(sourcePath = process.env.EVAOS_PEEKABOO_LICENSE, resourceDir = bridgeResourceDir) {
+  const source = String(sourcePath || '').trim();
+  if (!source) {
+    if (String(process.env.EVAOS_REQUIRED_PEEKABOO_VERSION || '').trim()) {
+      throw new Error('Pinned Peekaboo packaging requires EVAOS_PEEKABOO_LICENSE.');
+    }
+    return undefined;
+  }
+  if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
+    throw new Error('Configured Peekaboo license file does not exist.');
+  }
+  const contents = fs.readFileSync(source, 'utf8');
+  if (!contents.startsWith('MIT License') || !contents.includes('Permission is hereby granted')) {
+    throw new Error('Configured Peekaboo license file does not contain the expected MIT notice.');
+  }
+  const target = path.join(resourceDir, ...PEEKABOO_LICENSE_RELATIVE_PATH.split('/'));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  return {
+    license: 'MIT',
+    licensePath: PEEKABOO_LICENSE_RELATIVE_PATH,
+    licenseSha256: sha256File(target),
+  };
 }
 
 function preparePlaceholderBridgeResource(error) {
@@ -438,12 +492,17 @@ function main() {
     requireMachOReleaseBinary(path.join(bridgeBinDir, 'peekaboo'), 'bundled Peekaboo helper');
     requireMachOReleaseBinary(helperPath, 'bundled evaOS connector helper');
   }
+  const peekaboo = peekabooIdentity(path.join(bridgeBinDir, 'peekaboo'));
+  const peekabooLicense = installPeekabooLicense();
+  if (peekabooLicense) Object.assign(peekaboo, peekabooLicense);
+  const bundledTools = { peekaboo };
 
   const manifest = bridgeManifest({
     sourcePath: bridgeSourceDir,
     sourceCommit: gitValue(bridgeSourceDir, ['rev-parse', 'HEAD']),
     sourceBranch: gitValue(bridgeSourceDir, ['rev-parse', '--abbrev-ref', 'HEAD']),
     placeholder: false,
+    bundledTools,
   });
   writeManifest(manifest);
 
@@ -458,7 +517,9 @@ if (require.main === module) {
 module.exports = {
   bridgeManifest,
   bridgeWrapperScript,
+  installPeekabooLicense,
   isMachOExecutable,
+  peekabooIdentity,
   resolveBridgeSourceDir,
   shouldCloneBridgeRefAsBranch,
   sourceCandidates,
