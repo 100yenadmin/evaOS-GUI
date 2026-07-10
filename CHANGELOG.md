@@ -1,5 +1,43 @@
 # Changelog
 
+## evaOS Workbench 2.1.32 (unreleased)
+
+### Runtime Recovery
+
+- Adds the existing Workbench sign-in recovery flow to runtime dashboards when the app is web-authenticated but its opaque desktop broker session is missing.
+- Refreshes broker and customer state after recovery while keeping raw session material, callback data, and launch URLs out of renderer output.
+- Aligns the bundled AionCore source pin with the v0.1.43 runtime baseline already observed in the v2.1.31 installed-app investigation.
+
+### Mac Control Reliability
+
+- Pins the official Peekaboo 3.8.0 universal CLI as the packaged first recovery fallback, with exact source and license verification and fail-closed release archive checks.
+- Runs Workbench Functional Smoke on macOS 15 so the pinned helper can be executed and verified at its declared minimum OS version.
+- Adds localized repair guidance that names `evaOS Workbench.app`, explains how to add it to the macOS permission app list when absent, and tells the user to return and refresh status.
+- Preserves the existing TryCUA/CUA-primary route, native connector boundary, Accessibility/manual fallback, broker controls, stop/revoke behavior, and kill switch.
+
+### Release Boundary
+
+- This section describes merged source and candidate scope; it is not a release, distribution, or customer-readiness claim.
+- A v2.1.32 release still requires exact-candidate signing and notarization, installed-app permission and Mac-control proof, CUA-primary and fallback proof, stop/revoke and kill-switch checks, RC canary, distribution/public URL proof, and customer gates.
+
+## evaOS Workbench 2.1.31 (2026-07-07)
+
+### Admin Modules V1
+
+- Adds release-proofed admin module coverage for Connected Apps, People & Access, and Company Brain.
+- Preserves the working core broker modules: evaOS, Hermes, Mission Control, Shared Browser, and Terminal.
+- Preserves the direct Mac & iPhone connector path and keeps Mac-control as a separate non-regression gate.
+- Keeps the no-ACP bundled resource profile for a smaller Workbench package.
+
+### Release Proof
+
+- Published the v2.1.31 beta prerelease from `7acc835e41d058f97155a70ed283933dd07e3855` after the build/release, Functional Smoke, live broker/admin canary, signed DMG, notarization, RC canary, and distribution gates passed for that exact candidate.
+
+### Release Boundary
+
+- The v2.1.31 proof applies only to that exact candidate and its core broker/admin modules plus direct Mac-control non-regression.
+- ACP/chat visible-agent Mac-control, TryCUA-priority refresh work, desktop pet replacement, and deeper upstream/AionCore parity remain later lanes.
+
 ## evaOS Workbench 2.1.30 (2026-07-06)
 
 ### Release Guardrails

@@ -4,7 +4,6 @@
   "workspaces": {
     "": {
       "name": "evaos-workbench",
-      "version": "2.1.31",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.18.2",
         "@aionui/web-host": "workspace:*",
