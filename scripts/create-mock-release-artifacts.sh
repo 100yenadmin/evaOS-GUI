@@ -38,12 +38,39 @@ create_mock_macos_zip() {
   local output_path="$1"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge"
+  mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/bin"
+  mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/licenses"
   printf '#!/usr/bin/env bash\nprintf "{}\\n"\n' > "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
   chmod +x "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
-  cat > "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/manifest.json" <<'EOF'
-{"placeholder":false,"source":"mock-release-asset"}
-EOF
+  python3 - "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+bridge = pathlib.Path(sys.argv[1])
+macho = bytes.fromhex("cafebabe00000000")
+license_bytes = b"MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\n"
+(bridge / "bin" / "peekaboo").write_bytes(macho)
+(bridge / "bin" / "evaos-connector-helper").write_bytes(macho)
+(bridge / "bin" / "peekaboo").chmod(0o755)
+(bridge / "bin" / "evaos-connector-helper").chmod(0o755)
+(bridge / "licenses" / "Peekaboo-LICENSE.txt").write_bytes(license_bytes)
+manifest = {
+    "placeholder": False,
+    "source": "mock-release-asset",
+    "bundledTools": {
+        "peekaboo": {
+            "version": "3.8.0",
+            "sourceSha256": "4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383",
+            "license": "MIT",
+            "licensePath": "licenses/Peekaboo-LICENSE.txt",
+            "licenseSha256": hashlib.sha256(license_bytes).hexdigest(),
+        }
+    },
+}
+(bridge / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+PY
   python3 - "$tmp_dir" "$output_path" <<'PY'
 import pathlib
 import sys
