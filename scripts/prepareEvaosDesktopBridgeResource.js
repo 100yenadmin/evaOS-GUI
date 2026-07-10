@@ -420,6 +420,14 @@ function installPeekabooLicense(sourcePath = process.env.EVAOS_PEEKABOO_LICENSE,
   };
 }
 
+function peekabooBundleMetadata(binaryPath, resourceDir = bridgeResourceDir) {
+  if (!binaryPath) return undefined;
+  const peekaboo = peekabooIdentity(binaryPath);
+  const peekabooLicense = installPeekabooLicense(undefined, resourceDir);
+  if (peekabooLicense) Object.assign(peekaboo, peekabooLicense);
+  return { peekaboo };
+}
+
 function preparePlaceholderBridgeResource(error) {
   if (shouldRequireRealBridge() || !shouldAllowPlaceholder()) {
     throw error;
@@ -492,10 +500,7 @@ function main() {
     requireMachOReleaseBinary(path.join(bridgeBinDir, 'peekaboo'), 'bundled Peekaboo helper');
     requireMachOReleaseBinary(helperPath, 'bundled evaOS connector helper');
   }
-  const peekaboo = peekabooIdentity(path.join(bridgeBinDir, 'peekaboo'));
-  const peekabooLicense = installPeekabooLicense();
-  if (peekabooLicense) Object.assign(peekaboo, peekabooLicense);
-  const bundledTools = { peekaboo };
+  const bundledTools = peekabooBundleMetadata(peekabooBinary);
 
   const manifest = bridgeManifest({
     sourcePath: bridgeSourceDir,
@@ -519,6 +524,7 @@ module.exports = {
   bridgeWrapperScript,
   installPeekabooLicense,
   isMachOExecutable,
+  peekabooBundleMetadata,
   peekabooIdentity,
   resolveBridgeSourceDir,
   shouldCloneBridgeRefAsBranch,

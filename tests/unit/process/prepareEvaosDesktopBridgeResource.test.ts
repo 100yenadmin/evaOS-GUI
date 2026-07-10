@@ -33,6 +33,10 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
         licenseSha256: string;
       }
     | undefined;
+  peekabooBundleMetadata: (
+    binaryPath?: string,
+    resourceDir?: string
+  ) => { peekaboo: Record<string, string> } | undefined;
   peekabooIdentity: (filePath: string) => { version: string; sha256: string };
   shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
@@ -230,6 +234,10 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }
+  });
+
+  it('omits tool identity for a non-release fallback wrapper', () => {
+    expect(bridgeResource.peekabooBundleMetadata(undefined)).toBeUndefined();
   });
 });
 
