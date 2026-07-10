@@ -2,6 +2,13 @@
 
 ## evaOS Workbench 2.1.32 (unreleased)
 
+### Upstream Runtime And Workbench UX Sync
+
+- Includes the merged macOS update-install readiness fix, OpenAI-provider and log-rotation corrections, corrupted-database recovery confirmation, ACP runtime request deduplication, and team-chat capability propagation.
+- Includes the merged scheduled-task reliability, conversation-sidebar reveal, assistant avatar consistency, Skills Hub and skill-slash-command, assistant-management, assistant-selection, GUID slash-command, and settings-polish updates.
+- Closes known translation gaps, removes stale locale branding, and adds Spanish and Persian locale resources.
+- These upstream-derived changes are part of the v2.1.32 candidate source tree but still require the same exact-candidate release and runtime gates below.
+
 ### Runtime Recovery
 
 - Adds the existing Workbench sign-in recovery flow to runtime dashboards when the app is web-authenticated but its opaque desktop broker session is missing.
@@ -25,7 +32,7 @@
 ### Admin Modules V1
 
 - Adds release-proofed admin module coverage for Connected Apps, People & Access, and Company Brain.
-- Preserves the working core broker modules: evaOS, Hermes, Mission Control, Shared Browser, and Terminal.
+- Preserves the working core broker/workspace modules: evaOS, Hermes, Mission Control, Shared Browser, Design Workspace, Creative Studio, and Terminal.
 - Preserves the direct Mac & iPhone connector path and keeps Mac-control as a separate non-regression gate.
 - Keeps the no-ACP bundled resource profile for a smaller Workbench package.
 
