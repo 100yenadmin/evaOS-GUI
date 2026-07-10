@@ -7,7 +7,7 @@
 - Includes the merged macOS update-install readiness fix, OpenAI-provider and log-rotation corrections, corrupted-database recovery confirmation, ACP runtime request deduplication, and team-chat capability propagation.
 - Includes the merged scheduled-task reliability, conversation-sidebar reveal, assistant avatar consistency, Skills Hub and skill-slash-command, assistant-management, assistant-selection, GUID slash-command, and settings-polish updates.
 - Closes known translation gaps, removes stale locale branding, and adds Spanish and Persian locale resources.
-- These upstream-derived changes are part of the v2.1.32 candidate source tree but still require the same exact-candidate release and runtime gates below.
+- These upstream-derived changes are part of the exact v2.1.32 source tree that passed the release gates below; customer broker attachment, Mac-control execution, permissions, and setup proof remain separately open.
 
 ### Runtime Recovery
 
