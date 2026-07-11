@@ -132,10 +132,16 @@ const modelsByProvider: Record<string, string[]> = {
   'provider-empty': [],
 };
 
-const makeSelection = (): AionrsModelSelection => ({
+const makeSelection = ({
+  providerList = providers,
+  availableModels = modelsByProvider,
+}: {
+  providerList?: IProvider[];
+  availableModels?: Record<string, string[]>;
+} = {}): AionrsModelSelection => ({
   current_model: { id: 'provider-b', use_model: 'beta-2' } as AionrsModelSelection['current_model'],
-  providers,
-  getAvailableModels: (provider) => modelsByProvider[provider.id] ?? [],
+  providers: providerList,
+  getAvailableModels: (provider) => availableModels[provider.id] ?? [],
   handleSelectModel: vi.fn().mockResolvedValue(undefined),
   getDisplayModelName: (modelName) => modelName ?? '',
 });
@@ -165,6 +171,37 @@ describe('AionrsModelSelector', () => {
 
     fireEvent.click(screen.getByText('alpha-4'));
     expect(selection.handleSelectModel).toHaveBeenCalledWith(providers[0], 'alpha-4');
+
+    fireEvent.change(search, { target: { value: 'missing-model' } });
+    const emptyItem = screen.getByText('No matching models').closest('[role="menuitem"]');
+    expect(emptyItem).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(emptyItem!);
+    expect(selection.handleSelectModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps small provider lists grouped without adding search', () => {
+    const selection = makeSelection({
+      providerList: [providers[0]],
+      availableModels: { 'provider-a': ['alpha-1', 'alpha-2', 'alpha-3'] },
+    });
+    render(<AionrsModelSelector selection={selection} />);
+
+    expect(screen.queryByTestId('runtime-selector-model-search')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Provider A' })).getByText('alpha-3')).toBeInTheDocument();
+  });
+
+  it('maps a shared model name to the provider row that was clicked', () => {
+    const selection = makeSelection({
+      availableModels: {
+        'provider-a': ['shared-1', 'alpha-2', 'alpha-3'],
+        'provider-b': ['shared-1', 'beta-2', 'beta-3'],
+        'provider-empty': [],
+      },
+    });
+    render(<AionrsModelSelector selection={selection} />);
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Provider B' })).getByText('shared-1'));
+    expect(selection.handleSelectModel).toHaveBeenCalledWith(providers[1], 'shared-1');
   });
 
   it('preserves unsupported and mobile popup behavior', () => {
