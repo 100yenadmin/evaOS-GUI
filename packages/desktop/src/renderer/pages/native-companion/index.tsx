@@ -483,7 +483,11 @@ const NativeCompanionPage: React.FC = () => {
                 />
               </div>
               <Tag color={guidedSetupReady ? 'green' : 'orange'}>
-                {guidedSetupReady ? 'End-to-end ready' : guidedGrantActive ? 'Grant active; test needed' : 'Setup needed'}
+                {guidedSetupReady
+                  ? 'End-to-end ready'
+                  : guidedGrantActive
+                    ? 'Grant active; test needed'
+                    : 'Setup needed'}
               </Tag>
             </div>
 
