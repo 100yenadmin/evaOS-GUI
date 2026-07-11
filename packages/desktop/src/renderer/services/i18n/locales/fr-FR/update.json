@@ -1,0 +1,31 @@
+{
+  "modalTitle": "Mise à jour du logiciel",
+  "checking": "Vérification des mises à jour...",
+  "checkFailed": "Échec de la vérification des mises à jour",
+  "upToDateTitle": "Vous êtes à jour",
+  "currentVersion": "Version actuelle : {{version}}",
+  "availableTitle": "Mise à jour disponible",
+  "noReleaseNotes": "Aucune note de version fournie.",
+  "downloadingTitle": "Téléchargement de la mise à jour...",
+  "downloadButton": "Télécharger",
+  "downloadAndInstall": "Télécharger et installer",
+  "downloadStartFailed": "Échec du démarrage du téléchargement",
+  "downloadFailed": "Échec du téléchargement",
+  "noCompatibleAsset": "Aucun téléchargement compatible trouvé pour cette plateforme",
+  "noCompatibleAssetManual": "Aucun paquet ne correspond à l'architecture de votre système. Veuillez télécharger le bon installateur depuis les Releases.",
+  "goToRelease": "Ouvrir les Releases",
+  "downloadCompleteTitle": "Téléchargement terminé",
+  "readyToInstall": "Prêt à installer",
+  "readyToInstallDesc": "La mise à jour a été téléchargée. Cliquez sur le bouton ci-dessous pour redémarrer et installer.",
+  "installNow": "Installer et redémarrer",
+  "preparingInstall": "Préparation...",
+  "installWarning": "Ne rouvrez pas l'application pendant l'installation. Il redémarrera automatiquement.",
+  "autoUpdateMode": "Mode de mise à jour automatique",
+  "showInFolder": "Afficher dans le dossier",
+  "openFile": "Ouvrir le fichier",
+  "errorTitle": "Échec de la mise à jour",
+  "errors": {
+    "prepareInstallTimeout": "Le délai de préparation de l'installation a expiré. Veuillez réessayer plus tard.",
+    "prepareInstallFailed": "La préparation de l'installation a échoué. Veuillez réessayer plus tard."
+  }
+}

@@ -26,6 +26,7 @@ import ruRU from '@renderer/services/i18n/locales/ru-RU/index';
 import ukUA from '@renderer/services/i18n/locales/uk-UA/index';
 import ptBR from '@renderer/services/i18n/locales/pt-BR/index';
 import esES from '@renderer/services/i18n/locales/es-ES/index';
+import frFR from '@renderer/services/i18n/locales/fr-FR/index';
 import faIR from '@renderer/services/i18n/locales/fa-IR/index';
 
 // All locale data keyed by language code.
@@ -43,6 +44,7 @@ const localeData: LocaleData = {
   'uk-UA': ukUA,
   'pt-BR': ptBR,
   'es-ES': esES,
+  'fr-FR': frFR,
   'fa-IR': faIR,
 };
 
