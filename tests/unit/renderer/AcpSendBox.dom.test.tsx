@@ -275,6 +275,20 @@ describe('AcpSendBox', () => {
     await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledTimes(1));
     const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
     await expect(queuedStop()).rejects.toThrow('stop failed');
+    expect(resetStateMock).not.toHaveBeenCalled();
+  });
+
+  it('cleans up local state only after a queued stop succeeds', async () => {
+    render(<AcpSendBox conversation_id='conv-1' backend='claude' messageState={makeMessageState()} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'queue-send-now' }).click();
+    });
+
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledTimes(1));
+    const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
+    await queuedStop();
+    expect(stopInvokeMock).toHaveBeenCalledTimes(1);
     expect(resetStateMock).toHaveBeenCalledTimes(1);
   });
 });

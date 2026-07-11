@@ -420,29 +420,34 @@ const RemoteSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id 
   });
 
   const requestStop = async (): Promise<void> => {
-    try {
-      await ipcBridge.conversation.stop.invoke({ conversation_id });
-    } finally {
-      setAiProcessing(false);
-      aiProcessingRef.current = false;
-      setThought({ subject: '', description: '' });
-      hasContentInTurnRef.current = false;
-      resetActiveExecution('stop');
-    }
+    await ipcBridge.conversation.stop.invoke({ conversation_id });
+  };
+  const resetStoppedState = () => {
+    setAiProcessing(false);
+    aiProcessingRef.current = false;
+    setThought({ subject: '', description: '' });
+    hasContentInTurnRef.current = false;
+  };
+  const stopForQueuedSend = async (): Promise<void> => {
+    await requestStop();
+    resetStoppedState();
   };
   const handleStop = async (): Promise<void> => {
     try {
       await requestStop();
     } catch (error) {
       console.warn('[RemoteSendBox] stop request failed', error);
+    } finally {
+      resetStoppedState();
+      resetActiveExecution('stop');
     }
   };
 
   const handleSendNowQueued = useCallback(
     (item: ConversationCommandQueueItem) => {
-      sendNow(item.id, requestStop);
+      sendNow(item.id, stopForQueuedSend);
     },
-    [requestStop, sendNow]
+    [sendNow, stopForQueuedSend]
   );
 
   return (

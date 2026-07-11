@@ -565,23 +565,25 @@ const AionrsSendBox: React.FC<{
   const requestStop = async (): Promise<void> => {
     const turnId = runtimeView.activeTurnId;
     runtimeView.markStopRequested(turnId);
-    try {
-      const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
-      runtimeView.markStopAcknowledged(turnId, result.runtime);
-    } finally {
-      resetState();
-      resetActiveExecution('stop');
-    }
+    const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
+    runtimeView.markStopAcknowledged(turnId, result.runtime);
+  };
+  const stopForQueuedSend = async (): Promise<void> => {
+    await requestStop();
+    resetState();
   };
   const handleStop = async (): Promise<void> => {
     try {
       await requestStop();
     } catch (error) {
       console.warn('[AionrsSendBox] stop request failed', error);
+    } finally {
+      resetState();
+      resetActiveExecution('stop');
     }
   };
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
-  const queuedHandleStop = teamRuntime?.onStop ?? requestStop;
+  const queuedHandleStop = teamRuntime?.onStop ?? stopForQueuedSend;
   const handleSendNowQueued = useCallback(
     (item: ConversationCommandQueueItem) => {
       sendNow(item.id, queuedHandleStop);

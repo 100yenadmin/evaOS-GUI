@@ -341,7 +341,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
   });
 
-  it('handles a stop failure without sending or dropping the target', async () => {
+  it('keeps an Auto draft queued when stopping the active turn fails', async () => {
     const onExecute = vi.fn().mockResolvedValue(undefined);
     const onStop = vi.fn().mockRejectedValue(new Error('cancel failed'));
     const { result } = renderQueue({
@@ -350,10 +350,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
       onExecute,
     });
 
-    act(() => {
-      result.current.toggleMode();
-    });
-    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    expect(result.current.mode).toBe('auto');
     act(() => {
       result.current.enqueue({ input: 'kept target', files: [] });
     });
@@ -367,6 +364,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
     await waitFor(() => expect(Message.warning).toHaveBeenCalled());
     expect(onExecute).not.toHaveBeenCalled();
     expect(result.current.items.map((item) => item.input)).toEqual(['kept target']);
+    expect(result.current.mode).toBe('auto');
   });
 
   it('restores manual mode from persisted storage', async () => {
