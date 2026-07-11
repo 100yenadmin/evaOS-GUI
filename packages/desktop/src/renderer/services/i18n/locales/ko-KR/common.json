@@ -88,6 +88,14 @@
       "title": "evaOS Workbench package architecture mismatch",
       "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     },
+    "startupDirectory": {
+      "title": "시작 디렉터리를 사용할 수 없음",
+      "description": "evaOS Workbench는 열렸지만 필요한 로컬 시작 디렉터리가 없거나 사용할 수 없거나 권한으로 차단되어 관리형 런타임을 시작할 수 없습니다. 설정된 디렉터리가 존재하고 쓰기 가능한지 확인한 후 evaOS Workbench를 다시 시작하세요.",
+      "sendDiagnostics": "진단 보고서 보내기",
+      "diagnosticsSent": "진단 보고서를 보냈습니다",
+      "diagnosticsReportSuccess": "진단 보고서를 보냈습니다",
+      "diagnosticsReportFailed": "진단 보고서를 보내지 못했습니다"
+    },
     "recoverableDatabaseCorruption": {
       "title": "Local data needs repair",
       "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",

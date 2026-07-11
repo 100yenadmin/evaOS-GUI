@@ -23,6 +23,20 @@ function loadConversationLocale(language: string): Record<string, unknown> {
   return JSON.parse(readFileSync(url, 'utf8')) as Record<string, unknown>;
 }
 
+function loadCommonLocale(language: string): Record<string, unknown> {
+  const url = new URL(
+    `../../../packages/desktop/src/renderer/services/i18n/locales/${language}/common.json`,
+    import.meta.url
+  );
+  return JSON.parse(readFileSync(url, 'utf8')) as Record<string, unknown>;
+}
+
+function loadSupportedLanguages(): string[] {
+  const url = new URL('../../../packages/desktop/src/common/config/i18n-config.json', import.meta.url);
+  const config = JSON.parse(readFileSync(url, 'utf8')) as { supportedLanguages: string[] };
+  return config.supportedLanguages;
+}
+
 describe('managed node runtime settings copy', () => {
   it('does not tell MCP users to install Node.js when npx/node preparation fails', () => {
     const en = loadSettingsLocale('en-US');
@@ -44,5 +58,30 @@ describe('managed node runtime settings copy', () => {
 
     expect((zh.runtimePreparing as Record<string, string>).sendboxHint).toContain('运行环境');
     expect((zh.runtimePreparing as Record<string, string>).sendboxHint).not.toContain('托管的 Node');
+  });
+});
+
+describe('backend startup directory copy', () => {
+  it('is complete for every supported locale', () => {
+    const expectedKeys = [
+      'description',
+      'diagnosticsReportFailed',
+      'diagnosticsReportSuccess',
+      'diagnosticsSent',
+      'sendDiagnostics',
+      'title',
+    ];
+
+    for (const language of loadSupportedLanguages()) {
+      const common = loadCommonLocale(language);
+      const backendStartup = common.backendStartup as Record<string, unknown>;
+      const startupDirectory = backendStartup.startupDirectory as Record<string, unknown> | undefined;
+
+      expect(startupDirectory, language).toBeDefined();
+      expect(Object.keys(startupDirectory ?? {}).toSorted(), language).toEqual(expectedKeys);
+      expect(
+        Object.values(startupDirectory ?? {}).every((value) => typeof value === 'string' && value.length > 0)
+      ).toBe(true);
+    }
   });
 });

@@ -88,6 +88,14 @@
       "title": "evaOS Workbench package architecture mismatch",
       "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     },
+    "startupDirectory": {
+      "title": "Startup directory is unavailable",
+      "description": "evaOS Workbench opened, but its managed runtime could not start because a required local startup directory is missing, unavailable, or blocked by permissions. Check that the configured directories exist and are writable, then restart evaOS Workbench.",
+      "sendDiagnostics": "Send diagnostics",
+      "diagnosticsSent": "Diagnostics sent",
+      "diagnosticsReportSuccess": "Diagnostics report sent",
+      "diagnosticsReportFailed": "Failed to send diagnostics report"
+    },
     "recoverableDatabaseCorruption": {
       "title": "Local data needs repair",
       "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",

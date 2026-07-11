@@ -32,6 +32,10 @@ const GLIBC_VERSION_RE = /GLIBC_(\d+\.\d+)/g;
 const GLIBC_NOT_FOUND_RE = /GLIBC_\d+\.\d+[\s\S]{0,160}not found|not found[\s\S]{0,160}GLIBC_\d+\.\d+/i;
 const PACKAGED_APP_MARKER_ENTRIES = new Set(['app.asar', 'app.asar.unpacked/']);
 const RECOVERABLE_DATABASE_CORRUPTION_BOUNDARY_STAGE = 'database.recoverable_corruption';
+const STARTUP_DIRECTORY_PREPARATION_RE = /startup directory preparation failed|\bmkdir\b/i;
+const STARTUP_DIRECTORY_PERMISSION_RE = /\b(?:EACCES|EPERM)\b|permission denied|operation not permitted/i;
+const STARTUP_DIRECTORY_UNAVAILABLE_RE =
+  /startup directory preparation failed|(?:\b(?:ENOENT|ENOTDIR|EEXIST)\b[\s\S]{0,160}\bmkdir\b)|(?:\bmkdir\b[\s\S]{0,160}\b(?:ENOENT|ENOTDIR|EEXIST)\b)/i;
 const MAX_REPORTED_DIR_ENTRIES = 20;
 
 function collectBackendStartupText(error: unknown): string {
@@ -150,6 +154,29 @@ function classifyIncompleteInstallation(details: ErrorWithDetails['details']): B
   };
 }
 
+function classifyStartupDirectoryFailure(
+  details: ErrorWithDetails['details'],
+  text: string
+): BackendStartupFailureInfo | undefined {
+  if (details?.stage !== 'spawn') return undefined;
+
+  if (STARTUP_DIRECTORY_PREPARATION_RE.test(text) && STARTUP_DIRECTORY_PERMISSION_RE.test(text)) {
+    return {
+      reason: 'backend_startup_directory_unavailable',
+      startupDirectoryIssueKind: 'permission_denied',
+    };
+  }
+
+  if (STARTUP_DIRECTORY_UNAVAILABLE_RE.test(text)) {
+    return {
+      reason: 'backend_startup_directory_unavailable',
+      startupDirectoryIssueKind: 'missing_or_unavailable_directory',
+    };
+  }
+
+  return undefined;
+}
+
 export function classifyBackendStartupFailure(error: unknown): BackendStartupFailureInfo {
   const details = getBackendStartupDetails(error);
   const packageArchitectureMismatch = classifyPackageArchitectureMismatch(details);
@@ -159,6 +186,9 @@ export function classifyBackendStartupFailure(error: unknown): BackendStartupFai
   if (incompleteInstallation) return incompleteInstallation;
 
   const text = collectBackendStartupText(error);
+  const startupDirectoryFailure = classifyStartupDirectoryFailure(details, text);
+  if (startupDirectoryFailure) return startupDirectoryFailure;
+
   const requiredVersions = extractMissingGlibcVersions(text);
   if (requiredVersions.length > 0) {
     return {

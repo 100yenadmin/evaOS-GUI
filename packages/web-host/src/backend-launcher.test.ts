@@ -7,11 +7,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import type { Socket } from 'node:net';
 
 // ---- Module-level mocks ----
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
+}));
+
+vi.mock('node:fs', () => ({
+  mkdirSync: vi.fn(),
 }));
 
 vi.mock('node:net', () => ({
@@ -371,6 +376,13 @@ describe('BackendLifecycleManager.start (success path)', () => {
       expect(mgr.port).toBe(55555);
       expect(mgr.status).toBe('running');
       expect(resolveBackend).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(mkdirSync).mock.calls).toEqual([
+        ['/db/path', { recursive: true }],
+        ['/log/dir', { recursive: true }],
+        ['/c', { recursive: true }],
+        ['/w', { recursive: true }],
+        ['/l', { recursive: true }],
+      ]);
       expect(spawn).toHaveBeenCalledTimes(1);
 
       const spawnCall = vi.mocked(spawn).mock.calls[0];
@@ -408,6 +420,31 @@ describe('BackendLifecycleManager.start (success path)', () => {
       fetchSpy.mockRestore();
       infoSpy.mockRestore();
     }
+  });
+
+  it('fails before spawn when a startup directory cannot be prepared', async () => {
+    const preparationError = Object.assign(new Error('EACCES: permission denied, mkdir'), { code: 'EACCES' });
+    vi.mocked(mkdirSync).mockImplementationOnce(() => {
+      throw preparationError;
+    });
+
+    const mgr = new BackendLifecycleManager(APP_META_PACKAGED, () => '/abs/path/aioncore');
+
+    await expect(
+      mgr.start('/db/path', '/log/dir', {
+        cacheDir: '/cache',
+        workDir: '/work',
+        logDir: '/runtime-log',
+      })
+    ).rejects.toMatchObject({
+      name: 'BackendStartupError',
+      details: expect.objectContaining({
+        stage: 'spawn',
+        causeMessage: 'EACCES: permission denied, mkdir',
+      }),
+    });
+    expect(mgr.status).toBe('error');
+    expect(spawn).not.toHaveBeenCalled();
   });
 });
 

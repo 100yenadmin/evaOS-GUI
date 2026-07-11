@@ -108,6 +108,14 @@
       "diagnosticsReportSuccess": "گزارش تشخیصی ارسال شد",
       "diagnosticsReportFailed": "ارسال گزارش تشخیصی ناموفق بود"
     },
+    "startupDirectory": {
+      "title": "پوشه راه‌اندازی در دسترس نیست",
+      "description": "evaOS Workbench باز شد، اما محیط اجرای مدیریت‌شده نتوانست شروع شود زیرا یک پوشه راه‌اندازی محلی لازم وجود ندارد، در دسترس نیست یا به‌دلیل مجوزها مسدود شده است. بررسی کنید پوشه‌های پیکربندی‌شده وجود دارند و قابل نوشتن هستند، سپس evaOS Workbench را دوباره راه‌اندازی کنید.",
+      "sendDiagnostics": "ارسال گزارش تشخیصی",
+      "diagnosticsSent": "گزارش تشخیصی ارسال شد",
+      "diagnosticsReportSuccess": "گزارش تشخیصی ارسال شد",
+      "diagnosticsReportFailed": "ارسال گزارش تشخیصی ناموفق بود"
+    },
     "recoverableDatabaseCorruption": {
       "title": "داده‌های محلی خراب شده‌اند",
       "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",

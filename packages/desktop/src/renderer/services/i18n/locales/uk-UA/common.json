@@ -88,6 +88,14 @@
       "title": "evaOS Workbench package architecture mismatch",
       "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     },
+    "startupDirectory": {
+      "title": "Каталог запуску недоступний",
+      "description": "evaOS Workbench відкрився, але кероване середовище виконання не змогло запуститися: необхідний локальний каталог запуску відсутній, недоступний або заблокований дозволами. Переконайтеся, що налаштовані каталоги існують і доступні для запису, а потім перезапустіть evaOS Workbench.",
+      "sendDiagnostics": "Надіслати діагностику",
+      "diagnosticsSent": "Діагностику надіслано",
+      "diagnosticsReportSuccess": "Діагностичний звіт надіслано",
+      "diagnosticsReportFailed": "Не вдалося надіслати діагностичний звіт"
+    },
     "recoverableDatabaseCorruption": {
       "title": "Local data needs repair",
       "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",
