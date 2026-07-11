@@ -446,7 +446,8 @@
       "manual": "手动发送"
     },
     "pause": "暂停队列",
-    "resume": "继续队列"
+    "resume": "继续队列",
+    "stopFailed": "无法停止当前回复。草稿未发送。"
   },
   "contextUsage": {
     "contextUsed": "上下文已使用"

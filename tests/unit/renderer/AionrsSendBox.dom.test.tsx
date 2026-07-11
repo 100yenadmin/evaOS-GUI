@@ -167,6 +167,9 @@ const modelSelection = (): AionrsModelSelection =>
 describe('AionrsSendBox', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queueSendNowMock.mockImplementation((_id: string, onStop?: () => Promise<void>) => {
+      void onStop?.();
+    });
   });
 
   afterEach(() => {
@@ -196,8 +199,7 @@ describe('AionrsSendBox', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'queue-send-now' }));
 
-    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1'));
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1', onStop));
     expect(onStop).toHaveBeenCalledTimes(1);
-    expect(onStop.mock.invocationCallOrder[0]).toBeLessThan(queueSendNowMock.mock.invocationCallOrder[0]);
   });
 });

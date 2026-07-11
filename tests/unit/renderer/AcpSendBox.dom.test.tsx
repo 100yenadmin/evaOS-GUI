@@ -201,6 +201,9 @@ const makeMessageState = (): UseAcpMessageReturn => ({
 describe('AcpSendBox', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queueSendNowMock.mockImplementation((_id: string, onStop?: () => Promise<void>) => {
+      void onStop?.();
+    });
   });
 
   it('resets ACP loading state when sendMessage fails before any stream error arrives', async () => {
@@ -255,8 +258,7 @@ describe('AcpSendBox', () => {
       screen.getByRole('button', { name: 'queue-send-now' }).click();
     });
 
-    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1'));
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1', onStop));
     expect(onStop).toHaveBeenCalledTimes(1);
-    expect(onStop.mock.invocationCallOrder[0]).toBeLessThan(queueSendNowMock.mock.invocationCallOrder[0]);
   });
 });

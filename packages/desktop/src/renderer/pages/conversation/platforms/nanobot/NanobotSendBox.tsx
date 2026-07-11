@@ -397,9 +397,8 @@ const NanobotSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id
   };
 
   const handleSendNowQueued = useCallback(
-    async (item: ConversationCommandQueueItem) => {
-      await handleStop();
-      sendNow(item.id);
+    (item: ConversationCommandQueueItem) => {
+      sendNow(item.id, handleStop);
     },
     [handleStop, sendNow]
   );

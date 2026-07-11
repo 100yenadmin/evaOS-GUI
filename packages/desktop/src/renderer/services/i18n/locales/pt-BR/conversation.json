@@ -452,7 +452,8 @@
       "manual": "Envio manual"
     },
     "pause": "Pausar fila",
-    "resume": "Retomar fila"
+    "resume": "Retomar fila",
+    "stopFailed": "Não foi possível interromper a resposta atual. O rascunho não foi enviado."
   },
   "contextUsage": {
     "contextUsed": "contexto usado"

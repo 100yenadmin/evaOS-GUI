@@ -446,7 +446,8 @@
       "manual": "수동 전송"
     },
     "pause": "대기열 일시 중지",
-    "resume": "대기열 재개"
+    "resume": "대기열 재개",
+    "stopFailed": "현재 응답을 중지할 수 없습니다. 초안이 전송되지 않았습니다."
   },
   "contextUsage": {
     "contextUsed": "사용된 컨텍스트"

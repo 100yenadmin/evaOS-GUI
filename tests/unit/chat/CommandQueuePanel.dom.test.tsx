@@ -142,6 +142,18 @@ describe('CommandQueuePanel', () => {
     expect(onResume).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps mobile rows scrollable and exposes one functional drag handle', () => {
+    renderPanel({ isMobile: true });
+
+    const row = screen.getByLabelText('queued follow-up');
+    const dragHandle = screen.getByRole('button', { name: 'Drag to reorder queued command' });
+
+    expect(row).not.toHaveAttribute('role', 'button');
+    expect(row).not.toHaveStyle({ touchAction: 'none' });
+    expect(dragHandle).toHaveAttribute('data-drag-handle', 'enabled');
+    expect(dragHandle).toHaveStyle({ touchAction: 'none' });
+  });
+
   it('does not render a separate help button (help lives on the mode toggle)', () => {
     renderPanel();
     expect(screen.queryByRole('button', { name: 'Help' })).not.toBeInTheDocument();

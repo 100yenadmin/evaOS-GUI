@@ -509,9 +509,8 @@ const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_i
   };
 
   const handleSendNowQueued = useCallback(
-    async (item: ConversationCommandQueueItem) => {
-      await handleStop();
-      sendNow(item.id);
+    (item: ConversationCommandQueueItem) => {
+      sendNow(item.id, handleStop);
     },
     [handleStop, sendNow]
   );

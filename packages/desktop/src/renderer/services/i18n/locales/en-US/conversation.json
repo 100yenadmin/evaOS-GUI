@@ -446,7 +446,8 @@
       "manual": "Manual send"
     },
     "pause": "Pause queue",
-    "resume": "Resume queue"
+    "resume": "Resume queue",
+    "stopFailed": "Could not stop the current reply. The draft was not sent."
   },
   "contextUsage": {
     "contextUsed": "context used"

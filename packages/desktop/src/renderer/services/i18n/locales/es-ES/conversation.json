@@ -507,7 +507,8 @@
       "manual": "Envío manual"
     },
     "pause": "Pausar cola",
-    "resume": "Reanudar cola"
+    "resume": "Reanudar cola",
+    "stopFailed": "No se pudo detener la respuesta actual. El borrador no se envió."
   },
   "contextUsage": {
     "contextUsed": "contexto usado"

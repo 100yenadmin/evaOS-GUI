@@ -580,9 +580,8 @@ const AionrsSendBox: React.FC<{
   };
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
   const handleSendNowQueued = useCallback(
-    async (item: ConversationCommandQueueItem) => {
-      await effectiveHandleStop();
-      sendNow(item.id);
+    (item: ConversationCommandQueueItem) => {
+      sendNow(item.id, effectiveHandleStop);
     },
     [effectiveHandleStop, sendNow]
   );

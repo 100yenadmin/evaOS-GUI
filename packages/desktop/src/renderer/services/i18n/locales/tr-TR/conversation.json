@@ -435,7 +435,8 @@
       "manual": "Elle gönder"
     },
     "pause": "Kuyruğu duraklat",
-    "resume": "Kuyruğu sürdür"
+    "resume": "Kuyruğu sürdür",
+    "stopFailed": "Geçerli yanıt durdurulamadı. Taslak gönderilmedi."
   },
   "contextUsage": {
     "contextUsed": "bağlam kullanıldı"

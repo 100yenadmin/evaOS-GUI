@@ -437,6 +437,7 @@ export type I18nKey =
   | 'conversation.commandQueue.resume'
   | 'conversation.commandQueue.saveEdit'
   | 'conversation.commandQueue.sendNow'
+  | 'conversation.commandQueue.stopFailed'
   | 'conversation.commandQueue.title'
   | 'conversation.commandQueue.tooManyFiles'
   | 'conversation.contextUsage.contextUsed'

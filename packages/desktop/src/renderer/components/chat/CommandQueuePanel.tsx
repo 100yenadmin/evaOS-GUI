@@ -103,8 +103,6 @@ type QueueItemCardProps = {
   onDragHandlePointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
   dragHandleButtonProps: React.ButtonHTMLAttributes<HTMLButtonElement>;
   dragHandleRef: (element: HTMLButtonElement | null) => void;
-  cardDragListeners?: React.HTMLAttributes<HTMLDivElement>;
-  cardDragRef?: (element: HTMLElement | null) => void;
 };
 
 const renderQueueActionIconButton = ({
@@ -158,14 +156,10 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
   onDragHandlePointerDown,
   dragHandleButtonProps,
   dragHandleRef,
-  cardDragListeners,
-  cardDragRef,
 }) => {
   const { onPointerDown: onSortableDragHandlePointerDown, ...restDragHandleButtonProps } = dragHandleButtonProps ?? {};
   return (
     <div
-      {...(dragViaCard ? cardDragListeners : {})}
-      ref={dragViaCard ? cardDragRef : undefined}
       className='group flex items-center justify-between gap-6px rd-10px px-8px py-5px transition-[background-color,opacity] duration-180 ease-out'
       data-command-id={item.id}
       data-sortable={dragDisabled ? 'disabled' : 'enabled'}
@@ -175,7 +169,6 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
         background: isDragging
           ? 'color-mix(in srgb, var(--color-fill-2) 88%, var(--color-bg-1))'
           : 'color-mix(in srgb, var(--color-fill-1) 76%, transparent)',
-        touchAction: dragViaCard && !dragDisabled ? 'none' : undefined,
       }}
     >
       <div className='flex items-center gap-6px min-w-0 flex-1 relative pl-8px'>
@@ -193,7 +186,9 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
                 ? 'cursor-default opacity-0'
                 : isDragging
                   ? 'cursor-grabbing opacity-100'
-                  : 'cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                  : dragViaCard
+                    ? 'cursor-grab active:cursor-grabbing opacity-70 focus-visible:opacity-100'
+                    : 'cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
             }`}
             style={{
               left: '-15px',
@@ -301,24 +296,11 @@ const SortableQueueItem: React.FC<SortableQueueItemProps> = ({
         onSendNow={onSendNow}
         onRemove={onRemove}
         onDragHandlePointerDown={onDragHandlePointerDown}
-        dragHandleRef={dragViaCard ? undefined : setActivatorNodeRef}
-        dragHandleButtonProps={
-          dragViaCard
-            ? {}
-            : {
-                ...(attributes as React.ButtonHTMLAttributes<HTMLButtonElement>),
-                ...(listeners as React.ButtonHTMLAttributes<HTMLButtonElement>),
-              }
-        }
-        cardDragRef={dragViaCard ? setActivatorNodeRef : undefined}
-        cardDragListeners={
-          dragViaCard
-            ? {
-                ...(attributes as React.HTMLAttributes<HTMLDivElement>),
-                ...(listeners as React.HTMLAttributes<HTMLDivElement>),
-              }
-            : undefined
-        }
+        dragHandleRef={setActivatorNodeRef}
+        dragHandleButtonProps={{
+          ...(attributes as React.ButtonHTMLAttributes<HTMLButtonElement>),
+          ...(listeners as React.ButtonHTMLAttributes<HTMLButtonElement>),
+        }}
       />
     </div>
   );

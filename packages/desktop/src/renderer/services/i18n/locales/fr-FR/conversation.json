@@ -446,7 +446,8 @@
       "manual": "Envoi manuel"
     },
     "pause": "Mettre la file en pause",
-    "resume": "Reprendre la file"
+    "resume": "Reprendre la file",
+    "stopFailed": "Impossible d’arrêter la réponse en cours. Le brouillon n’a pas été envoyé."
   },
   "contextUsage": {
     "contextUsed": "contexte utilisé"

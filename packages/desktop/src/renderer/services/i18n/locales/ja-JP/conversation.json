@@ -446,7 +446,8 @@
       "manual": "手動送信"
     },
     "pause": "キューを一時停止",
-    "resume": "キューを再開"
+    "resume": "キューを再開",
+    "stopFailed": "現在の応答を停止できませんでした。下書きは送信されていません。"
   },
   "contextUsage": {
     "contextUsed": "コンテキスト使用量"

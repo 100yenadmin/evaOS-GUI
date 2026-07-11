@@ -8,6 +8,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { createElement, type PropsWithChildren } from 'react';
 import { SWRConfig } from 'swr';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Message } from '@arco-design/web-react';
 import {
   type ConversationCommandQueueRuntimeGate,
   useConversationCommandQueue,
@@ -58,6 +59,16 @@ const idleGate: ConversationCommandQueueRuntimeGate = {
 
 const storageKey = (conversationId: string) => `conversation-command-queue/${conversationId}`;
 
+const createDeferred = () => {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 const renderQueue = ({
   conversation_id,
   runtimeGate,
@@ -86,6 +97,7 @@ const renderQueue = ({
 
 describe('useConversationCommandQueue mode & send-now', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     sessionStorage.clear();
     vi.spyOn(console, 'info').mockImplementation(() => {});
   });
@@ -202,6 +214,161 @@ describe('useConversationCommandQueue mode & send-now', () => {
     expect(result.current.mode).toBe('manual');
   });
 
+  it('keeps an explicitly paused auto queue paused after Send now completes', async () => {
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const stopDeferred = createDeferred();
+    const onStop = vi.fn(() => stopDeferred.promise);
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-paused-sendnow',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.enqueue({ input: 'first', files: [] });
+      result.current.enqueue({ input: 'second', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.pause();
+    });
+    await waitFor(() => expect(result.current.isPaused).toBe(true));
+
+    act(() => {
+      result.current.sendNow(result.current.items[1].id, onStop);
+    });
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+    rerender({ gate: idleGate, busy: false });
+    await act(async () => {
+      stopDeferred.resolve();
+      await stopDeferred.promise;
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+
+    rerender({ gate: processingGate, busy: true });
+    rerender({ gate: idleGate, busy: false });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onExecute).toHaveBeenCalledTimes(1);
+    expect(result.current.items.map((item) => item.input)).toEqual(['first']);
+    expect(result.current.isPaused).toBe(true);
+  });
+
+  it('resumes auto-drain only after the Send now turn is observed complete', async () => {
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const stopDeferred = createDeferred();
+    const onStop = vi.fn(() => stopDeferred.promise);
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-auto-sendnow',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.enqueue({ input: 'first', files: [] });
+      result.current.enqueue({ input: 'second', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[1].id, onStop);
+    });
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+    rerender({ gate: idleGate, busy: false });
+    await act(async () => {
+      stopDeferred.resolve();
+      await stopDeferred.promise;
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    expect(onExecute.mock.calls[0][0]).toEqual(expect.objectContaining({ input: 'second' }));
+
+    rerender({ gate: processingGate, busy: true });
+    rerender({ gate: idleGate, busy: false });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(2));
+    expect(onExecute.mock.calls[1][0]).toEqual(expect.objectContaining({ input: 'first' }));
+  });
+
+  it('does not stop an idle runtime before Send now', async () => {
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderQueue({
+      conversation_id: 'conv-idle-sendnow',
+      runtimeGate: idleGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    act(() => {
+      result.current.enqueue({ input: 'idle target', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, onStop);
+    });
+
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it('serializes rapid Send now requests before the runtime reports processing', async () => {
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderQueue({
+      conversation_id: 'conv-sendnow-single-flight',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    act(() => {
+      result.current.enqueue({ input: 'first', files: [] });
+      result.current.enqueue({ input: 'second', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id);
+      result.current.sendNow(result.current.items[1].id);
+    });
+
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+  });
+
+  it('handles a stop failure without sending or dropping the target', async () => {
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const onStop = vi.fn().mockRejectedValue(new Error('cancel failed'));
+    const { result } = renderQueue({
+      conversation_id: 'conv-stop-failure',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    act(() => {
+      result.current.enqueue({ input: 'kept target', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, onStop);
+    });
+
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(Message.warning).toHaveBeenCalled());
+    expect(onExecute).not.toHaveBeenCalled();
+    expect(result.current.items.map((item) => item.input)).toEqual(['kept target']);
+  });
+
   it('restores manual mode from persisted storage', async () => {
     sessionStorage.setItem(
       storageKey('conv-persist'),
@@ -263,13 +430,80 @@ describe('useConversationCommandQueue mode & send-now', () => {
     });
     await waitFor(() => expect(result.current.items).toHaveLength(2));
 
-    const first = result.current.items[0];
+    const second = result.current.items[1];
     act(() => {
-      result.current.sendNow(first.id);
+      result.current.sendNow(second.id);
     });
 
     await waitFor(() => expect(result.current.isPaused).toBe(true));
     expect(result.current.items.map((item) => item.input)).toEqual(['first', 'second']);
     expect(result.current.mode).toBe('manual');
+  });
+
+  it('keeps manual mode when clearing the draft box', async () => {
+    const { result } = renderQueue({
+      conversation_id: 'conv-clear-manual',
+      runtimeGate: processingGate,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    act(() => {
+      result.current.enqueue({ input: 'clear me', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    act(() => {
+      result.current.clear();
+    });
+
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
+    expect(result.current.mode).toBe('manual');
+  });
+
+  it('does not resurrect a failed in-flight item after clear', async () => {
+    const deferred = createDeferred();
+    const onExecute = vi.fn(() => deferred.promise);
+    const { result } = renderQueue({
+      conversation_id: 'conv-clear-in-flight',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    act(() => {
+      result.current.enqueue({ input: 'in flight', files: [] });
+      result.current.enqueue({ input: 'also clear', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id);
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.clear();
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
+
+    await act(async () => {
+      deferred.reject(new Error('late failure'));
+      await deferred.promise.catch(() => {});
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(result.current.items).toHaveLength(0);
+    expect(result.current.isPaused).toBe(false);
+    expect(result.current.mode).toBe('manual');
+    const persisted = sessionStorage.getItem(storageKey('conv-clear-in-flight'));
+    expect(persisted).not.toContain('in flight');
+    expect(persisted).not.toContain('also clear');
+    expect(JSON.parse(persisted ?? '{}')).toMatchObject({ items: [], mode: 'manual' });
   });
 });
