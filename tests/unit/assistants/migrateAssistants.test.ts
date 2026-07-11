@@ -317,7 +317,7 @@ describe('migrateAssistants', () => {
       expect(ipcBridge.assistants.import.invoke).toHaveBeenCalledWith({
         assistants: [
           expect.objectContaining({ id: 'valid', agent_id: 'agent-claude-row' }),
-          expect.not.objectContaining({ agent_id: expect.anything() }),
+          expect.objectContaining({ id: 'retired', agent_id: undefined }),
         ],
       });
     });
