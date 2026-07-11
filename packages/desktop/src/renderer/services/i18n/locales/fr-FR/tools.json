@@ -56,7 +56,7 @@
     "result": "Résultat :",
     "command": "Commande :",
     "working_directory": "Répertoire de travail :",
-    "exit_code": "Sortie : {{code}}",
+    "exit_code": "Code de sortie : {{code}}",
     "duration": "Durée : {{seconds}}",
     "auto_approved": "Approuvé automatiquement",
     "manual_approval": "Approbation manuelle"

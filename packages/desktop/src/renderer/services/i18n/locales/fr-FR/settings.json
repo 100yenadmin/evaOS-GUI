@@ -134,7 +134,7 @@
   "assistantNoPermissionModes": "Cet agent principal n'a pas de mode d'autorisation commutable.",
   "assistantDefaultModelRequired": "Veuillez choisir un modèle par défaut lorsque vous utilisez une valeur fixe.",
   "assistantDefaultPermissionRequired": "Veuillez choisir une autorisation par défaut lorsque vous utilisez une valeur fixe.",
-  "assistantDefaultMcpLabel": "PCM",
+  "assistantDefaultMcpLabel": "MCP",
   "assistantOpenMcpSettings": "Ouvrir les paramètres MCP",
   "assistantSelectDefaultMcp": "Sélectionnez les serveurs MCP",
   "assistantNoAvailableMcps": "Aucun serveur MCP activé n'est disponible.",
@@ -656,10 +656,10 @@
   "mcpLogin": "Se connecter",
   "mcpNeedsLogin": "déconnecté · Entrée pour se connecter",
   "noConfiguredModels": "Aucun modèle configuré",
-  "needHelpConfigGuide": "Besoin d'aide ? Consultez le",
+  "needHelpConfigGuide": "Besoin d'aide pour la configuration ?",
   "configGuide": "Contacter l'assistance",
   "configGuideSuffix": ".",
-  "needHelpTooltip": "Si vous avez besoin d'aide, veuillez consulter",
+  "needHelpTooltip": "Besoin d'aide ?",
   "googleCloudProjectPlaceholder": "Entrer votre ID de projet Google Cloud",
   "noAvailableModels": "Aucun modèle disponible",
   "appDescription": "Application GUI gratuite, locale et open-source pour Gemini CLI",
@@ -1088,7 +1088,7 @@
   },
   "runtimeScope": {
     "conversation": "Conversation",
-    "mcp": "PCM",
+    "mcp": "MCP",
     "customAgent": "Agent personnalisé"
   },
   "providerIdConflict": "L'ID du fournisseur existe déjà. Veuillez réessayer."

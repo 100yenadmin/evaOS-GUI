@@ -3,7 +3,7 @@
     "title": "Intégration MCP",
     "description": "Gérer les serveurs et outils du protocole Model Context Protocol"
   },
-  "label": "PCM",
+  "label": "MCP",
   "servers": "Serveurs",
   "tools": "Outils",
   "executionHistory": "Historique d'exécution",

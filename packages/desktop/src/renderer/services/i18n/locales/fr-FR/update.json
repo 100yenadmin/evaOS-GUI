@@ -19,7 +19,7 @@
   "readyToInstallDesc": "La mise à jour a été téléchargée. Cliquez sur le bouton ci-dessous pour redémarrer et installer.",
   "installNow": "Installer et redémarrer",
   "preparingInstall": "Préparation...",
-  "installWarning": "Ne rouvrez pas l'application pendant l'installation. Il redémarrera automatiquement.",
+  "installWarning": "Ne rouvrez pas l'application pendant l'installation. Elle redémarrera automatiquement.",
   "autoUpdateMode": "Mode de mise à jour automatique",
   "showInFolder": "Afficher dans le dossier",
   "openFile": "Ouvrir le fichier",
