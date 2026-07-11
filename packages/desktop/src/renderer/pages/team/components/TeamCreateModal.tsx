@@ -1,18 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Input, Message, Tooltip } from '@arco-design/web-react';
 import type { RefInputType } from '@arco-design/web-react/es/Input/interface';
-import { Close, Search, CloseSmall } from '@icon-park/react';
+import { Close, Plus } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { ipcBridge } from '@/common';
-import type { TTeam, TeamAgent } from '@/common/types/team/teamTypes';
+import type { TeamAgent, TTeam } from '@/common/types/team/teamTypes';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
+import { useLayoutContext } from '@renderer/hooks/context/LayoutContext';
 import { useConversationAgents } from '@renderer/pages/conversation/hooks/useConversationAgents';
 import AionModal from '@renderer/components/base/AionModal';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { getConversationCreateErrorMessage } from '@renderer/pages/conversation/utils/conversationCreateError';
 import {
   agentKey,
-  agentFromKey,
   resolveConversationType,
   resolveTeamAgentType,
   filterTeamSupportedAgents,
@@ -24,137 +24,136 @@ import {
 } from './agentSelectUtils';
 import type { TeamAgentOption } from './agentSelectUtils';
 import { resolveDefaultTeamAgentModel } from './teamCreateModelResolver';
+import TeamMemberDraftList from './memberPicker/TeamMemberDraftList';
+import {
+  orderTeamMemberDraftsLeaderFirst,
+  removeTeamMemberDraft,
+  type TeamMemberDraft,
+} from './memberPicker/teamMemberDrafts';
 
-// [E2E SYNC] 修改此组件的 DOM 结构（class、标题、关闭按钮等）时，
-// 必须同步更新 tests/e2e/cases/teams/team-create.e2e.ts 和 team-whitelist.e2e.ts 中的 selector，
-// 并立即向上汇报改动情况。
 const FormItem = Form.Item;
 
+// [E2E SYNC] Preserve team-create-name-input, team-create-leader-select,
+// team-create-agent-option-*, workspace selectors, and the primary create action.
 type Props = {
   visible: boolean;
   onClose: () => void;
   onCreated: (team: TTeam) => void;
 };
 
-const AgentRadioRow: React.FC<{
+const TeamAgentPickerRow: React.FC<{
   agent: TeamAgentOption;
-  isSelected: boolean;
-  onClick: () => void;
-}> = ({ agent, isSelected, onClick }) => {
-  const row = (
-    <div
-      className={`flex cursor-pointer items-center gap-12px rounded-8px px-12px py-9px transition-colors ${
-        isSelected ? 'bg-aou-1' : 'hover:bg-fill-2'
-      }`}
-      style={isSelected ? { boxShadow: 'inset 0 0 0 1px var(--aou-6)' } : undefined}
-      onClick={onClick}
+  onSelect: () => void;
+}> = ({ agent, onSelect }) => {
+  const { t } = useTranslation();
+  const button = (
+    <Button
+      type='text'
+      long
+      onClick={onSelect}
       data-testid={`team-create-agent-option-${agentKey(agent)}`}
-      aria-label={agent.description ? `${agent.name}: ${agent.description}` : agent.name}
+      aria-label={`${t('team.create.addMember', { defaultValue: 'Add member' })}: ${agent.name}`}
+      className='!h-40px !justify-start !rounded-8px !px-10px !text-t-primary hover:!bg-fill-2'
     >
-      <div
-        className='h-16px w-16px flex-shrink-0 rounded-full transition-all'
-        style={{
-          boxSizing: 'border-box',
-          border: isSelected ? '5px solid var(--aou-6)' : '1.5px solid var(--color-border-3)',
-        }}
-      />
-      <div className='flex-1 overflow-hidden'>
-        <AgentOptionLabel agent={agent} />
+      <div className='flex w-full min-w-0 items-center gap-8px'>
+        <div className='min-w-0 flex-1 text-left'>
+          <AgentOptionLabel agent={agent} />
+        </div>
+        <Plus size='15' className='shrink-0 text-t-tertiary' />
       </div>
-    </div>
+    </Button>
   );
 
-  if (!agent.description) {
-    return row;
-  }
-
-  return (
+  return agent.description ? (
     <Tooltip content={agent.description} position='right'>
-      {row}
+      {button}
     </Tooltip>
+  ) : (
+    button
   );
 };
 
 const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const layout = useLayoutContext();
+  const isMobile = layout?.isMobile ?? false;
   const { cliAgents, presetAssistants } = useConversationAgents();
   const [name, setName] = useState('');
-  const [dispatchAgentKey, setDispatchAgentKey] = useState<string | undefined>(undefined);
+  const [members, setMembers] = useState<TeamMemberDraft[]>([]);
+  const [leaderSelectionId, setLeaderSelectionId] = useState<string>();
   const [workspace, setWorkspace] = useState('');
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [searchExpanded, setSearchExpanded] = useState(false);
+  const nextSelectionIdRef = useRef(0);
   const nameInputRef = useRef<RefInputType | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleToggleSearch = () => {
-    if (searchExpanded) {
-      setSearch('');
-      setSearchExpanded(false);
-    } else {
-      setSearchExpanded(true);
-      setTimeout(() => searchInputRef.current?.focus(), 50);
-    }
-  };
-
-  const cliAgentOptions = useMemo(() => cliAgents.map(cliAgentToOption), [cliAgents]);
+  const generatedAssistantIds = useMemo(
+    () =>
+      new Set(cliAgents.map((agent) => `bare:${agent.id}`).filter((id) => presetAssistants.some((a) => a.id === id))),
+    [cliAgents, presetAssistants]
+  );
+  const cliAgentOptions = useMemo(
+    () =>
+      compactTeamAgentOptions(
+        cliAgents.map((agent) => {
+          const assistantId = `bare:${agent.id}`;
+          return generatedAssistantIds.has(assistantId)
+            ? { ...cliAgentToOption(agent), assistant_id: assistantId }
+            : undefined;
+        })
+      ),
+    [cliAgents, generatedAssistantIds]
+  );
   const teamCapableKeys = useMemo(
     () =>
       new Set(
         cliAgents
-          .filter((a) => a.team_capable)
-          .flatMap((a) => [a.id, a.backend, a.agent_type].filter(Boolean) as string[])
+          .filter((agent) => agent.team_capable)
+          .flatMap((agent) => [agent.id, agent.backend, agent.agent_type].filter(Boolean) as string[])
       ),
     [cliAgents]
   );
   const presetAssistantOptions = useMemo(
-    () => compactTeamAgentOptions(presetAssistants.map((a) => assistantToOption(a, teamCapableKeys, i18n.language))),
-    [i18n.language, presetAssistants, teamCapableKeys]
+    () =>
+      compactTeamAgentOptions(
+        presetAssistants
+          .filter((assistant) => !generatedAssistantIds.has(assistant.id))
+          .map((assistant) => assistantToOption(assistant, teamCapableKeys, i18n.language))
+      ),
+    [generatedAssistantIds, i18n.language, presetAssistants, teamCapableKeys]
   );
   const allAgents = useMemo(
     () => sortTeamLeaderOptions(filterTeamSupportedAgents([...cliAgentOptions, ...presetAssistantOptions])),
     [cliAgentOptions, presetAssistantOptions]
   );
-
-  const { supportedCliAgents, supportedPresetAssistants } = useMemo(() => {
-    const supportedKeys = new Set(allAgents.map(agentKey));
-    return {
-      supportedCliAgents: allAgents.filter((a) => supportedKeys.has(agentKey(a)) && Boolean(a.agent_type)),
-      supportedPresetAssistants: allAgents.filter((a) => supportedKeys.has(agentKey(a)) && !a.agent_type),
-    };
-  }, [allAgents]);
-
-  const { filteredCliAgents, filteredPresetAssistants } = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) {
-      return { filteredCliAgents: supportedCliAgents, filteredPresetAssistants: supportedPresetAssistants };
-    }
-    return {
-      filteredCliAgents: supportedCliAgents.filter((a) => a.name.toLowerCase().includes(q)),
-      filteredPresetAssistants: supportedPresetAssistants.filter((a) => a.name.toLowerCase().includes(q)),
-    };
-  }, [supportedCliAgents, supportedPresetAssistants, search]);
-
-  const hasSearchResults = filteredCliAgents.length > 0 || filteredPresetAssistants.length > 0;
-
   useEffect(() => {
-    if (visible) {
-      setTimeout(() => nameInputRef.current?.focus(), 50);
-    }
+    if (visible) setTimeout(() => nameInputRef.current?.focus(), 50);
   }, [visible]);
 
-  const handleClose = () => {
+  const reset = () => {
     setName('');
-    setDispatchAgentKey(undefined);
+    setMembers([]);
+    setLeaderSelectionId(undefined);
     setWorkspace('');
-    setSearch('');
-    setSearchExpanded(false);
+    nextSelectionIdRef.current = 0;
+  };
+
+  const handleClose = () => {
+    reset();
     onClose();
   };
 
-  const handleSelectLeader = (key: string) => {
-    setDispatchAgentKey(key);
+  const handleSelectAgent = (agent: TeamAgentOption) => {
+    nextSelectionIdRef.current += 1;
+    const draft = { selectionId: `member-${nextSelectionIdRef.current}`, agent };
+    setMembers((current) => [...current, draft]);
+    setLeaderSelectionId((current) => current ?? draft.selectionId);
+  };
+
+  const handleRemoveMember = (selectionId: string) => {
+    const next = removeTeamMemberDraft(members, leaderSelectionId, selectionId);
+    setMembers(next.members);
+    setLeaderSelectionId(next.leaderSelectionId);
   };
 
   const handleCreate = async () => {
@@ -163,72 +162,152 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
       nameInputRef.current?.focus();
       return;
     }
-    if (!dispatchAgentKey) {
-      Message.warning(t('team.create.leaderRequired', { defaultValue: 'Please select a team leader' }));
+
+    const orderedMembers = orderTeamMemberDraftsLeaderFirst(members, leaderSelectionId);
+    if (orderedMembers.length === 0) {
+      Message.warning(t('team.create.selectAtLeastOneMember', { defaultValue: 'Select at least one team member.' }));
       return;
     }
-    const user_id = user?.id ?? 'system_default_user';
+
     setLoading(true);
     try {
-      const agents: TeamAgent[] = [];
-
-      const dispatchAgent = dispatchAgentKey ? agentFromKey(dispatchAgentKey, allAgents) : undefined;
-      const dispatchAgentType = resolveTeamAgentType(dispatchAgent, 'acp');
-      const dispatchConversationType = resolveConversationType(dispatchAgentType);
-      const resolvedModel = await resolveDefaultTeamAgentModel({
-        agent_type: dispatchAgentType,
-        conversation_type: dispatchConversationType,
-      });
-      agents.push({
-        slot_id: '',
-        conversation_id: '',
-        role: 'leader',
-        status: 'pending',
-        agent_type: dispatchAgentType,
-        agent_name: dispatchAgent?.name || 'Leader',
-        conversation_type: dispatchConversationType,
-        custom_agent_id: dispatchAgent?.id,
-        model: resolvedModel,
-      });
+      const agents = await Promise.all(
+        orderedMembers.map(async (member, index): Promise<Omit<TeamAgent, 'slot_id' | 'conversation_id'>> => {
+          const agentType = resolveTeamAgentType(member.agent, 'acp');
+          const conversationType = resolveConversationType(agentType);
+          let model: string;
+          try {
+            model = await resolveDefaultTeamAgentModel({
+              agent_type: agentType,
+              conversation_type: conversationType,
+            });
+          } catch (error) {
+            throw new Error(`${member.agent.name}: ${getConversationCreateErrorMessage(error, t)}`, { cause: error });
+          }
+          return {
+            role: index === 0 ? 'leader' : 'teammate',
+            status: 'pending',
+            agent_type: agentType,
+            agent_name: member.agent.name,
+            conversation_type: conversationType,
+            icon: member.agent.icon,
+            custom_agent_id: member.agent.assistant_id,
+            model,
+          };
+        })
+      );
 
       const team = await ipcBridge.team.create.invoke({
-        user_id,
-        name,
+        user_id: user?.id ?? 'system_default_user',
+        name: name.trim(),
         workspace,
         workspace_mode: 'shared',
         agents,
       });
-
-      // The platform bridge swallows provider errors and returns a sentinel object
       const result = team as unknown as { __bridgeError?: boolean; message?: string };
       if (result.__bridgeError) {
         Message.error(getConversationCreateErrorMessage(result.message ?? t('team.create.error'), t));
         return;
       }
-
       onCreated(team);
-      handleClose();
+      reset();
+      onClose();
     } catch (error) {
       Message.error(getConversationCreateErrorMessage(error, t));
     } finally {
       setLoading(false);
     }
   };
+
+  const pickerPane = (
+    <section data-testid='team-create-agent-pane' className='flex min-h-0 flex-col gap-8px'>
+      <span data-testid='team-create-leader-select' className='text-13px font-600 text-t-secondary'>
+        {t('team.create.allAssistantsWithCount', {
+          count: allAgents.length,
+          defaultValue: 'Available members ({{count}})',
+        })}
+      </span>
+      <div className='min-h-112px flex-1 overflow-y-auto rounded-10px border border-border-2 bg-fill-1 p-6px'>
+        {allAgents.length === 0 ? (
+          <div className='flex h-full min-h-94px items-center justify-center text-12px text-t-tertiary'>
+            {t('team.create.noSupportedAgents', { defaultValue: 'No supported agents installed' })}
+          </div>
+        ) : (
+          <div className='flex flex-col gap-4px'>
+            {allAgents.map((agent) => (
+              <TeamAgentPickerRow key={agentKey(agent)} agent={agent} onSelect={() => handleSelectAgent(agent)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+
+  const detailsPane = (
+    <section data-testid='team-create-details-pane' className='flex min-h-0 flex-col gap-16px'>
+      <TeamMemberDraftList
+        members={members}
+        leaderSelectionId={leaderSelectionId}
+        onLeaderChange={setLeaderSelectionId}
+        onRemove={handleRemoveMember}
+      />
+      <Form layout='vertical' className='shrink-0'>
+        <FormItem
+          label={
+            <span className='text-12px font-500 text-t-secondary'>
+              {t('team.create.namePlaceholder', { defaultValue: 'Team name' })}
+              <span className='ml-4px text-danger-6'>*</span>
+            </span>
+          }
+        >
+          <Input
+            ref={nameInputRef}
+            placeholder={t('team.create.namePlaceholder', { defaultValue: 'Team name' })}
+            value={name}
+            onChange={setName}
+            data-testid='team-create-name-input'
+          />
+        </FormItem>
+        <FormItem
+          label={
+            <span className='text-12px font-500 text-t-secondary'>
+              {t('team.create.step.workspace', { defaultValue: 'Project' })}
+              <span className='ml-4px text-11px font-normal text-t-tertiary'>
+                {t('common.optional', { defaultValue: '(optional)' })}
+              </span>
+            </span>
+          }
+        >
+          <WorkspaceFolderSelect
+            value={workspace}
+            onChange={setWorkspace}
+            placeholder={t('team.create.selectFolder', { defaultValue: 'Select folder' })}
+            recentLabel={t('team.create.recentLabel', { defaultValue: 'Recent' })}
+            chooseDifferentLabel={t('team.create.chooseDifferentFolder', {
+              defaultValue: 'Choose a different folder',
+            })}
+            triggerTestId='team-create-workspace-trigger'
+            menuTestId='team-create-workspace-menu'
+          />
+        </FormItem>
+      </Form>
+    </section>
+  );
+
   return (
     <AionModal
       visible={visible}
       onCancel={handleClose}
       className='team-create-modal'
-      style={{ width: 560 }}
+      style={{
+        width: isMobile ? 'calc(100vw - 32px)' : 880,
+        maxWidth: isMobile ? 'calc(100vw - 32px)' : 'calc(100vw - 72px)',
+      }}
       wrapStyle={{ zIndex: 10000 }}
       maskStyle={{ zIndex: 9999 }}
       autoFocus={false}
       unmountOnExit={false}
-      contentStyle={{
-        background: 'var(--dialog-fill-0)',
-        padding: 0,
-        overflow: 'hidden',
-      }}
+      contentStyle={{ background: 'var(--dialog-fill-0)', padding: 0, overflow: 'hidden' }}
       header={{
         render: () => (
           <div className='flex items-center justify-between border-b border-border-2 bg-dialog-fill-0 px-24px py-18px'>
@@ -236,13 +315,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
               <h3 className='m-0 text-16px font-600 text-t-primary'>
                 {t('team.create.title', { defaultValue: 'Create Team' })}
               </h3>
-              <Tooltip
-                content={t('team.create.tooltip', {
-                  defaultValue:
-                    'Teams let one lead agent coordinate helper agents for multi-step work while keeping the conversation in one place.',
-                })}
-                position='right'
-              >
+              <Tooltip content={t('team.create.tooltip')} position='right'>
                 <span
                   className='inline-flex size-16px items-center justify-center rounded-full border border-border-2 text-11px font-600 text-t-tertiary'
                   aria-label={t('team.create.tooltipLabel', { defaultValue: 'What are teams?' })}
@@ -254,6 +327,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
             <Button
               type='text'
               icon={<Close size='18' fill='currentColor' className='text-t-secondary' />}
+              aria-label={t('common.close', { defaultValue: 'Close' })}
               onClick={handleClose}
               className='!h-28px !w-28px !min-w-28px !p-0 !rd-8px hover:!bg-fill-2'
             />
@@ -269,7 +343,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
             type='primary'
             onClick={handleCreate}
             loading={loading}
-            disabled={!name.trim() || !dispatchAgentKey}
+            disabled={!name.trim() || !leaderSelectionId}
             className='min-w-80px'
             style={{ borderRadius: 8 }}
           >
@@ -278,112 +352,24 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
         </div>
       }
     >
-      <div className='px-24px py-20px' style={{ maxHeight: 'min(72vh, 640px)', overflowY: 'auto' }}>
-        <Form layout='vertical'>
-          {/* Team name */}
-          <FormItem
-            label={
-              <span className='text-12px font-500 text-t-secondary'>
-                {t('team.create.namePlaceholder', { defaultValue: 'Team name' })}
-                <span className='ml-4px text-danger-6'>*</span>
-              </span>
-            }
-          >
-            <Input
-              ref={nameInputRef}
-              placeholder={t('team.create.namePlaceholder', { defaultValue: 'Team name' })}
-              value={name}
-              onChange={setName}
-              data-testid='team-create-name-input'
-            />
-          </FormItem>
-
-          {/* Team Leader */}
-          <FormItem
-            label={
-              <div className='flex flex-col gap-2px'>
-                <span className='text-12px font-500 text-t-secondary'>
-                  {t('team.create.step.dispatch', { defaultValue: 'Team Leader' })}
-                  <span className='ml-4px text-danger-6'>*</span>
-                </span>
-                <span className='text-11px font-normal leading-16px text-t-tertiary'>
-                  {t('team.create.leaderDesc', {
-                    defaultValue: 'Receives your instructions and spawns teammates as needed during the conversation',
-                  })}
-                </span>
-              </div>
-            }
-          >
-            {allAgents.length === 0 ? (
-              <div className='flex items-center justify-center rounded-10px border border-dashed border-border-2 bg-fill-1 py-20px text-12px text-t-tertiary'>
-                {t('team.create.noSupportedAgents', { defaultValue: 'No supported agents installed' })}
-              </div>
-            ) : (
-              <div className='relative flex flex-col gap-8px'>
-                {/* 搜索框（点搜索图标后展开） */}
-                {searchExpanded && (
-                  <div className='flex items-center gap-8px rounded-8px border border-border-2 bg-bg-2 px-12px py-8px focus-within:border-primary-6'>
-                    <Search size='14' fill='currentColor' className='flex-shrink-0 text-t-tertiary' />
-                    <input
-                      ref={searchInputRef}
-                      className='flex-1 border-none bg-transparent text-13px text-t-primary outline-none placeholder:text-t-tertiary'
-                      placeholder={t('team.create.searchPlaceholder', { defaultValue: 'Search agents...' })}
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      data-testid='team-create-leader-search'
-                    />
-                  </div>
-                )}
-
-                {/* 列表 —— 根据 agent 数量自适应，最大 320px */}
-                <div className='max-h-320px overflow-y-auto rounded-12px border border-border-2 bg-fill-1 p-6px'>
-                  {!hasSearchResults ? (
-                    <div className='flex items-center justify-center py-20px text-12px text-t-tertiary'>
-                      {t('team.create.noSearchResults', { defaultValue: 'No results found' })}
-                    </div>
-                  ) : (
-                    [...filteredCliAgents, ...filteredPresetAssistants].map((agent) => {
-                      const key = agentKey(agent);
-                      return (
-                        <AgentRadioRow
-                          key={key}
-                          agent={agent}
-                          isSelected={dispatchAgentKey === key}
-                          onClick={() => handleSelectLeader(key)}
-                        />
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-          </FormItem>
-
-          {/* Project / Workspace */}
-          <FormItem
-            label={
-              <span className='text-12px font-500 text-t-secondary'>
-                {t('team.create.step.workspace', { defaultValue: 'Project' })}
-                <span className='ml-4px text-11px font-normal text-t-tertiary'>
-                  {t('common.optional', { defaultValue: '(optional)' })}
-                </span>
-              </span>
-            }
-          >
-            <WorkspaceFolderSelect
-              value={workspace}
-              onChange={setWorkspace}
-              placeholder={t('team.create.selectFolder', { defaultValue: 'Select folder' })}
-              recentLabel={t('team.create.recentLabel', { defaultValue: 'Recent' })}
-              chooseDifferentLabel={t('team.create.chooseDifferentFolder', {
-                defaultValue: 'Choose a different folder',
-              })}
-              triggerTestId='team-create-workspace-trigger'
-              menuTestId='team-create-workspace-menu'
-            />
-          </FormItem>
-        </Form>
-      </div>
+      {isMobile ? (
+        <div
+          data-testid='team-create-layout-mobile'
+          className='flex max-h-[72vh] flex-col gap-16px overflow-y-auto p-16px'
+        >
+          {pickerPane}
+          {detailsPane}
+        </div>
+      ) : (
+        <div
+          data-testid='team-create-layout'
+          className='grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-20px p-20px'
+          style={{ height: 'min(66vh, 620px)', minHeight: 440 }}
+        >
+          {pickerPane}
+          {detailsPane}
+        </div>
+      )}
     </AionModal>
   );
 };
