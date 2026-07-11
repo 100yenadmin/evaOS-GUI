@@ -14,10 +14,10 @@
     "none": "Aucun",
     "quickActionsTitle": "Que peut faire evaOS Workbench ?",
     "quickActionFeedback": "Des retours ou suggestions ?",
-    "quickActionStar": "Vous aimez ? Donnez-nous une étoile !",
+    "quickActionStar": "Visit ElectricSheep",
     "skillsMarket": "Marché de compétences evaOS Workbench",
     "skillsMarketDesc": "Recherchez et activez des compétences communautaires à la demande. Configurez une fois, disponible pour tous les agents.",
-    "skillsMarketDetails": "Voir plus >>"
+    "skillsMarketDetails": "Contact Support"
   },
   "history": {
     "recents": "Récents",
@@ -169,11 +169,11 @@
       },
       "USER_AGENT_UNSUPPORTED_METHOD": {
         "title": "L'agent sélectionné ne prend pas en charge cette action",
-        "body": "L'agent a signalé que la méthode ACP demandée n'est pas prise en charge ou n'est pas disponible."
+        "body": "This agent cannot handle the requested operation. Try another agent or update the current one."
       },
       "USER_AGENT_INVALID_PARAMS": {
         "title": "L'agent sélectionné a rejeté la demande",
-        "body": "L'agent a signalé que les paramètres de la demande n'étaient pas valides."
+        "body": "The agent reported that the request format was invalid. Try simplifying the message or switching agents."
       },
       "USER_AGENT_HANDSHAKE_FAILED": {
         "title": "Échec de la négociation avec l'agent",
@@ -265,8 +265,8 @@
       },
       "WORKSPACE_PATH_RUNTIME_UNAVAILABLE": {
         "title": "L'agent actuel n'a pas pu s'exécuter dans ce chemin d'espace de travail",
-        "body": "Assurez-vous que le chemin actuel de l’espace de travail existe.",
-        "bodyWithPath": "L'agent actuel n'a pas pu s'exécuter dans le chemin de l'espace de travail « {{workspacePath}} ». Assurez-vous que le chemin de l'espace de travail existe."
+        "body": "Make sure the current workspace path exists and can be used by evaOS Workbench.",
+        "bodyWithPath": "The current Agent failed to run in the workspace path \"{{workspacePath}}\". Make sure the path exists and can be used by evaOS Workbench."
       },
       "UNKNOWN_UPSTREAM_ERROR": {
         "title": "L'agent ou le fournisseur en amont a échoué",

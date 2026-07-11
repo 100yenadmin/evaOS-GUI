@@ -90,19 +90,19 @@
     },
     "startupDirectory": {
       "title": "Le répertoire de démarrage n'est pas disponible",
-      "description": "evaOS Workbench s'est ouvert, mais le backend local n'a pas pu démarrer car le répertoire de travail ou de journal configuré est manquant, indisponible ou bloqué par les autorisations. Vérifiez que les répertoires configurés existent et sont accessibles en écriture, puis redémarrez evaOS Workbench.",
+      "description": "evaOS Workbench opened, but its managed runtime could not start because a required local startup directory is missing, unavailable, or blocked by permissions. Check that the configured directories exist and are writable, then restart evaOS Workbench.",
       "sendDiagnostics": "Envoyer des diagnostics",
       "diagnosticsSent": "Diagnostics envoyés",
       "diagnosticsReportSuccess": "Rapport de diagnostic envoyé",
       "diagnosticsReportFailed": "Échec de l'envoi du rapport de diagnostic"
     },
     "recoverableDatabaseCorruption": {
-      "title": "Les données locales sont corrompues",
-      "description": "evaOS Workbench a détecté que la base de données locale est corrompue et ne peut pas continuer le démarrage. Après confirmation, evaOS Workbench sauvegardera l'ancienne base de données et créera une nouvelle base de données locale pour continuer le démarrage. Les données locales historiques ne seront pas affichées pour l'instant et l'ancienne base de données sera conservée comme sauvegarde.",
-      "confirmRebuild": "Sauvegarder l'ancienne base de données et reconstruire la nouvelle base de données",
-      "diagnosticsHint": "L'envoi de diagnostics ne modifiera pas la base de données locale.",
+      "title": "Local data needs repair",
+      "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",
+      "confirmRebuild": "Back up and rebuild database",
+      "diagnosticsHint": "Sending diagnostics or cancelling will not modify the local database.",
       "cancelHint": "No database changes were made. Restart evaOS Workbench when you are ready to try recovery.",
-      "rebuildFailed": "Échec de la sauvegarde de l'ancienne base de données et de la reconstruction de la nouvelle base de données"
+      "rebuildFailed": "Failed to back up and rebuild the database"
     }
   },
   "fileAttach.addFiles": "Ajouter des fichiers",
