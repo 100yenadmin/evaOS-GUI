@@ -4,7 +4,7 @@ import type {
   AssistantEngine,
   CreateAssistantRequest,
   UpdateAssistantRequest,
-} from '../types/agent/assistantTypes';
+} from '@/common/types/agent/assistantTypes';
 
 export type ApiAssistant = Omit<Assistant, 'preset_agent_type'>;
 export type ApiAssistantDetail = Omit<AssistantDetail, 'engine'> & {
@@ -19,6 +19,7 @@ function resolveRuntimeBackend(agent: { type: string; acp_backend?: string } | u
   return agent?.acp_backend || agent?.type || '';
 }
 
+/** Resolves the runtime key for a canonical catalog row id, or `undefined` when the row is absent. */
 export function resolveRuntimeBackendForCanonicalAgentId(
   agents: Array<{ id?: string; backend?: string; agent_type?: string }>,
   agentId: string
@@ -27,6 +28,7 @@ export function resolveRuntimeBackendForCanonicalAgentId(
   return agent ? agent.backend || agent.agent_type : undefined;
 }
 
+/** Resolves an assistant's canonical catalog row first, then falls back to its legacy runtime key. */
 export function resolveAgentRowForAssistant<
   T extends { id?: string; backend?: string; agent_type?: string; is_preset?: boolean },
 >(agents: T[], agentId: string, runtimeKey: string): T | undefined {
@@ -36,6 +38,7 @@ export function resolveAgentRowForAssistant<
   );
 }
 
+/** Resolves a runtime key to its canonical catalog row id, or `undefined` when no row matches. */
 export function resolveCanonicalAgentIdForRuntime(
   agents: Array<{ id?: string; backend?: string; agent_type?: string }>,
   runtimeKey: string
@@ -43,6 +46,7 @@ export function resolveCanonicalAgentIdForRuntime(
   return agents.find((agent) => (agent.backend || agent.agent_type) === runtimeKey)?.id;
 }
 
+/** Maps a canonical list response to the renderer compatibility projection. */
 export function fromApiAssistant(raw: ApiAssistant): Assistant {
   return {
     ...raw,
@@ -50,6 +54,7 @@ export function fromApiAssistant(raw: ApiAssistant): Assistant {
   };
 }
 
+/** Maps a canonical detail response and projects its legacy runtime backend field. */
 export function fromApiAssistantDetail(raw: ApiAssistantDetail): AssistantDetail {
   return {
     ...raw,
@@ -60,12 +65,14 @@ export function fromApiAssistantDetail(raw: ApiAssistantDetail): AssistantDetail
   };
 }
 
+/** Maps a create request to the canonical wire shape; legacy aliases must already contain canonical row ids. */
 export function toApiCreateAssistantRequest(request: CreateAssistantRequest): ApiCreateAssistantRequest {
   const { preset_agent_type, ...canonical } = request;
   const agentId = canonical.agent_id || preset_agent_type;
   return agentId ? { ...canonical, agent_id: agentId } : canonical;
 }
 
+/** Maps an update request to its id-free canonical wire shape. */
 export function toApiUpdateAssistantRequest(request: UpdateAssistantRequest): ApiUpdateAssistantRequest {
   const { id: _id, preset_agent_type, ...canonical } = request;
   const agentId = canonical.agent_id || preset_agent_type;

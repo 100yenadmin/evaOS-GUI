@@ -8,6 +8,9 @@ import { describe, expect, it } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import {
   canSwitchAssistantAgent,
+  isBuiltinAssistant,
+  isGeneratedAssistant,
+  isSystemAssistant,
   selectableAssistants,
   selectableEvaosAssistants,
 } from '@/renderer/utils/model/assistantSelection';
@@ -28,6 +31,14 @@ const assistant = (
 });
 
 describe('assistantSelection', () => {
+  it('classifies backend-owned assistant identities consistently', () => {
+    expect(isBuiltinAssistant({ source: 'builtin' })).toBe(true);
+    expect(isGeneratedAssistant({ source: 'generated' })).toBe(true);
+    expect(isSystemAssistant({ source: 'builtin' })).toBe(true);
+    expect(isSystemAssistant({ source: 'generated' })).toBe(true);
+    expect(isSystemAssistant({ source: 'user' })).toBe(false);
+  });
+
   it('keeps generated assistant agent bindings immutable', () => {
     expect(canSwitchAssistantAgent({ source: 'generated' } as Assistant)).toBe(false);
     expect(canSwitchAssistantAgent({ source: 'builtin' } as Assistant)).toBe(true);

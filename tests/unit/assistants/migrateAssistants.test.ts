@@ -373,17 +373,63 @@ describe('migrateAssistants', () => {
       });
     });
 
-    it('keeps migration retryable when a legacy builtin runtime cannot resolve to a canonical row', async () => {
+    it('skips a legacy builtin runtime that no longer resolves to a canonical row', async () => {
       const config = makeConfig({
         assistants: [{ id: 'builtin-word-creator', enabled: true, presetAgentType: 'retired', isBuiltin: true }],
       });
       (ipcBridge.assistants.list.invoke as any).mockResolvedValue(
         builtinListStub([{ id: 'word-creator', preset_agent_type: 'aionrs' }])
       );
+      (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([
+        {
+          id: 'agent-aionrs-row',
+          name: 'AionRS',
+          agent_type: 'aionrs',
+          agent_source: 'internal',
+          enabled: true,
+          installed: true,
+          sort_order: 0,
+          status: 'online',
+        },
+      ]);
 
       const result = await migrateAssistantsToBackend(config as any);
 
-      expect(result).toBe(false);
+      expect(result).toBe(true);
+      expect(ipcBridge.assistants.update.invoke).not.toHaveBeenCalled();
+    });
+
+    it('imports a valid custom assistant when a builtin references a retired runtime', async () => {
+      const config = makeConfig({
+        assistants: [
+          { id: 'custom-1', name: 'Custom 1', presetAgentType: 'claude' },
+          { id: 'builtin-word-creator', enabled: true, presetAgentType: 'retired', isBuiltin: true },
+        ],
+      });
+      (ipcBridge.assistants.list.invoke as any).mockResolvedValue(
+        builtinListStub([{ id: 'word-creator', preset_agent_type: 'aionrs' }])
+      );
+      (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([
+        {
+          id: 'agent-claude-row',
+          name: 'Claude',
+          agent_type: 'acp',
+          backend: 'claude',
+          agent_source: 'builtin',
+          enabled: true,
+          installed: true,
+          sort_order: 0,
+          status: 'online',
+        },
+      ]);
+      (ipcBridge.assistants.import.invoke as any).mockResolvedValue({ imported: 1, skipped: 0, failed: 0, errors: [] });
+
+      const result = await migrateAssistantsToBackend(config as any);
+
+      expect(result).toBe(true);
+      expect(ipcBridge.assistants.import.invoke).toHaveBeenCalledWith({
+        assistants: [expect.objectContaining({ id: 'custom-1', agent_id: 'agent-claude-row' })],
+      });
       expect(ipcBridge.assistants.update.invoke).not.toHaveBeenCalled();
     });
 

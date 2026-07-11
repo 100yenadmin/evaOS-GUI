@@ -12,6 +12,15 @@ type AssistantSelectionInput = Pick<Assistant, 'id' | 'enabled' | 'sort_order'> 
   agent_status?: Assistant['agent_status'];
 };
 
+export const isBuiltinAssistant = (assistant: Pick<Assistant, 'source'> | null | undefined): boolean =>
+  assistant?.source === 'builtin';
+
+export const isGeneratedAssistant = (assistant: Pick<Assistant, 'source'> | null | undefined): boolean =>
+  assistant?.source === 'generated';
+
+export const isSystemAssistant = (assistant: Pick<Assistant, 'source'> | null | undefined): boolean =>
+  isBuiltinAssistant(assistant) || isGeneratedAssistant(assistant);
+
 /** AionCore owns the runtime binding for generated (`bare:*`) assistants. */
 export const canSwitchAssistantAgent = (assistant: Pick<Assistant, 'source'> | undefined): boolean =>
   Boolean(assistant && assistant.source !== 'generated');

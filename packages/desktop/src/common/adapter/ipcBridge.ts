@@ -89,7 +89,7 @@ import {
   toApiUpdateAssistantRequest,
   type ApiAssistant,
   type ApiAssistantDetail,
-} from './assistantMapper';
+} from '@/common/adapter/assistantMapper';
 import {
   httpDelete,
   httpGet,
@@ -1055,9 +1055,7 @@ export const acpConversation = {
   responseStream: conversation.responseStream,
   getAvailableAgents: httpGet<AgentMetadata[], void>('/api/agents'),
   getManagedAgents: httpGet<AgentMetadata[], void>('/api/agents?include_disabled=true'),
-  getAssistantAgentCatalog: httpGet<import('@/renderer/utils/model/agentTypes').ManagedAgent[], void>(
-    '/api/agents/management'
-  ),
+  getAssistantAgentCatalog: httpGet<ManagedAgent[], void>('/api/agents/management'),
   refreshCustomAgents: httpPost<void, void>('/api/agents/refresh'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },
@@ -2198,7 +2196,7 @@ export const channel = {
 // ---------------------------------------------------------------------------
 
 import type { HubExtensionStatus, IHubAgentItem } from '@/common/types/agent/hub';
-import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
+import type { AgentMetadata, ManagedAgent } from '@/common/types/agent/agentMetadata';
 
 export const hub = {
   getExtensionList: httpGet<IHubAgentItem[], void>('/api/hub/extensions'),

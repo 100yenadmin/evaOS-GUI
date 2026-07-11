@@ -50,6 +50,10 @@ const resolveBackendModelOptions = (agent: ManagedAgent): AvailableBackendModelO
 const ASSISTANT_EDITOR_AGENT_TYPES = new Set(['acp', 'aionrs']);
 export const isAssistantEditorAgentType = (agentType: string): boolean => ASSISTANT_EDITOR_AGENT_TYPES.has(agentType);
 
+/**
+ * Builds canonical assistant-editor options from management rows.
+ * `currentAgentId` retains its matching row despite type, selectability, or status filters when identity is complete.
+ */
 export const buildAssistantEditorBackends = (agents: ManagedAgent[], currentAgentId?: string): AvailableBackend[] => {
   const backendMap = new Map<string, AvailableBackend>();
 
@@ -77,12 +81,15 @@ export const buildAssistantEditorBackends = (agents: ManagedAgent[], currentAgen
 /**
  * Provides canonical management-catalog rows for assistant editor bindings.
  *
- * Returns `availableBackends` (simplified shape for Select dropdowns)
- * Returns compatibility-shaped selector options plus the raw catalog so the
- * currently bound offline row can remain visible.
+ * Returns catalog-derived selectable options plus the raw rows. Callers that
+ * need to retain a current offline row must rebuild with `currentAgentId`.
  */
 export const useDetectedAgents = () => {
-  const { data: rawAgents = [] } = useSWR<ManagedAgent[]>(ASSISTANT_AGENT_CATALOG_SWR_KEY, fetchAssistantAgentCatalog);
+  const {
+    data: rawAgents = [],
+    error: catalogError,
+    isLoading: isCatalogLoading,
+  } = useSWR<ManagedAgent[]>(ASSISTANT_AGENT_CATALOG_SWR_KEY, fetchAssistantAgentCatalog);
 
   const availableBackends = useMemo<AvailableBackend[]>(() => buildAssistantEditorBackends(rawAgents), [rawAgents]);
 
@@ -98,6 +105,8 @@ export const useDetectedAgents = () => {
   return {
     managedAgents: rawAgents,
     availableBackends,
+    catalogError,
+    isCatalogLoading,
     refreshAgentDetection,
   };
 };

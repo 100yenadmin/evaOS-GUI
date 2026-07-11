@@ -10,6 +10,7 @@ import type {
 } from '@/renderer/pages/settings/AssistantSettings/types';
 import { ensureBackendMcpCatalog } from '@/renderer/hooks/mcp/catalog';
 import { emitter } from '@/renderer/utils/emitter';
+import { isBuiltinAssistant, isGeneratedAssistant, isSystemAssistant } from '@/renderer/utils/model/assistantSelection';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { mutate as swrMutate } from 'swr';
@@ -26,11 +27,6 @@ type UseAssistantEditorParams = {
 type AssistantScalarDefaultMode = 'auto' | 'fixed';
 type AssistantSkillsDefaultMode = 'auto' | 'fixed';
 type AssistantMcpDefaultMode = 'auto' | 'fixed';
-
-const isBuiltinAssistant = (assistant: Assistant | null | undefined): boolean => assistant?.source === 'builtin';
-const isGeneratedAssistant = (assistant: Assistant | null | undefined): boolean => assistant?.source === 'generated';
-const isSystemAssistant = (assistant: Assistant | null | undefined): boolean =>
-  isBuiltinAssistant(assistant) || isGeneratedAssistant(assistant);
 
 const resolveLocalizedRecommendedPrompts = (
   detail: Awaited<ReturnType<typeof ipcBridge.assistants.get.invoke>>,

@@ -111,7 +111,7 @@ describe('assistant IPC bridge contract', () => {
     const { assistants } = await import('@/common/adapter/ipcBridge');
     await assistants.create.invoke({ name: 'Mine', preset_agent_type: 'agent-claude-row' });
     await assistants.import.invoke({
-      assistants: [{ id: 'legacy', name: 'Legacy', preset_agent_type: 'claude' }],
+      assistants: [{ id: 'legacy', name: 'Legacy', preset_agent_type: 'agent-claude-row' }],
     });
 
     expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({
@@ -119,7 +119,7 @@ describe('assistant IPC bridge contract', () => {
       agent_id: 'agent-claude-row',
     });
     expect(JSON.parse(String(fetchSpy.mock.calls[1][1]?.body))).toEqual({
-      assistants: [{ id: 'legacy', name: 'Legacy', agent_id: 'claude' }],
+      assistants: [{ id: 'legacy', name: 'Legacy', agent_id: 'agent-claude-row' }],
     });
   });
 });

@@ -11,11 +11,11 @@ export type AssistantSource = 'builtin' | 'generated' | 'user' | 'extension';
 export type AssistantAgentStatus = 'missing' | 'online' | 'offline' | 'unchecked';
 export type AssistantAgentSource = 'internal' | 'builtin' | 'extension' | 'custom';
 
-export interface AssistantAgent {
+export type AssistantAgent = {
   type: string;
   source: AssistantAgentSource;
   acp_backend?: string;
-}
+};
 
 export interface Assistant {
   id: string;
@@ -144,7 +144,7 @@ export interface CreateAssistantRequest {
   description?: string;
   avatar?: string;
   agent_id?: string;
-  /** Legacy source alias. The HTTP mapper renames this to agent_id and never sends it on the wire. */
+  /** Legacy source alias whose value must already be a canonical row id before the HTTP mapper renames it. */
   preset_agent_type?: string;
   enabled_skills?: string[];
   custom_skill_names?: string[];

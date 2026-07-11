@@ -333,7 +333,7 @@ function collectBuiltinPresetAgentTypeOverrides(
   legacy: Record<string, unknown>[],
   currentBuiltinAgentTypes: Map<string, string>,
   canonicalAgentIdsByRuntime: ReadonlyMap<string, string>
-): BuiltinAgentTypeOverride[] | null {
+): BuiltinAgentTypeOverride[] {
   const overrides: BuiltinAgentTypeOverride[] = [];
   for (const row of legacy) {
     const id = typeof row.id === 'string' ? row.id : '';
@@ -359,7 +359,10 @@ function collectBuiltinPresetAgentTypeOverrides(
     }
 
     const agentId = canonicalAgentIdsByRuntime.get(raw);
-    if (!agentId) return null;
+    if (!agentId) {
+      console.warn(`[AionUi] Assistant migration: skipped retired builtin binding '${backendId}' -> '${raw}'`);
+      continue;
+    }
     overrides.push({ id: backendId, agent_id: agentId });
   }
   return overrides;
@@ -600,7 +603,9 @@ export async function migrateAssistantsToBackend(configFile: ConfigFile): Promis
           row.presetAgentType.length > 0 &&
           row.presetAgentType !== LEGACY_DEFAULT_PRESET_AGENT_TYPE
       ));
-  const canonicalAgentIdsByRuntime = needsCanonicalAgentCatalog ? await fetchCanonicalAgentIdsByRuntime() : new Map();
+  const canonicalAgentIdsByRuntime = needsCanonicalAgentCatalog
+    ? await fetchCanonicalAgentIdsByRuntime()
+    : new Map<string, string>();
   if (!canonicalAgentIdsByRuntime) {
     console.warn('[AionUi] Assistant migration deferred: canonical agent catalog is unavailable');
     return false;
@@ -608,10 +613,6 @@ export async function migrateAssistantsToBackend(configFile: ConfigFile): Promis
   const builtinAgentTypeOverrides = supportsAssistantDefinitions
     ? []
     : collectBuiltinPresetAgentTypeOverrides(legacy, currentBuiltinAgentTypes, canonicalAgentIdsByRuntime);
-  if (!builtinAgentTypeOverrides) {
-    console.warn('[AionUi] Assistant migration deferred: a builtin agent binding could not be resolved');
-    return false;
-  }
 
   // Phase 4 keys off the *legacy* custom-assistant id (the file name on
   // disk). The collision-rename path in `legacyAssistantToCreateRequest`

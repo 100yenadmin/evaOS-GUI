@@ -133,14 +133,14 @@ describe('assistantMapper', () => {
     expect(detail.preferences.last_thought_level_value).toBe('medium');
   });
 
-  it('renames the legacy create alias to agent_id before it crosses the wire', () => {
+  it('renames a pre-resolved legacy create alias to agent_id before it crosses the wire', () => {
     const request = toApiCreateAssistantRequest({
       id: 'mine',
       name: 'Mine',
-      preset_agent_type: 'claude',
+      preset_agent_type: 'agent-claude-row',
     });
 
-    expect(request).toEqual({ id: 'mine', name: 'Mine', agent_id: 'claude' });
+    expect(request).toEqual({ id: 'mine', name: 'Mine', agent_id: 'agent-claude-row' });
     expect(request).not.toHaveProperty('preset_agent_type');
   });
 

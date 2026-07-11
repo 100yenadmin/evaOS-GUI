@@ -24,21 +24,20 @@ vi.mock('@/common', () => ({
   ipcBridge: {
     acpConversation: {
       refreshCustomAgents: { invoke: vi.fn() },
+      getAssistantAgentCatalog: { invoke: vi.fn() },
     },
   },
-}));
-
-// Mock agentTypes module
-vi.mock('@/renderer/utils/model/agentTypes', () => ({
-  ASSISTANT_AGENT_CATALOG_SWR_KEY: 'assistant-agent-catalog',
-  DETECTED_AGENTS_SWR_KEY: 'detected-agents',
-  fetchAssistantAgentCatalog: vi.fn(),
 }));
 
 import { useDetectedAgents } from '@/renderer/hooks/assistant/useDetectedAgents';
 import { ipcBridge } from '@/common';
 import useSWR, { mutate } from 'swr';
-import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
+import {
+  ASSISTANT_AGENT_CATALOG_SWR_KEY,
+  DETECTED_AGENTS_SWR_KEY,
+  fetchAssistantAgentCatalog,
+  type ManagedAgent,
+} from '@/renderer/utils/model/agentTypes';
 
 describe('useDetectedAgents', () => {
   beforeEach(() => {
@@ -46,11 +45,41 @@ describe('useDetectedAgents', () => {
   });
 
   it('returns empty availableBackends when no agents detected', () => {
-    (useSWR as any).mockReturnValue({ data: [], error: null });
+    vi.mocked(useSWR).mockReturnValue({ data: [], error: null, isLoading: false } as ReturnType<typeof useSWR>);
 
     const { result } = renderHook(() => useDetectedAgents());
 
     expect(result.current.availableBackends).toEqual([]);
+  });
+
+  it('exposes catalog loading and failure state', () => {
+    const catalogError = new Error('catalog unavailable');
+    vi.mocked(useSWR).mockReturnValue({
+      data: undefined,
+      error: catalogError,
+      isLoading: true,
+    } as ReturnType<typeof useSWR>);
+
+    const { result } = renderHook(() => useDetectedAgents());
+
+    expect(result.current.catalogError).toBe(catalogError);
+    expect(result.current.isCatalogLoading).toBe(true);
+    expect(result.current.availableBackends).toEqual([]);
+  });
+
+  it('propagates assistant catalog IPC failures', async () => {
+    const failure = new Error('catalog unavailable');
+    vi.mocked(ipcBridge.acpConversation.getAssistantAgentCatalog.invoke).mockRejectedValue(failure);
+
+    await expect(fetchAssistantAgentCatalog()).rejects.toBe(failure);
+  });
+
+  it('rejects invalid assistant catalog responses', async () => {
+    vi.mocked(ipcBridge.acpConversation.getAssistantAgentCatalog.invoke).mockResolvedValue({
+      data: [],
+    } as unknown as ManagedAgent[]);
+
+    await expect(fetchAssistantAgentCatalog()).rejects.toThrow('Assistant agent catalog response must be an array');
   });
 
   it('filters and maps detected agents to availableBackends', () => {
@@ -87,7 +116,7 @@ describe('useDetectedAgents', () => {
         status: 'online',
       },
     ];
-    (useSWR as any).mockReturnValue({ data: mockAgents, error: null });
+    vi.mocked(useSWR).mockReturnValue({ data: mockAgents, error: null } as ReturnType<typeof useSWR>);
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -132,7 +161,7 @@ describe('useDetectedAgents', () => {
         },
       },
     ];
-    (useSWR as any).mockReturnValue({ data: mockAgents, error: null });
+    vi.mocked(useSWR).mockReturnValue({ data: mockAgents, error: null } as ReturnType<typeof useSWR>);
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -143,8 +172,8 @@ describe('useDetectedAgents', () => {
   });
 
   it('calls refreshCustomAgents and mutate on refreshAgentDetection', async () => {
-    (useSWR as any).mockReturnValue({ data: [], error: null });
-    (ipcBridge.acpConversation.refreshCustomAgents.invoke as any).mockResolvedValue(undefined);
+    vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
+    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -153,13 +182,13 @@ describe('useDetectedAgents', () => {
     });
 
     expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
-    expect(mutate).toHaveBeenNthCalledWith(1, 'assistant-agent-catalog');
-    expect(mutate).toHaveBeenNthCalledWith(2, 'detected-agents');
+    expect(mutate).toHaveBeenNthCalledWith(1, ASSISTANT_AGENT_CATALOG_SWR_KEY);
+    expect(mutate).toHaveBeenNthCalledWith(2, DETECTED_AGENTS_SWR_KEY);
   });
 
   it('ignores error during refreshAgentDetection', async () => {
-    (useSWR as any).mockReturnValue({ data: [], error: null });
-    (ipcBridge.acpConversation.refreshCustomAgents.invoke as any).mockRejectedValue(new Error('Refresh failed'));
+    vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
+    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockRejectedValue(new Error('Refresh failed'));
 
     const { result } = renderHook(() => useDetectedAgents());
 

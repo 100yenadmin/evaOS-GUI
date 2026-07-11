@@ -18,9 +18,13 @@ describe('persistAssistantAgentBinding', () => {
 
   it('restores the captured assistant list when persistence rejects', async () => {
     mutateAssistantList.mockReset();
-    mutateAssistantList.mockImplementation(async (_key, value) =>
-      typeof value === 'function' ? value(previousAssistants) : value
-    );
+    let cachedAssistants = previousAssistants;
+    mutateAssistantList.mockImplementation(async (_key, value) => {
+      if (typeof value === 'function') {
+        cachedAssistants = value(cachedAssistants);
+      }
+      return cachedAssistants;
+    });
     const updateBinding = vi.fn().mockRejectedValue(new Error('backend rejected'));
     const refreshAgents = vi.fn();
 
@@ -34,9 +38,39 @@ describe('persistAssistantAgentBinding', () => {
       })
     ).rejects.toThrow('backend rejected');
 
-    expect(mutateAssistantList).toHaveBeenCalledTimes(2);
-    expect(mutateAssistantList).toHaveBeenLastCalledWith('assistants.list', previousAssistants, { revalidate: false });
+    expect(mutateAssistantList).toHaveBeenCalledTimes(3);
+    expect(mutateAssistantList).toHaveBeenLastCalledWith('assistants.list');
+    expect(cachedAssistants).toEqual(previousAssistants);
     expect(refreshAgents).not.toHaveBeenCalled();
+  });
+
+  it('does not roll back a newer overlapping binding switch', async () => {
+    mutateAssistantList.mockReset();
+    const newerAssistants = [{ ...previousAssistants[0], agent_id: 'agent-gemini-row', preset_agent_type: 'gemini' }];
+    let cachedAssistants = previousAssistants;
+    let mutationCount = 0;
+    mutateAssistantList.mockImplementation(async (_key, value) => {
+      mutationCount += 1;
+      if (mutationCount === 2) {
+        cachedAssistants = newerAssistants;
+      }
+      if (typeof value === 'function') {
+        cachedAssistants = value(cachedAssistants);
+      }
+      return cachedAssistants;
+    });
+
+    await expect(
+      persistAssistantAgentBinding({
+        assistantId: 'assistant-1',
+        nextAgentId: 'agent-codex-row',
+        nextRuntimeKey: 'codex',
+        updateBinding: vi.fn().mockRejectedValue(new Error('first switch rejected')),
+        refreshAgents: vi.fn(),
+      })
+    ).rejects.toThrow('first switch rejected');
+
+    expect(cachedAssistants).toEqual(newerAssistants);
   });
 
   it('does not reject a committed update when best-effort refreshes fail', async () => {
@@ -58,6 +92,7 @@ describe('persistAssistantAgentBinding', () => {
     ).resolves.toBeUndefined();
 
     expect(updateBinding).toHaveBeenCalledWith({ id: 'assistant-1', agent_id: 'agent-codex-row' });
+    expect(mutateAssistantList).toHaveBeenCalledWith('assistants');
     expect(refreshAgents).toHaveBeenCalled();
   });
 });

@@ -29,6 +29,7 @@ import DeleteAssistantModal from './DeleteAssistantModal';
 import SkillConfirmModals from './SkillConfirmModals';
 import type { AssistantEditorViewModel } from './types';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
 type AssistantNavigationState = {
@@ -39,6 +40,7 @@ const OPEN_ASSISTANT_EDITOR_INTENT_KEY = 'guid.openAssistantEditorIntent';
 
 const AssistantSettings: React.FC = () => {
   const [message, messageContext] = Message.useMessage({ maxCount: 10 });
+  const { t } = useTranslation();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigationState = (location.state as AssistantNavigationState | null) ?? null;
@@ -88,7 +90,13 @@ const AssistantSettings: React.FC = () => {
     [visibleAssistants, avatarImageMap, localeKey]
   );
 
-  const { managedAgents, refreshAgentDetection } = useDetectedAgents();
+  const { managedAgents, catalogError, refreshAgentDetection } = useDetectedAgents();
+
+  useEffect(() => {
+    if (catalogError) {
+      message.error(t('common.failed', { defaultValue: 'Failed' }));
+    }
+  }, [catalogError, message, t]);
 
   const editor = useAssistantEditor({
     localeKey,
