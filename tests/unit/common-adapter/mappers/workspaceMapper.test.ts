@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { fromBackendWorkspaceFlatFiles, type RawWorkspaceFlatFile } from '@/common/adapter/workspaceMapper';
+import { fromBackendWorkspaceFlatFiles, type RawWorkspaceFlatFile } from '@/common/adapter/mappers/workspaceMapper';
 
 describe('workspaceMapper', () => {
   it('maps workspace flat files from backend snake_case to frontend camelCase', () => {

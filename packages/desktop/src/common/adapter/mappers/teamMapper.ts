@@ -11,7 +11,7 @@ import type {
   TeammateStatus,
   TTeam,
   WorkspaceMode,
-} from '../types/team/teamTypes';
+} from '../../types/team/teamTypes';
 
 // ── Parameter types for team API calls ─────────────────────────────────
 

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { fromApiSearchResult, type ApiMessageSearchItem } from '@/common/adapter/searchMapper';
+import { fromApiSearchResult, type ApiMessageSearchItem } from '@/common/adapter/mappers/searchMapper';
 import type { PaginatedResult } from '@/common/adapter/ipcBridge';
 
 describe('searchMapper', () => {

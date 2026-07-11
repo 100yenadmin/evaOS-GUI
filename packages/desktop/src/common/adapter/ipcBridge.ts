@@ -81,7 +81,7 @@ import type {
   UpdateDownloadResult,
 } from '../update/updateTypes';
 import type { ProtocolDetectionRequest, ProtocolDetectionResponse } from '../utils/protocolDetector';
-import { fromApiConversation, fromApiPaginatedConversations, toApiModelOptional } from './apiModelMapper';
+import { fromApiConversation, fromApiPaginatedConversations, toApiModelOptional } from './mappers/apiModelMapper';
 import {
   fromApiAssistant,
   fromApiAssistantDetail,
@@ -89,7 +89,7 @@ import {
   toApiUpdateAssistantRequest,
   type ApiAssistant,
   type ApiAssistantDetail,
-} from '@/common/adapter/assistantMapper';
+} from '@/common/adapter/mappers/assistantMapper';
 import {
   httpDelete,
   httpGet,
@@ -102,15 +102,15 @@ import {
   wsEmitter,
   wsMappedEmitter,
 } from './httpBridge';
-import { fromApiSearchResult, type ApiMessageSearchItem } from './searchMapper';
-import type { IAddTeamAgentParams, ICreateTeamParams } from './teamMapper';
+import { fromApiSearchResult, type ApiMessageSearchItem } from './mappers/searchMapper';
+import type { IAddTeamAgentParams, ICreateTeamParams } from './mappers/teamMapper';
 import {
   fromBackendAgent,
   fromBackendTeam,
   fromBackendTeamList,
   fromBackendTeamOptional,
   toBackendAgent,
-} from './teamMapper';
+} from './mappers/teamMapper';
 
 const EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS = 15000;
 const EVAOS_RUNTIME_SURFACE_PROTOCOL = 'evaos-runtime-surface:';
@@ -205,13 +205,13 @@ function installEvaosElectronProviderCallbackListener(
   });
   rendererWindow.__evaosProviderCallbackInstalled = true;
 }
-import { fromBackendCompareResult, type RawCompareResult } from './fileSnapshotMapper';
+import { fromBackendCompareResult, type RawCompareResult } from './mappers/fileSnapshotMapper';
 import {
   absoluteToRelativePath,
   fromBackendWorkspaceFlatFiles,
   fromBackendWorkspaceList,
   type RawWorkspaceFlatFile,
-} from './workspaceMapper';
+} from './mappers/workspaceMapper';
 import type {
   IEvaosRuntimeKey,
   IEvaosBrokerSessionState,
@@ -2212,7 +2212,7 @@ export const hub = {
 // Team Mode API — routed to /api/teams/*
 // ---------------------------------------------------------------------------
 
-export type { IAddTeamAgentParams, ICreateTeamParams } from './teamMapper';
+export type { IAddTeamAgentParams, ICreateTeamParams } from './mappers/teamMapper';
 
 export const team = {
   create: withResponseMap(

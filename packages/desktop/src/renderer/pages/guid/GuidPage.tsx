@@ -13,7 +13,7 @@ import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 import {
   resolveAgentRowForAssistant,
   resolveRuntimeBackendForCanonicalAgentId,
-} from '@/common/adapter/assistantMapper';
+} from '@/common/adapter/mappers/assistantMapper';
 
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
 import { isAssistantEditorAgentType } from '@/renderer/hooks/assistant/useDetectedAgents';

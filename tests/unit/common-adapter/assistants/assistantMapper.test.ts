@@ -6,7 +6,7 @@ import {
   resolveRuntimeBackendForCanonicalAgentId,
   toApiCreateAssistantRequest,
   toApiUpdateAssistantRequest,
-} from '@/common/adapter/assistantMapper';
+} from '@/common/adapter/mappers/assistantMapper';
 import { describe, expect, it } from 'vitest';
 
 const canonicalAgent = {

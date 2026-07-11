@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TMessage } from '../chat/chatLib';
-import type { TChatConversation } from '../config/storage';
-import type { IMessageSearchItem } from '../types/team/database';
-import type { PaginatedResult } from './ipcBridge';
+import type { TMessage } from '../../chat/chatLib';
+import type { TChatConversation } from '../../config/storage';
+import type { IMessageSearchItem } from '../../types/team/database';
+import type { PaginatedResult } from '../ipcBridge';
 import { fromApiConversation } from './apiModelMapper';
 
 export interface ApiMessageSearchItem {

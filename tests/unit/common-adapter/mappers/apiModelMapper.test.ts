@@ -15,7 +15,7 @@ import {
   fromApiConversation,
   fromApiPaginatedConversations,
   type ApiProviderWithModel,
-} from '@/common/adapter/apiModelMapper';
+} from '@/common/adapter/mappers/apiModelMapper';
 import type { TProviderWithModel } from '@/common/config/storage';
 
 describe('apiModelMapper', () => {
