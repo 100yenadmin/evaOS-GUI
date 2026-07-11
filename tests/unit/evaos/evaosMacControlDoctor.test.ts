@@ -661,6 +661,21 @@ describe('evaOS Mac control doctor', () => {
     expect(
       doctor.macControlReadyTextSatisfied(
         [
+          'Mac control is ready locally, but Workbench could not replace the stale connector.',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'End-to-end ready',
+          'Agent runtime',
+          'End-to-end ready',
+          'Proven',
+        ].join('\n')
+      )
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
           'Mac Access is on',
           'Workbench connector is reporting ready locally.',
           'Accessibility and Screen Recording are ready.',

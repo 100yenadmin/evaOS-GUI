@@ -373,6 +373,7 @@ describe('evaosNativeCompanionStatus', () => {
       runtimeToolReadiness: 'tools_ready',
       runtimeToolProofCustomerId: 'friendly',
       runtimeToolProofScopeId: 'grant-current',
+      controlSession: { auditId: 'audit-control-proven' },
     });
 
     const camelCaseProvenStatus = await getEvaosNativeCompanionStatus(deps);
@@ -384,25 +385,28 @@ describe('evaosNativeCompanionStatus', () => {
       runtimeToolReadiness: 'tools_ready',
       runtimeToolProofCustomerId: 'friendly',
       runtimeToolProofScopeId: 'grant-current',
+      controlSession: { auditId: 'audit-control-proven-camel-case' },
     });
 
     const failedPairingStatus = await getEvaosNativeCompanionStatus(deps);
     expect(failedPairingStatus).toMatchObject({
       agentPairingStatus: 'proof_failed',
       runtimeToolReadiness: 'proof_failed',
+      controlSession: { auditId: 'audit-control-failed-stale-proof' },
     });
 
     const incompletePairingStatus = await getEvaosNativeCompanionStatus(deps);
     expect(incompletePairingStatus).toMatchObject({
       agentPairingStatus: 'ready_for_agent_pairing',
       runtimeToolReadiness: 'pairing_ready',
+      controlSession: { auditId: 'audit-control-unpaired-stale-proof' },
     });
 
     const killSwitchStatus = await getEvaosNativeCompanionStatus(deps);
     expect(killSwitchStatus).toMatchObject({
       agentPairingStatus: 'agent_paired',
       runtimeToolReadiness: 'not_ready',
-      controlSession: { killSwitch: true },
+      controlSession: { auditId: 'audit-control-kill-switch-stale-proof', killSwitch: true },
     });
 
     const staleGrantProofStatus = await getEvaosNativeCompanionStatus(deps);
@@ -411,6 +415,7 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingCustomerId: 'friendly',
       agentPairingProofScopeId: 'grant-current',
       runtimeToolReadiness: 'pairing_ready',
+      controlSession: { auditId: 'audit-control-stale-grant-proof' },
     });
 
     const identicalStaleProofStatus = await getEvaosNativeCompanionStatus(deps);
@@ -420,13 +425,14 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingProofScopeId: 'grant-revoked',
       activeMacControlScopeId: 'grant-current',
       runtimeToolReadiness: 'pairing_ready',
+      controlSession: { auditId: 'audit-control-identical-stale-proof' },
     });
 
     const failedCommandStatus = await getEvaosNativeCompanionStatus(deps);
     expect(failedCommandStatus).toMatchObject({
       agentPairingStatus: 'ready_for_agent_pairing',
       runtimeToolReadiness: 'not_ready',
-      controlSession: { status: 'unavailable' },
+      controlSession: { auditId: 'audit-control-command-failed-stale-proof', status: 'unavailable' },
     });
   });
 

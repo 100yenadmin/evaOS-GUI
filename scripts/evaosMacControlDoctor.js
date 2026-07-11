@@ -1229,7 +1229,7 @@ function macControlReadyTextSatisfied(text) {
     return false;
   }
   return (
-    /Mac control is ready/i.test(normalized) &&
+    /(?:^|\n)\s*Mac control is ready\s*(?:\n|$)/i.test(normalized) &&
     /Workbench connector is reporting\s+ready locally/i.test(normalized) &&
     /Accessibility and Screen Recording are ready/i.test(normalized) &&
     /Guided Mac control setup[\s\S]*End-to-end ready/i.test(normalized) &&
