@@ -4,14 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AionrsSendBox from '@/renderer/pages/conversation/platforms/aionrs/AionrsSendBox';
 import type { AionrsModelSelection } from '@/renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
 
-const { setSendBoxHandlerMock } = vi.hoisted(() => ({
+const { setSendBoxHandlerMock, queueSendNowMock } = vi.hoisted(() => ({
   setSendBoxHandlerMock: vi.fn(),
+  queueSendNowMock: vi.fn(),
 }));
 
 vi.mock('@/common', () => ({
@@ -45,7 +46,13 @@ vi.mock('@/renderer/components/chat/SendBox', () => ({
 }));
 
 vi.mock('@/renderer/components/agent/AgentModeSelector', () => ({ default: () => null }));
-vi.mock('@/renderer/components/chat/CommandQueuePanel', () => ({ default: () => null }));
+vi.mock('@/renderer/components/chat/CommandQueuePanel', () => ({
+  default: ({ onSendNow }: { onSendNow: (item: { id: string; input: string; files: string[] }) => void }) => (
+    <button type='button' onClick={() => onSendNow({ id: 'queued-1', input: 'queued', files: [] })}>
+      queue-send-now
+    </button>
+  ),
+}));
 vi.mock('@/renderer/components/chat/MobileActionSheet', () => ({
   default: () => null,
   useAttachEntry: () => ({ entries: [], hiddenFileInput: null }),
@@ -100,16 +107,19 @@ vi.mock('@/renderer/pages/conversation/platforms/aionrs/useAionrsMessage', () =>
 vi.mock('@/renderer/pages/conversation/platforms/useConversationCommandQueue', () => ({
   shouldEnqueueConversationCommand: () => false,
   useConversationCommandQueue: () => ({
-    items: [],
+    items: [{ id: 'queued-1', input: 'queued', files: [], created_at: 1 }],
     isPaused: false,
+    mode: 'manual',
     isInteractionLocked: false,
     hasPendingCommands: false,
     enqueue: vi.fn(),
     remove: vi.fn(),
+    sendNow: queueSendNowMock,
     clear: vi.fn(),
     reorder: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
+    toggleMode: vi.fn(),
     lockInteraction: vi.fn(),
     unlockInteraction: vi.fn(),
     resetActiveExecution: vi.fn(),
@@ -168,5 +178,24 @@ describe('AionrsSendBox', () => {
 
     expect(screen.getByTestId('sendbox-input')).toHaveAttribute('placeholder', 'Send message to Custom...');
     expect(screen.queryByPlaceholderText('Send message to AionCLI...')).not.toBeInTheDocument();
+  });
+
+  it('stops the team-owned runtime before sending a queued item now', async () => {
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AionrsSendBox
+        conversation_id='conv-1'
+        modelSelection={modelSelection()}
+        teamRuntime={{
+          runtimeGate: { hydrated: true, canSendMessage: true, isProcessing: true },
+          loading: false,
+          onStop,
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'queue-send-now' }));
+
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1', onStop));
   });
 });

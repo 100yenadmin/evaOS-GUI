@@ -19,6 +19,7 @@ import { createSetUploadFile } from '@/renderer/hooks/chat/useSendBoxFiles';
 import { useSlashCommands } from '@/renderer/hooks/chat/useSlashCommands';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { useLatestRef } from '@/renderer/hooks/ui/useLatestRef';
+import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { useAddOrUpdateMessage } from '@/renderer/pages/conversation/Messages/hooks';
 import {
   shouldEnqueueConversationCommand,
@@ -57,6 +58,7 @@ const EMPTY_UPLOAD_FILES: string[] = [];
 const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id }) => {
   const [workspacePath, setWorkspacePath] = useState('');
   const { t } = useTranslation();
+  const { isMobile } = useLayoutContext();
   const teamPermission = useTeamPermission();
   const { checkAndUpdateTitle } = useAutoTitle();
   const slash_commands = useSlashCommands(conversation_id);
@@ -372,14 +374,17 @@ const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_i
   const {
     items,
     isPaused: isQueuePaused,
+    mode: queueMode,
     isInteractionLocked: isQueueInteractionLocked,
     hasPendingCommands,
     enqueue,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,
@@ -489,33 +494,52 @@ const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_i
     };
   }, [conversation_id, hasHydratedRunningState, addOrUpdateMessage]);
 
+  const requestStop = async (): Promise<void> => {
+    await ipcBridge.conversation.stop.invoke({ conversation_id });
+  };
+  const resetStoppedState = () => {
+    setAiProcessing(false);
+    aiProcessingRef.current = false;
+    setThought({ subject: '', description: '' });
+    hasContentInTurnRef.current = false;
+  };
+  const stopForQueuedSend = async (): Promise<void> => {
+    await requestStop();
+    resetStoppedState();
+  };
   const handleStop = async (): Promise<void> => {
-    // Best-effort cancel: swallow rejections so they don't bubble up as
-    // unhandled rejections. UI state is still reset via finally.
     try {
-      await ipcBridge.conversation.stop.invoke({ conversation_id });
+      await requestStop();
     } catch (error) {
       console.warn('[OpenClawSendBox] stop request failed', error);
     } finally {
-      setAiProcessing(false);
-      aiProcessingRef.current = false;
-      setThought({ subject: '', description: '' });
-      hasContentInTurnRef.current = false;
+      resetStoppedState();
       resetActiveExecution('stop');
     }
   };
+
+  const handleSendNowQueued = useCallback(
+    (item: ConversationCommandQueueItem) => {
+      sendNow(item.id, stopForQueuedSend);
+    },
+    [sendNow, stopForQueuedSend]
+  );
 
   return (
     <div className='max-w-800px w-full mx-auto flex flex-col mt-auto mb-16px'>
       <CommandQueuePanel
         items={items}
+        mode={queueMode}
         paused={isQueuePaused}
+        isMobile={isMobile}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
         onResume={resume}
         onInteractionLock={lockInteraction}
         onInteractionUnlock={unlockInteraction}
         onEdit={handleEditQueuedCommand}
+        onSendNow={handleSendNowQueued}
+        onToggleMode={toggleMode}
         onReorder={reorder}
         onRemove={remove}
         onClear={clear}

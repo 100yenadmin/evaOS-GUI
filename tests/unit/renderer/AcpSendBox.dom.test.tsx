@@ -11,14 +11,23 @@ import { BackendHttpError } from '@/common/adapter/httpBridge';
 import AcpSendBox from '@/renderer/pages/conversation/platforms/acp/AcpSendBox';
 import type { UseAcpMessageReturn } from '@/renderer/pages/conversation/platforms/acp/useAcpMessage';
 
-const { sendMessageInvokeMock, addOrUpdateMessageMock, resetStateMock, emitterEmitMock, setSendBoxHandlerMock } =
-  vi.hoisted(() => ({
-    sendMessageInvokeMock: vi.fn(),
-    addOrUpdateMessageMock: vi.fn(),
-    resetStateMock: vi.fn(),
-    emitterEmitMock: vi.fn(),
-    setSendBoxHandlerMock: vi.fn(),
-  }));
+const {
+  sendMessageInvokeMock,
+  addOrUpdateMessageMock,
+  resetStateMock,
+  emitterEmitMock,
+  setSendBoxHandlerMock,
+  queueSendNowMock,
+  stopInvokeMock,
+} = vi.hoisted(() => ({
+  sendMessageInvokeMock: vi.fn(),
+  addOrUpdateMessageMock: vi.fn(),
+  resetStateMock: vi.fn(),
+  emitterEmitMock: vi.fn(),
+  setSendBoxHandlerMock: vi.fn(),
+  queueSendNowMock: vi.fn(),
+  stopInvokeMock: vi.fn(),
+}));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
@@ -29,7 +38,7 @@ vi.mock('@/common', () => ({
     },
     conversation: {
       stop: {
-        invoke: vi.fn().mockResolvedValue(undefined),
+        invoke: stopInvokeMock,
       },
     },
   },
@@ -49,7 +58,13 @@ vi.mock('@/renderer/components/chat/SendBox', () => ({
 }));
 
 vi.mock('@/renderer/components/agent/AgentModeSelector', () => ({ default: () => null }));
-vi.mock('@/renderer/components/chat/CommandQueuePanel', () => ({ default: () => null }));
+vi.mock('@/renderer/components/chat/CommandQueuePanel', () => ({
+  default: ({ onSendNow }: { onSendNow: (item: { id: string; input: string; files: string[] }) => void }) => (
+    <button type='button' onClick={() => onSendNow({ id: 'queued-1', input: 'queued', files: [] })}>
+      queue-send-now
+    </button>
+  ),
+}));
 vi.mock('@/renderer/components/chat/MobileActionSheet', () => ({
   default: () => null,
   useAttachEntry: () => ({ entries: [], hiddenFileInput: null }),
@@ -113,16 +128,19 @@ vi.mock('@/renderer/pages/conversation/Messages/hooks', () => ({
 vi.mock('@/renderer/pages/conversation/platforms/useConversationCommandQueue', () => ({
   shouldEnqueueConversationCommand: () => false,
   useConversationCommandQueue: () => ({
-    items: [],
+    items: [{ id: 'queued-1', input: 'queued', files: [], created_at: 1 }],
     isPaused: false,
+    mode: 'manual',
     isInteractionLocked: false,
     hasPendingCommands: false,
     enqueue: vi.fn(),
     remove: vi.fn(),
+    sendNow: queueSendNowMock,
     clear: vi.fn(),
     reorder: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
+    toggleMode: vi.fn(),
     lockInteraction: vi.fn(),
     unlockInteraction: vi.fn(),
     resetActiveExecution: vi.fn(),
@@ -185,6 +203,7 @@ const makeMessageState = (): UseAcpMessageReturn => ({
 describe('AcpSendBox', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stopInvokeMock.mockResolvedValue({ runtime: undefined });
   });
 
   it('resets ACP loading state when sendMessage fails before any stream error arrives', async () => {
@@ -218,5 +237,55 @@ describe('AcpSendBox', () => {
     await waitFor(() => {
       expect(resetStateMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('stops the team-owned runtime before sending a queued item now', async () => {
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AcpSendBox
+        conversation_id='conv-1'
+        backend='claude'
+        messageState={makeMessageState()}
+        teamRuntime={{
+          runtimeGate: { hydrated: true, canSendMessage: true, isProcessing: true },
+          loading: true,
+          onStop,
+        }}
+      />
+    );
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'queue-send-now' }).click();
+    });
+
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1', onStop));
+  });
+
+  it('passes a rejecting local stop callback to queued Send now', async () => {
+    stopInvokeMock.mockRejectedValue(new Error('stop failed'));
+    render(<AcpSendBox conversation_id='conv-1' backend='claude' messageState={makeMessageState()} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'queue-send-now' }).click();
+    });
+
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledTimes(1));
+    const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
+    await expect(queuedStop()).rejects.toThrow('stop failed');
+    expect(resetStateMock).not.toHaveBeenCalled();
+  });
+
+  it('cleans up local state only after a queued stop succeeds', async () => {
+    render(<AcpSendBox conversation_id='conv-1' backend='claude' messageState={makeMessageState()} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'queue-send-now' }).click();
+    });
+
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledTimes(1));
+    const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
+    await queuedStop();
+    expect(stopInvokeMock).toHaveBeenCalledTimes(1);
+    expect(resetStateMock).toHaveBeenCalledTimes(1);
   });
 });

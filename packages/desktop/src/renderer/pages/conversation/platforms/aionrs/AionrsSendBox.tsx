@@ -285,14 +285,17 @@ const AionrsSendBox: React.FC<{
   const {
     items: queuedCommands,
     isPaused: isQueuePaused,
+    mode: queueMode,
     isInteractionLocked: isQueueInteractionLocked,
     hasPendingCommands,
     enqueue,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,
@@ -559,15 +562,19 @@ const AionrsSendBox: React.FC<{
     }
   });
 
-  // Stop conversation handler
-  const handleStop = async (): Promise<void> => {
-    // Best-effort cancel: swallow rejections so they don't bubble up as
-    // unhandled rejections. UI state is still reset via finally.
+  const requestStop = async (): Promise<void> => {
     const turnId = runtimeView.activeTurnId;
     runtimeView.markStopRequested(turnId);
+    const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
+    runtimeView.markStopAcknowledged(turnId, result.runtime);
+  };
+  const stopForQueuedSend = async (): Promise<void> => {
+    await requestStop();
+    resetState();
+  };
+  const handleStop = async (): Promise<void> => {
     try {
-      const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
-      runtimeView.markStopAcknowledged(turnId, result.runtime);
+      await requestStop();
     } catch (error) {
       console.warn('[AionrsSendBox] stop request failed', error);
     } finally {
@@ -576,18 +583,29 @@ const AionrsSendBox: React.FC<{
     }
   };
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
+  const queuedHandleStop = teamRuntime?.onStop ?? stopForQueuedSend;
+  const handleSendNowQueued = useCallback(
+    (item: ConversationCommandQueueItem) => {
+      sendNow(item.id, queuedHandleStop);
+    },
+    [queuedHandleStop, sendNow]
+  );
 
   return (
     <div className='max-w-800px w-full mx-auto flex flex-col mt-auto mb-16px'>
       <CommandQueuePanel
         items={queuedCommands}
+        mode={queueMode}
         paused={isQueuePaused}
+        isMobile={isMobile}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
         onResume={resume}
         onInteractionLock={lockInteraction}
         onInteractionUnlock={unlockInteraction}
         onEdit={handleEditQueuedCommand}
+        onSendNow={handleSendNowQueued}
+        onToggleMode={toggleMode}
         onReorder={reorder}
         onRemove={remove}
         onClear={clear}

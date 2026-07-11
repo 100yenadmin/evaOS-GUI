@@ -416,8 +416,8 @@
     "error": "Échec de la réponse à la question secondaire."
   },
   "commandQueue": {
-    "title": "Commandes en file d'attente",
-    "clear": "Vider la file",
+    "title": "Boîte de brouillons",
+    "clear": "Vider la boîte de brouillons",
     "edit": "Modifier",
     "editing": "Modification en cours",
     "editPlaceholder": "Mettre à jour la commande en file avant son exécution.",
@@ -432,7 +432,22 @@
     "queueFull": "La file est pleine. Retirez une commande avant d'en ajouter d'autres.",
     "inputTooLong": "Cette commande en file est trop longue. Raccourcissez-la avant d'envoyer.",
     "tooManyFiles": "Trop de fichiers sont joints à cette commande en file.",
-    "queueTooLarge": "Les données de la file sont trop volumineuses pour être sauvegardées en toute sécurité. Retirez d'abord quelques commandes."
+    "queueTooLarge": "Les données de la file sont trop volumineuses pour être sauvegardées en toute sécurité. Retirez d'abord quelques commandes.",
+    "sendNow": "Envoyer maintenant",
+    "modeToggle": "Changer le mode d’envoi",
+    "help": "Aide",
+    "helpIntro": "Les messages envoyés pendant que l’IA répond restent ici.",
+    "helpAuto": ": envoyés automatiquement un par un après chaque réponse.",
+    "helpManual": ": conservés ici sans envoi ; utilisez Envoyer maintenant pour chacun.",
+    "clearConfirmTitle": "Vider la boîte de brouillons ?",
+    "clearConfirmContent": "Tous les messages en attente seront supprimés. Cette action est irréversible.",
+    "mode": {
+      "auto": "Envoi automatique",
+      "manual": "Envoi manuel"
+    },
+    "pause": "Mettre la file en pause",
+    "resume": "Reprendre la file",
+    "stopFailed": "Impossible d’arrêter la réponse en cours. Le brouillon n’a pas été envoyé."
   },
   "contextUsage": {
     "contextUsed": "contexte utilisé"

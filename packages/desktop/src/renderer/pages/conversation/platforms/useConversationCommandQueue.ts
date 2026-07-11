@@ -12,9 +12,12 @@ export type ConversationCommandQueueItem = {
   created_at: number;
 };
 
+export type ConversationCommandQueueMode = 'auto' | 'manual';
+
 export type ConversationCommandQueueState = {
   items: ConversationCommandQueueItem[];
   isPaused: boolean;
+  mode: ConversationCommandQueueMode;
 };
 
 export const MAX_QUEUED_COMMANDS = 20;
@@ -57,9 +60,12 @@ const logCommandQueue = (conversation_id: string, event: string, payload: Record
   });
 };
 
+const normalizeQueueMode = (mode: unknown): ConversationCommandQueueMode => (mode === 'manual' ? 'manual' : 'auto');
+
 const createDefaultQueueState = (): ConversationCommandQueueState => ({
   items: [],
   isPaused: false,
+  mode: 'auto',
 });
 
 const queueStore = new Map<string, ConversationCommandQueueState>();
@@ -112,6 +118,7 @@ export const normalizeQueueState = (state: unknown): ConversationCommandQueueSta
   }
 
   const candidate = state as Partial<ConversationCommandQueueState>;
+  const mode = normalizeQueueMode(candidate.mode);
   const normalizedItems = Array.isArray(candidate.items)
     ? candidate.items.map(normalizeQueueItem).filter((item): item is ConversationCommandQueueItem => item !== null)
     : [];
@@ -122,6 +129,7 @@ export const normalizeQueueState = (state: unknown): ConversationCommandQueueSta
     const nextState = {
       items: nextItems,
       isPaused: Boolean(candidate.isPaused),
+      mode,
     };
 
     if (measureQueueStateBytes(nextState) > MAX_QUEUED_COMMAND_STATE_BYTES) {
@@ -134,6 +142,7 @@ export const normalizeQueueState = (state: unknown): ConversationCommandQueueSta
   return {
     items,
     isPaused: items.length > 0 ? Boolean(candidate.isPaused) : false,
+    mode,
   };
 };
 
@@ -237,7 +246,7 @@ const removePersistedQueueState = (conversation_id: string): void => {
 const persistQueueState = (conversation_id: string, state: ConversationCommandQueueState): void => {
   const normalized = normalizeQueueState(state);
 
-  if (normalized.items.length === 0 && !normalized.isPaused) {
+  if (normalized.items.length === 0 && !normalized.isPaused && normalized.mode === 'auto') {
     removePersistedQueueState(conversation_id);
     return;
   }
@@ -279,6 +288,17 @@ export const restoreQueuedCommand = (
   items: ConversationCommandQueueItem[],
   failedItem: ConversationCommandQueueItem
 ): ConversationCommandQueueItem[] => [failedItem, ...removeQueuedCommand(items, failedItem.id)];
+
+/** Removes a failed item and restores it at the requested index, clamped to the queue bounds. */
+export const restoreQueuedCommandAtIndex = (
+  items: ConversationCommandQueueItem[],
+  failedItem: ConversationCommandQueueItem,
+  index: number
+): ConversationCommandQueueItem[] => {
+  const nextItems = removeQueuedCommand(items, failedItem.id);
+  nextItems.splice(Math.min(Math.max(index, 0), nextItems.length), 0, failedItem);
+  return nextItems;
+};
 
 export const updateQueuedCommand = (
   items: ConversationCommandQueueItem[],
@@ -398,9 +418,52 @@ export const useConversationCommandQueue = ({
   const pausedRef = useRef(data.isPaused);
   const waitingForTurnStartRef = useRef(false);
   const waitingForTurnCompletionRef = useRef(false);
+  const executionEpochRef = useRef(0);
+  const sendNowReservationRef = useRef<symbol | null>(null);
+  const conversationIdRef = useRef(conversation_id);
+  const executionGateRef = useRef(executionGate);
+  const executionGateWaitersRef = useRef(new Set<() => void>());
   const interactionLockedRef = useRef(false);
   const [isInteractionLocked, setIsInteractionLocked] = useState(false);
   const [executionGateVersion, setExecutionGateVersion] = useState(0);
+
+  executionGateRef.current = executionGate;
+
+  const notifyExecutionGateWaiters = useCallback(() => {
+    for (const waiter of executionGateWaitersRef.current) {
+      waiter();
+    }
+  }, []);
+
+  useEffect(() => {
+    notifyExecutionGateWaiters();
+  }, [executionGate.canExecute, executionGate.hydrated, executionGate.isProcessing, notifyExecutionGateWaiters]);
+
+  useEffect(
+    () => () => {
+      executionEpochRef.current += 1;
+      sendNowReservationRef.current = null;
+      waitingForTurnStartRef.current = false;
+      waitingForTurnCompletionRef.current = false;
+      notifyExecutionGateWaiters();
+    },
+    [notifyExecutionGateWaiters]
+  );
+
+  useEffect(() => {
+    if (conversationIdRef.current === conversation_id) {
+      return;
+    }
+
+    conversationIdRef.current = conversation_id;
+    executionEpochRef.current += 1;
+    sendNowReservationRef.current = null;
+    waitingForTurnStartRef.current = false;
+    waitingForTurnCompletionRef.current = false;
+    interactionLockedRef.current = false;
+    setIsInteractionLocked(false);
+    notifyExecutionGateWaiters();
+  }, [conversation_id, notifyExecutionGateWaiters]);
 
   useEffect(() => {
     stateRef.current = data;
@@ -410,6 +473,7 @@ export const useConversationCommandQueue = ({
     if (waitingForTurnStartRef.current && executionGate.isProcessing) {
       waitingForTurnStartRef.current = false;
       waitingForTurnCompletionRef.current = true;
+      sendNowReservationRef.current = null;
       logCommandQueue(conversation_id, 'turn-started', {
         pendingItemCount: stateRef.current.items.length,
       });
@@ -439,13 +503,16 @@ export const useConversationCommandQueue = ({
 
     waitingForTurnStartRef.current = false;
     waitingForTurnCompletionRef.current = false;
+    executionEpochRef.current += 1;
+    sendNowReservationRef.current = null;
     pausedRef.current = false;
     interactionLockedRef.current = false;
     stateRef.current = createDefaultQueueState();
     setIsInteractionLocked(false);
+    notifyExecutionGateWaiters();
     removePersistedQueueState(conversation_id);
     void mutate(createDefaultQueueState(), { revalidate: false });
-  }, [conversation_id, enabled, mutate]);
+  }, [conversation_id, enabled, mutate, notifyExecutionGateWaiters]);
 
   const updateState = useCallback(
     (
@@ -473,13 +540,34 @@ export const useConversationCommandQueue = ({
     [conversation_id, enabled, mutate]
   );
 
-  const clear = useCallback(() => {
+  const hardReset = useCallback(() => {
+    executionEpochRef.current += 1;
+    sendNowReservationRef.current = null;
     waitingForTurnStartRef.current = false;
     waitingForTurnCompletionRef.current = false;
     pausedRef.current = false;
+    interactionLockedRef.current = false;
+    stateRef.current = createDefaultQueueState();
+    setIsInteractionLocked(false);
+    notifyExecutionGateWaiters();
+    removePersistedQueueState(conversation_id);
+    void mutate(createDefaultQueueState(), { revalidate: false });
+  }, [conversation_id, mutate, notifyExecutionGateWaiters]);
+
+  const clear = useCallback(() => {
+    executionEpochRef.current += 1;
+    sendNowReservationRef.current = null;
+    waitingForTurnStartRef.current = false;
+    waitingForTurnCompletionRef.current = false;
+    pausedRef.current = false;
+    notifyExecutionGateWaiters();
     logCommandQueue(conversation_id, 'cleared');
-    void updateState(() => createDefaultQueueState());
-  }, [conversation_id, updateState]);
+    void updateState((state) => ({
+      ...state,
+      items: [],
+      isPaused: false,
+    }));
+  }, [conversation_id, notifyExecutionGateWaiters, updateState]);
 
   useAddEventListener(
     'conversation.deleted',
@@ -487,10 +575,9 @@ export const useConversationCommandQueue = ({
       if (deletedConversationId !== conversation_id) {
         return;
       }
-      clear();
-      removePersistedQueueState(conversation_id);
+      hardReset();
     },
-    [clear, conversation_id]
+    [conversation_id, hardReset]
   );
 
   const enqueue = useCallback(
@@ -543,6 +630,7 @@ export const useConversationCommandQueue = ({
 
       const nextItems = updateQueuedCommand(currentState.items, commandId, { input });
       const nextState: ConversationCommandQueueState = {
+        ...currentState,
         isPaused: false,
         items: nextItems,
       };
@@ -581,12 +669,167 @@ export const useConversationCommandQueue = ({
       void updateState((state) => {
         const nextItems = removeQueuedCommand(state.items, commandId);
         return {
+          ...state,
           items: nextItems,
           isPaused: false,
         };
       });
     },
     [conversation_id, enabled, updateState]
+  );
+
+  const sendNow = useCallback(
+    (commandId: string, onStop?: () => Promise<void>) => {
+      if (
+        !enabled ||
+        sendNowReservationRef.current ||
+        waitingForTurnStartRef.current ||
+        (waitingForTurnCompletionRef.current && !(executionGate.isProcessing && onStop)) ||
+        interactionLockedRef.current ||
+        !executionGate.hydrated ||
+        (!executionGate.canExecute && !executionGate.isProcessing)
+      ) {
+        return;
+      }
+
+      const currentState = normalizeQueueState(stateRef.current);
+      const targetIndex = currentState.items.findIndex((item) => item.id === commandId);
+      const target = currentState.items[targetIndex];
+      if (!target || targetIndex < 0) {
+        return;
+      }
+
+      let requestEpoch = executionEpochRef.current;
+      const reservation = Symbol('send-now');
+      sendNowReservationRef.current = reservation;
+      const releaseReservation = () => {
+        if (sendNowReservationRef.current === reservation) {
+          sendNowReservationRef.current = null;
+        }
+      };
+      const ownsReservation = () => sendNowReservationRef.current === reservation;
+      const waitForExecutableGate = () =>
+        new Promise<void>((resolve) => {
+          const checkGate = () => {
+            if (
+              requestEpoch !== executionEpochRef.current ||
+              !ownsReservation() ||
+              (executionGateRef.current.hydrated && executionGateRef.current.canExecute)
+            ) {
+              executionGateWaitersRef.current.delete(checkGate);
+              resolve();
+            }
+          };
+          executionGateWaitersRef.current.add(checkGate);
+          checkGate();
+        });
+
+      const executeTarget = async () => {
+        if (executionGate.isProcessing && onStop) {
+          try {
+            await onStop();
+          } catch (error) {
+            if (requestEpoch !== executionEpochRef.current || sendNowReservationRef.current !== reservation) {
+              releaseReservation();
+              return;
+            }
+            releaseReservation();
+            logCommandQueue(conversation_id, 'send-now-stop-failed', {
+              errorType: error instanceof Error ? error.name : typeof error,
+            });
+            Message.warning(
+              t('conversation.commandQueue.stopFailed', {
+                defaultValue: 'Could not stop the current reply. The draft was not sent.',
+              })
+            );
+            return;
+          }
+
+          await waitForExecutableGate();
+        }
+
+        if (requestEpoch !== executionEpochRef.current || !ownsReservation()) {
+          releaseReservation();
+          return;
+        }
+
+        const latestState = normalizeQueueState(stateRef.current);
+        const latestTargetIndex = latestState.items.findIndex((item) => item.id === commandId);
+        const latestTarget = latestState.items[latestTargetIndex];
+        if (!latestTarget || latestTargetIndex < 0) {
+          releaseReservation();
+          return;
+        }
+
+        executionEpochRef.current += 1;
+        requestEpoch = executionEpochRef.current;
+        notifyExecutionGateWaiters();
+
+        waitingForTurnStartRef.current = true;
+        waitingForTurnCompletionRef.current = false;
+        logCommandQueue(conversation_id, 'send-now', {
+          item: summarizeQueuedCommand(latestTarget),
+          remainingItemCount: latestState.items.length - 1,
+        });
+
+        await updateState((state) => ({
+          ...state,
+          items: removeQueuedCommand(state.items, commandId),
+        }));
+
+        if (requestEpoch !== executionEpochRef.current || !ownsReservation()) {
+          if (requestEpoch === executionEpochRef.current) {
+            void updateState((state) => ({
+              ...state,
+              items: restoreQueuedCommandAtIndex(state.items, latestTarget, latestTargetIndex),
+            }));
+          }
+          releaseReservation();
+          return;
+        }
+
+        try {
+          await onExecute(latestTarget);
+        } catch (error) {
+          if (requestEpoch !== executionEpochRef.current) {
+            releaseReservation();
+            return;
+          }
+          console.error('[conversation-command-queue] Failed to send queued command now:', error);
+          logCommandQueue(conversation_id, 'send-now-failed', {
+            item: summarizeQueuedCommand(latestTarget),
+            error: error instanceof Error ? error.message : String(error),
+          });
+          waitingForTurnStartRef.current = false;
+          waitingForTurnCompletionRef.current = false;
+          releaseReservation();
+          pausedRef.current = true;
+          void updateState((state) => ({
+            ...state,
+            items: restoreQueuedCommandAtIndex(state.items, latestTarget, latestTargetIndex),
+            isPaused: true,
+          }));
+          Message.warning(
+            t('conversation.commandQueue.pausedAfterFailure', {
+              defaultValue: 'The next queued command could not start. Edit, reorder, or remove it to continue.',
+            })
+          );
+        }
+      };
+
+      void executeTarget();
+    },
+    [
+      conversation_id,
+      enabled,
+      executionGate.canExecute,
+      executionGate.hydrated,
+      executionGate.isProcessing,
+      notifyExecutionGateWaiters,
+      onExecute,
+      t,
+      updateState,
+    ]
   );
 
   const reorder = useCallback(
@@ -600,6 +843,7 @@ export const useConversationCommandQueue = ({
         overCommandId,
       });
       void updateState((state) => ({
+        ...state,
         isPaused: false,
         items: reorderQueuedCommand(state.items, activeCommandId, overCommandId),
       }));
@@ -645,6 +889,21 @@ export const useConversationCommandQueue = ({
     }));
   }, [conversation_id, data.items.length, enabled, updateState]);
 
+  const toggleMode = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
+
+    void updateState((state) => {
+      const nextMode: ConversationCommandQueueMode = state.mode === 'auto' ? 'manual' : 'auto';
+      logCommandQueue(conversation_id, 'mode-changed', { mode: nextMode });
+      return {
+        ...state,
+        mode: nextMode,
+      };
+    });
+  }, [conversation_id, enabled, updateState]);
+
   const lockInteraction = useCallback(() => {
     if (!enabled) {
       return;
@@ -672,8 +931,11 @@ export const useConversationCommandQueue = ({
   const resetActiveExecution = useCallback(
     (reason: 'stop' | 'external-reset') => {
       const hadPendingTurn = waitingForTurnStartRef.current || waitingForTurnCompletionRef.current;
+      executionEpochRef.current += 1;
       waitingForTurnStartRef.current = false;
       waitingForTurnCompletionRef.current = false;
+      sendNowReservationRef.current = null;
+      notifyExecutionGateWaiters();
 
       if (!hadPendingTurn) {
         return;
@@ -685,17 +947,19 @@ export const useConversationCommandQueue = ({
       });
       setExecutionGateVersion((version) => version + 1);
     },
-    [conversation_id]
+    [conversation_id, notifyExecutionGateWaiters]
   );
 
   useEffect(() => {
     if (
       !enabled ||
+      data.mode === 'manual' ||
       !executionGate.hydrated ||
       pausedRef.current ||
       !executionGate.canExecute ||
       waitingForTurnStartRef.current ||
       waitingForTurnCompletionRef.current ||
+      sendNowReservationRef.current ||
       interactionLockedRef.current ||
       data.items.length === 0
     ) {
@@ -703,17 +967,22 @@ export const useConversationCommandQueue = ({
     }
 
     const [nextCommand, ...remainingCommands] = data.items;
+    const requestEpoch = executionEpochRef.current;
     waitingForTurnStartRef.current = true;
     logCommandQueue(conversation_id, 'dequeued', {
       item: summarizeQueuedCommand(nextCommand),
       remainingItemCount: remainingCommands.length,
     });
-    void updateState(() => ({
+    void updateState((state) => ({
+      ...state,
       items: remainingCommands,
       isPaused: false,
     }));
 
     void onExecute(nextCommand).catch((error) => {
+      if (requestEpoch !== executionEpochRef.current) {
+        return;
+      }
       console.error('[conversation-command-queue] Failed to execute queued command:', error);
       logCommandQueue(conversation_id, 'execute-failed', {
         item: summarizeQueuedCommand(nextCommand),
@@ -723,6 +992,7 @@ export const useConversationCommandQueue = ({
       waitingForTurnCompletionRef.current = false;
       pausedRef.current = true;
       void updateState((state) => ({
+        ...state,
         items: restoreQueuedCommand(state.items, nextCommand),
         isPaused: true,
       }));
@@ -735,6 +1005,7 @@ export const useConversationCommandQueue = ({
   }, [
     conversation_id,
     data.items,
+    data.mode,
     enabled,
     executionGateVersion,
     executionGate.canExecute,
@@ -748,15 +1019,18 @@ export const useConversationCommandQueue = ({
   return {
     items: enabled ? data.items : [],
     isPaused: enabled ? data.isPaused : false,
+    mode: enabled ? data.mode : 'auto',
     isInteractionLocked,
     hasPendingCommands: enabled ? data.items.length > 0 : false,
     enqueue,
     update,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,
