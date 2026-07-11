@@ -29,7 +29,9 @@
   },
   "model": {
     "switchSuccess": "Le modèle a changé avec succès",
-    "switchFailed": "Échec du changement de modèle"
+    "switchFailed": "Échec du changement de modèle",
+    "searchPlaceholder": "Rechercher des modèles",
+    "noResults": "Aucun modèle correspondant"
   },
   "config": {
     "commandAck": "Commande envoyée, mais l'état n'est pas confirmé. Actualisez ou réessayez plus tard.",

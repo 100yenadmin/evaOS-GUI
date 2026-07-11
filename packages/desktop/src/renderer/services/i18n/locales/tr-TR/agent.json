@@ -29,7 +29,9 @@
   },
   "model": {
     "switchSuccess": "Model switched successfully",
-    "switchFailed": "Failed to switch model"
+    "switchFailed": "Failed to switch model",
+    "searchPlaceholder": "Model ara",
+    "noResults": "Eşleşen model yok"
   },
   "config": {
     "commandAck": "Runtime accepted the request, but did not confirm the new setting yet.",

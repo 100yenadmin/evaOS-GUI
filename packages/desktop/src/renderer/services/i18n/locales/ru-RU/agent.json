@@ -29,7 +29,9 @@
   },
   "model": {
     "switchSuccess": "Модель успешно сменена",
-    "switchFailed": "Не удалось сменить модель"
+    "switchFailed": "Не удалось сменить модель",
+    "searchPlaceholder": "Поиск моделей",
+    "noResults": "Нет подходящих моделей"
   },
   "config": {
     "commandAck": "Runtime accepted the request, but did not confirm the new setting yet.",
