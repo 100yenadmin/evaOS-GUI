@@ -17,9 +17,12 @@ import { useTranslation } from 'react-i18next';
 import RuntimeSelectorPill from './RuntimeSelectorPill';
 import {
   composeRuntimeSelectorLabel,
+  getCurrentThoughtLevelLabel,
   isConfigSetting,
+  RUNTIME_SUBMENU_TRIGGER_PROPS,
   RuntimeSelectorCheckedItem,
-  RuntimeSelectorMenuDivider,
+  RuntimeSelectorModelList,
+  RuntimeSelectorSubMenuTitle,
   renderThoughtLevelMenuGroup,
 } from './runtimeSelectorOptions';
 
@@ -131,29 +134,68 @@ const AcpModelSelector: React.FC<{
       {...(isMobileHeaderCompact ? { getPopupContainer: () => document.body } : {})}
       droplist={
         <Menu>
-          {renderThoughtLevelMenuGroup({
-            thoughtLevel,
-            setStatus,
-            title: t('agent.thoughtLevel.label'),
-            onSelect: (value) => void handleThoughtLevelSelect(value),
-          })}
-          {thoughtLevel && canSwitch && <RuntimeSelectorMenuDivider />}
-          {canSwitch && (
-            <Menu.ItemGroup title={t('common.model', { defaultValue: 'Model' })}>
-              {model_info.available_models.map((model) => (
-                <Menu.Item
-                  key={model.id}
-                  className={model.id === model_info.current_model_id ? 'bg-2!' : ''}
-                  onClick={() => {
-                    if (!isRuntimeSetting) selectModel(model.id);
-                  }}
-                >
-                  <RuntimeSelectorCheckedItem selected={model.id === model_info.current_model_id}>
-                    {model.label || model.id}
-                  </RuntimeSelectorCheckedItem>
-                </Menu.Item>
-              ))}
-            </Menu.ItemGroup>
+          {thoughtLevel && canSwitch ? (
+            <>
+              <Menu.SubMenu
+                key='model'
+                triggerProps={RUNTIME_SUBMENU_TRIGGER_PROPS}
+                title={
+                  <RuntimeSelectorSubMenuTitle
+                    label={t('common.model', { defaultValue: 'Model' })}
+                    value={display_label}
+                  />
+                }
+              >
+                <RuntimeSelectorModelList
+                  models={model_info?.available_models}
+                  currentModelId={model_info?.current_model_id}
+                  disabled={isRuntimeSetting}
+                  onSelect={selectModel}
+                />
+              </Menu.SubMenu>
+              <Menu.SubMenu
+                key='thought-level'
+                triggerProps={RUNTIME_SUBMENU_TRIGGER_PROPS}
+                title={
+                  <RuntimeSelectorSubMenuTitle
+                    label={t('agent.thoughtLevel.label')}
+                    value={getCurrentThoughtLevelLabel(thoughtLevel)}
+                  />
+                }
+              >
+                {thoughtLevel.options.map((item) => (
+                  <Menu.Item
+                    key={item.value}
+                    className={item.value === thoughtLevel.currentValue ? 'bg-2!' : ''}
+                    disabled={isRuntimeSetting}
+                    onClick={() => {
+                      if (!isRuntimeSetting) void handleThoughtLevelSelect(item.value);
+                    }}
+                  >
+                    <RuntimeSelectorCheckedItem
+                      selected={item.value === thoughtLevel.currentValue}
+                      description={item.description}
+                    >
+                      {item.label}
+                    </RuntimeSelectorCheckedItem>
+                  </Menu.Item>
+                ))}
+              </Menu.SubMenu>
+            </>
+          ) : canSwitch ? (
+            <RuntimeSelectorModelList
+              models={model_info?.available_models}
+              currentModelId={model_info?.current_model_id}
+              disabled={isRuntimeSetting}
+              onSelect={selectModel}
+            />
+          ) : (
+            renderThoughtLevelMenuGroup({
+              thoughtLevel,
+              setStatus,
+              title: t('agent.thoughtLevel.label'),
+              onSelect: (value) => void handleThoughtLevelSelect(value),
+            })
           )}
         </Menu>
       }

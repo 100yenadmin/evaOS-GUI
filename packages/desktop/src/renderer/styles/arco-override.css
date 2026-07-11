@@ -446,3 +446,21 @@ body[arco-theme='dark'] .arco-message-error {
   z-index: 1;
   background-color: var(--color-bg-popup);
 }
+
+/* RuntimeSelectorModelList owns the only scrolling region, below its fixed
+ * search field. Disable Arco's host scrolling only for popups containing that
+ * inner list so unrelated dropdowns retain their existing height behavior. */
+.arco-dropdown-menu:has(.runtime-model-scroll) {
+  max-height: none;
+  overflow: visible;
+}
+
+.runtime-model-scroll .arco-dropdown-menu-group-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-top: 0;
+  padding-top: 6px;
+  padding-bottom: 2px;
+  background-color: var(--color-bg-popup);
+}

@@ -88,6 +88,7 @@ vi.mock('@/renderer/utils/model/agentLogo', () => ({
 vi.mock('@icon-park/react', () => ({
   Brain: () => <span aria-hidden='true'>brain</span>,
   Down: () => <span aria-hidden='true'>v</span>,
+  Search: () => <span aria-hidden='true'>search</span>,
   Loading: ({ className }: { className?: string }) => <span aria-hidden='true' className={className} />,
 }));
 
@@ -99,6 +100,8 @@ vi.mock('react-i18next', () => ({
       if (key === 'agent.config.commandAck') return 'agent.config.commandAck';
       if (key === 'common.model') return 'Model';
       if (key === 'common.defaultModel') return 'Default';
+      if (key === 'agent.model.searchPlaceholder') return 'Search models';
+      if (key === 'agent.model.noResults') return 'No matching models';
       if (key === 'conversation.welcome.useCliModel') return 'Use CLI model';
       if (key === 'conversation.welcome.modelSwitchNotSupported') return 'Model switch is not supported';
       return options?.defaultValue ?? key;
@@ -108,7 +111,11 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@arco-design/web-react', () => {
   const Menu = Object.assign(
-    ({ children }: { children?: React.ReactNode }) => <div data-testid='dropdown-menu'>{children}</div>,
+    ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+      <div data-testid='dropdown-menu' className={className}>
+        {children}
+      </div>
+    ),
     {
       Item: ({
         children,
@@ -126,6 +133,12 @@ vi.mock('@arco-design/web-react', () => {
       ItemGroup: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) => (
         <div role='group' aria-label={String(title)}>
           {children}
+        </div>
+      ),
+      SubMenu: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) => (
+        <div role='group'>
+          <div data-testid='submenu-title'>{title}</div>
+          <div data-testid='submenu-body'>{children}</div>
         </div>
       ),
     }
@@ -157,7 +170,9 @@ vi.mock('@arco-design/web-react', () => {
       success: messageSuccessMock,
       error: messageErrorMock,
     },
-    Tooltip: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    Tooltip: ({ children, content }: { children?: React.ReactNode; content?: React.ReactNode }) => (
+      <span data-tooltip-content={typeof content === 'string' ? content : undefined}>{children}</span>
+    ),
   };
 });
 
@@ -173,22 +188,42 @@ describe('AcpModelSelector runtime options', () => {
     expect(screen.getByTestId('acp-model-selector')).toHaveTextContent('GPT-5.2 · High');
   });
 
-  it('renders the thought level group before the model group', () => {
+  it('preserves warmup and global-preference controls on the model hook', () => {
+    render(
+      <AcpModelSelector
+        conversation_id='conversation-1'
+        backend='codex'
+        waitForWarmup
+        persistGlobalPreference={false}
+      />
+    );
+
+    expect(useAcpModelInfoMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation_id: 'conversation-1',
+        backend: 'codex',
+        prepareRuntime: expect.any(Function),
+        persistGlobalPreference: false,
+      })
+    );
+  });
+
+  it('shows the model submenu before the thought level submenu, each with its current value', () => {
     render(<AcpModelSelector conversation_id='conversation-1' backend='codex' />);
 
-    expect(screen.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
-      'Thinking Level',
-      'Model',
-    ]);
-    expect(screen.getByTestId('runtime-selector-menu-divider')).toBeInTheDocument();
+    const titles = screen.getAllByTestId('submenu-title');
+    expect(titles[0]).toHaveTextContent('Model');
+    expect(titles[0]).toHaveTextContent('GPT-5.2');
+    expect(titles[1]).toHaveTextContent('Thinking Level');
+    expect(titles[1]).toHaveTextContent('High');
   });
 
   it('marks the current model with the same leading check indicator as thought level options', () => {
     render(<AcpModelSelector conversation_id='conversation-1' backend='codex' />);
 
-    const modelGroup = screen.getByRole('group', { name: 'Model' });
-    const currentModelItem = within(modelGroup).getByText('GPT-5.2').closest('[role="menuitem"]');
-    const otherModelItem = within(modelGroup).getByText('GPT-5.2 Mini').closest('[role="menuitem"]');
+    const modelBody = screen.getAllByTestId('submenu-body')[0];
+    const currentModelItem = within(modelBody).getByText('GPT-5.2').closest('[role="menuitem"]');
+    const otherModelItem = within(modelBody).getByText('GPT-5.2 Mini').closest('[role="menuitem"]');
 
     expect(currentModelItem?.textContent?.trim().startsWith('\u2713')).toBe(true);
     expect(otherModelItem).not.toHaveTextContent('\u2713');
@@ -200,8 +235,19 @@ describe('AcpModelSelector runtime options', () => {
     render(<AcpModelSelector conversation_id='conversation-1' backend='codex' />);
 
     expect(screen.getByTestId('acp-model-selector')).toHaveTextContent('GPT-5.2');
-    expect(screen.queryByRole('group', { name: 'Thinking Level' })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Model' })).toBeInTheDocument();
+    expect(screen.queryAllByTestId('submenu-title')).toHaveLength(0);
+    expect(screen.getByText('GPT-5.2 Mini')).toBeInTheDocument();
+  });
+
+  it('selects a model through the existing model setter', () => {
+    const selectModel = vi.fn();
+    useAcpModelInfoMock.mockReturnValue(makeResult({ selectModel }));
+
+    render(<AcpModelSelector conversation_id='conversation-1' backend='codex' />);
+    const modelBody = screen.getAllByTestId('submenu-body')[0];
+    fireEvent.click(within(modelBody).getByText('GPT-5.2 Mini'));
+
+    expect(selectModel).toHaveBeenCalledWith('gpt-5.2-mini');
   });
 
   it('supports a thinking-only runtime control when model switching is absent', () => {
