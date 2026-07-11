@@ -5,6 +5,11 @@
  */
 
 import type { AionrsModelSelection } from './useAionrsModelSelection';
+import {
+  RUNTIME_SELECTOR_MENU_CLASS_NAME,
+  type RuntimeSelectorModelGroup,
+  useRuntimeSelectorModelMenu,
+} from '@/renderer/components/agent/runtimeSelectorOptions';
 import { usePreviewContext } from '@/renderer/pages/conversation/Preview';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { getModelDisplayLabel } from '@/renderer/utils/model/agentLogo';
@@ -14,6 +19,9 @@ import { Brain, Down } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
+
+/** Collision-safe key for mapping shared model rows back to AionRS provider/model pairs. */
+const providerModelKey = (providerId: string, modelName: string): string => JSON.stringify([providerId, modelName]);
 
 const AionrsModelSelector: React.FC<{
   selection?: AionrsModelSelection;
@@ -27,6 +35,35 @@ const AionrsModelSelector: React.FC<{
   const defaultModelLabel = t('common.defaultModel');
 
   const current_model = selection?.current_model;
+  const providers = selection?.providers ?? [];
+  const modelGroups: RuntimeSelectorModelGroup[] = [];
+  const modelLookup = new Map<string, { provider: (typeof providers)[number]; modelName: string }>();
+
+  for (const provider of providers) {
+    const availableModels = selection?.getAvailableModels(provider) ?? [];
+    if (!availableModels.length) continue;
+    modelGroups.push({
+      key: provider.id,
+      title: provider.name,
+      models: availableModels.map((modelName) => {
+        const id = providerModelKey(provider.id, modelName);
+        modelLookup.set(id, { provider, modelName });
+        return { id, label: modelName, testId: `aionrs-model-option-${modelName}` };
+      }),
+    });
+  }
+
+  const currentModelId = current_model?.use_model
+    ? providerModelKey(current_model.id, current_model.use_model)
+    : undefined;
+  const modelMenu = useRuntimeSelectorModelMenu({
+    groups: modelGroups,
+    currentModelId,
+    onSelect: (id) => {
+      const entry = modelLookup.get(id);
+      if (entry && selection) void selection.handleSelectModel(entry.provider, entry.modelName);
+    },
+  });
 
   const renderLogo = () => <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />;
 
@@ -52,8 +89,6 @@ const AionrsModelSelector: React.FC<{
     );
   }
 
-  const { providers, getAvailableModels, handleSelectModel } = selection;
-
   const label = getModelDisplayLabel({
     selected_value: current_model?.use_model,
     selectedLabel: current_model?.use_model || '',
@@ -67,31 +102,7 @@ const AionrsModelSelector: React.FC<{
       // Mobile: portal the popup to <body> so it escapes the titlebar slot.
       // Desktop: leave default container so click events reach Menu.Item normally.
       {...(isMobileHeaderCompact ? { getPopupContainer: () => document.body } : {})}
-      droplist={
-        <Menu className='aion-model-menu--sticky-group'>
-          {providers.map((provider) => {
-            const models = getAvailableModels(provider);
-            if (!models.length) return null;
-
-            return (
-              <Menu.ItemGroup title={provider.name} key={provider.id}>
-                {models.map((modelName) => (
-                  <Menu.Item
-                    key={`${provider.id}-${modelName}`}
-                    data-testid={`aionrs-model-option-${modelName}`}
-                    className={current_model?.id + current_model?.use_model === provider.id + modelName ? '!bg-2' : ''}
-                    onClick={() => void handleSelectModel(provider, modelName)}
-                  >
-                    <div className='flex items-center gap-8px w-full'>
-                      <span>{modelName}</span>
-                    </div>
-                  </Menu.Item>
-                ))}
-              </Menu.ItemGroup>
-            );
-          })}
-        </Menu>
-      }
+      droplist={<Menu className={RUNTIME_SELECTOR_MENU_CLASS_NAME}>{modelMenu}</Menu>}
     >
       <Button
         data-testid='aionrs-model-selector'

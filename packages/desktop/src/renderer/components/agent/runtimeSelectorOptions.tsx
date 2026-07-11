@@ -24,7 +24,7 @@ export const RUNTIME_SUBMENU_TRIGGER_PROPS = {
 /** Component-scoped class for the root runtime selector menu. */
 export const RUNTIME_SELECTOR_MENU_CLASS_NAME = styles.runtimeMenu;
 
-type RuntimeSelectorModel = { id: string; label?: string; description?: string };
+type RuntimeSelectorModel = { id: string; label?: string; description?: string; testId?: string };
 
 export type RuntimeSelectorModelGroup = { key: string; title: string; models: RuntimeSelectorModel[] };
 
@@ -136,6 +136,7 @@ export const useRuntimeSelectorModelMenu = ({
       className={model.id === currentModelId ? 'bg-2!' : ''}
       disabled={disabled}
       aria-current={model.id === currentModelId ? 'true' : undefined}
+      data-testid={model.testId}
       onClick={() => {
         if (!disabled) onSelect(model.id);
       }}
