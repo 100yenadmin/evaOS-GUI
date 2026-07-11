@@ -20,6 +20,8 @@ export interface MobileActionSheetSubMenu {
   emptyText?: ReactNode;
   /** When false, options behave as plain action rows (no radio). Default: true. */
   selectable?: boolean;
+  /** Keep the submenu open and render checkbox state while toggling multiple options. */
+  multiSelect?: boolean;
 }
 
 export interface MobileActionSheetEntry {

@@ -811,6 +811,13 @@ const GuidPage: React.FC = () => {
       files={guidInput.files}
       onFilesUploaded={guidInput.handleFilesUploaded}
       modelSelectorNode={modelSelectorNode}
+      isGeminiMode={isGeminiMode}
+      modelList={modelSelection.modelList}
+      current_model={modelSelection.current_model}
+      setCurrentModel={setGuidCurrentModel}
+      currentAcpCachedModelInfo={agentSelection.currentAcpCachedModelInfo}
+      selectedAcpModel={agentSelection.selectedAcpModel}
+      setSelectedAcpModel={setGuidSelectedAcpModel}
       selectedAgent={agentSelection.selectedAgent}
       effectiveModeAgent={agentSelection.currentEffectiveAgentInfo.agent_type}
       selectedMode={agentSelection.selectedMode}
