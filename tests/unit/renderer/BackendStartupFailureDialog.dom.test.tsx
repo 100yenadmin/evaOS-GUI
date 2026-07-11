@@ -149,4 +149,27 @@ describe('BackendStartupFailureDialog recoverable database corruption', () => {
       screen.queryByRole('button', { name: /common.backendStartup.incompleteInstallation.downloadLatest/ })
     ).not.toBeInTheDocument();
   });
+
+  it('uses the unavailable-directory fallback when diagnostics omit an issue kind', async () => {
+    const failure = {
+      reason: 'backend_startup_directory_unavailable' as const,
+    };
+
+    render(<BackendStartupFailureDialog failure={failure} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /common.backendStartup.startupDirectory.sendDiagnostics/ }));
+    await waitFor(() =>
+      expect(mocks.feedbackModal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          feedbackExtra: expect.objectContaining({
+            startupDirectoryIssueKind: 'missing_or_unavailable_directory',
+          }),
+          feedbackTags: expect.objectContaining({
+            'evaos.backend_startup_failure.startup_directory_issue_kind': 'missing_or_unavailable_directory',
+          }),
+          visible: true,
+        })
+      )
+    );
+  });
 });

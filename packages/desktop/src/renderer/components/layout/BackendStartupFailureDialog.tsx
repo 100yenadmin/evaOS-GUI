@@ -27,6 +27,7 @@ export const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFail
   const isPackageArchitectureMismatch = failure.reason === 'backend_package_architecture_mismatch';
   const isRecoverableDatabaseCorruption = failure.reason === 'backend_recoverable_database_corruption';
   const isStartupDirectoryFailure = failure.reason === 'backend_startup_directory_unavailable';
+  const startupDirectoryIssueKind = failure.startupDirectoryIssueKind ?? 'missing_or_unavailable_directory';
   const title = isIncompatibleRuntime
     ? t('common.backendStartup.incompatibleRuntime.title')
     : isPackageArchitectureMismatch
@@ -115,12 +116,11 @@ export const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFail
           defaultModule='system-settings'
           feedbackTags={{
             'evaos.backend_startup_failure.reason': failure.reason,
-            'evaos.backend_startup_failure.startup_directory_issue_kind':
-              failure.startupDirectoryIssueKind ?? 'missing_or_unavailable_directory',
+            'evaos.backend_startup_failure.startup_directory_issue_kind': startupDirectoryIssueKind,
           }}
           feedbackExtra={{
             reason: failure.reason,
-            startupDirectoryIssueKind: failure.startupDirectoryIssueKind ?? 'missing_or_unavailable_directory',
+            startupDirectoryIssueKind,
           }}
         />
       ) : null}

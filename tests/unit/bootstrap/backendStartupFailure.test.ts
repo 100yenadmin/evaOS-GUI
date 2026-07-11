@@ -81,6 +81,38 @@ describe('classifyBackendStartupFailure', () => {
     });
   });
 
+  it('keeps non-directory spawn-stage ENOENT in the generic bucket', () => {
+    const error = new Error('aioncore process spawn threw before startup') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'spawn',
+      causeMessage: 'spawn aioncore ENOENT',
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_startup_failed',
+      backendBoundaryCode: undefined,
+      backendBoundaryStage: undefined,
+    });
+  });
+
+  it('keeps non-directory spawn-stage permission failures in the generic bucket', () => {
+    const error = new Error('aioncore process spawn threw before startup') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'spawn',
+      causeMessage: 'spawn aioncore EACCES',
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_startup_failed',
+      backendBoundaryCode: undefined,
+      backendBoundaryStage: undefined,
+    });
+  });
+
   it('preserves backend bootstrap code and stage for generic startup failures', () => {
     const error = new Error('aioncore exited before health check passed') as Error & {
       details?: Record<string, unknown>;
