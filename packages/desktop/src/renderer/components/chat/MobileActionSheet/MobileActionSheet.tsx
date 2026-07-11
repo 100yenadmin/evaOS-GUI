@@ -31,6 +31,25 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
   // forces React to commit the off-screen frame before the rAF kicks in.
   const [visible, setVisible] = useState(false);
   const openRafRef = useRef<number | null>(null);
+  const mainEntryRefs = useRef(new Map<string, HTMLDivElement>());
+  const firstSubOptionRef = useRef<HTMLDivElement | null>(null);
+  const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const returnFocusKeyRef = useRef<string | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const previousFocusedElementRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const activeElement = document.activeElement;
+    previousFocusedElementRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    return () => {
+      const previousFocusedElement = previousFocusedElementRef.current;
+      previousFocusedElementRef.current = null;
+      requestAnimationFrame(() => {
+        if (previousFocusedElement?.isConnected) previousFocusedElement.focus();
+      });
+    };
+  }, [open]);
 
   // Mount / unmount lifecycle — drives DOM presence only.
   useEffect(() => {
@@ -61,6 +80,15 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
     };
   }, [open, mounted]);
 
+  useLayoutEffect(() => {
+    if (!open || !mounted) return;
+    const raf = requestAnimationFrame(() => {
+      const firstEnabledEntry = [...mainEntryRefs.current.values()].find((entry) => entry.tabIndex === 0);
+      firstEnabledEntry?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, mounted]);
+
   useEffect(() => {
     if (activeSubKey) {
       setRenderedSubKey(activeSubKey);
@@ -79,6 +107,17 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
       return () => clearTimeout(id);
     }
   }, [activeSubKey, renderedSubKey]);
+
+  useEffect(() => {
+    if (subPhase === 'shown') {
+      (firstSubOptionRef.current ?? backButtonRef.current)?.focus();
+      return;
+    }
+    if (subPhase === 'exit' && returnFocusKeyRef.current) {
+      mainEntryRefs.current.get(returnFocusKeyRef.current)?.focus();
+      returnFocusKeyRef.current = null;
+    }
+  }, [subPhase]);
 
   useEffect(() => {
     if (!open) return;
@@ -120,20 +159,60 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
     // an action — close the sheet so the user can immediately interact with
     // the result (e.g. type a slash command, see attached files).
     if (activeSub.selectable !== false) {
+      returnFocusKeyRef.current = activeSubKey;
       setActiveSubKey(null);
       return;
     }
     onClose();
   };
 
+  const handleBack = () => {
+    returnFocusKeyRef.current = activeSubKey ?? renderedSubKey;
+    setActiveSubKey(null);
+  };
+
+  const handleKeyboardActivate = (event: React.KeyboardEvent, activate: () => void) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    activate();
+  };
+
+  const handleSheetKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab' || !sheetRef.current) return;
+
+    const focusable = [
+      ...sheetRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]):not([tabindex="-1"]), [role="button"][tabindex="0"]'
+      ),
+    ];
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+
+    const activeIndex = focusable.indexOf(document.activeElement as HTMLElement);
+    const nextIndex = event.shiftKey ? activeIndex - 1 : activeIndex + 1;
+    if (activeIndex === -1 || nextIndex < 0 || nextIndex >= focusable.length) {
+      event.preventDefault();
+      focusable[event.shiftKey ? focusable.length - 1 : 0]?.focus();
+    }
+  };
+
   return createPortal(
     <Fragment>
       <div className={`${styles.mask} ${visible ? styles.visible : ''}`} onClick={onClose} />
       <div
+        ref={sheetRef}
         className={`${styles.sheet} ${visible ? styles.visible : ''}`}
         role='dialog'
         aria-modal='true'
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleSheetKeyDown}
       >
         <div className={styles.handle} />
         <div className={styles.panes}>
@@ -147,8 +226,16 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
                 <Fragment key={entry.key}>
                   {entry.dividerBefore && index !== 0 && <div className={styles.divider} />}
                   <div
+                    ref={(node) => {
+                      if (node) mainEntryRefs.current.set(entry.key, node);
+                      else mainEntryRefs.current.delete(entry.key);
+                    }}
                     className={`${styles.item} ${entry.disabled ? styles.disabled : ''}`}
                     onClick={() => handleEntryClick(entry)}
+                    onKeyDown={(event) => handleKeyboardActivate(event, () => handleEntryClick(entry))}
+                    role='button'
+                    tabIndex={entry.disabled || subPhase === 'shown' ? -1 : 0}
+                    aria-disabled={entry.disabled || undefined}
                     data-testid={`mobile-action-sheet-${entry.key}`}
                   >
                     {entry.icon && (
@@ -180,7 +267,13 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
               aria-hidden={subPhase !== 'shown'}
             >
               <div className={styles.subbar}>
-                <button className={styles.back} onClick={() => setActiveSubKey(null)} type='button'>
+                <button
+                  ref={backButtonRef}
+                  className={styles.back}
+                  onClick={handleBack}
+                  type='button'
+                  tabIndex={subPhase === 'shown' ? 0 : -1}
+                >
                   <Left theme='outline' size='16' />
                   <span>{t('common.back', { defaultValue: 'Back' })}</span>
                 </button>
@@ -196,8 +289,14 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
                     return (
                       <div
                         key={option.key}
+                        ref={(node) => {
+                          if (renderedSub.options[0]?.key === option.key) firstSubOptionRef.current = node;
+                        }}
                         className={styles.item}
                         onClick={() => handleSubSelect(option.key)}
+                        onKeyDown={(event) => handleKeyboardActivate(event, () => handleSubSelect(option.key))}
+                        role='button'
+                        tabIndex={subPhase === 'shown' ? 0 : -1}
                         data-testid={`mobile-action-sheet-option-${option.key}`}
                       >
                         <div className={styles.body}>

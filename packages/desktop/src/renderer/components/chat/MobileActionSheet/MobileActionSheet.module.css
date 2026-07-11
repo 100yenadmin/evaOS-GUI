@@ -77,6 +77,11 @@
   background: var(--color-fill-1, #f2f3f5);
 }
 
+.item:focus-visible {
+  outline: 2px solid rgb(var(--primary-6, 22 93 255));
+  outline-offset: -2px;
+}
+
 .item.disabled {
   opacity: 0.5;
   cursor: not-allowed;

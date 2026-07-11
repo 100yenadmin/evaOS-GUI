@@ -6,7 +6,7 @@
 
 import MobileActionSheet from '@/renderer/components/chat/MobileActionSheet';
 import type { MobileActionSheetEntry } from '@/renderer/components/chat/MobileActionSheet/types';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -67,5 +67,65 @@ describe('MobileActionSheet', () => {
 
     expect(onClick).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves keyboard focus into and back out of submenu options', async () => {
+    const onSelect = vi.fn();
+    const entries: MobileActionSheetEntry[] = [
+      {
+        key: 'model',
+        label: 'Model',
+        submenu: {
+          title: 'Model',
+          options: [{ key: 'model-b', label: 'Model B' }],
+          onSelect,
+        },
+      },
+      { key: 'attach', label: 'Add files', onClick: vi.fn() },
+    ];
+
+    const Host = () => {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <>
+          <button type='button' onClick={() => setOpen(true)}>
+            Open sheet
+          </button>
+          <MobileActionSheet open={open} onClose={() => setOpen(false)} entries={entries} />
+        </>
+      );
+    };
+
+    render(<Host />);
+    const opener = screen.getByRole('button', { name: 'Open sheet' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const modelEntry = screen.getByTestId('mobile-action-sheet-model');
+    const attachEntry = screen.getByTestId('mobile-action-sheet-attach');
+    await waitFor(() => expect(modelEntry).toHaveFocus());
+
+    attachEntry.focus();
+    fireEvent.keyDown(attachEntry, { key: 'Tab' });
+    expect(modelEntry).toHaveFocus();
+    fireEvent.keyDown(modelEntry, { key: 'Tab', shiftKey: true });
+    expect(attachEntry).toHaveFocus();
+
+    modelEntry.focus();
+    fireEvent.keyDown(modelEntry, { key: 'Enter' });
+
+    const modelOption = screen.getByTestId('mobile-action-sheet-option-model-b');
+    await waitFor(() => expect(modelOption).toHaveFocus());
+    expect(modelEntry).toHaveAttribute('tabindex', '-1');
+    expect(modelOption).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(modelOption, { key: ' ' });
+
+    expect(onSelect).toHaveBeenCalledWith('model-b');
+    await waitFor(() => expect(modelEntry).toHaveFocus());
+    expect(modelEntry).toHaveAttribute('tabindex', '0');
+    expect(modelOption).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.keyDown(modelEntry, { key: 'Escape' });
+    await waitFor(() => expect(opener).toHaveFocus());
   });
 });

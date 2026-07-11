@@ -23,7 +23,7 @@ import type { Assistant } from '@/common/types/agent/assistantTypes';
 import PresetAgentTag, { type AgentSwitcherItem } from './PresetAgentTag';
 import { Button, Checkbox, Dropdown, Menu, Message, Tooltip } from '@arco-design/web-react';
 import { ArrowUp, Brain, FolderUpload, Lightning, Plus, Shield, UploadOne } from '@icon-park/react';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import styles from '../index.module.css';
 
@@ -41,6 +41,7 @@ type GuidActionRowProps = {
   currentAcpCachedModelInfo: AcpModelInfo | null;
   selectedAcpModel: string | null;
   setSelectedAcpModel: (model: string | null) => void;
+  onAddModel: () => void;
 
   // Agent mode
   selectedAgent: string | 'custom';
@@ -90,6 +91,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
   currentAcpCachedModelInfo,
   selectedAcpModel,
   setSelectedAcpModel,
+  onAddModel,
   selectedAgent,
   effectiveModeAgent,
   selectedMode,
@@ -127,6 +129,10 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
   // Browser file picker ref (WebUI only)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (!isMobile) setIsSheetOpen(false);
+  }, [isMobile]);
 
   const handleLocalFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -214,16 +220,26 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
       onModelSelect = setSelectedAcpModel;
     }
 
-    if (modelOptions.length > 0) {
+    if (modelOptions.length > 0 || isGeminiMode) {
+      const hasModels = modelOptions.length > 0;
       entries.push({
         key: 'model',
         icon: <Brain theme='outline' size='16' />,
         label: t('common.model'),
-        meta: currentModelLabel,
+        meta: hasModels ? currentModelLabel : t('settings.noAvailableModels'),
         submenu: {
           title: t('common.model'),
-          options: modelOptions,
-          onSelect: onModelSelect,
+          options: hasModels
+            ? modelOptions
+            : [
+                {
+                  key: 'add-model',
+                  label: t('settings.addModel'),
+                  description: t('settings.noAvailableModels'),
+                },
+              ],
+          selectable: hasModels,
+          onSelect: hasModels ? onModelSelect : onAddModel,
         },
       });
     }
@@ -323,6 +339,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     disabledBuiltinSkills,
     enabledSkills,
     isGeminiMode,
+    onAddModel,
     isMobile,
     isWebUI,
     mcpServers,

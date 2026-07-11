@@ -9,7 +9,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { showOpen } = vi.hoisted(() => ({ showOpen: vi.fn() }));
+const { showOpen, layoutState } = vi.hoisted(() => ({
+  showOpen: vi.fn(),
+  layoutState: { isMobile: true },
+}));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
@@ -20,7 +23,7 @@ vi.mock('@/common', () => ({
 }));
 
 vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
-  useLayoutContext: () => ({ isMobile: true }),
+  useLayoutContext: () => ({ isMobile: layoutState.isMobile }),
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
@@ -88,13 +91,16 @@ const renderRow = (overrides: Record<string, unknown> = {}) => {
     ...overrides,
   };
 
-  render(<GuidActionRow {...(props as React.ComponentProps<typeof GuidActionRow>)} />);
-  return props;
+  const view = render(<GuidActionRow {...(props as React.ComponentProps<typeof GuidActionRow>)} />);
+  return Object.assign(props, {
+    rerenderRow: () => view.rerender(<GuidActionRow {...(props as React.ComponentProps<typeof GuidActionRow>)} />),
+  });
 };
 
 describe('GuidActionRow mobile controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    layoutState.isMobile = true;
     showOpen.mockResolvedValue(['/tmp/example.txt']);
   });
 
@@ -144,5 +150,35 @@ describe('GuidActionRow mobile controls', () => {
 
     await waitFor(() => expect(props.onFilesUploaded).toHaveBeenCalledWith(['/tmp/example.txt']));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('preserves the add-model recovery route when no provider models are configured', () => {
+    const onAddModel = vi.fn();
+    renderRow({
+      isGeminiMode: true,
+      modelList: [],
+      currentAcpCachedModelInfo: null,
+      onAddModel,
+    });
+
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-model'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-option-add-model'));
+
+    expect(onAddModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reopen an old sheet after leaving and returning to mobile layout', () => {
+    const props = renderRow();
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    layoutState.isMobile = false;
+    props.rerenderRow();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    layoutState.isMobile = true;
+    props.rerenderRow();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
