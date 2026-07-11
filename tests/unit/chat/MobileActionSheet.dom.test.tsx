@@ -97,6 +97,41 @@ describe('MobileActionSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('does not activate a disabled entry', () => {
+    const onClick = vi.fn();
+    const onClose = vi.fn();
+    const entries: MobileActionSheetEntry[] = [{ key: 'attach', label: 'Add files', disabled: true, onClick }];
+
+    render(<MobileActionSheet open onClose={onClose} entries={entries} />);
+    const entry = screen.getByTestId('mobile-action-sheet-attach');
+
+    expect(entry).toHaveAttribute('aria-disabled', 'true');
+    expect(entry).toHaveAttribute('tabindex', '-1');
+    fireEvent.click(entry);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('renders an empty submenu message when no options are available', () => {
+    const entries: MobileActionSheetEntry[] = [
+      {
+        key: 'model',
+        label: 'Model',
+        submenu: {
+          title: 'Model',
+          options: [],
+          emptyText: 'No models available',
+          onSelect: vi.fn(),
+        },
+      },
+    ];
+
+    render(<MobileActionSheet open onClose={vi.fn()} entries={entries} />);
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-model'));
+
+    expect(screen.getByText('No models available')).toBeInTheDocument();
+  });
+
   it('moves keyboard focus into and back out of submenu options', async () => {
     const onSelect = vi.fn();
     const entries: MobileActionSheetEntry[] = [

@@ -9,9 +9,10 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { showOpen, layoutState, modeState } = vi.hoisted(() => ({
+const { showOpen, layoutState, modeState, platformState } = vi.hoisted(() => ({
   showOpen: vi.fn(),
   layoutState: { isMobile: true },
+  platformState: { isElectronDesktop: true },
   modeState: {
     modes: [
       { value: 'read-only', label: 'Read Only' },
@@ -37,7 +38,7 @@ vi.mock('@/renderer/hooks/agent/useAgentModesForBackend', () => ({
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
-  isElectronDesktop: () => true,
+  isElectronDesktop: () => platformState.isElectronDesktop,
 }));
 
 vi.mock('@/renderer/components/agent/AgentModeSelector', () => ({
@@ -112,6 +113,7 @@ describe('GuidActionRow mobile controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     layoutState.isMobile = true;
+    platformState.isElectronDesktop = true;
     modeState.modes = [
       { value: 'read-only', label: 'Read Only' },
       { value: 'auto', label: 'Auto' },
@@ -175,13 +177,30 @@ describe('GuidActionRow mobile controls', () => {
       fireEvent.click(screen.getByTestId('file-upload-btn'));
       fireEvent.click(screen.getByTestId('mobile-action-sheet-attach'));
 
+      await act(async () => {
+        await showOpen.mock.results[0]?.value;
+      });
+      expect(props.onFilesUploaded).toHaveBeenCalledWith(['/tmp/example.txt']);
+
       await act(async () => vi.advanceTimersByTimeAsync(280));
 
-      expect(props.onFilesUploaded).toHaveBeenCalledWith(['/tmp/example.txt']);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('routes the WebUI device action through the hidden browser file input', () => {
+    platformState.isElectronDesktop = false;
+    renderRow();
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    const clickSpy = vi.spyOn(fileInput as HTMLInputElement, 'click');
+
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-attach-device'));
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
   it('preserves the add-model recovery route when no provider models are configured', () => {
