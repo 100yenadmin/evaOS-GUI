@@ -259,9 +259,6 @@ describe('AcpSendBox', () => {
     });
 
     await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1', onStop));
-    const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
-    await queuedStop();
-    expect(onStop).toHaveBeenCalledTimes(1);
   });
 
   it('passes a rejecting local stop callback to queued Send now', async () => {

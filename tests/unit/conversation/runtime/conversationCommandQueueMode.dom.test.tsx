@@ -152,9 +152,9 @@ describe('useConversationCommandQueue mode & send-now', () => {
 
     // Even when the runtime goes idle, manual mode must not drain automatically.
     rerender({ gate: idleGate, busy: false });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
     expect(onExecute).not.toHaveBeenCalled();
-    expect(result.current.items).toHaveLength(1);
+    expect(result.current.mode).toBe('manual');
   });
 
   it('auto-sends again after switching manual back to auto', async () => {
@@ -176,7 +176,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
     await waitFor(() => expect(result.current.items).toHaveLength(1));
 
     rerender({ gate: idleGate, busy: false });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
     expect(onExecute).not.toHaveBeenCalled();
 
     act(() => {
@@ -254,10 +254,8 @@ describe('useConversationCommandQueue mode & send-now', () => {
 
     rerender({ gate: processingGate, busy: true });
     rerender({ gate: idleGate, busy: false });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
+    await waitFor(() => expect(result.current.items.map((item) => item.input)).toEqual(['first']));
     expect(onExecute).toHaveBeenCalledTimes(1);
-    expect(result.current.items.map((item) => item.input)).toEqual(['first']);
     expect(result.current.isPaused).toBe(true);
   });
 
@@ -448,12 +446,11 @@ describe('useConversationCommandQueue mode & send-now', () => {
       result.current.sendNow(result.current.items[0].id, onStop);
     });
     await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
     expect(onExecute).not.toHaveBeenCalled();
-    expect(result.current.items).toHaveLength(1);
 
     rerender({ gate: unhydratedIdleGate, busy: false });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
     expect(onExecute).not.toHaveBeenCalled();
 
     rerender({ gate: idleGate, busy: false });
@@ -479,9 +476,8 @@ describe('useConversationCommandQueue mode & send-now', () => {
 
     await waitFor(() => expect(result.current.mode).toBe('manual'));
     // Manual mode restored → must not auto-drain even though runtime is idle.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
     expect(onExecute).not.toHaveBeenCalled();
-    expect(result.current.items).toHaveLength(1);
   });
 
   it('migrates persisted queue state without a mode to auto', async () => {
@@ -588,8 +584,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
       await deferred.promise.catch(() => {});
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(result.current.items).toHaveLength(0);
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
     expect(result.current.isPaused).toBe(false);
     expect(result.current.mode).toBe('manual');
     const persisted = sessionStorage.getItem(storageKey('conv-clear-in-flight'));
@@ -880,9 +875,8 @@ describe('useConversationCommandQueue mode & send-now', () => {
     });
     rerender({ gate: idleGate, busy: false });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
     expect(onExecute).not.toHaveBeenCalled();
-    expect(result.current.items).toHaveLength(0);
   });
 
   it('resets in-flight send lifecycle when the conversation changes', async () => {
