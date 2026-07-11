@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConversationCommandQueueItem } from '@/renderer/pages/conversation/platforms/useConversationCommandQueue';
 import CommandQueuePanel from '@/renderer/components/chat/CommandQueuePanel';
@@ -70,6 +70,13 @@ const item: ConversationCommandQueueItem = {
   input: 'queued follow-up',
   files: [],
   created_at: 1,
+};
+
+const secondItem: ConversationCommandQueueItem = {
+  id: 'queued-2',
+  input: 'second queued follow-up',
+  files: [],
+  created_at: 2,
 };
 
 const renderPanel = (overrides: Partial<React.ComponentProps<typeof CommandQueuePanel>> = {}) => {
@@ -152,6 +159,18 @@ describe('CommandQueuePanel', () => {
     expect(row).not.toHaveStyle({ touchAction: 'none' });
     expect(dragHandle).toHaveAttribute('data-drag-handle', 'enabled');
     expect(dragHandle).toHaveStyle({ touchAction: 'none' });
+    expect(dragHandle).toHaveClass('min-h-44px', 'min-w-44px');
+  });
+
+  it('activates and cancels sorting from the keyboard drag handle', async () => {
+    const props = renderPanel({ items: [item, secondItem] });
+
+    const handles = screen.getAllByRole('button', { name: 'Drag to reorder queued command' });
+    handles[0].focus();
+    fireEvent.keyDown(handles[0], { key: ' ', code: 'Space' });
+    await waitFor(() => expect(props.onInteractionLock).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(handles[0], { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(props.onInteractionUnlock).toHaveBeenCalledTimes(1));
   });
 
   it('does not render a separate help button (help lives on the mode toggle)', () => {

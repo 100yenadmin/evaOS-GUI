@@ -81,16 +81,16 @@ const renderQueue = ({
   onExecute?: (item: Parameters<Parameters<typeof useConversationCommandQueue>[0]['onExecute']>[0]) => Promise<void>;
 }) =>
   renderHook(
-    ({ gate, busy }) =>
+    ({ gate, busy, id = conversation_id }: { gate: ConversationCommandQueueRuntimeGate; busy: boolean; id?: string }) =>
       useConversationCommandQueue({
-        conversation_id,
+        conversation_id: id,
         enabled: true,
         isBusy: busy,
         runtimeGate: gate,
         onExecute,
       }),
     {
-      initialProps: { gate: runtimeGate, busy: isBusy },
+      initialProps: { gate: runtimeGate, busy: isBusy, id: conversation_id },
       wrapper: createSwrWrapper(),
     }
   );
@@ -505,5 +505,157 @@ describe('useConversationCommandQueue mode & send-now', () => {
     expect(persisted).not.toContain('in flight');
     expect(persisted).not.toContain('also clear');
     expect(JSON.parse(persisted ?? '{}')).toMatchObject({ items: [], mode: 'manual' });
+  });
+
+  it('does not let a stale send-now release a newer reservation', async () => {
+    const firstStop = createDeferred();
+    const secondStop = createDeferred();
+    const thirdStop = vi.fn().mockResolvedValue(undefined);
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderQueue({
+      conversation_id: 'conv-sendnow-reservation-owner',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'stale first', files: [] });
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, () => firstStop.promise);
+    });
+    act(() => {
+      result.current.clear();
+      result.current.enqueue({ input: 'new second', files: [] });
+      result.current.enqueue({ input: 'new third', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, () => secondStop.promise);
+    });
+    await act(async () => {
+      firstStop.resolve();
+      await firstStop.promise;
+    });
+    act(() => {
+      result.current.sendNow(result.current.items[1].id, thirdStop);
+    });
+
+    expect(thirdStop).not.toHaveBeenCalled();
+    expect(onExecute).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondStop.resolve();
+      await secondStop.promise;
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+  });
+
+  it('re-resolves a queued draft after a slow stop before sending', async () => {
+    const stop = createDeferred();
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderQueue({
+      conversation_id: 'conv-sendnow-edit-during-stop',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'before edit', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    const commandId = result.current.items[0].id;
+
+    act(() => {
+      result.current.sendNow(commandId, () => stop.promise);
+      result.current.update(commandId, { input: 'after edit' });
+    });
+    await act(async () => {
+      stop.resolve();
+      await stop.promise;
+    });
+
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    expect(onExecute.mock.calls[0][0].input).toBe('after edit');
+  });
+
+  it('does not send a queued draft removed during a slow stop', async () => {
+    const stop = createDeferred();
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderQueue({
+      conversation_id: 'conv-sendnow-remove-during-stop',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'remove during stop', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    const commandId = result.current.items[0].id;
+
+    act(() => {
+      result.current.sendNow(commandId, () => stop.promise);
+      result.current.remove(commandId);
+    });
+    await act(async () => {
+      stop.resolve();
+      await stop.promise;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(onExecute).not.toHaveBeenCalled();
+    expect(result.current.items).toHaveLength(0);
+  });
+
+  it('resets in-flight send lifecycle when the conversation changes', async () => {
+    const firstStop = createDeferred();
+    const secondStop = createDeferred();
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-route-a',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'conversation A draft', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, () => firstStop.promise);
+    });
+
+    rerender({ gate: processingGate, busy: false, id: 'conv-route-b' });
+    await waitFor(() => expect(result.current.items).toHaveLength(0));
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'conversation B draft', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, () => secondStop.promise);
+    });
+
+    await act(async () => {
+      firstStop.resolve();
+      await firstStop.promise;
+    });
+    expect(onExecute).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondStop.resolve();
+      await secondStop.promise;
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    expect(onExecute.mock.calls[0][0].input).toBe('conversation B draft');
   });
 });

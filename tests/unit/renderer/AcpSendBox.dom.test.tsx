@@ -18,6 +18,7 @@ const {
   emitterEmitMock,
   setSendBoxHandlerMock,
   queueSendNowMock,
+  stopInvokeMock,
 } = vi.hoisted(() => ({
   sendMessageInvokeMock: vi.fn(),
   addOrUpdateMessageMock: vi.fn(),
@@ -25,6 +26,7 @@ const {
   emitterEmitMock: vi.fn(),
   setSendBoxHandlerMock: vi.fn(),
   queueSendNowMock: vi.fn(),
+  stopInvokeMock: vi.fn(),
 }));
 
 vi.mock('@/common', () => ({
@@ -36,7 +38,7 @@ vi.mock('@/common', () => ({
     },
     conversation: {
       stop: {
-        invoke: vi.fn().mockResolvedValue(undefined),
+        invoke: stopInvokeMock,
       },
     },
   },
@@ -201,9 +203,7 @@ const makeMessageState = (): UseAcpMessageReturn => ({
 describe('AcpSendBox', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    queueSendNowMock.mockImplementation((_id: string, onStop?: () => Promise<void>) => {
-      void onStop?.();
-    });
+    stopInvokeMock.mockResolvedValue({ runtime: undefined });
   });
 
   it('resets ACP loading state when sendMessage fails before any stream error arrives', async () => {
@@ -259,6 +259,22 @@ describe('AcpSendBox', () => {
     });
 
     await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledWith('queued-1', onStop));
+    const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
+    await queuedStop();
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes a rejecting local stop callback to queued Send now', async () => {
+    stopInvokeMock.mockRejectedValue(new Error('stop failed'));
+    render(<AcpSendBox conversation_id='conv-1' backend='claude' messageState={makeMessageState()} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'queue-send-now' }).click();
+    });
+
+    await waitFor(() => expect(queueSendNowMock).toHaveBeenCalledTimes(1));
+    const queuedStop = queueSendNowMock.mock.calls[0][1] as () => Promise<void>;
+    await expect(queuedStop()).rejects.toThrow('stop failed');
+    expect(resetStateMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -617,29 +617,33 @@ Please check your local CLI tool authentication status`,
     }
   });
 
-  // Stop conversation handler
-  const handleStop = async (): Promise<void> => {
-    // Cancelling is best-effort: swallow errors (e.g. backend WS not yet
-    // connected → 409) so they don't bubble up as unhandled rejections.
-    // UI state is still reset via finally.
+  const requestStop = async (): Promise<void> => {
     const turnId = runtimeView.activeTurnId;
     runtimeView.markStopRequested(turnId);
     try {
       const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
       runtimeView.markStopAcknowledged(turnId, result.runtime);
-    } catch (error) {
-      console.warn('[AcpSendBox] stop request failed', error);
     } finally {
       resetState();
       resetActiveExecution('stop');
     }
   };
+  // The ordinary Stop action remains best-effort, while queued Send now receives
+  // the rejecting request so it cannot overlap a turn that failed to stop.
+  const handleStop = async (): Promise<void> => {
+    try {
+      await requestStop();
+    } catch (error) {
+      console.warn('[AcpSendBox] stop request failed', error);
+    }
+  };
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
+  const queuedHandleStop = teamRuntime?.onStop ?? requestStop;
   const handleSendNowQueued = useCallback(
     (item: ConversationCommandQueueItem) => {
-      sendNow(item.id, effectiveHandleStop);
+      sendNow(item.id, queuedHandleStop);
     },
-    [effectiveHandleStop, sendNow]
+    [queuedHandleStop, sendNow]
   );
 
   return (

@@ -562,28 +562,31 @@ const AionrsSendBox: React.FC<{
     }
   });
 
-  // Stop conversation handler
-  const handleStop = async (): Promise<void> => {
-    // Best-effort cancel: swallow rejections so they don't bubble up as
-    // unhandled rejections. UI state is still reset via finally.
+  const requestStop = async (): Promise<void> => {
     const turnId = runtimeView.activeTurnId;
     runtimeView.markStopRequested(turnId);
     try {
       const result = await ipcBridge.conversation.stop.invoke({ conversation_id, turn_id: turnId });
       runtimeView.markStopAcknowledged(turnId, result.runtime);
-    } catch (error) {
-      console.warn('[AionrsSendBox] stop request failed', error);
     } finally {
       resetState();
       resetActiveExecution('stop');
     }
   };
+  const handleStop = async (): Promise<void> => {
+    try {
+      await requestStop();
+    } catch (error) {
+      console.warn('[AionrsSendBox] stop request failed', error);
+    }
+  };
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
+  const queuedHandleStop = teamRuntime?.onStop ?? requestStop;
   const handleSendNowQueued = useCallback(
     (item: ConversationCommandQueueItem) => {
-      sendNow(item.id, effectiveHandleStop);
+      sendNow(item.id, queuedHandleStop);
     },
-    [effectiveHandleStop, sendNow]
+    [queuedHandleStop, sendNow]
   );
 
   return (

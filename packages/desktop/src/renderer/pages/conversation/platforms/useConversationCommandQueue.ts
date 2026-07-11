@@ -418,10 +418,25 @@ export const useConversationCommandQueue = ({
   const waitingForTurnStartRef = useRef(false);
   const waitingForTurnCompletionRef = useRef(false);
   const executionEpochRef = useRef(0);
-  const sendNowReservedRef = useRef(false);
+  const sendNowReservationRef = useRef<symbol | null>(null);
+  const conversationIdRef = useRef(conversation_id);
   const interactionLockedRef = useRef(false);
   const [isInteractionLocked, setIsInteractionLocked] = useState(false);
   const [executionGateVersion, setExecutionGateVersion] = useState(0);
+
+  useEffect(() => {
+    if (conversationIdRef.current === conversation_id) {
+      return;
+    }
+
+    conversationIdRef.current = conversation_id;
+    executionEpochRef.current += 1;
+    sendNowReservationRef.current = null;
+    waitingForTurnStartRef.current = false;
+    waitingForTurnCompletionRef.current = false;
+    interactionLockedRef.current = false;
+    setIsInteractionLocked(false);
+  }, [conversation_id]);
 
   useEffect(() => {
     stateRef.current = data;
@@ -431,7 +446,7 @@ export const useConversationCommandQueue = ({
     if (waitingForTurnStartRef.current && executionGate.isProcessing) {
       waitingForTurnStartRef.current = false;
       waitingForTurnCompletionRef.current = true;
-      sendNowReservedRef.current = false;
+      sendNowReservationRef.current = null;
       logCommandQueue(conversation_id, 'turn-started', {
         pendingItemCount: stateRef.current.items.length,
       });
@@ -462,7 +477,7 @@ export const useConversationCommandQueue = ({
     waitingForTurnStartRef.current = false;
     waitingForTurnCompletionRef.current = false;
     executionEpochRef.current += 1;
-    sendNowReservedRef.current = false;
+    sendNowReservationRef.current = null;
     pausedRef.current = false;
     interactionLockedRef.current = false;
     stateRef.current = createDefaultQueueState();
@@ -499,7 +514,7 @@ export const useConversationCommandQueue = ({
 
   const hardReset = useCallback(() => {
     executionEpochRef.current += 1;
-    sendNowReservedRef.current = false;
+    sendNowReservationRef.current = null;
     waitingForTurnStartRef.current = false;
     waitingForTurnCompletionRef.current = false;
     pausedRef.current = false;
@@ -512,7 +527,7 @@ export const useConversationCommandQueue = ({
 
   const clear = useCallback(() => {
     executionEpochRef.current += 1;
-    sendNowReservedRef.current = false;
+    sendNowReservationRef.current = null;
     waitingForTurnStartRef.current = false;
     waitingForTurnCompletionRef.current = false;
     pausedRef.current = false;
@@ -635,7 +650,7 @@ export const useConversationCommandQueue = ({
 
   const sendNow = useCallback(
     (commandId: string, onStop?: () => Promise<void>) => {
-      if (!enabled || sendNowReservedRef.current) {
+      if (!enabled || sendNowReservationRef.current) {
         return;
       }
 
@@ -647,14 +662,24 @@ export const useConversationCommandQueue = ({
       }
 
       const requestEpoch = executionEpochRef.current;
-      sendNowReservedRef.current = true;
+      const reservation = Symbol('send-now');
+      sendNowReservationRef.current = reservation;
+      const releaseReservation = () => {
+        if (sendNowReservationRef.current === reservation) {
+          sendNowReservationRef.current = null;
+        }
+      };
 
       const executeTarget = async () => {
         if (executionGate.isProcessing && onStop) {
           try {
             await onStop();
           } catch (error) {
-            sendNowReservedRef.current = false;
+            if (requestEpoch !== executionEpochRef.current || sendNowReservationRef.current !== reservation) {
+              releaseReservation();
+              return;
+            }
+            releaseReservation();
             logCommandQueue(conversation_id, 'send-now-stop-failed', {
               errorType: error instanceof Error ? error.name : typeof error,
             });
@@ -668,15 +693,23 @@ export const useConversationCommandQueue = ({
         }
 
         if (requestEpoch !== executionEpochRef.current) {
-          sendNowReservedRef.current = false;
+          releaseReservation();
+          return;
+        }
+
+        const latestState = normalizeQueueState(stateRef.current);
+        const latestTargetIndex = latestState.items.findIndex((item) => item.id === commandId);
+        const latestTarget = latestState.items[latestTargetIndex];
+        if (!latestTarget || latestTargetIndex < 0) {
+          releaseReservation();
           return;
         }
 
         waitingForTurnStartRef.current = true;
         waitingForTurnCompletionRef.current = false;
         logCommandQueue(conversation_id, 'send-now', {
-          item: summarizeQueuedCommand(target),
-          remainingItemCount: currentState.items.length - 1,
+          item: summarizeQueuedCommand(latestTarget),
+          remainingItemCount: latestState.items.length - 1,
         });
 
         await updateState((state) => ({
@@ -685,29 +718,29 @@ export const useConversationCommandQueue = ({
         }));
 
         if (requestEpoch !== executionEpochRef.current) {
-          sendNowReservedRef.current = false;
+          releaseReservation();
           return;
         }
 
         try {
-          await onExecute(target);
+          await onExecute(latestTarget);
         } catch (error) {
           if (requestEpoch !== executionEpochRef.current) {
-            sendNowReservedRef.current = false;
+            releaseReservation();
             return;
           }
           console.error('[conversation-command-queue] Failed to send queued command now:', error);
           logCommandQueue(conversation_id, 'send-now-failed', {
-            item: summarizeQueuedCommand(target),
+            item: summarizeQueuedCommand(latestTarget),
             error: error instanceof Error ? error.message : String(error),
           });
           waitingForTurnStartRef.current = false;
           waitingForTurnCompletionRef.current = false;
-          sendNowReservedRef.current = false;
+          releaseReservation();
           pausedRef.current = true;
           void updateState((state) => ({
             ...state,
-            items: restoreQueuedCommandAtIndex(state.items, target, targetIndex),
+            items: restoreQueuedCommandAtIndex(state.items, latestTarget, latestTargetIndex),
             isPaused: true,
           }));
           Message.warning(
@@ -824,7 +857,7 @@ export const useConversationCommandQueue = ({
       const hadPendingTurn = waitingForTurnStartRef.current || waitingForTurnCompletionRef.current;
       waitingForTurnStartRef.current = false;
       waitingForTurnCompletionRef.current = false;
-      sendNowReservedRef.current = false;
+      sendNowReservationRef.current = null;
 
       if (!hadPendingTurn) {
         return;
@@ -848,7 +881,7 @@ export const useConversationCommandQueue = ({
       !executionGate.canExecute ||
       waitingForTurnStartRef.current ||
       waitingForTurnCompletionRef.current ||
-      sendNowReservedRef.current ||
+      sendNowReservationRef.current ||
       interactionLockedRef.current ||
       data.items.length === 0
     ) {

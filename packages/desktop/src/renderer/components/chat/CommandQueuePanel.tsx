@@ -6,12 +6,18 @@ import {
   type Modifier,
   closestCenter,
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import {
+  sortableKeyboardCoordinates,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Button, Dropdown, Menu, Modal, Tooltip, Typography } from '@arco-design/web-react';
 import { CornerDownRight, Delete, Drag, Edit, Inbox, MoreOne, SendOne, SortTwo } from '@icon-park/react';
@@ -181,7 +187,7 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
             disabled={dragDisabled}
             data-drag-handle={dragDisabled ? 'disabled' : 'enabled'}
             data-floating-handle='visible'
-            className={`absolute inline-flex h-16px w-12px items-center justify-center border-none bg-transparent p-0 outline-none transition-[opacity,color] duration-160 ease-out ${
+            className={`absolute inline-flex h-44px w-44px min-h-44px min-w-44px items-center justify-center border-none bg-transparent p-0 outline-none transition-[opacity,color] duration-160 ease-out ${
               dragDisabled
                 ? 'cursor-default opacity-0'
                 : isDragging
@@ -191,7 +197,7 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
                     : 'cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
             }`}
             style={{
-              left: '-15px',
+              left: '-31px',
               top: '50%',
               transform: 'translateY(-50%)',
               color: 'var(--color-text-3)',
@@ -327,11 +333,13 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
   const queueContainerRef = useRef<HTMLDivElement | null>(null);
   const activeDragHandleRef = useRef<HTMLButtonElement | null>(null);
   // Desktop: drag starts after moving 8px from the handle.
-  // Narrow / mobile: no handle, so long-press the whole row (200ms) starts the drag;
-  // the delay keeps a normal tap on the action buttons from being read as a drag.
+  // Narrow / mobile: long-press the dedicated handle (200ms) to preserve row scrolling.
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: isMobile ? { delay: 200, tolerance: 6 } : { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
