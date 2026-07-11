@@ -20,7 +20,7 @@
   "version": "Version",
   "contact": "Contact",
   "supportEmailFallback": "Email {{mailbox}} for support. The address was copied when possible.",
-  "github": "Github",
+  "github": "GitHub",
   "loading": "Veuillez patienter...",
   "copy": "Copier",
   "reply": "Répondre",
