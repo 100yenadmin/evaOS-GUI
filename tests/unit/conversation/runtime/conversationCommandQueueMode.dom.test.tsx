@@ -729,6 +729,46 @@ describe('useConversationCommandQueue mode & send-now', () => {
     });
   });
 
+  it('restores the older draft when a replacement stop fails', async () => {
+    const firstExecute = createDeferred();
+    const onExecute = vi.fn(() => firstExecute.promise);
+    const failedReplacementStop = vi.fn().mockRejectedValue(new Error('replacement stop failed'));
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-failed-replacement-stop',
+      runtimeGate: idleGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'original in flight', files: [] });
+      result.current.enqueue({ input: 'replacement kept', files: [] });
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id);
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+
+    rerender({ gate: processingGate, busy: false });
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, failedReplacementStop);
+    });
+    await waitFor(() => expect(failedReplacementStop).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(Message.warning).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      firstExecute.reject(new Error('original send failed'));
+      await firstExecute.promise.catch(() => {});
+    });
+
+    await waitFor(() => expect(result.current.isPaused).toBe(true));
+    expect(result.current.items.map((item) => item.input)).toEqual(['original in flight', 'replacement kept']);
+    expect(Message.warning).toHaveBeenCalledTimes(2);
+  });
+
   it('re-resolves a queued draft after a slow stop before sending', async () => {
     const stop = createDeferred();
     const onExecute = vi.fn().mockResolvedValue(undefined);

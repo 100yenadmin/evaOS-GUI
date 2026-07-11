@@ -679,9 +679,7 @@ export const useConversationCommandQueue = ({
         return;
       }
 
-      executionEpochRef.current += 1;
-      const requestEpoch = executionEpochRef.current;
-      notifyExecutionGateWaiters();
+      let requestEpoch = executionEpochRef.current;
       const reservation = Symbol('send-now');
       sendNowReservationRef.current = reservation;
       const releaseReservation = () => {
@@ -742,6 +740,10 @@ export const useConversationCommandQueue = ({
           releaseReservation();
           return;
         }
+
+        executionEpochRef.current += 1;
+        requestEpoch = executionEpochRef.current;
+        notifyExecutionGateWaiters();
 
         waitingForTurnStartRef.current = true;
         waitingForTurnCompletionRef.current = false;
