@@ -16,7 +16,7 @@ import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 import { Message } from '@arco-design/web-react';
 import { Plus, Robot } from '@icon-park/react';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -46,6 +46,12 @@ const resolveAssistantCandidateIds = (assistantId: string): string[] => {
 };
 
 const OPEN_ASSISTANT_EDITOR_INTENT_KEY = 'guid.openAssistantEditorIntent';
+
+export function resolveAssistantCardColumnCount(width: number): 1 | 2 | 3 {
+  if (width > 640) return 3;
+  if (width > 460) return 2;
+  return 1;
+}
 
 const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
   is_presetAgent,
@@ -118,17 +124,23 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
 
   const scrollWrapRef = useRef<HTMLDivElement>(null);
   const [isScrollable, setIsScrollable] = useState(false);
+  const [assistantCardColumnCount, setAssistantCardColumnCount] = useState<1 | 2 | 3>(3);
   const selectableAssistantCards = useMemo(() => selectableEvaosAssistants(assistants), [assistants]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollWrapRef.current;
     if (!el) return;
-    const measure = () => setIsScrollable(el.scrollHeight > el.clientHeight + 1);
+    const measure = (observedWidth?: number) => {
+      setIsScrollable(el.scrollHeight > el.clientHeight + 1);
+      const availableWidth =
+        observedWidth || el.clientWidth || (typeof window === 'undefined' ? 641 : window.innerWidth);
+      setAssistantCardColumnCount(resolveAssistantCardColumnCount(availableWidth));
+    };
     measure();
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver((entries) => measure(entries[0]?.contentRect.width));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [assistants]);
+  }, [assistants, is_presetAgent]);
 
   // Render only if the backend catalog has at least one assistant.
   if (!assistants || assistants.length === 0) return null;
@@ -209,9 +221,15 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
       </div>
       <div
         ref={scrollWrapRef}
+        data-testid='assistant-card-scroll'
+        data-scrollable={isScrollable}
         className={`${styles.assistantCardScrollWrap} ${isScrollable ? styles.assistantCardScrollWrapScrollable : ''}`}
       >
-        <div className={styles.assistantCardGrid}>
+        <div
+          className={styles.assistantCardGrid}
+          data-columns={assistantCardColumnCount}
+          data-testid='assistant-card-grid'
+        >
           {selectableAssistantCards.map((assistant) => {
             const avatarValue = assistant.avatar?.trim();
             const mappedAvatar = avatarValue ? CUSTOM_AVATAR_IMAGE_MAP[avatarValue] : undefined;

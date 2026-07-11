@@ -5,12 +5,45 @@
  */
 
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ConfigProvider } from '@arco-design/web-react';
-import AssistantSelectionArea from '@/renderer/pages/guid/components/AssistantSelectionArea';
+import AssistantSelectionArea, {
+  resolveAssistantCardColumnCount,
+} from '@/renderer/pages/guid/components/AssistantSelectionArea';
+import type { Assistant } from '@/common/types/agent/assistantTypes';
 
 const mockNavigate = vi.fn();
+const originalResizeObserver = global.ResizeObserver;
+let resizeObserverCallback: ResizeObserverCallback | null = null;
+
+class ResizeObserverMock {
+  constructor(callback: ResizeObserverCallback) {
+    resizeObserverCallback = callback;
+  }
+
+  observe = vi.fn();
+  disconnect = vi.fn();
+  unobserve = vi.fn();
+}
+
+const makeAssistant = (id: string, sortOrder: number): Assistant => ({
+  id,
+  source: 'user',
+  name: id,
+  name_i18n: {},
+  description_i18n: {},
+  enabled: true,
+  sort_order: sortOrder,
+  preset_agent_type: 'claude',
+  enabled_skills: [],
+  custom_skill_names: [],
+  disabled_builtin_skills: [],
+  context_i18n: {},
+  prompts: [],
+  prompts_i18n: {},
+  models: [],
+});
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -117,6 +150,117 @@ describe('AssistantSelectionArea', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    resizeObserverCallback = null;
+    global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    global.ResizeObserver = originalResizeObserver;
+  });
+
+  it.each([
+    [641, 3],
+    [640, 2],
+    [461, 2],
+    [460, 1],
+  ])('uses %i pixels for a %i-column assistant card grid', (width, expectedColumns) => {
+    expect(resolveAssistantCardColumnCount(width)).toBe(expectedColumns);
+  });
+
+  it('keeps overflow assistants and the add action interactive at narrow widths', () => {
+    const onSelectAssistant = vi.fn();
+    render(
+      <ConfigProvider>
+        <AssistantSelectionArea
+          is_presetAgent={false}
+          selectedAgentInfo={undefined}
+          assistants={[makeAssistant('writer', 1), makeAssistant('researcher', 2), makeAssistant('reviewer', 3)]}
+          localeKey='en-US'
+          currentEffectiveAgentInfo={{
+            agent_type: 'acp',
+            isFallback: false,
+            originalType: 'acp',
+            isAvailable: true,
+          }}
+          onSelectAssistant={onSelectAssistant}
+          onSetInput={vi.fn()}
+          onFocusInput={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+
+    const scrollWrap = screen.getByTestId('assistant-card-scroll');
+    Object.defineProperty(scrollWrap, 'clientHeight', { configurable: true, value: 200 });
+    Object.defineProperty(scrollWrap, 'scrollHeight', { configurable: true, value: 600 });
+
+    act(() => {
+      resizeObserverCallback?.(
+        [{ contentRect: { width: 460 } } as unknown as ResizeObserverEntry],
+        {} as ResizeObserver
+      );
+    });
+
+    expect(scrollWrap).toHaveAttribute('data-scrollable', 'true');
+
+    fireEvent.click(screen.getByTestId('preset-pill-reviewer'));
+    expect(onSelectAssistant).toHaveBeenCalledWith('custom:reviewer');
+
+    fireEvent.click(screen.getByTestId('btn-add-preset'));
+    expect(mockNavigate).toHaveBeenCalledWith('/assistants');
+  });
+
+  it('attaches responsive measurement when returning from a selected assistant to the list', () => {
+    const assistants = [makeAssistant('writer', 1)];
+    const currentEffectiveAgentInfo = {
+      agent_type: 'acp',
+      isFallback: false,
+      originalType: 'acp',
+      isAvailable: true,
+    } as const;
+    const callbacks = {
+      onSelectAssistant: vi.fn(),
+      onSetInput: vi.fn(),
+      onFocusInput: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <ConfigProvider>
+        <AssistantSelectionArea
+          is_presetAgent={true}
+          selectedAgentInfo={{ agent_type: 'acp', name: 'Writer', custom_agent_id: 'writer' }}
+          assistants={assistants}
+          localeKey='en-US'
+          currentEffectiveAgentInfo={currentEffectiveAgentInfo}
+          {...callbacks}
+        />
+      </ConfigProvider>
+    );
+
+    expect(resizeObserverCallback).toBeNull();
+
+    rerender(
+      <ConfigProvider>
+        <AssistantSelectionArea
+          is_presetAgent={false}
+          selectedAgentInfo={undefined}
+          assistants={assistants}
+          localeKey='en-US'
+          currentEffectiveAgentInfo={currentEffectiveAgentInfo}
+          {...callbacks}
+        />
+      </ConfigProvider>
+    );
+
+    expect(resizeObserverCallback).not.toBeNull();
+
+    act(() => {
+      resizeObserverCallback?.(
+        [{ contentRect: { width: 460 } } as unknown as ResizeObserverEntry],
+        {} as ResizeObserver
+      );
+    });
+
+    expect(screen.getByTestId('assistant-card-grid')).toHaveAttribute('data-columns', '1');
   });
 
   it('registers an open-details callback that navigates to the assistant settings editor page', () => {
