@@ -101,9 +101,9 @@
       "advancedSettings": "Расширенные настройки",
       "workspace": "Проект",
       "workspaceHint": "Опционально: задайте папку проекта для файловых операций",
-      "selectFolder": "[Select Folder]",
-      "clearFolder": "[Clear]",
-      "model": "[Model]",
+      "selectFolder": "Выбрать папку",
+      "clearFolder": "Очистить",
+      "model": "Модель",
       "aionrsModelRequired": "Выберите модель для Custom",
       "aionrsNoProvider": "Нет доступных моделей"
     },

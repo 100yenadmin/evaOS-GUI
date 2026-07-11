@@ -20,7 +20,7 @@
   "version": "Версия",
   "contact": "Контакты",
   "supportEmailFallback": "Напишите в поддержку на {{mailbox}}. Адрес был скопирован, если это возможно.",
-  "github": "Github",
+  "github": "GitHub",
   "loading": "Пожалуйста, подождите...",
   "copy": "Копировать",
   "reply": "Ответить",
@@ -84,8 +84,8 @@
       "sendDiagnostics": "Отправить диагностику"
     },
     "packageArchitectureMismatch": {
-      "title": "evaOS Workbench package architecture mismatch",
-      "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
+      "title": "Архитектура пакета evaOS Workbench не совпадает",
+      "description": "Этот пакет evaOS Workbench предназначен для {{packageArch}}, а этот Mac использует {{deviceArch}}. Возможно, скачан неверный пакет. Скачайте и установите пакет для {{expectedArch}}."
     },
     "startupDirectory": {
       "title": "Каталог запуска недоступен",
