@@ -679,7 +679,9 @@ export const useConversationCommandQueue = ({
         return;
       }
 
+      executionEpochRef.current += 1;
       const requestEpoch = executionEpochRef.current;
+      notifyExecutionGateWaiters();
       const reservation = Symbol('send-now');
       sendNowReservationRef.current = reservation;
       const releaseReservation = () => {
@@ -694,7 +696,7 @@ export const useConversationCommandQueue = ({
             if (
               requestEpoch !== executionEpochRef.current ||
               !ownsReservation() ||
-              executionGateRef.current.canExecute
+              (executionGateRef.current.hydrated && executionGateRef.current.canExecute)
             ) {
               executionGateWaitersRef.current.delete(checkGate);
               resolve();
@@ -795,7 +797,7 @@ export const useConversationCommandQueue = ({
 
       void executeTarget();
     },
-    [conversation_id, enabled, executionGate.isProcessing, onExecute, t, updateState]
+    [conversation_id, enabled, executionGate.isProcessing, notifyExecutionGateWaiters, onExecute, t, updateState]
   );
 
   const reorder = useCallback(

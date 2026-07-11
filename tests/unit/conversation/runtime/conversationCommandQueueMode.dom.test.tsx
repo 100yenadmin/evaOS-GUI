@@ -57,6 +57,12 @@ const idleGate: ConversationCommandQueueRuntimeGate = {
   isProcessing: false,
 };
 
+const unhydratedIdleGate: ConversationCommandQueueRuntimeGate = {
+  hydrated: false,
+  canSendMessage: true,
+  isProcessing: false,
+};
+
 const storageKey = (conversationId: string) => `conversation-command-queue/${conversationId}`;
 
 const createDeferred = () => {
@@ -391,6 +397,10 @@ describe('useConversationCommandQueue mode & send-now', () => {
     expect(onExecute).not.toHaveBeenCalled();
     expect(result.current.items).toHaveLength(1);
 
+    rerender({ gate: unhydratedIdleGate, busy: false });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(onExecute).not.toHaveBeenCalled();
+
     rerender({ gate: idleGate, busy: false });
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
   });
@@ -657,6 +667,55 @@ describe('useConversationCommandQueue mode & send-now', () => {
 
     await act(async () => {
       firstExecute.reject(new Error('stale execute failure'));
+      await firstExecute.promise.catch(() => {});
+    });
+
+    expect(result.current.items).toHaveLength(0);
+    expect(result.current.isPaused).toBe(false);
+    expect(Message.warning).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondExecute.resolve();
+      await secondExecute.promise;
+    });
+  });
+
+  it('ignores an older execute failure after a newer send supersedes it', async () => {
+    const firstExecute = createDeferred();
+    const secondExecute = createDeferred();
+    const onExecute = vi.fn((item: { input: string }) =>
+      item.input === 'first turn' ? firstExecute.promise : secondExecute.promise
+    );
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-execute-superseded-owner',
+      runtimeGate: idleGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'first turn', files: [] });
+      result.current.enqueue({ input: 'second turn', files: [] });
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id);
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+
+    rerender({ gate: processingGate, busy: false });
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, onStop);
+    });
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+    rerender({ gate: idleGate, busy: false });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      firstExecute.reject(new Error('superseded execute failure'));
       await firstExecute.promise.catch(() => {});
     });
 
