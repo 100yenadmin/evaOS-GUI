@@ -21,7 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Button, Dropdown, Menu, Modal, Tooltip, Typography } from '@arco-design/web-react';
 import { CornerDownRight, Delete, Drag, Edit, Inbox, MoreOne, SendOne, SortTwo } from '@icon-park/react';
-import React, { useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const getCommandPreview = (input: string): string => input.replace(/\s+/g, ' ').trim();
@@ -335,6 +335,8 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
   const queueContainerRef = useRef<HTMLDivElement | null>(null);
   const activeDragHandleRef = useRef<HTMLButtonElement | null>(null);
   const ownsDragInteractionLockRef = useRef(false);
+  const onInteractionUnlockRef = useRef(onInteractionUnlock);
+  onInteractionUnlockRef.current = onInteractionUnlock;
   // Desktop: drag starts after moving 8px from the handle.
   // Narrow / mobile: long-press the dedicated handle (200ms) to preserve row scrolling.
   const sensors = useSensors(
@@ -351,14 +353,34 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
     activeDragHandleRef.current = null;
   };
 
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    clearDragHandleFocus();
+  const releaseOwnedDragInteractionLock = useCallback(() => {
     if (!ownsDragInteractionLockRef.current) {
-      return;
+      return false;
     }
 
     ownsDragInteractionLockRef.current = false;
-    onInteractionUnlock();
+    onInteractionUnlockRef.current();
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      releaseOwnedDragInteractionLock();
+    }
+  }, [items.length, releaseOwnedDragInteractionLock]);
+
+  useEffect(
+    () => () => {
+      releaseOwnedDragInteractionLock();
+    },
+    [releaseOwnedDragInteractionLock]
+  );
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    clearDragHandleFocus();
+    if (!releaseOwnedDragInteractionLock()) {
+      return;
+    }
 
     if (!over || active.id === over.id) {
       return;
@@ -378,12 +400,9 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
 
   const handleDragCancel = () => {
     clearDragHandleFocus();
-    if (!ownsDragInteractionLockRef.current) {
+    if (!releaseOwnedDragInteractionLock()) {
       return;
     }
-
-    ownsDragInteractionLockRef.current = false;
-    onInteractionUnlock();
   };
 
   const dragHandleLabel = t('conversation.commandQueue.reorder', {

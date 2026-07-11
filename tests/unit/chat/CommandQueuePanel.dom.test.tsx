@@ -98,8 +98,13 @@ const renderPanel = (overrides: Partial<React.ComponentProps<typeof CommandQueue
     ...overrides,
   };
 
-  render(<CommandQueuePanel {...props} />);
-  return props;
+  const view = render(<CommandQueuePanel {...props} />);
+  return {
+    ...props,
+    rerenderPanel: (nextOverrides: Partial<React.ComponentProps<typeof CommandQueuePanel>>) =>
+      view.rerender(<CommandQueuePanel {...props} {...nextOverrides} />),
+    unmountPanel: view.unmount,
+  };
 };
 
 describe('CommandQueuePanel', () => {
@@ -190,6 +195,28 @@ describe('CommandQueuePanel', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(props.onInteractionUnlock).not.toHaveBeenCalled();
     expect(props.onReorder).not.toHaveBeenCalled();
+  });
+
+  it('releases an owned drag lock when the queue becomes empty', async () => {
+    const props = renderPanel({ items: [item, secondItem] });
+    const handle = screen.getAllByRole('button', { name: 'Drag to reorder queued command' })[0];
+
+    fireEvent.keyDown(handle, { key: ' ', code: 'Space' });
+    await waitFor(() => expect(props.onInteractionLock).toHaveBeenCalledTimes(1));
+    props.rerenderPanel({ items: [] });
+
+    await waitFor(() => expect(props.onInteractionUnlock).toHaveBeenCalledTimes(1));
+  });
+
+  it('releases an owned drag lock when the panel unmounts', async () => {
+    const props = renderPanel({ items: [item, secondItem] });
+    const handle = screen.getAllByRole('button', { name: 'Drag to reorder queued command' })[0];
+
+    fireEvent.keyDown(handle, { key: ' ', code: 'Space' });
+    await waitFor(() => expect(props.onInteractionLock).toHaveBeenCalledTimes(1));
+    props.unmountPanel();
+
+    expect(props.onInteractionUnlock).toHaveBeenCalledTimes(1);
   });
 
   it('does not render a separate help button (help lives on the mode toggle)', () => {
