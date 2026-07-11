@@ -167,7 +167,8 @@ describe('AssistantSelectionArea', () => {
     expect(resolveAssistantCardColumnCount(width)).toBe(expectedColumns);
   });
 
-  it('keeps every assistant and the add action available while adapting the grid to narrow widths', () => {
+  it('keeps overflow assistants and the add action interactive at narrow widths', () => {
+    const onSelectAssistant = vi.fn();
     render(
       <ConfigProvider>
         <AssistantSelectionArea
@@ -181,12 +182,76 @@ describe('AssistantSelectionArea', () => {
             originalType: 'acp',
             isAvailable: true,
           }}
-          onSelectAssistant={vi.fn()}
+          onSelectAssistant={onSelectAssistant}
           onSetInput={vi.fn()}
           onFocusInput={vi.fn()}
         />
       </ConfigProvider>
     );
+
+    const scrollWrap = screen.getByTestId('assistant-card-scroll');
+    Object.defineProperty(scrollWrap, 'clientHeight', { configurable: true, value: 200 });
+    Object.defineProperty(scrollWrap, 'scrollHeight', { configurable: true, value: 600 });
+
+    act(() => {
+      resizeObserverCallback?.(
+        [{ contentRect: { width: 460 } } as unknown as ResizeObserverEntry],
+        {} as ResizeObserver
+      );
+    });
+
+    expect(scrollWrap).toHaveAttribute('data-scrollable', 'true');
+
+    fireEvent.click(screen.getByTestId('preset-pill-reviewer'));
+    expect(onSelectAssistant).toHaveBeenCalledWith('custom:reviewer');
+
+    fireEvent.click(screen.getByTestId('btn-add-preset'));
+    expect(mockNavigate).toHaveBeenCalledWith('/assistants');
+  });
+
+  it('attaches responsive measurement when returning from a selected assistant to the list', () => {
+    const assistants = [makeAssistant('writer', 1)];
+    const currentEffectiveAgentInfo = {
+      agent_type: 'acp',
+      isFallback: false,
+      originalType: 'acp',
+      isAvailable: true,
+    } as const;
+    const callbacks = {
+      onSelectAssistant: vi.fn(),
+      onSetInput: vi.fn(),
+      onFocusInput: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <ConfigProvider>
+        <AssistantSelectionArea
+          is_presetAgent={true}
+          selectedAgentInfo={{ agent_type: 'acp', name: 'Writer', custom_agent_id: 'writer' }}
+          assistants={assistants}
+          localeKey='en-US'
+          currentEffectiveAgentInfo={currentEffectiveAgentInfo}
+          {...callbacks}
+        />
+      </ConfigProvider>
+    );
+
+    expect(resizeObserverCallback).toBeNull();
+
+    rerender(
+      <ConfigProvider>
+        <AssistantSelectionArea
+          is_presetAgent={false}
+          selectedAgentInfo={undefined}
+          assistants={assistants}
+          localeKey='en-US'
+          currentEffectiveAgentInfo={currentEffectiveAgentInfo}
+          {...callbacks}
+        />
+      </ConfigProvider>
+    );
+
+    expect(resizeObserverCallback).not.toBeNull();
 
     act(() => {
       resizeObserverCallback?.(
@@ -196,8 +261,6 @@ describe('AssistantSelectionArea', () => {
     });
 
     expect(screen.getByTestId('assistant-card-grid')).toHaveAttribute('data-columns', '1');
-    expect(screen.getAllByTestId(/^preset-pill-/)).toHaveLength(3);
-    expect(screen.getByTestId('btn-add-preset')).toBeInTheDocument();
   });
 
   it('registers an open-details callback that navigates to the assistant settings editor page', () => {
