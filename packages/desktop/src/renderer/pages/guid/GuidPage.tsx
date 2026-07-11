@@ -9,7 +9,7 @@ import { buildGuidSlashCommands } from '@/common/chat/slash/guidSlashCommands';
 import type { SlashCommandItem } from '@/common/chat/slash/types';
 import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
 import { resolveLocaleKey } from '@/common/utils';
-import type { Assistant, AssistantDetail } from '@/common/types/agent/assistantTypes';
+import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 import {
   resolveAgentRowForAssistant,
   resolveRuntimeBackendForCanonicalAgentId,
@@ -43,6 +43,7 @@ import {
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { canSwitchAssistantAgent } from '@/renderer/utils/model/assistantSelection';
 import { resolveGuidAssistantDefaults } from './utils/assistantDefaults';
+import { persistAssistantAgentBinding } from './utils/assistantAgentBinding';
 import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { appendSpeechTranscript } from '@/renderer/hooks/system/useSpeechInput';
@@ -52,7 +53,7 @@ import { Down, Left, Robot, Write } from '@icon-park/react';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import useSWR, { mutate as swrMutate } from 'swr';
+import useSWR from 'swr';
 import styles from './index.module.css';
 
 const GuidPage: React.FC = () => {
@@ -750,19 +751,13 @@ const GuidPage: React.FC = () => {
         return;
       }
       try {
-        // Optimistically patch the shared `assistants.list` SWR cache so the hero
-        // avatar/logo reflect the new preset_agent_type on the same frame as the
-        // click. Without this, downstream memos (selectedAssistantRecord →
-        // currentEffectiveAgentInfo → effectiveAgentLogo) lag a network roundtrip
-        // behind the user action.
-        await swrMutate(
-          'assistants.list',
-          (prev: Assistant[] | undefined) =>
-            prev?.map((a) => (a.id === assistantId ? { ...a, agent_id: nextAgentId, preset_agent_type: nextType } : a)),
-          { revalidate: false }
-        );
-        await ipcBridge.assistants.update.invoke({ id: assistantId, agent_id: nextAgentId });
-        await Promise.all([swrMutate('assistants.list'), agentSelection.refreshCustomAgents()]);
+        await persistAssistantAgentBinding({
+          assistantId,
+          nextAgentId,
+          nextRuntimeKey: nextType,
+          updateBinding: ipcBridge.assistants.update.invoke,
+          refreshAgents: agentSelection.refreshCustomAgents,
+        });
         const agent_name = agentSelection.availableAgents?.find((a) => a.id === nextAgentId)?.name || nextType;
         Message.success(t('guid.switchedToAgent', { agent: agent_name }));
       } catch (error) {
