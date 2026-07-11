@@ -2,6 +2,7 @@ import { ipcBridge } from '@/common';
 import type { AssistantEditorViewModel, AssistantListItem } from './types';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import { getAgentModes } from '@/renderer/utils/model/agentModes';
+import { isBuiltinAssistant, isGeneratedAssistant, isSystemAssistant } from '@/renderer/utils/model/assistantSelection';
 import { Button, Select, Tag } from '@arco-design/web-react';
 import { Info, Robot } from '@icon-park/react';
 import React, { useMemo, useState } from 'react';
@@ -69,9 +70,12 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
   const getEditorSelectPopupContainer = (node: HTMLElement) =>
     node.closest('[data-editor-popup-root]') ?? node.parentElement ?? document.body;
 
-  const isBuiltin = activeAssistant?.source === 'builtin';
+  const activeAssistantIsBuiltin = isBuiltinAssistant(activeAssistant);
+  const activeAssistantIsGenerated = isGeneratedAssistant(activeAssistant);
+  const activeAssistantIsSystem = isSystemAssistant(activeAssistant);
   const showSkills = isCreating || activeAssistant !== null;
   const currentBackend = availableBackends.find((option) => option.id === editAgent);
+  const editAgentRuntimeKey = currentBackend?.runtimeKey || '';
   const providerModelOptions = providers.flatMap((provider) =>
     getAvailableModels(provider).map((modelName) => ({
       key: `${provider.id}-${modelName}`,
@@ -80,27 +84,27 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
     }))
   );
   const modelOptions = useMemo(() => {
-    if (editAgent === 'aionrs') {
+    if (editAgentRuntimeKey === 'aionrs') {
       return providerModelOptions;
     }
 
     if (currentBackend && currentBackend.modelOptions.length > 0) {
       return currentBackend.modelOptions.map((model) => ({
-        key: `${editAgent}-${model.value}`,
+        key: `${editAgentRuntimeKey}-${model.value}`,
         value: model.value,
         label: model.label,
       }));
     }
 
     return [];
-  }, [currentBackend, editAgent, providerModelOptions]);
+  }, [currentBackend, editAgentRuntimeKey, providerModelOptions]);
   const permissionOptions = useMemo(
     () =>
-      getAgentModes(editAgent).map((option) => ({
+      getAgentModes(editAgentRuntimeKey).map((option) => ({
         ...option,
         label: t(`agentMode.${option.value}`, { defaultValue: option.label }),
       })),
-    [editAgent, t]
+    [editAgentRuntimeKey, t]
   );
   const recommendedPromptItems = useMemo(
     () =>
@@ -246,7 +250,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
 
   return (
     <div className='flex flex-col gap-16px pb-24px'>
-      {isBuiltin && activeAssistant ? (
+      {activeAssistantIsBuiltin && activeAssistant ? (
         <div
           className='rounded-12px border border-border-2 bg-fill-1 px-14px py-12px text-13px leading-20px text-t-secondary md:rounded-16px'
           data-testid='assistant-builtin-readonly-banner'
@@ -279,7 +283,8 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
       ) : null}
 
       <IdentitySection
-        isBuiltin={isBuiltin}
+        isBuiltin={activeAssistantIsSystem}
+        canEditDescription={activeAssistantIsGenerated}
         editAvatar={editAvatar}
         editName={editName}
         setEditName={setEditName}
@@ -294,7 +299,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
       />
 
       <PromptsSection
-        isBuiltin={isBuiltin}
+        isBuiltin={activeAssistantIsBuiltin}
         recommendedPromptItems={recommendedPromptItems}
         addingPrompt={addingPrompt}
         setAddingPrompt={setAddingPrompt}
@@ -333,6 +338,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
               getPopupContainer={getEditorSelectPopupContainer}
               value={editAgent}
               onChange={(value) => setEditAgent(value as string)}
+              disabled={activeAssistantIsGenerated}
               data-testid='select-assistant-agent'
             >
               {availableBackends.map((option) => (
@@ -358,7 +364,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
       </div>
 
       <DefaultsSection
-        isBuiltin={isBuiltin}
+        isBuiltin={activeAssistantIsBuiltin}
         isCreating={isCreating}
         showSkills={showSkills}
         defaultModelMode={defaultModelMode}
@@ -387,7 +393,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
       />
 
       <RulesSection
-        isBuiltin={isBuiltin}
+        isBuiltin={activeAssistantIsBuiltin}
         promptViewMode={promptViewMode}
         setPromptViewMode={setPromptViewMode}
         rulesExpanded={rulesExpanded}

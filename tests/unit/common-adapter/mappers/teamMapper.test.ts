@@ -12,7 +12,7 @@ import {
   fromBackendTeamOptional,
   normalizeTeamStatus,
   toBackendAgent,
-} from '@/common/adapter/teamMapper';
+} from '@/common/adapter/mappers/teamMapper';
 
 describe('teamMapper', () => {
   describe('normalizeTeamStatus', () => {

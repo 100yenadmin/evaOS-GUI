@@ -71,8 +71,8 @@ describe('evaOS PR check plan', () => {
 
   it('skips Windows checks for common mappers and shared type declarations', () => {
     const plan = prCheckPlan.planPrChecks([
-      'packages/desktop/src/common/adapter/apiModelMapper.ts',
-      'packages/desktop/src/common/adapter/searchMapper.ts',
+      'packages/desktop/src/common/adapter/mappers/apiModelMapper.ts',
+      'packages/desktop/src/common/adapter/mappers/searchMapper.ts',
       'packages/desktop/src/common/types/agent/assistantTypes.ts',
       'packages/desktop/src/common/types/office/preview.ts',
     ]);

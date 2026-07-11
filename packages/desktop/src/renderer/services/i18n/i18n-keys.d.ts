@@ -1358,6 +1358,7 @@ export type I18nKey =
   | 'settings.assistant.tokenRequired'
   | 'settings.assistant.tokenValid'
   | 'settings.assistant.userRevoked'
+  | 'settings.assistantAgentRequired'
   | 'settings.assistantAvatarBuiltinTab'
   | 'settings.assistantAvatarEmojiTab'
   | 'settings.assistantAvatarImageFiles'

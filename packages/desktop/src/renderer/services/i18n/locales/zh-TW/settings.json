@@ -88,6 +88,7 @@
   "assistantNoMatch": "沒有符合目前篩選條件的助理。",
   "assistantCreated": "助理已建立",
   "assistantNameRequired": "名稱不能為空",
+  "assistantAgentRequired": "請選擇主要代理",
   "assistantPromptRequired": "提示詞不能為空",
   "assistantPromptHint": "輸入此助理的規則。注意：Gemini 目前僅支援規則。",
   "assistantRules": "規則",

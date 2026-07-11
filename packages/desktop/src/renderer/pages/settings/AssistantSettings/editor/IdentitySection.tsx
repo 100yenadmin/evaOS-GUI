@@ -7,6 +7,7 @@ import { FieldLabel, SectionCard } from './editorSectionPrimitives';
 
 type IdentitySectionProps = {
   isBuiltin: boolean;
+  canEditDescription?: boolean;
   editAvatar: string;
   editName: string;
   setEditName: (value: string) => void;
@@ -22,6 +23,7 @@ type IdentitySectionProps = {
 
 const IdentitySection: React.FC<IdentitySectionProps> = ({
   isBuiltin,
+  canEditDescription = false,
   editAvatar,
   editName,
   setEditName,
@@ -36,6 +38,7 @@ const IdentitySection: React.FC<IdentitySectionProps> = ({
 }) => {
   const { t } = useTranslation();
   const isProfileEditable = !isBuiltin;
+  const isDescriptionEditable = isProfileEditable || canEditDescription;
 
   return (
     <SectionCard
@@ -102,7 +105,7 @@ const IdentitySection: React.FC<IdentitySectionProps> = ({
             <Input
               value={editDescription}
               onChange={(value) => setEditDescription(value)}
-              disabled={!isProfileEditable}
+              disabled={!isDescriptionEditable}
               data-testid='input-assistant-desc'
               placeholder={t('settings.assistantDescriptionPlaceholder', {
                 defaultValue: 'What can this assistant help with?',

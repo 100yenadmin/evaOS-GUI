@@ -1,8 +1,12 @@
 import { ipcBridge } from '@/common';
 import { DEFAULT_CODEX_MODELS } from '@/common/types/codex/codexModels';
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
-import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
-import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents } from '@/renderer/utils/model/agentTypes';
+import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
+import {
+  ASSISTANT_AGENT_CATALOG_SWR_KEY,
+  DETECTED_AGENTS_SWR_KEY,
+  fetchAssistantAgentCatalog,
+} from '@/renderer/utils/model/agentTypes';
 import { useCallback, useMemo } from 'react';
 import useSWR, { mutate } from 'swr';
 
@@ -14,12 +18,13 @@ export type AvailableBackendModelOption = {
 export type AvailableBackend = {
   id: string;
   name: string;
+  runtimeKey: string;
   isExtension?: boolean;
   modelOptions: AvailableBackendModelOption[];
 };
 
-const resolveBackendModelOptions = (agent: AgentMetadata): AvailableBackendModelOption[] => {
-  const handshakeModels = agent.handshake?.available_models as AcpModelInfo | undefined;
+const resolveBackendModelOptions = (agent: ManagedAgent): AvailableBackendModelOption[] => {
+  const handshakeModels = agent.available_models as AcpModelInfo | undefined;
   if (
     handshakeModels &&
     Array.isArray(handshakeModels.available_models) &&
@@ -42,43 +47,66 @@ const resolveBackendModelOptions = (agent: AgentMetadata): AvailableBackendModel
   return [];
 };
 
+const ASSISTANT_EDITOR_AGENT_TYPES = new Set(['acp', 'aionrs']);
+export const isAssistantEditorAgentType = (agentType: string): boolean => ASSISTANT_EDITOR_AGENT_TYPES.has(agentType);
+
 /**
- * Provides detected execution engines for assistant editor backend selectors.
- * Excludes preset assistants — those live in the backend catalog
- * (`ipcBridge.assistants.list`).
+ * Builds canonical assistant-editor options from management rows.
+ * `currentAgentId` retains its matching row despite type, selectability, or status filters when identity is complete.
+ */
+export const buildAssistantEditorBackends = (agents: ManagedAgent[], currentAgentId?: string): AvailableBackend[] => {
+  const backendMap = new Map<string, AvailableBackend>();
+
+  for (const agent of agents) {
+    const agentId = agent.id?.trim() || '';
+    const runtimeKey = (agent.backend || agent.agent_type || '').trim();
+    const isCurrent = Boolean(currentAgentId && agentId === currentAgentId);
+    if (!isAssistantEditorAgentType(agent.agent_type) && !isCurrent) continue;
+    const isSelectable =
+      agent.enabled !== false && agent.installed && (agent.status === 'online' || agent.status === 'unchecked');
+    if (!agentId || !runtimeKey || backendMap.has(agentId) || (!isSelectable && !isCurrent)) continue;
+
+    backendMap.set(agentId, {
+      id: agentId,
+      name: agent.name,
+      runtimeKey,
+      isExtension: agent.agent_source === 'extension',
+      modelOptions: resolveBackendModelOptions(agent),
+    });
+  }
+
+  return [...backendMap.values()];
+};
+
+/**
+ * Provides canonical management-catalog rows for assistant editor bindings.
  *
- * Returns `availableBackends` (simplified shape for Select dropdowns)
- * and `refreshAgentDetection` to trigger a re-scan.
+ * Returns catalog-derived selectable options plus the raw rows. Callers that
+ * need to retain a current offline row must rebuild with `currentAgentId`.
  */
 export const useDetectedAgents = () => {
-  const { data: rawAgents = [] } = useSWR<AgentMetadata[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
+  const {
+    data: rawAgents = [],
+    error: catalogError,
+    isLoading: isCatalogLoading,
+  } = useSWR<ManagedAgent[]>(ASSISTANT_AGENT_CATALOG_SWR_KEY, fetchAssistantAgentCatalog);
 
-  const availableBackends = useMemo<AvailableBackend[]>(
-    () =>
-      rawAgents
-        .filter((a) => a.agent_type !== 'remote')
-        .map((a) => ({
-          // `preset_agent_type` stores the backend slug (e.g. "claude", "gemini"),
-          // not the AgentMetadata row id. Align the Select value with that contract.
-          id: a.backend || a.agent_type,
-          name: a.name,
-          isExtension: a.agent_source === 'extension',
-          modelOptions: resolveBackendModelOptions(a),
-        })),
-    [rawAgents]
-  );
+  const availableBackends = useMemo<AvailableBackend[]>(() => buildAssistantEditorBackends(rawAgents), [rawAgents]);
 
   const refreshAgentDetection = useCallback(async () => {
     try {
       await ipcBridge.acpConversation.refreshCustomAgents.invoke();
-      await mutate(DETECTED_AGENTS_SWR_KEY);
+      await Promise.all([mutate(ASSISTANT_AGENT_CATALOG_SWR_KEY), mutate(DETECTED_AGENTS_SWR_KEY)]);
     } catch {
       // ignore
     }
   }, []);
 
   return {
+    managedAgents: rawAgents,
     availableBackends,
+    catalogError,
+    isCatalogLoading,
     refreshAgentDetection,
   };
 };

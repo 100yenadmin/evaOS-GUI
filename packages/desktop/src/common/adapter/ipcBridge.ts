@@ -26,8 +26,6 @@ import type {
   TProviderWithModel,
 } from '../config/storage';
 import type {
-  Assistant,
-  AssistantDetail,
   CreateAssistantRequest,
   ImportAssistantsRequest,
   ImportAssistantsResult,
@@ -83,7 +81,15 @@ import type {
   UpdateDownloadResult,
 } from '../update/updateTypes';
 import type { ProtocolDetectionRequest, ProtocolDetectionResponse } from '../utils/protocolDetector';
-import { fromApiConversation, fromApiPaginatedConversations, toApiModelOptional } from './apiModelMapper';
+import { fromApiConversation, fromApiPaginatedConversations, toApiModelOptional } from './mappers/apiModelMapper';
+import {
+  fromApiAssistant,
+  fromApiAssistantDetail,
+  toApiCreateAssistantRequest,
+  toApiUpdateAssistantRequest,
+  type ApiAssistant,
+  type ApiAssistantDetail,
+} from '@/common/adapter/mappers/assistantMapper';
 import {
   httpDelete,
   httpGet,
@@ -96,15 +102,15 @@ import {
   wsEmitter,
   wsMappedEmitter,
 } from './httpBridge';
-import { fromApiSearchResult, type ApiMessageSearchItem } from './searchMapper';
-import type { IAddTeamAgentParams, ICreateTeamParams } from './teamMapper';
+import { fromApiSearchResult, type ApiMessageSearchItem } from './mappers/searchMapper';
+import type { IAddTeamAgentParams, ICreateTeamParams } from './mappers/teamMapper';
 import {
   fromBackendAgent,
   fromBackendTeam,
   fromBackendTeamList,
   fromBackendTeamOptional,
   toBackendAgent,
-} from './teamMapper';
+} from './mappers/teamMapper';
 
 const EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS = 15000;
 const EVAOS_RUNTIME_SURFACE_PROTOCOL = 'evaos-runtime-surface:';
@@ -199,13 +205,13 @@ function installEvaosElectronProviderCallbackListener(
   });
   rendererWindow.__evaosProviderCallbackInstalled = true;
 }
-import { fromBackendCompareResult, type RawCompareResult } from './fileSnapshotMapper';
+import { fromBackendCompareResult, type RawCompareResult } from './mappers/fileSnapshotMapper';
 import {
   absoluteToRelativePath,
   fromBackendWorkspaceFlatFiles,
   fromBackendWorkspaceList,
   type RawWorkspaceFlatFile,
-} from './workspaceMapper';
+} from './mappers/workspaceMapper';
 import type {
   IEvaosRuntimeKey,
   IEvaosBrokerSessionState,
@@ -389,22 +395,36 @@ export const shell = {
 // ---------------------------------------------------------------------------
 
 export const assistants = {
-  list: httpGet<Assistant[], void>('/api/assistants'),
-  get: httpGet<AssistantDetail, { id: string; locale?: string }>(
-    ({ id, locale }) =>
-      `/api/assistants/${encodeURIComponent(id)}${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`
+  list: withResponseMap(httpGet<ApiAssistant[], void>('/api/assistants'), (list) => list.map(fromApiAssistant)),
+  get: withResponseMap(
+    httpGet<ApiAssistantDetail, { id: string; locale?: string }>(
+      ({ id, locale }) =>
+        `/api/assistants/${encodeURIComponent(id)}${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`
+    ),
+    fromApiAssistantDetail
   ),
-  create: httpPost<Assistant, CreateAssistantRequest>('/api/assistants'),
-  update: httpPut<Assistant, UpdateAssistantRequest>((p) => `/api/assistants/${p.id}`),
+  create: withResponseMap(
+    httpPost<ApiAssistant, CreateAssistantRequest>('/api/assistants', toApiCreateAssistantRequest),
+    fromApiAssistant
+  ),
+  update: withResponseMap(
+    httpPut<ApiAssistant, UpdateAssistantRequest>((p) => `/api/assistants/${p.id}`, toApiUpdateAssistantRequest),
+    fromApiAssistant
+  ),
   delete: httpDelete<void, { id: string }>((p) => `/api/assistants/${p.id}`),
-  setState: httpPatch<Assistant, SetAssistantStateRequest>(
-    (p) => `/api/assistants/${p.id}/state`,
-    (p) => {
-      const { id: _id, ...body } = p;
-      return body;
-    }
+  setState: withResponseMap(
+    httpPatch<ApiAssistant, SetAssistantStateRequest>(
+      (p) => `/api/assistants/${p.id}/state`,
+      (p) => {
+        const { id: _id, ...body } = p;
+        return body;
+      }
+    ),
+    fromApiAssistant
   ),
-  import: httpPost<ImportAssistantsResult, ImportAssistantsRequest>('/api/assistants/import'),
+  import: httpPost<ImportAssistantsResult, ImportAssistantsRequest>('/api/assistants/import', (p) => ({
+    assistants: p.assistants.map(toApiCreateAssistantRequest),
+  })),
 };
 
 // ---------------------------------------------------------------------------
@@ -1035,6 +1055,7 @@ export const acpConversation = {
   responseStream: conversation.responseStream,
   getAvailableAgents: httpGet<AgentMetadata[], void>('/api/agents'),
   getManagedAgents: httpGet<AgentMetadata[], void>('/api/agents?include_disabled=true'),
+  getAssistantAgentCatalog: httpGet<ManagedAgent[], void>('/api/agents/management'),
   refreshCustomAgents: httpPost<void, void>('/api/agents/refresh'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },
@@ -2175,7 +2196,7 @@ export const channel = {
 // ---------------------------------------------------------------------------
 
 import type { HubExtensionStatus, IHubAgentItem } from '@/common/types/agent/hub';
-import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
+import type { AgentMetadata, ManagedAgent } from '@/common/types/agent/agentMetadata';
 
 export const hub = {
   getExtensionList: httpGet<IHubAgentItem[], void>('/api/hub/extensions'),
@@ -2191,7 +2212,7 @@ export const hub = {
 // Team Mode API — routed to /api/teams/*
 // ---------------------------------------------------------------------------
 
-export type { IAddTeamAgentParams, ICreateTeamParams } from './teamMapper';
+export type { IAddTeamAgentParams, ICreateTeamParams } from './mappers/teamMapper';
 
 export const team = {
   create: withResponseMap(

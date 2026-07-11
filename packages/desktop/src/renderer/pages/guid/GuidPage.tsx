@@ -9,9 +9,14 @@ import { buildGuidSlashCommands } from '@/common/chat/slash/guidSlashCommands';
 import type { SlashCommandItem } from '@/common/chat/slash/types';
 import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
 import { resolveLocaleKey } from '@/common/utils';
-import type { Assistant, AssistantDetail } from '@/common/types/agent/assistantTypes';
+import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
+import {
+  resolveAgentRowForAssistant,
+  resolveRuntimeBackendForCanonicalAgentId,
+} from '@/common/adapter/mappers/assistantMapper';
 
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
+import { isAssistantEditorAgentType } from '@/renderer/hooks/assistant/useDetectedAgents';
 import { getFuzzyMatchIndices, useSlashCommandController } from '@/renderer/hooks/chat/useSlashCommandController';
 import { openEvaosExternalUrl, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import SlashCommandMenu, { type SlashCommandMenuItem } from '@/renderer/components/chat/SlashCommandMenu';
@@ -37,7 +42,9 @@ import {
   resolveEvaosNativeAvailabilitySource,
 } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
+import { canSwitchAssistantAgent } from '@/renderer/utils/model/assistantSelection';
 import { resolveGuidAssistantDefaults } from './utils/assistantDefaults';
+import { persistAssistantAgentBinding } from './utils/assistantAgentBinding';
 import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { appendSpeechTranscript } from '@/renderer/hooks/system/useSpeechInput';
@@ -47,7 +54,7 @@ import { Down, Left, Robot, Write } from '@icon-park/react';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import useSWR, { mutate as swrMutate } from 'swr';
+import useSWR from 'swr';
 import styles from './index.module.css';
 
 const GuidPage: React.FC = () => {
@@ -684,15 +691,16 @@ const GuidPage: React.FC = () => {
     return () => observer.disconnect();
   }, [agentSelection.is_presetAgent, selectedAssistantDescription]);
 
-  const currentPresetAgentType = selectedAssistantRecord?.preset_agent_type || 'gemini';
+  const currentPresetAgentId = selectedAssistantRecord?.agent_id || '';
+  const canSwitchPresetAgent = canSwitchAssistantAgent(selectedAssistantRecord);
   // Mirrors the assistant editor's Main Agent options — detected execution
   // engines from AgentPillBar's data source, so avatars resolve the same way.
   const agentSwitcherItems = useMemo(() => {
-    if (!agentSelection.availableAgents) return [];
+    if (!canSwitchPresetAgent || !agentSelection.availableAgents) return [];
     return agentSelection.availableAgents
-      .filter((a) => !a.is_preset && a.agent_type !== 'remote')
+      .filter((a) => !a.is_preset && isAssistantEditorAgentType(a.agent_type))
       .map((a) => {
-        const key = a.backend || a.agent_type;
+        const key = a.id;
         const extensionAvatar = a.isExtension ? resolveExtensionAssetUrl(a.avatar) : undefined;
         const logo =
           extensionAvatar ||
@@ -706,18 +714,19 @@ const GuidPage: React.FC = () => {
           key,
           label: a.name,
           logo,
-          isCurrent: key === currentPresetAgentType,
+          isCurrent: key === currentPresetAgentId,
           isExtension: a.isExtension,
         };
       });
-  }, [agentSelection.availableAgents, currentPresetAgentType]);
+  }, [agentSelection.availableAgents, canSwitchPresetAgent, currentPresetAgentId]);
 
   const effectiveAgentRecord = useMemo(() => {
-    return agentSelection.availableAgents?.find(
-      (agent) =>
-        !agent.is_preset && (agent.backend || agent.agent_type) === agentSelection.currentEffectiveAgentInfo.agent_type
+    return resolveAgentRowForAssistant(
+      agentSelection.availableAgents || [],
+      currentPresetAgentId,
+      agentSelection.currentEffectiveAgentInfo.agent_type
     );
-  }, [agentSelection.availableAgents, agentSelection.currentEffectiveAgentInfo.agent_type]);
+  }, [agentSelection.availableAgents, agentSelection.currentEffectiveAgentInfo.agent_type, currentPresetAgentId]);
 
   const effectiveAgentLogo = useMemo(
     () =>
@@ -730,36 +739,34 @@ const GuidPage: React.FC = () => {
     [effectiveAgentRecord, agentSelection.currentEffectiveAgentInfo.agent_type]
   );
   const handlePresetAgentTypeSwitch = useCallback(
-    async (nextType: string) => {
+    async (nextAgentId: string) => {
       // Only preset assistants (is_preset=true) expose `custom_agent_id` here, so this id is
       // always backed by the `/api/assistants` store. ACP custom agents are a separate store
       // (`ipcBridge.acpConversation.updateCustomAgent`) and do not carry `preset_agent_type`.
       // See commit 13858579d on main for the legacy single-store fix that this split already covers.
       const assistantId = agentSelection.selectedAgentInfo?.custom_agent_id;
-      if (!assistantId || nextType === currentPresetAgentType) return;
+      if (!assistantId || !canSwitchPresetAgent || nextAgentId === currentPresetAgentId) return;
+      const nextType = resolveRuntimeBackendForCanonicalAgentId(agentSelection.availableAgents || [], nextAgentId);
+      if (!nextType) {
+        Message.error(t('common.failed', { defaultValue: 'Failed' }));
+        return;
+      }
       try {
-        // Optimistically patch the shared `assistants.list` SWR cache so the hero
-        // avatar/logo reflect the new preset_agent_type on the same frame as the
-        // click. Without this, downstream memos (selectedAssistantRecord →
-        // currentEffectiveAgentInfo → effectiveAgentLogo) lag a network roundtrip
-        // behind the user action.
-        await swrMutate(
-          'assistants.list',
-          (prev: Assistant[] | undefined) =>
-            prev?.map((a) => (a.id === assistantId ? { ...a, preset_agent_type: nextType } : a)),
-          { revalidate: false }
-        );
-        await ipcBridge.assistants.update.invoke({ id: assistantId, preset_agent_type: nextType });
-        await Promise.all([swrMutate('assistants.list'), agentSelection.refreshCustomAgents()]);
-        const agent_name =
-          agentSelection.availableAgents?.find((a) => (a.backend || a.agent_type) === nextType)?.name || nextType;
+        await persistAssistantAgentBinding({
+          assistantId,
+          nextAgentId,
+          nextRuntimeKey: nextType,
+          updateBinding: ipcBridge.assistants.update.invoke,
+          refreshAgents: agentSelection.refreshCustomAgents,
+        });
+        const agent_name = agentSelection.availableAgents?.find((a) => a.id === nextAgentId)?.name || nextType;
         Message.success(t('guid.switchedToAgent', { agent: agent_name }));
       } catch (error) {
         console.error('[GuidPage] Failed to switch preset agent type:', error);
         Message.error(t('common.failed', { defaultValue: 'Failed' }));
       }
     },
-    [agentSelection, currentPresetAgentType, t]
+    [agentSelection, canSwitchPresetAgent, currentPresetAgentId, t]
   );
 
   // Resolve the effective agent type once — covers both direct selection and preset assistants
@@ -831,9 +838,13 @@ const GuidPage: React.FC = () => {
       onClosePresetTag={() => agentSelection.setSelectedAgentKey(agentSelection.defaultAgentKey)}
       agentLogo={effectiveAgentLogo}
       agentSwitcherItems={agentSwitcherItems}
-      onAgentSwitch={(key) => {
-        handlePresetAgentTypeSwitch(key).catch((err) => console.error('Failed to switch agent type:', err));
-      }}
+      onAgentSwitch={
+        canSwitchPresetAgent
+          ? (key) => {
+              handlePresetAgentTypeSwitch(key).catch((err) => console.error('Failed to switch agent type:', err));
+            }
+          : undefined
+      }
       allSkills={allSkills}
       disabledBuiltinSkills={guidDisabledBuiltinSkills ?? []}
       enabledSkills={guidEnabledSkills ?? []}

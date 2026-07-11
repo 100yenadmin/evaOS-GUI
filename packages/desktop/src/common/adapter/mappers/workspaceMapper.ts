@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IDirOrFile, IWorkspaceFlatFile } from './ipcBridge';
+import type { IDirOrFile, IWorkspaceFlatFile } from '../ipcBridge';
 
 type RawFsEntry = { name: string; type: string };
 export type RawWorkspaceFlatFile = { name: string; full_path: string; relative_path: string };

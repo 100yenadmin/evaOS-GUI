@@ -76,6 +76,7 @@ describe('useAssistantEditor', () => {
       sort_order: 1,
     },
     engine: {
+      agent_id: 'agent-claude-row',
       agent_backend: 'claude',
     },
     rules: {
@@ -169,7 +170,7 @@ describe('useAssistantEditor', () => {
     expect(result.current.editName).toBe('TestAssistant');
     expect(result.current.editDescription).toBe('Test desc');
     expect(result.current.editAvatar).toBe('🤖');
-    expect(result.current.editAgent).toBe('claude');
+    expect(result.current.editAgent).toBe('agent-claude-row');
     expect(result.current.editRecommendedPromptsText).toBe('Prompt one\nPrompt two');
     expect(result.current.defaultModelMode).toBe('fixed');
     expect(result.current.defaultModelValue).toBe('gemini-2.5-pro');
@@ -334,6 +335,7 @@ describe('useAssistantEditor', () => {
     act(() => {
       result.current.handleCreate();
       result.current.setEditName('NewAssistant');
+      result.current.setEditAgent('agent-claude-row');
       result.current.setEditRecommendedPromptsText('Prompt A\n\nPrompt B');
       result.current.setDefaultModelMode('fixed');
       result.current.setDefaultModelValue('gpt-4.1');
@@ -352,6 +354,7 @@ describe('useAssistantEditor', () => {
     await waitFor(() => expect(ipcBridge.assistants.create.invoke).toHaveBeenCalled());
     expect(ipcBridge.assistants.create.invoke).toHaveBeenCalledWith(
       expect.objectContaining({
+        agent_id: 'agent-claude-row',
         recommended_prompts: ['Prompt A', 'Prompt B'],
         defaults: {
           model: { mode: 'fixed', value: 'gpt-4.1' },
@@ -367,6 +370,24 @@ describe('useAssistantEditor', () => {
     expect(swrMutate).toHaveBeenCalledWith('assistants.list');
     expect(swrMutate).toHaveBeenCalledWith('assistants');
     expect(result.current.editVisible).toBe(false);
+  });
+
+  it('requires a canonical agent row before creating an assistant', async () => {
+    const { result } = renderHook(() => useAssistantEditor(defaultParams));
+
+    await act(async () => {
+      await result.current.handleCreate();
+    });
+    act(() => {
+      result.current.setEditName('NewAssistant');
+    });
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(ipcBridge.assistants.create.invoke).not.toHaveBeenCalled();
+    expect(mockMessage.error).toHaveBeenCalledWith('settings.assistantAgentRequired');
   });
 
   it('calls handleSave for updating existing assistant', async () => {
@@ -438,10 +459,10 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultPermissionValue).toBe('acceptEdits');
 
     act(() => {
-      result.current.setEditAgent('gemini');
+      result.current.setEditAgent('agent-gemini-row');
     });
 
-    expect(result.current.editAgent).toBe('gemini');
+    expect(result.current.editAgent).toBe('agent-gemini-row');
     expect(result.current.defaultModelMode).toBe('auto');
     expect(result.current.defaultModelValue).toBe('');
     expect(result.current.defaultPermissionMode).toBe('auto');
@@ -487,7 +508,7 @@ describe('useAssistantEditor', () => {
     });
 
     act(() => {
-      result.current.setEditAgent('gemini');
+      result.current.setEditAgent('agent-gemini-row');
       result.current.setDefaultModelMode('fixed');
       result.current.setDefaultModelValue('gemini-2.5-pro');
       result.current.setDefaultPermissionMode('fixed');
@@ -503,7 +524,7 @@ describe('useAssistantEditor', () => {
 
     expect(ipcBridge.assistants.update.invoke).toHaveBeenCalledWith({
       id: 'builtin-1',
-      preset_agent_type: 'gemini',
+      agent_id: 'agent-gemini-row',
       defaults: {
         model: { mode: 'fixed', value: 'gemini-2.5-pro' },
         permission: { mode: 'fixed', value: 'default' },
@@ -550,6 +571,79 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultPermissionValue).toBe('');
     expect(result.current.defaultMcpMode).toBe('auto');
     expect(result.current.selectedMcpIds).toEqual([]);
+  });
+
+  it('updates generated assistant configuration without sending immutable identity fields', async () => {
+    const assistant = {
+      id: 'bare:agent-claude-row',
+      name: 'Claude Code',
+      source: 'generated',
+      enabled: true,
+      sort_order: 1,
+      deletable: false,
+      agent_id: 'agent-claude-row',
+      preset_agent_type: 'claude',
+    } as AssistantListItem;
+    (ipcBridge.assistants.get.invoke as any).mockResolvedValue({
+      ...mockAssistantDetail,
+      id: assistant.id,
+      source: 'generated',
+      profile: { ...mockAssistantDetail.profile, description: 'Generated description' },
+      capabilities: { ...mockAssistantDetail.capabilities, custom_skill_names: ['generated-custom-skill'] },
+    });
+
+    const { result } = renderHook(() => useAssistantEditor({ ...defaultParams, activeAssistant: assistant }));
+
+    await act(async () => {
+      await result.current.handleEdit(assistant);
+    });
+    act(() => {
+      result.current.setEditDescription('');
+      result.current.setEditRecommendedPromptsText('Generated prompt');
+    });
+    await act(async () => {
+      await result.current.handleSave();
+      result.current.handleDeleteClick();
+    });
+
+    expect(ipcBridge.assistants.update.invoke).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: assistant.id,
+        description: '',
+        custom_skill_names: ['generated-custom-skill'],
+        recommended_prompts: ['Generated prompt'],
+      })
+    );
+    expect(ipcBridge.assistants.update.invoke).toHaveBeenCalledWith(
+      expect.not.objectContaining({ name: expect.anything(), avatar: expect.anything(), agent_id: expect.anything() })
+    );
+    expect(ipcBridge.fs.writeAssistantRule.invoke).toHaveBeenCalled();
+    expect(ipcBridge.assistants.delete.invoke).not.toHaveBeenCalled();
+    expect(mockMessage.warning).toHaveBeenCalled();
+  });
+
+  it('uses canonical deletable permission for delete guards', () => {
+    const lockedUser = {
+      id: 'locked-user',
+      name: 'Locked user',
+      source: 'user',
+      enabled: true,
+      sort_order: 1,
+      deletable: false,
+    } as AssistantListItem;
+    const locked = renderHook(() => useAssistantEditor({ ...defaultParams, activeAssistant: lockedUser }));
+
+    act(() => locked.result.current.handleDeleteClick());
+    expect(locked.result.current.deleteConfirmVisible).toBe(false);
+    expect(mockMessage.warning).toHaveBeenCalled();
+
+    const deletableGenerated = { ...lockedUser, id: 'generated-delete', source: 'generated', deletable: true } as const;
+    const allowed = renderHook(() =>
+      useAssistantEditor({ ...defaultParams, activeAssistant: deletableGenerated as AssistantListItem })
+    );
+
+    act(() => allowed.result.current.handleDeleteClick());
+    expect(allowed.result.current.deleteConfirmVisible).toBe(true);
   });
 
   it('optimistically updates and revalidates the shared assistant list when toggling enabled', async () => {
@@ -619,6 +713,7 @@ describe('useAssistantEditor', () => {
     act(() => {
       result.current.handleCreate();
       result.current.setEditName('NewAssistant');
+      result.current.setEditAgent('agent-claude-row');
     });
 
     await act(async () => {

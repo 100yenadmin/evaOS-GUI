@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { fromBackendCompareResult, type RawCompareResult } from '@/common/adapter/fileSnapshotMapper';
+import { fromBackendCompareResult, type RawCompareResult } from '@/common/adapter/mappers/fileSnapshotMapper';
 
 describe('fileSnapshotMapper', () => {
   it('maps relative_path → relativePath while preserving file_path and operation', () => {

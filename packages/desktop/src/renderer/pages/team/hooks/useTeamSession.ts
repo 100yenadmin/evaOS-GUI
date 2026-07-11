@@ -1,6 +1,6 @@
 // src/renderer/pages/team/hooks/useTeamSession.ts
 import { ipcBridge } from '@/common';
-import { normalizeTeamStatus } from '@/common/adapter/teamMapper';
+import { normalizeTeamStatus } from '@/common/adapter/mappers/teamMapper';
 import type {
   ITeamAgentRemovedEvent,
   ITeamAgentRenamedEvent,

@@ -3,7 +3,7 @@
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  *
- * Unit tests for common/adapter/apiModelMapper.ts (T1 in N3 test checklist).
+ * Unit tests for common/adapter/mappers/apiModelMapper.ts (T1 in N3 test checklist).
  * Tests model transformation between frontend and backend formats.
  */
 
@@ -15,7 +15,7 @@ import {
   fromApiConversation,
   fromApiPaginatedConversations,
   type ApiProviderWithModel,
-} from '@/common/adapter/apiModelMapper';
+} from '@/common/adapter/mappers/apiModelMapper';
 import type { TProviderWithModel } from '@/common/config/storage';
 
 describe('apiModelMapper', () => {

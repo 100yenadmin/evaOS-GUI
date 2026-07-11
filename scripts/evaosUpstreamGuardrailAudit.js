@@ -208,7 +208,7 @@ const EVAOS_UPSTREAM_CANARY_BUCKETS = Object.freeze([
     requiredProof: 'conversation runtime, send/cancel, team create/send/cancel smoke',
     pathGlobs: [
       'packages/desktop/src/common/types/team/**',
-      'packages/desktop/src/common/adapter/teamMapper.ts',
+      'packages/desktop/src/common/adapter/mappers/teamMapper.ts',
       'packages/desktop/src/renderer/pages/team/**',
       'packages/desktop/src/renderer/pages/conversation/runtime/**',
       'packages/desktop/src/renderer/pages/conversation/platforms/acp/**',

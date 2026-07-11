@@ -64,6 +64,13 @@ vi.mock('@renderer/pages/conversation/hooks/useConversationAgents', () => ({
         agent_type: 'claude',
         team_capable: true,
       },
+      {
+        id: 'generated-blocked-agent',
+        name: 'Generated Blocked Agent',
+        backend: 'claude',
+        agent_type: 'claude',
+        team_capable: true,
+      },
     ],
     presetAssistants: [
       {
@@ -82,6 +89,7 @@ vi.mock('@renderer/pages/conversation/hooks/useConversationAgents', () => ({
         prompts: [],
         prompts_i18n: {},
         models: [],
+        team_selectable: true,
       },
       {
         id: 'bare:codex-agent',
@@ -99,6 +107,25 @@ vi.mock('@renderer/pages/conversation/hooks/useConversationAgents', () => ({
         prompts: [],
         prompts_i18n: {},
         models: [],
+        team_selectable: true,
+      },
+      {
+        id: 'bare:generated-blocked-agent',
+        source: 'generated',
+        name: 'Generated Blocked Agent',
+        name_i18n: {},
+        description_i18n: {},
+        enabled: true,
+        sort_order: 2,
+        preset_agent_type: 'claude',
+        enabled_skills: [],
+        custom_skill_names: [],
+        disabled_builtin_skills: [],
+        context_i18n: {},
+        prompts: [],
+        prompts_i18n: {},
+        models: [],
+        team_selectable: false,
       },
     ],
   }),
@@ -257,6 +284,7 @@ describe('TeamCreateModal multi-member creation', () => {
     expect(screen.getByTestId('team-create-agent-option-claude-agent')).toBeInTheDocument();
     expect(screen.queryByTestId('team-create-agent-option-blocked-agent')).not.toBeInTheDocument();
     expect(screen.queryByTestId('team-create-agent-option-uncatalogued-agent')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('team-create-agent-option-generated-blocked-agent')).not.toBeInTheDocument();
   });
 
   it('preserves the existing E2E trigger and name-input ordering', () => {

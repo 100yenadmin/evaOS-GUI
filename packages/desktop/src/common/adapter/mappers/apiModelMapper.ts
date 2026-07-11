@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TProviderWithModel } from '../config/storage';
+import type { TProviderWithModel } from '../../config/storage';
 
 export type ApiProviderWithModel = {
   provider_id: string;

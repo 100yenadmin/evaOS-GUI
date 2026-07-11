@@ -9,7 +9,21 @@ import { isEvaosAssistantVisibleInRc } from '@/renderer/evaos/evaosAssistantPres
 
 type AssistantSelectionInput = Pick<Assistant, 'id' | 'enabled' | 'sort_order'> & {
   source: string;
+  agent_status?: Assistant['agent_status'];
 };
+
+export const isBuiltinAssistant = (assistant: Pick<Assistant, 'source'> | null | undefined): boolean =>
+  assistant?.source === 'builtin';
+
+export const isGeneratedAssistant = (assistant: Pick<Assistant, 'source'> | null | undefined): boolean =>
+  assistant?.source === 'generated';
+
+export const isSystemAssistant = (assistant: Pick<Assistant, 'source'> | null | undefined): boolean =>
+  isBuiltinAssistant(assistant) || isGeneratedAssistant(assistant);
+
+/** AionCore owns the runtime binding for generated (`bare:*`) assistants. */
+export const canSwitchAssistantAgent = (assistant: Pick<Assistant, 'source'> | undefined): boolean =>
+  Boolean(assistant && assistant.source !== 'generated');
 
 /** Group weight - lower comes first. Bare CLI < user-created < official. */
 const sourceGroupWeight = (source: string): number => {
@@ -33,7 +47,7 @@ const sourceGroupWeight = (source: string): number => {
 export const selectableAssistants = <T extends AssistantSelectionInput>(assistants: readonly T[]): T[] =>
   assistants
     .map((assistant, index) => ({ assistant, index }))
-    .filter(({ assistant }) => assistant.enabled !== false)
+    .filter(({ assistant }) => assistant.enabled !== false && assistant.agent_status !== 'missing')
     .toSorted((left, right) => {
       const groupDelta = sourceGroupWeight(left.assistant.source) - sourceGroupWeight(right.assistant.source);
       if (groupDelta !== 0) return groupDelta;

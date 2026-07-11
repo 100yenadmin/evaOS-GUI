@@ -44,14 +44,22 @@ describe('team agent type policy', () => {
   });
 
   it('curates preset assistants before they enter the team leader picker', () => {
-    const teamCapableKeys = new Set(['openclaw-gateway']);
     const options = compactTeamAgentOptions([
-      assistantToOption(assistant({ id: 'openclaw-setup', name: 'OpenClaw Setup Expert' }), teamCapableKeys),
-      assistantToOption(assistant({ id: 'builtin-moltbook', name: 'Moltbook' }), teamCapableKeys),
+      assistantToOption(assistant({ id: 'openclaw-setup', name: 'OpenClaw Setup Expert' })),
+      assistantToOption(assistant({ id: 'builtin-moltbook', name: 'Moltbook' })),
     ]);
 
     expect(options.map((option) => option.name)).toEqual(['Gateway Debug Expert']);
     expect(options[0].description).toContain('OpenClaw and Hermes');
+  });
+
+  it('uses canonical per-assistant team eligibility instead of a shared runtime slug', () => {
+    const allowed = assistantToOption(assistant({ id: 'allowed', team_selectable: true }));
+    const blocked = assistantToOption(assistant({ id: 'blocked', team_selectable: false }));
+
+    expect(filterTeamSupportedAgents(compactTeamAgentOptions([allowed, blocked])).map((option) => option.id)).toEqual([
+      'allowed',
+    ]);
   });
 });
 
@@ -77,6 +85,7 @@ function assistant(overrides: Partial<Assistant>): Assistant {
     preset_agent_type: 'openclaw-gateway',
     enabled_skills: [],
     disabled_builtin_skills: [],
+    team_selectable: true,
     ...overrides,
   } as Assistant;
 }

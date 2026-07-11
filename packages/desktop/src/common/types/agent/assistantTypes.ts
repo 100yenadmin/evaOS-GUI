@@ -4,10 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Mirror of aionui-api-types/src/assistant.rs.
-// Any shape change on either side requires a same-PR update on the other.
+// Canonical v0.1.43 fields mirror aionui-api-types/src/assistant.rs. Legacy
+// compatibility projections are populated only by assistantMapper.ts.
 
-export type AssistantSource = 'builtin' | 'user' | 'extension';
+export type AssistantSource = 'builtin' | 'generated' | 'user' | 'extension';
+export type AssistantAgentStatus = 'missing' | 'online' | 'offline' | 'unchecked';
+export type AssistantAgentSource = 'internal' | 'builtin' | 'extension' | 'custom';
+
+export type AssistantAgent = {
+  type: string;
+  source: AssistantAgentSource;
+  acp_backend?: string;
+};
 
 export interface Assistant {
   id: string;
@@ -19,6 +27,10 @@ export interface Assistant {
   avatar?: string;
   enabled: boolean;
   sort_order: number;
+  /** Canonical AionCore assistant binding (agent_metadata row identity). */
+  agent_id: string;
+  agent?: AssistantAgent;
+  /** Compatibility projection for renderer surfaces that still consume a runtime backend slug. */
   preset_agent_type: string;
   enabled_skills: string[];
   custom_skill_names: string[];
@@ -29,6 +41,11 @@ export interface Assistant {
   prompts_i18n: Record<string, string[]>;
   models: string[];
   last_used_at?: number;
+  agent_status: AssistantAgentStatus;
+  agent_status_message?: string;
+  team_selectable: boolean;
+  team_block_reason?: string;
+  deletable: boolean;
 }
 
 export interface AssistantProfile {
@@ -46,6 +63,9 @@ export interface AssistantState {
 }
 
 export interface AssistantEngine {
+  agent_id: string;
+  agent?: AssistantAgent;
+  /** Compatibility projection for renderer consumers not yet migrated to canonical identity. */
   agent_backend: string;
 }
 
@@ -72,6 +92,7 @@ export interface AssistantDefaultList {
 export interface AssistantDefaults {
   model: AssistantDefaultScalar;
   permission: AssistantDefaultScalar;
+  thought_level: AssistantDefaultScalar;
   skills: AssistantDefaultList;
   mcps: AssistantDefaultList;
 }
@@ -79,6 +100,7 @@ export interface AssistantDefaults {
 export interface AssistantDefaultsRequest {
   model?: AssistantDefaultScalar;
   permission?: AssistantDefaultScalar;
+  thought_level?: AssistantDefaultScalar;
   skills?: AssistantDefaultList;
   mcps?: AssistantDefaultList;
 }
@@ -92,6 +114,7 @@ export interface AssistantCapabilities {
 export interface AssistantPreferences {
   last_model_id?: string;
   last_permission_value?: string;
+  last_thought_level_value?: string;
   last_skill_ids: string[];
   last_disabled_builtin_skill_ids: string[];
   last_mcp_ids: string[];
@@ -100,6 +123,11 @@ export interface AssistantPreferences {
 export interface AssistantDetail {
   id: string;
   source: AssistantSource;
+  agent_status: AssistantAgentStatus;
+  agent_status_message?: string;
+  team_selectable: boolean;
+  team_block_reason?: string;
+  deletable: boolean;
   profile: AssistantProfile;
   state: AssistantState;
   engine: AssistantEngine;
@@ -115,6 +143,8 @@ export interface CreateAssistantRequest {
   name: string;
   description?: string;
   avatar?: string;
+  agent_id?: string;
+  /** Legacy source alias whose value must already be a canonical row id before the HTTP mapper renames it. */
   preset_agent_type?: string;
   enabled_skills?: string[];
   custom_skill_names?: string[];

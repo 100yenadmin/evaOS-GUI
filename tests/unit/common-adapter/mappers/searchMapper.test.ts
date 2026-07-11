@@ -3,12 +3,12 @@
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  *
- * Unit tests for common/adapter/searchMapper.ts (T2 in N3 test checklist).
+ * Unit tests for common/adapter/mappers/searchMapper.ts (T2 in N3 test checklist).
  * Tests search result transformation from backend to frontend format.
  */
 
 import { describe, it, expect } from 'vitest';
-import { fromApiSearchResult, type ApiMessageSearchItem } from '@/common/adapter/searchMapper';
+import { fromApiSearchResult, type ApiMessageSearchItem } from '@/common/adapter/mappers/searchMapper';
 import type { PaginatedResult } from '@/common/adapter/ipcBridge';
 
 describe('searchMapper', () => {

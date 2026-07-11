@@ -20,6 +20,7 @@
 import { Message } from '@arco-design/web-react';
 import coworkSvg from '@/renderer/assets/icons/cowork.svg';
 import { useDetectedAgents, useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
+import { buildAssistantEditorBackends } from '@/renderer/hooks/assistant/useDetectedAgents';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
 import { prepareEvaosAssistantListForRc, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
@@ -28,6 +29,7 @@ import DeleteAssistantModal from './DeleteAssistantModal';
 import SkillConfirmModals from './SkillConfirmModals';
 import type { AssistantEditorViewModel } from './types';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
 type AssistantNavigationState = {
@@ -38,6 +40,7 @@ const OPEN_ASSISTANT_EDITOR_INTENT_KEY = 'guid.openAssistantEditorIntent';
 
 const AssistantSettings: React.FC = () => {
   const [message, messageContext] = Message.useMessage({ maxCount: 10 });
+  const { t } = useTranslation();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigationState = (location.state as AssistantNavigationState | null) ?? null;
@@ -87,7 +90,13 @@ const AssistantSettings: React.FC = () => {
     [visibleAssistants, avatarImageMap, localeKey]
   );
 
-  const { availableBackends, refreshAgentDetection } = useDetectedAgents();
+  const { managedAgents, catalogError, refreshAgentDetection } = useDetectedAgents();
+
+  useEffect(() => {
+    if (catalogError) {
+      message.error(t('common.failed', { defaultValue: 'Failed' }));
+    }
+  }, [catalogError, message, t]);
 
   const editor = useAssistantEditor({
     localeKey,
@@ -97,6 +106,10 @@ const AssistantSettings: React.FC = () => {
     refreshAgentDetection,
     message,
   });
+  const availableBackends = useMemo(
+    () => buildAssistantEditorBackends(managedAgents, editor.editAgent),
+    [editor.editAgent, managedAgents]
+  );
 
   const editAvatarImage = editor.editAvatarPreview || resolveAvatarImageSrc(editor.editAvatar, avatarImageMap);
   const hasConsumedNavigationIntentRef = useRef(false);
