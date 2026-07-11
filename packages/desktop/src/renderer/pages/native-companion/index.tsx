@@ -1021,13 +1021,16 @@ function statusForSelectedPairingCustomer(
   const pairingMatches = Boolean(
     selectedPairingCustomerId &&
     status.agentPairingCustomerId === selectedPairingCustomerId &&
-    status.agentPairingProofScopeId
+    status.agentPairingProofScopeId &&
+    status.activeMacControlScopeId &&
+    status.agentPairingProofScopeId === status.activeMacControlScopeId
   );
   const proofMatches = Boolean(
     pairingMatches &&
     status.runtimeToolProofCustomerId === selectedPairingCustomerId &&
     status.runtimeToolProofScopeId &&
-    status.runtimeToolProofScopeId === status.agentPairingProofScopeId
+    status.runtimeToolProofScopeId === status.agentPairingProofScopeId &&
+    status.runtimeToolProofScopeId === status.activeMacControlScopeId
   );
   const pairingNeedsScope =
     status.agentPairingStatus === 'agent_paired' || status.agentPairingStatus === 'proof_failed';

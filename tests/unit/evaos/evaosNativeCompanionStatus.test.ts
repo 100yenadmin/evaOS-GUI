@@ -189,6 +189,7 @@ describe('evaosNativeCompanionStatus', () => {
             agent_pairing_status: 'agent_paired',
             agent_pairing_customer_id: 'friendly',
             agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
           },
         },
         {
@@ -201,6 +202,7 @@ describe('evaosNativeCompanionStatus', () => {
             agent_pairing_status: 'agent_paired',
             agent_pairing_customer_id: 'friendly',
             agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
             runtime_tool_readiness: 'tools_ready',
             runtime_tool_proof_customer_id: 'friendly',
             runtime_tool_proof_scope_id: 'grant-current',
@@ -216,6 +218,7 @@ describe('evaosNativeCompanionStatus', () => {
             agent_pairing_status: 'agent_paired',
             agentPairingCustomerId: 'friendly',
             agentPairingProofScopeId: 'grant-current',
+            activeMacControlScopeId: 'grant-current',
             runtimeToolReadiness: 'tools_ready',
             runtimeToolProofCustomerId: 'friendly',
             runtimeToolProofScopeId: 'grant-current',
@@ -231,6 +234,7 @@ describe('evaosNativeCompanionStatus', () => {
             agent_pairing_status: 'proof_failed',
             agent_pairing_customer_id: 'friendly',
             agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
             runtime_tool_readiness: 'tools_ready',
             runtime_tool_proof_customer_id: 'friendly',
             runtime_tool_proof_scope_id: 'grant-current',
@@ -257,6 +261,7 @@ describe('evaosNativeCompanionStatus', () => {
             agent_pairing_status: 'agent_paired',
             agent_pairing_customer_id: 'friendly',
             agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
             runtime_tool_readiness: 'tools_ready',
           },
         },
@@ -270,6 +275,23 @@ describe('evaosNativeCompanionStatus', () => {
             agent_pairing_status: 'agent_paired',
             agent_pairing_customer_id: 'friendly',
             agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
+            runtime_tool_readiness: 'tools_ready',
+            runtime_tool_proof_customer_id: 'friendly',
+            runtime_tool_proof_scope_id: 'grant-revoked',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-identical-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-revoked',
+            active_mac_control_scope_id: 'grant-current',
             runtime_tool_readiness: 'tools_ready',
             runtime_tool_proof_customer_id: 'friendly',
             runtime_tool_proof_scope_id: 'grant-revoked',
@@ -347,6 +369,7 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingStatus: 'agent_paired',
       agentPairingCustomerId: 'friendly',
       agentPairingProofScopeId: 'grant-current',
+      activeMacControlScopeId: 'grant-current',
       runtimeToolReadiness: 'tools_ready',
       runtimeToolProofCustomerId: 'friendly',
       runtimeToolProofScopeId: 'grant-current',
@@ -357,6 +380,7 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingStatus: 'agent_paired',
       agentPairingCustomerId: 'friendly',
       agentPairingProofScopeId: 'grant-current',
+      activeMacControlScopeId: 'grant-current',
       runtimeToolReadiness: 'tools_ready',
       runtimeToolProofCustomerId: 'friendly',
       runtimeToolProofScopeId: 'grant-current',
@@ -386,6 +410,15 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingStatus: 'agent_paired',
       agentPairingCustomerId: 'friendly',
       agentPairingProofScopeId: 'grant-current',
+      runtimeToolReadiness: 'pairing_ready',
+    });
+
+    const identicalStaleProofStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(identicalStaleProofStatus).toMatchObject({
+      agentPairingStatus: 'ready_for_agent_pairing',
+      agentPairingCustomerId: 'friendly',
+      agentPairingProofScopeId: 'grant-revoked',
+      activeMacControlScopeId: 'grant-current',
       runtimeToolReadiness: 'pairing_ready',
     });
 
@@ -1963,6 +1996,7 @@ describe('evaosNativeCompanionStatus', () => {
           agent_pairing_status: 'agent_paired',
           agent_pairing_customer_id: 'friendly',
           agent_pairing_proof_scope_id: 'grant-current',
+          active_mac_control_scope_id: 'grant-current',
         },
       },
       'audit-tail --json --limit 12': {

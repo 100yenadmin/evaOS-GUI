@@ -1960,6 +1960,7 @@ describe('NativeCompanionPage', () => {
       agentPairingStatus: 'agent_paired' as const,
       agentPairingCustomerId: 'benjamin-kennedy',
       agentPairingProofScopeId: 'grant-current',
+      activeMacControlScopeId: 'grant-current',
       runtimeToolReadiness: 'pairing_ready' as const,
       runtimeToolProofCustomerId: 'benjamin-kennedy',
       runtimeToolProofScopeId: 'grant-current',
@@ -2022,6 +2023,22 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
 
     expect(await screen.findAllByText('Needs retry')).toHaveLength(2);
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
+    expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();
+
+    cleanup();
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        ...pairedStatus,
+        agentPairingProofScopeId: 'grant-revoked',
+        runtimeToolReadiness: 'tools_ready',
+        runtimeToolProofScopeId: 'grant-revoked',
+      },
+    });
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Setup needed')).toBeInTheDocument();
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
     expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();
 

@@ -238,10 +238,16 @@ export async function getEvaosNativeCompanionStatus(
     reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed'
       ? agentPairingProofScopeIdFromControlSession(controlSession)
       : undefined;
-  const pairingProofHasScope = Boolean(agentPairingCustomerId && agentPairingProofScopeId);
+  const activeMacControlScopeId = activeMacControlScopeIdFromControlSession(controlSession);
+  const pairingProofMatchesActiveScope = Boolean(
+    agentPairingCustomerId &&
+    agentPairingProofScopeId &&
+    activeMacControlScopeId &&
+    agentPairingProofScopeId === activeMacControlScopeId
+  );
   const agentPairingStatus =
     (reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed') &&
-    !pairingProofHasScope
+    !pairingProofMatchesActiveScope
       ? 'ready_for_agent_pairing'
       : reportedAgentPairingStatus;
   const reportedRuntimeToolReadiness = runtimeToolReadinessFromPairing(readiness, agentPairingStatus, controlSession);
@@ -254,9 +260,10 @@ export async function getEvaosNativeCompanionStatus(
       ? runtimeToolProofScopeIdFromControlSession(controlSession)
       : undefined;
   const runtimeProofMatchesPairing = Boolean(
-    pairingProofHasScope &&
+    pairingProofMatchesActiveScope &&
     runtimeToolProofCustomerId === agentPairingCustomerId &&
-    runtimeToolProofScopeId === agentPairingProofScopeId
+    runtimeToolProofScopeId === agentPairingProofScopeId &&
+    runtimeToolProofScopeId === activeMacControlScopeId
   );
   const runtimeToolReadiness =
     (reportedRuntimeToolReadiness === 'tools_ready' || reportedRuntimeToolReadiness === 'proof_failed') &&
@@ -291,6 +298,7 @@ export async function getEvaosNativeCompanionStatus(
     agentPairingStatus,
     agentPairingCustomerId,
     agentPairingProofScopeId,
+    activeMacControlScopeId,
     runtimeToolReadiness,
     runtimeToolProofCustomerId,
     runtimeToolProofScopeId,
@@ -1154,13 +1162,15 @@ async function runSetupCheckAction(
   const ready = setup.connectorReady && setup.macReady && setup.controlReady;
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
   const reportedAgentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession) : 'not_ready';
-  const pairingProofHasScope = Boolean(
+  const agentPairingProofScopeId = agentPairingProofScopeIdFromControlSession(controlSession);
+  const pairingProofMatchesActiveScope = Boolean(
     agentPairingCustomerIdFromControlSession(controlSession) &&
-    agentPairingProofScopeIdFromControlSession(controlSession)
+    agentPairingProofScopeId &&
+    agentPairingProofScopeId === activeMacControlScopeIdFromControlSession(controlSession)
   );
   const agentPairingStatus =
     (reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed') &&
-    !pairingProofHasScope
+    !pairingProofMatchesActiveScope
       ? 'ready_for_agent_pairing'
       : reportedAgentPairingStatus;
 
@@ -2696,6 +2706,18 @@ function agentPairingProofScopeIdFromControlSession(controlSession: BridgeComman
     readString(controlSession.data, 'agentPairingProofScopeId') ??
     readNestedString(controlSession.data, ['agent_pairing', 'proof_scope_id']) ??
     readNestedString(controlSession.data, ['agentPairing', 'proofScopeId'])
+  );
+}
+
+function activeMacControlScopeIdFromControlSession(controlSession: BridgeCommandResult): string | undefined {
+  if (!controlSession.ok) return undefined;
+  return (
+    readString(controlSession.data, 'active_mac_control_scope_id') ??
+    readString(controlSession.data, 'activeMacControlScopeId') ??
+    readNestedString(controlSession.data, ['active_mac_control', 'scope_id']) ??
+    readNestedString(controlSession.data, ['activeMacControl', 'scopeId']) ??
+    readNestedString(controlSession.data, ['route_summary', 'canonical_route', 'proof_scope_id']) ??
+    readNestedString(controlSession.data, ['routeSummary', 'canonicalRoute', 'proofScopeId'])
   );
 }
 
