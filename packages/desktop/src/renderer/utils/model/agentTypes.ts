@@ -16,12 +16,14 @@ export const DETECTED_AGENTS_SWR_KEY = 'agents.detected';
  * Settings without leaking into chat/team pickers.
  */
 export const MANAGED_AGENTS_SWR_KEY = 'agents.managed';
+export const ASSISTANT_AGENT_CATALOG_SWR_KEY = 'agents.assistant-management-catalog';
 
 /** Type of an agent. */
 export type AgentType = 'acp' | 'remote' | 'aionrs' | 'openclaw-gateway' | 'nanobot';
 
 /** Source tier of an agent row, mirroring backend `agent_source` enum. */
 export type AgentSource = 'internal' | 'builtin' | 'extension' | 'custom';
+export type AgentManagementStatus = 'online' | 'offline' | 'missing' | 'unchecked';
 
 /** Source-specific bookkeeping (how to probe, how to upgrade). */
 export type AgentSourceInfo = {
@@ -109,6 +111,16 @@ export type AgentMetadata = {
   handshake?: AgentHandshake;
 };
 
+/** Diagnostics-first row returned by AionCore v0.1.43 `/api/agents/management`. */
+export type ManagedAgent = Omit<AgentMetadata, 'available' | 'handshake'> & {
+  installed: boolean;
+  sort_order: number;
+  status: AgentManagementStatus;
+  config_options?: unknown;
+  available_modes?: unknown;
+  available_models?: unknown;
+};
+
 /** Shared fetcher for DETECTED_AGENTS_SWR_KEY — single source of truth. */
 export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
   try {
@@ -128,6 +140,19 @@ export async function fetchManagedAgents(): Promise<AgentMetadata[]> {
     const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
     if (Array.isArray(agents)) {
       return agents as AgentMetadata[];
+    }
+  } catch {
+    // fallback to empty
+  }
+  return [];
+}
+
+/** Canonical catalog used by assistant editor bindings. */
+export async function fetchAssistantAgentCatalog(): Promise<ManagedAgent[]> {
+  try {
+    const agents = await ipcBridge.acpConversation.getAssistantAgentCatalog.invoke();
+    if (Array.isArray(agents)) {
+      return agents as ManagedAgent[];
     }
   } catch {
     // fallback to empty

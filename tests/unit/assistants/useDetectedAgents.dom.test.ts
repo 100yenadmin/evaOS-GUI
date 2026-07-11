@@ -8,11 +8,11 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 
 // Mock SWR
 vi.mock('swr', () => ({
-  default: vi.fn((key, fetcher) => {
+  default: vi.fn((_key, _fetcher) => {
     // Return mock data immediately for simplicity
     return { data: [], error: null, isLoading: false };
   }),
@@ -30,14 +30,15 @@ vi.mock('@/common', () => ({
 
 // Mock agentTypes module
 vi.mock('@/renderer/utils/model/agentTypes', () => ({
+  ASSISTANT_AGENT_CATALOG_SWR_KEY: 'assistant-agent-catalog',
   DETECTED_AGENTS_SWR_KEY: 'detected-agents',
-  fetchDetectedAgents: vi.fn(),
+  fetchAssistantAgentCatalog: vi.fn(),
 }));
 
 import { useDetectedAgents } from '@/renderer/hooks/assistant/useDetectedAgents';
 import { ipcBridge } from '@/common';
 import useSWR, { mutate } from 'swr';
-import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
+import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
 
 describe('useDetectedAgents', () => {
   beforeEach(() => {
@@ -53,14 +54,38 @@ describe('useDetectedAgents', () => {
   });
 
   it('filters and maps detected agents to availableBackends', () => {
-    // Option `id` must be the backend slug (what `preset_agent_type` stores),
-    // not the AgentMetadata row id — otherwise the assistant editor saves a row
-    // id (e.g. "2d23ff1c") as `preset_agent_type`, which later resolves to no
-    // agent.
-    const mockAgents: AgentMetadata[] = [
-      { id: 'a1', name: 'ClaudeCode', agent_type: 'acp', agent_source: 'builtin', backend: 'claude' },
-      { id: 'a2', name: 'ExtAgent', agent_type: 'local', agent_source: 'extension' },
-      { id: 'a3', name: 'RemoteAgent', agent_type: 'remote', agent_source: 'builtin' },
+    const mockAgents: ManagedAgent[] = [
+      {
+        id: 'a1',
+        name: 'ClaudeCode',
+        agent_type: 'acp',
+        agent_source: 'builtin',
+        backend: 'claude',
+        enabled: true,
+        installed: true,
+        sort_order: 0,
+        status: 'online',
+      },
+      {
+        id: 'a2',
+        name: 'AionRS',
+        agent_type: 'aionrs',
+        agent_source: 'internal',
+        enabled: true,
+        installed: true,
+        sort_order: 1,
+        status: 'unchecked',
+      },
+      {
+        id: 'a3',
+        name: 'RemoteAgent',
+        agent_type: 'remote',
+        agent_source: 'builtin',
+        enabled: true,
+        installed: true,
+        sort_order: 2,
+        status: 'online',
+      },
     ];
     (useSWR as any).mockReturnValue({ data: mockAgents, error: null });
 
@@ -69,37 +94,41 @@ describe('useDetectedAgents', () => {
     expect(result.current.availableBackends).toHaveLength(2); // 'remote' excluded
     // backend slug wins when present
     expect(result.current.availableBackends[0]).toEqual({
-      id: 'claude',
+      id: 'a1',
       name: 'ClaudeCode',
+      runtimeKey: 'claude',
       isExtension: false,
       modelOptions: [],
     });
     // falls back to agent_type when backend is absent (e.g. internal engines)
     expect(result.current.availableBackends[1]).toEqual({
-      id: 'local',
-      name: 'ExtAgent',
-      isExtension: true,
+      id: 'a2',
+      name: 'AionRS',
+      runtimeKey: 'aionrs',
+      isExtension: false,
       modelOptions: [],
     });
   });
 
   it('derives backend-scoped model options from handshake available_models', () => {
-    const mockAgents: AgentMetadata[] = [
+    const mockAgents: ManagedAgent[] = [
       {
         id: 'a1',
         name: 'ClaudeCode',
         agent_type: 'acp',
         agent_source: 'builtin',
         backend: 'claude',
-        handshake: {
-          available_models: {
-            current_model_id: 'claude-sonnet-4',
-            current_model_label: 'Claude Sonnet 4',
-            available_models: [
-              { id: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
-              { id: 'claude-opus-4', label: 'Claude Opus 4' },
-            ],
-          },
+        enabled: true,
+        installed: true,
+        sort_order: 0,
+        status: 'online',
+        available_models: {
+          current_model_id: 'claude-sonnet-4',
+          current_model_label: 'Claude Sonnet 4',
+          available_models: [
+            { id: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
+            { id: 'claude-opus-4', label: 'Claude Opus 4' },
+          ],
         },
       },
     ];
@@ -124,7 +153,8 @@ describe('useDetectedAgents', () => {
     });
 
     expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
-    expect(mutate).toHaveBeenCalledWith('detected-agents');
+    expect(mutate).toHaveBeenNthCalledWith(1, 'assistant-agent-catalog');
+    expect(mutate).toHaveBeenNthCalledWith(2, 'detected-agents');
   });
 
   it('ignores error during refreshAgentDetection', async () => {

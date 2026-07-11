@@ -28,6 +28,9 @@ type AssistantSkillsDefaultMode = 'auto' | 'fixed';
 type AssistantMcpDefaultMode = 'auto' | 'fixed';
 
 const isBuiltinAssistant = (assistant: Assistant | null | undefined): boolean => assistant?.source === 'builtin';
+const isGeneratedAssistant = (assistant: Assistant | null | undefined): boolean => assistant?.source === 'generated';
+const isSystemAssistant = (assistant: Assistant | null | undefined): boolean =>
+  isBuiltinAssistant(assistant) || isGeneratedAssistant(assistant);
 
 const resolveLocalizedRecommendedPrompts = (
   detail: Awaited<ReturnType<typeof ipcBridge.assistants.get.invoke>>,
@@ -69,7 +72,7 @@ export const useAssistantEditor = ({
   const [editContext, setEditContext] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [editAvatarPreview, setEditAvatarPreview] = useState<string | undefined>(undefined);
-  const [editAgent, setEditAgentState] = useState<string>('claude');
+  const [editAgent, setEditAgentState] = useState<string>('');
   const [editRecommendedPromptsText, setEditRecommendedPromptsText] = useState('');
   const [defaultModelMode, setDefaultModelMode] = useState<AssistantScalarDefaultMode>('auto');
   const [defaultModelValue, setDefaultModelValue] = useState('');
@@ -208,12 +211,12 @@ export const useAssistantEditor = ({
     setIsCreating(false);
     setActiveAssistantId(assistant.id);
     setEditVisible(true);
-    setPromptViewMode(isBuiltinAssistant(assistant) ? 'preview' : 'edit');
+    setPromptViewMode(isSystemAssistant(assistant) ? 'preview' : 'edit');
     setEditName(assistant.name || '');
     setEditDescription(assistant.description || '');
     setEditAvatar(assistant.avatar || '');
     setEditAvatarPreview(undefined);
-    setEditAgent(assistant.preset_agent_type || 'claude');
+    setEditAgent(assistant.agent_id || '');
     resetDefaultConfigState();
     resetSkillEditorState();
 
@@ -232,7 +235,7 @@ export const useAssistantEditor = ({
       );
       setEditAvatar(detail.profile.avatar || '');
       setEditAvatarPreview(undefined);
-      setEditAgent(detail.engine.agent_backend || assistant.preset_agent_type || 'claude');
+      setEditAgent(detail.engine.agent_id || assistant.agent_id || '');
       setEditContext(detail.rules.content || '');
       setEditRecommendedPromptsText(resolveLocalizedRecommendedPrompts(detail, localeKey).join('\n'));
       setDefaultModelMode(detail.defaults.model.mode === 'fixed' ? 'fixed' : 'auto');
@@ -269,7 +272,7 @@ export const useAssistantEditor = ({
     setEditContext('');
     setEditAvatar('\u{1F916}');
     setEditAvatarPreview(undefined);
-    setEditAgent('claude');
+    setEditAgent('');
     resetDefaultConfigState();
     resetSkillEditorState();
 
@@ -299,7 +302,7 @@ export const useAssistantEditor = ({
     setEditDescription(assistant.description_i18n?.[localeKey] || assistant.description || '');
     setEditAvatar(assistant.avatar || '\u{1F916}');
     setEditAvatarPreview(undefined);
-    setEditAgent(assistant.preset_agent_type || 'claude');
+    setEditAgent(assistant.agent_id || '');
     resetDefaultConfigState();
     resetSkillEditorState();
 
@@ -352,6 +355,11 @@ export const useAssistantEditor = ({
     try {
       if (!editName.trim()) {
         message.error(t('settings.assistantNameRequired', { defaultValue: 'Assistant name is required' }));
+        return;
+      }
+
+      if (!editAgent.trim()) {
+        message.error(t('settings.assistantAgentRequired', { defaultValue: 'Please choose a main agent' }));
         return;
       }
 
@@ -418,7 +426,7 @@ export const useAssistantEditor = ({
           name: editName,
           description: editDescription || undefined,
           avatar: editAvatar || undefined,
-          preset_agent_type: editAgent,
+          agent_id: editAgent || undefined,
           enabled_skills: selectedSkills,
           custom_skill_names: finalCustomSkills,
           disabled_builtin_skills: disabledBuiltinSkills.length > 0 ? disabledBuiltinSkills : undefined,
@@ -437,7 +445,7 @@ export const useAssistantEditor = ({
         const updateRequest: UpdateAssistantRequest = isBuiltinAssistant(activeAssistant)
           ? {
               id: activeAssistant.id,
-              preset_agent_type: editAgent,
+              agent_id: editAgent || undefined,
               defaults: {
                 model:
                   defaultModelMode === 'fixed'
@@ -449,18 +457,28 @@ export const useAssistantEditor = ({
                     : { mode: defaultPermissionMode },
               },
             }
-          : {
-              id: activeAssistant.id,
-              name: editName,
-              description: editDescription || undefined,
-              avatar: editAvatar || undefined,
-              preset_agent_type: editAgent,
-              enabled_skills: selectedSkills,
-              custom_skill_names: finalCustomSkills,
-              disabled_builtin_skills: disabledBuiltinSkills.length > 0 ? disabledBuiltinSkills : undefined,
-              recommended_prompts: recommendedPrompts,
-              defaults,
-            };
+          : isGeneratedAssistant(activeAssistant)
+            ? {
+                id: activeAssistant.id,
+                description: editDescription,
+                enabled_skills: selectedSkills,
+                custom_skill_names: finalCustomSkills,
+                disabled_builtin_skills: disabledBuiltinSkills.length > 0 ? disabledBuiltinSkills : undefined,
+                recommended_prompts: recommendedPrompts,
+                defaults,
+              }
+            : {
+                id: activeAssistant.id,
+                name: editName,
+                description: editDescription,
+                avatar: editAvatar || undefined,
+                agent_id: editAgent || undefined,
+                enabled_skills: selectedSkills,
+                custom_skill_names: finalCustomSkills,
+                disabled_builtin_skills: disabledBuiltinSkills.length > 0 ? disabledBuiltinSkills : undefined,
+                recommended_prompts: recommendedPrompts,
+                defaults,
+              };
         await ipcBridge.assistants.update.invoke(updateRequest);
 
         if (!isBuiltinAssistant(activeAssistant)) {
@@ -485,7 +503,7 @@ export const useAssistantEditor = ({
   const handleDeleteClick = () => {
     if (!activeAssistant) return;
 
-    if (isBuiltinAssistant(activeAssistant)) {
+    if (activeAssistant.source !== 'user') {
       message.warning(t('settings.cannotDeleteBuiltin', { defaultValue: 'Cannot delete builtin assistants' }));
       return;
     }
@@ -496,7 +514,7 @@ export const useAssistantEditor = ({
   const handleDeleteRequest = (assistant: AssistantListItem) => {
     setActiveAssistantId(assistant.id);
 
-    if (isBuiltinAssistant(assistant)) {
+    if (assistant.source !== 'user') {
       message.warning(t('settings.cannotDeleteBuiltin', { defaultValue: 'Cannot delete builtin assistants' }));
       return;
     }

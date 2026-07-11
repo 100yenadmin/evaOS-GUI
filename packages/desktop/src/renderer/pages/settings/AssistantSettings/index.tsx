@@ -20,6 +20,7 @@
 import { Message } from '@arco-design/web-react';
 import coworkSvg from '@/renderer/assets/icons/cowork.svg';
 import { useDetectedAgents, useAssistantEditor, useAssistantList } from '@/renderer/hooks/assistant';
+import { buildAssistantEditorBackends } from '@/renderer/hooks/assistant/useDetectedAgents';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
 import { prepareEvaosAssistantListForRc, resolveAvatarImageSrc } from './assistantUtils';
 import AssistantEditorPage from './AssistantEditorPage';
@@ -87,7 +88,7 @@ const AssistantSettings: React.FC = () => {
     [visibleAssistants, avatarImageMap, localeKey]
   );
 
-  const { availableBackends, refreshAgentDetection } = useDetectedAgents();
+  const { managedAgents, refreshAgentDetection } = useDetectedAgents();
 
   const editor = useAssistantEditor({
     localeKey,
@@ -97,6 +98,10 @@ const AssistantSettings: React.FC = () => {
     refreshAgentDetection,
     message,
   });
+  const availableBackends = useMemo(
+    () => buildAssistantEditorBackends(managedAgents, editor.editAgent),
+    [editor.editAgent, managedAgents]
+  );
 
   const editAvatarImage = editor.editAvatarPreview || resolveAvatarImageSrc(editor.editAvatar, avatarImageMap);
   const hasConsumedNavigationIntentRef = useRef(false);

@@ -57,11 +57,7 @@ export function cliAgentToOption(agent: AgentMetadata): TeamAgentOption {
   };
 }
 
-export function assistantToOption(
-  assistant: Assistant,
-  teamCapableKeys?: Set<string>,
-  localeKey = 'en-US'
-): TeamAgentOption | undefined {
+export function assistantToOption(assistant: Assistant, localeKey = 'en-US'): TeamAgentOption | undefined {
   if (!isEvaosAssistantVisibleInRc(assistant)) {
     return undefined;
   }
@@ -72,7 +68,7 @@ export function assistantToOption(
     backend: assistant.preset_agent_type,
     icon: assistant.avatar,
     description: getEvaosAssistantDisplayDescription(assistant, localeKey),
-    team_capable: teamCapableKeys ? teamCapableKeys.has(assistant.preset_agent_type) : undefined,
+    team_capable: assistant.team_selectable,
   };
 }
 

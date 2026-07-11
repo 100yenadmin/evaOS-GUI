@@ -87,40 +87,40 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
   const nextSelectionIdRef = useRef(0);
   const nameInputRef = useRef<RefInputType | null>(null);
 
-  const generatedAssistantIds = useMemo(
+  const generatedAssistantsById = useMemo(
     () =>
-      new Set(cliAgents.map((agent) => `bare:${agent.id}`).filter((id) => presetAssistants.some((a) => a.id === id))),
-    [cliAgents, presetAssistants]
+      new Map(
+        presetAssistants
+          .filter((assistant) => assistant.source === 'generated')
+          .map((assistant) => [assistant.id, assistant] as const)
+      ),
+    [presetAssistants]
   );
   const cliAgentOptions = useMemo(
     () =>
       compactTeamAgentOptions(
         cliAgents.map((agent) => {
           const assistantId = `bare:${agent.id}`;
-          return generatedAssistantIds.has(assistantId)
-            ? { ...cliAgentToOption(agent), assistant_id: assistantId }
+          const assistant = generatedAssistantsById.get(assistantId);
+          return assistant
+            ? {
+                ...cliAgentToOption(agent),
+                assistant_id: assistantId,
+                team_capable: assistant.team_selectable,
+              }
             : undefined;
         })
       ),
-    [cliAgents, generatedAssistantIds]
-  );
-  const teamCapableKeys = useMemo(
-    () =>
-      new Set(
-        cliAgents
-          .filter((agent) => agent.team_capable)
-          .flatMap((agent) => [agent.id, agent.backend, agent.agent_type].filter(Boolean) as string[])
-      ),
-    [cliAgents]
+    [cliAgents, generatedAssistantsById]
   );
   const presetAssistantOptions = useMemo(
     () =>
       compactTeamAgentOptions(
         presetAssistants
-          .filter((assistant) => !generatedAssistantIds.has(assistant.id))
-          .map((assistant) => assistantToOption(assistant, teamCapableKeys, i18n.language))
+          .filter((assistant) => !generatedAssistantsById.has(assistant.id))
+          .map((assistant) => assistantToOption(assistant, i18n.language))
       ),
-    [generatedAssistantIds, i18n.language, presetAssistants, teamCapableKeys]
+    [generatedAssistantsById, i18n.language, presetAssistants]
   );
   const allAgents = useMemo(
     () => sortTeamLeaderOptions(filterTeamSupportedAgents([...cliAgentOptions, ...presetAssistantOptions])),

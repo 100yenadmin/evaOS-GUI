@@ -88,6 +88,7 @@
   "assistantNoMatch": "Mevcut filtrelere uyan asistan bulunamadı.",
   "assistantCreated": "Asistan oluşturuldu",
   "assistantNameRequired": "İsim zorunludur",
+  "assistantAgentRequired": "Bir ana aracı seçin",
   "assistantPromptRequired": "İstem zorunludur",
   "assistantPromptHint": "Bu asistan için kuralları girin. Not: Gemini şu anda sadece kuralları desteklemektedir.",
   "assistantRules": "Kurallar",

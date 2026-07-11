@@ -280,6 +280,7 @@ describe('AssistantEditorSections', () => {
               {
                 id: 'aionrs',
                 name: 'Aionrs',
+                runtimeKey: 'aionrs',
                 modelOptions: [{ value: 'handshake-model', label: 'Handshake Model' }],
               },
             ],
@@ -309,6 +310,35 @@ describe('AssistantEditorSections', () => {
     expect(promptScope.getByText('Prompt one')).toBeInTheDocument();
     expect(promptScope.getByText('Prompt two')).toBeInTheDocument();
     expect(promptScope.getByRole('button', { name: 'Add' })).toBeInTheDocument();
+  });
+
+  it('keeps generated identity immutable while allowing supported configuration edits', () => {
+    const { container } = renderWithProviders(
+      <AssistantEditorSections
+        editor={createEditor({ isCreating: false })}
+        activeAssistant={
+          {
+            id: 'bare:agent-claude-row',
+            name: 'Claude Code',
+            source: 'generated',
+            enabled: true,
+            sort_order: 1,
+            agent_id: 'agent-claude-row',
+          } as never
+        }
+      />
+    );
+
+    expect(screen.getByTestId('input-assistant-name')).toBeDisabled();
+    expect(screen.getByTestId('input-assistant-desc')).toBeEnabled();
+    expect(container.querySelector('[data-testid="select-assistant-agent"]')?.className).toContain(
+      'arco-select-disabled'
+    );
+    expect(
+      within(screen.getByTestId('assistant-card-prompts')).getByRole('button', { name: 'Add' })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('select-assistant-default-skills')).toBeInTheDocument();
+    expect(screen.getByTestId('select-assistant-default-mcp')).toBeInTheDocument();
   });
 
   it('keeps existing recommended prompts above the new prompt input while adding', () => {
@@ -421,7 +451,9 @@ describe('AssistantEditorSections', () => {
           agent: {
             value: 'claude',
             setValue: vi.fn(),
-            availableBackends: [{ id: 'claude', name: 'Claude', isExtension: false, modelOptions: [] }],
+            availableBackends: [
+              { id: 'claude', name: 'Claude', runtimeKey: 'claude', isExtension: false, modelOptions: [] },
+            ],
           },
         })}
         activeAssistant={{

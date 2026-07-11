@@ -75,7 +75,7 @@ describe('AssistantSettings', () => {
     });
 
     useDetectedAgentsMock.mockReturnValue({
-      availableBackends: [],
+      managedAgents: [],
       refreshAgentDetection: vi.fn(),
     });
 

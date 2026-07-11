@@ -20,6 +20,9 @@ vi.mock('@/common', () => ({
       list: { invoke: vi.fn(async () => []) },
       get: { invoke: vi.fn() },
     },
+    acpConversation: {
+      getAssistantAgentCatalog: { invoke: vi.fn(async () => []) },
+    },
     fs: {
       writeAssistantRule: { invoke: vi.fn(async () => true) },
       readAssistantRule: { invoke: vi.fn(async () => '') },
@@ -59,6 +62,18 @@ describe('migrateAssistants', () => {
     vi.clearAllMocks();
     (ipcBridge.assistants.list.invoke as any).mockResolvedValue([]);
     (ipcBridge.assistants.get.invoke as any).mockResolvedValue(undefined);
+    (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([
+      {
+        id: 'agent-aionrs-row',
+        name: 'AionRS',
+        agent_type: 'aionrs',
+        agent_source: 'internal',
+        enabled: true,
+        installed: true,
+        sort_order: 0,
+        status: 'online',
+      },
+    ]);
     (ipcBridge.fs.readAssistantRule.invoke as any).mockResolvedValue('');
   });
 
@@ -71,10 +86,10 @@ describe('migrateAssistants', () => {
         presetAgentType: 'claude',
         avatar: '🤖',
       };
-      const result = legacyAssistantToCreateRequest(legacy);
+      const result = legacyAssistantToCreateRequest(legacy, new Map([['claude', 'agent-claude-row']]));
       expect(result.id).toBe('my-assistant');
       expect(result.name).toBe('MyAssistant');
-      expect(result.preset_agent_type).toBe('claude');
+      expect(result.agent_id).toBe('agent-claude-row');
     });
 
     it('renames colliding preset ids to avoid overwrite', () => {
@@ -111,20 +126,31 @@ describe('migrateAssistants', () => {
       // backend default is 'aionrs' (the internal gemini engine was removed).
       // Treat a legacy 'gemini' value as "no explicit choice" so users who
       // never touched the picker get the current default, not a broken one.
-      const result = legacyAssistantToCreateRequest({ id: 'x', presetAgentType: 'gemini' });
-      expect(result.preset_agent_type).toBe('aionrs');
+      const result = legacyAssistantToCreateRequest(
+        { id: 'x', presetAgentType: 'gemini' },
+        new Map([['aionrs', 'agent-aionrs-row']])
+      );
+      expect(result.agent_id).toBe('agent-aionrs-row');
     });
 
     it('defaults to aionrs when presetAgentType missing', () => {
-      const result = legacyAssistantToCreateRequest({ id: 'x' });
-      expect(result.preset_agent_type).toBe('aionrs');
+      const result = legacyAssistantToCreateRequest({ id: 'x' }, new Map([['aionrs', 'agent-aionrs-row']]));
+      expect(result.agent_id).toBe('agent-aionrs-row');
     });
 
-    it('preserves non-default preset_agent_type verbatim', () => {
+    it('preserves a non-default legacy binding as canonical agent_id input', () => {
       // Users who actually picked a backend keep their choice across the
       // gemini → aionrs default migration.
-      const result = legacyAssistantToCreateRequest({ id: 'x', presetAgentType: 'codex' });
-      expect(result.preset_agent_type).toBe('codex');
+      const result = legacyAssistantToCreateRequest(
+        { id: 'x', presetAgentType: 'codex' },
+        new Map([['codex', 'agent-codex-row']])
+      );
+      expect(result.agent_id).toBe('agent-codex-row');
+    });
+
+    it('omits an unresolved legacy runtime slug instead of persisting it as a row id', () => {
+      const result = legacyAssistantToCreateRequest({ id: 'x', presetAgentType: 'retired-runtime' }, new Map());
+      expect(result.agent_id).toBeUndefined();
     });
   });
 
@@ -230,13 +256,70 @@ describe('migrateAssistants', () => {
         },
       });
       (ipcBridge.assistants.import.invoke as any).mockResolvedValue({ imported: 1, skipped: 0, failed: 0, errors: [] });
+      (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([
+        {
+          id: 'agent-aionrs-row',
+          name: 'AionRS',
+          agent_type: 'aionrs',
+          agent_source: 'internal',
+          enabled: true,
+          installed: true,
+          status: 'online',
+        },
+      ]);
 
       const result = await migrateAssistantsToBackend(config as any);
 
       expect(result).toBe(true);
       expect(ipcBridge.assistants.import.invoke).toHaveBeenCalledTimes(1);
+      expect(ipcBridge.assistants.import.invoke).toHaveBeenCalledWith({
+        assistants: [expect.objectContaining({ id: 'custom-1', agent_id: 'agent-aionrs-row' })],
+      });
       expect(ipcBridge.assistants.setState.invoke).not.toHaveBeenCalled();
       expect(ipcBridge.assistants.update.invoke).not.toHaveBeenCalled();
+    });
+
+    it('keeps migration retryable when the canonical agent catalog is unavailable', async () => {
+      const config = makeConfig({ assistants: [{ id: 'custom-1', name: 'Custom 1', presetAgentType: 'claude' }] });
+      (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([]);
+
+      const result = await migrateAssistantsToBackend(config as any);
+
+      expect(result).toBe(false);
+      expect(ipcBridge.assistants.import.invoke).not.toHaveBeenCalled();
+    });
+
+    it('imports valid rows when another custom assistant references a retired runtime', async () => {
+      const config = makeConfig({
+        assistants: [
+          { id: 'valid', name: 'Valid', presetAgentType: 'claude' },
+          { id: 'retired', name: 'Retired', presetAgentType: 'retired-runtime' },
+        ],
+      });
+      (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([
+        {
+          id: 'agent-claude-row',
+          name: 'Claude',
+          agent_type: 'acp',
+          backend: 'claude',
+          agent_source: 'builtin',
+          enabled: true,
+          installed: true,
+          sort_order: 0,
+          status: 'online',
+        },
+      ]);
+      (ipcBridge.assistants.import.invoke as any).mockResolvedValue({ imported: 2, skipped: 0, failed: 0, errors: [] });
+
+      const result = await migrateAssistantsToBackend(config as any);
+
+      expect(result).toBe(true);
+      expect(ipcBridge.assistants.import.invoke).toHaveBeenCalledWith({
+        assistants: [
+          expect.objectContaining({ id: 'valid', agent_id: 'agent-claude-row' }),
+          expect.not.objectContaining({ agent_id: expect.anything() }),
+        ],
+      });
     });
   });
 
@@ -266,6 +349,19 @@ describe('migrateAssistants', () => {
         builtinListStub([{ id: 'word-creator', preset_agent_type: 'aionrs' }])
       );
       (ipcBridge.assistants.update.invoke as any).mockResolvedValue({});
+      (ipcBridge.acpConversation.getAssistantAgentCatalog.invoke as any).mockResolvedValue([
+        {
+          id: 'agent-codex-row',
+          name: 'Codex',
+          agent_type: 'acp',
+          backend: 'codex',
+          agent_source: 'builtin',
+          enabled: true,
+          installed: true,
+          sort_order: 0,
+          status: 'online',
+        },
+      ]);
 
       const result = await migrateAssistantsToBackend(config as any);
 
@@ -273,8 +369,22 @@ describe('migrateAssistants', () => {
       expect(ipcBridge.assistants.update.invoke).toHaveBeenCalledTimes(1);
       expect(ipcBridge.assistants.update.invoke).toHaveBeenCalledWith({
         id: 'word-creator',
-        preset_agent_type: 'codex',
+        agent_id: 'agent-codex-row',
       });
+    });
+
+    it('keeps migration retryable when a legacy builtin runtime cannot resolve to a canonical row', async () => {
+      const config = makeConfig({
+        assistants: [{ id: 'builtin-word-creator', enabled: true, presetAgentType: 'retired', isBuiltin: true }],
+      });
+      (ipcBridge.assistants.list.invoke as any).mockResolvedValue(
+        builtinListStub([{ id: 'word-creator', preset_agent_type: 'aionrs' }])
+      );
+
+      const result = await migrateAssistantsToBackend(config as any);
+
+      expect(result).toBe(false);
+      expect(ipcBridge.assistants.update.invoke).not.toHaveBeenCalled();
     });
 
     it('does not override when legacy value is the old default (gemini)', async () => {

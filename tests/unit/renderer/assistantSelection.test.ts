@@ -6,9 +6,13 @@
 
 import { describe, expect, it } from 'vitest';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
-import { selectableAssistants, selectableEvaosAssistants } from '@/renderer/utils/model/assistantSelection';
+import {
+  canSwitchAssistantAgent,
+  selectableAssistants,
+  selectableEvaosAssistants,
+} from '@/renderer/utils/model/assistantSelection';
 
-type SelectionFixtureAssistant = Pick<Assistant, 'id' | 'enabled' | 'sort_order'> & {
+type SelectionFixtureAssistant = Pick<Assistant, 'id' | 'enabled' | 'sort_order' | 'agent_status'> & {
   source: Assistant['source'] | 'generated';
 };
 
@@ -19,10 +23,17 @@ const assistant = (
   source: overrides.source,
   enabled: overrides.enabled ?? true,
   sort_order: overrides.sort_order ?? 1000,
+  agent_status: overrides.agent_status ?? 'online',
   ...overrides,
 });
 
 describe('assistantSelection', () => {
+  it('keeps generated assistant agent bindings immutable', () => {
+    expect(canSwitchAssistantAgent({ source: 'generated' } as Assistant)).toBe(false);
+    expect(canSwitchAssistantAgent({ source: 'builtin' } as Assistant)).toBe(true);
+    expect(canSwitchAssistantAgent({ source: 'user' } as Assistant)).toBe(true);
+  });
+
   it('orders enabled assistants by source group then sort order', () => {
     const selected = selectableAssistants([
       assistant({ id: 'official-low', source: 'builtin', sort_order: 1 }),
@@ -50,6 +61,15 @@ describe('assistantSelection', () => {
     ]);
 
     expect(selected.map((item) => item.id)).toEqual(['first', 'second', 'third']);
+  });
+
+  it('does not expose assistants whose canonical agent row is missing', () => {
+    const selected = selectableAssistants([
+      assistant({ id: 'available', source: 'user' }),
+      assistant({ id: 'orphaned', source: 'user', agent_status: 'missing' }),
+    ]);
+
+    expect(selected.map((item) => item.id)).toEqual(['available']);
   });
 
   it('applies evaOS RC visibility while pinning Cowork first', () => {

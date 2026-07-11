@@ -70,8 +70,11 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
     node.closest('[data-editor-popup-root]') ?? node.parentElement ?? document.body;
 
   const isBuiltin = activeAssistant?.source === 'builtin';
+  const isGenerated = activeAssistant?.source === 'generated';
+  const isSystemAssistant = isBuiltin || isGenerated;
   const showSkills = isCreating || activeAssistant !== null;
   const currentBackend = availableBackends.find((option) => option.id === editAgent);
+  const editAgentRuntimeKey = currentBackend?.runtimeKey || '';
   const providerModelOptions = providers.flatMap((provider) =>
     getAvailableModels(provider).map((modelName) => ({
       key: `${provider.id}-${modelName}`,
@@ -80,27 +83,27 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
     }))
   );
   const modelOptions = useMemo(() => {
-    if (editAgent === 'aionrs') {
+    if (editAgentRuntimeKey === 'aionrs') {
       return providerModelOptions;
     }
 
     if (currentBackend && currentBackend.modelOptions.length > 0) {
       return currentBackend.modelOptions.map((model) => ({
-        key: `${editAgent}-${model.value}`,
+        key: `${editAgentRuntimeKey}-${model.value}`,
         value: model.value,
         label: model.label,
       }));
     }
 
     return [];
-  }, [currentBackend, editAgent, providerModelOptions]);
+  }, [currentBackend, editAgentRuntimeKey, providerModelOptions]);
   const permissionOptions = useMemo(
     () =>
-      getAgentModes(editAgent).map((option) => ({
+      getAgentModes(editAgentRuntimeKey).map((option) => ({
         ...option,
         label: t(`agentMode.${option.value}`, { defaultValue: option.label }),
       })),
-    [editAgent, t]
+    [editAgentRuntimeKey, t]
   );
   const recommendedPromptItems = useMemo(
     () =>
@@ -279,7 +282,8 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
       ) : null}
 
       <IdentitySection
-        isBuiltin={isBuiltin}
+        isBuiltin={isSystemAssistant}
+        canEditDescription={isGenerated}
         editAvatar={editAvatar}
         editName={editName}
         setEditName={setEditName}
@@ -333,6 +337,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
               getPopupContainer={getEditorSelectPopupContainer}
               value={editAgent}
               onChange={(value) => setEditAgent(value as string)}
+              disabled={isGenerated}
               data-testid='select-assistant-agent'
             >
               {availableBackends.map((option) => (

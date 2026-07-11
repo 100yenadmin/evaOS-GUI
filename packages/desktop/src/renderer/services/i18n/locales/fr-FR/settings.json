@@ -88,6 +88,7 @@
   "assistantNoMatch": "Aucun assistant ne correspond aux filtres actuels.",
   "assistantCreated": "Assistant créé",
   "assistantNameRequired": "Le nom est requis",
+  "assistantAgentRequired": "Choisissez un agent principal",
   "assistantPromptRequired": "Le prompt est requis",
   "assistantPromptHint": "Entrez les règles pour cet assistant. Note : Gemini ne supporte actuellement que les règles.",
   "assistantRules": "Règles",

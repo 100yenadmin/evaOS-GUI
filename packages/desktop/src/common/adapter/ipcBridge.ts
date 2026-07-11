@@ -26,8 +26,6 @@ import type {
   TProviderWithModel,
 } from '../config/storage';
 import type {
-  Assistant,
-  AssistantDetail,
   CreateAssistantRequest,
   ImportAssistantsRequest,
   ImportAssistantsResult,
@@ -84,6 +82,14 @@ import type {
 } from '../update/updateTypes';
 import type { ProtocolDetectionRequest, ProtocolDetectionResponse } from '../utils/protocolDetector';
 import { fromApiConversation, fromApiPaginatedConversations, toApiModelOptional } from './apiModelMapper';
+import {
+  fromApiAssistant,
+  fromApiAssistantDetail,
+  toApiCreateAssistantRequest,
+  toApiUpdateAssistantRequest,
+  type ApiAssistant,
+  type ApiAssistantDetail,
+} from './assistantMapper';
 import {
   httpDelete,
   httpGet,
@@ -389,22 +395,36 @@ export const shell = {
 // ---------------------------------------------------------------------------
 
 export const assistants = {
-  list: httpGet<Assistant[], void>('/api/assistants'),
-  get: httpGet<AssistantDetail, { id: string; locale?: string }>(
-    ({ id, locale }) =>
-      `/api/assistants/${encodeURIComponent(id)}${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`
+  list: withResponseMap(httpGet<ApiAssistant[], void>('/api/assistants'), (list) => list.map(fromApiAssistant)),
+  get: withResponseMap(
+    httpGet<ApiAssistantDetail, { id: string; locale?: string }>(
+      ({ id, locale }) =>
+        `/api/assistants/${encodeURIComponent(id)}${locale ? `?locale=${encodeURIComponent(locale)}` : ''}`
+    ),
+    fromApiAssistantDetail
   ),
-  create: httpPost<Assistant, CreateAssistantRequest>('/api/assistants'),
-  update: httpPut<Assistant, UpdateAssistantRequest>((p) => `/api/assistants/${p.id}`),
+  create: withResponseMap(
+    httpPost<ApiAssistant, CreateAssistantRequest>('/api/assistants', toApiCreateAssistantRequest),
+    fromApiAssistant
+  ),
+  update: withResponseMap(
+    httpPut<ApiAssistant, UpdateAssistantRequest>((p) => `/api/assistants/${p.id}`, toApiUpdateAssistantRequest),
+    fromApiAssistant
+  ),
   delete: httpDelete<void, { id: string }>((p) => `/api/assistants/${p.id}`),
-  setState: httpPatch<Assistant, SetAssistantStateRequest>(
-    (p) => `/api/assistants/${p.id}/state`,
-    (p) => {
-      const { id: _id, ...body } = p;
-      return body;
-    }
+  setState: withResponseMap(
+    httpPatch<ApiAssistant, SetAssistantStateRequest>(
+      (p) => `/api/assistants/${p.id}/state`,
+      (p) => {
+        const { id: _id, ...body } = p;
+        return body;
+      }
+    ),
+    fromApiAssistant
   ),
-  import: httpPost<ImportAssistantsResult, ImportAssistantsRequest>('/api/assistants/import'),
+  import: httpPost<ImportAssistantsResult, ImportAssistantsRequest>('/api/assistants/import', (p) => ({
+    assistants: p.assistants.map(toApiCreateAssistantRequest),
+  })),
 };
 
 // ---------------------------------------------------------------------------
@@ -1035,6 +1055,9 @@ export const acpConversation = {
   responseStream: conversation.responseStream,
   getAvailableAgents: httpGet<AgentMetadata[], void>('/api/agents'),
   getManagedAgents: httpGet<AgentMetadata[], void>('/api/agents?include_disabled=true'),
+  getAssistantAgentCatalog: httpGet<import('@/renderer/utils/model/agentTypes').ManagedAgent[], void>(
+    '/api/agents/management'
+  ),
   refreshCustomAgents: httpPost<void, void>('/api/agents/refresh'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },

@@ -127,4 +127,44 @@ describe('AssistantEditorPage', () => {
     expect(screen.getByText('学术论文助手')).toBeInTheDocument();
     expect(screen.queryByText('Academic Paper')).not.toBeInTheDocument();
   });
+
+  it('does not expose delete for generated catalog assistants', () => {
+    const editor = createEditor();
+    editor.isCreating = false;
+
+    render(
+      <ConfigProvider>
+        <AssistantEditorPage
+          editor={editor}
+          activeAssistant={
+            {
+              id: 'bare:agent-claude-row',
+              name: 'Claude Code',
+              source: 'generated',
+              enabled: true,
+              sort_order: 1,
+            } as never
+          }
+          onBack={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+
+    expect(screen.queryByTestId('btn-delete-assistant')).not.toBeInTheDocument();
+    expect(screen.getByTestId('btn-save-assistant')).toBeEnabled();
+  });
+
+  it('disables create until a canonical agent row is selected', () => {
+    const editor = createEditor();
+    editor.profile.name = 'New assistant';
+    editor.agent.value = '';
+
+    render(
+      <ConfigProvider>
+        <AssistantEditorPage editor={editor} activeAssistant={null} onBack={vi.fn()} />
+      </ConfigProvider>
+    );
+
+    expect(screen.getByTestId('btn-save-assistant')).toBeDisabled();
+  });
 });

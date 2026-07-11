@@ -88,6 +88,7 @@
   "assistantNoMatch": "현재 필터 조건에 일치하는 어시스턴트가 없습니다.",
   "assistantCreated": "어시스턴트 생성됨",
   "assistantNameRequired": "이름은 필수입니다",
+  "assistantAgentRequired": "메인 에이전트를 선택하세요",
   "assistantPromptRequired": "프롬프트는 필수입니다",
   "assistantPromptHint": "이 어시스턴트에 대한 규칙을 입력하세요. 참고: Gemini는 현재 규칙만 지원합니다.",
   "assistantRules": "규칙",
