@@ -804,6 +804,7 @@ const GuidPage: React.FC = () => {
     [guidInput.setInput]
   );
   const { handleLiveTranscript } = useLiveTranscriptInsertion(guidInput.setInput);
+  const handleAddModel = useCallback(() => navigate('/settings/model'), [navigate]);
 
   // Build the action row
   const actionRowNode = (
@@ -811,6 +812,14 @@ const GuidPage: React.FC = () => {
       files={guidInput.files}
       onFilesUploaded={guidInput.handleFilesUploaded}
       modelSelectorNode={modelSelectorNode}
+      isGeminiMode={isGeminiMode}
+      modelList={modelSelection.modelList}
+      current_model={modelSelection.current_model}
+      setCurrentModel={setGuidCurrentModel}
+      currentAcpCachedModelInfo={agentSelection.currentAcpCachedModelInfo}
+      selectedAcpModel={agentSelection.selectedAcpModel}
+      setSelectedAcpModel={setGuidSelectedAcpModel}
+      onAddModel={handleAddModel}
       selectedAgent={agentSelection.selectedAgent}
       effectiveModeAgent={agentSelection.currentEffectiveAgentInfo.agent_type}
       selectedMode={agentSelection.selectedMode}
