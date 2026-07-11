@@ -25,6 +25,7 @@ import type {
   IEvaosNativeCompanionActionResult,
   IEvaosNativeCompanionAgentPairingStatus,
   IEvaosNativeCompanionRepairAction,
+  IEvaosNativeCompanionRuntimeToolReadiness,
   IEvaosNativeCompanionStatusView,
   IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
@@ -159,6 +160,7 @@ const NativeCompanionPage: React.FC = () => {
     isOperator,
   });
   const agentPairingStatus = effectiveAgentPairingStatus(status, currentActionResult);
+  const runtimeToolReadiness = status?.runtimeToolReadiness ?? 'not_ready';
   const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(currentActionResult);
   const canCreatePairingPrompt = canCreateNativeCompanionPairingPrompt({
@@ -174,7 +176,8 @@ const NativeCompanionPage: React.FC = () => {
     pairingPromptCopied: Boolean(copyMessage),
     permissionGuideDetail,
   });
-  const guidedSetupReady = agentPairingStatus === 'agent_paired' || currentActionResult?.connectorGrant?.ok === true;
+  const guidedGrantActive = agentPairingStatus === 'agent_paired' || currentActionResult?.connectorGrant?.ok === true;
+  const guidedSetupReady = runtimeToolReadiness === 'tools_ready';
 
   const handleOpenReleasedWorkbench = React.useCallback(async () => {
     const result = await openReleasedWorkbench();
@@ -479,7 +482,9 @@ const NativeCompanionPage: React.FC = () => {
                   onChange={handlePairingTargetChange}
                 />
               </div>
-              <Tag color={guidedSetupReady ? 'green' : 'orange'}>{guidedSetupReady ? 'Ready' : 'Setup needed'}</Tag>
+              <Tag color={guidedSetupReady ? 'green' : 'orange'}>
+                {guidedSetupReady ? 'End-to-end ready' : guidedGrantActive ? 'Grant active; test needed' : 'Setup needed'}
+              </Tag>
             </div>
 
             <div className='mt-12px rounded-8px bg-fill-1 p-12px'>
@@ -517,12 +522,12 @@ const NativeCompanionPage: React.FC = () => {
               <div className='mt-12px grid grid-cols-1 gap-10px md:grid-cols-2' aria-label='Agent connector proof'>
                 <AgentProofCard
                   title='Test with evaOS / OpenClaw'
-                  pairingStatus={agentPairingStatus}
+                  runtimeToolReadiness={runtimeToolReadiness}
                   detail='Use the evaOS/OpenClaw plugin to run status, desktop see, one low-impact action, audit tail, and stop or kill-switch proof through this connector.'
                 />
                 <AgentProofCard
                   title='Test with Hermes'
-                  pairingStatus={agentPairingStatus}
+                  runtimeToolReadiness={runtimeToolReadiness}
                   detail='Run the same connector contract through Hermes. Hermes must use the shared Workbench connector, not a second Mac-control backend.'
                 />
               </div>
@@ -971,13 +976,13 @@ function capabilityDisplayName(id: string): string {
 function AgentProofCard({
   title,
   detail,
-  pairingStatus,
+  runtimeToolReadiness,
 }: {
   title: string;
   detail: string;
-  pairingStatus: IEvaosNativeCompanionAgentPairingStatus;
+  runtimeToolReadiness: IEvaosNativeCompanionRuntimeToolReadiness;
 }) {
-  const label = agentProofLabel(pairingStatus);
+  const label = agentProofLabel(runtimeToolReadiness);
   return (
     <div className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-12px'>
       <div className='flex flex-wrap items-center justify-between gap-8px'>
@@ -1155,11 +1160,11 @@ function isPairableMacControlTarget(target: IEvaosCustomerTargetView): boolean {
   return true;
 }
 
-function agentProofLabel(status: IEvaosNativeCompanionAgentPairingStatus): {
+function agentProofLabel(status: IEvaosNativeCompanionRuntimeToolReadiness): {
   text: string;
   tone: NativeCompanionTone;
 } {
-  if (status === 'agent_paired') {
+  if (status === 'tools_ready') {
     return { text: 'Proven', tone: 'ready' };
   }
   if (status === 'proof_failed') {

@@ -669,7 +669,32 @@ describe('evaOS Mac control doctor', () => {
           'Connect Mac Control',
         ].join('\n')
       )
-    ).toBe(true);
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'This Mac is locally ready',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Grant active; test needed',
+          'Connect Mac Control',
+        ].join('\n')
+      )
+    ).toBe(false);
+
+    expect(
+      doctor.macControlReadyTextSatisfied(
+        [
+          'Mac control is connected for this evaOS Workbench session.',
+          'Workbench connector is reporting ready locally.',
+          'Accessibility and Screen Recording are ready.',
+          'Guided Mac control setup',
+          'Ready',
+        ].join('\n')
+      )
+    ).toBe(false);
 
     expect(
       doctor.macControlReadyTextSatisfied(
@@ -678,7 +703,10 @@ describe('evaOS Mac control doctor', () => {
           'Workbench connector is reporting ready locally.',
           'Accessibility and Screen Recording are ready.',
           'Guided Mac control setup',
-          'Ready',
+          'End-to-end ready',
+          'Agent runtime',
+          'End-to-end ready',
+          'Proven',
           'Start Full Access',
         ].join('\n')
       )
@@ -687,15 +715,15 @@ describe('evaOS Mac control doctor', () => {
     expect(
       doctor.macControlReadyTextSatisfied(
         [
-          'Mac Access is on',
+          'This Mac is locally ready',
           'Workbench connector is reporting ready locally.',
           'Accessibility and Screen Recording are ready.',
           'Guided Mac control setup',
-          'Ready',
+          'Grant active; test needed',
           'Mac control is connected for this evaOS Workbench session.',
         ].join('\n')
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('records bridge readiness even when UI product proof is skipped', async () => {

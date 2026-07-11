@@ -230,7 +230,7 @@ export async function getEvaosNativeCompanionStatus(
   const agentPairingStatus = pairingCapable
     ? agentPairingStatusFromStatus(readiness, controlSession.data)
     : 'not_ready';
-  const runtimeToolReadiness = runtimeToolReadinessFromPairing(readiness, agentPairingStatus);
+  const runtimeToolReadiness = runtimeToolReadinessFromPairing(readiness, agentPairingStatus, controlSession.data);
   const pairingBlockedReason = pairingCapable
     ? undefined
     : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
@@ -2582,12 +2582,19 @@ function agentPairingStatusFromStatus(
 
 function runtimeToolReadinessFromPairing(
   readiness: IEvaosNativeCompanionStatusView['readiness'],
-  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus
+  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus,
+  controlSession: unknown
 ): IEvaosNativeCompanionRuntimeToolReadiness {
   if (readiness !== 'ready' || agentPairingStatus === 'not_ready') return 'not_ready';
-  if (agentPairingStatus === 'agent_paired') return 'tools_ready';
+  const explicit =
+    readString(controlSession, 'runtime_tool_readiness') ?? readString(controlSession, 'runtimeToolReadiness');
+  if (isRuntimeToolReadiness(explicit)) return explicit;
   if (agentPairingStatus === 'proof_failed') return 'proof_failed';
   return 'pairing_ready';
+}
+
+function isRuntimeToolReadiness(value: string | undefined): value is IEvaosNativeCompanionRuntimeToolReadiness {
+  return value === 'not_ready' || value === 'pairing_ready' || value === 'tools_ready' || value === 'proof_failed';
 }
 
 function isAgentPairingStatus(value: string | undefined): value is IEvaosNativeCompanionAgentPairingStatus {

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Mac Control Runtime Proof
+
+- Keep local connector and macOS permission readiness visibly separate from
+  end-to-end Jane/OpenClaw and Hermes tool readiness.
+- Treat an active account-scoped connector grant as `test needed`; only an
+  explicit `tools_ready` runtime proof may label Mac control and the two agent
+  proof cards ready/proven.
+- Preserve the existing broker grant, stop/revoke, kill-switch, diagnostics,
+  TCC, and no-ACP boundaries while preventing local readiness from masking a
+  broken VM/WebChat tool path.
+
 ## evaOS Workbench 2.1.32 (2026-07-11)
 
 ### Upstream Runtime And Workbench UX Sync

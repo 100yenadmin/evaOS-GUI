@@ -119,7 +119,7 @@ const ROUTE_CHECKS = [
     title: 'Mac & iPhone',
     proofStage: PROOF_STAGES.SHELL_SMOKE,
     settledMarkers: ['Mac & iPhone', 'Mac control repair', 'Boundary clean'],
-    settledAnyMarkers: ['Mac control is ready', 'Repair needed', 'Needs permission'],
+    settledAnyMarkers: ['Mac control is ready', 'This Mac is locally ready', 'Repair needed', 'Needs permission'],
     loadedStateRequiredMarkers: [
       'native companion status matrix',
       'open-native handoff',

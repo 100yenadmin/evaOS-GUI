@@ -290,7 +290,7 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     const { container } = renderNativeCompanion();
 
-    expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+    expect(await screen.findByText('This Mac is locally ready')).toBeInTheDocument();
     expect(screen.getByText(/Local Workbench connector and macOS permissions are ready/i)).toBeInTheDocument();
     expect(screen.getAllByText('Connect Mac control').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Connect Mac Control' })).toBeInTheDocument();
@@ -380,7 +380,7 @@ describe('NativeCompanionPage', () => {
 
     renderNativeCompanion();
 
-    expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+    expect(await screen.findByText('This Mac is locally ready')).toBeInTheDocument();
     expect(screen.queryByText('Advanced diagnostics')).not.toBeInTheDocument();
     expect(screen.queryByText('EVAs-Mac-mini.local')).not.toBeInTheDocument();
     expect(screen.queryByText('audit-mac, audit-iphone')).not.toBeInTheDocument();
@@ -446,7 +446,7 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+    expect(await screen.findByText('This Mac is locally ready')).toBeInTheDocument();
     expect(screen.getByText('Agent setup needed')).toBeInTheDocument();
     expect(screen.getAllByText(/broker-owned private connector link/).length).toBeGreaterThan(0);
     expect(screen.getByTestId('native-companion-next-action')).toHaveTextContent('Connect Mac Control');
@@ -928,7 +928,7 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByText('Test with Hermes')).toBeInTheDocument();
     expect(screen.getAllByText('Pending')).toHaveLength(2);
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
-    expect(screen.getByText(/account-scoped connector grant/i)).toBeInTheDocument();
+    expect(screen.getByText(/end-to-end broker grant and runtime tool proof/i)).toBeInTheDocument();
   });
 
   it('shows reconnect step when broker denies connector grant and preserves the Mac-control target', async () => {
@@ -1493,7 +1493,7 @@ describe('NativeCompanionPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderNativeCompanion();
 
-      expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+      expect(await screen.findByText('This Mac is locally ready')).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
       await waitFor(() =>
         expect(
@@ -1583,7 +1583,7 @@ describe('NativeCompanionPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderNativeCompanion();
 
-      expect(await screen.findByText('Mac Access is on')).toBeInTheDocument();
+      expect(await screen.findByText('This Mac is locally ready')).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Connect Mac Control' }));
       await waitFor(() =>
         expect(
@@ -1666,7 +1666,7 @@ describe('NativeCompanionPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderNativeCompanion();
 
-      await screen.findByText('Mac Access is on');
+      await screen.findByText('This Mac is locally ready');
       await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
       await user.click(screen.getByRole('button', { name: 'Turn On Mac Access' }));
       await waitFor(() => expect(screen.getAllByText('Mac Access connector started.').length).toBeGreaterThan(0));
@@ -1952,65 +1952,61 @@ describe('NativeCompanionPage', () => {
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
   });
 
-  it('marks agent proof cards proven only when status carries agent pairing proof', async () => {
+  it('keeps proof cards pending for a grant and marks them proven only with runtime tool proof', async () => {
+    const pairedStatus = {
+      schemaVersion: 'evaos.native_companion_status.v1' as const,
+      generatedAt: '2026-06-07T03:45:00.000Z',
+      readiness: 'ready' as const,
+      agentPairingStatus: 'agent_paired' as const,
+      runtimeToolReadiness: 'pairing_ready' as const,
+      summaryText: 'Workbench connector ready with agent proof.',
+      sourcePointer: 'native-companion:read-only-bridge',
+      canOpenReleasedWorkbench: false,
+      releasedWorkbench: { installed: false },
+      bridgeCli: {
+        installed: true,
+        status: 'ready' as const,
+        auditId: 'audit-bridge-ready',
+        readOnly: true,
+        permissions: { accessibility: 'granted', screenRecording: 'granted' },
+      },
+      connectorService: { status: 'ready' as const, running: true, reachable: true },
+      customerMac: {
+        status: 'ready' as const,
+        auditId: 'audit-mac-ready',
+        permissions: { accessibility: 'granted', screenRecording: 'granted' },
+      },
+      iPhone: { status: 'unavailable' as const, installed: false, running: false },
+      controlSession: {
+        status: 'ready' as const,
+        auditId: 'audit-control-ready',
+        active: true,
+        mode: 'full-access' as const,
+        killSwitch: false,
+      },
+      audit: { status: 'ready' as const, auditIds: ['audit-mac-ready', 'audit-control-ready'] },
+    };
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
-      data: {
-        schemaVersion: 'evaos.native_companion_status.v1',
-        generatedAt: '2026-06-07T03:45:00.000Z',
-        readiness: 'ready',
-        agentPairingStatus: 'agent_paired',
-        summaryText: 'Workbench connector ready with agent proof.',
-        sourcePointer: 'native-companion:read-only-bridge',
-        canOpenReleasedWorkbench: false,
-        releasedWorkbench: { installed: false },
-        bridgeCli: {
-          installed: true,
-          status: 'ready',
-          auditId: 'audit-bridge-ready',
-          readOnly: true,
-          permissions: {
-            accessibility: 'granted',
-            screenRecording: 'granted',
-          },
-        },
-        connectorService: {
-          status: 'ready',
-          running: true,
-          reachable: true,
-        },
-        customerMac: {
-          status: 'ready',
-          auditId: 'audit-mac-ready',
-          permissions: {
-            accessibility: 'granted',
-            screenRecording: 'granted',
-          },
-        },
-        iPhone: {
-          status: 'unavailable',
-          installed: false,
-          running: false,
-        },
-        controlSession: {
-          status: 'ready',
-          auditId: 'audit-control-ready',
-          active: true,
-          mode: 'full-access',
-          killSwitch: false,
-        },
-        audit: {
-          status: 'ready',
-          auditIds: ['audit-mac-ready', 'audit-control-ready'],
-        },
-      },
+      data: pairedStatus,
     });
 
     renderNativeCompanion();
 
-    expect(await screen.findByText('Agent paired')).toBeInTheDocument();
+    expect(await screen.findAllByText('Grant active; test needed')).toHaveLength(2);
     expect(screen.getByText('Test with evaOS / OpenClaw')).toBeInTheDocument();
     expect(screen.getByText('Test with Hermes')).toBeInTheDocument();
+    expect(screen.getAllByText('Pending')).toHaveLength(2);
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
+
+    cleanup();
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: { ...pairedStatus, runtimeToolReadiness: 'tools_ready' },
+    });
+    renderNativeCompanion();
+
+    expect(await screen.findAllByText('End-to-end ready')).toHaveLength(2);
     expect(screen.getAllByText('Proven')).toHaveLength(2);
     expect(screen.queryByText('Pending')).not.toBeInTheDocument();
   });

@@ -156,7 +156,7 @@ describe('nativeCompanionViewModel', () => {
     expect(viewModel.primaryAction.kind).toBe('refresh');
     expect(viewModel.primaryAction.label).toBe('Check again');
     expect(viewModel.readinessStrip.map((item) => item.help).join(' ')).not.toMatch(/AionUi|Aion CLI/i);
-    expect(viewModel.readinessStrip.map((item) => item.label)).toEqual(['Connector', 'Agent access', 'Permissions']);
+    expect(viewModel.readinessStrip.map((item) => item.label)).toEqual(['Connector', 'Agent runtime', 'Permissions']);
     expect(viewModel.repairSteps.join(' ')).not.toMatch(
       /pairing code|keychain|tcc bypass|access[_-]?token|desktop[_-]?session|provider[_-]?grant|secret/i
     );
@@ -204,11 +204,11 @@ describe('nativeCompanionViewModel', () => {
       error: null,
       hasSelectedCustomer: true,
     });
-    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent runtime');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
     const toolStep = viewModel.repairSteps.find((step) => step.title === 'Test Mac control');
 
-    expect(viewModel.title).toBe('Mac Access is on');
+    expect(viewModel.title).toBe('This Mac is locally ready');
     expect(viewModel.summary).toContain('Local Workbench connector and macOS permissions are ready');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
@@ -221,7 +221,7 @@ describe('nativeCompanionViewModel', () => {
       value: 'Ready to connect',
       tone: 'attention',
     });
-    expect(pairing?.help).toContain('account-scoped connector grant');
+    expect(pairing?.help).toContain('End-to-end broker grant and runtime tool proof');
     expect(pairingStep?.detail).toContain('do not expose public Mac, VNC, SSH, or browser debug ports');
     expect(toolStep).toMatchObject({
       state: 'neutral',
@@ -245,11 +245,11 @@ describe('nativeCompanionViewModel', () => {
       error: null,
       hasSelectedCustomer: true,
     });
-    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent runtime');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
 
     expect(viewModel.state).toBe('ready');
-    expect(viewModel.title).toBe('Mac Access is on');
+    expect(viewModel.title).toBe('This Mac is locally ready');
     expect(viewModel.summary).toContain('Local Workbench connector and macOS permissions are ready');
     expect(pairing).toMatchObject({
       value: 'Agent setup needed',
@@ -331,11 +331,12 @@ describe('nativeCompanionViewModel', () => {
     });
   });
 
-  it('distinguishes a proven paired agent from local connector readiness', () => {
+  it('distinguishes proven runtime tools from local connector readiness', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
         readiness: 'ready',
         agentPairingStatus: 'agent_paired',
+        runtimeToolReadiness: 'tools_ready',
         summaryText: 'Workbench connector ready with agent proof.',
         bridgeCli: { installed: true, status: 'ready', readOnly: true },
         connectorService: { status: 'ready', running: true, reachable: true },
@@ -345,17 +346,17 @@ describe('nativeCompanionViewModel', () => {
       error: null,
       hasSelectedCustomer: true,
     });
-    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent access');
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent runtime');
     const pairingStep = viewModel.repairSteps.find((step) => step.title === 'Connect Mac control');
 
     expect(pairing).toMatchObject({
-      value: 'Agent paired',
+      value: 'End-to-end ready',
       tone: 'ready',
     });
     expect(pairingStep).toMatchObject({
       state: 'ready',
     });
-    expect(viewModel.summary).toContain('Local Workbench connector and macOS permissions are ready');
+    expect(viewModel.summary).toContain('End-to-end broker and runtime tool proof is ready');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'run',
       action: 'control_start',
@@ -363,6 +364,33 @@ describe('nativeCompanionViewModel', () => {
       label: 'Start Full Access',
       disabled: false,
     });
+  });
+
+  it('keeps an active connector grant below end-to-end ready until runtime tools are proven', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'agent_paired',
+        runtimeToolReadiness: 'pairing_ready',
+        summaryText: 'Workbench connector ready with an active account-scoped grant.',
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+    });
+    const pairing = viewModel.readinessStrip.find((item) => item.label === 'Agent runtime');
+    const toolStep = viewModel.repairSteps.find((step) => step.title === 'Test Mac control');
+
+    expect(viewModel.title).toBe('This Mac is locally ready');
+    expect(viewModel.summary).toContain('not proven end to end');
+    expect(pairing).toMatchObject({
+      value: 'Grant active; test needed',
+      tone: 'attention',
+    });
+    expect(toolStep).toMatchObject({ state: 'neutral' });
   });
 
   it('prioritizes one next action through the Mac pairing flow', () => {
@@ -617,7 +645,7 @@ describe('nativeCompanionViewModel', () => {
 
     expect(viewModel.state).toBe('ready');
     expect(viewModel.readinessStrip.find((item) => item.label === 'Permissions')).toMatchObject({
-      value: 'Granted',
+      value: 'Granted on this Mac',
       tone: 'ready',
     });
     expect(viewModel.repairSteps.find((step) => step.title === 'Allow screen and control')).toMatchObject({
@@ -657,7 +685,7 @@ describe('nativeCompanionViewModel', () => {
 
     expect(viewModel.state).toBe('ready');
     expect(viewModel.readinessStrip.find((item) => item.label === 'Permissions')).toMatchObject({
-      value: 'Granted',
+      value: 'Granted on this Mac',
       tone: 'ready',
     });
     expect(viewModel.nextAction).toMatchObject({

@@ -1228,16 +1228,13 @@ function macControlReadyTextSatisfied(text) {
   ) {
     return false;
   }
-  const connectedOrAlreadyPaired =
-    /Mac control is connected for this evaOS Workbench session/i.test(normalized) ||
-    /Mac control is ready/i.test(normalized) ||
-    /Mac Access is on/i.test(normalized) ||
-    /Full Access agent control is active/i.test(normalized);
   return (
-    connectedOrAlreadyPaired &&
+    /Mac control is ready/i.test(normalized) &&
     /Workbench connector is reporting\s+ready locally/i.test(normalized) &&
     /Accessibility and Screen Recording are ready/i.test(normalized) &&
-    /Guided Mac control setup[\s\S]*Ready/i.test(normalized)
+    /Guided Mac control setup[\s\S]*End-to-end ready/i.test(normalized) &&
+    /Agent runtime[\s\S]*End-to-end ready/i.test(normalized) &&
+    /Proven/i.test(normalized)
   );
 }
 

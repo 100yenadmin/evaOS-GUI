@@ -178,15 +178,29 @@ describe('evaosNativeCompanionStatus', () => {
           },
         },
       },
-      'customer-mac control status --json': {
-        ok: true,
-        audit_id: 'audit-control',
-        data: {
-          active: false,
-          mode: 'ask-permission',
-          kill_switch: false,
+      'customer-mac control status --json': [
+        {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+          },
         },
-      },
+        {
+          ok: true,
+          audit_id: 'audit-control-proven',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            runtime_tool_readiness: 'tools_ready',
+          },
+        },
+      ],
       'audit-tail --json --limit 5': {
         ok: true,
         audit_id: 'audit-tail',
@@ -201,7 +215,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(status).toMatchObject({
       schemaVersion: 'evaos.native_companion_status.v1',
       readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
+      agentPairingStatus: 'agent_paired',
       runtimeToolReadiness: 'pairing_ready',
       generatedAt: '2026-06-07T03:45:00.000Z',
       bridgeCli: {
@@ -241,6 +255,12 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(status.canOpenReleasedWorkbench).toBe(true);
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
+
+    const provenStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(provenStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      runtimeToolReadiness: 'tools_ready',
+    });
   });
 
   it('uses bridge ready as connector truth when legacy connector-service status is stale', async () => {
