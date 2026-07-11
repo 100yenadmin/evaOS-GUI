@@ -25,6 +25,8 @@ import {
  */
 export type TeamAgentOption = {
   id: string;
+  /** Canonical assistant-catalog identity accepted by AionCore Team APIs. */
+  assistant_id?: string;
   name: string;
   /** Execution backend (claude, gemini, qwen, …). For assistants this is
    *  `preset_agent_type`; for CLI agents it's `backend`. */
@@ -65,6 +67,7 @@ export function assistantToOption(
   }
   return {
     id: assistant.id,
+    assistant_id: assistant.id,
     name: getEvaosAssistantDisplayName(assistant, localeKey),
     backend: assistant.preset_agent_type,
     icon: assistant.avatar,
@@ -81,7 +84,7 @@ export function sortTeamLeaderOptions(options: TeamAgentOption[]): TeamAgentOpti
   const cliOptions = sortEvaosDetectedAgentsForPresentation(
     options
       .filter((option): option is TeamAgentOption & { agent_type: string } => Boolean(option.agent_type))
-      .map((option) => ({ ...option, name: option.name }))
+      .map((option) => Object.assign({}, option, { name: option.name }))
   );
   const cliOrder = new Map(cliOptions.map((option, index) => [agentKey(option), index]));
   return options
