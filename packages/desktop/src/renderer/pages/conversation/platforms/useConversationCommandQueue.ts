@@ -12,9 +12,12 @@ export type ConversationCommandQueueItem = {
   created_at: number;
 };
 
+export type ConversationCommandQueueMode = 'auto' | 'manual';
+
 export type ConversationCommandQueueState = {
   items: ConversationCommandQueueItem[];
   isPaused: boolean;
+  mode: ConversationCommandQueueMode;
 };
 
 export const MAX_QUEUED_COMMANDS = 20;
@@ -57,9 +60,12 @@ const logCommandQueue = (conversation_id: string, event: string, payload: Record
   });
 };
 
+const normalizeQueueMode = (mode: unknown): ConversationCommandQueueMode => (mode === 'manual' ? 'manual' : 'auto');
+
 const createDefaultQueueState = (): ConversationCommandQueueState => ({
   items: [],
   isPaused: false,
+  mode: 'auto',
 });
 
 const queueStore = new Map<string, ConversationCommandQueueState>();
@@ -112,6 +118,7 @@ export const normalizeQueueState = (state: unknown): ConversationCommandQueueSta
   }
 
   const candidate = state as Partial<ConversationCommandQueueState>;
+  const mode = normalizeQueueMode(candidate.mode);
   const normalizedItems = Array.isArray(candidate.items)
     ? candidate.items.map(normalizeQueueItem).filter((item): item is ConversationCommandQueueItem => item !== null)
     : [];
@@ -122,6 +129,7 @@ export const normalizeQueueState = (state: unknown): ConversationCommandQueueSta
     const nextState = {
       items: nextItems,
       isPaused: Boolean(candidate.isPaused),
+      mode,
     };
 
     if (measureQueueStateBytes(nextState) > MAX_QUEUED_COMMAND_STATE_BYTES) {
@@ -134,6 +142,7 @@ export const normalizeQueueState = (state: unknown): ConversationCommandQueueSta
   return {
     items,
     isPaused: items.length > 0 ? Boolean(candidate.isPaused) : false,
+    mode,
   };
 };
 
@@ -237,7 +246,7 @@ const removePersistedQueueState = (conversation_id: string): void => {
 const persistQueueState = (conversation_id: string, state: ConversationCommandQueueState): void => {
   const normalized = normalizeQueueState(state);
 
-  if (normalized.items.length === 0 && !normalized.isPaused) {
+  if (normalized.items.length === 0 && !normalized.isPaused && normalized.mode === 'auto') {
     removePersistedQueueState(conversation_id);
     return;
   }
@@ -543,6 +552,7 @@ export const useConversationCommandQueue = ({
 
       const nextItems = updateQueuedCommand(currentState.items, commandId, { input });
       const nextState: ConversationCommandQueueState = {
+        ...currentState,
         isPaused: false,
         items: nextItems,
       };
@@ -581,12 +591,64 @@ export const useConversationCommandQueue = ({
       void updateState((state) => {
         const nextItems = removeQueuedCommand(state.items, commandId);
         return {
+          ...state,
           items: nextItems,
           isPaused: false,
         };
       });
     },
     [conversation_id, enabled, updateState]
+  );
+
+  const sendNow = useCallback(
+    (commandId: string) => {
+      if (!enabled) {
+        return;
+      }
+
+      const currentState = normalizeQueueState(stateRef.current);
+      const target = currentState.items.find((item) => item.id === commandId);
+      if (!target) {
+        return;
+      }
+
+      // Remove only the targeted command; the rest keep their mode, order and paused flag.
+      const nextItems = removeQueuedCommand(currentState.items, commandId);
+      waitingForTurnStartRef.current = true;
+      waitingForTurnCompletionRef.current = false;
+      pausedRef.current = false;
+      logCommandQueue(conversation_id, 'send-now', {
+        item: summarizeQueuedCommand(target),
+        remainingItemCount: nextItems.length,
+      });
+      void updateState((state) => ({
+        ...state,
+        items: removeQueuedCommand(state.items, commandId),
+        isPaused: false,
+      }));
+
+      void onExecute(target).catch((error) => {
+        console.error('[conversation-command-queue] Failed to send queued command now:', error);
+        logCommandQueue(conversation_id, 'send-now-failed', {
+          item: summarizeQueuedCommand(target),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        waitingForTurnStartRef.current = false;
+        waitingForTurnCompletionRef.current = false;
+        pausedRef.current = true;
+        void updateState((state) => ({
+          ...state,
+          items: restoreQueuedCommand(state.items, target),
+          isPaused: true,
+        }));
+        Message.warning(
+          t('conversation.commandQueue.pausedAfterFailure', {
+            defaultValue: 'The next queued command could not start. Edit, reorder, or remove it to continue.',
+          })
+        );
+      });
+    },
+    [conversation_id, enabled, onExecute, t, updateState]
   );
 
   const reorder = useCallback(
@@ -600,6 +662,7 @@ export const useConversationCommandQueue = ({
         overCommandId,
       });
       void updateState((state) => ({
+        ...state,
         isPaused: false,
         items: reorderQueuedCommand(state.items, activeCommandId, overCommandId),
       }));
@@ -644,6 +707,21 @@ export const useConversationCommandQueue = ({
       isPaused: state.items.length > 0 ? false : state.isPaused,
     }));
   }, [conversation_id, data.items.length, enabled, updateState]);
+
+  const toggleMode = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
+
+    void updateState((state) => {
+      const nextMode: ConversationCommandQueueMode = state.mode === 'auto' ? 'manual' : 'auto';
+      logCommandQueue(conversation_id, 'mode-changed', { mode: nextMode });
+      return {
+        ...state,
+        mode: nextMode,
+      };
+    });
+  }, [conversation_id, enabled, updateState]);
 
   const lockInteraction = useCallback(() => {
     if (!enabled) {
@@ -691,6 +769,7 @@ export const useConversationCommandQueue = ({
   useEffect(() => {
     if (
       !enabled ||
+      data.mode === 'manual' ||
       !executionGate.hydrated ||
       pausedRef.current ||
       !executionGate.canExecute ||
@@ -708,7 +787,8 @@ export const useConversationCommandQueue = ({
       item: summarizeQueuedCommand(nextCommand),
       remainingItemCount: remainingCommands.length,
     });
-    void updateState(() => ({
+    void updateState((state) => ({
+      ...state,
       items: remainingCommands,
       isPaused: false,
     }));
@@ -723,6 +803,7 @@ export const useConversationCommandQueue = ({
       waitingForTurnCompletionRef.current = false;
       pausedRef.current = true;
       void updateState((state) => ({
+        ...state,
         items: restoreQueuedCommand(state.items, nextCommand),
         isPaused: true,
       }));
@@ -735,6 +816,7 @@ export const useConversationCommandQueue = ({
   }, [
     conversation_id,
     data.items,
+    data.mode,
     enabled,
     executionGateVersion,
     executionGate.canExecute,
@@ -748,15 +830,18 @@ export const useConversationCommandQueue = ({
   return {
     items: enabled ? data.items : [],
     isPaused: enabled ? data.isPaused : false,
+    mode: enabled ? data.mode : 'auto',
     isInteractionLocked,
     hasPendingCommands: enabled ? data.items.length > 0 : false,
     enqueue,
     update,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,

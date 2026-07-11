@@ -348,14 +348,17 @@ const RemoteSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id 
   const {
     items: queuedCommands,
     isPaused: isQueuePaused,
+    mode: queueMode,
     isInteractionLocked: isQueueInteractionLocked,
     hasPendingCommands,
     enqueue,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,
@@ -433,10 +436,19 @@ const RemoteSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id 
     }
   };
 
+  const handleSendNowQueued = useCallback(
+    async (item: ConversationCommandQueueItem) => {
+      await handleStop();
+      sendNow(item.id);
+    },
+    [handleStop, sendNow]
+  );
+
   return (
     <div className='max-w-800px w-full mx-auto flex flex-col mt-auto mb-16px'>
       <CommandQueuePanel
         items={queuedCommands}
+        mode={queueMode}
         paused={isQueuePaused}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
@@ -444,6 +456,8 @@ const RemoteSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id 
         onInteractionLock={lockInteraction}
         onInteractionUnlock={unlockInteraction}
         onEdit={handleEditQueuedCommand}
+        onSendNow={handleSendNowQueued}
+        onToggleMode={toggleMode}
         onReorder={reorder}
         onRemove={remove}
         onClear={clear}

@@ -372,14 +372,17 @@ const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_i
   const {
     items,
     isPaused: isQueuePaused,
+    mode: queueMode,
     isInteractionLocked: isQueueInteractionLocked,
     hasPendingCommands,
     enqueue,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,
@@ -505,10 +508,19 @@ const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_i
     }
   };
 
+  const handleSendNowQueued = useCallback(
+    async (item: ConversationCommandQueueItem) => {
+      await handleStop();
+      sendNow(item.id);
+    },
+    [handleStop, sendNow]
+  );
+
   return (
     <div className='max-w-800px w-full mx-auto flex flex-col mt-auto mb-16px'>
       <CommandQueuePanel
         items={items}
+        mode={queueMode}
         paused={isQueuePaused}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
@@ -516,6 +528,8 @@ const OpenClawSendBox: React.FC<{ conversation_id: string }> = ({ conversation_i
         onInteractionLock={lockInteraction}
         onInteractionUnlock={unlockInteraction}
         onEdit={handleEditQueuedCommand}
+        onSendNow={handleSendNowQueued}
+        onToggleMode={toggleMode}
         onReorder={reorder}
         onRemove={remove}
         onClear={clear}

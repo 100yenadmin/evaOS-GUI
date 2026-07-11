@@ -387,14 +387,17 @@ Please check your local CLI tool authentication status`,
   const {
     items: queuedCommands,
     isPaused: isQueuePaused,
+    mode: queueMode,
     isInteractionLocked: isQueueInteractionLocked,
     hasPendingCommands,
     enqueue,
     remove,
+    sendNow,
     clear,
     reorder,
     pause,
     resume,
+    toggleMode,
     lockInteraction,
     unlockInteraction,
     resetActiveExecution,
@@ -632,18 +635,29 @@ Please check your local CLI tool authentication status`,
     }
   };
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
+  const handleSendNowQueued = useCallback(
+    async (item: ConversationCommandQueueItem) => {
+      await effectiveHandleStop();
+      sendNow(item.id);
+    },
+    [effectiveHandleStop, sendNow]
+  );
 
   return (
     <div className='max-w-800px w-full mx-auto flex flex-col mt-auto mb-16px'>
       <CommandQueuePanel
         items={queuedCommands}
+        mode={queueMode}
         paused={isQueuePaused}
+        isMobile={isMobile}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
         onResume={resume}
         onInteractionLock={lockInteraction}
         onInteractionUnlock={unlockInteraction}
         onEdit={handleEditQueuedCommand}
+        onSendNow={handleSendNowQueued}
+        onToggleMode={toggleMode}
         onReorder={reorder}
         onRemove={remove}
         onClear={clear}
