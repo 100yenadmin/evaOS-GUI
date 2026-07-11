@@ -176,6 +176,19 @@ describe('CommandQueuePanel', () => {
     await waitFor(() => expect(props.onInteractionUnlock).toHaveBeenCalledTimes(1));
   });
 
+  it('does not acquire the interaction lock when queue interaction is already locked', async () => {
+    const props = renderPanel({ items: [item, secondItem], interactionLocked: true });
+    const handle = screen.getAllByRole('button', { name: 'Drag to reorder queued command' })[0];
+
+    handle.focus();
+    fireEvent.keyDown(handle, { key: ' ', code: 'Space' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(props.onInteractionLock).not.toHaveBeenCalled();
+    expect(props.onReorder).not.toHaveBeenCalled();
+    fireEvent.keyDown(handle, { key: 'Escape', code: 'Escape' });
+  });
+
   it('does not render a separate help button (help lives on the mode toggle)', () => {
     renderPanel();
     expect(screen.queryByRole('button', { name: 'Help' })).not.toBeInTheDocument();

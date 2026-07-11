@@ -18,6 +18,7 @@ import { createSetUploadFile } from '@/renderer/hooks/chat/useSendBoxFiles';
 import { useSlashCommands } from '@/renderer/hooks/chat/useSlashCommands';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { useLatestRef } from '@/renderer/hooks/ui/useLatestRef';
+import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { useAddOrUpdateMessage } from '@/renderer/pages/conversation/Messages/hooks';
 import {
   shouldEnqueueConversationCommand,
@@ -57,6 +58,7 @@ const EMPTY_UPLOAD_FILES: string[] = [];
 const NanobotSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id }) => {
   const [workspacePath, setWorkspacePath] = useState('');
   const { t } = useTranslation();
+  const { isMobile } = useLayoutContext();
   const teamPermission = useTeamPermission();
   const { checkAndUpdateTitle } = useAutoTitle();
   const slash_commands = useSlashCommands(conversation_id);
@@ -417,6 +419,7 @@ const NanobotSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id
         items={items}
         mode={queueMode}
         paused={isQueuePaused}
+        isMobile={isMobile}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
         onResume={resume}

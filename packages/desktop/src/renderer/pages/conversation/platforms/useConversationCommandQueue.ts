@@ -289,6 +289,7 @@ export const restoreQueuedCommand = (
   failedItem: ConversationCommandQueueItem
 ): ConversationCommandQueueItem[] => [failedItem, ...removeQueuedCommand(items, failedItem.id)];
 
+/** Removes a failed item and restores it at the requested index, clamped to the queue bounds. */
 export const restoreQueuedCommandAtIndex = (
   items: ConversationCommandQueueItem[],
   failedItem: ConversationCommandQueueItem,
@@ -437,6 +438,17 @@ export const useConversationCommandQueue = ({
   useEffect(() => {
     notifyExecutionGateWaiters();
   }, [executionGate.canExecute, executionGate.hydrated, executionGate.isProcessing, notifyExecutionGateWaiters]);
+
+  useEffect(
+    () => () => {
+      executionEpochRef.current += 1;
+      sendNowReservationRef.current = null;
+      waitingForTurnStartRef.current = false;
+      waitingForTurnCompletionRef.current = false;
+      notifyExecutionGateWaiters();
+    },
+    [notifyExecutionGateWaiters]
+  );
 
   useEffect(() => {
     if (conversationIdRef.current === conversation_id) {
@@ -668,7 +680,15 @@ export const useConversationCommandQueue = ({
 
   const sendNow = useCallback(
     (commandId: string, onStop?: () => Promise<void>) => {
-      if (!enabled || sendNowReservationRef.current) {
+      if (
+        !enabled ||
+        sendNowReservationRef.current ||
+        waitingForTurnStartRef.current ||
+        (waitingForTurnCompletionRef.current && !(executionGate.isProcessing && onStop)) ||
+        interactionLockedRef.current ||
+        !executionGate.hydrated ||
+        (!executionGate.canExecute && !executionGate.isProcessing)
+      ) {
         return;
       }
 
@@ -799,7 +819,17 @@ export const useConversationCommandQueue = ({
 
       void executeTarget();
     },
-    [conversation_id, enabled, executionGate.isProcessing, notifyExecutionGateWaiters, onExecute, t, updateState]
+    [
+      conversation_id,
+      enabled,
+      executionGate.canExecute,
+      executionGate.hydrated,
+      executionGate.isProcessing,
+      notifyExecutionGateWaiters,
+      onExecute,
+      t,
+      updateState,
+    ]
   );
 
   const reorder = useCallback(

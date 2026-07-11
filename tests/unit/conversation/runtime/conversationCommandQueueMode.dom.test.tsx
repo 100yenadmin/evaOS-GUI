@@ -347,6 +347,61 @@ describe('useConversationCommandQueue mode & send-now', () => {
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
   });
 
+  it('does not let Send now bypass a pending auto-drained execution', async () => {
+    const firstExecute = createDeferred();
+    const onExecute = vi.fn(() => firstExecute.promise);
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-auto-pending-sendnow',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.enqueue({ input: 'auto first', files: [] });
+      result.current.enqueue({ input: 'manual override second', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    rerender({ gate: idleGate, busy: false });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id);
+    });
+    expect(onExecute).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstExecute.resolve();
+      await firstExecute.promise;
+    });
+  });
+
+  it('invalidates a slow Send now continuation when the hook unmounts', async () => {
+    const stop = createDeferred();
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result, unmount } = renderQueue({
+      conversation_id: 'conv-unmount-sendnow',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'do not send after unmount', files: [] });
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, () => stop.promise);
+    });
+
+    unmount();
+    await act(async () => {
+      stop.resolve();
+      await stop.promise;
+    });
+    expect(onExecute).not.toHaveBeenCalled();
+  });
+
   it('keeps an Auto draft queued when stopping the active turn fails', async () => {
     const onExecute = vi.fn().mockResolvedValue(undefined);
     const onStop = vi.fn().mockRejectedValue(new Error('cancel failed'));

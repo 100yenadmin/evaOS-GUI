@@ -17,6 +17,7 @@ import { getSendBoxDraftHook, type FileOrFolderItem } from '@/renderer/hooks/cha
 import { createSetUploadFile } from '@/renderer/hooks/chat/useSendBoxFiles';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { useLatestRef } from '@/renderer/hooks/ui/useLatestRef';
+import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { useAddOrUpdateMessage } from '@/renderer/pages/conversation/Messages/hooks';
 import {
   shouldEnqueueConversationCommand,
@@ -56,6 +57,7 @@ const EMPTY_UPLOAD_FILES: string[] = [];
 const RemoteSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id }) => {
   const [workspacePath, setWorkspacePath] = useState('');
   const { t } = useTranslation();
+  const { isMobile } = useLayoutContext();
   const teamPermission = useTeamPermission();
   const { checkAndUpdateTitle } = useAutoTitle();
   const addOrUpdateMessage = useAddOrUpdateMessage();
@@ -456,6 +458,7 @@ const RemoteSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id 
         items={queuedCommands}
         mode={queueMode}
         paused={isQueuePaused}
+        isMobile={isMobile}
         interactionLocked={isQueueInteractionLocked}
         onPause={pause}
         onResume={resume}
