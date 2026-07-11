@@ -5,14 +5,24 @@
  */
 
 import type { AcpConfigSetStatus, AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
-import AionInlineSearchInput from '@/renderer/components/base/AionInlineSearchInput';
 import { Menu, Tooltip } from '@arco-design/web-react';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import AionInlineSearchInput from './runtimeSelector/AionInlineSearchInput';
+import styles from './runtimeSelector/RuntimeSelectorModelMenu.module.css';
 
+/** Number of models above which a selector menu adds search. */
 export const MODEL_SEARCH_THRESHOLD = 5;
 
-export const RUNTIME_SUBMENU_TRIGGER_PROPS = { position: 'lt', autoFitPosition: true } as const;
+/** Shared popup positioning and scoped styling for runtime selector submenus. */
+export const RUNTIME_SUBMENU_TRIGGER_PROPS = {
+  position: 'lt',
+  autoFitPosition: true,
+  className: styles.runtimeSubmenuPopup,
+} as const;
+
+/** Component-scoped class for the root runtime selector menu. */
+export const RUNTIME_SELECTOR_MENU_CLASS_NAME = styles.runtimeMenu;
 
 type RuntimeSelectorModel = { id: string; label?: string; description?: string };
 
@@ -71,6 +81,7 @@ export const RuntimeSelectorCheckedItem: React.FC<{
   );
 };
 
+/** Displays a runtime submenu label alongside its currently selected value. */
 export const RuntimeSelectorSubMenuTitle: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className='flex items-center justify-between gap-8px w-full min-w-0'>
     <span className='shrink-0'>{label}</span>
@@ -78,13 +89,26 @@ export const RuntimeSelectorSubMenuTitle: React.FC<{ label: string; value: strin
   </div>
 );
 
-export const RuntimeSelectorModelList: React.FC<{
+type RuntimeSelectorModelMenuOptions = {
   models?: RuntimeSelectorModel[];
   groups?: RuntimeSelectorModelGroup[];
   currentModelId?: string | null;
   disabled?: boolean;
   onSelect: (modelId: string) => void;
-}> = ({ models, groups, currentModelId, disabled = false, onSelect }) => {
+};
+
+/**
+ * Builds searchable model menu nodes for direct placement under Arco `Menu` or
+ * `Menu.SubMenu`. Returning the actual `Menu.*` elements keeps Arco's keyboard
+ * collection and key-path registration intact.
+ */
+export const useRuntimeSelectorModelMenu = ({
+  models,
+  groups,
+  currentModelId,
+  disabled = false,
+  onSelect,
+}: RuntimeSelectorModelMenuOptions): React.ReactNode => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const totalCount = groups ? groups.reduce((sum, group) => sum + group.models.length, 0) : (models?.length ?? 0);
@@ -111,6 +135,7 @@ export const RuntimeSelectorModelList: React.FC<{
       key={model.id}
       className={model.id === currentModelId ? 'bg-2!' : ''}
       disabled={disabled}
+      aria-current={model.id === currentModelId ? 'true' : undefined}
       onClick={() => {
         if (!disabled) onSelect(model.id);
       }}
@@ -123,35 +148,40 @@ export const RuntimeSelectorModelList: React.FC<{
 
   const isEmpty = groups ? filteredGroups.length === 0 : filteredModels.length === 0;
 
-  return (
-    <>
-      {totalCount > MODEL_SEARCH_THRESHOLD && (
-        <div className='px-6px pt-4px pb-6px' style={{ background: 'var(--color-bg-popup)' }}>
-          <AionInlineSearchInput
-            value={query}
-            onChange={setQuery}
-            placeholder={searchLabel}
-            data-testid='runtime-selector-model-search'
-            inputProps={{ 'aria-label': searchLabel }}
-          />
-        </div>
-      )}
-      <div className='runtime-model-scroll max-h-280px overflow-y-auto'>
-        {isEmpty ? (
-          <div className='px-12px py-10px text-12px text-t-tertiary text-center'>
-            {t('agent.model.noResults', { defaultValue: 'No matching models' })}
-          </div>
-        ) : groups ? (
-          filteredGroups.map((group) => (
-            <Menu.ItemGroup key={group.key} title={group.title}>
-              {group.models.map(renderRow)}
-            </Menu.ItemGroup>
-          ))
-        ) : (
-          filteredModels.map(renderRow)
-        )}
+  const modelNodes = isEmpty ? (
+    <Menu.Item key='runtime-model-empty' disabled>
+      <div className='px-12px py-10px text-12px text-t-tertiary text-center'>
+        {t('agent.model.noResults', { defaultValue: 'No matching models' })}
       </div>
-    </>
+    </Menu.Item>
+  ) : groups ? (
+    filteredGroups.map((group) => (
+      <Menu.ItemGroup key={group.key} title={group.title}>
+        {group.models.map(renderRow)}
+      </Menu.ItemGroup>
+    ))
+  ) : (
+    filteredModels.map(renderRow)
+  );
+
+  if (totalCount <= MODEL_SEARCH_THRESHOLD) return modelNodes;
+
+  return (
+    <Menu.ItemGroup
+      key='runtime-model-list'
+      className={styles.modelListGroup}
+      title={
+        <AionInlineSearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder={searchLabel}
+          data-testid='runtime-selector-model-search'
+          inputProps={{ 'aria-label': searchLabel }}
+        />
+      }
+    >
+      {modelNodes}
+    </Menu.ItemGroup>
   );
 };
 
@@ -174,6 +204,7 @@ export const renderThoughtLevelMenuGroup = ({
         <Menu.Item
           key={item.value}
           className={item.value === thoughtLevel.currentValue ? 'bg-2!' : ''}
+          aria-current={item.value === thoughtLevel.currentValue ? 'true' : undefined}
           onClick={() => {
             if (!setting) onSelect(item.value);
           }}
