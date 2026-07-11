@@ -182,7 +182,7 @@ describe('GuidActionRow mobile controls', () => {
       });
       expect(props.onFilesUploaded).toHaveBeenCalledWith(['/tmp/example.txt']);
 
-      await act(async () => vi.advanceTimersByTimeAsync(280));
+      await act(async () => vi.runAllTimersAsync());
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     } finally {
