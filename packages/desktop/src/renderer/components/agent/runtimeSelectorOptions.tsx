@@ -89,6 +89,7 @@ export const RuntimeSelectorModelList: React.FC<{
   const [query, setQuery] = useState('');
   const totalCount = groups ? groups.reduce((sum, group) => sum + group.models.length, 0) : (models?.length ?? 0);
   const keyword = query.trim().toLowerCase();
+  const searchLabel = t('agent.model.searchPlaceholder', { defaultValue: 'Search models' });
 
   const filteredModels = useMemo(() => {
     if (!models || !keyword) return models ?? [];
@@ -129,8 +130,9 @@ export const RuntimeSelectorModelList: React.FC<{
           <AionInlineSearchInput
             value={query}
             onChange={setQuery}
-            placeholder={t('agent.model.searchPlaceholder', { defaultValue: 'Search models' })}
+            placeholder={searchLabel}
             data-testid='runtime-selector-model-search'
+            inputProps={{ 'aria-label': searchLabel }}
           />
         </div>
       )}

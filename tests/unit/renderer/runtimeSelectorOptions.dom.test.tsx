@@ -63,6 +63,7 @@ describe('runtime selector options', () => {
 
     rerender(<RuntimeSelectorModelList models={models} onSelect={vi.fn()} />);
     const search = screen.getByTestId('runtime-selector-model-search');
+    expect(search).toHaveAccessibleName('Search models');
     fireEvent.change(search, { target: { value: 'MODEL-6' } });
 
     expect(screen.getByText('Model 6')).toBeInTheDocument();
