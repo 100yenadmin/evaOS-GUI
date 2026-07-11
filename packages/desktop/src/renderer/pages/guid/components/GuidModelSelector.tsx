@@ -15,6 +15,11 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useProvidersQuery } from '@/renderer/hooks/agent/useModelProviderList';
+import {
+  RUNTIME_SELECTOR_MENU_CLASS_NAME,
+  type RuntimeSelectorModelGroup,
+  useRuntimeSelectorModelMenu,
+} from '@/renderer/components/agent/runtimeSelectorOptions';
 
 type GuidModelSelectorProps = {
   // Gemini model state
@@ -27,6 +32,15 @@ type GuidModelSelectorProps = {
   currentAcpCachedModelInfo: AcpModelInfo | null;
   selectedAcpModel: string | null;
   setSelectedAcpModel: React.Dispatch<React.SetStateAction<string | null>>;
+};
+
+/** Collision-safe key for provider-grouped GUID model choices. */
+const providerModelKey = (providerId: string, modelName: string): string => JSON.stringify([providerId, modelName]);
+
+const renderHealthDot = (status: string): React.ReactNode => {
+  if (status === 'unknown') return undefined;
+  const color = status === 'healthy' ? 'bg-green-500' : status === 'unhealthy' ? 'bg-red-500' : 'bg-gray-400';
+  return <span aria-hidden='true' className={`w-6px h-6px rounded-full shrink-0 ${color}`} />;
 };
 
 const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
@@ -87,83 +101,77 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
     });
   }, [acpSelectedLabel, currentAcpCachedModelInfo?.current_model_id, defaultModelLabel, selectedAcpModel]);
 
+  const providerModelGroups: RuntimeSelectorModelGroup[] = [];
+  const providerModelLookup = new Map<string, { provider: IProvider; modelName: string }>();
+  for (const provider of enabledModelList) {
+    const availableModels = getAvailableModels(provider);
+    if (availableModels.length === 0) continue;
+    const providerConfig = modelConfig?.find((candidate) => candidate.id === provider.id);
+    providerModelGroups.push({
+      key: provider.id,
+      title: provider.name,
+      models: availableModels.map((modelName) => {
+        const id = providerModelKey(provider.id, modelName);
+        const healthStatus = providerConfig?.model_health?.[modelName]?.status || 'unknown';
+        providerModelLookup.set(id, { provider, modelName });
+        return { id, label: modelName, leading: renderHealthDot(healthStatus) };
+      }),
+    });
+  }
+  const currentProviderModelId = current_model?.use_model
+    ? providerModelKey(current_model.id, current_model.use_model)
+    : undefined;
+  const providerModelMenu = useRuntimeSelectorModelMenu({
+    groups: providerModelGroups,
+    currentModelId: currentProviderModelId,
+    onSelect: (id) => {
+      const entry = providerModelLookup.get(id);
+      if (!entry) return;
+      setCurrentModel({ ...entry.provider, use_model: entry.modelName } as TProviderWithModel).catch((error) => {
+        console.error('Failed to set current model:', error);
+      });
+    },
+  });
+
+  const acpProviderConfig = modelConfig?.find((provider) => provider.platform?.includes(''));
+  const acpModels = (currentAcpCachedModelInfo?.available_models ?? []).map((model) => ({
+    ...model,
+    leading: renderHealthDot(acpProviderConfig?.model_health?.[model.id]?.status || 'unknown'),
+  }));
+  const acpModelMenu = useRuntimeSelectorModelMenu({
+    models: acpModels,
+    currentModelId: selectedAcpModel,
+    onSelect: setSelectedAcpModel,
+  });
+
   if (isGeminiMode) {
     return (
       <Dropdown
         trigger='hover'
         droplist={
           <Menu
-            className='aion-model-menu--sticky-group'
-            selectedKeys={current_model ? [current_model.id + current_model.use_model] : []}
+            className={RUNTIME_SELECTOR_MENU_CLASS_NAME}
+            selectedKeys={currentProviderModelId ? [currentProviderModelId] : []}
           >
-            {!enabledModelList || enabledModelList.length === 0
-              ? [
-                  <Menu.Item
-                    key='no-models'
-                    className='px-12px py-12px text-t-secondary text-14px text-center flex justify-center items-center'
-                    disabled
-                  >
-                    {t('settings.noAvailableModels')}
-                  </Menu.Item>,
-                  <Menu.Item
-                    key='add-model'
-                    className='text-12px text-t-secondary'
-                    onClick={() => navigate('/settings/model')}
-                  >
-                    <Plus theme='outline' size='12' />
-                    {t('settings.addModel')}
-                  </Menu.Item>,
-                ]
-              : [
-                  ...(enabledModelList || []).map((provider) => {
-                    const available_models = getAvailableModels(provider);
-                    if (available_models.length === 0) return null;
-                    return (
-                      <Menu.ItemGroup title={provider.name} key={provider.id}>
-                        {available_models.map((modelName) => {
-                          // 获取模型健康状态
-                          const matchedProvider = modelConfig?.find((p) => p.id === provider.id);
-                          const healthStatus = matchedProvider?.model_health?.[modelName]?.status || 'unknown';
-                          const healthColor =
-                            healthStatus === 'healthy'
-                              ? 'bg-green-500'
-                              : healthStatus === 'unhealthy'
-                                ? 'bg-red-500'
-                                : 'bg-gray-400';
-
-                          return (
-                            <Menu.Item
-                              key={provider.id + modelName}
-                              className={
-                                current_model?.id + current_model?.use_model === provider.id + modelName ? '!bg-2' : ''
-                              }
-                              onClick={() => {
-                                setCurrentModel({ ...provider, use_model: modelName }).catch((error) => {
-                                  console.error('Failed to set current model:', error);
-                                });
-                              }}
-                            >
-                              <div className='flex items-center gap-8px w-full'>
-                                {healthStatus !== 'unknown' && (
-                                  <div className={`w-6px h-6px rounded-full shrink-0 ${healthColor}`} />
-                                )}
-                                <span>{modelName}</span>
-                              </div>
-                            </Menu.Item>
-                          );
-                        })}
-                      </Menu.ItemGroup>
-                    );
-                  }),
-                  <Menu.Item
-                    key='add-model'
-                    className='text-12px text-t-secondary'
-                    onClick={() => navigate('/settings/model')}
-                  >
-                    <Plus theme='outline' size='12' />
-                    {t('settings.addModel')}
-                  </Menu.Item>,
-                ]}
+            {providerModelGroups.length === 0 ? (
+              <Menu.Item
+                key='no-models'
+                className='px-12px py-12px text-t-secondary text-14px text-center flex justify-center items-center'
+                disabled
+              >
+                {t('settings.noAvailableModels')}
+              </Menu.Item>
+            ) : (
+              providerModelMenu
+            )}
+            <Menu.Item
+              key='add-model'
+              className='text-12px text-t-secondary'
+              onClick={() => navigate('/settings/model')}
+            >
+              <Plus theme='outline' size='12' />
+              {t('settings.addModel')}
+            </Menu.Item>
           </Menu>
         }
       >
@@ -190,33 +198,11 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
         <Dropdown
           trigger='click'
           droplist={
-            <Menu selectedKeys={selectedAcpModel ? [selectedAcpModel] : []}>
-              {currentAcpCachedModelInfo.available_models.map((model) => {
-                // 获取模型健康状态
-                const providerConfig = modelConfig?.find((p) => p.platform?.includes(''));
-                const healthStatus = providerConfig?.model_health?.[model.id]?.status || 'unknown';
-                const healthColor =
-                  healthStatus === 'healthy'
-                    ? 'bg-green-500'
-                    : healthStatus === 'unhealthy'
-                      ? 'bg-red-500'
-                      : 'bg-gray-400';
-
-                return (
-                  <Menu.Item
-                    key={model.id}
-                    className={model.id === selectedAcpModel ? '!bg-2' : ''}
-                    onClick={() => setSelectedAcpModel(model.id)}
-                  >
-                    <div className='flex items-center gap-8px w-full'>
-                      {healthStatus !== 'unknown' && (
-                        <div className={`w-6px h-6px rounded-full shrink-0 ${healthColor}`} />
-                      )}
-                      <span>{model.label}</span>
-                    </div>
-                  </Menu.Item>
-                );
-              })}
+            <Menu
+              className={RUNTIME_SELECTOR_MENU_CLASS_NAME}
+              selectedKeys={selectedAcpModel ? [selectedAcpModel] : []}
+            >
+              {acpModelMenu}
             </Menu>
           }
         >

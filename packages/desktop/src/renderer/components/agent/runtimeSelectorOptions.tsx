@@ -24,7 +24,13 @@ export const RUNTIME_SUBMENU_TRIGGER_PROPS = {
 /** Component-scoped class for the root runtime selector menu. */
 export const RUNTIME_SELECTOR_MENU_CLASS_NAME = styles.runtimeMenu;
 
-type RuntimeSelectorModel = { id: string; label?: string; description?: string; testId?: string };
+type RuntimeSelectorModel = {
+  id: string;
+  label?: string;
+  description?: string;
+  testId?: string;
+  leading?: React.ReactNode;
+};
 
 export type RuntimeSelectorModelGroup = { key: string; title: string; models: RuntimeSelectorModel[] };
 
@@ -142,7 +148,14 @@ export const useRuntimeSelectorModelMenu = ({
       }}
     >
       <RuntimeSelectorCheckedItem selected={model.id === currentModelId} description={model.description}>
-        {model.label || model.id}
+        {model.leading ? (
+          <span className='flex items-center gap-8px min-w-0'>
+            {model.leading}
+            <span className='min-w-0 truncate'>{model.label || model.id}</span>
+          </span>
+        ) : (
+          model.label || model.id
+        )}
       </RuntimeSelectorCheckedItem>
     </Menu.Item>
   );
