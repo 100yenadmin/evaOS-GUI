@@ -107,6 +107,14 @@
       "diagnosticsReportSuccess": "Diagnostics report sent",
       "diagnosticsReportFailed": "Failed to send diagnostics report"
     },
+    "startupDirectory": {
+      "title": "El directorio de inicio no está disponible",
+      "description": "evaOS Workbench se abrió, pero el entorno de ejecución administrado no pudo iniciarse porque falta un directorio de inicio local necesario, no está disponible o los permisos lo bloquean. Comprueba que los directorios configurados existan y permitan escritura, y reinicia evaOS Workbench.",
+      "sendDiagnostics": "Enviar diagnóstico",
+      "diagnosticsSent": "Diagnóstico enviado",
+      "diagnosticsReportSuccess": "Informe de diagnóstico enviado",
+      "diagnosticsReportFailed": "No se pudo enviar el informe de diagnóstico"
+    },
     "recoverableDatabaseCorruption": {
       "title": "Local data is corrupted",
       "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",

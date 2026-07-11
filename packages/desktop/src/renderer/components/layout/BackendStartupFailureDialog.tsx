@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button, Message, Modal, Typography } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
 import type { BackendStartupFailureInfo } from '@/common/types/platform/electron';
+import FeedbackReportModal from '@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal';
 
 const EVAOS_BETA_DOWNLOAD_URL = 'https://github.com/100yenadmin/evaOS-GUI/releases';
 
@@ -11,6 +12,7 @@ export function shouldShowBackendStartupFailureDialog(failure: BackendStartupFai
     failure?.reason === 'backend_incomplete_installation' ||
     failure?.reason === 'backend_package_architecture_mismatch' ||
     failure?.reason === 'backend_recoverable_database_corruption' ||
+    failure?.reason === 'backend_startup_directory_unavailable' ||
     failure?.reason === 'backend_startup_failed'
   );
 }
@@ -19,17 +21,21 @@ export const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFail
   const { t } = useTranslation();
   const [recovering, setRecovering] = useState(false);
   const [recoveryCancelled, setRecoveryCancelled] = useState(false);
+  const [showDiagnosticsReport, setShowDiagnosticsReport] = useState(false);
 
   const isIncompatibleRuntime = failure.reason === 'backend_incompatible_runtime';
   const isPackageArchitectureMismatch = failure.reason === 'backend_package_architecture_mismatch';
   const isRecoverableDatabaseCorruption = failure.reason === 'backend_recoverable_database_corruption';
+  const isStartupDirectoryFailure = failure.reason === 'backend_startup_directory_unavailable';
   const title = isIncompatibleRuntime
     ? t('common.backendStartup.incompatibleRuntime.title')
     : isPackageArchitectureMismatch
       ? t('common.backendStartup.packageArchitectureMismatch.title')
-      : isRecoverableDatabaseCorruption
-        ? t('common.backendStartup.recoverableDatabaseCorruption.title')
-        : t('common.backendStartup.incompleteInstallation.title');
+      : isStartupDirectoryFailure
+        ? t('common.backendStartup.startupDirectory.title')
+        : isRecoverableDatabaseCorruption
+          ? t('common.backendStartup.recoverableDatabaseCorruption.title')
+          : t('common.backendStartup.incompleteInstallation.title');
   const description = isIncompatibleRuntime
     ? t('common.backendStartup.incompatibleRuntime.description')
     : isPackageArchitectureMismatch
@@ -38,9 +44,11 @@ export const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFail
           deviceArch: failure.deviceArch ?? 'arm64',
           expectedArch: failure.expectedDownloadArch ?? 'arm64',
         })
-      : isRecoverableDatabaseCorruption
-        ? t('common.backendStartup.recoverableDatabaseCorruption.description')
-        : t('common.backendStartup.incompleteInstallation.description');
+      : isStartupDirectoryFailure
+        ? t('common.backendStartup.startupDirectory.description')
+        : isRecoverableDatabaseCorruption
+          ? t('common.backendStartup.recoverableDatabaseCorruption.description')
+          : t('common.backendStartup.incompleteInstallation.description');
   const requiredVersions = failure.requiredVersions?.map((version) => `GLIBC_${version}`).join(', ');
 
   const handleDownload = () => {
@@ -59,7 +67,11 @@ export const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFail
     }
   };
 
-  const footer = isIncompatibleRuntime ? null : isRecoverableDatabaseCorruption ? (
+  const footer = isIncompatibleRuntime ? null : isStartupDirectoryFailure ? (
+    <Button type='primary' onClick={() => setShowDiagnosticsReport(true)}>
+      {t('common.backendStartup.startupDirectory.sendDiagnostics')}
+    </Button>
+  ) : isRecoverableDatabaseCorruption ? (
     <>
       <Button disabled={recovering} onClick={() => setRecoveryCancelled(true)}>
         {t('common.cancel')}
@@ -96,6 +108,22 @@ export const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFail
           ) : null}
         </div>
       </Modal>
+      {isStartupDirectoryFailure ? (
+        <FeedbackReportModal
+          visible={showDiagnosticsReport}
+          onCancel={() => setShowDiagnosticsReport(false)}
+          defaultModule='system-settings'
+          feedbackTags={{
+            'evaos.backend_startup_failure.reason': failure.reason,
+            'evaos.backend_startup_failure.startup_directory_issue_kind':
+              failure.startupDirectoryIssueKind ?? 'missing_or_unavailable_directory',
+          }}
+          feedbackExtra={{
+            reason: failure.reason,
+            startupDirectoryIssueKind: failure.startupDirectoryIssueKind ?? 'missing_or_unavailable_directory',
+          }}
+        />
+      ) : null}
     </div>
   );
 };

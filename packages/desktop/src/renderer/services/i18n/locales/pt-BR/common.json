@@ -88,6 +88,14 @@
       "title": "evaOS Workbench package architecture mismatch",
       "description": "This evaOS Workbench package is for {{packageArch}}, but this Mac is {{deviceArch}}. You may have downloaded the wrong package. Please download and install the {{expectedArch}} package."
     },
+    "startupDirectory": {
+      "title": "Diretório de inicialização indisponível",
+      "description": "O evaOS Workbench abriu, mas o ambiente de execução gerenciado não pôde iniciar porque um diretório local de inicialização necessário não existe, está indisponível ou foi bloqueado por permissões. Verifique se os diretórios configurados existem e permitem escrita, depois reinicie o evaOS Workbench.",
+      "sendDiagnostics": "Enviar diagnóstico",
+      "diagnosticsSent": "Diagnóstico enviado",
+      "diagnosticsReportSuccess": "Relatório de diagnóstico enviado",
+      "diagnosticsReportFailed": "Falha ao enviar relatório de diagnóstico"
+    },
     "recoverableDatabaseCorruption": {
       "title": "Local data needs repair",
       "description": "evaOS Workbench detected that the local database is corrupted and cannot continue startup. With your confirmation, evaOS Workbench will ask the managed runtime to back up the old database and create a new local database.",

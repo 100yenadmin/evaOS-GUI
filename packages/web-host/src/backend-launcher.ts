@@ -9,6 +9,7 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
 import { cleanupRegisteredAgentProcesses } from './agent-process-registry.js';
 import type { AppMetadata, BackendBinaryResolver } from './types.js';
@@ -218,6 +219,11 @@ export function buildSpawnEnv(dirs: BackendDirConfig): NodeJS.ProcessEnv {
     AIONUI_WORK_DIR: dirs.workDir,
     AIONUI_LOG_DIR: dirs.logDir,
   };
+}
+
+function ensureBackendStartupDirectory(directory?: string): void {
+  if (!directory?.trim()) return;
+  mkdirSync(directory, { recursive: true });
 }
 
 const FETCH_FORBIDDEN_PORTS = new Set([
@@ -577,6 +583,16 @@ export class BackendLifecycleManager {
       isPackaged: this.appMeta.isPackaged,
       recoverCorruptedDatabase: launchFlags.recoverCorruptedDatabase === true,
     });
+    try {
+      ensureBackendStartupDirectory(dbPath);
+      ensureBackendStartupDirectory(logDir);
+      ensureBackendStartupDirectory(dirs?.cacheDir);
+      ensureBackendStartupDirectory(dirs?.workDir);
+      ensureBackendStartupDirectory(dirs?.logDir);
+    } catch (error) {
+      this._status = 'error';
+      throw makeStartupError('spawn', 'aioncore startup directory preparation failed', error);
+    }
     console.log(`[aioncore] starting: ${binaryPath} ${args.join(' ')}`);
 
     try {

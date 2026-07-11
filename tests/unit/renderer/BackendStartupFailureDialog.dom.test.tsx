@@ -1,15 +1,26 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendStartupFailureDialog } from '@/renderer/components/layout/BackendStartupFailureDialog';
+import {
+  BackendStartupFailureDialog,
+  shouldShowBackendStartupFailureDialog,
+} from '@/renderer/components/layout/BackendStartupFailureDialog';
 
 const mocks = vi.hoisted(() => ({
+  feedbackModal: vi.fn(),
   recoverCorruptedDatabase: vi.fn(),
   messageError: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal', () => ({
+  default: (props: unknown) => {
+    mocks.feedbackModal(props);
+    return null;
+  },
 }));
 
 vi.mock('@arco-design/web-react', async () => {
@@ -25,6 +36,7 @@ vi.mock('@arco-design/web-react', async () => {
 
 describe('BackendStartupFailureDialog recoverable database corruption', () => {
   beforeEach(() => {
+    mocks.feedbackModal.mockReset();
     mocks.recoverCorruptedDatabase.mockReset();
     mocks.messageError.mockReset();
     Object.defineProperty(window, 'electronAPI', {
@@ -104,5 +116,37 @@ describe('BackendStartupFailureDialog recoverable database corruption', () => {
       )
     );
     expect(mocks.recoverCorruptedDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('shows startup directory guidance with diagnostics instead of download', async () => {
+    const failure = {
+      reason: 'backend_startup_directory_unavailable' as const,
+      startupDirectoryIssueKind: 'permission_denied' as const,
+    };
+
+    render(<BackendStartupFailureDialog failure={failure} />);
+
+    expect(shouldShowBackendStartupFailureDialog(failure)).toBe(true);
+    expect(screen.getByText('common.backendStartup.startupDirectory.title')).toBeInTheDocument();
+    expect(screen.getByText('common.backendStartup.startupDirectory.description')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /common.backendStartup.startupDirectory.sendDiagnostics/ }));
+    await waitFor(() =>
+      expect(mocks.feedbackModal).toHaveBeenLastCalledWith({
+        defaultModule: 'system-settings',
+        feedbackExtra: {
+          reason: 'backend_startup_directory_unavailable',
+          startupDirectoryIssueKind: 'permission_denied',
+        },
+        feedbackTags: {
+          'evaos.backend_startup_failure.reason': 'backend_startup_directory_unavailable',
+          'evaos.backend_startup_failure.startup_directory_issue_kind': 'permission_denied',
+        },
+        onCancel: expect.any(Function),
+        visible: true,
+      })
+    );
+    expect(
+      screen.queryByRole('button', { name: /common.backendStartup.incompleteInstallation.downloadLatest/ })
+    ).not.toBeInTheDocument();
   });
 });

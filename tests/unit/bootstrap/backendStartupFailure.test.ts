@@ -35,6 +35,52 @@ describe('classifyBackendStartupFailure', () => {
     });
   });
 
+  it('classifies startup directory permission failures separately', () => {
+    const error = new Error('aioncore startup directory preparation failed') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'spawn',
+      causeMessage: 'EACCES: permission denied, mkdir /redacted/work-directory',
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_startup_directory_unavailable',
+      startupDirectoryIssueKind: 'permission_denied',
+    });
+  });
+
+  it('classifies unavailable startup directory preparation separately', () => {
+    const error = new Error('aioncore startup directory preparation failed') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'spawn',
+      causeMessage: 'ENOTDIR: not a directory, mkdir /redacted/work-directory',
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_startup_directory_unavailable',
+      startupDirectoryIssueKind: 'missing_or_unavailable_directory',
+    });
+  });
+
+  it('keeps binary spawn ENOENT in the generic bucket', () => {
+    const error = new Error('aioncore process emitted an error before startup') as Error & {
+      details?: Record<string, unknown>;
+    };
+    error.details = {
+      stage: 'spawn_error',
+      causeMessage: 'spawn aioncore ENOENT',
+    };
+
+    expect(classifyBackendStartupFailure(error)).toEqual({
+      reason: 'backend_startup_failed',
+      backendBoundaryCode: undefined,
+      backendBoundaryStage: undefined,
+    });
+  });
+
   it('preserves backend bootstrap code and stage for generic startup failures', () => {
     const error = new Error('aioncore exited before health check passed') as Error & {
       details?: Record<string, unknown>;
