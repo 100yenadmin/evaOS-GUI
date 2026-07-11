@@ -29,8 +29,23 @@ vi.mock('@/renderer/styles/colors', () => ({
 }));
 
 vi.mock('@/renderer/utils/model/agentLogo', () => ({
-  getModelDisplayLabel: ({ selectedLabel, fallbackLabel }: { selectedLabel?: string; fallbackLabel: string }) =>
-    selectedLabel || fallbackLabel,
+  getModelDisplayLabel: ({
+    selected_value,
+    selectedLabel,
+    defaultModelLabel,
+    fallbackLabel,
+  }: {
+    selected_value?: string | null;
+    selectedLabel?: string | null;
+    defaultModelLabel: string;
+    fallbackLabel: string;
+  }) => {
+    if (!selectedLabel) return fallbackLabel;
+    const text = `${selected_value || ''} ${selectedLabel}`.toLowerCase();
+    return text.includes('default') || text.includes('recommended') || text.includes('默认')
+      ? defaultModelLabel
+      : selectedLabel;
+  },
 }));
 
 vi.mock('@icon-park/react', () => ({
@@ -134,9 +149,14 @@ describe('GuidModelSelector desktop menus', () => {
     vi.clearAllMocks();
     mocks.providerConfig = [
       {
+        id: 'acp-health-fixture',
+        platform: '',
+        model_health: { 'model-2': { status: 'healthy' } },
+      },
+      {
         id: 'provider-a',
         platform: 'openai',
-        model_health: { 'alpha-4': { status: 'healthy' }, 'model-2': { status: 'healthy' } },
+        model_health: { 'alpha-4': { status: 'healthy' } },
       },
       { id: 'provider-b', platform: 'anthropic', model_health: { 'beta-3': { status: 'unhealthy' } } },
     ];
