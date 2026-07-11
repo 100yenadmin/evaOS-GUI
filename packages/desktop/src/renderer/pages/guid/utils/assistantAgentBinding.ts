@@ -18,22 +18,26 @@ export async function persistAssistantAgentBinding({
   updateBinding,
   refreshAgents,
 }: PersistAssistantAgentBindingInput): Promise<void> {
+  let previousAssistants: Assistant[] | undefined;
   await swrMutate(
     ASSISTANT_LIST_CACHE_KEY,
-    (previous: Assistant[] | undefined) =>
-      previous?.map((assistant) =>
+    (previous: Assistant[] | undefined) => {
+      previousAssistants = previous;
+      return previous?.map((assistant) =>
         assistant.id === assistantId
           ? { ...assistant, agent_id: nextAgentId, preset_agent_type: nextRuntimeKey }
           : assistant
-      ),
+      );
+    },
     { revalidate: false }
   );
 
   try {
     await updateBinding({ id: assistantId, agent_id: nextAgentId });
-    await Promise.all([swrMutate(ASSISTANT_LIST_CACHE_KEY), refreshAgents()]);
   } catch (error) {
-    await swrMutate(ASSISTANT_LIST_CACHE_KEY).catch((): void => undefined);
+    await swrMutate(ASSISTANT_LIST_CACHE_KEY, previousAssistants, { revalidate: false });
     throw error;
   }
+
+  await Promise.allSettled([swrMutate(ASSISTANT_LIST_CACHE_KEY), refreshAgents()]);
 }
