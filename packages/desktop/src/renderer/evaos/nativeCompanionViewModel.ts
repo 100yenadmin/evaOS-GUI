@@ -94,14 +94,14 @@ export function getNativeCompanionRepairViewModel(
   input: NativeCompanionRepairViewModelInput
 ): NativeCompanionRepairViewModel {
   const state = collapseNativeCompanionState(input);
-  const statusTone = toneForState(state);
+  const statusTone = toneForState(state, input.status);
   const reportedSummary = safeReportedSummary(input);
 
   return {
     state,
     title: titleForState(state, input.loading, input.status),
     summary: summaryForState(state, input.loading, input.status),
-    statusLabel: labelForState(state, input.loading),
+    statusLabel: labelForState(state, input.loading, input.status),
     statusTone,
     readinessStrip: readinessStripForState(input.status, state, input.loading),
     repairSteps: repairStepsForState(input.status, state),
@@ -139,7 +139,7 @@ function titleForState(
   if (state !== 'ready' && secureConnectorLinkRequired(status)) return 'Connect secure Mac link';
   switch (state) {
     case 'ready':
-      return runtimeToolsReady(status) ? 'Mac control is ready' : 'Mac Access is on';
+      return runtimeToolsReady(status) ? 'Mac control is ready' : 'This Mac is locally ready';
     case 'not_paired':
       return 'Pair this Mac';
     case 'permission_needed':
@@ -164,7 +164,9 @@ function summaryForState(
   }
   switch (state) {
     case 'ready':
-      return 'Local Workbench connector and macOS permissions are ready. Connect agent access separately when evaOS/OpenClaw or Hermes needs to operate this Mac.';
+      return runtimeToolsReady(status)
+        ? 'End-to-end broker and runtime tool proof is ready for evaOS/OpenClaw and Hermes Mac control.'
+        : 'Local Workbench connector and macOS permissions are ready, but Jane/OpenClaw and Hermes are not proven end to end. Run the setup check before treating Mac control as ready.';
     case 'not_paired':
       return 'This Mac needs a fresh Workbench connector grant before evaOS or Hermes chat can use Mac control.';
     case 'permission_needed':
@@ -178,12 +180,21 @@ function summaryForState(
   }
 }
 
-function labelForState(state: NativeCompanionUserState, loading: boolean): string {
-  return loading ? 'checking' : state;
+function labelForState(
+  state: NativeCompanionUserState,
+  loading: boolean,
+  status: IEvaosNativeCompanionStatusView | null | undefined
+): string {
+  if (loading) return 'checking';
+  if (state === 'ready' && !runtimeToolsReady(status)) return 'local ready';
+  return state;
 }
 
-function toneForState(state: NativeCompanionUserState): NativeCompanionTone {
-  if (state === 'ready') return 'ready';
+function toneForState(
+  state: NativeCompanionUserState,
+  status: IEvaosNativeCompanionStatusView | null | undefined
+): NativeCompanionTone {
+  if (state === 'ready') return runtimeToolsReady(status) ? 'ready' : 'attention';
   if (state === 'offline' || state === 'unsupported') return 'offline';
   return 'attention';
 }
@@ -201,10 +212,10 @@ function readinessStripForState(
       help: 'Secure local connector status reported by Workbench.',
     },
     {
-      label: 'Agent access',
+      label: 'Agent runtime',
       value: pairingValue(status, state),
       tone: pairingTone(status, state),
-      help: 'Workbench registers an account-scoped connector grant for first-party evaOS/OpenClaw and Hermes agents.',
+      help: 'End-to-end broker grant and runtime tool proof for evaOS/OpenClaw and Hermes.',
     },
     {
       label: 'Permissions',
@@ -530,7 +541,7 @@ function connectorValue(
   if (loading) return 'Checking';
   if (!status) return 'Offline';
   if (!status.bridgeCli.installed) return state === 'unsupported' ? 'Unavailable' : 'Repair needed';
-  if (connectorServiceReady(status)) return 'Ready';
+  if (connectorServiceReady(status)) return 'Ready on this Mac';
   if (
     status.bridgeCli.status === 'error' ||
     status.bridgeCli.status === 'unavailable' ||
@@ -559,7 +570,7 @@ function permissionsValue(
 ): string {
   if (loading) return 'Checking';
   if (!status || state === 'offline' || state === 'unsupported') return 'Unavailable';
-  if (permissionsReady(status)) return 'Granted';
+  if (permissionsReady(status)) return 'Granted on this Mac';
   return 'Needs permission';
 }
 
@@ -570,7 +581,7 @@ function permissionsTone(
 ): NativeCompanionTone {
   if (loading) return 'neutral';
   if (!status || state === 'offline' || state === 'unsupported') return 'offline';
-  return permissionsValue(status, state, loading) === 'Granted' ? 'ready' : 'attention';
+  return permissionsValue(status, state, loading) === 'Granted on this Mac' ? 'ready' : 'attention';
 }
 
 function connectorStepDetail(
@@ -625,9 +636,10 @@ function pairingValue(
   if (state === 'not_paired') return 'Connect this Mac';
   if (state !== 'ready') return state === 'offline' || state === 'unsupported' ? 'Unavailable' : 'Repair needed';
   if (status?.pairingCapable === false) return 'Agent setup needed';
+  if (runtimeToolsReady(status)) return 'End-to-end ready';
   switch (normalizeAgentPairingStatus(status?.agentPairingStatus)) {
     case 'agent_paired':
-      return 'Agent paired';
+      return 'Grant active; test needed';
     case 'pairing_prompt_created':
       return 'Prompt created';
     case 'proof_failed':
@@ -674,10 +686,7 @@ function actionResultCanDriveAgentPairing(
 }
 
 function runtimeToolsReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
-  return (
-    status?.runtimeToolReadiness === 'tools_ready' ||
-    normalizeAgentPairingStatus(status?.agentPairingStatus) === 'agent_paired'
-  );
+  return status?.runtimeToolReadiness === 'tools_ready';
 }
 
 function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {

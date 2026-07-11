@@ -227,10 +227,49 @@ export async function getEvaosNativeCompanionStatus(
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
     isPairingCapableBridgePath(bridgePath, deps.env) && connectorServiceHasSecureRegistrationHost(connectorServiceData);
-  const agentPairingStatus = pairingCapable
-    ? agentPairingStatusFromStatus(readiness, controlSession.data)
+  const reportedAgentPairingStatus = pairingCapable
+    ? agentPairingStatusFromStatus(readiness, controlSession)
     : 'not_ready';
-  const runtimeToolReadiness = runtimeToolReadinessFromPairing(readiness, agentPairingStatus);
+  const agentPairingCustomerId =
+    reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed'
+      ? agentPairingCustomerIdFromControlSession(controlSession)
+      : undefined;
+  const agentPairingProofScopeId =
+    reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed'
+      ? agentPairingProofScopeIdFromControlSession(controlSession)
+      : undefined;
+  const activeMacControlScopeId = activeMacControlScopeIdFromControlSession(controlSession);
+  const pairingProofMatchesActiveScope = Boolean(
+    agentPairingCustomerId &&
+    agentPairingProofScopeId &&
+    activeMacControlScopeId &&
+    agentPairingProofScopeId === activeMacControlScopeId
+  );
+  const agentPairingStatus =
+    (reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed') &&
+    !pairingProofMatchesActiveScope
+      ? 'ready_for_agent_pairing'
+      : reportedAgentPairingStatus;
+  const reportedRuntimeToolReadiness = runtimeToolReadinessFromPairing(readiness, agentPairingStatus, controlSession);
+  const runtimeToolProofCustomerId =
+    reportedRuntimeToolReadiness === 'tools_ready' || reportedRuntimeToolReadiness === 'proof_failed'
+      ? runtimeToolProofCustomerIdFromControlSession(controlSession)
+      : undefined;
+  const runtimeToolProofScopeId =
+    reportedRuntimeToolReadiness === 'tools_ready' || reportedRuntimeToolReadiness === 'proof_failed'
+      ? runtimeToolProofScopeIdFromControlSession(controlSession)
+      : undefined;
+  const runtimeProofMatchesPairing = Boolean(
+    pairingProofMatchesActiveScope &&
+    runtimeToolProofCustomerId === agentPairingCustomerId &&
+    runtimeToolProofScopeId === agentPairingProofScopeId &&
+    runtimeToolProofScopeId === activeMacControlScopeId
+  );
+  const runtimeToolReadiness =
+    (reportedRuntimeToolReadiness === 'tools_ready' || reportedRuntimeToolReadiness === 'proof_failed') &&
+    !runtimeProofMatchesPairing
+      ? 'pairing_ready'
+      : reportedRuntimeToolReadiness;
   const pairingBlockedReason = pairingCapable
     ? undefined
     : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
@@ -257,7 +296,12 @@ export async function getEvaosNativeCompanionStatus(
     generatedAt,
     readiness,
     agentPairingStatus,
+    agentPairingCustomerId,
+    agentPairingProofScopeId,
+    activeMacControlScopeId,
     runtimeToolReadiness,
+    runtimeToolProofCustomerId,
+    runtimeToolProofScopeId,
     pairingCapable,
     pairingBlockedReason,
     blockerReason,
@@ -1117,7 +1161,18 @@ async function runSetupCheckAction(
   };
   const ready = setup.connectorReady && setup.macReady && setup.controlReady;
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
-  const agentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession.data) : 'not_ready';
+  const reportedAgentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession) : 'not_ready';
+  const agentPairingProofScopeId = agentPairingProofScopeIdFromControlSession(controlSession);
+  const pairingProofMatchesActiveScope = Boolean(
+    agentPairingCustomerIdFromControlSession(controlSession) &&
+    agentPairingProofScopeId &&
+    agentPairingProofScopeId === activeMacControlScopeIdFromControlSession(controlSession)
+  );
+  const agentPairingStatus =
+    (reportedAgentPairingStatus === 'agent_paired' || reportedAgentPairingStatus === 'proof_failed') &&
+    !pairingProofMatchesActiveScope
+      ? 'ready_for_agent_pairing'
+      : reportedAgentPairingStatus;
 
   return nativeActionResult(
     'setup_check',
@@ -2568,13 +2623,17 @@ function controlModeFromPayload(input: unknown): IEvaosNativeCompanionControlMod
 
 function agentPairingStatusFromStatus(
   readiness: IEvaosNativeCompanionStatusView['readiness'],
-  controlSession: unknown
+  controlSession: BridgeCommandResult
 ): IEvaosNativeCompanionAgentPairingStatus {
   if (readiness !== 'ready') return 'not_ready';
+  if (!controlSession.ok) return 'ready_for_agent_pairing';
   const explicit =
-    readString(controlSession, 'agent_pairing_status') ?? readString(controlSession, 'agentPairingStatus');
+    readString(controlSession.data, 'agent_pairing_status') ?? readString(controlSession.data, 'agentPairingStatus');
   if (isAgentPairingStatus(explicit)) return explicit;
-  if (readBoolean(controlSession, 'agent_paired') === true || readBoolean(controlSession, 'agentPaired') === true) {
+  if (
+    readBoolean(controlSession.data, 'agent_paired') === true ||
+    readBoolean(controlSession.data, 'agentPaired') === true
+  ) {
     return 'agent_paired';
   }
   return 'ready_for_agent_pairing';
@@ -2582,12 +2641,42 @@ function agentPairingStatusFromStatus(
 
 function runtimeToolReadinessFromPairing(
   readiness: IEvaosNativeCompanionStatusView['readiness'],
-  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus
+  agentPairingStatus: IEvaosNativeCompanionAgentPairingStatus,
+  controlSession: BridgeCommandResult
 ): IEvaosNativeCompanionRuntimeToolReadiness {
-  if (readiness !== 'ready' || agentPairingStatus === 'not_ready') return 'not_ready';
-  if (agentPairingStatus === 'agent_paired') return 'tools_ready';
+  if (!controlSession.ok || readiness !== 'ready' || agentPairingStatus === 'not_ready') return 'not_ready';
+  if (readBoolean(controlSession.data, 'kill_switch') === true) return 'not_ready';
   if (agentPairingStatus === 'proof_failed') return 'proof_failed';
+  if (agentPairingStatus !== 'agent_paired') return 'pairing_ready';
+  const explicit =
+    readString(controlSession.data, 'runtime_tool_readiness') ??
+    readString(controlSession.data, 'runtimeToolReadiness');
+  if (isRuntimeToolReadiness(explicit)) return explicit;
   return 'pairing_ready';
+}
+
+function isRuntimeToolReadiness(value: string | undefined): value is IEvaosNativeCompanionRuntimeToolReadiness {
+  return value === 'not_ready' || value === 'pairing_ready' || value === 'tools_ready' || value === 'proof_failed';
+}
+
+function runtimeToolProofCustomerIdFromControlSession(controlSession: BridgeCommandResult): string | undefined {
+  if (!controlSession.ok) return undefined;
+  return (
+    readString(controlSession.data, 'runtime_tool_proof_customer_id') ??
+    readString(controlSession.data, 'runtimeToolProofCustomerId') ??
+    readNestedString(controlSession.data, ['runtime_tool_proof', 'customer_id']) ??
+    readNestedString(controlSession.data, ['runtimeToolProof', 'customerId'])
+  );
+}
+
+function runtimeToolProofScopeIdFromControlSession(controlSession: BridgeCommandResult): string | undefined {
+  if (!controlSession.ok) return undefined;
+  return (
+    readString(controlSession.data, 'runtime_tool_proof_scope_id') ??
+    readString(controlSession.data, 'runtimeToolProofScopeId') ??
+    readNestedString(controlSession.data, ['runtime_tool_proof', 'scope_id']) ??
+    readNestedString(controlSession.data, ['runtimeToolProof', 'scopeId'])
+  );
 }
 
 function isAgentPairingStatus(value: string | undefined): value is IEvaosNativeCompanionAgentPairingStatus {
@@ -2597,6 +2686,38 @@ function isAgentPairingStatus(value: string | undefined): value is IEvaosNativeC
     value === 'pairing_prompt_created' ||
     value === 'agent_paired' ||
     value === 'proof_failed'
+  );
+}
+
+function agentPairingCustomerIdFromControlSession(controlSession: BridgeCommandResult): string | undefined {
+  if (!controlSession.ok) return undefined;
+  return (
+    readString(controlSession.data, 'agent_pairing_customer_id') ??
+    readString(controlSession.data, 'agentPairingCustomerId') ??
+    readNestedString(controlSession.data, ['agent_pairing', 'customer_id']) ??
+    readNestedString(controlSession.data, ['agentPairing', 'customerId'])
+  );
+}
+
+function agentPairingProofScopeIdFromControlSession(controlSession: BridgeCommandResult): string | undefined {
+  if (!controlSession.ok) return undefined;
+  return (
+    readString(controlSession.data, 'agent_pairing_proof_scope_id') ??
+    readString(controlSession.data, 'agentPairingProofScopeId') ??
+    readNestedString(controlSession.data, ['agent_pairing', 'proof_scope_id']) ??
+    readNestedString(controlSession.data, ['agentPairing', 'proofScopeId'])
+  );
+}
+
+function activeMacControlScopeIdFromControlSession(controlSession: BridgeCommandResult): string | undefined {
+  if (!controlSession.ok) return undefined;
+  return (
+    readString(controlSession.data, 'active_mac_control_scope_id') ??
+    readString(controlSession.data, 'activeMacControlScopeId') ??
+    readNestedString(controlSession.data, ['active_mac_control', 'scope_id']) ??
+    readNestedString(controlSession.data, ['activeMacControl', 'scopeId']) ??
+    readNestedString(controlSession.data, ['route_summary', 'canonical_route', 'proof_scope_id']) ??
+    readNestedString(controlSession.data, ['routeSummary', 'canonicalRoute', 'proofScopeId'])
   );
 }
 

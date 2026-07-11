@@ -193,7 +193,12 @@ export interface IEvaosNativeCompanionStatusView {
   generatedAt: string;
   readiness: IEvaosNativeCompanionReadiness;
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
+  agentPairingCustomerId?: string;
+  agentPairingProofScopeId?: string;
+  activeMacControlScopeId?: string;
   runtimeToolReadiness?: IEvaosNativeCompanionRuntimeToolReadiness;
+  runtimeToolProofCustomerId?: string;
+  runtimeToolProofScopeId?: string;
   pairingCapable?: boolean;
   pairingBlockedReason?: IEvaosMacControlBlockerReason;
   blockerReason?: IEvaosMacControlBlockerReason;

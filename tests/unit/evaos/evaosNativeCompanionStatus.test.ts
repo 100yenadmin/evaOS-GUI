@@ -178,15 +178,137 @@ describe('evaosNativeCompanionStatus', () => {
           },
         },
       },
-      'customer-mac control status --json': {
-        ok: true,
-        audit_id: 'audit-control',
-        data: {
-          active: false,
-          mode: 'ask-permission',
-          kill_switch: false,
+      'customer-mac control status --json': [
+        {
+          ok: true,
+          audit_id: 'audit-control',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
+          },
         },
-      },
+        {
+          ok: true,
+          audit_id: 'audit-control-proven',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
+            runtime_tool_readiness: 'tools_ready',
+            runtime_tool_proof_customer_id: 'friendly',
+            runtime_tool_proof_scope_id: 'grant-current',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-proven-camel-case',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agentPairingCustomerId: 'friendly',
+            agentPairingProofScopeId: 'grant-current',
+            activeMacControlScopeId: 'grant-current',
+            runtimeToolReadiness: 'tools_ready',
+            runtimeToolProofCustomerId: 'friendly',
+            runtimeToolProofScopeId: 'grant-current',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-failed-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'proof_failed',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
+            runtime_tool_readiness: 'tools_ready',
+            runtime_tool_proof_customer_id: 'friendly',
+            runtime_tool_proof_scope_id: 'grant-current',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-unpaired-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'ready_for_agent_pairing',
+            runtimeToolReadiness: 'tools_ready',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-kill-switch-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: true,
+            agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
+            runtime_tool_readiness: 'tools_ready',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-stale-grant-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-current',
+            active_mac_control_scope_id: 'grant-current',
+            runtime_tool_readiness: 'tools_ready',
+            runtime_tool_proof_customer_id: 'friendly',
+            runtime_tool_proof_scope_id: 'grant-revoked',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-identical-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            agent_pairing_proof_scope_id: 'grant-revoked',
+            active_mac_control_scope_id: 'grant-current',
+            runtime_tool_readiness: 'tools_ready',
+            runtime_tool_proof_customer_id: 'friendly',
+            runtime_tool_proof_scope_id: 'grant-revoked',
+          },
+        },
+        {
+          ok: false,
+          audit_id: 'audit-control-command-failed-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            runtime_tool_readiness: 'tools_ready',
+          },
+        },
+      ],
       'audit-tail --json --limit 5': {
         ok: true,
         audit_id: 'audit-tail',
@@ -201,7 +323,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(status).toMatchObject({
       schemaVersion: 'evaos.native_companion_status.v1',
       readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
+      agentPairingStatus: 'agent_paired',
       runtimeToolReadiness: 'pairing_ready',
       generatedAt: '2026-06-07T03:45:00.000Z',
       bridgeCli: {
@@ -241,6 +363,77 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(status.canOpenReleasedWorkbench).toBe(true);
     expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
+
+    const provenStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(provenStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      agentPairingCustomerId: 'friendly',
+      agentPairingProofScopeId: 'grant-current',
+      activeMacControlScopeId: 'grant-current',
+      runtimeToolReadiness: 'tools_ready',
+      runtimeToolProofCustomerId: 'friendly',
+      runtimeToolProofScopeId: 'grant-current',
+      controlSession: { auditId: 'audit-control-proven' },
+    });
+
+    const camelCaseProvenStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(camelCaseProvenStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      agentPairingCustomerId: 'friendly',
+      agentPairingProofScopeId: 'grant-current',
+      activeMacControlScopeId: 'grant-current',
+      runtimeToolReadiness: 'tools_ready',
+      runtimeToolProofCustomerId: 'friendly',
+      runtimeToolProofScopeId: 'grant-current',
+      controlSession: { auditId: 'audit-control-proven-camel-case' },
+    });
+
+    const failedPairingStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(failedPairingStatus).toMatchObject({
+      agentPairingStatus: 'proof_failed',
+      runtimeToolReadiness: 'proof_failed',
+      controlSession: { auditId: 'audit-control-failed-stale-proof' },
+    });
+
+    const incompletePairingStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(incompletePairingStatus).toMatchObject({
+      agentPairingStatus: 'ready_for_agent_pairing',
+      runtimeToolReadiness: 'pairing_ready',
+      controlSession: { auditId: 'audit-control-unpaired-stale-proof' },
+    });
+
+    const killSwitchStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(killSwitchStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      runtimeToolReadiness: 'not_ready',
+      controlSession: { auditId: 'audit-control-kill-switch-stale-proof', killSwitch: true },
+    });
+
+    const staleGrantProofStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(staleGrantProofStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      agentPairingCustomerId: 'friendly',
+      agentPairingProofScopeId: 'grant-current',
+      runtimeToolReadiness: 'pairing_ready',
+      controlSession: { auditId: 'audit-control-stale-grant-proof' },
+    });
+
+    const identicalStaleProofStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(identicalStaleProofStatus).toMatchObject({
+      agentPairingStatus: 'ready_for_agent_pairing',
+      agentPairingCustomerId: 'friendly',
+      agentPairingProofScopeId: 'grant-revoked',
+      activeMacControlScopeId: 'grant-current',
+      runtimeToolReadiness: 'pairing_ready',
+      controlSession: { auditId: 'audit-control-identical-stale-proof' },
+    });
+
+    const failedCommandStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(failedCommandStatus).toMatchObject({
+      agentPairingStatus: 'ready_for_agent_pairing',
+      runtimeToolReadiness: 'not_ready',
+      controlSession: { auditId: 'audit-control-command-failed-stale-proof', status: 'unavailable' },
+    });
   });
 
   it('uses bridge ready as connector truth when legacy connector-service status is stale', async () => {
@@ -1807,6 +2000,9 @@ describe('evaosNativeCompanionStatus', () => {
           mode: 'full-access',
           kill_switch: false,
           agent_pairing_status: 'agent_paired',
+          agent_pairing_customer_id: 'friendly',
+          agent_pairing_proof_scope_id: 'grant-current',
+          active_mac_control_scope_id: 'grant-current',
         },
       },
       'audit-tail --json --limit 12': {
