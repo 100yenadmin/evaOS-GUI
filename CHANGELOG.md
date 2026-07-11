@@ -9,6 +9,11 @@
 - Treat an active account-scoped connector grant as `test needed`; only an
   explicit `tools_ready` runtime proof may label Mac control and the two agent
   proof cards ready/proven.
+- Reject stale or contradictory runtime proof when the control-status command
+  failed, pairing is incomplete/failed, or the kill switch is engaged.
+- Bind ready/proven labels to the selected customer through explicit runtime
+  proof provenance; missing or mismatched customer identity remains `test
+needed` instead of reusing another grant's proof.
 - Preserve the existing broker grant, stop/revoke, kill-switch, diagnostics,
   TCC, and no-ACP boundaries while preventing local readiness from masking a
   broken VM/WebChat tool path.

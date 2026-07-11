@@ -132,6 +132,10 @@ const NativeCompanionPage: React.FC = () => {
       actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId, actionResultCustomerId, status),
     [actionResult, actionResultCustomerId, selectedPairingCustomerId, status]
   );
+  const selectedPairingStatus = React.useMemo(
+    () => statusForSelectedPairingCustomer(status, selectedPairingCustomerId),
+    [selectedPairingCustomerId, status]
+  );
   React.useEffect(() => {
     if (!actionResult || currentActionResult) return;
     setActionResult(null);
@@ -141,7 +145,7 @@ const NativeCompanionPage: React.FC = () => {
   }, [actionResult, currentActionResult]);
   const permissionGuideDetail = t('evaos.nativeCompanion.permissionGuideDetail');
   const viewModel = getNativeCompanionRepairViewModel({
-    status,
+    status: selectedPairingStatus,
     loading,
     error,
     hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
@@ -159,12 +163,12 @@ const NativeCompanionPage: React.FC = () => {
     roles: customerContext.roles,
     isOperator,
   });
-  const agentPairingStatus = effectiveAgentPairingStatus(status, currentActionResult);
-  const runtimeToolReadiness = status?.runtimeToolReadiness ?? 'not_ready';
-  const shouldShowAgentProof = status?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
+  const agentPairingStatus = effectiveAgentPairingStatus(selectedPairingStatus, currentActionResult);
+  const runtimeToolReadiness = selectedPairingStatus?.runtimeToolReadiness ?? 'not_ready';
+  const shouldShowAgentProof = selectedPairingStatus?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(currentActionResult);
   const canCreatePairingPrompt = canCreateNativeCompanionPairingPrompt({
-    status,
+    status: selectedPairingStatus,
     loading,
     error,
     hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
@@ -1007,6 +1011,33 @@ function effectiveAgentPairingStatus(
     if (actionResult?.pairing?.setupPrompt) return 'pairing_prompt_created';
   }
   return status?.agentPairingStatus ?? (status?.readiness === 'ready' ? 'ready_for_agent_pairing' : 'not_ready');
+}
+
+function statusForSelectedPairingCustomer(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  selectedPairingCustomerId: string | undefined
+): IEvaosNativeCompanionStatusView | null | undefined {
+  if (!status) return status;
+  const pairingMatches = selectedPairingCustomerId && status.agentPairingCustomerId === selectedPairingCustomerId;
+  const proofMatches = pairingMatches && status.runtimeToolProofCustomerId === selectedPairingCustomerId;
+  const scopedAgentPairingStatus =
+    status.agentPairingStatus === 'agent_paired' && !pairingMatches
+      ? 'ready_for_agent_pairing'
+      : status.agentPairingStatus;
+  const proofNeedsScope =
+    status.runtimeToolReadiness === 'tools_ready' || status.runtimeToolReadiness === 'proof_failed';
+  const scopedRuntimeToolReadiness = proofNeedsScope && !proofMatches ? 'pairing_ready' : status.runtimeToolReadiness;
+  if (
+    scopedAgentPairingStatus === status.agentPairingStatus &&
+    scopedRuntimeToolReadiness === status.runtimeToolReadiness
+  ) {
+    return status;
+  }
+  return {
+    ...status,
+    agentPairingStatus: scopedAgentPairingStatus,
+    runtimeToolReadiness: scopedRuntimeToolReadiness,
+  };
 }
 
 function actionResultForCurrentPairingCustomer(

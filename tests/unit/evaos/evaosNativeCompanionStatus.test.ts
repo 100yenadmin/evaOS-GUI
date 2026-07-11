@@ -197,6 +197,65 @@ describe('evaosNativeCompanionStatus', () => {
             mode: 'ask-permission',
             kill_switch: false,
             agent_pairing_status: 'agent_paired',
+            agent_pairing_customer_id: 'friendly',
+            runtime_tool_readiness: 'tools_ready',
+            runtime_tool_proof_customer_id: 'friendly',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-proven-camel-case',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
+            agentPairingCustomerId: 'friendly',
+            runtimeToolReadiness: 'tools_ready',
+            runtimeToolProofCustomerId: 'friendly',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-failed-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'proof_failed',
+            runtime_tool_readiness: 'tools_ready',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-unpaired-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'ready_for_agent_pairing',
+            runtimeToolReadiness: 'tools_ready',
+          },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-kill-switch-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: true,
+            agent_pairing_status: 'agent_paired',
+            runtime_tool_readiness: 'tools_ready',
+          },
+        },
+        {
+          ok: false,
+          audit_id: 'audit-control-command-failed-stale-proof',
+          data: {
+            active: false,
+            mode: 'ask-permission',
+            kill_switch: false,
+            agent_pairing_status: 'agent_paired',
             runtime_tool_readiness: 'tools_ready',
           },
         },
@@ -259,7 +318,43 @@ describe('evaosNativeCompanionStatus', () => {
     const provenStatus = await getEvaosNativeCompanionStatus(deps);
     expect(provenStatus).toMatchObject({
       agentPairingStatus: 'agent_paired',
+      agentPairingCustomerId: 'friendly',
       runtimeToolReadiness: 'tools_ready',
+      runtimeToolProofCustomerId: 'friendly',
+    });
+
+    const camelCaseProvenStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(camelCaseProvenStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      agentPairingCustomerId: 'friendly',
+      runtimeToolReadiness: 'tools_ready',
+      runtimeToolProofCustomerId: 'friendly',
+    });
+
+    const failedPairingStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(failedPairingStatus).toMatchObject({
+      agentPairingStatus: 'proof_failed',
+      runtimeToolReadiness: 'proof_failed',
+    });
+
+    const incompletePairingStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(incompletePairingStatus).toMatchObject({
+      agentPairingStatus: 'ready_for_agent_pairing',
+      runtimeToolReadiness: 'pairing_ready',
+    });
+
+    const killSwitchStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(killSwitchStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      runtimeToolReadiness: 'not_ready',
+      controlSession: { killSwitch: true },
+    });
+
+    const failedCommandStatus = await getEvaosNativeCompanionStatus(deps);
+    expect(failedCommandStatus).toMatchObject({
+      agentPairingStatus: 'agent_paired',
+      runtimeToolReadiness: 'not_ready',
+      controlSession: { status: 'unavailable' },
     });
   });
 

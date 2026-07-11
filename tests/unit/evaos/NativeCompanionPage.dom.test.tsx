@@ -1958,7 +1958,9 @@ describe('NativeCompanionPage', () => {
       generatedAt: '2026-06-07T03:45:00.000Z',
       readiness: 'ready' as const,
       agentPairingStatus: 'agent_paired' as const,
+      agentPairingCustomerId: 'benjamin-kennedy',
       runtimeToolReadiness: 'pairing_ready' as const,
+      runtimeToolProofCustomerId: 'benjamin-kennedy',
       summaryText: 'Workbench connector ready with agent proof.',
       sourcePointer: 'native-companion:read-only-bridge',
       canOpenReleasedWorkbench: false,
@@ -2009,6 +2011,44 @@ describe('NativeCompanionPage', () => {
     expect(await screen.findAllByText('End-to-end ready')).toHaveLength(2);
     expect(screen.getAllByText('Proven')).toHaveLength(2);
     expect(screen.queryByText('Pending')).not.toBeInTheDocument();
+
+    cleanup();
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: { ...pairedStatus, runtimeToolReadiness: 'proof_failed' },
+    });
+    renderNativeCompanion();
+
+    expect(await screen.findAllByText('Needs retry')).toHaveLength(2);
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
+    expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();
+
+    cleanup();
+    customerContextMock.customerContext.selectedCustomerId = 'customer-b';
+    customerContextMock.customerContext.selectedTarget = {
+      customerId: 'customer-b',
+      targetKind: 'customer_vm',
+      displayName: 'Customer B',
+      isDefault: true,
+    };
+    customerContextMock.customerContext.targets = [
+      {
+        customerId: 'benjamin-kennedy',
+        targetKind: 'customer_vm',
+        displayName: 'Benjamin Kennedy',
+      },
+      customerContextMock.customerContext.selectedTarget,
+    ];
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: { ...pairedStatus, runtimeToolReadiness: 'tools_ready' },
+    });
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Setup needed')).toBeInTheDocument();
+    expect(screen.queryByText('Grant active; test needed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
+    expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();
   });
 
   it('does not mark setup check as proven without explicit agent pairing proof', async () => {
