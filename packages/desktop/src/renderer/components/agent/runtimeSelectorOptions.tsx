@@ -6,7 +6,7 @@
 
 import type { AcpConfigSetStatus, AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { Menu, Tooltip } from '@arco-design/web-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AionInlineSearchInput from './runtimeSelector/AionInlineSearchInput';
 import styles from './runtimeSelector/RuntimeSelectorModelMenu.module.css';
@@ -24,7 +24,13 @@ export const RUNTIME_SUBMENU_TRIGGER_PROPS = {
 /** Component-scoped class for the root runtime selector menu. */
 export const RUNTIME_SELECTOR_MENU_CLASS_NAME = styles.runtimeMenu;
 
-type RuntimeSelectorModel = { id: string; label?: string; description?: string; testId?: string };
+type RuntimeSelectorModel = {
+  id: string;
+  label?: string;
+  description?: string;
+  testId?: string;
+  leading?: React.ReactNode;
+};
 
 export type RuntimeSelectorModelGroup = { key: string; title: string; models: RuntimeSelectorModel[] };
 
@@ -112,8 +118,15 @@ export const useRuntimeSelectorModelMenu = ({
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const totalCount = groups ? groups.reduce((sum, group) => sum + group.models.length, 0) : (models?.length ?? 0);
+  const modelSourceKey = groups
+    ? JSON.stringify(groups.map((group) => [group.key, group.models.map((model) => model.id)]))
+    : JSON.stringify((models ?? []).map((model) => model.id));
   const keyword = query.trim().toLowerCase();
   const searchLabel = t('agent.model.searchPlaceholder', { defaultValue: 'Search models' });
+
+  useEffect(() => {
+    setQuery('');
+  }, [modelSourceKey]);
 
   const filteredModels = useMemo(() => {
     if (!models || !keyword) return models ?? [];
@@ -142,7 +155,14 @@ export const useRuntimeSelectorModelMenu = ({
       }}
     >
       <RuntimeSelectorCheckedItem selected={model.id === currentModelId} description={model.description}>
-        {model.label || model.id}
+        {model.leading ? (
+          <span className='flex items-center gap-8px min-w-0'>
+            {model.leading}
+            <span className='min-w-0 truncate'>{model.label || model.id}</span>
+          </span>
+        ) : (
+          model.label || model.id
+        )}
       </RuntimeSelectorCheckedItem>
     </Menu.Item>
   );
