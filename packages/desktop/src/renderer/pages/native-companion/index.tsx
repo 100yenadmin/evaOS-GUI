@@ -1069,6 +1069,9 @@ function actionResultCanDriveAgentPairing(
   actionResult: IEvaosNativeCompanionActionResult | null | undefined
 ): boolean {
   if (!actionResult) return false;
+  // setup_check is an observation, not durable pairing proof. The refreshed
+  // status owns pairing truth so a result from an older grant cannot override it.
+  if (actionResult.action === 'setup_check') return false;
   if (!actionResultMatchesCurrentConnectorStatus(status, actionResult)) return false;
   return actionResult.status === 'succeeded';
 }

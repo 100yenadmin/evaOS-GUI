@@ -2108,7 +2108,7 @@ describe('NativeCompanionPage', () => {
     expect(screen.queryByText('Needs retry')).not.toBeInTheDocument();
   });
 
-  it('does not mark setup check as proven without explicit agent pairing proof', async () => {
+  it('does not let a stale setup-check action restore agent pairing after refreshed status downgrades it', async () => {
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -2199,7 +2199,7 @@ describe('NativeCompanionPage', () => {
             mode: 'full-access',
             killSwitch: false,
           },
-          agentPairingStatus: 'ready_for_agent_pairing',
+          agentPairingStatus: 'agent_paired',
         },
       });
 
@@ -2220,6 +2220,8 @@ describe('NativeCompanionPage', () => {
     await user.click(screen.getByTestId('native-companion-next-action'));
 
     await waitFor(() => expect(bridgeMocks.runAction).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Ready to connect')).toBeInTheDocument();
+    expect(screen.queryByText('Grant active; test needed')).not.toBeInTheDocument();
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
   });
 });
