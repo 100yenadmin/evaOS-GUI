@@ -161,6 +161,7 @@ describe('AionrsModelSelector', () => {
       .getByText('beta-2')
       .closest('[role="menuitem"]');
     expect(selectedItem).toHaveAttribute('aria-current', 'true');
+    expect(selectedItem).toHaveAttribute('data-testid', 'aionrs-model-option-beta-2');
 
     const search = screen.getByTestId('runtime-selector-model-search');
     expect(search).toHaveAccessibleName('Search models');

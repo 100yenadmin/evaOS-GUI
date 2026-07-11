@@ -48,7 +48,7 @@ const AionrsModelSelector: React.FC<{
       models: availableModels.map((modelName) => {
         const id = providerModelKey(provider.id, modelName);
         modelLookup.set(id, { provider, modelName });
-        return { id, label: modelName };
+        return { id, label: modelName, testId: `aionrs-model-option-${modelName}` };
       }),
     });
   }
