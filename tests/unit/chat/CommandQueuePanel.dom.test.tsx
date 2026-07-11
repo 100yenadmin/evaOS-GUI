@@ -160,6 +160,8 @@ describe('CommandQueuePanel', () => {
     expect(dragHandle).toHaveAttribute('data-drag-handle', 'enabled');
     expect(dragHandle).toHaveStyle({ touchAction: 'none' });
     expect(dragHandle).toHaveClass('min-h-44px', 'min-w-44px');
+    expect(dragHandle).toHaveStyle({ left: '0' });
+    expect(dragHandle.parentElement).toHaveClass('w-44px');
   });
 
   it('activates and cancels sorting from the keyboard drag handle', async () => {

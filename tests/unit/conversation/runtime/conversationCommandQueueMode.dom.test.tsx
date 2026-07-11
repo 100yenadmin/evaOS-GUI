@@ -554,6 +554,46 @@ describe('useConversationCommandQueue mode & send-now', () => {
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
   });
 
+  it('does not execute an invalidated send-now after an ordinary stop reset', async () => {
+    const firstStop = createDeferred();
+    const secondStop = createDeferred();
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderQueue({
+      conversation_id: 'conv-sendnow-reset-owner',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'first pending stop', files: [] });
+      result.current.enqueue({ input: 'second pending stop', files: [] });
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, () => firstStop.promise);
+      result.current.resetActiveExecution('stop');
+      result.current.sendNow(result.current.items[1].id, () => secondStop.promise);
+    });
+
+    await act(async () => {
+      firstStop.resolve();
+      await firstStop.promise;
+    });
+    expect(onExecute).not.toHaveBeenCalled();
+    expect(result.current.items.map((item) => item.input)).toEqual(['first pending stop', 'second pending stop']);
+
+    await act(async () => {
+      secondStop.resolve();
+      await secondStop.promise;
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+    expect(onExecute.mock.calls[0][0].input).toBe('second pending stop');
+    expect(result.current.items.map((item) => item.input)).toEqual(['first pending stop']);
+  });
+
   it('re-resolves a queued draft after a slow stop before sending', async () => {
     const stop = createDeferred();
     const onExecute = vi.fn().mockResolvedValue(undefined);

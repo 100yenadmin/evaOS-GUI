@@ -177,8 +177,8 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
           : 'color-mix(in srgb, var(--color-fill-1) 76%, transparent)',
       }}
     >
-      <div className='flex items-center gap-6px min-w-0 flex-1 relative pl-8px'>
-        <div className='flex items-center gap-5px w-18px shrink-0 relative'>
+      <div className='flex items-center gap-6px min-w-0 flex-1 relative'>
+        <div className='flex items-center w-44px shrink-0 relative'>
           <button
             {...restDragHandleButtonProps}
             ref={dragHandleRef}
@@ -197,7 +197,7 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
                     : 'cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
             }`}
             style={{
-              left: '-31px',
+              left: '0',
               top: '50%',
               transform: 'translateY(-50%)',
               color: 'var(--color-text-3)',
@@ -213,7 +213,9 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
           <span
             aria-hidden='true'
             data-queue-arrow='true'
-            className='inline-flex h-16px w-16px items-center justify-center shrink-0'
+            className={`inline-flex h-16px w-16px items-center justify-center shrink-0 ml-14px transition-opacity ${
+              dragViaCard ? 'opacity-0' : 'group-hover:opacity-0'
+            }`}
             style={{
               color: 'var(--color-text-3)',
             }}

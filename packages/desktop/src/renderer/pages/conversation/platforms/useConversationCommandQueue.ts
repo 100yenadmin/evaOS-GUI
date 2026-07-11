@@ -669,6 +669,7 @@ export const useConversationCommandQueue = ({
           sendNowReservationRef.current = null;
         }
       };
+      const ownsReservation = () => sendNowReservationRef.current === reservation;
 
       const executeTarget = async () => {
         if (executionGate.isProcessing && onStop) {
@@ -692,7 +693,7 @@ export const useConversationCommandQueue = ({
           }
         }
 
-        if (requestEpoch !== executionEpochRef.current) {
+        if (requestEpoch !== executionEpochRef.current || !ownsReservation()) {
           releaseReservation();
           return;
         }
@@ -717,7 +718,13 @@ export const useConversationCommandQueue = ({
           items: removeQueuedCommand(state.items, commandId),
         }));
 
-        if (requestEpoch !== executionEpochRef.current) {
+        if (requestEpoch !== executionEpochRef.current || !ownsReservation()) {
+          if (requestEpoch === executionEpochRef.current) {
+            void updateState((state) => ({
+              ...state,
+              items: restoreQueuedCommandAtIndex(state.items, latestTarget, latestTargetIndex),
+            }));
+          }
           releaseReservation();
           return;
         }
