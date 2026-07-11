@@ -1,4 +1,4 @@
-import { buildAssistantEditorBackends } from '@/renderer/hooks/assistant/useDetectedAgents';
+import { buildAssistantEditorBackends, isAssistantEditorAgentType } from '@/renderer/hooks/assistant/useDetectedAgents';
 import { describe, expect, it } from 'vitest';
 
 const catalog = [
@@ -50,6 +50,16 @@ const catalog = [
     status: 'online' as const,
   },
   {
+    id: 'legacy-openclaw-row',
+    name: 'Legacy OpenClaw',
+    agent_type: 'openclaw-gateway' as const,
+    agent_source: 'builtin' as const,
+    enabled: true,
+    installed: true,
+    sort_order: 4,
+    status: 'online' as const,
+  },
+  {
     id: 'agent-uninstalled-row',
     name: 'Uninstalled ACP',
     agent_type: 'acp' as const,
@@ -57,12 +67,20 @@ const catalog = [
     backend: 'uninstalled-acp',
     enabled: true,
     installed: false,
-    sort_order: 4,
+    sort_order: 5,
     status: 'unchecked' as const,
   },
 ];
 
 describe('buildAssistantEditorBackends', () => {
+  it('offers only current AionCore conversation-capable agent types for new bindings', () => {
+    expect(isAssistantEditorAgentType('acp')).toBe(true);
+    expect(isAssistantEditorAgentType('aionrs')).toBe(true);
+    expect(isAssistantEditorAgentType('openclaw-gateway')).toBe(false);
+    expect(isAssistantEditorAgentType('nanobot')).toBe(false);
+    expect(isAssistantEditorAgentType('remote')).toBe(false);
+  });
+
   it('uses canonical catalog row ids and keeps runtime keys separate', () => {
     expect(buildAssistantEditorBackends(catalog)).toEqual([
       {
@@ -94,6 +112,13 @@ describe('buildAssistantEditorBackends', () => {
     expect(buildAssistantEditorBackends(catalog).map((item) => item.id)).not.toContain('agent-uninstalled-row');
     expect(buildAssistantEditorBackends(catalog, 'agent-uninstalled-row').map((item) => item.id)).toContain(
       'agent-uninstalled-row'
+    );
+  });
+
+  it('keeps a legacy non-ACP row visible only while it is the current binding', () => {
+    expect(buildAssistantEditorBackends(catalog).map((item) => item.id)).not.toContain('legacy-openclaw-row');
+    expect(buildAssistantEditorBackends(catalog, 'legacy-openclaw-row').map((item) => item.id)).toContain(
+      'legacy-openclaw-row'
     );
   });
 });

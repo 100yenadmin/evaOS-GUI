@@ -14,7 +14,7 @@ type AssistantEditorPageProps = {
 const AssistantEditorPage: React.FC<AssistantEditorPageProps> = ({ editor, activeAssistant, onBack }) => {
   const { t } = useTranslation();
   const { isCreating, actions, profile } = editor;
-  const canDelete = !isCreating && activeAssistant?.source === 'user';
+  const canDelete = !isCreating && activeAssistant?.deletable === true;
   const canSave = !isCreating || Boolean(profile.name.trim() && editor.agent.value.trim());
 
   return (

@@ -48,16 +48,16 @@ const resolveBackendModelOptions = (agent: ManagedAgent): AvailableBackendModelO
 };
 
 const ASSISTANT_EDITOR_AGENT_TYPES = new Set(['acp', 'aionrs']);
+export const isAssistantEditorAgentType = (agentType: string): boolean => ASSISTANT_EDITOR_AGENT_TYPES.has(agentType);
 
 export const buildAssistantEditorBackends = (agents: ManagedAgent[], currentAgentId?: string): AvailableBackend[] => {
   const backendMap = new Map<string, AvailableBackend>();
 
   for (const agent of agents) {
-    if (!ASSISTANT_EDITOR_AGENT_TYPES.has(agent.agent_type)) continue;
-
     const agentId = agent.id?.trim() || '';
     const runtimeKey = (agent.backend || agent.agent_type || '').trim();
     const isCurrent = Boolean(currentAgentId && agentId === currentAgentId);
+    if (!isAssistantEditorAgentType(agent.agent_type) && !isCurrent) continue;
     const isSelectable =
       agent.enabled !== false && agent.installed && (agent.status === 'online' || agent.status === 'unchecked');
     if (!agentId || !runtimeKey || backendMap.has(agentId) || (!isSelectable && !isCurrent)) continue;

@@ -16,6 +16,7 @@ import {
 } from '@/common/adapter/assistantMapper';
 
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
+import { isAssistantEditorAgentType } from '@/renderer/hooks/assistant/useDetectedAgents';
 import { getFuzzyMatchIndices, useSlashCommandController } from '@/renderer/hooks/chat/useSlashCommandController';
 import { openEvaosExternalUrl, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import SlashCommandMenu, { type SlashCommandMenuItem } from '@/renderer/components/chat/SlashCommandMenu';
@@ -697,7 +698,7 @@ const GuidPage: React.FC = () => {
   const agentSwitcherItems = useMemo(() => {
     if (!canSwitchPresetAgent || !agentSelection.availableAgents) return [];
     return agentSelection.availableAgents
-      .filter((a) => !a.is_preset && a.agent_type !== 'remote')
+      .filter((a) => !a.is_preset && isAssistantEditorAgentType(a.agent_type))
       .map((a) => {
         const key = a.id;
         const extensionAvatar = a.isExtension ? resolveExtensionAssetUrl(a.avatar) : undefined;

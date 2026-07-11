@@ -141,6 +141,7 @@ describe('AssistantEditorPage', () => {
               id: 'bare:agent-claude-row',
               name: 'Claude Code',
               source: 'generated',
+              deletable: false,
               enabled: true,
               sort_order: 1,
             } as never
@@ -152,6 +153,47 @@ describe('AssistantEditorPage', () => {
 
     expect(screen.queryByTestId('btn-delete-assistant')).not.toBeInTheDocument();
     expect(screen.getByTestId('btn-save-assistant')).toBeEnabled();
+  });
+
+  it('uses the canonical deletable permission instead of assistant source', () => {
+    const editor = createEditor();
+    editor.isCreating = false;
+
+    const { rerender } = render(
+      <ConfigProvider>
+        <AssistantEditorPage
+          editor={editor}
+          activeAssistant={
+            {
+              id: 'user-locked',
+              name: 'Locked user assistant',
+              source: 'user',
+              deletable: false,
+            } as never
+          }
+          onBack={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+    expect(screen.queryByTestId('btn-delete-assistant')).not.toBeInTheDocument();
+
+    rerender(
+      <ConfigProvider>
+        <AssistantEditorPage
+          editor={editor}
+          activeAssistant={
+            {
+              id: 'generated-deletable',
+              name: 'Deletable assistant',
+              source: 'generated',
+              deletable: true,
+            } as never
+          }
+          onBack={vi.fn()}
+        />
+      </ConfigProvider>
+    );
+    expect(screen.getByTestId('btn-delete-assistant')).toBeInTheDocument();
   });
 
   it('disables create until a canonical agent row is selected', () => {

@@ -503,7 +503,7 @@ export const useAssistantEditor = ({
   const handleDeleteClick = () => {
     if (!activeAssistant) return;
 
-    if (activeAssistant.source !== 'user') {
+    if (!activeAssistant.deletable) {
       message.warning(t('settings.cannotDeleteBuiltin', { defaultValue: 'Cannot delete builtin assistants' }));
       return;
     }
@@ -514,7 +514,7 @@ export const useAssistantEditor = ({
   const handleDeleteRequest = (assistant: AssistantListItem) => {
     setActiveAssistantId(assistant.id);
 
-    if (assistant.source !== 'user') {
+    if (!assistant.deletable) {
       message.warning(t('settings.cannotDeleteBuiltin', { defaultValue: 'Cannot delete builtin assistants' }));
       return;
     }
@@ -524,6 +524,11 @@ export const useAssistantEditor = ({
 
   const handleDeleteConfirm = async () => {
     if (!activeAssistant) return;
+
+    if (!activeAssistant.deletable) {
+      message.warning(t('settings.cannotDeleteBuiltin', { defaultValue: 'Cannot delete builtin assistants' }));
+      return;
+    }
 
     try {
       await ipcBridge.assistants.delete.invoke({ id: activeAssistant.id });

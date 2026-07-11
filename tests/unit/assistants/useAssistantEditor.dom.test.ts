@@ -580,6 +580,7 @@ describe('useAssistantEditor', () => {
       source: 'generated',
       enabled: true,
       sort_order: 1,
+      deletable: false,
       agent_id: 'agent-claude-row',
       preset_agent_type: 'claude',
     } as AssistantListItem;
@@ -619,6 +620,30 @@ describe('useAssistantEditor', () => {
     expect(ipcBridge.fs.writeAssistantRule.invoke).toHaveBeenCalled();
     expect(ipcBridge.assistants.delete.invoke).not.toHaveBeenCalled();
     expect(mockMessage.warning).toHaveBeenCalled();
+  });
+
+  it('uses canonical deletable permission for delete guards', () => {
+    const lockedUser = {
+      id: 'locked-user',
+      name: 'Locked user',
+      source: 'user',
+      enabled: true,
+      sort_order: 1,
+      deletable: false,
+    } as AssistantListItem;
+    const locked = renderHook(() => useAssistantEditor({ ...defaultParams, activeAssistant: lockedUser }));
+
+    act(() => locked.result.current.handleDeleteClick());
+    expect(locked.result.current.deleteConfirmVisible).toBe(false);
+    expect(mockMessage.warning).toHaveBeenCalled();
+
+    const deletableGenerated = { ...lockedUser, id: 'generated-delete', source: 'generated', deletable: true } as const;
+    const allowed = renderHook(() =>
+      useAssistantEditor({ ...defaultParams, activeAssistant: deletableGenerated as AssistantListItem })
+    );
+
+    act(() => allowed.result.current.handleDeleteClick());
+    expect(allowed.result.current.deleteConfirmVisible).toBe(true);
   });
 
   it('optimistically updates and revalidates the shared assistant list when toggling enabled', async () => {
