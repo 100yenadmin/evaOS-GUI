@@ -420,9 +420,23 @@ export const useConversationCommandQueue = ({
   const executionEpochRef = useRef(0);
   const sendNowReservationRef = useRef<symbol | null>(null);
   const conversationIdRef = useRef(conversation_id);
+  const executionGateRef = useRef(executionGate);
+  const executionGateWaitersRef = useRef(new Set<() => void>());
   const interactionLockedRef = useRef(false);
   const [isInteractionLocked, setIsInteractionLocked] = useState(false);
   const [executionGateVersion, setExecutionGateVersion] = useState(0);
+
+  executionGateRef.current = executionGate;
+
+  const notifyExecutionGateWaiters = useCallback(() => {
+    for (const waiter of executionGateWaitersRef.current) {
+      waiter();
+    }
+  }, []);
+
+  useEffect(() => {
+    notifyExecutionGateWaiters();
+  }, [executionGate.canExecute, executionGate.hydrated, executionGate.isProcessing, notifyExecutionGateWaiters]);
 
   useEffect(() => {
     if (conversationIdRef.current === conversation_id) {
@@ -436,7 +450,8 @@ export const useConversationCommandQueue = ({
     waitingForTurnCompletionRef.current = false;
     interactionLockedRef.current = false;
     setIsInteractionLocked(false);
-  }, [conversation_id]);
+    notifyExecutionGateWaiters();
+  }, [conversation_id, notifyExecutionGateWaiters]);
 
   useEffect(() => {
     stateRef.current = data;
@@ -482,9 +497,10 @@ export const useConversationCommandQueue = ({
     interactionLockedRef.current = false;
     stateRef.current = createDefaultQueueState();
     setIsInteractionLocked(false);
+    notifyExecutionGateWaiters();
     removePersistedQueueState(conversation_id);
     void mutate(createDefaultQueueState(), { revalidate: false });
-  }, [conversation_id, enabled, mutate]);
+  }, [conversation_id, enabled, mutate, notifyExecutionGateWaiters]);
 
   const updateState = useCallback(
     (
@@ -521,9 +537,10 @@ export const useConversationCommandQueue = ({
     interactionLockedRef.current = false;
     stateRef.current = createDefaultQueueState();
     setIsInteractionLocked(false);
+    notifyExecutionGateWaiters();
     removePersistedQueueState(conversation_id);
     void mutate(createDefaultQueueState(), { revalidate: false });
-  }, [conversation_id, mutate]);
+  }, [conversation_id, mutate, notifyExecutionGateWaiters]);
 
   const clear = useCallback(() => {
     executionEpochRef.current += 1;
@@ -531,13 +548,14 @@ export const useConversationCommandQueue = ({
     waitingForTurnStartRef.current = false;
     waitingForTurnCompletionRef.current = false;
     pausedRef.current = false;
+    notifyExecutionGateWaiters();
     logCommandQueue(conversation_id, 'cleared');
     void updateState((state) => ({
       ...state,
       items: [],
       isPaused: false,
     }));
-  }, [conversation_id, updateState]);
+  }, [conversation_id, notifyExecutionGateWaiters, updateState]);
 
   useAddEventListener(
     'conversation.deleted',
@@ -670,6 +688,21 @@ export const useConversationCommandQueue = ({
         }
       };
       const ownsReservation = () => sendNowReservationRef.current === reservation;
+      const waitForExecutableGate = () =>
+        new Promise<void>((resolve) => {
+          const checkGate = () => {
+            if (
+              requestEpoch !== executionEpochRef.current ||
+              !ownsReservation() ||
+              executionGateRef.current.canExecute
+            ) {
+              executionGateWaitersRef.current.delete(checkGate);
+              resolve();
+            }
+          };
+          executionGateWaitersRef.current.add(checkGate);
+          checkGate();
+        });
 
       const executeTarget = async () => {
         if (executionGate.isProcessing && onStop) {
@@ -691,6 +724,8 @@ export const useConversationCommandQueue = ({
             );
             return;
           }
+
+          await waitForExecutableGate();
         }
 
         if (requestEpoch !== executionEpochRef.current || !ownsReservation()) {
@@ -862,9 +897,11 @@ export const useConversationCommandQueue = ({
   const resetActiveExecution = useCallback(
     (reason: 'stop' | 'external-reset') => {
       const hadPendingTurn = waitingForTurnStartRef.current || waitingForTurnCompletionRef.current;
+      executionEpochRef.current += 1;
       waitingForTurnStartRef.current = false;
       waitingForTurnCompletionRef.current = false;
       sendNowReservationRef.current = null;
+      notifyExecutionGateWaiters();
 
       if (!hadPendingTurn) {
         return;
@@ -876,7 +913,7 @@ export const useConversationCommandQueue = ({
       });
       setExecutionGateVersion((version) => version + 1);
     },
-    [conversation_id]
+    [conversation_id, notifyExecutionGateWaiters]
   );
 
   useEffect(() => {

@@ -367,6 +367,34 @@ describe('useConversationCommandQueue mode & send-now', () => {
     expect(result.current.mode).toBe('auto');
   });
 
+  it('waits for the stopped runtime to become idle before sending now', async () => {
+    const onExecute = vi.fn().mockResolvedValue(undefined);
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderQueue({
+      conversation_id: 'conv-stop-await-idle',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'wait for idle', files: [] });
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id, onStop);
+    });
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(onExecute).not.toHaveBeenCalled();
+    expect(result.current.items).toHaveLength(1);
+
+    rerender({ gate: idleGate, busy: false });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+  });
+
   it('restores manual mode from persisted storage', async () => {
     sessionStorage.setItem(
       storageKey('conv-persist'),
@@ -510,7 +538,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
     const secondStop = createDeferred();
     const thirdStop = vi.fn().mockResolvedValue(undefined);
     const onExecute = vi.fn().mockResolvedValue(undefined);
-    const { result } = renderQueue({
+    const { result, rerender } = renderQueue({
       conversation_id: 'conv-sendnow-reservation-owner',
       runtimeGate: processingGate,
       onExecute,
@@ -551,6 +579,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
       secondStop.resolve();
       await secondStop.promise;
     });
+    rerender({ gate: idleGate, busy: false });
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
   });
 
@@ -558,7 +587,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
     const firstStop = createDeferred();
     const secondStop = createDeferred();
     const onExecute = vi.fn().mockResolvedValue(undefined);
-    const { result } = renderQueue({
+    const { result, rerender } = renderQueue({
       conversation_id: 'conv-sendnow-reset-owner',
       runtimeGate: processingGate,
       onExecute,
@@ -589,15 +618,62 @@ describe('useConversationCommandQueue mode & send-now', () => {
       secondStop.resolve();
       await secondStop.promise;
     });
+    rerender({ gate: idleGate, busy: false });
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
     expect(onExecute.mock.calls[0][0].input).toBe('second pending stop');
     expect(result.current.items.map((item) => item.input)).toEqual(['first pending stop']);
   });
 
+  it('ignores a stale execute failure after reset and a newer send', async () => {
+    const firstExecute = createDeferred();
+    const secondExecute = createDeferred();
+    const onExecute = vi.fn((item: { input: string }) =>
+      item.input === 'first executing' ? firstExecute.promise : secondExecute.promise
+    );
+    const { result } = renderQueue({
+      conversation_id: 'conv-execute-reset-owner',
+      runtimeGate: processingGate,
+      onExecute,
+    });
+
+    act(() => {
+      result.current.toggleMode();
+      result.current.enqueue({ input: 'first executing', files: [] });
+      result.current.enqueue({ input: 'second executing', files: [] });
+    });
+    await waitFor(() => expect(result.current.mode).toBe('manual'));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.sendNow(result.current.items[0].id);
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.resetActiveExecution('stop');
+      result.current.sendNow(result.current.items[0].id);
+    });
+    await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      firstExecute.reject(new Error('stale execute failure'));
+      await firstExecute.promise.catch(() => {});
+    });
+
+    expect(result.current.items).toHaveLength(0);
+    expect(result.current.isPaused).toBe(false);
+    expect(Message.warning).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondExecute.resolve();
+      await secondExecute.promise;
+    });
+  });
+
   it('re-resolves a queued draft after a slow stop before sending', async () => {
     const stop = createDeferred();
     const onExecute = vi.fn().mockResolvedValue(undefined);
-    const { result } = renderQueue({
+    const { result, rerender } = renderQueue({
       conversation_id: 'conv-sendnow-edit-during-stop',
       runtimeGate: processingGate,
       onExecute,
@@ -618,6 +694,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
       stop.resolve();
       await stop.promise;
     });
+    rerender({ gate: idleGate, busy: false });
 
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
     expect(onExecute.mock.calls[0][0].input).toBe('after edit');
@@ -626,7 +703,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
   it('does not send a queued draft removed during a slow stop', async () => {
     const stop = createDeferred();
     const onExecute = vi.fn().mockResolvedValue(undefined);
-    const { result } = renderQueue({
+    const { result, rerender } = renderQueue({
       conversation_id: 'conv-sendnow-remove-during-stop',
       runtimeGate: processingGate,
       onExecute,
@@ -647,6 +724,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
       stop.resolve();
       await stop.promise;
     });
+    rerender({ gate: idleGate, busy: false });
 
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(onExecute).not.toHaveBeenCalled();
@@ -693,6 +771,7 @@ describe('useConversationCommandQueue mode & send-now', () => {
       secondStop.resolve();
       await secondStop.promise;
     });
+    rerender({ gate: idleGate, busy: false, id: 'conv-route-b' });
     await waitFor(() => expect(onExecute).toHaveBeenCalledTimes(1));
     expect(onExecute.mock.calls[0][0].input).toBe('conversation B draft');
   });

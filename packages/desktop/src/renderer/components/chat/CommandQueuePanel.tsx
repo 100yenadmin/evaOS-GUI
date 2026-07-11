@@ -166,7 +166,7 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
   const { onPointerDown: onSortableDragHandlePointerDown, ...restDragHandleButtonProps } = dragHandleButtonProps ?? {};
   return (
     <div
-      className='group flex items-center justify-between gap-6px rd-10px px-8px py-5px transition-[background-color,opacity] duration-180 ease-out'
+      className='group flex min-h-44px items-center justify-between gap-6px rd-10px px-8px py-5px transition-[background-color,opacity] duration-180 ease-out'
       data-command-id={item.id}
       data-sortable={dragDisabled ? 'disabled' : 'enabled'}
       aria-grabbed={isDragging}
@@ -178,7 +178,7 @@ const QueueItemCard: React.FC<QueueItemCardProps> = ({
       }}
     >
       <div className='flex items-center gap-6px min-w-0 flex-1 relative'>
-        <div className='flex items-center w-44px shrink-0 relative'>
+        <div className='flex h-44px w-44px items-center shrink-0 relative'>
           <button
             {...restDragHandleButtonProps}
             ref={dragHandleRef}
