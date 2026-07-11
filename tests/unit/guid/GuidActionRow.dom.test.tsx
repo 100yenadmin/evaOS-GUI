@@ -9,9 +9,15 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { showOpen, layoutState } = vi.hoisted(() => ({
+const { showOpen, layoutState, modeState } = vi.hoisted(() => ({
   showOpen: vi.fn(),
   layoutState: { isMobile: true },
+  modeState: {
+    modes: [
+      { value: 'read-only', label: 'Read Only' },
+      { value: 'auto', label: 'Auto' },
+    ],
+  },
 }));
 
 vi.mock('@/common', () => ({
@@ -24,6 +30,10 @@ vi.mock('@/common', () => ({
 
 vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
   useLayoutContext: () => ({ isMobile: layoutState.isMobile }),
+}));
+
+vi.mock('@/renderer/hooks/agent/useAgentModesForBackend', () => ({
+  useAgentModesForBackend: () => modeState.modes,
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
@@ -101,6 +111,10 @@ describe('GuidActionRow mobile controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     layoutState.isMobile = true;
+    modeState.modes = [
+      { value: 'read-only', label: 'Read Only' },
+      { value: 'auto', label: 'Auto' },
+    ];
     showOpen.mockResolvedValue(['/tmp/example.txt']);
   });
 
@@ -141,6 +155,16 @@ describe('GuidActionRow mobile controls', () => {
     fireEvent.click(screen.getByTestId('mobile-action-sheet-mcp'));
     fireEvent.click(screen.getByTestId('mobile-action-sheet-option-mcp-b'));
     expect(props.onToggleMcpServer).toHaveBeenCalledWith('mcp-b');
+  });
+
+  it('uses backend-cached permission modes instead of only static mode definitions', () => {
+    modeState.modes = [{ value: 'session-mode', label: 'Session Mode' }];
+    const props = renderRow({ selectedMode: 'session-mode' });
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-permission'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-option-session-mode'));
+
+    expect(props.onModeSelect).toHaveBeenCalledWith('session-mode');
   });
 
   it('routes host attachment through the existing upload callback and closes the sheet', async () => {

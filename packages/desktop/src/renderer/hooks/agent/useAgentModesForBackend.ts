@@ -5,6 +5,7 @@
  */
 
 import { configService } from '@/common/config/configService';
+import { filterEvaosBetaAgentModes } from '@/common/types/agent/agentModes';
 import type { AcpSessionConfigOption } from '@/common/types/platform/acpTypes';
 import { getAgentModes, type AgentModeOption } from '@/renderer/utils/model/agentModes';
 import { useEffect, useMemo, useState } from 'react';
@@ -54,7 +55,7 @@ export const useAgentModesForBackend = (backend?: string): AgentModeOption[] => 
   }, [backend]);
 
   return useMemo(() => {
-    if (cachedModes.length > 0) return cachedModes;
+    if (cachedModes.length > 0) return filterEvaosBetaAgentModes(cachedModes);
     return getAgentModes(backend);
   }, [cachedModes, backend]);
 };

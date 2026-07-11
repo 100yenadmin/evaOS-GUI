@@ -12,7 +12,8 @@ import type {
   MobileActionSheetEntry,
   MobileActionSheetOption,
 } from '@/renderer/components/chat/MobileActionSheet/types';
-import { getAgentModes, supportsModeSwitch, type AgentModeOption } from '@/renderer/utils/model/agentModes';
+import { useAgentModesForBackend } from '@/renderer/hooks/agent/useAgentModesForBackend';
+import { supportsModeSwitch, type AgentModeOption } from '@/renderer/utils/model/agentModes';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { getCleanFileNames, FileService } from '@/renderer/services/FileService';
 import { iconColors } from '@/renderer/styles/colors';
@@ -123,6 +124,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
   const [isPlusDropdownOpen, setIsPlusDropdownOpen] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const modeBackend = effectiveModeAgent || selectedAgent;
+  const availableModeOptions = useAgentModesForBackend(modeBackend);
   const showModeSwitch = supportsModeSwitch(modeBackend);
   const configOptionCount = (modelSelectorNode ? 1 : 0) + (showModeSwitch ? 1 : 0);
 
@@ -244,7 +246,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
       });
     }
 
-    const modeOptions = getAgentModes(modeBackend);
+    const modeOptions = availableModeOptions;
     if (modeOptions.length > 0) {
       const options = modeOptions.map((mode) => ({
         key: mode.value,
@@ -334,6 +336,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     activeMcpCount,
     activeSkillCount,
     allSkills,
+    availableModeOptions,
     currentAcpCachedModelInfo,
     current_model,
     disabledBuiltinSkills,
