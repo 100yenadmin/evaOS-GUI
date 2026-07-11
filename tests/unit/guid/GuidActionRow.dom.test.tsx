@@ -5,7 +5,7 @@
  */
 
 import GuidActionRow from '@/renderer/pages/guid/components/GuidActionRow';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -74,6 +74,7 @@ const renderRow = (overrides: Record<string, unknown> = {}) => {
     },
     selectedAcpModel: 'model-a',
     setSelectedAcpModel: vi.fn(),
+    onAddModel: vi.fn(),
     selectedAgent: 'codex',
     selectedMode: 'read-only',
     onModeSelect: vi.fn(),
@@ -168,12 +169,19 @@ describe('GuidActionRow mobile controls', () => {
   });
 
   it('routes host attachment through the existing upload callback and closes the sheet', async () => {
-    const props = renderRow();
-    fireEvent.click(screen.getByTestId('file-upload-btn'));
-    fireEvent.click(screen.getByTestId('mobile-action-sheet-attach'));
+    vi.useFakeTimers();
+    try {
+      const props = renderRow();
+      fireEvent.click(screen.getByTestId('file-upload-btn'));
+      fireEvent.click(screen.getByTestId('mobile-action-sheet-attach'));
 
-    await waitFor(() => expect(props.onFilesUploaded).toHaveBeenCalledWith(['/tmp/example.txt']));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await act(async () => vi.advanceTimersByTimeAsync(280));
+
+      expect(props.onFilesUploaded).toHaveBeenCalledWith(['/tmp/example.txt']);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('preserves the add-model recovery route when no provider models are configured', () => {
