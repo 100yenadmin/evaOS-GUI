@@ -1018,12 +1018,21 @@ function statusForSelectedPairingCustomer(
   selectedPairingCustomerId: string | undefined
 ): IEvaosNativeCompanionStatusView | null | undefined {
   if (!status) return status;
-  const pairingMatches = selectedPairingCustomerId && status.agentPairingCustomerId === selectedPairingCustomerId;
-  const proofMatches = pairingMatches && status.runtimeToolProofCustomerId === selectedPairingCustomerId;
+  const pairingMatches = Boolean(
+    selectedPairingCustomerId &&
+    status.agentPairingCustomerId === selectedPairingCustomerId &&
+    status.agentPairingProofScopeId
+  );
+  const proofMatches = Boolean(
+    pairingMatches &&
+    status.runtimeToolProofCustomerId === selectedPairingCustomerId &&
+    status.runtimeToolProofScopeId &&
+    status.runtimeToolProofScopeId === status.agentPairingProofScopeId
+  );
+  const pairingNeedsScope =
+    status.agentPairingStatus === 'agent_paired' || status.agentPairingStatus === 'proof_failed';
   const scopedAgentPairingStatus =
-    status.agentPairingStatus === 'agent_paired' && !pairingMatches
-      ? 'ready_for_agent_pairing'
-      : status.agentPairingStatus;
+    pairingNeedsScope && !pairingMatches ? 'ready_for_agent_pairing' : status.agentPairingStatus;
   const proofNeedsScope =
     status.runtimeToolReadiness === 'tools_ready' || status.runtimeToolReadiness === 'proof_failed';
   const scopedRuntimeToolReadiness = proofNeedsScope && !proofMatches ? 'pairing_ready' : status.runtimeToolReadiness;

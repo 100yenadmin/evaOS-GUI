@@ -1959,8 +1959,10 @@ describe('NativeCompanionPage', () => {
       readiness: 'ready' as const,
       agentPairingStatus: 'agent_paired' as const,
       agentPairingCustomerId: 'benjamin-kennedy',
+      agentPairingProofScopeId: 'grant-current',
       runtimeToolReadiness: 'pairing_ready' as const,
       runtimeToolProofCustomerId: 'benjamin-kennedy',
+      runtimeToolProofScopeId: 'grant-current',
       summaryText: 'Workbench connector ready with agent proof.',
       sourcePointer: 'native-companion:read-only-bridge',
       canOpenReleasedWorkbench: false,
@@ -2049,6 +2051,44 @@ describe('NativeCompanionPage', () => {
     expect(screen.queryByText('Grant active; test needed')).not.toBeInTheDocument();
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
     expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();
+
+    cleanup();
+    customerContextMock.customerContext.selectedCustomerId = 'benjamin-kennedy';
+    customerContextMock.customerContext.selectedTarget = {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm',
+      displayName: 'Benjamin Kennedy',
+      isDefault: true,
+    };
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        ...pairedStatus,
+        runtimeToolReadiness: 'tools_ready',
+        runtimeToolProofScopeId: 'grant-revoked',
+      },
+    });
+    renderNativeCompanion();
+
+    expect(await screen.findAllByText('Grant active; test needed')).toHaveLength(2);
+    expect(screen.queryByText('Proven')).not.toBeInTheDocument();
+    expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();
+
+    cleanup();
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        ...pairedStatus,
+        agentPairingStatus: 'proof_failed',
+        agentPairingProofScopeId: undefined,
+        runtimeToolReadiness: 'proof_failed',
+        runtimeToolProofScopeId: undefined,
+      },
+    });
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Setup needed')).toBeInTheDocument();
+    expect(screen.queryByText('Needs retry')).not.toBeInTheDocument();
   });
 
   it('does not mark setup check as proven without explicit agent pairing proof', async () => {

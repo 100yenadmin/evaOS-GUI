@@ -11,9 +11,9 @@
   proof cards ready/proven.
 - Reject stale or contradictory runtime proof when the control-status command
   failed, pairing is incomplete/failed, or the kill switch is engaged.
-- Bind ready/proven labels to the selected customer through explicit runtime
-  proof provenance; missing or mismatched customer identity remains `test
-needed` instead of reusing another grant's proof.
+- Bind ready/proven labels to the selected customer and the exact opaque
+  pairing/proof scope; missing or mismatched customer, grant, or device
+  provenance remains `test needed` instead of reusing stale proof.
 - Preserve the existing broker grant, stop/revoke, kill-switch, diagnostics,
   TCC, and no-ACP boundaries while preventing local readiness from masking a
   broken VM/WebChat tool path.
