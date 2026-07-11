@@ -170,7 +170,8 @@ describe('AionrsModelSelector', () => {
   it('preserves unsupported and mobile popup behavior', () => {
     const { rerender } = render(<AionrsModelSelector disabled selection={makeSelection()} />);
     expect(screen.queryByTestId('aionrs-model-selector')).not.toBeInTheDocument();
-    expect(screen.getByText('conversation.welcome.useCliModel')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
     mocks.isMobile = true;
     rerender(<AionrsModelSelector selection={makeSelection()} />);
