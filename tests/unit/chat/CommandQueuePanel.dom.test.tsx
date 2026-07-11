@@ -187,6 +187,9 @@ describe('CommandQueuePanel', () => {
     expect(props.onInteractionLock).not.toHaveBeenCalled();
     expect(props.onReorder).not.toHaveBeenCalled();
     fireEvent.keyDown(handle, { key: 'Escape', code: 'Escape' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(props.onInteractionUnlock).not.toHaveBeenCalled();
+    expect(props.onReorder).not.toHaveBeenCalled();
   });
 
   it('does not render a separate help button (help lives on the mode toggle)', () => {

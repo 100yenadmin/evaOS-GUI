@@ -334,6 +334,7 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
   const { t } = useTranslation();
   const queueContainerRef = useRef<HTMLDivElement | null>(null);
   const activeDragHandleRef = useRef<HTMLButtonElement | null>(null);
+  const ownsDragInteractionLockRef = useRef(false);
   // Desktop: drag starts after moving 8px from the handle.
   // Narrow / mobile: long-press the dedicated handle (200ms) to preserve row scrolling.
   const sensors = useSensors(
@@ -351,8 +352,13 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
   };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    onInteractionUnlock();
     clearDragHandleFocus();
+    if (!ownsDragInteractionLockRef.current) {
+      return;
+    }
+
+    ownsDragInteractionLockRef.current = false;
+    onInteractionUnlock();
 
     if (!over || active.id === over.id) {
       return;
@@ -366,12 +372,18 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
       return;
     }
 
+    ownsDragInteractionLockRef.current = true;
     onInteractionLock();
   };
 
   const handleDragCancel = () => {
-    onInteractionUnlock();
     clearDragHandleFocus();
+    if (!ownsDragInteractionLockRef.current) {
+      return;
+    }
+
+    ownsDragInteractionLockRef.current = false;
+    onInteractionUnlock();
   };
 
   const dragHandleLabel = t('conversation.commandQueue.reorder', {
