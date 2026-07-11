@@ -191,20 +191,24 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
 
     if (isGeminiMode) {
       const enabledProviders = modelList.filter((provider) => provider.enabled !== false);
-      modelOptions = enabledProviders.flatMap((provider) =>
-        getAvailableModels(provider).map((modelName) => ({
-          key: `${provider.id}::${modelName}`,
-          label: modelName,
-          description: provider.name,
-          active: current_model?.id === provider.id && current_model?.use_model === modelName,
-        }))
+      const modelTargets = new Map<string, { provider: IProvider; modelName: string }>();
+      modelOptions = enabledProviders.flatMap((provider, providerIndex) =>
+        getAvailableModels(provider).map((modelName, modelIndex) => {
+          const key = `provider-model-${providerIndex}-${modelIndex}`;
+          modelTargets.set(key, { provider, modelName });
+          return {
+            key,
+            label: modelName,
+            description: provider.name,
+            active: current_model?.id === provider.id && current_model?.use_model === modelName,
+          };
+        })
       );
       currentModelLabel = current_model?.use_model || '';
       onModelSelect = (key) => {
-        const [providerId, modelName] = key.split('::');
-        const provider = enabledProviders.find((candidate) => candidate.id === providerId);
-        if (provider && modelName) {
-          void setCurrentModel({ ...provider, use_model: modelName } as TProviderWithModel);
+        const target = modelTargets.get(key);
+        if (target) {
+          void setCurrentModel({ ...target.provider, use_model: target.modelName } as TProviderWithModel);
         }
       };
     } else {
@@ -232,7 +236,9 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
         submenu: {
           title: t('common.model'),
           options: hasModels
-            ? modelOptions
+            ? isGeminiMode
+              ? [...modelOptions, { key: 'add-model', label: t('settings.addModel') }]
+              : modelOptions
             : [
                 {
                   key: 'add-model',
@@ -241,7 +247,12 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
                 },
               ],
           selectable: hasModels,
-          onSelect: hasModels ? onModelSelect : onAddModel,
+          onSelect: hasModels
+            ? (key) => {
+                if (key === 'add-model') onAddModel();
+                else onModelSelect(key);
+              }
+            : onAddModel,
         },
       });
     }

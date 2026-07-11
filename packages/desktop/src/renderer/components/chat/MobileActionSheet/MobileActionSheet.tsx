@@ -13,6 +13,12 @@ import type { MobileActionSheetEntry, MobileActionSheetProps, MobileActionSheetS
 
 const TRANSITION_MS = 260;
 
+const handleKeyboardActivate = (event: React.KeyboardEvent, activate: () => void) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  activate();
+};
+
 const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, title, entries }) => {
   const { t } = useTranslation();
   const [activeSubKey, setActiveSubKey] = useState<string | null>(null);
@@ -171,12 +177,6 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
     setActiveSubKey(null);
   };
 
-  const handleKeyboardActivate = (event: React.KeyboardEvent, activate: () => void) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    activate();
-  };
-
   const handleSheetKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -187,7 +187,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
 
     const focusable = [
       ...sheetRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]):not([tabindex="-1"]), [role="button"][tabindex="0"]'
+        'button:not([disabled]):not([tabindex="-1"]), [role="button"][tabindex="0"], [role="checkbox"][tabindex="0"]'
       ),
     ];
     if (focusable.length === 0) {
@@ -284,7 +284,10 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
                   <div className={styles.empty}>{renderedSub.emptyText}</div>
                 ) : (
                   renderedSub.options.map((option) => {
-                    const showRadio = renderedSub.multiSelect !== true && renderedSub.selectable !== false;
+                    const showRadio =
+                      renderedSub.multiSelect !== true &&
+                      renderedSub.selectable !== false &&
+                      option.active !== undefined;
                     const showCheckbox = renderedSub.multiSelect === true;
                     return (
                       <div
@@ -295,7 +298,8 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({ open, onClose, ti
                         className={styles.item}
                         onClick={() => handleSubSelect(option.key)}
                         onKeyDown={(event) => handleKeyboardActivate(event, () => handleSubSelect(option.key))}
-                        role='button'
+                        role={showCheckbox ? 'checkbox' : 'button'}
+                        aria-checked={showCheckbox ? option.active === true : undefined}
                         tabIndex={subPhase === 'shown' ? 0 : -1}
                         data-testid={`mobile-action-sheet-option-${option.key}`}
                       >

@@ -57,6 +57,34 @@ describe('MobileActionSheet', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('exposes multi-select option state to assistive technology', async () => {
+    const entries: MobileActionSheetEntry[] = [
+      {
+        key: 'skills',
+        label: 'Skills',
+        submenu: {
+          title: 'Skills',
+          multiSelect: true,
+          options: [
+            { key: 'enabled', label: 'Enabled skill', active: true },
+            { key: 'disabled', label: 'Disabled skill', active: false },
+          ],
+          onSelect: vi.fn(),
+        },
+      },
+    ];
+
+    render(<MobileActionSheet open onClose={vi.fn()} entries={entries} />);
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-skills'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('mobile-action-sheet-option-enabled')).toHaveAttribute('tabindex', '0')
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'Enabled skill' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Disabled skill' })).toHaveAttribute('aria-checked', 'false');
+  });
+
   it('runs an action entry and closes the sheet', () => {
     const onClick = vi.fn();
     const onClose = vi.fn();

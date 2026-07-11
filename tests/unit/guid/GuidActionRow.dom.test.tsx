@@ -200,6 +200,43 @@ describe('GuidActionRow mobile controls', () => {
     expect(onAddModel).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves the add-model route when provider models are configured', () => {
+    const onAddModel = vi.fn();
+    renderRow({
+      isGeminiMode: true,
+      modelList: [{ id: 'provider-a', name: 'Provider A', enabled: true, models: ['model-a'] }],
+      currentAcpCachedModelInfo: null,
+      onAddModel,
+    });
+
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-model'));
+    const addModelOption = screen.getByTestId('mobile-action-sheet-option-add-model');
+
+    expect(addModelOption.querySelector('[aria-hidden="true"]')).not.toBeInTheDocument();
+    fireEvent.click(addModelOption);
+
+    expect(onAddModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves provider model names containing the composite-key delimiter', () => {
+    const setCurrentModel = vi.fn();
+    renderRow({
+      isGeminiMode: true,
+      modelList: [{ id: 'provider-a', name: 'Provider A', enabled: true, models: ['model::custom'] }],
+      currentAcpCachedModelInfo: null,
+      setCurrentModel,
+    });
+
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-model'));
+    fireEvent.click(screen.getByText('model::custom').closest('[data-testid]') as HTMLElement);
+
+    expect(setCurrentModel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'provider-a', use_model: 'model::custom' })
+    );
+  });
+
   it('does not reopen an old sheet after leaving and returning to mobile layout', () => {
     const props = renderRow();
     fireEvent.click(screen.getByTestId('file-upload-btn'));
