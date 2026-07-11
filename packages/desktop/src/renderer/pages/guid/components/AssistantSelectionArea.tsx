@@ -47,6 +47,12 @@ const resolveAssistantCandidateIds = (assistantId: string): string[] => {
 
 const OPEN_ASSISTANT_EDITOR_INTENT_KEY = 'guid.openAssistantEditorIntent';
 
+export function resolveAssistantCardColumnCount(width: number): 1 | 2 | 3 {
+  if (width > 640) return 3;
+  if (width > 460) return 2;
+  return 1;
+}
+
 const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
   is_presetAgent,
   selectedAgentKey,
@@ -118,14 +124,20 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
 
   const scrollWrapRef = useRef<HTMLDivElement>(null);
   const [isScrollable, setIsScrollable] = useState(false);
+  const [assistantCardColumnCount, setAssistantCardColumnCount] = useState<1 | 2 | 3>(3);
   const selectableAssistantCards = useMemo(() => selectableEvaosAssistants(assistants), [assistants]);
 
   useEffect(() => {
     const el = scrollWrapRef.current;
     if (!el) return;
-    const measure = () => setIsScrollable(el.scrollHeight > el.clientHeight + 1);
+    const measure = (observedWidth?: number) => {
+      setIsScrollable(el.scrollHeight > el.clientHeight + 1);
+      const availableWidth =
+        observedWidth || el.clientWidth || (typeof window === 'undefined' ? 641 : window.innerWidth);
+      setAssistantCardColumnCount(resolveAssistantCardColumnCount(availableWidth));
+    };
     measure();
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver((entries) => measure(entries[0]?.contentRect.width));
     observer.observe(el);
     return () => observer.disconnect();
   }, [assistants]);
@@ -211,7 +223,11 @@ const AssistantSelectionArea: React.FC<AssistantSelectionAreaProps> = ({
         ref={scrollWrapRef}
         className={`${styles.assistantCardScrollWrap} ${isScrollable ? styles.assistantCardScrollWrapScrollable : ''}`}
       >
-        <div className={styles.assistantCardGrid}>
+        <div
+          className={styles.assistantCardGrid}
+          data-columns={assistantCardColumnCount}
+          data-testid='assistant-card-grid'
+        >
           {selectableAssistantCards.map((assistant) => {
             const avatarValue = assistant.avatar?.trim();
             const mappedAvatar = avatarValue ? CUSTOM_AVATAR_IMAGE_MAP[avatarValue] : undefined;

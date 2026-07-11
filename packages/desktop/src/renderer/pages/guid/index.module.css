@@ -800,6 +800,14 @@
   gap: 10px;
 }
 
+.assistantCardGrid[data-columns='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.assistantCardGrid[data-columns='1'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .assistantCard {
   display: flex;
   align-items: center;
@@ -893,12 +901,6 @@
 .assistantCardAdd:hover {
   background: var(--color-fill-2);
   color: var(--color-text-2);
-}
-
-@media (max-width: 640px) {
-  .assistantCardGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* 预设助手标签 */
