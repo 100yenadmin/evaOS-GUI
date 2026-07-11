@@ -237,6 +237,28 @@ describe('GuidActionRow mobile controls', () => {
     );
   });
 
+  it('does not treat an ACP model ID named add-model as the provider settings action', () => {
+    const setSelectedAcpModel = vi.fn();
+    const onAddModel = vi.fn();
+    renderRow({
+      currentAcpCachedModelInfo: {
+        current_model_id: 'add-model',
+        current_model_label: 'Add Model Runtime',
+        available_models: [{ id: 'add-model', label: 'Add Model Runtime' }],
+      },
+      selectedAcpModel: null,
+      setSelectedAcpModel,
+      onAddModel,
+    });
+
+    fireEvent.click(screen.getByTestId('file-upload-btn'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-model'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-option-add-model'));
+
+    expect(setSelectedAcpModel).toHaveBeenCalledWith('add-model');
+    expect(onAddModel).not.toHaveBeenCalled();
+  });
+
   it('does not reopen an old sheet after leaving and returning to mobile layout', () => {
     const props = renderRow();
     fireEvent.click(screen.getByTestId('file-upload-btn'));

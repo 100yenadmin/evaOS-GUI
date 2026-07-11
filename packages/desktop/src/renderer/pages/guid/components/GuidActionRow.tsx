@@ -249,7 +249,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
           selectable: hasModels,
           onSelect: hasModels
             ? (key) => {
-                if (key === 'add-model') onAddModel();
+                if (isGeminiMode && key === 'add-model') onAddModel();
                 else onModelSelect(key);
               }
             : onAddModel,
