@@ -6,7 +6,7 @@
 
 import type { AcpConfigSetStatus, AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { Menu, Tooltip } from '@arco-design/web-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AionInlineSearchInput from './runtimeSelector/AionInlineSearchInput';
 import styles from './runtimeSelector/RuntimeSelectorModelMenu.module.css';
@@ -118,8 +118,15 @@ export const useRuntimeSelectorModelMenu = ({
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const totalCount = groups ? groups.reduce((sum, group) => sum + group.models.length, 0) : (models?.length ?? 0);
+  const modelSourceKey = groups
+    ? JSON.stringify(groups.map((group) => [group.key, group.models.map((model) => model.id)]))
+    : JSON.stringify((models ?? []).map((model) => model.id));
   const keyword = query.trim().toLowerCase();
   const searchLabel = t('agent.model.searchPlaceholder', { defaultValue: 'Search models' });
+
+  useEffect(() => {
+    setQuery('');
+  }, [modelSourceKey]);
 
   const filteredModels = useMemo(() => {
     if (!models || !keyword) return models ?? [];

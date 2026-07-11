@@ -206,6 +206,28 @@ describe('GuidModelSelector desktop menus', () => {
     expect(within(screen.getByRole('group', { name: 'Provider A' })).getByText('alpha-2')).toBeInTheDocument();
   });
 
+  it('clears a stale provider search when the model source changes to a small list', () => {
+    const props = baseProps();
+    const { rerender } = render(<GuidModelSelector {...props} />);
+
+    fireEvent.change(screen.getByTestId('runtime-selector-model-search'), { target: { value: 'beta-3' } });
+    expect(screen.getByText('beta-3')).toBeInTheDocument();
+
+    rerender(
+      <GuidModelSelector
+        {...props}
+        modelList={
+          [{ id: 'provider-c', name: 'Provider C', enabled: true, models: ['gamma-1', 'gamma-2'] }] as IProvider[]
+        }
+        current_model={{ id: 'provider-c', use_model: 'gamma-1' } as TProviderWithModel}
+      />
+    );
+
+    expect(screen.queryByTestId('runtime-selector-model-search')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Provider C' })).getByText('gamma-2')).toBeInTheDocument();
+    expect(screen.queryByText('agent.model.noResults')).not.toBeInTheDocument();
+  });
+
   it('keeps the no-model recovery menu when no enabled provider has models', () => {
     const props = baseProps();
     render(<GuidModelSelector {...props} modelList={[]} current_model={undefined} />);
