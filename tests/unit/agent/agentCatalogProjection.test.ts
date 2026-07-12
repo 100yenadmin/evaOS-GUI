@@ -85,6 +85,16 @@ describe('detected agent catalog projection', () => {
     ]);
   });
 
+  it('uses unchecked management status as the startup selection source of truth', async () => {
+    vi.mocked(ipcBridge.acpConversation.getAvailableAgents.invoke).mockResolvedValue([
+      { ...onlineAgent, id: 'unchecked-row', installed: false, status: 'unchecked' },
+    ]);
+
+    await expect(fetchDetectedAgents()).resolves.toEqual([
+      expect.objectContaining({ id: 'unchecked-row', available: true }),
+    ]);
+  });
+
   it('re-probes every enabled row before an explicit catalog refresh', async () => {
     vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([
       onlineAgent,

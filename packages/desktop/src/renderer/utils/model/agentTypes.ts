@@ -33,7 +33,7 @@ export const ASSISTANT_AGENT_CATALOG_SWR_KEY = 'agents.assistant-management-cata
 
 function projectManagementAgent(agent: ManagedAgent): AgentMetadata {
   const {
-    installed,
+    installed: _installed,
     status: _status,
     config_options,
     available_modes,
@@ -43,7 +43,7 @@ function projectManagementAgent(agent: ManagedAgent): AgentMetadata {
   } = agent;
   return {
     ...metadata,
-    available: installed && (agent.status === 'online' || agent.status === 'unchecked'),
+    available: agent.status === 'online' || agent.status === 'unchecked',
     handshake: {
       config_options,
       available_modes,
@@ -60,7 +60,7 @@ export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
     throw new TypeError('Detected agent catalog response must be an array');
   }
   return agents
-    .filter((agent) => agent.enabled && agent.installed && (agent.status === 'online' || agent.status === 'unchecked'))
+    .filter((agent) => agent.enabled && (agent.status === 'online' || agent.status === 'unchecked'))
     .map(projectManagementAgent);
 }
 

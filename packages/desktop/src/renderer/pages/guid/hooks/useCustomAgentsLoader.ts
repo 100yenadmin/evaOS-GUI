@@ -6,7 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
-import { reprobeEnabledAgents, type AgentMetadata } from '@/renderer/utils/model/agentTypes';
+import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
 import { useAgents } from '@/renderer/hooks/agent/useAgents';
 import { useCallback, useEffect, useMemo } from 'react';
 import useSWR, { mutate as swrMutate } from 'swr';
@@ -100,16 +100,10 @@ export const useCustomAgentsLoader = ({
     return map;
   }, [assistants, customAgents]);
 
-  // Explicit refresh — used by "switch preset agent type" and the settings
-  // refresh button. Not triggered on mount; we rely on the backend's hydration
-  // + SWR's revalidate-on-focus to keep the list fresh without the old
-  // `useEffect → refresh` loop that fired on every GuidPage mount.
+  // Cache revalidation used after switching a preset agent binding. This must
+  // not run manual health probes: a binding update should not block on or
+  // mutate the health state of unrelated engines.
   const refreshCustomAgents = useCallback(async () => {
-    try {
-      await reprobeEnabledAgents();
-    } catch (error) {
-      console.error('Failed to refresh custom agents:', error);
-    }
     await revalidate();
   }, [revalidate]);
 

@@ -7,7 +7,6 @@ import { mutate } from 'swr';
 import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import { DETECTED_AGENTS_SWR_KEY } from '@/renderer/utils/model/agentTypes';
-import { reprobeEnabledAgents } from '@/renderer/utils/model/agentTypes';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { useThemeContext } from '@/renderer/hooks/context/ThemeContext';
@@ -45,7 +44,6 @@ const PresetManagement: React.FC<PresetManagementProps> = ({ message }) => {
 
   const refreshAgentDetection = useCallback(async () => {
     try {
-      await reprobeEnabledAgents();
       await mutate(DETECTED_AGENTS_SWR_KEY);
     } catch {
       // ignore

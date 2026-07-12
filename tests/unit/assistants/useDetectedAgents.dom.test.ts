@@ -172,12 +172,8 @@ describe('useDetectedAgents', () => {
     ]);
   });
 
-  it('re-probes enabled agents and mutates both catalogs on refreshAgentDetection', async () => {
+  it('revalidates both catalogs without probing engines on refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
-    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([
-      { id: 'claude', enabled: true },
-    ] as ManagedAgent[]);
-    vi.mocked(ipcBridge.acpConversation.checkAgentHealth.invoke).mockResolvedValue({ available: true });
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -185,14 +181,14 @@ describe('useDetectedAgents', () => {
       await result.current.refreshAgentDetection();
     });
 
-    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenCalledWith({ id: 'claude' });
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).not.toHaveBeenCalled();
     expect(mutate).toHaveBeenNthCalledWith(1, ASSISTANT_AGENT_CATALOG_SWR_KEY);
     expect(mutate).toHaveBeenNthCalledWith(2, DETECTED_AGENTS_SWR_KEY);
   });
 
   it('ignores error during refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
-    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockRejectedValue(new Error('Refresh failed'));
+    vi.mocked(mutate).mockRejectedValueOnce(new Error('Refresh failed'));
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -201,6 +197,6 @@ describe('useDetectedAgents', () => {
     });
 
     // Should not throw or log error (hook ignores it)
-    expect(ipcBridge.acpConversation.getManagedAgents.invoke).toHaveBeenCalled();
+    expect(mutate).toHaveBeenCalled();
   });
 });

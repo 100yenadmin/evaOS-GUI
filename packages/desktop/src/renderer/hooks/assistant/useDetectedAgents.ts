@@ -5,7 +5,6 @@ import {
   ASSISTANT_AGENT_CATALOG_SWR_KEY,
   DETECTED_AGENTS_SWR_KEY,
   fetchAssistantAgentCatalog,
-  reprobeEnabledAgents,
 } from '@/renderer/utils/model/agentTypes';
 import { useCallback, useMemo } from 'react';
 import useSWR, { mutate } from 'swr';
@@ -95,7 +94,6 @@ export const useDetectedAgents = () => {
 
   const refreshAgentDetection = useCallback(async () => {
     try {
-      await reprobeEnabledAgents();
       await Promise.all([mutate(ASSISTANT_AGENT_CATALOG_SWR_KEY), mutate(DETECTED_AGENTS_SWR_KEY)]);
     } catch {
       // ignore
