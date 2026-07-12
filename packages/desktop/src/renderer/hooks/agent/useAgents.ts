@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcBridge } from '@/common';
 import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
 import {
   DETECTED_AGENTS_SWR_KEY,
   MANAGED_AGENTS_SWR_KEY,
   fetchDetectedAgents,
   fetchManagedAgents,
+  reprobeEnabledAgents,
 } from '@/renderer/utils/model/agentTypes';
 import useSWR, { mutate } from 'swr';
 
@@ -40,7 +40,7 @@ export const useAgents = (): UseAgentsResult => {
     error,
     revalidate: () => mutate<AgentMetadata[]>(DETECTED_AGENTS_SWR_KEY),
     refreshCustomAgents: async () => {
-      await ipcBridge.acpConversation.refreshCustomAgents.invoke();
+      await reprobeEnabledAgents();
       await mutate(DETECTED_AGENTS_SWR_KEY);
     },
   };
@@ -68,7 +68,7 @@ export const useManagedAgents = (): UseAgentsResult => {
     error,
     revalidate: revalidateBoth,
     refreshCustomAgents: async () => {
-      await ipcBridge.acpConversation.refreshCustomAgents.invoke();
+      await reprobeEnabledAgents();
       await revalidateBoth();
     },
   };
@@ -95,6 +95,6 @@ export async function getAgents(): Promise<AgentMetadata[]> {
  * revalidate the shared cache. Safe to call from plain async code.
  */
 export async function refreshAgents(): Promise<void> {
-  await ipcBridge.acpConversation.refreshCustomAgents.invoke();
+  await reprobeEnabledAgents();
   await mutate(DETECTED_AGENTS_SWR_KEY);
 }

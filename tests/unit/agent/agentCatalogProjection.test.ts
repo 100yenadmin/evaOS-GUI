@@ -5,13 +5,14 @@ vi.mock('@/common', () => ({
     acpConversation: {
       getAvailableAgents: { invoke: vi.fn() },
       getManagedAgents: { invoke: vi.fn() },
+      checkAgentHealth: { invoke: vi.fn() },
     },
   },
 }));
 
 import { ipcBridge } from '@/common';
 import type { ManagedAgent } from '@/common/types/agent/agentMetadata';
-import { fetchDetectedAgents, fetchManagedAgents } from '@/renderer/utils/model/agentTypes';
+import { fetchDetectedAgents, fetchManagedAgents, reprobeEnabledAgents } from '@/renderer/utils/model/agentTypes';
 
 const onlineAgent: ManagedAgent = {
   id: 'claude-row',
@@ -44,6 +45,9 @@ describe('detected agent catalog projection', () => {
     vi.mocked(ipcBridge.acpConversation.getAvailableAgents.invoke).mockResolvedValue([
       onlineAgent,
       { ...onlineAgent, id: 'disabled-row', enabled: false },
+      { ...onlineAgent, id: 'offline-row', status: 'offline' },
+      { ...onlineAgent, id: 'missing-row', installed: false, status: 'missing' },
+      { ...onlineAgent, id: 'unchecked-row', status: 'unchecked' },
     ]);
 
     await expect(fetchDetectedAgents()).resolves.toEqual([
@@ -70,6 +74,21 @@ describe('detected agent catalog projection', () => {
         },
       },
     ]);
+  });
+
+  it('re-probes every enabled row before an explicit catalog refresh', async () => {
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([
+      onlineAgent,
+      { ...onlineAgent, id: 'missing-row', installed: false, status: 'missing' },
+      { ...onlineAgent, id: 'disabled-row', enabled: false },
+    ]);
+    vi.mocked(ipcBridge.acpConversation.checkAgentHealth.invoke).mockResolvedValue({ available: true });
+
+    await reprobeEnabledAgents();
+
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenCalledTimes(2);
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenCalledWith({ id: 'claude-row' });
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenCalledWith({ id: 'missing-row' });
   });
 
   it('keeps disabled rows in the settings catalog while projecting availability', async () => {
@@ -118,17 +137,13 @@ describe('detected agent catalog projection', () => {
   });
 
   it('rejects malformed detected-catalog payloads instead of silently choosing an empty catalog', async () => {
-    vi.mocked(ipcBridge.acpConversation.getAvailableAgents.invoke).mockResolvedValue(
-      null as unknown as ManagedAgent[]
-    );
+    vi.mocked(ipcBridge.acpConversation.getAvailableAgents.invoke).mockResolvedValue(null as unknown as ManagedAgent[]);
 
     await expect(fetchDetectedAgents()).rejects.toThrow('Detected agent catalog response must be an array');
   });
 
   it('rejects malformed settings-catalog payloads instead of hiding the failure as an empty state', async () => {
-    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue(
-      {} as unknown as ManagedAgent[]
-    );
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue({} as unknown as ManagedAgent[]);
 
     await expect(fetchManagedAgents()).rejects.toThrow('Managed agent catalog response must be an array');
   });

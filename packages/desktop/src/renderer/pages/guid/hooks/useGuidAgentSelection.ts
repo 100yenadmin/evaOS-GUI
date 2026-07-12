@@ -42,6 +42,8 @@ export type GuidAgentSelectionResult = {
   selectedAgentInfo: AvailableAgent | undefined;
   is_presetAgent: boolean;
   availableAgents: AvailableAgent[] | undefined;
+  agentCatalogError: unknown;
+  retryAgentCatalog: () => void;
   /** Backend-merged preset catalog: builtin + user + extension. */
   assistants: Assistant[];
   /** User-defined ACP engine rows (agent_source === 'custom') from the backend. */
@@ -283,7 +285,14 @@ export const useGuidAgentSelection = ({
   const is_presetAgent = Boolean(selectedAgentInfo?.is_preset);
 
   // --- SWR: Fetch detected execution engines (shared cache) ---
-  const { data: availableAgentsData } = useSWR<AvailableAgent[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
+  const {
+    data: availableAgentsData,
+    error: agentCatalogError,
+    mutate: revalidateAgentCatalog,
+  } = useSWR<AvailableAgent[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
+  const retryAgentCatalog = useCallback(() => {
+    void revalidateAgentCatalog();
+  }, [revalidateAgentCatalog]);
 
   // Fetch remote agents from DB and merge into available agents
   const { data: remoteAgentsData } = useSWR('remote-agents.list', () => ipcBridge.remoteAgent.list.invoke());
@@ -573,6 +582,8 @@ export const useGuidAgentSelection = ({
     selectedAgentInfo,
     is_presetAgent,
     availableAgents,
+    agentCatalogError,
+    retryAgentCatalog,
     assistants,
     customAgents,
     selectedMode,

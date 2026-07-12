@@ -23,7 +23,8 @@ vi.mock('swr', () => ({
 vi.mock('@/common', () => ({
   ipcBridge: {
     acpConversation: {
-      refreshCustomAgents: { invoke: vi.fn() },
+      getManagedAgents: { invoke: vi.fn() },
+      checkAgentHealth: { invoke: vi.fn() },
       getAssistantAgentCatalog: { invoke: vi.fn() },
     },
   },
@@ -171,9 +172,12 @@ describe('useDetectedAgents', () => {
     ]);
   });
 
-  it('calls refreshCustomAgents and mutate on refreshAgentDetection', async () => {
+  it('re-probes enabled agents and mutates both catalogs on refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
-    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockResolvedValue(undefined);
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([
+      { id: 'claude', enabled: true },
+    ] as ManagedAgent[]);
+    vi.mocked(ipcBridge.acpConversation.checkAgentHealth.invoke).mockResolvedValue({ available: true });
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -181,14 +185,14 @@ describe('useDetectedAgents', () => {
       await result.current.refreshAgentDetection();
     });
 
-    expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenCalledWith({ id: 'claude' });
     expect(mutate).toHaveBeenNthCalledWith(1, ASSISTANT_AGENT_CATALOG_SWR_KEY);
     expect(mutate).toHaveBeenNthCalledWith(2, DETECTED_AGENTS_SWR_KEY);
   });
 
   it('ignores error during refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
-    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockRejectedValue(new Error('Refresh failed'));
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockRejectedValue(new Error('Refresh failed'));
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -197,6 +201,6 @@ describe('useDetectedAgents', () => {
     });
 
     // Should not throw or log error (hook ignores it)
-    expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
+    expect(ipcBridge.acpConversation.getManagedAgents.invoke).toHaveBeenCalled();
   });
 });

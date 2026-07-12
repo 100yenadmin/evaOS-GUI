@@ -6,7 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
-import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
+import { reprobeEnabledAgents, type AgentMetadata } from '@/renderer/utils/model/agentTypes';
 import { useAgents } from '@/renderer/hooks/agent/useAgents';
 import { useCallback, useEffect, useMemo } from 'react';
 import useSWR, { mutate as swrMutate } from 'swr';
@@ -106,7 +106,7 @@ export const useCustomAgentsLoader = ({
   // `useEffect → refresh` loop that fired on every GuidPage mount.
   const refreshCustomAgents = useCallback(async () => {
     try {
-      await ipcBridge.acpConversation.refreshCustomAgents.invoke();
+      await reprobeEnabledAgents();
     } catch (error) {
       console.error('Failed to refresh custom agents:', error);
     }

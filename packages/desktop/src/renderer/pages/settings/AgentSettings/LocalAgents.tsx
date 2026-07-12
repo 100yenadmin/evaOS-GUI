@@ -63,8 +63,6 @@ const LocalAgents: React.FC = () => {
   );
 
   const [editorVisible, setEditorVisible] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<AgentMetadata | null>(null);
-
   const handleSaveCustomAgent = useCallback(
     async (draft: CustomAgentDraft) => {
       const body = {
@@ -76,20 +74,15 @@ const LocalAgents: React.FC = () => {
         advanced: draft.advanced,
       };
       try {
-        if (editingAgent) {
-          await ipcBridge.acpConversation.updateCustomAgent.invoke({ id: editingAgent.id, ...body });
-        } else {
-          await ipcBridge.acpConversation.createCustomAgent.invoke(body);
-        }
+        await ipcBridge.acpConversation.createCustomAgent.invoke(body);
         await mutateAgents();
         setEditorVisible(false);
-        setEditingAgent(null);
       } catch (err) {
         // Surface backend rejection (e.g. cli_not_found / acp_init_failed) without crashing.
         console.error('save custom agent failed:', err);
       }
     },
-    [editingAgent, mutateAgents]
+    [mutateAgents]
   );
 
   const handleDeleteCustomAgent = useCallback(
@@ -171,7 +164,6 @@ const LocalAgents: React.FC = () => {
   );
 
   const openCustomAgentEditor = useCallback(() => {
-    setEditingAgent(null);
     setEditorVisible(true);
   }, []);
 
@@ -303,12 +295,9 @@ const LocalAgents: React.FC = () => {
         visible={editorVisible}
         onCancel={() => {
           setEditorVisible(false);
-          setEditingAgent(null);
         }}
         header={{
-          title: editingAgent
-            ? t('settings.agentManagement.editCustomAgent')
-            : t('settings.agentManagement.detectCustomAgent'),
+          title: t('settings.agentManagement.detectCustomAgent'),
           showClose: true,
         }}
         footer={null}
@@ -327,12 +316,11 @@ const LocalAgents: React.FC = () => {
             retrigger it. */}
         {editorVisible && (
           <InlineAgentEditor
-            key={editingAgent?.id ?? 'new'}
-            agent={editingAgent}
+            key='new'
+            agent={null}
             onSave={(agent) => void handleSaveCustomAgent(agent)}
             onCancel={() => {
               setEditorVisible(false);
-              setEditingAgent(null);
             }}
           />
         )}
@@ -345,10 +333,6 @@ const LocalAgents: React.FC = () => {
             type='custom'
             agent={agent}
             onGoToChat={() => goToChatWithAgent(agent)}
-            onEdit={() => {
-              setEditingAgent(agent);
-              setEditorVisible(true);
-            }}
             onDelete={() => void handleDeleteCustomAgent(agent.id)}
             onToggle={(enabled) => void handleToggleCustomAgent(agent.id, enabled)}
           />

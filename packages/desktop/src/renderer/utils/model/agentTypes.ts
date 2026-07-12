@@ -59,7 +59,28 @@ export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
   if (!Array.isArray(agents)) {
     throw new TypeError('Detected agent catalog response must be an array');
   }
-  return agents.filter((agent) => agent.enabled).map(projectManagementAgent);
+  return agents
+    .filter((agent) => agent.enabled && agent.installed && agent.status === 'online')
+    .map(projectManagementAgent);
+}
+
+/**
+ * Explicit refresh is a real probe, not another read of the cached management
+ * rows. Probe every enabled row (including currently missing rows, which may
+ * have been installed since startup), then let callers revalidate their SWR
+ * caches. Individual failures remain row-scoped and must not prevent the rest
+ * of the catalog from refreshing.
+ */
+export async function reprobeEnabledAgents(): Promise<void> {
+  const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
+  if (!Array.isArray(agents)) {
+    throw new TypeError('Managed agent catalog response must be an array');
+  }
+  await Promise.allSettled(
+    agents
+      .filter((agent) => agent.enabled)
+      .map((agent) => ipcBridge.acpConversation.checkAgentHealth.invoke({ id: agent.id }))
+  );
 }
 
 /** Fetcher for the Settings-only management view that includes disabled rows. */

@@ -1056,7 +1056,6 @@ export const acpConversation = {
   getAvailableAgents: httpGet<ManagedAgent[], void>('/api/agents/management'),
   getManagedAgents: httpGet<ManagedAgent[], void>('/api/agents/management'),
   getAssistantAgentCatalog: httpGet<ManagedAgent[], void>('/api/agents/management'),
-  refreshCustomAgents: httpGet<ManagedAgent[], void>('/api/agents/management'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },
     { command: string; acp_args?: string[]; env?: Record<string, string>; runtime_scope_id?: string }
@@ -1954,13 +1953,7 @@ export interface IConversationTurnCompletedEvent {
   turn_id: string;
   status: 'pending' | 'running' | 'finished';
   state:
-    | 'ai_generating'
-    | 'ai_waiting_input'
-    | 'ai_waiting_confirmation'
-    | 'initializing'
-    | 'stopped'
-    | 'error'
-    | 'unknown';
+    'ai_generating' | 'ai_waiting_input' | 'ai_waiting_confirmation' | 'initializing' | 'stopped' | 'error' | 'unknown';
   detail: string;
   can_send_message: boolean;
   runtime: {

@@ -49,7 +49,7 @@ import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
 import { appendSpeechTranscript } from '@/renderer/hooks/system/useSpeechInput';
 import { useLiveTranscriptInsertion } from '@/renderer/hooks/system/useLiveTranscriptInsertion';
-import { Button, ConfigProvider, Message } from '@arco-design/web-react';
+import { Alert, Button, ConfigProvider, Message } from '@arco-design/web-react';
 import { Down, Left, Robot, Write } from '@icon-park/react';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -972,6 +972,19 @@ const GuidPage: React.FC = () => {
                 ) : null}
               </div>
             ) : null
+          ) : agentSelection.agentCatalogError ? (
+            <Alert
+              type='error'
+              data-testid='guid-agent-catalog-error'
+              content={
+                <div className='flex items-center justify-between gap-12px'>
+                  <span>{t('common.failed')}</span>
+                  <Button size='small' onClick={agentSelection.retryAgentCatalog}>
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              }
+            />
           ) : agentSelection.availableAgents === undefined ? (
             <AgentPillBarSkeleton />
           ) : agentSelection.availableAgents.length > 0 ? (

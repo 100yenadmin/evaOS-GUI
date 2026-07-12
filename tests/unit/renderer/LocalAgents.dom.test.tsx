@@ -173,4 +173,11 @@ describe('LocalAgents', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(revalidateMock).toHaveBeenCalledTimes(1);
   });
+
+  it('renders existing custom agents without opening the destructive redacted edit path', () => {
+    render(<LocalAgents />);
+
+    expect(screen.getByText('Personal Agent')).toBeInTheDocument();
+    expect(screen.queryByText('settings.agentManagement.editCustomAgent')).toBeNull();
+  });
 });

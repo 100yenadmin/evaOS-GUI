@@ -37,7 +37,6 @@ describe('agent IPC bridge contract', () => {
     await acpConversation.getAvailableAgents.invoke();
     await acpConversation.getManagedAgents.invoke();
     await acpConversation.getAssistantAgentCatalog.invoke();
-    await acpConversation.refreshCustomAgents.invoke();
 
     expect(
       fetchSpy.mock.calls.map(([url, init]) => ({
@@ -45,7 +44,6 @@ describe('agent IPC bridge contract', () => {
         path: new URL(String(url)).pathname,
       }))
     ).toEqual([
-      { method: 'GET', path: '/api/agents/management' },
       { method: 'GET', path: '/api/agents/management' },
       { method: 'GET', path: '/api/agents/management' },
       { method: 'GET', path: '/api/agents/management' },
