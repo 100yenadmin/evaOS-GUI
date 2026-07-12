@@ -47,7 +47,6 @@ describe('detected agent catalog projection', () => {
       { ...onlineAgent, id: 'disabled-row', enabled: false },
       { ...onlineAgent, id: 'offline-row', status: 'offline' },
       { ...onlineAgent, id: 'missing-row', installed: false, status: 'missing' },
-      { ...onlineAgent, id: 'unchecked-row', status: 'unchecked' },
     ]);
 
     await expect(fetchDetectedAgents()).resolves.toEqual([
@@ -73,6 +72,16 @@ describe('detected agent catalog projection', () => {
           available_commands: [{ name: 'review' }],
         },
       },
+    ]);
+  });
+
+  it('keeps installed unchecked startup rows selectable until their first probe', async () => {
+    vi.mocked(ipcBridge.acpConversation.getAvailableAgents.invoke).mockResolvedValue([
+      { ...onlineAgent, id: 'unchecked-row', status: 'unchecked' },
+    ]);
+
+    await expect(fetchDetectedAgents()).resolves.toEqual([
+      expect.objectContaining({ id: 'unchecked-row', available: true }),
     ]);
   });
 

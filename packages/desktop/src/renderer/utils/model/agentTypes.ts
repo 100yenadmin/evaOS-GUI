@@ -43,7 +43,7 @@ function projectManagementAgent(agent: ManagedAgent): AgentMetadata {
   } = agent;
   return {
     ...metadata,
-    available: installed && agent.status === 'online',
+    available: installed && (agent.status === 'online' || agent.status === 'unchecked'),
     handshake: {
       config_options,
       available_modes,
@@ -60,7 +60,7 @@ export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
     throw new TypeError('Detected agent catalog response must be an array');
   }
   return agents
-    .filter((agent) => agent.enabled && agent.installed && agent.status === 'online')
+    .filter((agent) => agent.enabled && agent.installed && (agent.status === 'online' || agent.status === 'unchecked'))
     .map(projectManagementAgent);
 }
 
