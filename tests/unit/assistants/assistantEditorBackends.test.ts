@@ -90,6 +90,7 @@ describe('buildAssistantEditorBackends', () => {
         isExtension: false,
         modelOptions: [{ value: 'sonnet', label: 'Sonnet' }],
         thoughtLevelOption: null,
+        hasObservedConfigOptions: false,
       },
       {
         id: 'agent-aionrs-row',
@@ -98,6 +99,7 @@ describe('buildAssistantEditorBackends', () => {
         isExtension: false,
         modelOptions: [],
         thoughtLevelOption: null,
+        hasObservedConfigOptions: false,
       },
     ]);
   });
