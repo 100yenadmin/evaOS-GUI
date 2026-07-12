@@ -43,7 +43,10 @@ import {
 } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { canSwitchAssistantAgent } from '@/renderer/utils/model/assistantSelection';
-import { resolveCompatibleThoughtLevelValue, resolveGuidAssistantDefaults } from './utils/assistantDefaults';
+import {
+  resolveCompatibleThoughtLevelValue,
+  resolveGuidAssistantDefaults,
+} from '@/renderer/pages/guid/utils/assistantDefaults';
 import { persistAssistantAgentBinding } from './utils/assistantAgentBinding';
 import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
@@ -300,6 +303,7 @@ const GuidPage: React.FC = () => {
     is_presetAgent: agentSelection.is_presetAgent,
     selectedMode: agentSelection.selectedMode,
     selectedThoughtLevelValue: agentSelection.selectedThoughtLevelValue,
+    availableThoughtLevelValues: agentSelection.runtimeThoughtLevelOption?.options.map((option) => option.value) ?? [],
     selectedAcpModel: agentSelection.selectedAcpModel,
     currentAcpCachedModelInfo: agentSelection.currentAcpCachedModelInfo,
     current_model: modelSelection.current_model,
@@ -511,7 +515,7 @@ const GuidPage: React.FC = () => {
         last_thought_level_value: selectedAssistantDetail.preferences.last_thought_level_value,
         last_mcp_ids: selectedAssistantDetail.preferences.last_mcp_ids,
       },
-      availableThoughtLevels: agentSelection.currentThoughtLevelOption?.options.map((option) => option.value) ?? [],
+      availableThoughtLevels: agentSelection.runtimeThoughtLevelOption?.options.map((option) => option.value) ?? [],
     });
     if (appliedAssistantDefaultsKeyRef.current === signature) {
       return;
@@ -548,9 +552,9 @@ const GuidPage: React.FC = () => {
       if (resolvedDefaults.permissionMode) {
         agentSelection.setSelectedMode(resolvedDefaults.permissionMode, { persistPreference: false });
       }
-      if (agentSelection.currentThoughtLevelOption) {
+      if (agentSelection.runtimeThoughtLevelOption) {
         const selectedThoughtLevel = resolveCompatibleThoughtLevelValue(
-          agentSelection.currentThoughtLevelOption,
+          agentSelection.runtimeThoughtLevelOption,
           resolvedDefaults.thoughtLevel
         );
         agentSelection.setSelectedThoughtLevelValue(selectedThoughtLevel);
@@ -565,7 +569,7 @@ const GuidPage: React.FC = () => {
     });
   }, [
     agentSelection.currentEffectiveAgentInfo.agent_type,
-    agentSelection.currentThoughtLevelOption,
+    agentSelection.runtimeThoughtLevelOption,
     agentSelection.setSelectedAcpModel,
     agentSelection.setSelectedMode,
     agentSelection.setSelectedThoughtLevelValue,

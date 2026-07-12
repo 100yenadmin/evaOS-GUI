@@ -120,7 +120,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
     [currentBackend]
   );
   useEffect(() => {
-    if (defaultThoughtLevelMode !== 'fixed' || thoughtLevelOptions.length === 0) return;
+    if (defaultThoughtLevelMode !== 'fixed') return;
     if (thoughtLevelOptions.some((option) => option.value === defaultThoughtLevelValue)) return;
     setDefaultThoughtLevelMode('auto');
     setDefaultThoughtLevelValue('');

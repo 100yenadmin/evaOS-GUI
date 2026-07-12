@@ -67,6 +67,7 @@ const createDeps = (): GuidSendDeps => ({
   is_presetAgent: true,
   selectedMode: 'bypassPermissions',
   selectedThoughtLevelValue: 'high',
+  availableThoughtLevelValues: ['medium', 'high'],
   selectedAcpModel: 'claude-opus',
   currentAcpCachedModelInfo: null,
   current_model: undefined,
@@ -214,7 +215,7 @@ describe('useGuidSend', () => {
 
   it('omits thought level when the selected runtime does not advertise a compatible choice', async () => {
     const deps = createDeps();
-    deps.selectedThoughtLevelValue = '';
+    deps.selectedThoughtLevelValue = 'obsolete';
 
     const { result } = renderHook(() => useGuidSend(deps));
 

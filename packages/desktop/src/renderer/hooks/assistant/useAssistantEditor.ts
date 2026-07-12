@@ -175,19 +175,6 @@ export const useAssistantEditor = ({
     setDisabledBuiltinSkills([]);
   }, []);
 
-  const resetDefaultConfigState = useCallback(() => {
-    setEditRecommendedPromptsText('');
-    setDefaultModelMode('auto');
-    setDefaultModelValue('');
-    setDefaultPermissionMode('auto');
-    setDefaultPermissionValue('');
-    setDefaultThoughtLevelMode('auto');
-    setDefaultThoughtLevelValue('');
-    setDefaultSkillsMode('fixed');
-    setDefaultMcpMode('auto');
-    setSelectedMcpIds([]);
-  }, []);
-
   const resetRuntimeDefaults = useCallback(() => {
     setDefaultModelMode('auto');
     setDefaultModelValue('');
@@ -196,6 +183,14 @@ export const useAssistantEditor = ({
     setDefaultThoughtLevelMode('auto');
     setDefaultThoughtLevelValue('');
   }, []);
+
+  const resetDefaultConfigState = useCallback(() => {
+    setEditRecommendedPromptsText('');
+    resetRuntimeDefaults();
+    setDefaultSkillsMode('fixed');
+    setDefaultMcpMode('auto');
+    setSelectedMcpIds([]);
+  }, [resetRuntimeDefaults]);
 
   const setEditAgent = useCallback(
     (nextAgent: string) => {
@@ -466,18 +461,9 @@ export const useAssistantEditor = ({
               id: activeAssistant.id,
               agent_id: editAgent || undefined,
               defaults: {
-                model:
-                  defaultModelMode === 'fixed'
-                    ? { mode: 'fixed', value: defaultModelValue.trim() }
-                    : { mode: defaultModelMode },
-                permission:
-                  defaultPermissionMode === 'fixed'
-                    ? { mode: 'fixed', value: defaultPermissionValue.trim() }
-                    : { mode: defaultPermissionMode },
-                thought_level:
-                  defaultThoughtLevelMode === 'fixed'
-                    ? { mode: 'fixed', value: defaultThoughtLevelValue.trim() }
-                    : { mode: defaultThoughtLevelMode },
+                model: defaults.model,
+                permission: defaults.permission,
+                thought_level: defaults.thought_level,
               },
             }
           : isGeneratedAssistant(activeAssistant)

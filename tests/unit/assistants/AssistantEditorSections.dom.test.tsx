@@ -56,7 +56,11 @@ const renderWithProviders = (ui: React.ReactElement) =>
     </MemoryRouter>
   );
 
-const createEditor = (overrides: Partial<AssistantEditorViewModel> = {}): AssistantEditorViewModel => {
+type AssistantEditorOverrides = Omit<Partial<AssistantEditorViewModel>, 'defaults'> & {
+  defaults?: Partial<AssistantEditorViewModel['defaults']>;
+};
+
+const createEditor = (overrides: AssistantEditorOverrides = {}): AssistantEditorViewModel => {
   const base: AssistantEditorViewModel = {
     isCreating: true,
     profile: {
@@ -246,6 +250,37 @@ describe('AssistantEditorSections', () => {
                   currentValue: 'medium',
                   options: [{ value: 'medium', label: 'Balanced' }],
                 },
+              },
+            ],
+          },
+          defaults: {
+            thoughtLevel: { mode: 'fixed', setMode, value: 'obsolete', setValue },
+          },
+        })}
+        activeAssistant={null}
+      />
+    );
+
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith('auto'));
+    expect(setValue).toHaveBeenCalledWith('');
+  });
+
+  it('clears a fixed thought-level default when the runtime advertises no compatible options', async () => {
+    const setMode = vi.fn();
+    const setValue = vi.fn();
+    renderWithProviders(
+      <AssistantEditorSections
+        editor={createEditor({
+          agent: {
+            value: 'agent-runtime-row',
+            setValue: vi.fn(),
+            availableBackends: [
+              {
+                id: 'agent-runtime-row',
+                name: 'Runtime without thinking levels',
+                runtimeKey: 'runtime',
+                modelOptions: [],
+                thoughtLevelOption: null,
               },
             ],
           },

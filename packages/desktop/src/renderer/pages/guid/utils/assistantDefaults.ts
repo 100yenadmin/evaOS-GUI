@@ -1,6 +1,7 @@
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 
+/** Prefers a compatible requested value, then the runtime value, then the first advertised option. */
 export const resolveCompatibleThoughtLevelValue = (
   option: AcpDerivedOption | null | undefined,
   preferredValue?: string

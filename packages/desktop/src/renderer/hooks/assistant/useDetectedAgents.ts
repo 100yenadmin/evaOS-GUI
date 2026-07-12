@@ -42,6 +42,7 @@ const normalizeConfigOptions = (value: unknown): AcpConfigOptionDto[] => {
   return Array.isArray(options) ? (options as AcpConfigOptionDto[]) : [];
 };
 
+/** Derives a thought-level selector from raw runtime config options, or returns null when unavailable. */
 export const deriveAssistantThoughtLevelOption = (configOptions: unknown): AcpDerivedOption | null =>
   deriveSelectOption(normalizeConfigOptions(configOptions), 'thought_level', ['thought_level', 'reasoning_effort']);
 

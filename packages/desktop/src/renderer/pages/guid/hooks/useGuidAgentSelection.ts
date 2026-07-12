@@ -34,7 +34,7 @@ import { savePreferredMode, savePreferredModelId, getAgentKey as getAgentKeyUtil
 import { usePresetAssistantResolver } from './usePresetAssistantResolver';
 import { useAgentAvailability } from './useAgentAvailability';
 import { useCustomAgentsLoader } from './useCustomAgentsLoader';
-import { resolveCompatibleThoughtLevelValue } from '../utils/assistantDefaults';
+import { resolveCompatibleThoughtLevelValue } from '@/renderer/pages/guid/utils/assistantDefaults';
 import { deriveAssistantThoughtLevelOption } from '@/renderer/hooks/assistant/useDetectedAgents';
 import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 
@@ -57,6 +57,7 @@ export type GuidAgentSelectionResult = {
   selectedAcpModel: string | null;
   setSelectedAcpModel: (model: React.SetStateAction<string | null>, options?: { persistPreference?: boolean }) => void;
   currentAcpCachedModelInfo: AcpModelInfo | null;
+  runtimeThoughtLevelOption: AcpDerivedOption | null;
   currentThoughtLevelOption: AcpDerivedOption | null;
   selectedThoughtLevelValue: string;
   setSelectedThoughtLevelValue: (value: React.SetStateAction<string>) => void;
@@ -565,7 +566,7 @@ export const useGuidAgentSelection = ({
     return null;
   }, [selectedAgentKey, is_presetAgent, currentEffectiveAgentInfo.agent_type, availableAgentsData]);
 
-  const selectedRuntimeThoughtLevelOption = useMemo(() => {
+  const selectedRuntimeThoughtLevelContext = useMemo(() => {
     const metadataAgents = availableAgentsData as unknown as AgentMetadata[] | undefined;
     const effectiveAgentType = is_presetAgent ? currentEffectiveAgentInfo.agent_type : selectedAgent;
     const selectedAssistantId = is_presetAgent ? selectedAgentInfo?.custom_agent_id : undefined;
@@ -579,7 +580,10 @@ export const useGuidAgentSelection = ({
       ? assistants.find((assistant) => assistantIds.has(assistant.id))?.agent_id
       : selectedAgentInfo?.id;
     const matched = resolveAgentRowForAssistant(metadataAgents ?? [], canonicalAgentId || '', effectiveAgentType);
-    return deriveAssistantThoughtLevelOption(matched?.handshake?.config_options);
+    return {
+      rowId: matched?.id || effectiveAgentType,
+      option: deriveAssistantThoughtLevelOption(matched?.handshake?.config_options),
+    };
   }, [
     assistants,
     availableAgentsData,
@@ -588,20 +592,22 @@ export const useGuidAgentSelection = ({
     selectedAgent,
     selectedAgentInfo,
   ]);
+  const selectedRuntimeThoughtLevelOption = selectedRuntimeThoughtLevelContext.option;
+  const thoughtLevelScopeKey = `${selectedAgentKey}:${selectedRuntimeThoughtLevelContext.rowId}`;
 
   const thoughtLevelScopeRef = useRef<string | null>(null);
   useEffect(() => {
     const optionValues = new Set(selectedRuntimeThoughtLevelOption?.options.map((option) => option.value) ?? []);
     const fallbackValue = resolveCompatibleThoughtLevelValue(selectedRuntimeThoughtLevelOption);
+    const scopeChanged = thoughtLevelScopeRef.current !== thoughtLevelScopeKey;
+    thoughtLevelScopeRef.current = thoughtLevelScopeKey;
 
     _setSelectedThoughtLevelValue((previousValue) => {
-      const scopeChanged = thoughtLevelScopeRef.current !== selectedAgentKey;
-      thoughtLevelScopeRef.current = selectedAgentKey;
       if (!selectedRuntimeThoughtLevelOption) return '';
       if (!scopeChanged && previousValue && optionValues.has(previousValue)) return previousValue;
       return fallbackValue;
     });
-  }, [selectedAgentKey, selectedRuntimeThoughtLevelOption]);
+  }, [selectedRuntimeThoughtLevelOption, thoughtLevelScopeKey]);
 
   const currentThoughtLevelOption = useMemo(
     () =>
@@ -652,6 +658,7 @@ export const useGuidAgentSelection = ({
     selectedAcpModel,
     setSelectedAcpModel,
     currentAcpCachedModelInfo,
+    runtimeThoughtLevelOption: selectedRuntimeThoughtLevelOption,
     currentThoughtLevelOption,
     selectedThoughtLevelValue,
     setSelectedThoughtLevelValue,

@@ -28,7 +28,7 @@ vi.mock('@/common', () => ({
   },
 }));
 
-import { useDetectedAgents } from '@/renderer/hooks/assistant/useDetectedAgents';
+import { deriveAssistantThoughtLevelOption, useDetectedAgents } from '@/renderer/hooks/assistant/useDetectedAgents';
 import { ipcBridge } from '@/common';
 import useSWR, { mutate } from 'swr';
 import {
@@ -216,6 +216,31 @@ describe('useDetectedAgents', () => {
       ],
     });
   });
+
+  it.each([
+    [
+      'JSON string',
+      JSON.stringify({
+        config_options: [{ id: 'reasoning_effort', type: 'select', options: [{ value: 'low', label: 'Low' }] }],
+      }),
+    ],
+    ['direct array', [{ id: 'reasoning_effort', type: 'select', options: [{ value: 'low', label: 'Low' }] }]],
+    [
+      'camelCase wrapper',
+      { configOptions: [{ id: 'reasoning_effort', type: 'select', options: [{ value: 'low', label: 'Low' }] }] },
+    ],
+  ])('normalizes thought-level config options from a %s payload', (_label, payload) => {
+    expect(deriveAssistantThoughtLevelOption(payload)?.options).toEqual([
+      { value: 'low', label: 'Low', description: undefined },
+    ]);
+  });
+
+  it.each(['{invalid', null, 42, { config_options: 'invalid' }])(
+    'ignores an invalid thought-level config payload',
+    (payload) => {
+      expect(deriveAssistantThoughtLevelOption(payload)).toBeNull();
+    }
+  );
 
   it('revalidates both catalogs without probing engines on refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
