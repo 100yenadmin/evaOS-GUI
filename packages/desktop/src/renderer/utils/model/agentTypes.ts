@@ -19,42 +19,56 @@ export type {
   ManagedAgent,
 } from '@/common/types/agent/agentMetadata';
 
-/** SWR key for agent metadata rows (from `/api/agents`). */
+/** SWR key for enabled runtime rows projected from `/api/agents/management`. */
 export const DETECTED_AGENTS_SWR_KEY = 'agents.detected';
 
 /**
  * SWR key for the Agent settings management view
- * (`/api/agents?include_disabled=true`). Kept separate from
+ * (`/api/agents/management`). Kept separate from
  * DETECTED_AGENTS_SWR_KEY so disabled custom agents can be re-enabled in
  * Settings without leaking into chat/team pickers.
  */
 export const MANAGED_AGENTS_SWR_KEY = 'agents.managed';
 export const ASSISTANT_AGENT_CATALOG_SWR_KEY = 'agents.assistant-management-catalog';
 
+function projectManagementAgent(agent: ManagedAgent): AgentMetadata {
+  const {
+    installed,
+    status: _status,
+    config_options,
+    available_modes,
+    available_models,
+    available_commands,
+    ...metadata
+  } = agent;
+  return {
+    ...metadata,
+    available: installed,
+    handshake: {
+      config_options,
+      available_modes,
+      available_models,
+      available_commands,
+    },
+  };
+}
+
 /** Shared fetcher for DETECTED_AGENTS_SWR_KEY — single source of truth. */
 export async function fetchDetectedAgents(): Promise<AgentMetadata[]> {
-  try {
-    const agents = await ipcBridge.acpConversation.getAvailableAgents.invoke();
-    if (Array.isArray(agents)) {
-      return agents as AgentMetadata[];
-    }
-  } catch {
-    // fallback to empty
+  const agents = await ipcBridge.acpConversation.getAvailableAgents.invoke();
+  if (!Array.isArray(agents)) {
+    throw new TypeError('Detected agent catalog response must be an array');
   }
-  return [];
+  return agents.filter((agent) => agent.enabled).map(projectManagementAgent);
 }
 
 /** Fetcher for the Settings-only management view that includes disabled rows. */
 export async function fetchManagedAgents(): Promise<AgentMetadata[]> {
-  try {
-    const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
-    if (Array.isArray(agents)) {
-      return agents as AgentMetadata[];
-    }
-  } catch {
-    // fallback to empty
+  const agents = await ipcBridge.acpConversation.getManagedAgents.invoke();
+  if (!Array.isArray(agents)) {
+    throw new TypeError('Managed agent catalog response must be an array');
   }
-  return [];
+  return agents.map(projectManagementAgent);
 }
 
 /** Canonical catalog used by assistant editor bindings. */

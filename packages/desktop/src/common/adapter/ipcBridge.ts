@@ -1053,10 +1053,10 @@ export const mode = {
 export const acpConversation = {
   sendMessage: conversation.sendMessage,
   responseStream: conversation.responseStream,
-  getAvailableAgents: httpGet<AgentMetadata[], void>('/api/agents'),
-  getManagedAgents: httpGet<AgentMetadata[], void>('/api/agents?include_disabled=true'),
+  getAvailableAgents: httpGet<ManagedAgent[], void>('/api/agents/management'),
+  getManagedAgents: httpGet<ManagedAgent[], void>('/api/agents/management'),
   getAssistantAgentCatalog: httpGet<ManagedAgent[], void>('/api/agents/management'),
-  refreshCustomAgents: httpPost<void, void>('/api/agents/refresh'),
+  refreshCustomAgents: httpGet<ManagedAgent[], void>('/api/agents/management'),
   testCustomAgent: httpPost<
     { step: 'success' } | { step: 'fail_cli'; error: string } | { step: 'fail_acp'; error: string },
     { command: string; acp_args?: string[]; env?: Record<string, string>; runtime_scope_id?: string }
@@ -1105,8 +1105,16 @@ export const acpConversation = {
     (p) => `/api/agents/${p.id}/enabled`,
     (p) => ({ enabled: p.enabled })
   ),
-  checkAgentHealth: httpPost<{ available: boolean; latency?: number; error?: string }, { backend: string }>(
-    '/api/agents/health-check'
+  checkAgentHealth: withResponseMap(
+    httpPost<ManagedAgent, { id: string }>(
+      (p) => `/api/agents/${p.id}/health-check`,
+      () => undefined
+    ),
+    (agent) => ({
+      available: agent.status === 'online',
+      latency: agent.last_check_latency_ms,
+      error: agent.status === 'online' ? undefined : agent.last_check_error_message,
+    })
   ),
   checkProviderHealth: httpPost<ProviderHealthCheckResponse, ProviderHealthCheckRequest>(
     '/api/agents/provider-health-check'

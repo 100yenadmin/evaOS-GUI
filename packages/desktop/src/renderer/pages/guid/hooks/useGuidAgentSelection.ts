@@ -88,7 +88,7 @@ export type GuidAgentSelectionResult = {
  * Resolve the default session_mode for a given backend.
  *
  * Priority:
- *   1. Handshake `available_modes.current_mode_id` from `/api/agents`
+ *   1. Projected `available_modes.current_mode_id` from `/api/agents/management`
  *   2. First entry of handshake `available_modes`
  *   3. First entry of the static `AGENT_MODES` table
  *   4. Literal `'default'` (legacy fallback — only correct for claude/qwen/gemini/aionrs)
@@ -290,7 +290,7 @@ export const useGuidAgentSelection = ({
 
   useEffect(() => {
     if (!availableAgentsData) return;
-    // Normalise backend /api/agents rows into AvailableAgent shape.
+    // Normalise projected management rows into AvailableAgent shape.
     // `id` is the canonical row identifier; `custom_agent_id` is a legacy
     // alias still read by a few downstream consumers (send hook / mention
     // tokens / preset resolver). Custom-row `icon` is a user-picked emoji,
@@ -515,7 +515,7 @@ export const useGuidAgentSelection = ({
     // For preset agents, resolve to the actual backend type for model list lookup
     const backend = is_presetAgent ? currentEffectiveAgentInfo.agent_type : selectedAgent;
 
-    // Source: `handshake.available_models` from `/api/agents`.
+    // Source: projected `available_models` from `/api/agents/management`.
     // The backend persists the last-seen `ModelInfoPayload` (snake_case) on
     // the agent_metadata row, so this is populated across restarts without
     // requiring a fresh session.

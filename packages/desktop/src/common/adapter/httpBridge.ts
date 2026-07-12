@@ -162,7 +162,7 @@ export type HttpRequestOptions = {
 };
 
 const FILE_PROTOCOL_OFFLINE_READ_DEFAULTS = new Map<string, unknown>([
-  ['GET /api/agents', []],
+  ['GET /api/agents/management', []],
   ['GET /api/extensions/settings-tabs', []],
   ['POST /api/extensions/i18n', {}],
 ]);

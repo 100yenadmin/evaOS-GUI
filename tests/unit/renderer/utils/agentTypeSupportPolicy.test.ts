@@ -24,6 +24,7 @@ describe('Guid agent support policy', () => {
     expect(isDeprecatedRuntimeAgentType('nanobot')).toBe(true);
     expect(isDeprecatedRuntimeAgentType('remote')).toBe(true);
     expect(isDeprecatedRuntimeAgentType('gemini')).toBe(true);
+    expect(isDeprecatedRuntimeAgentType('codex')).toBe(true);
   });
 
   it('resolves supported top-level conversation type from backend labels', () => {
