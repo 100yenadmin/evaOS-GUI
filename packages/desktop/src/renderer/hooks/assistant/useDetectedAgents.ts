@@ -1,4 +1,3 @@
-import { ipcBridge } from '@/common';
 import { DEFAULT_CODEX_MODELS } from '@/common/types/codex/codexModels';
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
@@ -95,7 +94,6 @@ export const useDetectedAgents = () => {
 
   const refreshAgentDetection = useCallback(async () => {
     try {
-      await ipcBridge.acpConversation.refreshCustomAgents.invoke();
       await Promise.all([mutate(ASSISTANT_AGENT_CATALOG_SWR_KEY), mutate(DETECTED_AGENTS_SWR_KEY)]);
     } catch {
       // ignore

@@ -419,7 +419,7 @@ describe('httpBridge', () => {
       vi.stubGlobal('fetch', fetchSpy);
       vi.spyOn(console, 'debug').mockImplementation(() => {});
 
-      await expect(httpRequest('GET', '/api/agents')).resolves.toEqual([]);
+      await expect(httpRequest('GET', '/api/agents/management')).resolves.toEqual([]);
       await expect(httpRequest('GET', '/api/cron/jobs')).resolves.toEqual([]);
       await expect(httpRequest('GET', '/api/cron/jobs?conversation_id=conv_123')).resolves.toEqual([]);
       await expect(httpRequest('GET', '/api/conversations?limit=50')).resolves.toEqual({

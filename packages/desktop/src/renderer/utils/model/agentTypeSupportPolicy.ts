@@ -1,5 +1,5 @@
 const SUPPORTED_NEW_CONVERSATION_AGENT_TYPES = new Set(['acp', 'aionrs']);
-const DEPRECATED_RUNTIME_AGENT_TYPES = new Set(['openclaw-gateway', 'nanobot', 'remote', 'gemini']);
+const DEPRECATED_RUNTIME_AGENT_TYPES = new Set(['openclaw-gateway', 'nanobot', 'remote', 'gemini', 'codex']);
 
 export function isSupportedNewConversationAgent(agent: { agent_type: string }): boolean {
   return SUPPORTED_NEW_CONVERSATION_AGENT_TYPES.has(agent.agent_type);

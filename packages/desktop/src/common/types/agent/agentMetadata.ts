@@ -5,7 +5,7 @@
  */
 
 /** Type of an agent. */
-export type AgentType = 'acp' | 'remote' | 'aionrs' | 'openclaw-gateway' | 'nanobot';
+export type AgentType = 'acp' | 'remote' | 'aionrs' | 'openclaw-gateway' | 'nanobot' | 'gemini' | 'codex';
 
 /** Source tier of an agent row, mirroring backend `agent_source` enum. */
 export type AgentSource = 'internal' | 'builtin' | 'extension' | 'custom';
@@ -29,6 +29,9 @@ export type AgentEnvEntry = {
 /** Adapter-side behaviour switches populated by the backend. */
 export type BehaviorPolicy = {
   supports_side_question?: boolean;
+  self_identity_sticky?: boolean;
+  session_load_via_meta_field?: boolean;
+  supports_team?: boolean;
 };
 
 /** Handshake-derived fields captured from the ACP init/session response. */
@@ -41,7 +44,7 @@ export type AgentHandshake = {
   available_commands?: unknown;
 };
 
-/** Unified agent metadata returned by `/api/agents`. */
+/** Legacy runtime metadata projected from the v0.1.43 management catalog. */
 export type AgentMetadata = {
   id: string;
   icon?: string;
@@ -73,4 +76,7 @@ export type ManagedAgent = Omit<AgentMetadata, 'available' | 'handshake'> & {
   config_options?: unknown;
   available_modes?: unknown;
   available_models?: unknown;
+  available_commands?: unknown;
+  last_check_error_message?: string;
+  last_check_latency_ms?: number;
 };

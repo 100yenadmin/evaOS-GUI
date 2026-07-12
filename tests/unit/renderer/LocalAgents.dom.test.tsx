@@ -24,6 +24,8 @@ vi.mock('react-i18next', () => ({
       if (key === 'settings.agentManagement.localAgentsDescription') return 'Local agents';
       if (key === 'settings.agentManagement.detectCustomAgent') return 'Detect Custom Agent';
       if (key === 'settings.agentManagement.goToChat') return 'Go to Chat';
+      if (key === 'common.failed') return 'Failed';
+      if (key === 'common.retry') return 'Retry';
       if (key === 'settings.agentManagement.nativePaired') return 'Paired';
       if (key === 'settings.agentManagement.nativeStatusReason') return `Mac control status: ${options?.status ?? ''}`;
       if (key === 'settings.agentManagement.nativePairingProofMissing') return 'Mac control pairing proof is missing.';
@@ -154,5 +156,28 @@ describe('LocalAgents', () => {
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
     expect(screen.getByText('Hermes')).toBeInTheDocument();
     expect(screen.getAllByText('Go to Chat').length).toBeGreaterThan(0);
+  });
+
+  it('shows a retryable error instead of an empty catalog when loading fails', () => {
+    managedAgentsMock.mockReturnValue({
+      agents: [],
+      isLoading: false,
+      error: new Error('catalog unavailable'),
+      revalidate: revalidateMock,
+      refreshCustomAgents: vi.fn(),
+    });
+
+    render(<LocalAgents />);
+
+    expect(screen.getByTestId('agent-catalog-error')).toHaveTextContent('Failed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(revalidateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders existing custom agents without opening the destructive redacted edit path', () => {
+    render(<LocalAgents />);
+
+    expect(screen.getByText('Personal Agent')).toBeInTheDocument();
+    expect(screen.queryByText('settings.agentManagement.editCustomAgent')).toBeNull();
   });
 });

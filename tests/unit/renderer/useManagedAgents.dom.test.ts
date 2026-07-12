@@ -7,19 +7,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/common', () => ({
-  ipcBridge: {
-    acpConversation: {
-      refreshCustomAgents: { invoke: vi.fn() },
-    },
-  },
-}));
-
 vi.mock('@/renderer/utils/model/agentTypes', () => ({
   DETECTED_AGENTS_SWR_KEY: 'agents.detected',
   MANAGED_AGENTS_SWR_KEY: 'agents.managed',
   fetchDetectedAgents: vi.fn(),
   fetchManagedAgents: vi.fn(),
+  reprobeEnabledAgents: vi.fn(),
 }));
 
 vi.mock('swr', () => ({
@@ -27,9 +20,9 @@ vi.mock('swr', () => ({
   mutate: vi.fn(),
 }));
 
-import { ipcBridge } from '@/common';
 import { useManagedAgents } from '@/renderer/hooks/agent/useAgents';
 import { fetchManagedAgents } from '@/renderer/utils/model/agentTypes';
+import { reprobeEnabledAgents } from '@/renderer/utils/model/agentTypes';
 import useSWR, { mutate } from 'swr';
 
 describe('useManagedAgents', () => {
@@ -37,7 +30,7 @@ describe('useManagedAgents', () => {
     vi.clearAllMocks();
     vi.mocked(useSWR).mockReturnValue({ data: [], isLoading: false, error: null, mutate: vi.fn() } as never);
     vi.mocked(mutate).mockResolvedValue(undefined);
-    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockResolvedValue(undefined);
+    vi.mocked(reprobeEnabledAgents).mockResolvedValue(undefined);
   });
 
   it('uses the Settings-only managed agents cache key', () => {
@@ -53,7 +46,7 @@ describe('useManagedAgents', () => {
       await result.current.refreshCustomAgents();
     });
 
-    expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
+    expect(reprobeEnabledAgents).toHaveBeenCalled();
     expect(mutate).toHaveBeenCalledWith('agents.managed');
     expect(mutate).toHaveBeenCalledWith('agents.detected');
   });

@@ -23,7 +23,6 @@ vi.mock('swr', () => ({
 vi.mock('@/common', () => ({
   ipcBridge: {
     acpConversation: {
-      refreshCustomAgents: { invoke: vi.fn() },
       getAssistantAgentCatalog: { invoke: vi.fn() },
     },
   },
@@ -171,9 +170,8 @@ describe('useDetectedAgents', () => {
     ]);
   });
 
-  it('calls refreshCustomAgents and mutate on refreshAgentDetection', async () => {
+  it('revalidates both catalogs without probing engines on refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
-    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -181,14 +179,13 @@ describe('useDetectedAgents', () => {
       await result.current.refreshAgentDetection();
     });
 
-    expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
     expect(mutate).toHaveBeenNthCalledWith(1, ASSISTANT_AGENT_CATALOG_SWR_KEY);
     expect(mutate).toHaveBeenNthCalledWith(2, DETECTED_AGENTS_SWR_KEY);
   });
 
   it('ignores error during refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
-    vi.mocked(ipcBridge.acpConversation.refreshCustomAgents.invoke).mockRejectedValue(new Error('Refresh failed'));
+    vi.mocked(mutate).mockRejectedValueOnce(new Error('Refresh failed'));
 
     const { result } = renderHook(() => useDetectedAgents());
 
@@ -197,6 +194,6 @@ describe('useDetectedAgents', () => {
     });
 
     // Should not throw or log error (hook ignores it)
-    expect(ipcBridge.acpConversation.refreshCustomAgents.invoke).toHaveBeenCalled();
+    expect(mutate).toHaveBeenCalled();
   });
 });

@@ -47,7 +47,7 @@ type AgentCardProps =
       type: 'custom';
       agent: CustomAgentCardData;
       onGoToChat: () => void;
-      onEdit: () => void;
+      onEdit?: () => void;
       onDelete: () => void;
       onToggle: (enabled: boolean) => void;
     };
@@ -141,7 +141,9 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
         <Button size='small' type='text' onClick={onGoToChat} disabled={isDisabled}>
           {t('settings.agentManagement.goToChat')}
         </Button>
-        <Button size='small' type='text' icon={<EditTwo theme='outline' size='14' />} onClick={onEdit} />
+        {onEdit ? (
+          <Button size='small' type='text' icon={<EditTwo theme='outline' size='14' />} onClick={onEdit} />
+        ) : null}
         <Button
           size='small'
           type='text'

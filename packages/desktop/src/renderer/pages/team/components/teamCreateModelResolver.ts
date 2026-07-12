@@ -43,7 +43,7 @@ export async function resolveDefaultTeamAgentModel(params: {
 }
 
 async function resolveAcpDefaultModel(agent_type: string): Promise<string> {
-  // 1. Try handshake data from /api/agents
+  // 1. Try model data projected from /api/agents/management
   try {
     const agents = await getAgents();
     const matched = agents.find((a) => (a.backend ?? a.agent_type) === agent_type);

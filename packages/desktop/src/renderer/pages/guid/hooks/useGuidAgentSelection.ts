@@ -42,6 +42,8 @@ export type GuidAgentSelectionResult = {
   selectedAgentInfo: AvailableAgent | undefined;
   is_presetAgent: boolean;
   availableAgents: AvailableAgent[] | undefined;
+  agentCatalogError: unknown;
+  retryAgentCatalog: () => void;
   /** Backend-merged preset catalog: builtin + user + extension. */
   assistants: Assistant[];
   /** User-defined ACP engine rows (agent_source === 'custom') from the backend. */
@@ -88,7 +90,7 @@ export type GuidAgentSelectionResult = {
  * Resolve the default session_mode for a given backend.
  *
  * Priority:
- *   1. Handshake `available_modes.current_mode_id` from `/api/agents`
+ *   1. Projected `available_modes.current_mode_id` from `/api/agents/management`
  *   2. First entry of handshake `available_modes`
  *   3. First entry of the static `AGENT_MODES` table
  *   4. Literal `'default'` (legacy fallback — only correct for claude/qwen/gemini/aionrs)
@@ -283,14 +285,21 @@ export const useGuidAgentSelection = ({
   const is_presetAgent = Boolean(selectedAgentInfo?.is_preset);
 
   // --- SWR: Fetch detected execution engines (shared cache) ---
-  const { data: availableAgentsData } = useSWR<AvailableAgent[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
+  const {
+    data: availableAgentsData,
+    error: agentCatalogError,
+    mutate: revalidateAgentCatalog,
+  } = useSWR<AvailableAgent[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
+  const retryAgentCatalog = useCallback(() => {
+    void revalidateAgentCatalog();
+  }, [revalidateAgentCatalog]);
 
   // Fetch remote agents from DB and merge into available agents
   const { data: remoteAgentsData } = useSWR('remote-agents.list', () => ipcBridge.remoteAgent.list.invoke());
 
   useEffect(() => {
     if (!availableAgentsData) return;
-    // Normalise backend /api/agents rows into AvailableAgent shape.
+    // Normalise projected management rows into AvailableAgent shape.
     // `id` is the canonical row identifier; `custom_agent_id` is a legacy
     // alias still read by a few downstream consumers (send hook / mention
     // tokens / preset resolver). Custom-row `icon` is a user-picked emoji,
@@ -515,7 +524,7 @@ export const useGuidAgentSelection = ({
     // For preset agents, resolve to the actual backend type for model list lookup
     const backend = is_presetAgent ? currentEffectiveAgentInfo.agent_type : selectedAgent;
 
-    // Source: `handshake.available_models` from `/api/agents`.
+    // Source: projected `available_models` from `/api/agents/management`.
     // The backend persists the last-seen `ModelInfoPayload` (snake_case) on
     // the agent_metadata row, so this is populated across restarts without
     // requiring a fresh session.
@@ -573,6 +582,8 @@ export const useGuidAgentSelection = ({
     selectedAgentInfo,
     is_presetAgent,
     availableAgents,
+    agentCatalogError,
+    retryAgentCatalog,
     assistants,
     customAgents,
     selectedMode,

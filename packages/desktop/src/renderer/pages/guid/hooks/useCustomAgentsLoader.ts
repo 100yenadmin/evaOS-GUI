@@ -14,7 +14,7 @@ import useSWR, { mutate as swrMutate } from 'swr';
 type UseCustomAgentsLoaderOptions = {
   /**
    * Ids of ACP custom agents detected as installed/available. Used to filter
-   * results from `ipcBridge.acpConversation.getAvailableAgents`
+   * results projected from the management catalog
    * (filtered by `agent_source === 'custom'`) down to engine configs whose CLI
    * actually resolves on this machine.
    */
@@ -30,7 +30,7 @@ type UseCustomAgentsLoaderResult = {
   assistants: Assistant[];
   /**
    * User-defined ACP custom agent rows fetched from
-   * `ipcBridge.acpConversation.getAvailableAgents` (filtered by
+   * the management catalog projection (filtered by
    * `agent_source === 'custom'`). Completely separate from `assistants`. Only
    * entries whose ids also appear in `availableCustomAgentIds` are returned —
    * we hide configs whose CLI is missing from PATH.
@@ -100,16 +100,10 @@ export const useCustomAgentsLoader = ({
     return map;
   }, [assistants, customAgents]);
 
-  // Explicit refresh — used by "switch preset agent type" and the settings
-  // refresh button. Not triggered on mount; we rely on the backend's hydration
-  // + SWR's revalidate-on-focus to keep the list fresh without the old
-  // `useEffect → POST /refresh` loop that fired on every GuidPage mount.
+  // Cache revalidation used after switching a preset agent binding. This must
+  // not run manual health probes: a binding update should not block on or
+  // mutate the health state of unrelated engines.
   const refreshCustomAgents = useCallback(async () => {
-    try {
-      await ipcBridge.acpConversation.refreshCustomAgents.invoke();
-    } catch (error) {
-      console.error('Failed to refresh custom agents:', error);
-    }
     await revalidate();
   }, [revalidate]);
 

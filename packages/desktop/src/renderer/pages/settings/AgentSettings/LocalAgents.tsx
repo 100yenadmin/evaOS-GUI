@@ -8,7 +8,7 @@ import { ipcBridge } from '@/common';
 import type { AgentMetadata } from '@/renderer/utils/model/agentTypes';
 import AionModal from '@/renderer/components/base/AionModal';
 import { useManagedAgents } from '@/renderer/hooks/agent/useAgents';
-import { Button, Typography } from '@arco-design/web-react';
+import { Alert, Button, Typography } from '@arco-design/web-react';
 import { Home, Plus } from '@icon-park/react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -47,7 +47,7 @@ const LocalAgents: React.FC = () => {
 
   // Settings management view includes disabled custom agents so they remain
   // visible and can be re-enabled; chat/team pickers still use useAgents().
-  const { agents: allAgents, revalidate: mutateAgents } = useManagedAgents();
+  const { agents: allAgents, error: catalogError, revalidate: mutateAgents } = useManagedAgents();
 
   const detectedAgents = useMemo(
     () =>
@@ -63,8 +63,6 @@ const LocalAgents: React.FC = () => {
   );
 
   const [editorVisible, setEditorVisible] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<AgentMetadata | null>(null);
-
   const handleSaveCustomAgent = useCallback(
     async (draft: CustomAgentDraft) => {
       const body = {
@@ -76,20 +74,15 @@ const LocalAgents: React.FC = () => {
         advanced: draft.advanced,
       };
       try {
-        if (editingAgent) {
-          await ipcBridge.acpConversation.updateCustomAgent.invoke({ id: editingAgent.id, ...body });
-        } else {
-          await ipcBridge.acpConversation.createCustomAgent.invoke(body);
-        }
+        await ipcBridge.acpConversation.createCustomAgent.invoke(body);
         await mutateAgents();
         setEditorVisible(false);
-        setEditingAgent(null);
       } catch (err) {
         // Surface backend rejection (e.g. cli_not_found / acp_init_failed) without crashing.
         console.error('save custom agent failed:', err);
       }
     },
-    [editingAgent, mutateAgents]
+    [mutateAgents]
   );
 
   const handleDeleteCustomAgent = useCallback(
@@ -171,7 +164,6 @@ const LocalAgents: React.FC = () => {
   );
 
   const openCustomAgentEditor = useCallback(() => {
-    setEditingAgent(null);
     setEditorVisible(true);
   }, []);
 
@@ -205,6 +197,22 @@ const LocalAgents: React.FC = () => {
           {t('settings.agentManagement.detectCustomAgent')}
         </Button>
       </div>
+
+      {catalogError ? (
+        <Alert
+          type='error'
+          data-testid='agent-catalog-error'
+          className='mx-16px'
+          content={
+            <div className='flex items-center justify-between gap-12px'>
+              <span>{t('common.failed')}</span>
+              <Button size='small' onClick={() => void mutateAgents()}>
+                {t('common.retry')}
+              </Button>
+            </div>
+          }
+        />
+      ) : null}
 
       {process.env.NODE_ENV === 'development' && (
         <div className='px-16px mt-8px'>
@@ -268,7 +276,7 @@ const LocalAgents: React.FC = () => {
           />
         ))}
       </div>
-      {(!detectedAgents || detectedAgents.length === 0 || visibleDetectedAgentCards.length === 0) && (
+      {!catalogError && (!detectedAgents || detectedAgents.length === 0 || visibleDetectedAgentCards.length === 0) && (
         <Typography.Text type='secondary' className='block px-16px py-16px text-center text-12px'>
           {t('settings.agentManagement.localAgentsEmpty')}
         </Typography.Text>
@@ -287,12 +295,9 @@ const LocalAgents: React.FC = () => {
         visible={editorVisible}
         onCancel={() => {
           setEditorVisible(false);
-          setEditingAgent(null);
         }}
         header={{
-          title: editingAgent
-            ? t('settings.agentManagement.editCustomAgent')
-            : t('settings.agentManagement.detectCustomAgent'),
+          title: t('settings.agentManagement.detectCustomAgent'),
           showClose: true,
         }}
         footer={null}
@@ -311,12 +316,11 @@ const LocalAgents: React.FC = () => {
             retrigger it. */}
         {editorVisible && (
           <InlineAgentEditor
-            key={editingAgent?.id ?? 'new'}
-            agent={editingAgent}
+            key='new'
+            agent={null}
             onSave={(agent) => void handleSaveCustomAgent(agent)}
             onCancel={() => {
               setEditorVisible(false);
-              setEditingAgent(null);
             }}
           />
         )}
@@ -329,10 +333,6 @@ const LocalAgents: React.FC = () => {
             type='custom'
             agent={agent}
             onGoToChat={() => goToChatWithAgent(agent)}
-            onEdit={() => {
-              setEditingAgent(agent);
-              setEditorVisible(true);
-            }}
             onDelete={() => void handleDeleteCustomAgent(agent.id)}
             onToggle={(enabled) => void handleToggleCustomAgent(agent.id, enabled)}
           />

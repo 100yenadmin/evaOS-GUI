@@ -87,8 +87,15 @@ export function useAgentReadinessCheck(options: UseAgentReadinessCheckOptions) {
     }));
 
     try {
+      const agents = await getAgents();
+      const selectedAgent = agents.find(
+        (agent) => agent.id === agentToCheck || agent.backend === agentToCheck || agent.agent_type === agentToCheck
+      );
+      if (!selectedAgent) {
+        throw new Error(`Agent catalog row not found for ${agentToCheck}`);
+      }
       const result = await ipcBridge.acpConversation.checkAgentHealth.invoke({
-        backend: agentToCheck,
+        id: selectedAgent.id,
       });
 
       if (result.available) {
@@ -152,6 +159,7 @@ export function useAgentReadinessCheck(options: UseAgentReadinessCheckOptions) {
         .map((agent) => {
           const backendKey = (agent.backend || agent.agent_type) as string;
           return {
+            id: agent.id,
             backend: backendKey,
             name: AGENT_NAMES[backendKey] || agent.name,
             available: false,
@@ -185,7 +193,7 @@ export function useAgentReadinessCheck(options: UseAgentReadinessCheckOptions) {
 
         try {
           const healthResult = await ipcBridge.acpConversation.checkAgentHealth.invoke({
-            backend: agent.backend,
+            id: agent.id,
           });
           const latency = Date.now() - startTime;
 
