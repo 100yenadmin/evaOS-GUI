@@ -117,7 +117,28 @@
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
-    "permissionGuideDetail": "不足している macOS の権限を evaOS Workbench.app に付与してください。一覧にない場合は、evaOS Workbench.app をアプリ一覧にドラッグしてください。その後ここに戻り、ステータスを更新してください。"
+    "permissionGuideDetail": "不足している macOS の権限を evaOS Workbench.app に付与してください。一覧にない場合は、evaOS Workbench.app をアプリ一覧にドラッグしてください。その後ここに戻り、ステータスを更新してください。",
+    "onboarding": {
+      "repairWorkbenchTitle": "Workbench を修復",
+      "repairWorkbenchMissingDetail": "この Workbench には同梱の Mac コネクタがありません。Workbench を再インストールまたは更新してください。Python や Homebrew は不要です。",
+      "repairWorkbenchIncompatibleDetail": "同梱の Mac コネクタはこの Workbench と互換性がありません。署名済み Workbench アプリを再インストールまたは更新してください。",
+      "repairControlToolsTitle": "Mac コントロールツールを修復",
+      "repairControlToolsDetail": "優先 CUA エンジンと同梱の Peekaboo フォールバックのどちらも利用できません。この Mac をペアリングする前に Workbench を修復してください。",
+      "clientMissingTitle": "セキュアネットワークをインストール",
+      "clientMissingDetail": "Tailscale 公式の macOS ダウンロードページを開き、通常のインストーラに従ってください。ターミナル、Python、pip、Homebrew は不要です。",
+      "clientStoppedTitle": "セキュアネットワークを開く",
+      "clientStoppedDetail": "インストール済みのセキュアネットワークアプリを開き、macOS の VPN 確認が表示されたら許可して、もう一度確認してください。",
+      "unenrolledTitle": "この Mac を接続",
+      "unenrolledDetail": "この Mac を安全に接続するには、選択した顧客向けの承認済み登録が必要です。",
+      "wrongControlPlaneTitle": "セキュアネットワークを再接続",
+      "wrongControlPlaneDetail": "この Mac は誤ったプライベートネットワークに接続されています。正しく再接続するには承認済み登録が必要です。",
+      "aclBlockedTitle": "セキュアネットワークへのアクセスがブロックされています",
+      "aclBlockedDetail": "個人情報を公開せずに顧客スコープのネットワークポリシーを修復するため、サポートへ報告してください。",
+      "offlineTitle": "セキュアネットワークを再接続",
+      "offlineDetail": "セキュアネットワーククライアントを再接続し、Workbench でもう一度確認してください。",
+      "errorTitle": "セキュアネットワークを確認",
+      "errorDetail": "Workbench はセキュアネットワークを確認できませんでした。サポートへ報告し、ターミナルコマンドや接続情報は入力しないでください。"
+    }
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",

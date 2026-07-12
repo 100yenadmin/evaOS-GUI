@@ -117,7 +117,28 @@
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
-    "permissionGuideDetail": "Grant the missing macOS permission to evaOS Workbench.app. If it is not listed, drag evaOS Workbench.app into the app list. Then return here and refresh status."
+    "permissionGuideDetail": "Grant the missing macOS permission to evaOS Workbench.app. If it is not listed, drag evaOS Workbench.app into the app list. Then return here and refresh status.",
+    "onboarding": {
+      "repairWorkbenchTitle": "Repair Workbench",
+      "repairWorkbenchMissingDetail": "This Workbench installation is missing its bundled Mac connector. Reinstall or update Workbench; do not install Python or Homebrew.",
+      "repairWorkbenchIncompatibleDetail": "The bundled Mac connector is not compatible with this Workbench build. Reinstall or update the signed Workbench app.",
+      "repairControlToolsTitle": "Repair Mac control tools",
+      "repairControlToolsDetail": "Neither the preferred CUA engine nor the bundled Peekaboo fallback is available. Repair Workbench before pairing this Mac.",
+      "clientMissingTitle": "Install secure network",
+      "clientMissingDetail": "Open the official Tailscale macOS download page and follow the normal installer. No terminal, Python, pip, or Homebrew is required.",
+      "clientStoppedTitle": "Open secure network",
+      "clientStoppedDetail": "Open the installed secure-network app, allow the normal macOS VPN prompt if shown, then check again.",
+      "unenrolledTitle": "Connect this Mac",
+      "unenrolledDetail": "Workbench needs approved enrollment from the selected customer before it can connect this Mac safely.",
+      "wrongControlPlaneTitle": "Reconnect secure network",
+      "wrongControlPlaneDetail": "This Mac is on the wrong private network. Workbench needs approved enrollment before reconnecting correctly.",
+      "aclBlockedTitle": "Secure network access is blocked",
+      "aclBlockedDetail": "Use Report to support so the customer-scoped network policy can be repaired without exposing private details.",
+      "offlineTitle": "Reconnect secure network",
+      "offlineDetail": "Reconnect the secure-network client, then ask Workbench to verify it again.",
+      "errorTitle": "Check secure network",
+      "errorDetail": "Workbench could not verify the secure network. Use Report to support; do not enter terminal commands or connection details."
+    }
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",

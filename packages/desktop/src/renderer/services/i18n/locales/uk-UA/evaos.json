@@ -117,7 +117,28 @@
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
-    "permissionGuideDetail": "Надайте evaOS Workbench.app відсутній дозвіл macOS. Якщо програми немає у списку, перетягніть evaOS Workbench.app до списку програм. Потім поверніться сюди й оновіть стан."
+    "permissionGuideDetail": "Надайте evaOS Workbench.app відсутній дозвіл macOS. Якщо програми немає у списку, перетягніть evaOS Workbench.app до списку програм. Потім поверніться сюди й оновіть стан.",
+    "onboarding": {
+      "repairWorkbenchTitle": "Відновити Workbench",
+      "repairWorkbenchMissingDetail": "У цій інсталяції Workbench немає вбудованого конектора Mac. Перевстановіть або оновіть Workbench; Python і Homebrew не потрібні.",
+      "repairWorkbenchIncompatibleDetail": "Вбудований конектор Mac несумісний із цією версією Workbench. Перевстановіть або оновіть підписану програму Workbench.",
+      "repairControlToolsTitle": "Відновити інструменти керування Mac",
+      "repairControlToolsDetail": "Недоступні ані основний рушій CUA, ані вбудований резервний Peekaboo. Відновіть Workbench перед сполученням цього Mac.",
+      "clientMissingTitle": "Установити захищену мережу",
+      "clientMissingDetail": "Відкрийте офіційну сторінку завантаження Tailscale для macOS і дотримуйтеся звичайного інсталятора. Термінал, Python, pip і Homebrew не потрібні.",
+      "clientStoppedTitle": "Відкрити захищену мережу",
+      "clientStoppedDetail": "Відкрийте встановлену програму захищеної мережі, дозвольте запит VPN macOS, якщо він з’явиться, і перевірте ще раз.",
+      "unenrolledTitle": "Підключити цей Mac",
+      "unenrolledDetail": "Для безпечного підключення цього Mac Workbench потрібна схвалена реєстрація вибраного клієнта.",
+      "wrongControlPlaneTitle": "Перепідключити захищену мережу",
+      "wrongControlPlaneDetail": "Цей Mac перебуває в неправильній приватній мережі. Для правильного перепідключення Workbench потрібна схвалена реєстрація.",
+      "aclBlockedTitle": "Доступ до захищеної мережі заблоковано",
+      "aclBlockedDetail": "Скористайтеся «Повідомити підтримці», щоб виправити мережеву політику клієнта без розкриття приватних даних.",
+      "offlineTitle": "Перепідключити захищену мережу",
+      "offlineDetail": "Перепідключіть клієнт захищеної мережі та попросіть Workbench перевірити його знову.",
+      "errorTitle": "Перевірити захищену мережу",
+      "errorDetail": "Workbench не зміг перевірити захищену мережу. Повідомте підтримці; не вводьте команди Термінала або дані підключення."
+    }
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",

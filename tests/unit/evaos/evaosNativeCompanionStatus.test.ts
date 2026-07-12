@@ -3343,4 +3343,59 @@ describe('evaosNativeCompanionStatus', () => {
     expect(openExternal).toHaveBeenCalledTimes(2);
     expect(openPath).not.toHaveBeenCalled();
   });
+
+  it('opens the official secure-network download page without running a terminal command', async () => {
+    const openExternal = vi.fn(async () => undefined);
+    const deps = depsWithResponses({}, { openExternal });
+
+    const result = await openNativeCompanionRepairAction({ action: 'secure_network_install' }, deps);
+
+    expect(result).toMatchObject({
+      opened: true,
+      target: 'https://tailscale.com/download/mac',
+    });
+    expect(openExternal).toHaveBeenCalledWith('https://tailscale.com/download/mac');
+    expect(deps.execFile).not.toHaveBeenCalled();
+  });
+
+  it('opens the installed secure-network app from an approved application path', async () => {
+    const openPath = vi.fn(async () => '');
+    const openExternal = vi.fn(async () => undefined);
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn((path: string) => path === '/Applications/Tailscale.app'),
+        openPath,
+        openExternal,
+      }
+    );
+
+    const result = await openNativeCompanionRepairAction({ action: 'secure_network_open' }, deps);
+
+    expect(result).toMatchObject({
+      opened: true,
+      target: '/Applications/Tailscale.app',
+    });
+    expect(openPath).toHaveBeenCalledWith('/Applications/Tailscale.app');
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the secure-network app disappeared instead of opening an unpinned artifact', async () => {
+    const openPath = vi.fn(async () => '');
+    const openExternal = vi.fn(async () => undefined);
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(() => false),
+        openPath,
+        openExternal,
+      }
+    );
+
+    const result = await openNativeCompanionRepairAction({ action: 'secure_network_open' }, deps);
+
+    expect(result).toMatchObject({ opened: false });
+    expect(openPath).not.toHaveBeenCalled();
+    expect(openExternal).not.toHaveBeenCalled();
+  });
 });

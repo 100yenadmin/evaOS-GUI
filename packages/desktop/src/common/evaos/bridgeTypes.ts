@@ -291,7 +291,12 @@ export interface IEvaosNativeCompanionOpenResult {
   path?: string;
 }
 
-export type IEvaosNativeCompanionRepairAction = 'accessibility' | 'screen_recording' | 'released_workbench_fallback';
+export type IEvaosNativeCompanionRepairAction =
+  | 'accessibility'
+  | 'screen_recording'
+  | 'released_workbench_fallback'
+  | 'secure_network_install'
+  | 'secure_network_open';
 
 export interface IEvaosNativeCompanionRepairActionRequest {
   action: IEvaosNativeCompanionRepairAction;

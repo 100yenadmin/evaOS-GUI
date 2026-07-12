@@ -117,7 +117,28 @@
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
-    "permissionGuideDetail": "授予 evaOS Workbench.app 缺少的 macOS 權限。如果 App 清單中沒有此 App，請將 evaOS Workbench.app 拖入 App 清單。然後返回此處並重新整理狀態。"
+    "permissionGuideDetail": "授予 evaOS Workbench.app 缺少的 macOS 權限。如果 App 清單中沒有此 App，請將 evaOS Workbench.app 拖入 App 清單。然後返回此處並重新整理狀態。",
+    "onboarding": {
+      "repairWorkbenchTitle": "修復 Workbench",
+      "repairWorkbenchMissingDetail": "此 Workbench 安裝缺少內建 Mac 連接器。請重新安裝或更新 Workbench；不需要安裝 Python 或 Homebrew。",
+      "repairWorkbenchIncompatibleDetail": "內建 Mac 連接器與此 Workbench 版本不相容。請重新安裝或更新已簽署的 Workbench App。",
+      "repairControlToolsTitle": "修復 Mac 控制工具",
+      "repairControlToolsDetail": "偏好的 CUA 引擎與內建 Peekaboo 備援均無法使用。請先修復 Workbench，再配對此 Mac。",
+      "clientMissingTitle": "安裝安全網路",
+      "clientMissingDetail": "開啟 Tailscale 官方 macOS 下載頁面，並依正常安裝流程操作。不需要終端機、Python、pip 或 Homebrew。",
+      "clientStoppedTitle": "開啟安全網路",
+      "clientStoppedDetail": "開啟已安裝的安全網路 App；若出現 macOS VPN 提示，請允許，然後再次檢查。",
+      "unenrolledTitle": "連接此 Mac",
+      "unenrolledDetail": "Workbench 需要所選客戶核准的註冊，才能安全地連接此 Mac。",
+      "wrongControlPlaneTitle": "重新連接安全網路",
+      "wrongControlPlaneDetail": "此 Mac 位於錯誤的私人網路。Workbench 需要核准的註冊才能正確重新連接。",
+      "aclBlockedTitle": "安全網路存取已被封鎖",
+      "aclBlockedDetail": "請使用「回報給支援團隊」，以便在不揭露私人資訊的情況下修復客戶範圍的網路政策。",
+      "offlineTitle": "重新連接安全網路",
+      "offlineDetail": "重新連接安全網路用戶端，然後讓 Workbench 再次驗證。",
+      "errorTitle": "檢查安全網路",
+      "errorDetail": "Workbench 無法驗證安全網路。請使用「回報給支援團隊」；不要輸入終端機指令或連線資訊。"
+    }
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",

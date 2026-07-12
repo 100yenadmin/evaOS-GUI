@@ -144,6 +144,30 @@ const NativeCompanionPage: React.FC = () => {
     setHandoffMessage(null);
   }, [actionResult, currentActionResult]);
   const permissionGuideDetail = t('evaos.nativeCompanion.permissionGuideDetail');
+  const prerequisiteCopy = React.useMemo(
+    () => ({
+      repairWorkbenchTitle: t('evaos.nativeCompanion.onboarding.repairWorkbenchTitle'),
+      repairWorkbenchMissingDetail: t('evaos.nativeCompanion.onboarding.repairWorkbenchMissingDetail'),
+      repairWorkbenchIncompatibleDetail: t('evaos.nativeCompanion.onboarding.repairWorkbenchIncompatibleDetail'),
+      repairControlToolsTitle: t('evaos.nativeCompanion.onboarding.repairControlToolsTitle'),
+      repairControlToolsDetail: t('evaos.nativeCompanion.onboarding.repairControlToolsDetail'),
+      clientMissingTitle: t('evaos.nativeCompanion.onboarding.clientMissingTitle'),
+      clientMissingDetail: t('evaos.nativeCompanion.onboarding.clientMissingDetail'),
+      clientStoppedTitle: t('evaos.nativeCompanion.onboarding.clientStoppedTitle'),
+      clientStoppedDetail: t('evaos.nativeCompanion.onboarding.clientStoppedDetail'),
+      unenrolledTitle: t('evaos.nativeCompanion.onboarding.unenrolledTitle'),
+      unenrolledDetail: t('evaos.nativeCompanion.onboarding.unenrolledDetail'),
+      wrongControlPlaneTitle: t('evaos.nativeCompanion.onboarding.wrongControlPlaneTitle'),
+      wrongControlPlaneDetail: t('evaos.nativeCompanion.onboarding.wrongControlPlaneDetail'),
+      aclBlockedTitle: t('evaos.nativeCompanion.onboarding.aclBlockedTitle'),
+      aclBlockedDetail: t('evaos.nativeCompanion.onboarding.aclBlockedDetail'),
+      offlineTitle: t('evaos.nativeCompanion.onboarding.offlineTitle'),
+      offlineDetail: t('evaos.nativeCompanion.onboarding.offlineDetail'),
+      errorTitle: t('evaos.nativeCompanion.onboarding.errorTitle'),
+      errorDetail: t('evaos.nativeCompanion.onboarding.errorDetail'),
+    }),
+    [t]
+  );
   const viewModel = getNativeCompanionRepairViewModel({
     status: selectedPairingStatus,
     loading,
@@ -156,6 +180,7 @@ const NativeCompanionPage: React.FC = () => {
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
     permissionGuideDetail,
+    prerequisiteCopy,
   });
   const showDiagnostics = canShowEvaosSupportDiagnostics({
     authenticated: brokerAuthenticated,
@@ -179,6 +204,7 @@ const NativeCompanionPage: React.FC = () => {
     actionResult: currentActionResult,
     pairingPromptCopied: Boolean(copyMessage),
     permissionGuideDetail,
+    prerequisiteCopy,
   });
   const guidedGrantActive = agentPairingStatus === 'agent_paired' || currentActionResult?.connectorGrant?.ok === true;
   const guidedSetupReady = runtimeToolReadiness === 'tools_ready';

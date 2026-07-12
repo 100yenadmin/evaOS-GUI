@@ -117,7 +117,28 @@
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
-    "permissionGuideDetail": "evaOS Workbench.app에 누락된 macOS 권한을 부여하세요. 목록에 없다면 evaOS Workbench.app을 앱 목록으로 드래그하세요. 그런 다음 여기로 돌아와 상태를 새로 고치세요."
+    "permissionGuideDetail": "evaOS Workbench.app에 누락된 macOS 권한을 부여하세요. 목록에 없다면 evaOS Workbench.app을 앱 목록으로 드래그하세요. 그런 다음 여기로 돌아와 상태를 새로 고치세요.",
+    "onboarding": {
+      "repairWorkbenchTitle": "Workbench 복구",
+      "repairWorkbenchMissingDetail": "이 Workbench 설치에는 번들 Mac 커넥터가 없습니다. Workbench를 다시 설치하거나 업데이트하세요. Python이나 Homebrew는 설치하지 않아도 됩니다.",
+      "repairWorkbenchIncompatibleDetail": "번들 Mac 커넥터가 이 Workbench 빌드와 호환되지 않습니다. 서명된 Workbench 앱을 다시 설치하거나 업데이트하세요.",
+      "repairControlToolsTitle": "Mac 제어 도구 복구",
+      "repairControlToolsDetail": "기본 CUA 엔진과 번들 Peekaboo 대체 엔진을 모두 사용할 수 없습니다. 이 Mac을 페어링하기 전에 Workbench를 복구하세요.",
+      "clientMissingTitle": "보안 네트워크 설치",
+      "clientMissingDetail": "Tailscale 공식 macOS 다운로드 페이지를 열고 일반 설치 절차를 따르세요. 터미널, Python, pip 또는 Homebrew가 필요하지 않습니다.",
+      "clientStoppedTitle": "보안 네트워크 열기",
+      "clientStoppedDetail": "설치된 보안 네트워크 앱을 열고 macOS VPN 메시지가 표시되면 허용한 다음 다시 확인하세요.",
+      "unenrolledTitle": "이 Mac 연결",
+      "unenrolledDetail": "이 Mac을 안전하게 연결하려면 선택한 고객의 승인된 등록이 필요합니다.",
+      "wrongControlPlaneTitle": "보안 네트워크 다시 연결",
+      "wrongControlPlaneDetail": "이 Mac이 잘못된 사설 네트워크에 연결되어 있습니다. 올바르게 다시 연결하려면 승인된 등록이 필요합니다.",
+      "aclBlockedTitle": "보안 네트워크 액세스가 차단됨",
+      "aclBlockedDetail": "개인 정보를 노출하지 않고 고객 범위 네트워크 정책을 복구할 수 있도록 지원팀에 보고하세요.",
+      "offlineTitle": "보안 네트워크 다시 연결",
+      "offlineDetail": "보안 네트워크 클라이언트를 다시 연결한 다음 Workbench에서 다시 확인하세요.",
+      "errorTitle": "보안 네트워크 확인",
+      "errorDetail": "Workbench가 보안 네트워크를 확인하지 못했습니다. 지원팀에 보고하고 터미널 명령이나 연결 정보를 입력하지 마세요."
+    }
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",

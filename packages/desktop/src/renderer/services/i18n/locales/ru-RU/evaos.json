@@ -117,7 +117,28 @@
   "nativeCompanion": {
     "desktopAuthStartFailed": "evaOS sign-in could not start. Use Sign In in the sidebar, then retry.",
     "desktopAuthContinue": "Continue sign-in in the browser, then return here.",
-    "permissionGuideDetail": "Предоставьте evaOS Workbench.app недостающее разрешение macOS. Если приложения нет в списке, перетащите evaOS Workbench.app в список приложений. Затем вернитесь сюда и обновите статус."
+    "permissionGuideDetail": "Предоставьте evaOS Workbench.app недостающее разрешение macOS. Если приложения нет в списке, перетащите evaOS Workbench.app в список приложений. Затем вернитесь сюда и обновите статус.",
+    "onboarding": {
+      "repairWorkbenchTitle": "Восстановить Workbench",
+      "repairWorkbenchMissingDetail": "В этой установке Workbench отсутствует встроенный коннектор Mac. Переустановите или обновите Workbench; Python и Homebrew устанавливать не нужно.",
+      "repairWorkbenchIncompatibleDetail": "Встроенный коннектор Mac несовместим с этой версией Workbench. Переустановите или обновите подписанное приложение Workbench.",
+      "repairControlToolsTitle": "Восстановить инструменты управления Mac",
+      "repairControlToolsDetail": "Недоступны ни основной движок CUA, ни встроенный резервный Peekaboo. Восстановите Workbench перед сопряжением этого Mac.",
+      "clientMissingTitle": "Установить защищённую сеть",
+      "clientMissingDetail": "Откройте официальную страницу загрузки Tailscale для macOS и следуйте обычному установщику. Терминал, Python, pip и Homebrew не требуются.",
+      "clientStoppedTitle": "Открыть защищённую сеть",
+      "clientStoppedDetail": "Откройте установленное приложение защищённой сети, подтвердите запрос VPN macOS, если он появится, и проверьте снова.",
+      "unenrolledTitle": "Подключить этот Mac",
+      "unenrolledDetail": "Для безопасного подключения этого Mac Workbench требуется одобренная регистрация выбранного клиента.",
+      "wrongControlPlaneTitle": "Переподключить защищённую сеть",
+      "wrongControlPlaneDetail": "Этот Mac находится в неверной частной сети. Для правильного переподключения Workbench требуется одобренная регистрация.",
+      "aclBlockedTitle": "Доступ к защищённой сети заблокирован",
+      "aclBlockedDetail": "Используйте «Сообщить в поддержку», чтобы исправить сетевую политику клиента без раскрытия частных данных.",
+      "offlineTitle": "Переподключить защищённую сеть",
+      "offlineDetail": "Переподключите клиент защищённой сети и попросите Workbench проверить его снова.",
+      "errorTitle": "Проверить защищённую сеть",
+      "errorDetail": "Workbench не удалось проверить защищённую сеть. Сообщите в поддержку; не вводите команды Терминала или данные подключения."
+    }
   },
   "companyBrain": {
     "accountFailedClosed": "Company Brain account proof failed closed.",

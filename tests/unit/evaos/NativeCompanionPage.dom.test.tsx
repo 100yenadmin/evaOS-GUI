@@ -33,9 +33,33 @@ const brokerMocks = vi.hoisted(() => ({
 }));
 
 const i18nMocks = vi.hoisted(() => ({
-  t: vi.fn((key: string) =>
-    key === 'evaos.nativeCompanion.permissionGuideDetail' ? 'Localized permission guidance.' : key
-  ),
+  t: vi.fn((key: string) => {
+    const translations: Record<string, string> = {
+      'evaos.nativeCompanion.permissionGuideDetail': 'Localized permission guidance.',
+      'evaos.nativeCompanion.onboarding.repairWorkbenchTitle': 'Repair Workbench',
+      'evaos.nativeCompanion.onboarding.repairWorkbenchMissingDetail': 'Repair the missing bundled Mac connector.',
+      'evaos.nativeCompanion.onboarding.repairWorkbenchIncompatibleDetail':
+        'Repair the incompatible bundled Mac connector.',
+      'evaos.nativeCompanion.onboarding.repairControlToolsTitle': 'Repair Mac control tools',
+      'evaos.nativeCompanion.onboarding.repairControlToolsDetail': 'Repair CUA or the bundled Peekaboo fallback.',
+      'evaos.nativeCompanion.onboarding.clientMissingTitle': 'Install secure network',
+      'evaos.nativeCompanion.onboarding.clientMissingDetail':
+        'Open the official Tailscale macOS download page. No terminal commands are required.',
+      'evaos.nativeCompanion.onboarding.clientStoppedTitle': 'Open secure network',
+      'evaos.nativeCompanion.onboarding.clientStoppedDetail': 'Open the installed secure-network app.',
+      'evaos.nativeCompanion.onboarding.unenrolledTitle': 'Connect this Mac',
+      'evaos.nativeCompanion.onboarding.unenrolledDetail': 'Approved enrollment is required.',
+      'evaos.nativeCompanion.onboarding.wrongControlPlaneTitle': 'Reconnect secure network',
+      'evaos.nativeCompanion.onboarding.wrongControlPlaneDetail': 'The Mac is on the wrong private network.',
+      'evaos.nativeCompanion.onboarding.aclBlockedTitle': 'Secure network access is blocked',
+      'evaos.nativeCompanion.onboarding.aclBlockedDetail': 'Use Report to support.',
+      'evaos.nativeCompanion.onboarding.offlineTitle': 'Reconnect secure network',
+      'evaos.nativeCompanion.onboarding.offlineDetail': 'Reconnect, then verify again.',
+      'evaos.nativeCompanion.onboarding.errorTitle': 'Check secure network',
+      'evaos.nativeCompanion.onboarding.errorDetail': 'Use Report to support; do not enter terminal commands.',
+    };
+    return translations[key] ?? key;
+  }),
 }));
 
 const customerContextMock = vi.hoisted(() => ({
@@ -542,6 +566,65 @@ describe('NativeCompanionPage', () => {
     await waitFor(() => expect(bridgeMocks.openRepairAction).toHaveBeenCalledTimes(1));
     expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'screen_recording' });
     expect(bridgeMocks.openReleasedWorkbench).not.toHaveBeenCalled();
+  });
+
+  it('shows a one-click official secure-network install handoff before connector startup', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-12T12:00:00.000Z',
+        readiness: 'repair_required',
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'client_missing',
+          actionEngine: 'peekaboo_ready',
+        },
+        summaryText: 'Secure network client is missing.',
+        sourcePointer: 'native-companion:typed-prerequisites',
+        canOpenReleasedWorkbench: true,
+        releasedWorkbench: { installed: true },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'repair_required', running: false, reachable: false },
+        customerMac: {
+          status: 'repair_required',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'available' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+    bridgeMocks.openRepairAction.mockResolvedValue({
+      success: true,
+      data: {
+        opened: true,
+        target: 'https://tailscale.com/download/mac',
+        message: 'Opened the official secure-network download page.',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    const action = await screen.findByRole('button', { name: 'Install secure network' });
+    expect(
+      screen.getAllByText('Open the official Tailscale macOS download page. No terminal commands are required.').length
+    ).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Turn On Mac Access' })).not.toBeInTheDocument();
+
+    await user.click(action);
+
+    await waitFor(() =>
+      expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'secure_network_install' })
+    );
+    expect(bridgeMocks.runAction).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'connector_start' }));
   });
 
   it('opens evaOS support email with Mac control state context', async () => {

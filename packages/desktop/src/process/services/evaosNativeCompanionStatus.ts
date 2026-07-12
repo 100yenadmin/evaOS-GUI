@@ -47,6 +47,8 @@ const execFileAsync = promisify(execFileCallback);
 
 const HOMEBREW_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
 const DEFAULT_RELEASED_WORKBENCH_PATH = `/Applications/${EVAOS_BETA_IDENTITY.macAppBundleName}`;
+const SECURE_NETWORK_INSTALL_URL = 'https://tailscale.com/download/mac';
+const SECURE_NETWORK_APP_NAME = 'Tailscale.app';
 const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
@@ -1840,6 +1842,20 @@ export async function openNativeCompanionRepairAction(
     };
   }
 
+  if (request.action === 'secure_network_install') {
+    const openExternal = deps.openExternal ?? defaultOpenExternal;
+    await openExternal(SECURE_NETWORK_INSTALL_URL);
+    return {
+      opened: true,
+      target: SECURE_NETWORK_INSTALL_URL,
+      message: 'Opened the official secure-network download page.',
+    };
+  }
+
+  if (request.action === 'secure_network_open') {
+    return openSecureNetworkApp(deps);
+  }
+
   const target = systemSettingsUrlForRepairAction(request.action);
   await primeRepairPermission(request.action, deps);
   const openExternal = deps.openExternal ?? defaultOpenExternal;
@@ -1851,6 +1867,37 @@ export async function openNativeCompanionRepairAction(
       request.action === 'accessibility'
         ? 'Opened macOS Accessibility permissions for evaOS Workbench.'
         : 'Opened macOS Screen Recording permissions for evaOS Workbench.',
+  };
+}
+
+async function openSecureNetworkApp(
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionRepairActionResult> {
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const openPath = deps.openPath ?? defaultOpenPath;
+  const appPath = [
+    join('/Applications', SECURE_NETWORK_APP_NAME),
+    join(homedir(), 'Applications', SECURE_NETWORK_APP_NAME),
+  ].find((candidate) => existsSync(candidate));
+  if (!appPath) {
+    return {
+      opened: false,
+      message: 'The secure-network app is not installed at an approved application path.',
+    };
+  }
+
+  const error = await openPath(appPath);
+  if (error) {
+    return {
+      opened: false,
+      target: appPath,
+      message: 'The secure-network app could not be opened. Recheck the installation, then try again.',
+    };
+  }
+  return {
+    opened: true,
+    target: appPath,
+    message: 'Opened the secure-network app. Return to Workbench after it reports connected.',
   };
 }
 
