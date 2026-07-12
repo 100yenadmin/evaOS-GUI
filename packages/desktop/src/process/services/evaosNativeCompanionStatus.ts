@@ -235,17 +235,19 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
+  const redactedPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
   const prerequisites = classifyNativeCompanionPrerequisites({
     bridgeRuntime: {
       installed: true,
       commandSucceeded: bridge.ok,
       compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge, deps.env),
     },
-    privateNetwork: privateNetworkEvidence(connectorServiceData),
+    privateNetwork: redactedPrivateNetworkEvidence,
     actionEngine: actionEngineEvidence(customerMac.data),
   });
   const bridgeRuntimeExplicitlyBlocked = prerequisites.bridgeRuntime === 'incompatible';
-  const privateNetworkExplicitlyBlocked = !['online', 'error'].includes(prerequisites.privateNetwork);
+  const privateNetworkExplicitlyBlocked =
+    redactedPrivateNetworkEvidence !== undefined && prerequisites.privateNetwork !== 'online';
   const prerequisiteExplicitlyBlocksPairing = bridgeRuntimeExplicitlyBlocked || privateNetworkExplicitlyBlocked;
   const readiness =
     bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteExplicitlyBlocksPairing

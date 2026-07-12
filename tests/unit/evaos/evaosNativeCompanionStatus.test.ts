@@ -190,6 +190,61 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('demotes pairing when explicit private-network evidence cannot prove control-plane and ACL state', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        data: {
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version: '0.1.1',
+            version_compatible: true,
+            compatible: true,
+          },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+        tailnet_ip: '100.64.0.10',
+        private_network: {
+          client_installed: true,
+          client_running: true,
+          enrolled: true,
+          online: true,
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        data: {
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          control_engines: { peekaboo: { available: true }, active_primary: 'peekaboo' },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+      'customer-mac control status --json': { ok: true, data: { active: false, kill_switch: false } },
+      'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+      'ready --json': { ok: true, data: { ready: true } },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      pairingCapable: false,
+      pairingBlockedReason: 'secure_network_link_required',
+      blockerReason: 'secure_network_link_required',
+      prerequisites: {
+        bridgeRuntime: 'ready',
+        privateNetwork: 'error',
+        actionEngine: 'peekaboo_ready',
+      },
+    });
+  });
+
   it('demotes legacy-ready pairing when the bundled bridge explicitly reports incompatibility', async () => {
     const deps = depsWithResponses({
       'status --json': {
