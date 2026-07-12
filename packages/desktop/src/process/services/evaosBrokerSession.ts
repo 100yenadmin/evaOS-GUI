@@ -170,6 +170,34 @@ export type EvaosPrivateNetworkEnrollment = {
   expiresAt: string;
 };
 
+export type EvaosPrivateNetworkAuthorityReason =
+  | 'ready'
+  | 'mac_node_missing'
+  | 'mac_node_offline'
+  | 'mac_node_expired'
+  | 'vm_node_missing'
+  | 'vm_node_offline'
+  | 'vm_node_expired'
+  | 'grant_binding_mismatch'
+  | 'policy_unavailable'
+  | 'policy_hash_mismatch'
+  | 'authority_unavailable';
+
+export type EvaosPrivateNetworkAuthorityAttestation = {
+  customerId: string;
+  deviceId: string;
+  deviceIdentifier: string;
+  enrollmentId: string;
+  grantId: string;
+  correctControlPlane: boolean;
+  aclAllowed: boolean;
+  online: boolean;
+  reason: EvaosPrivateNetworkAuthorityReason;
+  observedAt: string;
+  expiresAt: string;
+  auditId: string;
+};
+
 export type EvaosBrokerFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export type EvaosProviderAuthUrlOpener = (url: string) => Promise<void> | void;
 export type EvaosRuntimeUrlOpener = (url: string) => Promise<void> | void;
@@ -925,6 +953,43 @@ export class EvaosBrokerSessionClient {
     return sanitizePrivateNetworkCancellation(raw, customerId, enrollmentId);
   }
 
+  async getPrivateNetworkReadiness(request: {
+    customerId: string;
+    deviceIdentifier: string;
+    signal?: AbortSignal;
+  }): Promise<EvaosPrivateNetworkAuthorityAttestation> {
+    const customerId = normalizeRequiredText(
+      request.customerId,
+      'invalid_customer',
+      'Choose a customer before checking the private Mac network.'
+    );
+    const deviceIdentifier = normalizeRequiredText(
+      request.deviceIdentifier,
+      'invalid_customer',
+      'Workbench could not identify this Mac for private-network readiness.'
+    );
+    const session = this.requireActiveSession('Sign in to evaOS before checking the private Mac network.');
+    let raw: unknown;
+    try {
+      raw = await this.postJsonToEndpoint(
+        this.customerMacControlEndpoint,
+        {
+          action: 'get_private_network_readiness',
+          customer_id: customerId,
+          device_identifier: deviceIdentifier,
+        },
+        session,
+        { signal: request.signal }
+      );
+    } catch (error) {
+      if (error instanceof EvaosBrokerSessionError && error.status === 401) {
+        this.clearRejectedSession(session);
+      }
+      throw error;
+    }
+    return sanitizePrivateNetworkAuthorityAttestation(raw, customerId, deviceIdentifier, this.now());
+  }
+
   async ensureCustomerMacConnectorGrant(request: {
     customerId: string;
     connectorUrl: string;
@@ -1104,15 +1169,17 @@ export class EvaosBrokerSessionClient {
   private async postJsonToEndpoint(
     endpoint: string,
     body: Record<string, unknown>,
-    session?: EvaosDesktopSession
+    session?: EvaosDesktopSession,
+    options: { signal?: AbortSignal } = {}
   ): Promise<unknown> {
-    return (await this.postJsonResponseToEndpoint(endpoint, body, session)).data;
+    return (await this.postJsonResponseToEndpoint(endpoint, body, session, options)).data;
   }
 
   private async postJsonResponseToEndpoint(
     endpoint: string,
     body: Record<string, unknown>,
-    session?: EvaosDesktopSession
+    session?: EvaosDesktopSession,
+    options: { signal?: AbortSignal } = {}
   ): Promise<{ data: unknown; response: Response }> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -1128,6 +1195,7 @@ export class EvaosBrokerSessionClient {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: options.signal,
       });
     } catch {
       throw new EvaosBrokerSessionError('broker_network_error', 'The evaOS broker could not be reached.');
@@ -1424,6 +1492,91 @@ function sanitizePrivateNetworkEnrollment(
     loginServer,
     authKey,
     expiresAt,
+  };
+}
+
+const PRIVATE_NETWORK_AUTHORITY_REASONS = new Set<EvaosPrivateNetworkAuthorityReason>([
+  'ready',
+  'mac_node_missing',
+  'mac_node_offline',
+  'mac_node_expired',
+  'vm_node_missing',
+  'vm_node_offline',
+  'vm_node_expired',
+  'grant_binding_mismatch',
+  'policy_unavailable',
+  'policy_hash_mismatch',
+  'authority_unavailable',
+]);
+
+function sanitizePrivateNetworkAuthorityAttestation(
+  raw: unknown,
+  expectedCustomerId: string,
+  expectedDeviceIdentifier: string,
+  now: Date
+): EvaosPrivateNetworkAuthorityAttestation {
+  const response = asRecord(raw);
+  const customerId = safeText(response?.customer_id);
+  const deviceId = safeText(response?.device_id);
+  const deviceIdentifier = safeText(response?.device_identifier);
+  const enrollmentId = safeText(response?.enrollment_id);
+  const grantId = safeText(response?.grant_id);
+  const correctControlPlane = response?.correct_control_plane;
+  const aclAllowed = response?.acl_allowed;
+  const online = response?.online;
+  const reasonText = safeText(response?.reason, 80);
+  const reason = reasonText as EvaosPrivateNetworkAuthorityReason | undefined;
+  const observedAt = safeIsoDate(response?.observed_at);
+  const expiresAt = safeIsoDate(response?.expires_at);
+  const auditId = safeText(response?.audit_id);
+  const observedAtMs = observedAt ? Date.parse(observedAt) : Number.NaN;
+  const expiresAtMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const nowMs = now.getTime();
+  const hasReadyProof = correctControlPlane === true && aclAllowed === true && online === true;
+  if (
+    response?.ok !== true ||
+    customerId !== expectedCustomerId ||
+    deviceIdentifier !== expectedDeviceIdentifier ||
+    !deviceId ||
+    !enrollmentId ||
+    !grantId ||
+    typeof correctControlPlane !== 'boolean' ||
+    typeof aclAllowed !== 'boolean' ||
+    typeof online !== 'boolean' ||
+    !reason ||
+    !PRIVATE_NETWORK_AUTHORITY_REASONS.has(reason) ||
+    !observedAt ||
+    !expiresAt ||
+    !auditId ||
+    !Number.isFinite(observedAtMs) ||
+    !Number.isFinite(expiresAtMs) ||
+    observedAtMs > nowMs + 5_000 ||
+    observedAtMs < nowMs - 60_000 ||
+    expiresAtMs <= nowMs ||
+    expiresAtMs - nowMs > 60_000 ||
+    expiresAtMs <= observedAtMs ||
+    expiresAtMs - observedAtMs > 60_000 ||
+    (reason === 'ready' && !hasReadyProof) ||
+    (reason !== 'ready' && hasReadyProof)
+  ) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker did not return fresh private-network authority proof for this Mac.'
+    );
+  }
+  return {
+    customerId,
+    deviceId,
+    deviceIdentifier,
+    enrollmentId,
+    grantId,
+    correctControlPlane,
+    aclAllowed,
+    online,
+    reason,
+    observedAt,
+    expiresAt,
+    auditId,
   };
 }
 

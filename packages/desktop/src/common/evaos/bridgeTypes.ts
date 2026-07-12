@@ -165,6 +165,10 @@ export type IEvaosNativeCompanionStatusValue =
   | 'unavailable'
   | 'error';
 
+export type IEvaosNativeCompanionStatusRequest = {
+  customerId?: string;
+};
+
 export type NativeCompanionBridgeRuntimePrerequisite = 'missing' | 'incompatible' | 'ready' | 'error';
 export type NativeCompanionPrivateNetworkPrerequisite =
   | 'client_missing'

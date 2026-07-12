@@ -32,50 +32,58 @@ interface EvaosNativeCompanionStatusState {
 
 export const NATIVE_COMPANION_STATUS_POLL_MS = 5_000;
 
-export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompanionStatusState {
-  const [status, setStatus] = useState<IEvaosNativeCompanionStatusView | null>(null);
+export function useEvaosNativeCompanionStatus(enabled = true, customerId?: string): EvaosNativeCompanionStatusState {
+  const scopeKey = customerId ?? '';
+  const [scopedStatus, setScopedStatus] = useState<{
+    scopeKey: string;
+    status: IEvaosNativeCompanionStatusView;
+  } | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
-  const refreshInFlightRef = useRef(false);
-  const queuedForegroundRefreshRef = useRef(false);
+  const currentScopeRef = useRef<string | undefined>(enabled ? scopeKey : undefined);
+  currentScopeRef.current = enabled ? scopeKey : undefined;
+  const refreshInFlightScopesRef = useRef(new Set<string>());
+  const queuedForegroundScopesRef = useRef(new Set<string>());
 
   const refresh = useCallback(
     async (options: { silent?: boolean } = {}) => {
       if (!enabled) {
-        setStatus(null);
+        setScopedStatus(null);
         setLoading(false);
         setError(null);
         return;
       }
-      if (refreshInFlightRef.current) {
-        if (!options.silent) queuedForegroundRefreshRef.current = true;
+      if (refreshInFlightScopesRef.current.has(scopeKey)) {
+        if (!options.silent) queuedForegroundScopesRef.current.add(scopeKey);
         return;
       }
 
-      refreshInFlightRef.current = true;
+      refreshInFlightScopesRef.current.add(scopeKey);
       if (!options.silent) setLoading(true);
       setError(null);
       try {
-        const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke();
+        const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke({ customerId });
+        if (currentScopeRef.current !== scopeKey) return;
         if (!response.success || !response.data) {
-          setStatus(null);
+          setScopedStatus(null);
           setError(response.msg || 'Workbench connector status failed safely.');
           return;
         }
-        setStatus(response.data);
+        setScopedStatus({ scopeKey, status: response.data });
       } catch {
-        setStatus(null);
-        setError('Workbench connector status could not be reached.');
+        if (currentScopeRef.current === scopeKey) {
+          setScopedStatus(null);
+          setError('Workbench connector status could not be reached.');
+        }
       } finally {
-        setLoading(false);
-        refreshInFlightRef.current = false;
-        if (queuedForegroundRefreshRef.current) {
-          queuedForegroundRefreshRef.current = false;
+        if (currentScopeRef.current === scopeKey) setLoading(false);
+        refreshInFlightScopesRef.current.delete(scopeKey);
+        if (queuedForegroundScopesRef.current.delete(scopeKey) && currentScopeRef.current === scopeKey) {
           void refresh();
         }
       }
     },
-    [enabled]
+    [customerId, enabled, scopeKey]
   );
 
   const openReleasedWorkbench = useCallback(async () => {
@@ -146,7 +154,7 @@ export function useEvaosNativeCompanionStatus(enabled = true): EvaosNativeCompan
   }, [enabled, refresh]);
 
   return {
-    status,
+    status: enabled && scopedStatus?.scopeKey === scopeKey ? scopedStatus.status : null,
     loading,
     error,
     refresh,

@@ -72,7 +72,7 @@ const NativeCompanionPage: React.FC = () => {
   );
   const selectedPairingCustomerId = selectedPairingTarget?.customerId;
   const { status, loading, error, refresh, openReleasedWorkbench, openRepairAction, runAction, getDiagnosticPacket } =
-    useEvaosNativeCompanionStatus();
+    useEvaosNativeCompanionStatus(true, selectedPairingCustomerId);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [connectorActionsOpen, setConnectorActionsOpen] = React.useState(false);
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);

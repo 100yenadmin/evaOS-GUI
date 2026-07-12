@@ -11,6 +11,7 @@ import type {
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
+  IEvaosNativeCompanionStatusRequest,
   IEvaosNativeCompanionStatusView,
   IEvaosWorkbenchDiagnosticPacketRequest,
   IEvaosWorkbenchDiagnosticPacketV1,
@@ -33,8 +34,8 @@ interface BridgeResponse<D = {}> {
 
 export function initEvaosNativeCompanionBridge(): void {
   ipcBridge.evaosNativeCompanion.getStatus.provider(
-    async (): Promise<BridgeResponse<IEvaosNativeCompanionStatusView>> =>
-      toBridgeResponse(() => getEvaosNativeCompanionStatus())
+    async (request: IEvaosNativeCompanionStatusRequest): Promise<BridgeResponse<IEvaosNativeCompanionStatusView>> =>
+      toBridgeResponse(() => getEvaosNativeCompanionStatus({}, request))
   );
 
   ipcBridge.evaosNativeCompanion.getDiagnosticPacket.provider(

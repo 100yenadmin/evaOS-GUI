@@ -40,6 +40,7 @@ import {
 const NOW = new Date('2026-06-03T12:00:00.000Z');
 const FUTURE = '2026-06-03T16:00:00.000Z';
 const NETWORK_FUTURE = '2026-06-03T12:15:00.000Z';
+const AUTHORITY_FUTURE = '2026-06-03T12:00:45.000Z';
 const PAST = '2026-06-03T08:00:00.000Z';
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -903,6 +904,106 @@ describe('EvaosBrokerSessionClient', () => {
       auth_key: 'one-use-network-key-for-test',
     });
     expect(JSON.stringify(result)).not.toContain('one-use-network-key-for-test');
+  });
+
+  it('returns only fresh customer-bound private-network authority proof', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'jackie-david',
+        device_id: 'device-david',
+        device_identifier: 'david-mac-hardware-id',
+        enrollment_id: 'network-enrollment-1',
+        grant_id: 'grant-david',
+        correct_control_plane: true,
+        acl_allowed: true,
+        online: true,
+        reason: 'ready',
+        observed_at: NOW.toISOString(),
+        expires_at: AUTHORITY_FUTURE,
+        audit_id: 'audit-private-network-ready',
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    const abortController = new AbortController();
+    const result = await client.getPrivateNetworkReadiness({
+      customerId: 'jackie-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      signal: abortController.signal,
+    });
+
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'get_private_network_readiness',
+      customer_id: 'jackie-david',
+      device_identifier: 'david-mac-hardware-id',
+    });
+    expect(fetchImpl.mock.calls[0][1]?.signal).toBe(abortController.signal);
+    expect(result).toEqual({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      enrollmentId: 'network-enrollment-1',
+      grantId: 'grant-david',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready',
+      observedAt: NOW.toISOString(),
+      expiresAt: AUTHORITY_FUTURE,
+      auditId: 'audit-private-network-ready',
+    });
+    expect(JSON.stringify(result)).not.toMatch(/headscale|policy|100\.64\.|login_server|Bearer|eds_/i);
+  });
+
+  it.each([
+    ['mismatched customer', { customer_id: 'different-customer' }],
+    ['mismatched device', { device_identifier: 'different-device' }],
+    ['expired proof', { expires_at: PAST }],
+    ['overlong proof', { expires_at: NETWORK_FUTURE }],
+    ['stale observation', { observed_at: '2026-06-03T11:58:59.000Z' }],
+    ['overlong observation lifetime', { observed_at: '2026-06-03T11:59:30.000Z', expires_at: AUTHORITY_FUTURE }],
+    ['inconsistent ready proof', { acl_allowed: false }],
+    ['unknown reason', { reason: 'trust_me' }],
+  ])('rejects private-network authority with %s', async (_label, override) => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'jackie-david',
+        device_id: 'device-david',
+        device_identifier: 'david-mac-hardware-id',
+        enrollment_id: 'network-enrollment-1',
+        grant_id: 'grant-david',
+        correct_control_plane: true,
+        acl_allowed: true,
+        online: true,
+        reason: 'ready',
+        observed_at: NOW.toISOString(),
+        expires_at: AUTHORITY_FUTURE,
+        audit_id: 'audit-private-network-ready',
+        ...override,
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(
+      client.getPrivateNetworkReadiness({
+        customerId: 'jackie-david',
+        deviceIdentifier: 'david-mac-hardware-id',
+      })
+    ).rejects.toMatchObject({ code: 'broker_invalid_response' });
   });
 
   it('completes Mac pairing enrollment through the broker without returning connector secrets', async () => {

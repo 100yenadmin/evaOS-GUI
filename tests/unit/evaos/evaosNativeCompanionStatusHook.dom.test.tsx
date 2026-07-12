@@ -101,4 +101,43 @@ describe('useEvaosNativeCompanionStatus', () => {
     await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:foreground'));
   });
+
+  it('scopes status to the selected customer and never renders stale proof after a switch', async () => {
+    const statusFor = (customerId: string) => ({
+      schemaVersion: 'evaos.native_companion_status.v1' as const,
+      generatedAt: '2026-07-13T00:00:00.000Z',
+      readiness: 'ready' as const,
+      summaryText: 'ready',
+      sourcePointer: `native-companion:${customerId}`,
+      canOpenReleasedWorkbench: false,
+      releasedWorkbench: { installed: true },
+      bridgeCli: { installed: true, status: 'ready' as const, readOnly: true, permissions: {} },
+      connectorService: { status: 'ready' as const, running: true, reachable: true },
+      customerMac: { status: 'ready' as const, permissions: {} },
+      iPhone: { status: 'unavailable' as const, installed: false, running: false },
+      audit: { status: 'ready' as const, auditIds: [] },
+    });
+    let resolveDavid: ((value: { success: true; data: ReturnType<typeof statusFor> }) => void) | undefined;
+    bridgeMocks.getStatus.mockResolvedValueOnce({ success: true, data: statusFor('jackie') }).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDavid = resolve;
+        })
+    );
+
+    const { result, rerender } = renderHook(({ customerId }) => useEvaosNativeCompanionStatus(true, customerId), {
+      initialProps: { customerId: 'jackie' },
+    });
+    await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:jackie'));
+    expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({ customerId: 'jackie' });
+
+    rerender({ customerId: 'david' });
+    expect(result.current.status).toBeNull();
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({ customerId: 'david' }));
+
+    await act(async () => {
+      resolveDavid?.({ success: true, data: statusFor('david') });
+    });
+    await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:david'));
+  });
 });
