@@ -107,6 +107,21 @@ export type NativeCompanionPrerequisiteCopy = {
   offlineDetail: string;
   errorTitle: string;
   errorDetail: string;
+  refreshSessionLabel: string;
+  refreshSessionTitle: string;
+  refreshSessionDetail: string;
+  checkingSessionLabel: string;
+  checkingSessionTitle: string;
+  checkingSessionDetail: string;
+  signInLabel: string;
+  signInTitle: string;
+  signInDetail: string;
+  selectCustomerLabel: string;
+  selectCustomerTitle: string;
+  selectCustomerDetail: string;
+  chooseMacTargetLabel: string;
+  chooseMacTargetTitle: string;
+  chooseMacTargetDetail: string;
 };
 
 const PAIRING_PATTERN = /\b(?:not[_ -]?paired|pairing[_ -]?required|pairing required|device identity changed)\b/i;
@@ -315,6 +330,80 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
   };
 }
 
+function brokerCustomerNextAction(
+  input: NativeCompanionRepairViewModelInput,
+  actionResult: IEvaosNativeCompanionActionResult | null,
+  totalSteps: number,
+  step: number
+): NativeCompanionNextAction | undefined {
+  const copy = input.prerequisiteCopy;
+  if (
+    actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
+  ) {
+    return {
+      kind: 'reconnect',
+      label: copy.refreshSessionLabel,
+      title: copy.refreshSessionTitle,
+      detail: copy.refreshSessionDetail,
+      step,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (input.brokerSessionLoading) {
+    return {
+      kind: 'none',
+      label: copy.checkingSessionLabel,
+      title: copy.checkingSessionTitle,
+      detail: copy.checkingSessionDetail,
+      step,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (input.brokerAuthenticated === false) {
+    return {
+      kind: 'reconnect',
+      label: copy.signInLabel,
+      title: copy.signInTitle,
+      detail: copy.signInDetail,
+      step,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (!input.hasSelectedCustomer) {
+    return {
+      kind: 'none',
+      label: copy.selectCustomerLabel,
+      title: copy.selectCustomerTitle,
+      detail: copy.selectCustomerDetail,
+      step,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (input.hasPairableCustomer === false) {
+    return {
+      kind: 'none',
+      label: copy.chooseMacTargetLabel,
+      title: copy.chooseMacTargetTitle,
+      detail: copy.chooseMacTargetDetail,
+      step,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  return undefined;
+}
+
 function nextActionForState(
   input: NativeCompanionRepairViewModelInput,
   state: NativeCompanionUserState
@@ -382,7 +471,19 @@ function nextActionForState(
 
   const networkPrerequisite = blockingPrivateNetworkPrerequisite(status, input.prerequisiteCopy);
   if (networkPrerequisite) {
-    return networkPrerequisite.action;
+    if (status.prerequisites?.privateNetwork !== 'unenrolled') {
+      return networkPrerequisite.action;
+    }
+    if (actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-submitted') {
+      return {
+        ...networkPrerequisite.action,
+        kind: 'none',
+        action: undefined,
+        disabled: true,
+      };
+    }
+    const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
+    return brokerGate ?? networkPrerequisite.action;
   }
 
   if (!connectorServiceReady(status)) {
@@ -398,69 +499,8 @@ function nextActionForState(
     };
   }
 
-  if (
-    actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
-    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required'
-  ) {
-    return {
-      kind: 'reconnect',
-      label: 'Refresh Workbench Session',
-      title: 'Refresh Workbench session',
-      detail: 'Refresh the evaOS broker session so Workbench can connect Mac control for the selected customer.',
-      step: 3,
-      totalSteps,
-      disabled: false,
-    };
-  }
-
-  if (input.brokerSessionLoading) {
-    return {
-      kind: 'none',
-      label: 'Checking session',
-      title: 'Checking Workbench session',
-      detail: 'Workbench is checking the evaOS broker session before connecting Mac control.',
-      step: 3,
-      totalSteps,
-      disabled: true,
-    };
-  }
-
-  if (input.brokerAuthenticated === false) {
-    return {
-      kind: 'reconnect',
-      label: 'Sign In To Workbench',
-      title: 'Sign in to Workbench',
-      detail: 'Sign in to evaOS so Workbench can connect Mac control for the selected customer.',
-      step: 3,
-      totalSteps,
-      disabled: false,
-    };
-  }
-
-  if (!input.hasSelectedCustomer) {
-    return {
-      kind: 'none',
-      label: 'Select customer',
-      title: 'Choose a customer',
-      detail: 'Select the customer this Mac should connect to before enabling first-party Mac control.',
-      step: 3,
-      totalSteps,
-      disabled: true,
-    };
-  }
-
-  if (input.hasPairableCustomer === false) {
-    return {
-      kind: 'none',
-      label: 'Choose Mac target',
-      title: 'Choose a Mac-control customer',
-      detail:
-        'The selected account is not a VM-backed Mac-control target. Choose a customer target before connecting Mac control.',
-      step: 3,
-      totalSteps,
-      disabled: true,
-    };
-  }
+  const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 3);
+  if (brokerGate) return brokerGate;
 
   if (agentPairingStatus === 'agent_paired') {
     if (status.controlSession?.active) {
@@ -881,11 +921,12 @@ function blockingPrivateNetworkPrerequisite(
         summary: copy.unenrolledDetail,
         action: {
           ...baseAction,
-          kind: 'none',
+          kind: 'run',
+          action: 'secure_network_enroll',
           label: copy.unenrolledTitle,
           title: copy.unenrolledTitle,
           detail: copy.unenrolledDetail,
-          disabled: true,
+          disabled: false,
         },
       };
     case 'wrong_control_plane':

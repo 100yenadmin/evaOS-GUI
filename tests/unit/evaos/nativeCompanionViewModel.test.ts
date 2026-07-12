@@ -46,6 +46,21 @@ const prerequisiteCopy: NativeCompanionPrerequisiteCopy = {
   errorTitle: 'Check secure network',
   errorDetail:
     'Workbench could not verify the secure network. Use Report to support; do not enter terminal commands or connection details.',
+  refreshSessionLabel: 'Localized refresh session label',
+  refreshSessionTitle: 'Localized refresh session title',
+  refreshSessionDetail: 'Localized refresh session detail',
+  checkingSessionLabel: 'Localized checking session label',
+  checkingSessionTitle: 'Localized checking session title',
+  checkingSessionDetail: 'Localized checking session detail',
+  signInLabel: 'Localized sign-in label',
+  signInTitle: 'Localized sign-in title',
+  signInDetail: 'Localized sign-in detail',
+  selectCustomerLabel: 'Localized select customer label',
+  selectCustomerTitle: 'Localized select customer title',
+  selectCustomerDetail: 'Localized select customer detail',
+  chooseMacTargetLabel: 'Localized choose Mac target label',
+  chooseMacTargetTitle: 'Localized choose Mac target title',
+  chooseMacTargetDetail: 'Localized choose Mac target detail',
 };
 
 const getNativeCompanionRepairViewModel = (input: TestViewModelInput) =>
@@ -314,6 +329,10 @@ describe('nativeCompanionViewModel', () => {
       }),
       loading: false,
       error: null,
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
     });
 
     expect(viewModel.state).toBe('repair_required');
@@ -352,8 +371,137 @@ describe('nativeCompanionViewModel', () => {
     });
   });
 
+  it('offers broker-owned one-use enrollment for an installed unenrolled client', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.title).toBe('Connect this Mac');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'secure_network_enroll',
+      label: 'Connect this Mac',
+      disabled: false,
+    });
+    expect(viewModel.nextAction.detail).toContain('approved enrollment');
+  });
+
+  it('requires an authenticated broker session before offering private-network enrollment', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      brokerAuthenticated: false,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Localized sign-in label',
+      title: 'Localized sign-in title',
+      detail: 'Localized sign-in detail',
+      step: 1,
+      disabled: false,
+    });
+  });
+
+  it('routes a rejected private-network broker session to session recovery', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      actionResult: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Session refresh required.',
+        sourcePointer: 'native-companion:secure-network-enrollment-broker-session-required',
+        refreshRecommended: false,
+        auditIds: [],
+      },
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Localized refresh session label',
+      title: 'Localized refresh session title',
+      detail: 'Localized refresh session detail',
+      step: 1,
+      disabled: false,
+    });
+  });
+
+  it('keeps one-use private-network enrollment disabled while broker verification is pending', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      actionResult: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Unlocalized enrollment submission detail.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        refreshRecommended: true,
+        auditIds: [],
+      },
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'none',
+      label: 'Connect this Mac',
+      disabled: true,
+      step: 1,
+    });
+  });
+
   it.each([
-    ['unenrolled', 'Connect this Mac', 'approved enrollment'],
     ['wrong_control_plane', 'Reconnect secure network', 'wrong private network'],
     ['acl_blocked', 'Secure network access is blocked', 'support'],
     ['error', 'Check secure network', 'could not verify'],
@@ -469,12 +617,12 @@ describe('nativeCompanionViewModel', () => {
 
     expect(viewModel.nextAction).toMatchObject({
       kind: 'none',
-      label: 'Choose Mac target',
-      title: 'Choose a Mac-control customer',
+      label: 'Localized choose Mac target label',
+      title: 'Localized choose Mac target title',
       step: 3,
       disabled: true,
     });
-    expect(viewModel.nextAction.detail).toContain('not a VM-backed Mac-control target');
+    expect(viewModel.nextAction.detail).toBe('Localized choose Mac target detail');
   });
 
   it('does not overclaim ready when the connector service is offline', () => {
@@ -604,7 +752,7 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'reconnect',
-      label: 'Sign In To Workbench',
+      label: 'Localized sign-in label',
       disabled: false,
     });
 
@@ -617,7 +765,7 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'none',
-      label: 'Select customer',
+      label: 'Localized select customer label',
       disabled: true,
     });
 
@@ -641,8 +789,8 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'reconnect',
-      label: 'Refresh Workbench Session',
-      title: 'Refresh Workbench session',
+      label: 'Localized refresh session label',
+      title: 'Localized refresh session title',
     });
 
     expect(

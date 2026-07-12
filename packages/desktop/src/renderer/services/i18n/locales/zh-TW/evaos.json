@@ -130,6 +130,9 @@
       "clientStoppedDetail": "開啟已安裝的安全網路 App；若出現 macOS VPN 提示，請允許，然後再次檢查。",
       "unenrolledTitle": "連接此 Mac",
       "unenrolledDetail": "Workbench 需要所選客戶核准的註冊，才能安全地連接此 Mac。",
+      "enrollmentSubmittedDetail": "註冊已提交。在顯示就緒之前，Workbench 正在等待代理節點與存取原則驗證。",
+      "enrollmentFailedDetail": "Workbench 無法完成或安全取消註冊。請重新開啟 Tailscale；如有需要，等待短期註冊到期後再試，或使用「回報」。",
+      "enrollmentSessionDetail": "請重新整理 evaOS Workbench 工作階段，然後為此 Mac 重試已核准的註冊。",
       "wrongControlPlaneTitle": "重新連接安全網路",
       "wrongControlPlaneDetail": "此 Mac 位於錯誤的私人網路。Workbench 需要核准的註冊才能正確重新連接。",
       "aclBlockedTitle": "安全網路存取已被封鎖",
@@ -137,7 +140,22 @@
       "offlineTitle": "重新連接安全網路",
       "offlineDetail": "重新連接安全網路用戶端，然後讓 Workbench 再次驗證。",
       "errorTitle": "檢查安全網路",
-      "errorDetail": "Workbench 無法驗證安全網路。請使用「回報給支援團隊」；不要輸入終端機指令或連線資訊。"
+      "errorDetail": "Workbench 無法驗證安全網路。請使用「回報給支援團隊」；不要輸入終端機指令或連線資訊。",
+      "refreshSessionLabel": "重新整理 Workbench 工作階段",
+      "refreshSessionTitle": "重新整理 Workbench 工作階段",
+      "refreshSessionDetail": "重新整理 evaOS 代理工作階段，讓 Workbench 能為所選客戶連接 Mac 控制。",
+      "checkingSessionLabel": "正在檢查工作階段",
+      "checkingSessionTitle": "正在檢查 Workbench 工作階段",
+      "checkingSessionDetail": "Workbench 正在連接 Mac 控制前檢查 evaOS 代理工作階段。",
+      "signInLabel": "登入 Workbench",
+      "signInTitle": "登入 Workbench",
+      "signInDetail": "登入 evaOS，讓 Workbench 能為所選客戶連接 Mac 控制。",
+      "selectCustomerLabel": "選擇客戶",
+      "selectCustomerTitle": "選擇客戶",
+      "selectCustomerDetail": "啟用第一方 Mac 控制前，請選擇此 Mac 應連接的客戶。",
+      "chooseMacTargetLabel": "選擇 Mac 目標",
+      "chooseMacTargetTitle": "選擇 Mac 控制客戶",
+      "chooseMacTargetDetail": "所選帳戶不是由 VM 支援的 Mac 控制目標。連接 Mac 控制前請選擇客戶目標。"
     }
   },
   "companyBrain": {

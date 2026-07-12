@@ -320,7 +320,8 @@ export type IEvaosNativeCompanionAction =
   | 'control_stop'
   | 'kill_switch'
   | 'audit_tail'
-  | 'create_pairing_prompt';
+  | 'create_pairing_prompt'
+  | 'secure_network_enroll';
 
 export interface IEvaosNativeCompanionActionRequest {
   action: IEvaosNativeCompanionAction;

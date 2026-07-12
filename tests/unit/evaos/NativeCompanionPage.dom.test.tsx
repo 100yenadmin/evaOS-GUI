@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NativeCompanionPage from '@/renderer/pages/native-companion';
 import type { IEvaosBrokerSessionStatus, IEvaosCustomerTargetView } from '@/common/evaos/bridgeTypes';
+import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from '@renderer/hooks/system/useDeepLink';
 
 const bridgeMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
@@ -49,6 +50,10 @@ const i18nMocks = vi.hoisted(() => ({
       'evaos.nativeCompanion.onboarding.clientStoppedDetail': 'Open the installed secure-network app.',
       'evaos.nativeCompanion.onboarding.unenrolledTitle': 'Connect this Mac',
       'evaos.nativeCompanion.onboarding.unenrolledDetail': 'Approved enrollment is required.',
+      'evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail':
+        'Localized enrollment is waiting for broker verification.',
+      'evaos.nativeCompanion.onboarding.enrollmentFailedDetail': 'Localized enrollment failed safely.',
+      'evaos.nativeCompanion.onboarding.enrollmentSessionDetail': 'Localized Workbench session refresh required.',
       'evaos.nativeCompanion.onboarding.wrongControlPlaneTitle': 'Reconnect secure network',
       'evaos.nativeCompanion.onboarding.wrongControlPlaneDetail': 'The Mac is on the wrong private network.',
       'evaos.nativeCompanion.onboarding.aclBlockedTitle': 'Secure network access is blocked',
@@ -57,6 +62,21 @@ const i18nMocks = vi.hoisted(() => ({
       'evaos.nativeCompanion.onboarding.offlineDetail': 'Reconnect, then verify again.',
       'evaos.nativeCompanion.onboarding.errorTitle': 'Check secure network',
       'evaos.nativeCompanion.onboarding.errorDetail': 'Use Report to support; do not enter terminal commands.',
+      'evaos.nativeCompanion.onboarding.refreshSessionLabel': 'Refresh Workbench Session',
+      'evaos.nativeCompanion.onboarding.refreshSessionTitle': 'Refresh Workbench session',
+      'evaos.nativeCompanion.onboarding.refreshSessionDetail': 'Refresh the Workbench session.',
+      'evaos.nativeCompanion.onboarding.checkingSessionLabel': 'Checking session',
+      'evaos.nativeCompanion.onboarding.checkingSessionTitle': 'Checking Workbench session',
+      'evaos.nativeCompanion.onboarding.checkingSessionDetail': 'Workbench is checking the session.',
+      'evaos.nativeCompanion.onboarding.signInLabel': 'Sign In To Workbench',
+      'evaos.nativeCompanion.onboarding.signInTitle': 'Sign in to Workbench',
+      'evaos.nativeCompanion.onboarding.signInDetail': 'Sign in to Workbench.',
+      'evaos.nativeCompanion.onboarding.selectCustomerLabel': 'Select customer',
+      'evaos.nativeCompanion.onboarding.selectCustomerTitle': 'Choose a customer',
+      'evaos.nativeCompanion.onboarding.selectCustomerDetail': 'Select a customer.',
+      'evaos.nativeCompanion.onboarding.chooseMacTargetLabel': 'Choose Mac target',
+      'evaos.nativeCompanion.onboarding.chooseMacTargetTitle': 'Choose a Mac-control customer',
+      'evaos.nativeCompanion.onboarding.chooseMacTargetDetail': 'Choose a VM-backed target.',
     };
     return translations[key] ?? key;
   }),
@@ -164,6 +184,56 @@ function renderNativeCompanion() {
       <NativeCompanionPage />
     </ConfigProvider>
   );
+}
+
+function mockUnenrolledMacStatus(): void {
+  bridgeMocks.getStatus.mockResolvedValue({
+    success: true,
+    data: {
+      schemaVersion: 'evaos.native_companion_status.v1',
+      generatedAt: '2026-07-12T12:00:00.000Z',
+      readiness: 'repair_required',
+      pairingCapable: false,
+      pairingBlockedReason: 'secure_network_link_required',
+      prerequisites: {
+        bridgeRuntime: 'ready',
+        privateNetwork: 'unenrolled',
+        actionEngine: 'cua_ready',
+      },
+      summaryText: 'Secure network enrollment is required.',
+      sourcePointer: 'native-companion:typed-prerequisites',
+      canOpenReleasedWorkbench: true,
+      releasedWorkbench: { installed: true },
+      bridgeCli: {
+        installed: true,
+        status: 'ready',
+        readOnly: true,
+        permissions: { accessibility: 'granted', screenRecording: 'granted' },
+      },
+      connectorService: { status: 'repair_required', running: true, reachable: false },
+      customerMac: {
+        status: 'repair_required',
+        permissions: { accessibility: 'granted', screenRecording: 'granted' },
+      },
+      iPhone: { status: 'available' },
+      audit: { status: 'ready', auditIds: [] },
+    },
+  });
+}
+
+function mockSecureNetworkSessionRequired(): void {
+  bridgeMocks.runAction.mockResolvedValue({
+    success: true,
+    data: {
+      action: 'secure_network_enroll',
+      status: 'repair_required',
+      message: 'Session refresh required.',
+      sourcePointer: 'native-companion:secure-network-enrollment-broker-session-required',
+      auditIds: [],
+      refreshRecommended: false,
+      blockerReason: 'broker_session_expired',
+    },
+  });
 }
 
 describe('NativeCompanionPage', () => {
@@ -625,6 +695,138 @@ describe('NativeCompanionPage', () => {
       expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'secure_network_install' })
     );
     expect(bridgeMocks.runAction).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'connector_start' }));
+  });
+
+  it('routes an unenrolled Mac through the authenticated broker action for the selected customer', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-12T12:00:00.000Z',
+        readiness: 'repair_required',
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+        summaryText: 'Secure network enrollment is required.',
+        sourcePointer: 'native-companion:typed-prerequisites',
+        canOpenReleasedWorkbench: true,
+        releasedWorkbench: { installed: true },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'repair_required', running: true, reachable: false },
+        customerMac: {
+          status: 'repair_required',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'available' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+    bridgeMocks.runAction.mockResolvedValue({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Private-network enrollment was submitted.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        auditIds: [],
+        refreshRecommended: true,
+        blockerReason: 'secure_network_link_required',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    await waitFor(() =>
+      expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+        action: 'secure_network_enroll',
+        customerId: 'benjamin-kennedy',
+        agentLabel: 'evaOS Workbench',
+      })
+    );
+    expect((await screen.findAllByText('Localized enrollment is waiting for broker verification.')).length).toBe(2);
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
+    expect(bridgeMocks.openRepairAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'native-companion:secure-network-enrollment-broker-session-required',
+      'Localized Workbench session refresh required.',
+    ],
+    ['native-companion:secure-network-enrollment-client-failed', 'Localized enrollment failed safely.'],
+  ])('localizes secure-network action result %s', async (sourcePointer, localizedMessage) => {
+    mockUnenrolledMacStatus();
+    bridgeMocks.runAction.mockResolvedValue({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Raw process message must not be rendered.',
+        sourcePointer,
+        auditIds: [],
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    expect((await screen.findAllByText(localizedMessage)).length).toBe(2);
+    expect(screen.queryByText('Raw process message must not be rendered.')).not.toBeInTheDocument();
+  });
+
+  it('clears secure-network session recovery after the broker session refreshes', async () => {
+    mockUnenrolledMacStatus();
+    mockSecureNetworkSessionRequired();
+    const user = userEvent.setup();
+    const view = renderNativeCompanion();
+
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+    expect(await screen.findByRole('button', { name: 'Refresh Workbench Session' })).toBeInTheDocument();
+
+    customerContextMock.brokerSession = {
+      ...customerContextMock.brokerSession!,
+      sessionKey: 'evaos-session-2',
+      source: 'callback',
+    };
+    view.rerender(
+      <ConfigProvider>
+        <NativeCompanionPage />
+      </ConfigProvider>
+    );
+
+    expect(await screen.findByRole('button', { name: 'Connect this Mac' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh Workbench Session' })).not.toBeInTheDocument();
+  });
+
+  it('clears secure-network session recovery when a desktop session is imported', async () => {
+    mockUnenrolledMacStatus();
+    mockSecureNetworkSessionRequired();
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+    expect(await screen.findByRole('button', { name: 'Refresh Workbench Session' })).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new Event(EVAOS_DESKTOP_SESSION_IMPORTED_EVENT));
+    });
+
+    expect(await screen.findByRole('button', { name: 'Connect this Mac' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh Workbench Session' })).not.toBeInTheDocument();
   });
 
   it('opens evaOS support email with Mac control state context', async () => {

@@ -132,6 +132,9 @@ const NativeCompanionPage: React.FC = () => {
       actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId, actionResultCustomerId, status),
     [actionResult, actionResultCustomerId, selectedPairingCustomerId, status]
   );
+  const currentActionResultMessage = currentActionResult
+    ? localizedNativeCompanionActionResultMessage(currentActionResult, t)
+    : undefined;
   const selectedPairingStatus = React.useMemo(
     () => statusForSelectedPairingCustomer(status, selectedPairingCustomerId),
     [selectedPairingCustomerId, status]
@@ -165,6 +168,21 @@ const NativeCompanionPage: React.FC = () => {
       offlineDetail: t('evaos.nativeCompanion.onboarding.offlineDetail'),
       errorTitle: t('evaos.nativeCompanion.onboarding.errorTitle'),
       errorDetail: t('evaos.nativeCompanion.onboarding.errorDetail'),
+      refreshSessionLabel: t('evaos.nativeCompanion.onboarding.refreshSessionLabel'),
+      refreshSessionTitle: t('evaos.nativeCompanion.onboarding.refreshSessionTitle'),
+      refreshSessionDetail: t('evaos.nativeCompanion.onboarding.refreshSessionDetail'),
+      checkingSessionLabel: t('evaos.nativeCompanion.onboarding.checkingSessionLabel'),
+      checkingSessionTitle: t('evaos.nativeCompanion.onboarding.checkingSessionTitle'),
+      checkingSessionDetail: t('evaos.nativeCompanion.onboarding.checkingSessionDetail'),
+      signInLabel: t('evaos.nativeCompanion.onboarding.signInLabel'),
+      signInTitle: t('evaos.nativeCompanion.onboarding.signInTitle'),
+      signInDetail: t('evaos.nativeCompanion.onboarding.signInDetail'),
+      selectCustomerLabel: t('evaos.nativeCompanion.onboarding.selectCustomerLabel'),
+      selectCustomerTitle: t('evaos.nativeCompanion.onboarding.selectCustomerTitle'),
+      selectCustomerDetail: t('evaos.nativeCompanion.onboarding.selectCustomerDetail'),
+      chooseMacTargetLabel: t('evaos.nativeCompanion.onboarding.chooseMacTargetLabel'),
+      chooseMacTargetTitle: t('evaos.nativeCompanion.onboarding.chooseMacTargetTitle'),
+      chooseMacTargetDetail: t('evaos.nativeCompanion.onboarding.chooseMacTargetDetail'),
     }),
     [t]
   );
@@ -172,9 +190,8 @@ const NativeCompanionPage: React.FC = () => {
     status: selectedPairingStatus,
     loading,
     error,
-    hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
-    hasPairableCustomer:
-      selectedCustomerId || selectedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
+    hasSelectedCustomer: Boolean(selectedCustomerId || lockedPairingCustomerId),
+    hasPairableCustomer: selectedCustomerId || lockedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult: currentActionResult,
@@ -196,9 +213,8 @@ const NativeCompanionPage: React.FC = () => {
     status: selectedPairingStatus,
     loading,
     error,
-    hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
-    hasPairableCustomer:
-      selectedCustomerId || selectedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
+    hasSelectedCustomer: Boolean(selectedCustomerId || lockedPairingCustomerId),
+    hasPairableCustomer: selectedCustomerId || lockedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult: currentActionResult,
@@ -229,6 +245,7 @@ const NativeCompanionPage: React.FC = () => {
       setTakeoverCueWarning(null);
       const targetsMacControlCustomer =
         request.action === 'create_pairing_prompt' ||
+        request.action === 'secure_network_enroll' ||
         request.action === 'ensure_customer_mac_connector_grant' ||
         request.action === 'setup_check';
       const requestCustomerId =
@@ -260,7 +277,15 @@ const NativeCompanionPage: React.FC = () => {
         }
         setActionResult(result);
         setActionResultCustomerId(targetsMacControlCustomer ? requestCustomerId : undefined);
-        setHandoffMessage(result.message);
+        setHandoffMessage(
+          result.sourcePointer === 'native-companion:secure-network-enrollment-submitted'
+            ? t('evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail')
+            : result.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
+              ? t('evaos.nativeCompanion.onboarding.enrollmentSessionDetail')
+              : result.sourcePointer.startsWith('native-companion:secure-network-enrollment-')
+                ? t('evaos.nativeCompanion.onboarding.enrollmentFailedDetail')
+                : result.message
+        );
         if (result.refreshRecommended) {
           await refresh();
         }
@@ -269,7 +294,7 @@ const NativeCompanionPage: React.FC = () => {
         setActionInFlight(null);
       }
     },
-    [refresh, runAction, selectedCustomerId, selectedPairingCustomerId]
+    [refresh, runAction, selectedCustomerId, selectedPairingCustomerId, t]
   );
 
   const handleCopyPairingPrompt = React.useCallback(async () => {
@@ -652,7 +677,7 @@ const NativeCompanionPage: React.FC = () => {
               <div data-testid='native-companion-action-result' className='mt-12px rounded-8px bg-fill-1 p-12px'>
                 <div className='flex flex-wrap items-center gap-8px'>
                   <Tag color={tagColorForActionStatus(currentActionResult.status)}>{currentActionResult.status}</Tag>
-                  <span className='text-12px leading-18px text-t-secondary'>{currentActionResult.message}</span>
+                  <span className='text-12px leading-18px text-t-secondary'>{currentActionResultMessage}</span>
                 </div>
                 {currentActionResult.setup ? (
                   <div className='mt-8px grid grid-cols-1 gap-6px text-12px leading-18px text-t-secondary md:grid-cols-4'>
@@ -1143,7 +1168,8 @@ function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): b
 function isPairingBrokerSessionRequired(actionResult: IEvaosNativeCompanionActionResult | null): boolean {
   return (
     actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
-    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required'
+    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
   );
 }
 
@@ -1171,6 +1197,22 @@ function selectMacPairingTarget(input: {
     (input.isOperator ? pairableTargets.find((target) => target.customerId === 'golden') : undefined) ??
     pairableTargets[0]
   );
+}
+
+function localizedNativeCompanionActionResultMessage(
+  actionResult: IEvaosNativeCompanionActionResult,
+  translate: (key: string) => string
+): string {
+  if (actionResult.sourcePointer === 'native-companion:secure-network-enrollment-submitted') {
+    return translate('evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail');
+  }
+  if (actionResult.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required') {
+    return translate('evaos.nativeCompanion.onboarding.enrollmentSessionDetail');
+  }
+  if (actionResult.sourcePointer.startsWith('native-companion:secure-network-enrollment-')) {
+    return translate('evaos.nativeCompanion.onboarding.enrollmentFailedDetail');
+  }
+  return actionResult.message;
 }
 
 function MacPairingTargetControl({

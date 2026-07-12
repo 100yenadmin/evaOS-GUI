@@ -130,6 +130,9 @@
       "clientStoppedDetail": "インストール済みのセキュアネットワークアプリを開き、macOS の VPN 確認が表示されたら許可して、もう一度確認してください。",
       "unenrolledTitle": "この Mac を接続",
       "unenrolledDetail": "この Mac を安全に接続するには、選択した顧客向けの承認済み登録が必要です。",
+      "enrollmentSubmittedDetail": "登録を送信しました。準備完了と表示する前に、Workbench はブローカーノードとアクセスポリシーの検証を待っています。",
+      "enrollmentFailedDetail": "Workbench は登録を完了または安全に取り消せませんでした。Tailscale を開き直し、必要なら短時間の登録が期限切れになるまで待ってから再試行するか、レポートを使用してください。",
+      "enrollmentSessionDetail": "evaOS Workbench セッションを更新してから、この Mac の承認済み登録を再試行してください。",
       "wrongControlPlaneTitle": "セキュアネットワークを再接続",
       "wrongControlPlaneDetail": "この Mac は誤ったプライベートネットワークに接続されています。正しく再接続するには承認済み登録が必要です。",
       "aclBlockedTitle": "セキュアネットワークへのアクセスがブロックされています",
@@ -137,7 +140,22 @@
       "offlineTitle": "セキュアネットワークを再接続",
       "offlineDetail": "セキュアネットワーククライアントを再接続し、Workbench でもう一度確認してください。",
       "errorTitle": "セキュアネットワークを確認",
-      "errorDetail": "Workbench はセキュアネットワークを確認できませんでした。サポートへ報告し、ターミナルコマンドや接続情報は入力しないでください。"
+      "errorDetail": "Workbench はセキュアネットワークを確認できませんでした。サポートへ報告し、ターミナルコマンドや接続情報は入力しないでください。",
+      "refreshSessionLabel": "Workbench セッションを更新",
+      "refreshSessionTitle": "Workbench セッションを更新",
+      "refreshSessionDetail": "evaOS ブローカーセッションを更新して、選択した顧客の Mac コントロールに Workbench を接続します。",
+      "checkingSessionLabel": "セッションを確認中",
+      "checkingSessionTitle": "Workbench セッションを確認中",
+      "checkingSessionDetail": "Mac コントロールへ接続する前に、Workbench が evaOS ブローカーセッションを確認しています。",
+      "signInLabel": "Workbench にサインイン",
+      "signInTitle": "Workbench にサインイン",
+      "signInDetail": "evaOS にサインインして、選択した顧客の Mac コントロールに Workbench を接続します。",
+      "selectCustomerLabel": "顧客を選択",
+      "selectCustomerTitle": "顧客を選択",
+      "selectCustomerDetail": "ファーストパーティの Mac コントロールを有効にする前に、この Mac の接続先となる顧客を選択してください。",
+      "chooseMacTargetLabel": "Mac 対象を選択",
+      "chooseMacTargetTitle": "Mac コントロール顧客を選択",
+      "chooseMacTargetDetail": "選択したアカウントは VM ベースの Mac コントロール対象ではありません。接続前に顧客対象を選択してください。"
     }
   },
   "companyBrain": {

@@ -130,6 +130,9 @@
       "clientStoppedDetail": "Откройте установленное приложение защищённой сети, подтвердите запрос VPN macOS, если он появится, и проверьте снова.",
       "unenrolledTitle": "Подключить этот Mac",
       "unenrolledDetail": "Для безопасного подключения этого Mac Workbench требуется одобренная регистрация выбранного клиента.",
+      "enrollmentSubmittedDetail": "Регистрация отправлена. Workbench ожидает проверку узла брокера и политики доступа, прежде чем показать готовность.",
+      "enrollmentFailedDetail": "Workbench не удалось завершить или безопасно отменить регистрацию. Снова откройте Tailscale, при необходимости дождитесь истечения короткой регистрации, затем повторите попытку или используйте отчёт.",
+      "enrollmentSessionDetail": "Обновите сеанс evaOS Workbench, затем повторите одобренную регистрацию этого Mac.",
       "wrongControlPlaneTitle": "Переподключить защищённую сеть",
       "wrongControlPlaneDetail": "Этот Mac находится в неверной частной сети. Для правильного переподключения Workbench требуется одобренная регистрация.",
       "aclBlockedTitle": "Доступ к защищённой сети заблокирован",
@@ -137,7 +140,22 @@
       "offlineTitle": "Переподключить защищённую сеть",
       "offlineDetail": "Переподключите клиент защищённой сети и попросите Workbench проверить его снова.",
       "errorTitle": "Проверить защищённую сеть",
-      "errorDetail": "Workbench не удалось проверить защищённую сеть. Сообщите в поддержку; не вводите команды Терминала или данные подключения."
+      "errorDetail": "Workbench не удалось проверить защищённую сеть. Сообщите в поддержку; не вводите команды Терминала или данные подключения.",
+      "refreshSessionLabel": "Обновить сеанс Workbench",
+      "refreshSessionTitle": "Обновите сеанс Workbench",
+      "refreshSessionDetail": "Обновите сеанс брокера evaOS, чтобы Workbench мог подключить управление Mac для выбранного клиента.",
+      "checkingSessionLabel": "Проверка сеанса",
+      "checkingSessionTitle": "Проверка сеанса Workbench",
+      "checkingSessionDetail": "Workbench проверяет сеанс брокера evaOS перед подключением управления Mac.",
+      "signInLabel": "Войти в Workbench",
+      "signInTitle": "Войдите в Workbench",
+      "signInDetail": "Войдите в evaOS, чтобы Workbench мог подключить управление Mac для выбранного клиента.",
+      "selectCustomerLabel": "Выбрать клиента",
+      "selectCustomerTitle": "Выберите клиента",
+      "selectCustomerDetail": "Перед включением управления Mac выберите клиента, к которому должен подключаться этот Mac.",
+      "chooseMacTargetLabel": "Выбрать цель Mac",
+      "chooseMacTargetTitle": "Выберите клиента управления Mac",
+      "chooseMacTargetDetail": "Выбранная учётная запись не является целью управления Mac на базе VM. Перед подключением выберите клиента."
     }
   },
   "companyBrain": {

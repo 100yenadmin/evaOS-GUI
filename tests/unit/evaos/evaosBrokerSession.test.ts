@@ -39,6 +39,7 @@ import {
 
 const NOW = new Date('2026-06-03T12:00:00.000Z');
 const FUTURE = '2026-06-03T16:00:00.000Z';
+const NETWORK_FUTURE = '2026-06-03T12:15:00.000Z';
 const PAST = '2026-06-03T08:00:00.000Z';
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -628,6 +629,48 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
   });
 
+  it('preserves the requested customer binding when the pairing broker omits customer_id', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        enrollment_code: 'PAIR-1234',
+        enrollment_expires_at: FUTURE,
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(client.createCustomerMacEnrollment({ customerId: 'golden' })).resolves.toMatchObject({
+      customerId: 'golden',
+      pairingCode: 'PAIR-1234',
+    });
+  });
+
+  it('rejects a pairing enrollment bound to a different customer', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        customer_id: 'different-customer',
+        enrollment_code: 'PAIR-1234',
+        enrollment_expires_at: FUTURE,
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(client.createCustomerMacEnrollment({ customerId: 'golden' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+    });
+  });
+
   it('clears stale desktop session state when Mac pairing enrollment auth is rejected', async () => {
     const fetchImpl = fetchMock();
     fetchImpl.mockResolvedValueOnce(jsonResponse({ error: 'desktop_session_expired' }, { status: 401 }));
@@ -663,6 +706,245 @@ describe('EvaosBrokerSessionClient', () => {
       expired: false,
       source: 'none',
     });
+  });
+
+  it('returns one-use private-network material only to the authenticated main-process caller', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          ok: true,
+          customer_id: 'jackie-david',
+          device_id: 'device-david',
+          device_identifier: 'david-mac-hardware-id',
+          client_variant: 'tailscale_standalone',
+          network_enrollment: {
+            enrollment_id: 'network-enrollment-1',
+            login_server: 'https://headscale.example',
+            auth_key: 'one-use-network-key-for-test',
+            expires_at: NETWORK_FUTURE,
+            reusable: false,
+            ephemeral: false,
+          },
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      )
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}&email=admin%40100yen.org`
+    );
+
+    const result = await client.createPrivateNetworkEnrollment({
+      customerId: 'jackie-david',
+      deviceName: 'David Mac',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_standalone',
+    });
+
+    expect(result).toEqual({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_standalone',
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey: 'one-use-network-key-for-test',
+      expiresAt: NETWORK_FUTURE,
+    });
+    expect(requestHeaders(fetchImpl.mock.calls[0]).Authorization).toBe('Bearer eds_callback_session_secret_for_test');
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'create_private_network_enrollment',
+      customer_id: 'jackie-david',
+      device_name: 'David Mac',
+      device_identifier: 'david-mac-hardware-id',
+      client_variant: 'tailscale_standalone',
+    });
+  });
+
+  it('rejects private-network material unless the broker proves one-use no-store semantics', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'jackie-david',
+        device_id: 'device-david',
+        device_identifier: 'david-mac-hardware-id',
+        client_variant: 'tailscale_standalone',
+        network_enrollment: {
+          enrollment_id: 'network-enrollment-1',
+          login_server: 'https://headscale.example',
+          auth_key: 'unsafe-reusable-key-for-test',
+          expires_at: NETWORK_FUTURE,
+          reusable: true,
+          ephemeral: false,
+        },
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(
+      client.createPrivateNetworkEnrollment({
+        customerId: 'jackie-david',
+        deviceIdentifier: 'david-mac-hardware-id',
+        clientVariant: 'tailscale_standalone',
+      })
+    ).rejects.toMatchObject({ code: 'broker_invalid_response' });
+  });
+
+  it.each([
+    [
+      'missing customer binding',
+      (payload: Record<string, unknown>) => {
+        delete payload.customer_id;
+      },
+    ],
+    [
+      'mismatched device binding',
+      (payload: Record<string, unknown>) => {
+        payload.device_identifier = 'different-mac-hardware-id';
+      },
+    ],
+    [
+      'mismatched client binding',
+      (payload: Record<string, unknown>) => {
+        payload.client_variant = 'tailscale_app_store';
+      },
+    ],
+  ])('rejects private-network material with %s', async (_label, mutatePayload) => {
+    const payload: Record<string, unknown> = {
+      ok: true,
+      customer_id: 'jackie-david',
+      device_id: 'device-david',
+      device_identifier: 'david-mac-hardware-id',
+      client_variant: 'tailscale_standalone',
+      network_enrollment: {
+        enrollment_id: 'network-enrollment-1',
+        login_server: 'https://headscale.example',
+        auth_key: 'one-use-network-key-for-test',
+        expires_at: NETWORK_FUTURE,
+        reusable: false,
+        ephemeral: false,
+      },
+    };
+    mutatePayload(payload);
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(jsonResponse(payload, { headers: { 'Cache-Control': 'no-store' } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          customer_id: 'jackie-david',
+          enrollment_id: 'network-enrollment-1',
+          state: 'cancelled',
+        })
+      );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(
+      client.createPrivateNetworkEnrollment({
+        customerId: 'jackie-david',
+        deviceIdentifier: 'david-mac-hardware-id',
+        clientVariant: 'tailscale_standalone',
+      })
+    ).rejects.toMatchObject({ code: 'broker_invalid_response' });
+  });
+
+  it('cancels otherwise valid material when the broker omits no-store', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          customer_id: 'jackie-david',
+          device_id: 'device-david',
+          device_identifier: 'david-mac-hardware-id',
+          client_variant: 'tailscale_standalone',
+          network_enrollment: {
+            enrollment_id: 'network-enrollment-1',
+            login_server: 'https://headscale.example',
+            auth_key: 'uncached-contract-key-for-test',
+            expires_at: NETWORK_FUTURE,
+            reusable: false,
+            ephemeral: false,
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          customer_id: 'jackie-david',
+          enrollment_id: 'network-enrollment-1',
+          state: 'cancelled',
+        })
+      );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(
+      client.createPrivateNetworkEnrollment({
+        customerId: 'jackie-david',
+        deviceIdentifier: 'david-mac-hardware-id',
+        clientVariant: 'tailscale_standalone',
+      })
+    ).rejects.toMatchObject({ code: 'broker_invalid_response' });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(requestBody(fetchImpl.mock.calls[1])).toEqual({
+      action: 'cancel_private_network_enrollment',
+      customer_id: 'jackie-david',
+      enrollment_id: 'network-enrollment-1',
+      auth_key: 'uncached-contract-key-for-test',
+    });
+  });
+
+  it('cancels the exact private-network enrollment without returning the one-use key', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'jackie-david',
+        enrollment_id: 'network-enrollment-1',
+        state: 'cancelled',
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    const result = await client.cancelPrivateNetworkEnrollment({
+      customerId: 'jackie-david',
+      enrollmentId: 'network-enrollment-1',
+      authKey: 'one-use-network-key-for-test',
+    });
+
+    expect(result).toEqual({ cancelled: true, enrollmentId: 'network-enrollment-1' });
+    expect(requestBody(fetchImpl.mock.calls[0])).toEqual({
+      action: 'cancel_private_network_enrollment',
+      customer_id: 'jackie-david',
+      enrollment_id: 'network-enrollment-1',
+      auth_key: 'one-use-network-key-for-test',
+    });
+    expect(JSON.stringify(result)).not.toContain('one-use-network-key-for-test');
   });
 
   it('completes Mac pairing enrollment through the broker without returning connector secrets', async () => {

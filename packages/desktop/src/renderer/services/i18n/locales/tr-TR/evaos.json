@@ -130,6 +130,9 @@
       "clientStoppedDetail": "Yüklü güvenli ağ uygulamasını açın, görünürse macOS VPN istemine izin verin ve tekrar kontrol edin.",
       "unenrolledTitle": "Bu Mac’i bağla",
       "unenrolledDetail": "Workbench’in bu Mac’i güvenle bağlayabilmesi için seçilen müşteriden onaylı kayıt gerekir.",
+      "enrollmentSubmittedDetail": "Kayıt gönderildi. Workbench, hazır göstermeden önce aracı düğüm ve erişim ilkesi doğrulamasını bekliyor.",
+      "enrollmentFailedDetail": "Workbench kaydı tamamlayamadı veya güvenle iptal edemedi. Tailscale’i yeniden açın; gerekirse kısa süreli kaydın dolmasını bekleyip tekrar deneyin ya da Rapor’u kullanın.",
+      "enrollmentSessionDetail": "evaOS Workbench oturumunuzu yenileyin, ardından bu Mac için onaylı kaydı yeniden deneyin.",
       "wrongControlPlaneTitle": "Güvenli ağı yeniden bağla",
       "wrongControlPlaneDetail": "Bu Mac yanlış özel ağa bağlı. Doğru şekilde yeniden bağlanmak için Workbench’in onaylı kayda ihtiyacı var.",
       "aclBlockedTitle": "Güvenli ağ erişimi engellendi",
@@ -137,7 +140,22 @@
       "offlineTitle": "Güvenli ağı yeniden bağla",
       "offlineDetail": "Güvenli ağ istemcisini yeniden bağlayın ve Workbench’ten tekrar doğrulamasını isteyin.",
       "errorTitle": "Güvenli ağı kontrol et",
-      "errorDetail": "Workbench güvenli ağı doğrulayamadı. Desteğe bildirin; Terminal komutları veya bağlantı ayrıntıları girmeyin."
+      "errorDetail": "Workbench güvenli ağı doğrulayamadı. Desteğe bildirin; Terminal komutları veya bağlantı ayrıntıları girmeyin.",
+      "refreshSessionLabel": "Workbench Oturumunu Yenile",
+      "refreshSessionTitle": "Workbench oturumunu yenileyin",
+      "refreshSessionDetail": "Workbench'in seçili müşteri için Mac kontrolünü bağlayabilmesi amacıyla evaOS aracı oturumunu yenileyin.",
+      "checkingSessionLabel": "Oturum kontrol ediliyor",
+      "checkingSessionTitle": "Workbench oturumu kontrol ediliyor",
+      "checkingSessionDetail": "Workbench, Mac kontrolünü bağlamadan önce evaOS aracı oturumunu kontrol ediyor.",
+      "signInLabel": "Workbench'te Oturum Aç",
+      "signInTitle": "Workbench'te oturum açın",
+      "signInDetail": "Workbench'in seçili müşteri için Mac kontrolünü bağlayabilmesi amacıyla evaOS'ta oturum açın.",
+      "selectCustomerLabel": "Müşteri seç",
+      "selectCustomerTitle": "Bir müşteri seçin",
+      "selectCustomerDetail": "Birinci taraf Mac kontrolünü etkinleştirmeden önce bu Mac'in bağlanacağı müşteriyi seçin.",
+      "chooseMacTargetLabel": "Mac hedefi seç",
+      "chooseMacTargetTitle": "Bir Mac kontrol müşterisi seçin",
+      "chooseMacTargetDetail": "Seçili hesap VM destekli bir Mac kontrol hedefi değil. Bağlanmadan önce bir müşteri hedefi seçin."
     }
   },
   "companyBrain": {
