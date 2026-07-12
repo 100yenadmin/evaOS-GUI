@@ -206,16 +206,7 @@ export async function getEvaosNativeCompanionStatus(
     };
   }
 
-  const [
-    bridge,
-    connectorService,
-    customerMac,
-    iPhone,
-    controlSession,
-    audit,
-    bridgeReadyStatus,
-    customerMacCapabilities,
-  ] = await Promise.all([
+  const [bridge, connectorService, customerMac, iPhone, controlSession, audit, bridgeReadyStatus] = await Promise.all([
     runBridgeCommand(bridgePath, ['status', '--json'], deps),
     runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
@@ -223,7 +214,6 @@ export async function getEvaosNativeCompanionStatus(
     runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '5'], deps),
     runBridgeCommand(bridgePath, ['ready', '--json'], deps),
-    runBridgeCommand(bridgePath, ['customer-mac', 'capabilities', '--json'], deps),
   ]);
 
   const bridgePermissions = permissionView(bridge.data?.permissions);
@@ -245,10 +235,25 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
-  const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
+  const prerequisites = classifyNativeCompanionPrerequisites({
+    bridgeRuntime: {
+      installed: true,
+      commandSucceeded: bridge.ok,
+      compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge),
+    },
+    privateNetwork: privateNetworkEvidence(connectorServiceData),
+    actionEngine: actionEngineEvidence(customerMac.data),
+  });
+  const privateNetworkExplicitlyBlocked = !['online', 'error'].includes(prerequisites.privateNetwork);
+  const readiness =
+    bridgeReady && connectorServiceReady && customerMacReady && !privateNetworkExplicitlyBlocked
+      ? 'ready'
+      : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
-    isPairingCapableBridgePath(bridgePath, deps.env) && connectorServiceHasSecureRegistrationHost(connectorServiceData);
+    !privateNetworkExplicitlyBlocked &&
+    isPairingCapableBridgePath(bridgePath, deps.env) &&
+    connectorServiceHasSecureRegistrationHost(connectorServiceData);
   const reportedAgentPairingStatus = pairingCapable
     ? agentPairingStatusFromStatus(readiness, controlSession)
     : 'not_ready';
@@ -294,7 +299,9 @@ export async function getEvaosNativeCompanionStatus(
       : reportedRuntimeToolReadiness;
   const pairingBlockedReason = pairingCapable
     ? undefined
-    : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
+    : privateNetworkExplicitlyBlocked
+      ? 'secure_network_link_required'
+      : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
   const blockerReason = blockerReasonForStatus({
     bridge,
     connectorService,
@@ -312,16 +319,6 @@ export async function getEvaosNativeCompanionStatus(
     pairingBlockedReason,
     agentPairingStatus,
   });
-  const prerequisites = classifyNativeCompanionPrerequisites({
-    bridgeRuntime: {
-      installed: true,
-      commandSucceeded: bridge.ok,
-      compatible: isCompatibleBundledBridgeRuntime(bridgePath, bridge),
-    },
-    privateNetwork: privateNetworkEvidence(connectorServiceData),
-    actionEngine: actionEngineEvidence(customerMacCapabilities.data, customerMac.data),
-  });
-
   return {
     schemaVersion: 'evaos.native_companion_status.v1',
     generatedAt,
@@ -1864,41 +1861,31 @@ function privateNetworkEvidence(input: unknown): NativeCompanionPrerequisiteEvid
   };
 }
 
-function actionEngineEvidence(
-  capabilitiesData: unknown,
-  customerMacData: unknown
-): NativeCompanionPrerequisiteEvidence['actionEngine'] {
-  const engines =
-    readRecord(capabilitiesData, 'engines') ??
-    readRecord(capabilitiesData, 'control_engines') ??
-    readRecord(customerMacData, 'control_engines') ??
-    readRecord(customerMacData, 'engines');
+function actionEngineEvidence(customerMacData: unknown): NativeCompanionPrerequisiteEvidence['actionEngine'] {
+  const engines = readRecord(customerMacData, 'control_engines') ?? readRecord(customerMacData, 'engines');
   if (!engines) return undefined;
 
   const cua = readRecord(engines, 'cua_driver');
   const peekaboo = readRecord(engines, 'peekaboo');
   const activePrimary = readString(engines, 'active_primary');
   const nativeFallbacks = new Set(['post_to_pid_helper', 'accessibility', 'system_events']);
-  const fallbacks = readStringArray(engines, 'fallbacks');
   return {
     cuaAvailable: readBoolean(cua, 'available'),
     cuaActiveForActions:
       readBooleanAlias(cua, 'active_for_actions', 'activeForActions') ??
       (activePrimary === 'cua_driver' ? true : undefined),
     peekabooAvailable: readBoolean(peekaboo, 'available'),
-    nativeFallbackAvailable:
-      (activePrimary ? nativeFallbacks.has(activePrimary) : false) ||
-      fallbacks.some((item) => nativeFallbacks.has(item)),
+    nativeFallbackAvailable: activePrimary ? nativeFallbacks.has(activePrimary) : false,
   };
 }
 
-function isCompatibleBundledBridgeRuntime(bridgePath: string, bridge: BridgeCommandResult): boolean {
+function bundledBridgeRuntimeCompatibility(bridgePath: string, bridge: BridgeCommandResult): boolean | undefined {
   if (!isPairingCapableBridgePath(bridgePath)) return false;
-  const explicitCompatibility =
+  return (
     readBoolean(bridge.data, 'compatible') ??
     readBooleanAlias(bridge.data, 'version_compatible', 'versionCompatible') ??
-    readBooleanAlias(bridge.data, 'workbench_compatible', 'workbenchCompatible');
-  return explicitCompatibility !== false;
+    readBooleanAlias(bridge.data, 'workbench_compatible', 'workbenchCompatible')
+  );
 }
 
 function privateNetworkAvailable(input: unknown): boolean | undefined {
@@ -2940,13 +2927,6 @@ function readRecord(input: unknown, key: string): Record<string, unknown> | unde
   if (!input || typeof input !== 'object') return undefined;
   const value = (input as Record<string, unknown>)[key];
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-}
-
-function readStringArray(input: unknown, key: string): string[] {
-  if (!input || typeof input !== 'object') return [];
-  const value = (input as Record<string, unknown>)[key];
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
 function readNestedBoolean(input: unknown, path: string[]): boolean | undefined {

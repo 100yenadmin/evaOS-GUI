@@ -133,12 +133,64 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('demotes legacy-ready pairing when explicit private-network evidence is offline', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        data: {
+          compatible: true,
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+        tailnet_ip: '100.64.0.10',
+        private_network: {
+          client_installed: true,
+          client_running: true,
+          enrolled: true,
+          correct_control_plane: true,
+          acl_allowed: true,
+          online: false,
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        data: {
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          control_engines: { peekaboo: { available: true }, active_primary: 'peekaboo' },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+      'customer-mac control status --json': { ok: true, data: { active: false, kill_switch: false } },
+      'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+      'ready --json': { ok: true, data: { ready: true } },
+    });
+
+    const status = await getEvaosNativeCompanionStatus(deps);
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      pairingCapable: false,
+      pairingBlockedReason: 'secure_network_link_required',
+      blockerReason: 'secure_network_link_required',
+      prerequisites: {
+        bridgeRuntime: 'ready',
+        privateNetwork: 'offline',
+        actionEngine: 'peekaboo_ready',
+      },
+    });
+  });
+
   it('summarizes read-only bridge status without renderer-visible secrets', async () => {
     const deps = depsWithResponses({
       'status --json': {
         ok: true,
         audit_id: 'audit-bridge',
         data: {
+          compatible: true,
           permissions: {
             accessibility: { status: 'granted', guidance: 'secret-looking token guidance should not be used' },
             screen_recording: { status: 'granted' },
@@ -171,6 +223,11 @@ describe('evaosNativeCompanionStatus', () => {
         ok: true,
         audit_id: 'audit-mac',
         data: {
+          control_engines: {
+            cua_driver: { available: true, active_for_actions: true },
+            peekaboo: { available: true },
+            active_primary: 'cua_driver',
+          },
           device: {
             hostname: 'EVAs-Mac-mini.local',
             id: 'mac-3bf1c1b451434bcf',
@@ -188,16 +245,6 @@ describe('evaosNativeCompanionStatus', () => {
             append_only_audit_log: true,
             kill_switch_available: true,
             hidden_shell_public_ports_and_token_exfiltration_blocked: true,
-          },
-        },
-      },
-      'customer-mac capabilities --json': {
-        ok: true,
-        data: {
-          engines: {
-            cua_driver: { available: true, active_for_actions: true },
-            peekaboo: { available: true },
-            active_primary: 'cua_driver',
           },
         },
       },
