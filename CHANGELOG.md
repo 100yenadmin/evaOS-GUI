@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Mac Control Runtime Proof
+
+- Keep local connector and macOS permission readiness visibly separate from
+  end-to-end Jane/OpenClaw and Hermes tool readiness.
+- Treat an active account-scoped connector grant as `test needed`; only an
+  explicit `tools_ready` runtime proof may label Mac control and the two agent
+  proof cards ready/proven.
+- Reject stale or contradictory runtime proof when the control-status command
+  failed, pairing is incomplete/failed, or the kill switch is engaged.
+- Bind ready/proven labels to the selected customer and the canonical current
+  Mac-control scope; pairing and runtime proof must both match that opaque
+  grant/device scope, or remain `test needed` instead of reusing stale proof.
+- Preserve the existing broker grant, stop/revoke, kill-switch, diagnostics,
+  TCC, and no-ACP boundaries while preventing local readiness from masking a
+  broken VM/WebChat tool path.
+
 ## evaOS Workbench 2.1.32 (2026-07-11)
 
 ### Upstream Runtime And Workbench UX Sync
