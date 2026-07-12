@@ -140,4 +140,60 @@ describe('useEvaosNativeCompanionStatus', () => {
     });
     await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:david'));
   });
+
+  it('drops non-enumerated authority diagnostics before exposing renderer status', async () => {
+    bridgeMocks.getStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-13T00:00:00.000Z',
+        readiness: 'repair_required',
+        summaryText: 'repair required',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true },
+        bridgeCli: { installed: true, status: 'ready', readOnly: true, permissions: {} },
+        connectorService: { status: 'repair_required', running: true, reachable: true },
+        customerMac: { status: 'ready', permissions: {} },
+        iPhone: { status: 'unavailable', installed: false, running: false },
+        audit: { status: 'ready', auditIds: [] },
+        privateNetworkAuthority: {
+          classification: 'observed',
+          reason: 'send_private_endpoint_to_renderer',
+          auditId: 'audit-safe',
+          endpoint: 'http://100.64.0.10:8765',
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(true, 'customer-313'));
+
+    await waitFor(() => expect(result.current.status).not.toBeNull());
+    expect(result.current.status?.privateNetworkAuthority).toBeUndefined();
+    expect(JSON.stringify(result.current.status)).not.toContain('100.64.0.10');
+  });
+
+  it('drops non-enumerated authority diagnostics from renderer diagnostic packets', async () => {
+    bridgeMocks.getStatus.mockResolvedValueOnce({ success: false, msg: 'not needed' });
+    bridgeMocks.getDiagnosticPacket.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
+        brokerGrant: {
+          auditIds: [],
+          privateNetworkAuthority: {
+            classification: 'observed',
+            reason: 'raw_policy_payload',
+            endpoint: 'http://100.64.0.10:8765',
+          },
+        },
+      },
+    });
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(false, 'customer-313'));
+
+    const packet = await result.current.getDiagnosticPacket({ customerId: 'customer-313' });
+
+    expect(packet?.brokerGrant.privateNetworkAuthority).toBeUndefined();
+    expect(JSON.stringify(packet)).not.toContain('100.64.0.10');
+  });
 });

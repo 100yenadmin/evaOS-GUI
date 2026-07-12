@@ -13,6 +13,8 @@ import type {
   IEvaosNativeCompanionRepairAction,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionStatusView,
+  IEvaosPrivateNetworkAuthorityDiagnostic,
+  IEvaosPrivateNetworkAuthorityDiagnosticReason,
   IEvaosWorkbenchDiagnosticPacketRequest,
   IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
@@ -31,6 +33,63 @@ interface EvaosNativeCompanionStatusState {
 }
 
 export const NATIVE_COMPANION_STATUS_POLL_MS = 5_000;
+
+const SAFE_AUTHORITY_DIAGNOSTIC_REASONS = new Set<IEvaosPrivateNetworkAuthorityDiagnosticReason>([
+  'ready',
+  'mac_node_missing',
+  'mac_node_offline',
+  'mac_node_expired',
+  'vm_node_missing',
+  'vm_node_offline',
+  'vm_node_expired',
+  'grant_binding_mismatch',
+  'policy_unavailable',
+  'policy_hash_mismatch',
+  'authority_unavailable',
+  'local_evidence_unavailable',
+  'local_scope_unavailable',
+  'authority_proof_invalid',
+]);
+
+function safeAuthorityDiagnostic(value: unknown): IEvaosPrivateNetworkAuthorityDiagnostic | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (
+    (candidate.classification !== 'observed' &&
+      candidate.classification !== 'unavailable' &&
+      candidate.classification !== 'stale') ||
+    typeof candidate.reason !== 'string' ||
+    !SAFE_AUTHORITY_DIAGNOSTIC_REASONS.has(candidate.reason as IEvaosPrivateNetworkAuthorityDiagnosticReason)
+  ) {
+    return undefined;
+  }
+  const auditId =
+    typeof candidate.auditId === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(candidate.auditId)
+      ? candidate.auditId
+      : undefined;
+  return {
+    classification: candidate.classification,
+    reason: candidate.reason as IEvaosPrivateNetworkAuthorityDiagnosticReason,
+    auditId,
+  };
+}
+
+function safeRendererStatus(status: IEvaosNativeCompanionStatusView): IEvaosNativeCompanionStatusView {
+  return {
+    ...status,
+    privateNetworkAuthority: safeAuthorityDiagnostic(status.privateNetworkAuthority),
+  };
+}
+
+function safeRendererDiagnosticPacket(packet: IEvaosWorkbenchDiagnosticPacketV1): IEvaosWorkbenchDiagnosticPacketV1 {
+  return {
+    ...packet,
+    brokerGrant: {
+      ...packet.brokerGrant,
+      privateNetworkAuthority: safeAuthorityDiagnostic(packet.brokerGrant.privateNetworkAuthority),
+    },
+  };
+}
 
 export function useEvaosNativeCompanionStatus(enabled = true, customerId?: string): EvaosNativeCompanionStatusState {
   const scopeKey = customerId ?? '';
@@ -69,7 +128,7 @@ export function useEvaosNativeCompanionStatus(enabled = true, customerId?: strin
           setError(response.msg || 'Workbench connector status failed safely.');
           return;
         }
-        setScopedStatus({ scopeKey, status: response.data });
+        setScopedStatus({ scopeKey, status: safeRendererStatus(response.data) });
       } catch {
         if (currentScopeRef.current === scopeKey) {
           setScopedStatus(null);
@@ -133,7 +192,7 @@ export function useEvaosNativeCompanionStatus(enabled = true, customerId?: strin
         if (!response.success || !response.data) {
           return null;
         }
-        return response.data;
+        return safeRendererDiagnosticPacket(response.data);
       } catch {
         return null;
       }

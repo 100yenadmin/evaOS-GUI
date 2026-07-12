@@ -209,6 +209,28 @@ export type IEvaosMacControlBlockerReason =
   | 'stale_connector_port_conflict'
   | 'unknown';
 
+export type IEvaosPrivateNetworkAuthorityDiagnosticReason =
+  | 'ready'
+  | 'mac_node_missing'
+  | 'mac_node_offline'
+  | 'mac_node_expired'
+  | 'vm_node_missing'
+  | 'vm_node_offline'
+  | 'vm_node_expired'
+  | 'grant_binding_mismatch'
+  | 'policy_unavailable'
+  | 'policy_hash_mismatch'
+  | 'authority_unavailable'
+  | 'local_evidence_unavailable'
+  | 'local_scope_unavailable'
+  | 'authority_proof_invalid';
+
+export type IEvaosPrivateNetworkAuthorityDiagnostic = {
+  classification: 'observed' | 'unavailable' | 'stale';
+  reason: IEvaosPrivateNetworkAuthorityDiagnosticReason;
+  auditId?: string;
+};
+
 export interface IEvaosNativeCompanionPermissionView {
   accessibility?: string;
   screenRecording?: string;
@@ -228,6 +250,7 @@ export interface IEvaosNativeCompanionStatusView {
   pairingCapable?: boolean;
   pairingBlockedReason?: IEvaosMacControlBlockerReason;
   blockerReason?: IEvaosMacControlBlockerReason;
+  privateNetworkAuthority?: IEvaosPrivateNetworkAuthorityDiagnostic;
   prerequisites?: NativeCompanionPrerequisites;
   summaryText: string;
   sourcePointer: string;
@@ -428,6 +451,7 @@ export interface IEvaosWorkbenchDiagnosticPacketV1 {
     agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
     sourcePointer?: string;
     auditIds: string[];
+    privateNetworkAuthority?: IEvaosPrivateNetworkAuthorityDiagnostic;
   };
   bridge: {
     installed: boolean;

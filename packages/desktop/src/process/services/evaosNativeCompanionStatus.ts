@@ -27,6 +27,7 @@ import type {
   IEvaosMacControlBlockerReason,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
+  IEvaosPrivateNetworkAuthorityDiagnostic,
   IEvaosNativeCompanionReadiness,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
@@ -284,10 +285,10 @@ export async function getEvaosNativeCompanionStatus(
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
   const localPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
-  const redactedPrivateNetworkEvidence = await privateNetworkEvidenceWithAuthority({
+  const privateNetworkAuthorityResult = await privateNetworkEvidenceWithAuthority({
     customerId: request.customerId,
     deviceIdentifier: privateNetworkDeviceIdentifier(customerMac.data),
-    expectedGrantId: activeMacControlScopeIdFromControlSession(controlSession),
+    expectedGrantId: controlSession.ok ? activeMacControlScopeIdFromControlSession(controlSession) : undefined,
     localEvidence: localPrivateNetworkEvidence,
     now,
     deps,
@@ -298,7 +299,7 @@ export async function getEvaosNativeCompanionStatus(
       commandSucceeded: bridge.ok,
       compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge, deps.env),
     },
-    privateNetwork: redactedPrivateNetworkEvidence,
+    privateNetwork: privateNetworkAuthorityResult.evidence,
     actionEngine: actionEngineEvidence(customerMac.data),
   });
   const bridgeRuntimeExplicitlyBlocked = prerequisites.bridgeRuntime === 'incompatible';
@@ -394,6 +395,7 @@ export async function getEvaosNativeCompanionStatus(
     pairingCapable,
     pairingBlockedReason,
     blockerReason,
+    privateNetworkAuthority: privateNetworkAuthorityResult.diagnostic,
     prerequisites,
     summaryText,
     sourcePointer:
@@ -515,6 +517,7 @@ export async function getEvaosWorkbenchDiagnosticPacket(
       agentPairingStatus: status.agentPairingStatus,
       sourcePointer: safeDiagnosticText(status.sourcePointer),
       auditIds: safeDiagnosticAuditIds(status.audit.auditIds),
+      privateNetworkAuthority: status.privateNetworkAuthority,
     },
     bridge: {
       installed: status.bridgeCli.installed,
@@ -2273,7 +2276,10 @@ async function privateNetworkEvidenceWithAuthority(input: {
   localEvidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
   now: () => Date;
   deps: EvaosNativeCompanionStatusDeps;
-}): Promise<NativeCompanionPrerequisiteEvidence['privateNetwork']> {
+}): Promise<{
+  evidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
+  diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic;
+}> {
   const { customerId, deviceIdentifier, expectedGrantId, localEvidence, now, deps } = input;
   if (
     !localEvidence ||
@@ -2283,7 +2289,16 @@ async function privateNetworkEvidenceWithAuthority(input: {
     !customerId ||
     !deviceIdentifier
   ) {
-    return localEvidence;
+    return {
+      evidence: localEvidence,
+      diagnostic: { classification: 'unavailable', reason: 'local_evidence_unavailable' },
+    };
+  }
+  if (!expectedGrantId) {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'local_scope_unavailable' },
+    };
   }
   const getPrivateNetworkReadiness =
     deps.getPrivateNetworkReadiness ??
@@ -2298,13 +2313,23 @@ async function privateNetworkEvidenceWithAuthority(input: {
     const expiresAtMs = Date.parse(authority.expiresAt);
     const observedAtMs = Date.parse(authority.observedAt);
     const nowMs = now().getTime();
+    const diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic = {
+      classification: 'observed',
+      reason: authority.reason,
+      auditId: safeDiagnosticText(authority.auditId),
+    };
+    const authorityIsStale =
+      Number.isFinite(observedAtMs) &&
+      Number.isFinite(expiresAtMs) &&
+      (observedAtMs < nowMs - 60_000 || expiresAtMs <= nowMs);
+    const authorityBindingMismatch = authority.grantId !== expectedGrantId;
     if (
       authority.customerId !== customerId ||
       authority.deviceIdentifier !== deviceIdentifier ||
       !authority.deviceId ||
       !authority.enrollmentId ||
       !authority.grantId ||
-      (expectedGrantId !== undefined && authority.grantId !== expectedGrantId) ||
+      authority.grantId !== expectedGrantId ||
       !authority.auditId ||
       !Number.isFinite(observedAtMs) ||
       !Number.isFinite(expiresAtMs) ||
@@ -2315,16 +2340,33 @@ async function privateNetworkEvidenceWithAuthority(input: {
       expiresAtMs <= observedAtMs ||
       expiresAtMs - observedAtMs > 60_000
     ) {
-      return localEvidence;
+      return {
+        evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+        diagnostic: {
+          classification: authorityIsStale ? 'stale' : 'unavailable',
+          reason: authorityBindingMismatch
+            ? 'grant_binding_mismatch'
+            : authorityIsStale
+              ? authority.reason
+              : 'authority_proof_invalid',
+          auditId: diagnostic.auditId,
+        },
+      };
     }
     return {
-      ...localEvidence,
-      correctControlPlane: authority.correctControlPlane,
-      aclAllowed: authority.aclAllowed,
-      online: localEvidence.online === true && authority.online === true,
+      evidence: {
+        ...localEvidence,
+        correctControlPlane: authority.correctControlPlane,
+        aclAllowed: authority.aclAllowed,
+        online: localEvidence.online === true && authority.online === true,
+      },
+      diagnostic,
     };
   } catch {
-    return localEvidence;
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'authority_unavailable' },
+    };
   }
 }
 
