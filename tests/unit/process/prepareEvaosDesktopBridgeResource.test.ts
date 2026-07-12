@@ -113,6 +113,13 @@ describe('prepareEvaosDesktopBridgeResource', () => {
         sourceCommit,
         producerManifest: 'payload-manifest.json',
         producerManifestSha256: manifestSha256,
+        bundledTools: {
+          peekaboo: {
+            version: '3.8.0',
+            license: 'MIT',
+            licensePath: 'licenses/Peekaboo-LICENSE.txt',
+          },
+        },
         payload: {
           algorithm: 'sha256-tree-v1',
           sha256: payloadSha256,
@@ -460,7 +467,7 @@ function writePinnedPayloadFixture(
   writeFileSync(join(payloadDir, 'evaos-desktop-bridge'), options.rootMachO === false ? '#!/bin/sh\nexit 0\n' : machO);
   chmodSync(join(payloadDir, 'evaos-desktop-bridge'), 0o755);
   writeFileSync(join(payloadDir, '_internal', 'runtime.dat'), 'private runtime\n');
-  writeFileSync(join(payloadDir, 'licenses', 'LICENSE'), license);
+  writeFileSync(join(payloadDir, 'licenses', 'Peekaboo-LICENSE.txt'), license);
 
   const payload = bridgeResource.computePayloadTreeDigest(payloadDir);
   const sha256 = (relativePath: string) =>
@@ -490,12 +497,25 @@ function writePinnedPayloadFixture(
         },
         files: {
           root_executable: { path: 'evaos-desktop-bridge', sha256: sha256('evaos-desktop-bridge') },
-          peekaboo: { path: 'bin/peekaboo', sha256: sha256('bin/peekaboo') },
+          peekaboo: {
+            path: 'bin/peekaboo',
+            sha256: sha256('bin/peekaboo'),
+            version: '3.8.0',
+            license: 'MIT',
+            license_path: 'licenses/Peekaboo-LICENSE.txt',
+            license_sha256: sha256('licenses/Peekaboo-LICENSE.txt'),
+          },
           connector_helper: {
             path: 'bin/evaos-connector-helper',
             sha256: sha256('bin/evaos-connector-helper'),
           },
-          licenses: [{ name: 'Desktop Bridge', path: 'licenses/LICENSE', sha256: sha256('licenses/LICENSE') }],
+          licenses: [
+            {
+              name: 'Peekaboo',
+              path: 'licenses/Peekaboo-LICENSE.txt',
+              sha256: sha256('licenses/Peekaboo-LICENSE.txt'),
+            },
+          ],
         },
         payload: {
           algorithm: payload.algorithm,

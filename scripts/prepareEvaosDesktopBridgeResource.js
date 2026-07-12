@@ -12,6 +12,7 @@ const defaultBridgeSourceRepo = 'https://github.com/electricsheephq/evaos-deskto
 const defaultBridgeSourceRef = 'main';
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
+const DEFAULT_REQUIRED_PEEKABOO_VERSION = '3.8.0';
 const PAYLOAD_MANIFEST_FILENAME = 'payload-manifest.json';
 const RESOURCE_MANIFEST_FILENAME = 'manifest.json';
 
@@ -562,7 +563,24 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
   verifyPayloadFile(payloadDir, manifest.files?.root_executable, 'evaos-desktop-bridge', 'root executable', {
     arm64MachO: true,
   });
-  verifyPayloadFile(payloadDir, manifest.files?.peekaboo, 'bin/peekaboo', 'Peekaboo executable', {
+  const peekaboo = manifest.files?.peekaboo;
+  const requiredPeekabooVersion =
+    String(process.env.EVAOS_REQUIRED_PEEKABOO_VERSION || '').trim() || DEFAULT_REQUIRED_PEEKABOO_VERSION;
+  if (
+    peekaboo?.version !== requiredPeekabooVersion ||
+    peekaboo?.license !== 'MIT' ||
+    peekaboo?.license_path !== PEEKABOO_LICENSE_RELATIVE_PATH ||
+    requireSha256(peekaboo?.license_sha256, 'Peekaboo license') !==
+      requireSha256(
+        manifest.files?.licenses?.find((license) => license?.path === PEEKABOO_LICENSE_RELATIVE_PATH)?.sha256,
+        'recorded Peekaboo license'
+      )
+  ) {
+    throw new Error(
+      'Desktop Bridge payload Peekaboo version or license identity does not match the approved contract.'
+    );
+  }
+  verifyPayloadFile(payloadDir, peekaboo, 'bin/peekaboo', 'Peekaboo executable', {
     arm64MachO: true,
   });
   verifyPayloadFile(payloadDir, manifest.files?.connector_helper, 'bin/evaos-connector-helper', 'connector helper', {
@@ -604,6 +622,15 @@ function preparePinnedBridgePayload(payloadDir, resourceDir, expectedPayloadSha2
     producerManifestSha256: requireSha256(expectedManifestSha256, 'out-of-band manifest'),
     sourceCommit: validated.manifest.source.commit,
     sourceVersion: validated.manifest.source.version,
+    bundledTools: {
+      peekaboo: {
+        version: validated.manifest.files.peekaboo.version,
+        sourceSha256: validated.manifest.files.peekaboo.sha256,
+        license: validated.manifest.files.peekaboo.license,
+        licensePath: validated.manifest.files.peekaboo.license_path,
+        licenseSha256: validated.manifest.files.peekaboo.license_sha256,
+      },
+    },
     payload: {
       algorithm: copiedPayload.algorithm,
       sha256: copiedPayload.sha256,
