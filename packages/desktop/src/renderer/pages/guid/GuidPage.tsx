@@ -987,7 +987,8 @@ const GuidPage: React.FC = () => {
                 ) : null}
               </div>
             ) : null
-          ) : agentSelection.agentCatalogError ? null : agentSelection.availableAgents === undefined ? (
+          ) : agentSelection.agentCatalogError &&
+            agentSelection.availableAgents === undefined ? null : agentSelection.availableAgents === undefined ? (
             <AgentPillBarSkeleton />
           ) : agentSelection.availableAgents.length > 0 ? (
             <AgentPillBar
