@@ -242,6 +242,26 @@ describe('useDetectedAgents', () => {
     }
   );
 
+  it('preserves the runtime name, label, and value fallback chain while normalizing', () => {
+    const option = deriveAssistantThoughtLevelOption(
+      JSON.stringify({
+        config_options: [
+          {
+            id: 'reasoning_effort',
+            type: 'select',
+            options: [{ value: 'low', name: 'Quick' }, { value: 'medium', label: 'Balanced' }, { value: 'high' }],
+          },
+        ],
+      })
+    );
+
+    expect(option?.options).toEqual([
+      { value: 'low', label: 'Quick', description: undefined },
+      { value: 'medium', label: 'Balanced', description: undefined },
+      { value: 'high', label: 'high', description: undefined },
+    ]);
+  });
+
   it('revalidates both catalogs without probing engines on refreshAgentDetection', async () => {
     vi.mocked(useSWR).mockReturnValue({ data: [], error: null } as ReturnType<typeof useSWR>);
 
