@@ -96,7 +96,9 @@ describe('evaosNativeCompanionStatus', () => {
     expect(status.summaryText).toContain('LOCAL FIXTURE - NOT LIVE BETA PROOF');
     expect(status.audit.auditIds).toContain('fixture-audit-native-not_paired');
     expect(execFile).not.toHaveBeenCalled();
-    expect(JSON.stringify(status)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
+    expect(JSON.stringify(status)).not.toMatch(
+      /Bearer|desktop_session|provider_grant|access_token|refresh_token|100\.64\.0\.10/i
+    );
   });
 
   it('does not enable native state fixtures without the E2E local product gate', async () => {
@@ -115,6 +117,20 @@ describe('evaosNativeCompanionStatus', () => {
 
     expect(status.sourcePointer).toBe('native-companion:bridge-cli-missing');
     expect(status.bridgeCli.installed).toBe(false);
+  });
+
+  it('classifies a missing bundled bridge without claiming any other prerequisite is ready', async () => {
+    const status = await getEvaosNativeCompanionStatus({
+      now: () => new Date('2026-06-07T03:45:00.000Z'),
+      bridgePaths: [bundledBridgePath],
+      existsSync: vi.fn(() => false),
+    });
+
+    expect(status.prerequisites).toEqual({
+      bridgeRuntime: 'missing',
+      privateNetwork: 'error',
+      actionEngine: 'unavailable',
+    });
   });
 
   it('summarizes read-only bridge status without renderer-visible secrets', async () => {
@@ -141,6 +157,14 @@ describe('evaosNativeCompanionStatus', () => {
           reachable: true,
         },
         tailnet_ip: '100.64.0.10',
+        private_network: {
+          client_installed: true,
+          client_running: true,
+          enrolled: true,
+          correct_control_plane: true,
+          acl_allowed: true,
+          online: true,
+        },
         permission_target: 'evaOS Workbench',
       },
       'customer-mac status --json': {
@@ -164,6 +188,16 @@ describe('evaosNativeCompanionStatus', () => {
             append_only_audit_log: true,
             kill_switch_available: true,
             hidden_shell_public_ports_and_token_exfiltration_blocked: true,
+          },
+        },
+      },
+      'customer-mac capabilities --json': {
+        ok: true,
+        data: {
+          engines: {
+            cua_driver: { available: true, active_for_actions: true },
+            peekaboo: { available: true },
+            active_primary: 'cua_driver',
           },
         },
       },
@@ -326,6 +360,11 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingStatus: 'agent_paired',
       runtimeToolReadiness: 'pairing_ready',
       generatedAt: '2026-06-07T03:45:00.000Z',
+      prerequisites: {
+        bridgeRuntime: 'ready',
+        privateNetwork: 'online',
+        actionEngine: 'cua_ready',
+      },
       bridgeCli: {
         installed: true,
         status: 'ready',
@@ -336,7 +375,7 @@ describe('evaosNativeCompanionStatus', () => {
         status: 'ready',
         running: true,
         reachable: true,
-        tailnetIp: '100.64.0.10',
+        privateNetworkAvailable: true,
       },
       customerMac: {
         status: 'ready',
@@ -362,7 +401,9 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(status.canOpenReleasedWorkbench).toBe(true);
-    expect(JSON.stringify(status)).not.toMatch(/Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf/i);
+    expect(JSON.stringify(status)).not.toMatch(
+      /Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf|100\.64\.0\.10/i
+    );
 
     const provenStatus = await getEvaosNativeCompanionStatus(deps);
     expect(provenStatus).toMatchObject({
@@ -663,7 +704,7 @@ describe('evaosNativeCompanionStatus', () => {
         status: 'repair_required',
         running: true,
         reachable: true,
-        tailnetIp: '100.64.0.10',
+        privateNetworkAvailable: true,
       },
     });
     expect(status.summaryText).toContain('repair is required');
@@ -1016,7 +1057,7 @@ describe('evaosNativeCompanionStatus', () => {
         status: 'ready',
         running: true,
         reachable: true,
-        tailnetIp: '100.64.0.4',
+        privateNetworkAvailable: true,
       },
       customerMac: {
         status: 'ready',
@@ -1173,6 +1214,31 @@ describe('evaosNativeCompanionStatus', () => {
     expect(status.bridgeCli.path).toBe(bundledBridge);
     expect(status.bridgeCli.version).toBe('0.6.29');
     expect(execFile.mock.calls.every(([file]) => file === bundledBridge)).toBe(true);
+  });
+
+  it('does not search environment or Homebrew bridge paths in packaged mode', async () => {
+    const homebrewBridge = '/opt/homebrew/bin/evaos-desktop-bridge';
+    const execFile = vi.fn(async () => {
+      throw new Error('packaged status must not execute a host bridge');
+    });
+
+    const status = await getEvaosNativeCompanionStatus({
+      now: () => new Date('2026-06-07T03:45:00.000Z'),
+      env: {
+        EVAOS_DESKTOP_BRIDGE_PATH: homebrewBridge,
+        IS_PACKAGED: 'true',
+      } as NodeJS.ProcessEnv,
+      isPackaged: true,
+      releasedWorkbenchPath: '/Applications/evaOS Workbench.app',
+      existsSync: vi.fn((candidate: string) => candidate === homebrewBridge),
+      execFile,
+    });
+
+    expect(status).toMatchObject({
+      prerequisites: { bridgeRuntime: 'missing' },
+      bridgeCli: { installed: false, status: 'missing' },
+    });
+    expect(execFile).not.toHaveBeenCalled();
   });
 
   it('does not mark Mac control ready when the connector service is not reachable', async () => {

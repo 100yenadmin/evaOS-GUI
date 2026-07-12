@@ -165,6 +165,28 @@ export type IEvaosNativeCompanionStatusValue =
   | 'unavailable'
   | 'error';
 
+export type NativeCompanionBridgeRuntimePrerequisite = 'missing' | 'incompatible' | 'ready' | 'error';
+export type NativeCompanionPrivateNetworkPrerequisite =
+  | 'client_missing'
+  | 'client_stopped'
+  | 'unenrolled'
+  | 'wrong_control_plane'
+  | 'acl_blocked'
+  | 'offline'
+  | 'online'
+  | 'error';
+export type NativeCompanionActionEnginePrerequisite =
+  | 'cua_ready'
+  | 'peekaboo_ready'
+  | 'native_fallback_ready'
+  | 'unavailable';
+
+export type NativeCompanionPrerequisites = {
+  bridgeRuntime: NativeCompanionBridgeRuntimePrerequisite;
+  privateNetwork: NativeCompanionPrivateNetworkPrerequisite;
+  actionEngine: NativeCompanionActionEnginePrerequisite;
+};
+
 export type IEvaosMacControlBlockerReason =
   | 'listener_owner_mismatch'
   | 'port_in_use'
@@ -202,6 +224,7 @@ export interface IEvaosNativeCompanionStatusView {
   pairingCapable?: boolean;
   pairingBlockedReason?: IEvaosMacControlBlockerReason;
   blockerReason?: IEvaosMacControlBlockerReason;
+  prerequisites?: NativeCompanionPrerequisites;
   summaryText: string;
   sourcePointer: string;
   canOpenReleasedWorkbench: boolean;
@@ -227,6 +250,8 @@ export interface IEvaosNativeCompanionStatusView {
     running?: boolean;
     reachable?: boolean;
     managedBy?: string;
+    privateNetworkAvailable?: boolean;
+    /** @deprecated Private addresses must not cross the main-to-renderer boundary. */
     tailnetIp?: string;
     permissionTarget?: string;
   };

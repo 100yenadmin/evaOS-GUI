@@ -36,6 +36,11 @@ import type {
   IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
+import {
+  classifyNativeCompanionPrerequisites,
+  type NativeCompanionPrerequisiteEvidence,
+} from '@/common/evaos/nativeCompanionPrerequisites';
+import { getPlatformServices } from '@/common/platform';
 import { getDefaultEvaosBrokerSessionClient, isEvaosBrokerSessionError } from './evaosBrokerSession';
 
 const execFileAsync = promisify(execFileCallback);
@@ -90,6 +95,7 @@ type NativeCompanionFixtureState = (typeof NATIVE_COMPANION_FIXTURE_STATES)[numb
 export type EvaosNativeCompanionStatusDeps = {
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
+  isPackaged?: boolean;
   bridgePaths?: string[];
   releasedWorkbenchPath?: string;
   existsSync?: (path: string) => boolean;
@@ -160,7 +166,10 @@ export async function getEvaosNativeCompanionStatus(
   }
 
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   const releasedWorkbenchPath = deps.releasedWorkbenchPath ?? DEFAULT_RELEASED_WORKBENCH_PATH;
   const releasedWorkbenchInstalled = existsSync(releasedWorkbenchPath);
 
@@ -174,6 +183,9 @@ export async function getEvaosNativeCompanionStatus(
       pairingCapable: false,
       pairingBlockedReason: 'bundled_bridge_required',
       blockerReason: 'bridge_cli_missing',
+      prerequisites: classifyNativeCompanionPrerequisites({
+        bridgeRuntime: { installed: false },
+      }),
       summaryText: 'Workbench connector tools are not installed. Use setup or support to repair Mac control.',
       sourcePointer: 'native-companion:bridge-cli-missing',
       canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -194,7 +206,16 @@ export async function getEvaosNativeCompanionStatus(
     };
   }
 
-  const [bridge, connectorService, customerMac, iPhone, controlSession, audit, bridgeReadyStatus] = await Promise.all([
+  const [
+    bridge,
+    connectorService,
+    customerMac,
+    iPhone,
+    controlSession,
+    audit,
+    bridgeReadyStatus,
+    customerMacCapabilities,
+  ] = await Promise.all([
     runBridgeCommand(bridgePath, ['status', '--json'], deps),
     runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
@@ -202,6 +223,7 @@ export async function getEvaosNativeCompanionStatus(
     runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '5'], deps),
     runBridgeCommand(bridgePath, ['ready', '--json'], deps),
+    runBridgeCommand(bridgePath, ['customer-mac', 'capabilities', '--json'], deps),
   ]);
 
   const bridgePermissions = permissionView(bridge.data?.permissions);
@@ -290,6 +312,15 @@ export async function getEvaosNativeCompanionStatus(
     pairingBlockedReason,
     agentPairingStatus,
   });
+  const prerequisites = classifyNativeCompanionPrerequisites({
+    bridgeRuntime: {
+      installed: true,
+      commandSucceeded: bridge.ok,
+      compatible: isCompatibleBundledBridgeRuntime(bridgePath, bridge),
+    },
+    privateNetwork: privateNetworkEvidence(connectorServiceData),
+    actionEngine: actionEngineEvidence(customerMacCapabilities.data, customerMac.data),
+  });
 
   return {
     schemaVersion: 'evaos.native_companion_status.v1',
@@ -305,6 +336,7 @@ export async function getEvaosNativeCompanionStatus(
     pairingCapable,
     pairingBlockedReason,
     blockerReason,
+    prerequisites,
     summaryText,
     sourcePointer: 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -330,7 +362,7 @@ export async function getEvaosNativeCompanionStatus(
       running: connectorServiceReady || readBoolean(connectorServiceData, 'running'),
       reachable: connectorServiceReady || readNestedBoolean(connectorServiceData, ['health', 'reachable']),
       managedBy: readString(connectorServiceData, 'managed_by'),
-      tailnetIp: readString(connectorServiceData, 'tailnet_ip'),
+      privateNetworkAvailable: privateNetworkAvailable(connectorServiceData),
       permissionTarget: readString(connectorServiceData, 'permission_target'),
     },
     customerMac: {
@@ -371,7 +403,10 @@ export async function getEvaosWorkbenchDiagnosticPacket(
   const now = deps.now ?? (() => new Date());
   const generatedAt = now().toISOString();
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   const status = await getEvaosNativeCompanionStatus({ ...deps, now });
   const bridgeDiagnostics = bridgePath
     ? await runOptionalBridgeDiagnostics(bridgePath, ['diagnostics', '--json'], deps)
@@ -500,6 +535,11 @@ function nativeCompanionFixtureStatus(
     agentPairingStatus: 'not_ready',
     runtimeToolReadiness: 'not_ready',
     blockerReason: fixtureState === 'permission_needed' ? 'permission_missing' : 'connector_service_not_ready',
+    prerequisites: {
+      bridgeRuntime: 'ready',
+      privateNetwork: 'offline',
+      actionEngine: 'peekaboo_ready',
+    },
     summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair state fixture.',
     sourcePointer: `local-fixture:native-companion:${fixtureState}`,
     canOpenReleasedWorkbench: true,
@@ -526,7 +566,7 @@ function nativeCompanionFixtureStatus(
       running: fixtureState === 'ready',
       reachable: fixtureState === 'ready',
       managedBy: 'fixture',
-      tailnetIp: '100.64.0.10',
+      privateNetworkAvailable: fixtureState === 'ready',
       permissionTarget: 'evaOS Workbench',
     },
     customerMac: {
@@ -569,6 +609,7 @@ function nativeCompanionFixtureStatus(
       agentPairingStatus: 'ready_for_agent_pairing',
       runtimeToolReadiness: 'pairing_ready',
       blockerReason: undefined,
+      prerequisites: { ...base.prerequisites!, privateNetwork: 'online' },
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
       bridgeCli: { ...base.bridgeCli, status: 'ready' },
       connectorService: { ...base.connectorService, status: 'ready', running: true, reachable: true },
@@ -1682,7 +1723,10 @@ async function primeRepairPermission(
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<void> {
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   if (!bridgePath) return;
   if (action === 'accessibility') {
     await runBridgeCommand(bridgePath, ['permissions', 'prime', '--json', '--permission', 'accessibility'], deps);
@@ -1726,7 +1770,10 @@ export async function runNativeCompanionAction(
   deps: EvaosNativeCompanionStatusDeps = {}
 ): Promise<IEvaosNativeCompanionActionResult> {
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   if (!bridgePath) {
     return nativeActionResult(request.action, 'repair_required', 'Workbench connector tools are not installed.', {
       sourcePointer: 'native-companion:bridge-cli-missing',
@@ -1804,12 +1851,82 @@ export async function openNativeCompanionRepairAction(
   };
 }
 
-function defaultBridgePaths(env: NodeJS.ProcessEnv = process.env): string[] {
+function privateNetworkEvidence(input: unknown): NativeCompanionPrerequisiteEvidence['privateNetwork'] {
+  const network = readRecord(input, 'private_network') ?? readRecord(input, 'secure_network');
+  if (!network) return undefined;
+  return {
+    clientInstalled: readBooleanAlias(network, 'client_installed', 'clientInstalled'),
+    clientRunning: readBooleanAlias(network, 'client_running', 'clientRunning'),
+    enrolled: readBoolean(network, 'enrolled'),
+    correctControlPlane: readBooleanAlias(network, 'correct_control_plane', 'correctControlPlane'),
+    aclAllowed: readBooleanAlias(network, 'acl_allowed', 'aclAllowed'),
+    online: readBoolean(network, 'online'),
+  };
+}
+
+function actionEngineEvidence(
+  capabilitiesData: unknown,
+  customerMacData: unknown
+): NativeCompanionPrerequisiteEvidence['actionEngine'] {
+  const engines =
+    readRecord(capabilitiesData, 'engines') ??
+    readRecord(capabilitiesData, 'control_engines') ??
+    readRecord(customerMacData, 'control_engines') ??
+    readRecord(customerMacData, 'engines');
+  if (!engines) return undefined;
+
+  const cua = readRecord(engines, 'cua_driver');
+  const peekaboo = readRecord(engines, 'peekaboo');
+  const activePrimary = readString(engines, 'active_primary');
+  const nativeFallbacks = new Set(['post_to_pid_helper', 'accessibility', 'system_events']);
+  const fallbacks = readStringArray(engines, 'fallbacks');
+  return {
+    cuaAvailable: readBoolean(cua, 'available'),
+    cuaActiveForActions:
+      readBooleanAlias(cua, 'active_for_actions', 'activeForActions') ??
+      (activePrimary === 'cua_driver' ? true : undefined),
+    peekabooAvailable: readBoolean(peekaboo, 'available'),
+    nativeFallbackAvailable:
+      (activePrimary ? nativeFallbacks.has(activePrimary) : false) ||
+      fallbacks.some((item) => nativeFallbacks.has(item)),
+  };
+}
+
+function isCompatibleBundledBridgeRuntime(bridgePath: string, bridge: BridgeCommandResult): boolean {
+  if (!isPairingCapableBridgePath(bridgePath)) return false;
+  const explicitCompatibility =
+    readBoolean(bridge.data, 'compatible') ??
+    readBooleanAlias(bridge.data, 'version_compatible', 'versionCompatible') ??
+    readBooleanAlias(bridge.data, 'workbench_compatible', 'workbenchCompatible');
+  return explicitCompatibility !== false;
+}
+
+function privateNetworkAvailable(input: unknown): boolean | undefined {
+  const explicit = readBooleanAlias(input, 'tailnet_available', 'privateNetworkAvailable');
+  if (explicit !== undefined) return explicit;
+  const evidence = privateNetworkEvidence(input);
+  if (evidence?.clientRunning !== undefined) return evidence.clientRunning;
+  return readString(input, 'tailnet_ip') ? true : undefined;
+}
+
+function nativeCompanionIsPackaged(deps: EvaosNativeCompanionStatusDeps): boolean {
+  if (deps.isPackaged !== undefined) return deps.isPackaged;
+  if (deps.env?.IS_PACKAGED === 'true') return true;
+  try {
+    return getPlatformServices().paths.isPackaged();
+  } catch {
+    return false;
+  }
+}
+
+function defaultBridgePaths(env: NodeJS.ProcessEnv = process.env, isPackaged = false): string[] {
   const resourcesPath = readProcessResourcesPath();
+  const bundledBridgePath = resourcesPath ? join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined;
+  if (isPackaged) return compactStrings([bundledBridgePath]);
   return compactStrings([
     env.EVAOS_DESKTOP_BRIDGE_PATH,
     env.EVAOS_WORKBENCH_BRIDGE_PATH,
-    resourcesPath ? join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined,
+    bundledBridgePath,
     resolve(process.cwd(), 'resources', 'Bridge', 'evaos-desktop-bridge'),
     ...HOMEBREW_BRIDGE_PATHS,
   ]);
@@ -2813,6 +2930,23 @@ function readBoolean(input: unknown, key: string): boolean | undefined {
   if (!input || typeof input !== 'object') return undefined;
   const value = (input as Record<string, unknown>)[key];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function readBooleanAlias(input: unknown, snakeCaseKey: string, camelCaseKey: string): boolean | undefined {
+  return readBoolean(input, snakeCaseKey) ?? readBoolean(input, camelCaseKey);
+}
+
+function readRecord(input: unknown, key: string): Record<string, unknown> | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = (input as Record<string, unknown>)[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function readStringArray(input: unknown, key: string): string[] {
+  if (!input || typeof input !== 'object') return [];
+  const value = (input as Record<string, unknown>)[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
 function readNestedBoolean(input: unknown, path: string[]): boolean | undefined {
