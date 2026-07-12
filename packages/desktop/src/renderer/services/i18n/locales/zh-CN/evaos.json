@@ -140,7 +140,22 @@
       "offlineTitle": "重新连接安全网络",
       "offlineDetail": "重新连接安全网络客户端，然后让 Workbench 再次验证。",
       "errorTitle": "检查安全网络",
-      "errorDetail": "Workbench 无法验证安全网络。请使用“报告给支持团队”；不要输入终端命令或连接信息。"
+      "errorDetail": "Workbench 无法验证安全网络。请使用“报告给支持团队”；不要输入终端命令或连接信息。",
+      "refreshSessionLabel": "刷新 Workbench 会话",
+      "refreshSessionTitle": "刷新 Workbench 会话",
+      "refreshSessionDetail": "刷新 evaOS 代理会话，以便 Workbench 为所选客户连接 Mac 控制。",
+      "checkingSessionLabel": "正在检查会话",
+      "checkingSessionTitle": "正在检查 Workbench 会话",
+      "checkingSessionDetail": "Workbench 正在连接 Mac 控制前检查 evaOS 代理会话。",
+      "signInLabel": "登录 Workbench",
+      "signInTitle": "登录 Workbench",
+      "signInDetail": "登录 evaOS，以便 Workbench 为所选客户连接 Mac 控制。",
+      "selectCustomerLabel": "选择客户",
+      "selectCustomerTitle": "选择客户",
+      "selectCustomerDetail": "启用第一方 Mac 控制前，请选择此 Mac 应连接的客户。",
+      "chooseMacTargetLabel": "选择 Mac 目标",
+      "chooseMacTargetTitle": "选择 Mac 控制客户",
+      "chooseMacTargetDetail": "所选账户不是由 VM 支持的 Mac 控制目标。连接 Mac 控制前请选择客户目标。"
     }
   },
   "companyBrain": {

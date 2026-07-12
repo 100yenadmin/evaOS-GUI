@@ -1314,7 +1314,14 @@ function sanitizeCustomerMacEnrollment(
   fallbackCustomerId: string
 ): { customerId: string; pairingCode: string; expiresAt?: string } {
   const response = asRecord(raw);
-  const customerId = safeText(response?.customer_id);
+  const brokerCustomerId = safeText(response?.customer_id);
+  if (brokerCustomerId && brokerCustomerId !== fallbackCustomerId) {
+    throw new EvaosBrokerSessionError(
+      'broker_invalid_response',
+      'The evaOS broker returned a Mac pairing code for a different customer.'
+    );
+  }
+  const customerId = brokerCustomerId ?? fallbackCustomerId;
   const pairingCode = safeText(response?.enrollment_code);
   if (!pairingCode) {
     throw new EvaosBrokerSessionError(

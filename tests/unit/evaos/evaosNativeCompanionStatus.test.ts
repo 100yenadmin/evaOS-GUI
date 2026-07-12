@@ -3628,6 +3628,7 @@ describe('evaosNativeCompanionStatus', () => {
       }
       throw new Error(`unexpected command ${file} ${key}`);
     });
+    const diagnosticEvents: string[] = [];
     const deps = depsWithResponses(
       {},
       {
@@ -3641,6 +3642,7 @@ describe('evaosNativeCompanionStatus', () => {
         execFile,
         createPrivateNetworkEnrollment,
         cancelPrivateNetworkEnrollment,
+        recordDiagnosticEvent: (eventCode) => diagnosticEvents.push(eventCode),
       }
     );
 
@@ -3660,6 +3662,105 @@ describe('evaosNativeCompanionStatus', () => {
       authKey,
     });
     expect(JSON.stringify(result)).not.toContain(authKey);
+    expect(diagnosticEvents).toEqual(['secure_network_enrollment_login_failed']);
+    expect(JSON.stringify(diagnosticEvents)).not.toMatch(
+      /auth-key|Tailscale login failed|one-use-private-network-key/i
+    );
+  });
+
+  it.each([
+    ['secret file', 'secure_network_enrollment_secret_unlink_failed'],
+    ['secret directory', 'secure_network_enrollment_secret_directory_cleanup_failed'],
+  ] as const)('records only a safe event code when %s cleanup is ambiguous', async (cleanupTarget, expectedEvent) => {
+    const authKey = 'one-use-private-network-key-for-test';
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_standalone' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey,
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const cancelPrivateNetworkEnrollment = vi.fn();
+    const diagnosticEvents: string[] = [];
+    let connectorStatusCalls = 0;
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        connectorStatusCalls += 1;
+        return {
+          stdout: json({
+            ok: true,
+            data: {
+              private_network: {
+                client_installed: true,
+                client_running: true,
+                enrolled: connectorStatusCalls >= 3,
+              },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+      if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') return { stdout: '', stderr: '' };
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const cleanupOverrides: Partial<EvaosNativeCompanionStatusDeps> =
+      cleanupTarget === 'secret file'
+        ? {
+            unlinkSync: (path) => {
+              fs.unlinkSync(path);
+              throw new Error('secret file cleanup failed after removal');
+            },
+          }
+        : {
+            rmSync: (path, options) => {
+              fs.rmSync(path, options);
+              throw new Error('secret directory cleanup failed after removal');
+            },
+          };
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+        cancelPrivateNetworkEnrollment,
+        recordDiagnosticEvent: (eventCode) => diagnosticEvents.push(eventCode),
+        ...cleanupOverrides,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+    });
+    expect(diagnosticEvents).toEqual([expectedEvent]);
+    expect(JSON.stringify(diagnosticEvents)).not.toMatch(/auth-key|one-use-private-network-key|evaos-private-network/i);
+    expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
   });
 
   it('settles before cancellation when a failed CLI exit is followed by delayed enrolled local state', async () => {
@@ -3709,6 +3810,7 @@ describe('evaosNativeCompanionStatus', () => {
       }
       throw new Error(`unexpected command ${file} ${key}`);
     });
+    const recordDiagnosticEvent = vi.fn();
     const deps = depsWithResponses(
       {},
       {
@@ -3722,6 +3824,7 @@ describe('evaosNativeCompanionStatus', () => {
         execFile,
         createPrivateNetworkEnrollment,
         cancelPrivateNetworkEnrollment,
+        recordDiagnosticEvent,
       }
     );
 
@@ -3736,6 +3839,7 @@ describe('evaosNativeCompanionStatus', () => {
       blockerReason: 'secure_network_link_required',
     });
     expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith('secure_network_enrollment_login_failed');
     expect(deps.sleep).toHaveBeenCalledWith(250);
     expect(JSON.stringify(result)).not.toContain(authKey);
   });

@@ -140,7 +140,22 @@
       "offlineTitle": "Reconnect secure network",
       "offlineDetail": "Reconnect the secure-network client, then ask Workbench to verify it again.",
       "errorTitle": "Check secure network",
-      "errorDetail": "Workbench could not verify the secure network. Use Report to support; do not enter terminal commands or connection details."
+      "errorDetail": "Workbench could not verify the secure network. Use Report to support; do not enter terminal commands or connection details.",
+      "refreshSessionLabel": "Refresh Workbench Session",
+      "refreshSessionTitle": "Refresh Workbench session",
+      "refreshSessionDetail": "Refresh the evaOS broker session so Workbench can connect Mac control for the selected customer.",
+      "checkingSessionLabel": "Checking session",
+      "checkingSessionTitle": "Checking Workbench session",
+      "checkingSessionDetail": "Workbench is checking the evaOS broker session before connecting Mac control.",
+      "signInLabel": "Sign In To Workbench",
+      "signInTitle": "Sign in to Workbench",
+      "signInDetail": "Sign in to evaOS so Workbench can connect Mac control for the selected customer.",
+      "selectCustomerLabel": "Select customer",
+      "selectCustomerTitle": "Choose a customer",
+      "selectCustomerDetail": "Select the customer this Mac should connect to before enabling first-party Mac control.",
+      "chooseMacTargetLabel": "Choose Mac target",
+      "chooseMacTargetTitle": "Choose a Mac-control customer",
+      "chooseMacTargetDetail": "The selected account is not a VM-backed Mac-control target. Choose a customer target before connecting Mac control."
     }
   },
   "companyBrain": {

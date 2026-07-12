@@ -165,6 +165,21 @@ const NativeCompanionPage: React.FC = () => {
       offlineDetail: t('evaos.nativeCompanion.onboarding.offlineDetail'),
       errorTitle: t('evaos.nativeCompanion.onboarding.errorTitle'),
       errorDetail: t('evaos.nativeCompanion.onboarding.errorDetail'),
+      refreshSessionLabel: t('evaos.nativeCompanion.onboarding.refreshSessionLabel'),
+      refreshSessionTitle: t('evaos.nativeCompanion.onboarding.refreshSessionTitle'),
+      refreshSessionDetail: t('evaos.nativeCompanion.onboarding.refreshSessionDetail'),
+      checkingSessionLabel: t('evaos.nativeCompanion.onboarding.checkingSessionLabel'),
+      checkingSessionTitle: t('evaos.nativeCompanion.onboarding.checkingSessionTitle'),
+      checkingSessionDetail: t('evaos.nativeCompanion.onboarding.checkingSessionDetail'),
+      signInLabel: t('evaos.nativeCompanion.onboarding.signInLabel'),
+      signInTitle: t('evaos.nativeCompanion.onboarding.signInTitle'),
+      signInDetail: t('evaos.nativeCompanion.onboarding.signInDetail'),
+      selectCustomerLabel: t('evaos.nativeCompanion.onboarding.selectCustomerLabel'),
+      selectCustomerTitle: t('evaos.nativeCompanion.onboarding.selectCustomerTitle'),
+      selectCustomerDetail: t('evaos.nativeCompanion.onboarding.selectCustomerDetail'),
+      chooseMacTargetLabel: t('evaos.nativeCompanion.onboarding.chooseMacTargetLabel'),
+      chooseMacTargetTitle: t('evaos.nativeCompanion.onboarding.chooseMacTargetTitle'),
+      chooseMacTargetDetail: t('evaos.nativeCompanion.onboarding.chooseMacTargetDetail'),
     }),
     [t]
   );
@@ -1152,7 +1167,8 @@ function isAgentProofVisible(status: IEvaosNativeCompanionAgentPairingStatus): b
 function isPairingBrokerSessionRequired(actionResult: IEvaosNativeCompanionActionResult | null): boolean {
   return (
     actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
-    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required'
+    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
   );
 }
 

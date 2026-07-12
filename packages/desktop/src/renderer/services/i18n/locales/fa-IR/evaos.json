@@ -140,7 +140,22 @@
       "offlineTitle": "اتصال دوباره شبکه امن",
       "offlineDetail": "کلاینت شبکه امن را دوباره متصل کنید و از Workbench بخواهید دوباره آن را تأیید کند.",
       "errorTitle": "بررسی شبکه امن",
-      "errorDetail": "Workbench نتوانست شبکه امن را تأیید کند. به پشتیبانی گزارش دهید؛ فرمان Terminal یا جزئیات اتصال وارد نکنید."
+      "errorDetail": "Workbench نتوانست شبکه امن را تأیید کند. به پشتیبانی گزارش دهید؛ فرمان Terminal یا جزئیات اتصال وارد نکنید.",
+      "refreshSessionLabel": "تازه‌سازی نشست Workbench",
+      "refreshSessionTitle": "نشست Workbench را تازه‌سازی کنید",
+      "refreshSessionDetail": "نشست کارگزار evaOS را تازه‌سازی کنید تا Workbench کنترل Mac مشتری انتخاب‌شده را متصل کند.",
+      "checkingSessionLabel": "در حال بررسی نشست",
+      "checkingSessionTitle": "در حال بررسی نشست Workbench",
+      "checkingSessionDetail": "Workbench پیش از اتصال کنترل Mac در حال بررسی نشست کارگزار evaOS است.",
+      "signInLabel": "ورود به Workbench",
+      "signInTitle": "به Workbench وارد شوید",
+      "signInDetail": "به evaOS وارد شوید تا Workbench کنترل Mac مشتری انتخاب‌شده را متصل کند.",
+      "selectCustomerLabel": "انتخاب مشتری",
+      "selectCustomerTitle": "یک مشتری انتخاب کنید",
+      "selectCustomerDetail": "پیش از فعال‌سازی کنترل مستقیم Mac، مشتری‌ای را که این Mac باید به آن متصل شود انتخاب کنید.",
+      "chooseMacTargetLabel": "انتخاب Mac هدف",
+      "chooseMacTargetTitle": "یک مشتری کنترل Mac انتخاب کنید",
+      "chooseMacTargetDetail": "حساب انتخاب‌شده هدف کنترل Mac مبتنی بر VM نیست. پیش از اتصال، یک مشتری هدف انتخاب کنید."
     }
   },
   "companyBrain": {
