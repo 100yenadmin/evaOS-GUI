@@ -66,6 +66,7 @@ const createDeps = (): GuidSendDeps => ({
   } as never,
   is_presetAgent: true,
   selectedMode: 'bypassPermissions',
+  selectedThoughtLevelValue: 'high',
   selectedAcpModel: 'claude-opus',
   currentAcpCachedModelInfo: null,
   current_model: undefined,
@@ -206,8 +207,23 @@ describe('useGuidSend', () => {
     const payload = createConversationInvokeMock.mock.calls[0][0];
     expect(payload.assistant?.conversation_overrides?.permission).toBe('bypassPermissions');
     expect(payload.assistant?.conversation_overrides?.model).toBe('claude-opus');
+    expect(payload.assistant?.conversation_overrides?.thought_level).toBe('high');
     expect(swrMutateMock).toHaveBeenCalledWith('guid.assistant.detail.assistant-1.zh-CN');
     expect(swrMutateMock).toHaveBeenCalledWith('assistants.list');
+  });
+
+  it('omits thought level when the selected runtime does not advertise a compatible choice', async () => {
+    const deps = createDeps();
+    deps.selectedThoughtLevelValue = '';
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.assistant?.conversation_overrides).not.toHaveProperty('thought_level');
   });
 
   it('falls back to assistant default skill and MCP ids for preset conversations before local Guid overrides exist', async () => {

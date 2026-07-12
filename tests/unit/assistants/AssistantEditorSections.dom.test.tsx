@@ -81,6 +81,7 @@ const createEditor = (overrides: Partial<AssistantEditorViewModel> = {}): Assist
     defaults: {
       model: { mode: 'auto', setMode: vi.fn(), value: '', setValue: vi.fn() },
       permission: { mode: 'auto', setMode: vi.fn(), value: '', setValue: vi.fn() },
+      thoughtLevel: { mode: 'auto', setMode: vi.fn(), value: '', setValue: vi.fn() },
       skills: { mode: 'fixed', setMode: vi.fn() },
       mcps: { mode: 'fixed', setMode: vi.fn(), availableServers: [], selectedIds: [], setSelectedIds: vi.fn() },
     },
@@ -119,6 +120,7 @@ const createEditor = (overrides: Partial<AssistantEditorViewModel> = {}): Assist
       ...overrides.defaults,
       model: { ...base.defaults.model, ...overrides.defaults?.model },
       permission: { ...base.defaults.permission, ...overrides.defaults?.permission },
+      thoughtLevel: { ...base.defaults.thoughtLevel, ...overrides.defaults?.thoughtLevel },
       skills: { ...base.defaults.skills, ...overrides.defaults?.skills },
       mcps: { ...base.defaults.mcps, ...overrides.defaults?.mcps },
     },
@@ -175,6 +177,7 @@ describe('AssistantEditorSections', () => {
     const defaultsScope = within(defaultsCard);
     expect(defaultsScope.getByText('Default Model')).toBeInTheDocument();
     expect(defaultsScope.getByText('Default Permission')).toBeInTheDocument();
+    expect(defaultsScope.queryByText('Default Thinking Level')).not.toBeInTheDocument();
     expect(defaultsScope.getByText('Default Skills')).toBeInTheDocument();
     expect(defaultsScope.getByText('Default MCP')).toBeInTheDocument();
     expect(
@@ -182,6 +185,80 @@ describe('AssistantEditorSections', () => {
         'Remember last used only takes effect after this assistant has recorded a previous selection.'
       )
     ).toBeInTheDocument();
+  });
+
+  it('shows thought-level defaults only for a runtime that advertises compatible choices', () => {
+    renderWithProviders(
+      <AssistantEditorSections
+        editor={createEditor({
+          agent: {
+            value: 'agent-claude-row',
+            setValue: vi.fn(),
+            availableBackends: [
+              {
+                id: 'agent-claude-row',
+                name: 'Claude Code',
+                runtimeKey: 'claude',
+                modelOptions: [],
+                thoughtLevelOption: {
+                  id: 'reasoning_effort',
+                  category: 'thought_level',
+                  currentValue: 'medium',
+                  options: [
+                    { value: 'medium', label: 'Balanced' },
+                    { value: 'high', label: 'High' },
+                  ],
+                },
+              },
+            ],
+          },
+          defaults: {
+            thoughtLevel: { mode: 'fixed', setMode: vi.fn(), value: 'high', setValue: vi.fn() },
+          },
+        })}
+        activeAssistant={null}
+      />
+    );
+
+    const defaultsCard = screen.getByTestId('assistant-card-defaults');
+    expect(within(defaultsCard).getByText('Default Thinking Level')).toBeInTheDocument();
+    expect(screen.getByTestId('select-assistant-default-thought-level')).toHaveTextContent('High');
+  });
+
+  it('clears a fixed thought-level default that is no longer advertised', async () => {
+    const setMode = vi.fn();
+    const setValue = vi.fn();
+    renderWithProviders(
+      <AssistantEditorSections
+        editor={createEditor({
+          agent: {
+            value: 'agent-claude-row',
+            setValue: vi.fn(),
+            availableBackends: [
+              {
+                id: 'agent-claude-row',
+                name: 'Claude Code',
+                runtimeKey: 'claude',
+                modelOptions: [],
+                thoughtLevelOption: {
+                  id: 'reasoning_effort',
+                  category: 'thought_level',
+                  currentValue: 'medium',
+                  options: [{ value: 'medium', label: 'Balanced' }],
+                },
+              },
+            ],
+          },
+          defaults: {
+            thoughtLevel: { mode: 'fixed', setMode, value: 'obsolete', setValue },
+          },
+        })}
+        activeAssistant={null}
+      />
+    );
+
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith('auto'));
+    expect(setValue).toHaveBeenCalledWith('');
   });
 
   it('renders auto defaults consistently for model, permission, skills, and MCP', () => {
@@ -282,6 +359,7 @@ describe('AssistantEditorSections', () => {
                 name: 'Aionrs',
                 runtimeKey: 'aionrs',
                 modelOptions: [{ value: 'handshake-model', label: 'Handshake Model' }],
+                thoughtLevelOption: null,
               },
             ],
           },
@@ -452,7 +530,14 @@ describe('AssistantEditorSections', () => {
             value: 'claude',
             setValue: vi.fn(),
             availableBackends: [
-              { id: 'claude', name: 'Claude', runtimeKey: 'claude', isExtension: false, modelOptions: [] },
+              {
+                id: 'claude',
+                name: 'Claude',
+                runtimeKey: 'claude',
+                isExtension: false,
+                modelOptions: [],
+                thoughtLevelOption: null,
+              },
             ],
           },
         })}

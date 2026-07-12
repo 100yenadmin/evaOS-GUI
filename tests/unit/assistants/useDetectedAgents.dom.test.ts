@@ -127,6 +127,7 @@ describe('useDetectedAgents', () => {
       runtimeKey: 'claude',
       isExtension: false,
       modelOptions: [],
+      thoughtLevelOption: null,
     });
     // falls back to agent_type when backend is absent (e.g. internal engines)
     expect(result.current.availableBackends[1]).toEqual({
@@ -135,6 +136,7 @@ describe('useDetectedAgents', () => {
       runtimeKey: 'aionrs',
       isExtension: false,
       modelOptions: [],
+      thoughtLevelOption: null,
     });
   });
 
@@ -168,6 +170,51 @@ describe('useDetectedAgents', () => {
       { value: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
       { value: 'claude-opus-4', label: 'Claude Opus 4' },
     ]);
+  });
+
+  it('derives thought-level choices from the canonical management row config catalog', () => {
+    const mockAgents: ManagedAgent[] = [
+      {
+        id: 'a1',
+        name: 'ClaudeCode',
+        agent_type: 'acp',
+        agent_source: 'builtin',
+        backend: 'claude',
+        enabled: true,
+        installed: true,
+        sort_order: 0,
+        status: 'online',
+        config_options: {
+          config_options: [
+            {
+              id: 'reasoning_effort',
+              category: 'thought_level',
+              type: 'select',
+              current_value: 'medium',
+              options: [
+                { value: 'low', label: 'Low' },
+                { value: 'medium', name: 'Balanced' },
+                { value: 'high', label: 'High', description: 'Most careful' },
+              ],
+            },
+          ],
+        },
+      },
+    ];
+    vi.mocked(useSWR).mockReturnValue({ data: mockAgents, error: null } as ReturnType<typeof useSWR>);
+
+    const { result } = renderHook(() => useDetectedAgents());
+
+    expect(result.current.availableBackends[0]?.thoughtLevelOption).toEqual({
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'medium',
+      options: [
+        { value: 'low', label: 'Low', description: undefined },
+        { value: 'medium', label: 'Balanced', description: undefined },
+        { value: 'high', label: 'High', description: 'Most careful' },
+      ],
+    });
   });
 
   it('revalidates both catalogs without probing engines on refreshAgentDetection', async () => {

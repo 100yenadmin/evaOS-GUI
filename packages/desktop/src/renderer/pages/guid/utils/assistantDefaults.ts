@@ -1,8 +1,21 @@
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
+import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
+
+export const resolveCompatibleThoughtLevelValue = (
+  option: AcpDerivedOption | null | undefined,
+  preferredValue?: string
+): string => {
+  if (!option || option.options.length === 0) return '';
+  const availableValues = new Set(option.options.map((item) => item.value));
+  if (preferredValue && availableValues.has(preferredValue)) return preferredValue;
+  if (option.currentValue && availableValues.has(option.currentValue)) return option.currentValue;
+  return option.options[0]?.value ?? '';
+};
 
 export type ResolvedGuidAssistantDefaults = {
   modelId?: string;
   permissionMode?: string;
+  thoughtLevel?: string;
   skillIds: string[];
   disabledBuiltinSkillIds: string[];
   mcpIds: string[];
@@ -15,6 +28,7 @@ export const resolveGuidAssistantDefaults = (
     return {
       modelId: undefined,
       permissionMode: undefined,
+      thoughtLevel: undefined,
       skillIds: [],
       disabledBuiltinSkillIds: [],
       mcpIds: [],
@@ -33,6 +47,14 @@ export const resolveGuidAssistantDefaults = (
       ? detail.defaults.permission.value
       : detail.defaults.permission.mode === 'auto'
         ? detail.preferences.last_permission_value
+        : undefined;
+
+  const thoughtLevelDefault = detail.defaults.thought_level ?? { mode: 'auto' };
+  const thoughtLevel =
+    thoughtLevelDefault.mode === 'fixed'
+      ? thoughtLevelDefault.value
+      : thoughtLevelDefault.mode === 'auto'
+        ? detail.preferences.last_thought_level_value
         : undefined;
 
   const skillIds =
@@ -59,6 +81,7 @@ export const resolveGuidAssistantDefaults = (
   return {
     modelId: modelId || undefined,
     permissionMode: permissionMode || undefined,
+    thoughtLevel: thoughtLevel || undefined,
     skillIds,
     disabledBuiltinSkillIds,
     mcpIds,

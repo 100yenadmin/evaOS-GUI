@@ -11,6 +11,7 @@ import { mapAgentAvailableCommandsToSlashCommands } from '@/common/chat/slash/gu
 import type { SlashCommandItem } from '@/common/chat/slash/types';
 import type { IProvider } from '@/common/config/storage';
 import { configService } from '@/common/config/configService';
+import { resolveAgentRowForAssistant } from '@/common/adapter/mappers/assistantMapper';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { AcpSessionModes } from '@/common/types/platform/acpTypes';
 import type { AcpModelInfo, AvailableAgent, EffectiveAgentInfo } from '../types';
@@ -33,6 +34,9 @@ import { savePreferredMode, savePreferredModelId, getAgentKey as getAgentKeyUtil
 import { usePresetAssistantResolver } from './usePresetAssistantResolver';
 import { useAgentAvailability } from './useAgentAvailability';
 import { useCustomAgentsLoader } from './useCustomAgentsLoader';
+import { resolveCompatibleThoughtLevelValue } from '../utils/assistantDefaults';
+import { deriveAssistantThoughtLevelOption } from '@/renderer/hooks/assistant/useDetectedAgents';
+import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 
 export type GuidAgentSelectionResult = {
   selectedAgentKey: string;
@@ -53,6 +57,9 @@ export type GuidAgentSelectionResult = {
   selectedAcpModel: string | null;
   setSelectedAcpModel: (model: React.SetStateAction<string | null>, options?: { persistPreference?: boolean }) => void;
   currentAcpCachedModelInfo: AcpModelInfo | null;
+  currentThoughtLevelOption: AcpDerivedOption | null;
+  selectedThoughtLevelValue: string;
+  setSelectedThoughtLevelValue: (value: React.SetStateAction<string>) => void;
   currentAgentAvailableCommands: SlashCommandItem[];
   currentEffectiveAgentInfo: EffectiveAgentInfo;
   getAgentKey: (agent: {
@@ -151,6 +158,7 @@ export const useGuidAgentSelection = ({
   // Guard: only run the initial restore once; user selections are never overwritten
   const initialRestoreDoneRef = useRef(false);
   const [selectedAcpModel, _setSelectedAcpModel] = useState<string | null>(null);
+  const [selectedThoughtLevelValue, _setSelectedThoughtLevelValue] = useState('');
   const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus();
 
   // Wrap setSelectedAgentKey to also save to storage
@@ -197,6 +205,10 @@ export const useGuidAgentSelection = ({
     },
     []
   );
+
+  const setSelectedThoughtLevelValue = useCallback((value: React.SetStateAction<string>) => {
+    _setSelectedThoughtLevelValue((previous) => (typeof value === 'function' ? value(previous) : value));
+  }, []);
 
   const availableCustomAgentIds = useMemo(() => {
     const ids = new Set<string>();
@@ -553,6 +565,55 @@ export const useGuidAgentSelection = ({
     return null;
   }, [selectedAgentKey, is_presetAgent, currentEffectiveAgentInfo.agent_type, availableAgentsData]);
 
+  const selectedRuntimeThoughtLevelOption = useMemo(() => {
+    const metadataAgents = availableAgentsData as unknown as AgentMetadata[] | undefined;
+    const effectiveAgentType = is_presetAgent ? currentEffectiveAgentInfo.agent_type : selectedAgent;
+    const selectedAssistantId = is_presetAgent ? selectedAgentInfo?.custom_agent_id : undefined;
+    const strippedAssistantId = selectedAssistantId?.replace(/^builtin-/, '');
+    const assistantIds = new Set(
+      selectedAssistantId && strippedAssistantId
+        ? [selectedAssistantId, `builtin-${strippedAssistantId}`, strippedAssistantId]
+        : []
+    );
+    const canonicalAgentId = is_presetAgent
+      ? assistants.find((assistant) => assistantIds.has(assistant.id))?.agent_id
+      : selectedAgentInfo?.id;
+    const matched = resolveAgentRowForAssistant(metadataAgents ?? [], canonicalAgentId || '', effectiveAgentType);
+    return deriveAssistantThoughtLevelOption(matched?.handshake?.config_options);
+  }, [
+    assistants,
+    availableAgentsData,
+    currentEffectiveAgentInfo.agent_type,
+    is_presetAgent,
+    selectedAgent,
+    selectedAgentInfo,
+  ]);
+
+  const thoughtLevelScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const optionValues = new Set(selectedRuntimeThoughtLevelOption?.options.map((option) => option.value) ?? []);
+    const fallbackValue = resolveCompatibleThoughtLevelValue(selectedRuntimeThoughtLevelOption);
+
+    _setSelectedThoughtLevelValue((previousValue) => {
+      const scopeChanged = thoughtLevelScopeRef.current !== selectedAgentKey;
+      thoughtLevelScopeRef.current = selectedAgentKey;
+      if (!selectedRuntimeThoughtLevelOption) return '';
+      if (!scopeChanged && previousValue && optionValues.has(previousValue)) return previousValue;
+      return fallbackValue;
+    });
+  }, [selectedAgentKey, selectedRuntimeThoughtLevelOption]);
+
+  const currentThoughtLevelOption = useMemo(
+    () =>
+      selectedRuntimeThoughtLevelOption
+        ? {
+            ...selectedRuntimeThoughtLevelOption,
+            currentValue: selectedThoughtLevelValue || selectedRuntimeThoughtLevelOption.currentValue,
+          }
+        : null,
+    [selectedRuntimeThoughtLevelOption, selectedThoughtLevelValue]
+  );
+
   const currentAgentAvailableCommands = useMemo(() => {
     const metadataAgents = availableAgentsData as unknown as AgentMetadata[] | undefined;
     const effectiveAgentType = is_presetAgent ? currentEffectiveAgentInfo.agent_type : selectedAgent;
@@ -591,6 +652,9 @@ export const useGuidAgentSelection = ({
     selectedAcpModel,
     setSelectedAcpModel,
     currentAcpCachedModelInfo,
+    currentThoughtLevelOption,
+    selectedThoughtLevelValue,
+    setSelectedThoughtLevelValue,
     currentAgentAvailableCommands,
     currentEffectiveAgentInfo,
     getAgentKey,

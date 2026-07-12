@@ -5,7 +5,7 @@ import { getAgentModes } from '@/renderer/utils/model/agentModes';
 import { isBuiltinAssistant, isGeneratedAssistant, isSystemAssistant } from '@/renderer/utils/model/assistantSelection';
 import { Button, Select, Tag } from '@arco-design/web-react';
 import { Info, Robot } from '@icon-park/react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import IdentitySection from './editor/IdentitySection';
 import PromptsSection from './editor/PromptsSection';
@@ -48,6 +48,10 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
   const setDefaultPermissionMode = defaults.permission.setMode;
   const defaultPermissionValue = defaults.permission.value;
   const setDefaultPermissionValue = defaults.permission.setValue;
+  const defaultThoughtLevelMode = defaults.thoughtLevel.mode;
+  const setDefaultThoughtLevelMode = defaults.thoughtLevel.setMode;
+  const defaultThoughtLevelValue = defaults.thoughtLevel.value;
+  const setDefaultThoughtLevelValue = defaults.thoughtLevel.setValue;
   const defaultSkillsMode = defaults.skills.mode;
   const setDefaultSkillsMode = defaults.skills.setMode;
   const defaultMcpMode = defaults.mcps.mode;
@@ -106,6 +110,27 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
       })),
     [editAgentRuntimeKey, t]
   );
+  const thoughtLevelOptions = useMemo(
+    () =>
+      (currentBackend?.thoughtLevelOption?.options ?? []).map((option) => ({
+        key: `${currentBackend?.id}-${option.value}`,
+        value: option.value,
+        label: option.label,
+      })),
+    [currentBackend]
+  );
+  useEffect(() => {
+    if (defaultThoughtLevelMode !== 'fixed' || thoughtLevelOptions.length === 0) return;
+    if (thoughtLevelOptions.some((option) => option.value === defaultThoughtLevelValue)) return;
+    setDefaultThoughtLevelMode('auto');
+    setDefaultThoughtLevelValue('');
+  }, [
+    defaultThoughtLevelMode,
+    defaultThoughtLevelValue,
+    setDefaultThoughtLevelMode,
+    setDefaultThoughtLevelValue,
+    thoughtLevelOptions,
+  ]);
   const recommendedPromptItems = useMemo(
     () =>
       editRecommendedPromptsText
@@ -261,7 +286,7 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
               <span>
                 {t('settings.assistantBuiltinReadonlyTip', {
                   defaultValue:
-                    'This is a builtin assistant. You can change Main Agent, Default Model, and Default Permission. To customize other fields, ',
+                    'This is an official assistant — only engine-related settings can be changed. To customize anything else, ',
                 })}
               </span>
               <Button
@@ -375,12 +400,17 @@ const AssistantEditorSections: React.FC<AssistantEditorSectionsProps> = ({ edito
         setDefaultPermissionMode={setDefaultPermissionMode}
         defaultPermissionValue={defaultPermissionValue}
         setDefaultPermissionValue={setDefaultPermissionValue}
+        defaultThoughtLevelMode={defaultThoughtLevelMode}
+        setDefaultThoughtLevelMode={setDefaultThoughtLevelMode}
+        defaultThoughtLevelValue={defaultThoughtLevelValue}
+        setDefaultThoughtLevelValue={setDefaultThoughtLevelValue}
         defaultSkillsMode={defaultSkillsMode}
         setDefaultSkillsMode={setDefaultSkillsMode}
         defaultMcpMode={defaultMcpMode}
         setDefaultMcpMode={setDefaultMcpMode}
         modelOptions={modelOptions}
         permissionOptions={permissionOptions}
+        thoughtLevelOptions={thoughtLevelOptions}
         editableSkillOptions={editableSkillOptions}
         selectedSkillValues={selectedSkillValues}
         enabledMcpServers={availableMcpServers}

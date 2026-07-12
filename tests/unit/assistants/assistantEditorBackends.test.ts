@@ -89,6 +89,7 @@ describe('buildAssistantEditorBackends', () => {
         runtimeKey: 'claude',
         isExtension: false,
         modelOptions: [{ value: 'sonnet', label: 'Sonnet' }],
+        thoughtLevelOption: null,
       },
       {
         id: 'agent-aionrs-row',
@@ -96,6 +97,7 @@ describe('buildAssistantEditorBackends', () => {
         runtimeKey: 'aionrs',
         isExtension: false,
         modelOptions: [],
+        thoughtLevelOption: null,
       },
     ]);
   });
