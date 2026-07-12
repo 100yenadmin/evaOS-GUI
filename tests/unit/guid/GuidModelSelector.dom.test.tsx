@@ -307,4 +307,33 @@ describe('GuidModelSelector desktop menus', () => {
     fireEvent.click(screen.getByText('High'));
     expect(onThoughtLevelSelect).toHaveBeenCalledWith('high');
   });
+
+  it('shows thought-level choices when the ACP runtime has no switchable models', () => {
+    const onThoughtLevelSelect = vi.fn();
+    const thoughtLevelOption: AcpDerivedOption = {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'medium',
+      options: [
+        { value: 'medium', label: 'Balanced' },
+        { value: 'high', label: 'High' },
+      ],
+    };
+
+    render(
+      <GuidModelSelector
+        {...baseProps()}
+        isGeminiMode={false}
+        currentAcpCachedModelInfo={null}
+        thoughtLevelOption={thoughtLevelOption}
+        onThoughtLevelSelect={onThoughtLevelSelect}
+      />
+    );
+
+    expect(screen.getByRole('button')).toHaveTextContent('common.defaultModel · Balanced');
+    expect(screen.getByRole('group', { name: 'agent.thoughtLevel.label' })).toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-selector-menu-divider')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('High'));
+    expect(onThoughtLevelSelect).toHaveBeenCalledWith('high');
+  });
 });

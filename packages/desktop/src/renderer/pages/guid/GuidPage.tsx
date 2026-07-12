@@ -303,6 +303,7 @@ const GuidPage: React.FC = () => {
     is_presetAgent: agentSelection.is_presetAgent,
     selectedMode: agentSelection.selectedMode,
     selectedThoughtLevelValue: agentSelection.selectedThoughtLevelValue,
+    thoughtLevelOptionId: agentSelection.runtimeThoughtLevelOption?.id,
     availableThoughtLevelValues: agentSelection.runtimeThoughtLevelOption?.options.map((option) => option.value) ?? [],
     selectedAcpModel: agentSelection.selectedAcpModel,
     currentAcpCachedModelInfo: agentSelection.currentAcpCachedModelInfo,

@@ -203,52 +203,31 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
     );
   }
 
-  // ACP cached model selector
-  if (currentAcpCachedModelInfo && currentAcpCachedModelInfo.available_models?.length > 0) {
-    if (currentAcpCachedModelInfo.available_models.length > 0) {
-      return (
-        <Dropdown
-          trigger='click'
-          droplist={
-            <Menu
-              className={RUNTIME_SELECTOR_MENU_CLASS_NAME}
-              selectedKeys={selectedAcpModel ? [selectedAcpModel] : []}
-            >
-              {renderThoughtLevelMenuGroup({
-                thoughtLevel: thoughtLevelOption,
-                title: t('agent.thoughtLevel.label'),
-                onSelect: (value) => onThoughtLevelSelect?.(value),
-              })}
-              {thoughtLevelOption ? <RuntimeSelectorMenuDivider /> : null}
-              {acpModelMenu}
-            </Menu>
-          }
-        >
-          <Button className={'sendbox-model-btn guid-config-btn'} shape='round' size='small'>
-            <span className='flex items-center gap-6px min-w-0'>
-              <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />
-              <span>{combinedAcpButtonLabel}</span>
-              <Down theme='outline' size='12' fill={iconColors.secondary} className='shrink-0' />
-            </span>
-          </Button>
-        </Dropdown>
-      );
-    }
-
+  const hasAcpModels = acpModels.length > 0;
+  if (hasAcpModels || thoughtLevelOption) {
     return (
-      <Tooltip content={t('conversation.welcome.modelSwitchNotSupported')} position='top'>
-        <Button
-          className={'sendbox-model-btn guid-config-btn'}
-          shape='round'
-          size='small'
-          style={{ cursor: 'default' }}
-        >
+      <Dropdown
+        trigger='click'
+        droplist={
+          <Menu className={RUNTIME_SELECTOR_MENU_CLASS_NAME} selectedKeys={selectedAcpModel ? [selectedAcpModel] : []}>
+            {renderThoughtLevelMenuGroup({
+              thoughtLevel: thoughtLevelOption,
+              title: t('agent.thoughtLevel.label'),
+              onSelect: (value) => onThoughtLevelSelect?.(value),
+            })}
+            {thoughtLevelOption && hasAcpModels ? <RuntimeSelectorMenuDivider /> : null}
+            {hasAcpModels ? acpModelMenu : null}
+          </Menu>
+        }
+      >
+        <Button className={'sendbox-model-btn guid-config-btn'} shape='round' size='small'>
           <span className='flex items-center gap-6px min-w-0'>
             <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />
-            <span>{acpButtonLabel}</span>
+            <span>{combinedAcpButtonLabel}</span>
+            <Down theme='outline' size='12' fill={iconColors.secondary} className='shrink-0' />
           </span>
         </Button>
-      </Tooltip>
+      </Dropdown>
     );
   }
 

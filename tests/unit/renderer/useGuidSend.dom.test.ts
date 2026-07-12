@@ -67,6 +67,7 @@ const createDeps = (): GuidSendDeps => ({
   is_presetAgent: true,
   selectedMode: 'bypassPermissions',
   selectedThoughtLevelValue: 'high',
+  thoughtLevelOptionId: 'reasoning_effort',
   availableThoughtLevelValues: ['medium', 'high'],
   selectedAcpModel: 'claude-opus',
   currentAcpCachedModelInfo: null,
@@ -225,6 +226,31 @@ describe('useGuidSend', () => {
 
     const payload = createConversationInvokeMock.mock.calls[0][0];
     expect(payload.assistant?.conversation_overrides).not.toHaveProperty('thought_level');
+  });
+
+  it('sends a compatible thought level as a pending config option for a direct ACP agent', async () => {
+    const deps = createDeps();
+    deps.selectedAgentKey = 'claude';
+    deps.selectedAgentInfo = {
+      id: 'agent-claude-row',
+      key: 'claude',
+      name: 'Claude',
+      agent_type: 'acp',
+      backend: 'claude',
+      is_preset: false,
+      isExtension: false,
+    } as never;
+    deps.is_presetAgent = false;
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.assistant).toBeUndefined();
+    expect(payload.extra.pending_config_options).toEqual({ reasoning_effort: 'high' });
   });
 
   it('falls back to assistant default skill and MCP ids for preset conversations before local Guid overrides exist', async () => {

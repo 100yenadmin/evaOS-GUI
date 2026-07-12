@@ -94,6 +94,7 @@ export type GuidSendDeps = {
   is_presetAgent: boolean;
   selectedMode: string;
   selectedThoughtLevelValue: string;
+  thoughtLevelOptionId?: string;
   availableThoughtLevelValues: string[];
   selectedAcpModel: string | null;
   currentAcpCachedModelInfo: AcpModelInfo | null;
@@ -157,6 +158,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     is_presetAgent,
     selectedMode,
     selectedThoughtLevelValue,
+    thoughtLevelOptionId,
     availableThoughtLevelValues,
     selectedAcpModel,
     currentAcpCachedModelInfo,
@@ -427,6 +429,10 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
           selected_session_mcp_servers:
             selectedMcpServerIds !== undefined ? selectedSessionMcpServers : selectedSessionMcpServersToSend,
+          pending_config_options:
+            !is_preset && compatibleThoughtLevelValue && thoughtLevelOptionId
+              ? { [thoughtLevelOptionId]: compatibleThoughtLevelValue }
+              : undefined,
         },
       });
 
@@ -472,6 +478,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     is_presetAgent,
     selectedMode,
     selectedThoughtLevelValue,
+    thoughtLevelOptionId,
     availableThoughtLevelValues,
     selectedAcpModel,
     currentAcpCachedModelInfo,

@@ -1809,6 +1809,7 @@ export interface ICreateConversationParams {
     conversation_overrides?: {
       model?: string;
       permission?: string;
+      thought_level?: string;
       skill_ids?: string[];
       disabled_builtin_skill_ids?: string[];
       mcp_ids?: string[];
