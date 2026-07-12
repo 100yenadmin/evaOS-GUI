@@ -15,7 +15,7 @@ import {
 import { Magic, FolderOpen, Lightning } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { ipcBridge } from '@/common';
-import { reprobeEnabledAgents } from '@/renderer/utils/model/agentTypes';
+import { mutate as swrMutate } from 'swr';
 import { uuid } from '@/common/utils';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { IDirOrFile } from '@/common/adapter/ipcBridge';
@@ -278,7 +278,7 @@ Requirements:
           content,
         });
       }
-      await reprobeEnabledAgents();
+      await swrMutate('assistants.list');
       Message.success(
         t('conversation.skill_generator.preset_registered', { defaultValue: 'Agent preset registered successfully!' })
       );

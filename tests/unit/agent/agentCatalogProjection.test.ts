@@ -122,6 +122,16 @@ describe('detected agent catalog projection', () => {
     ]);
   });
 
+  it('does not present installed but offline rows as available in Settings', async () => {
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([
+      { ...onlineAgent, id: 'offline-row', status: 'offline' },
+    ]);
+
+    await expect(fetchManagedAgents()).resolves.toEqual([
+      expect.objectContaining({ id: 'offline-row', available: false }),
+    ]);
+  });
+
   it('surfaces detected-catalog transport failures to the shared SWR error state', async () => {
     const failure = new Error('catalog unavailable');
     vi.mocked(ipcBridge.acpConversation.getAvailableAgents.invoke).mockRejectedValue(failure);

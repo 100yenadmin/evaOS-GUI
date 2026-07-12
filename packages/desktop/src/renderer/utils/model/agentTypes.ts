@@ -43,7 +43,7 @@ function projectManagementAgent(agent: ManagedAgent): AgentMetadata {
   } = agent;
   return {
     ...metadata,
-    available: installed,
+    available: installed && agent.status === 'online',
     handshake: {
       config_options,
       available_modes,

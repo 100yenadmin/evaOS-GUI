@@ -937,6 +937,21 @@ const GuidPage: React.FC = () => {
             )}
           </div>
 
+          {agentSelection.agentCatalogError ? (
+            <Alert
+              type='error'
+              data-testid='guid-agent-catalog-error'
+              content={
+                <div className='flex items-center justify-between gap-12px'>
+                  <span>{t('common.failed')}</span>
+                  <Button size='small' onClick={agentSelection.retryAgentCatalog}>
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              }
+            />
+          ) : null}
+
           {agentSelection.is_presetAgent ? (
             selectedAssistantDescription ? (
               <div
@@ -972,20 +987,7 @@ const GuidPage: React.FC = () => {
                 ) : null}
               </div>
             ) : null
-          ) : agentSelection.agentCatalogError ? (
-            <Alert
-              type='error'
-              data-testid='guid-agent-catalog-error'
-              content={
-                <div className='flex items-center justify-between gap-12px'>
-                  <span>{t('common.failed')}</span>
-                  <Button size='small' onClick={agentSelection.retryAgentCatalog}>
-                    {t('common.retry')}
-                  </Button>
-                </div>
-              }
-            />
-          ) : agentSelection.availableAgents === undefined ? (
+          ) : agentSelection.agentCatalogError ? null : agentSelection.availableAgents === undefined ? (
             <AgentPillBarSkeleton />
           ) : agentSelection.availableAgents.length > 0 ? (
             <AgentPillBar
