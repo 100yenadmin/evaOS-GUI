@@ -13,6 +13,7 @@ import type {
   MobileActionSheetOption,
 } from '@/renderer/components/chat/MobileActionSheet/types';
 import { useAgentModesForBackend } from '@/renderer/hooks/agent/useAgentModesForBackend';
+import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { supportsModeSwitch, type AgentModeOption } from '@/renderer/utils/model/agentModes';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { getCleanFileNames, FileService } from '@/renderer/services/FileService';
@@ -42,6 +43,9 @@ type GuidActionRowProps = {
   currentAcpCachedModelInfo: AcpModelInfo | null;
   selectedAcpModel: string | null;
   setSelectedAcpModel: (model: string | null) => void;
+  thoughtLevelOption?: AcpDerivedOption | null;
+  selectedThoughtLevelValue: string;
+  onThoughtLevelSelect: (value: string) => void;
   onAddModel: () => void;
 
   // Agent mode
@@ -92,6 +96,9 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
   currentAcpCachedModelInfo,
   selectedAcpModel,
   setSelectedAcpModel,
+  thoughtLevelOption,
+  selectedThoughtLevelValue,
+  onThoughtLevelSelect,
   onAddModel,
   selectedAgent,
   effectiveModeAgent,
@@ -257,6 +264,26 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
       });
     }
 
+    if (!isGeminiMode && thoughtLevelOption && thoughtLevelOption.options.length > 0) {
+      const options = thoughtLevelOption.options.map((option) => ({
+        key: option.value,
+        label: option.label,
+        description: option.description,
+        active: option.value === selectedThoughtLevelValue,
+      }));
+      entries.push({
+        key: 'thought-level',
+        icon: <Brain theme='outline' size='16' />,
+        label: t('agent.thoughtLevel.label'),
+        meta: options.find((option) => option.active)?.label,
+        submenu: {
+          title: t('agent.thoughtLevel.label'),
+          options,
+          onSelect: onThoughtLevelSelect,
+        },
+      });
+    }
+
     const modeOptions = availableModeOptions;
     if (modeOptions.length > 0) {
       const options = modeOptions.map((mode) => ({
@@ -360,15 +387,18 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
     modeBackend,
     modelList,
     onModeSelect,
+    onThoughtLevelSelect,
     onToggleMcpServer,
     onToggleSkill,
     openHostFilePicker,
     selectedAcpModel,
     selectedMcpServerIds,
     selectedMode,
+    selectedThoughtLevelValue,
     setCurrentModel,
     setSelectedAcpModel,
     t,
+    thoughtLevelOption,
   ]);
 
   const menuContent = (

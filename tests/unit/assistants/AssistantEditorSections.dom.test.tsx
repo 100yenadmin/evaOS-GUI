@@ -77,6 +77,7 @@ const createEditor = (overrides: AssistantEditorOverrides = {}): AssistantEditor
       value: 'claude',
       setValue: vi.fn(),
       availableBackends: [],
+      isLoading: false,
     },
     prompts: {
       text: '',
@@ -294,6 +295,30 @@ describe('AssistantEditorSections', () => {
 
     await waitFor(() => expect(setMode).toHaveBeenCalledWith('auto'));
     expect(setValue).toHaveBeenCalledWith('');
+  });
+
+  it('preserves a fixed thought-level default while the runtime catalog is loading', () => {
+    const setMode = vi.fn();
+    const setValue = vi.fn();
+    renderWithProviders(
+      <AssistantEditorSections
+        editor={createEditor({
+          agent: {
+            value: 'agent-runtime-row',
+            setValue: vi.fn(),
+            availableBackends: [],
+            isLoading: true,
+          },
+          defaults: {
+            thoughtLevel: { mode: 'fixed', setMode, value: 'high', setValue },
+          },
+        })}
+        activeAssistant={null}
+      />
+    );
+
+    expect(setMode).not.toHaveBeenCalled();
+    expect(setValue).not.toHaveBeenCalled();
   });
 
   it('renders auto defaults consistently for model, permission, skills, and MCP', () => {

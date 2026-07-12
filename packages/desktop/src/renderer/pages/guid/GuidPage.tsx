@@ -853,6 +853,9 @@ const GuidPage: React.FC = () => {
       currentAcpCachedModelInfo={agentSelection.currentAcpCachedModelInfo}
       selectedAcpModel={agentSelection.selectedAcpModel}
       setSelectedAcpModel={setGuidSelectedAcpModel}
+      thoughtLevelOption={isGeminiMode ? null : agentSelection.currentThoughtLevelOption}
+      selectedThoughtLevelValue={agentSelection.selectedThoughtLevelValue}
+      onThoughtLevelSelect={setGuidSelectedThoughtLevel}
       onAddModel={handleAddModel}
       selectedAgent={agentSelection.selectedAgent}
       effectiveModeAgent={agentSelection.currentEffectiveAgentInfo.agent_type}

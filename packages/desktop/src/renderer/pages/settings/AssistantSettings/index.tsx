@@ -90,7 +90,7 @@ const AssistantSettings: React.FC = () => {
     [visibleAssistants, avatarImageMap, localeKey]
   );
 
-  const { managedAgents, catalogError, refreshAgentDetection } = useDetectedAgents();
+  const { managedAgents, catalogError, isCatalogLoading, refreshAgentDetection } = useDetectedAgents();
 
   useEffect(() => {
     if (catalogError) {
@@ -131,6 +131,7 @@ const AssistantSettings: React.FC = () => {
       value: editor.editAgent,
       setValue: editor.setEditAgent,
       availableBackends,
+      isLoading: isCatalogLoading,
     },
     prompts: {
       text: editor.editRecommendedPromptsText,

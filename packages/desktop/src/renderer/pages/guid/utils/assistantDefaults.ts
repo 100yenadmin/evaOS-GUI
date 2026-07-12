@@ -1,7 +1,7 @@
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 
-/** Prefers a compatible requested value, then the runtime value, then the first advertised option. */
+/** Prefers a compatible requested value, then the runtime value, without inventing a selection. */
 export const resolveCompatibleThoughtLevelValue = (
   option: AcpDerivedOption | null | undefined,
   preferredValue?: string
@@ -10,7 +10,7 @@ export const resolveCompatibleThoughtLevelValue = (
   const availableValues = new Set(option.options.map((item) => item.value));
   if (preferredValue && availableValues.has(preferredValue)) return preferredValue;
   if (option.currentValue && availableValues.has(option.currentValue)) return option.currentValue;
-  return option.options[0]?.value ?? '';
+  return '';
 };
 
 export type ResolvedGuidAssistantDefaults = {

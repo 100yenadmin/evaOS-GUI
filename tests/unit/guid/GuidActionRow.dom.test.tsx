@@ -75,6 +75,17 @@ const renderRow = (overrides: Record<string, unknown> = {}) => {
     },
     selectedAcpModel: 'model-a',
     setSelectedAcpModel: vi.fn(),
+    thoughtLevelOption: {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'medium',
+      options: [
+        { value: 'medium', label: 'Balanced' },
+        { value: 'high', label: 'High' },
+      ],
+    },
+    selectedThoughtLevelValue: 'medium',
+    onThoughtLevelSelect: vi.fn(),
     onAddModel: vi.fn(),
     selectedAgent: 'codex',
     selectedMode: 'read-only',
@@ -130,6 +141,7 @@ describe('GuidActionRow mobile controls', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByTestId('mobile-action-sheet-model')).toBeInTheDocument();
+    expect(screen.getByTestId('mobile-action-sheet-thought-level')).toBeInTheDocument();
     expect(screen.getByTestId('mobile-action-sheet-permission')).toBeInTheDocument();
     expect(screen.getByTestId('mobile-action-sheet-attach')).toBeInTheDocument();
     expect(screen.getByTestId('mobile-action-sheet-skills')).toBeInTheDocument();
@@ -144,6 +156,12 @@ describe('GuidActionRow mobile controls', () => {
     fireEvent.click(screen.getByTestId('mobile-action-sheet-option-model-b'));
     expect(props.setSelectedAcpModel).toHaveBeenCalledWith('model-b');
 
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-thought-level'));
+    fireEvent.click(screen.getByTestId('mobile-action-sheet-option-high'));
+    expect(props.onThoughtLevelSelect).toHaveBeenCalledWith('high');
+
+    fireEvent.click(screen.getByText('Back'));
     fireEvent.click(screen.getByTestId('mobile-action-sheet-permission'));
     fireEvent.click(screen.getByTestId('mobile-action-sheet-option-auto'));
     expect(props.onModeSelect).toHaveBeenCalledWith('auto');

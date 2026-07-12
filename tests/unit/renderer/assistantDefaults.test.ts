@@ -176,4 +176,8 @@ describe('resolveCompatibleThoughtLevelValue', () => {
   it('returns empty when the runtime does not advertise thought-level choices', () => {
     expect(resolveCompatibleThoughtLevelValue(null, 'high')).toBe('');
   });
+
+  it('leaves the selection empty when the runtime advertises choices without a current or preferred value', () => {
+    expect(resolveCompatibleThoughtLevelValue({ ...option, currentValue: undefined })).toBe('');
+  });
 });

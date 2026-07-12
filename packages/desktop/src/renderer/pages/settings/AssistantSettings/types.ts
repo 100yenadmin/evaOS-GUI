@@ -59,6 +59,7 @@ export type AssistantEditorViewModel = {
     value: string;
     setValue: (value: string) => void;
     availableBackends: AvailableBackend[];
+    isLoading?: boolean;
   };
   prompts: {
     text: string;
