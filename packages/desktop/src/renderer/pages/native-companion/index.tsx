@@ -229,6 +229,7 @@ const NativeCompanionPage: React.FC = () => {
       setTakeoverCueWarning(null);
       const targetsMacControlCustomer =
         request.action === 'create_pairing_prompt' ||
+        request.action === 'secure_network_enroll' ||
         request.action === 'ensure_customer_mac_connector_grant' ||
         request.action === 'setup_check';
       const requestCustomerId =
@@ -260,7 +261,15 @@ const NativeCompanionPage: React.FC = () => {
         }
         setActionResult(result);
         setActionResultCustomerId(targetsMacControlCustomer ? requestCustomerId : undefined);
-        setHandoffMessage(result.message);
+        setHandoffMessage(
+          result.sourcePointer === 'native-companion:secure-network-enrollment-submitted'
+            ? t('evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail')
+            : result.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
+              ? t('evaos.nativeCompanion.onboarding.enrollmentSessionDetail')
+              : result.sourcePointer.startsWith('native-companion:secure-network-enrollment-')
+                ? t('evaos.nativeCompanion.onboarding.enrollmentFailedDetail')
+                : result.message
+        );
         if (result.refreshRecommended) {
           await refresh();
         }
@@ -269,7 +278,7 @@ const NativeCompanionPage: React.FC = () => {
         setActionInFlight(null);
       }
     },
-    [refresh, runAction, selectedCustomerId, selectedPairingCustomerId]
+    [refresh, runAction, selectedCustomerId, selectedPairingCustomerId, t]
   );
 
   const handleCopyPairingPrompt = React.useCallback(async () => {

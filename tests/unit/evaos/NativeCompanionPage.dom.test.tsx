@@ -49,6 +49,10 @@ const i18nMocks = vi.hoisted(() => ({
       'evaos.nativeCompanion.onboarding.clientStoppedDetail': 'Open the installed secure-network app.',
       'evaos.nativeCompanion.onboarding.unenrolledTitle': 'Connect this Mac',
       'evaos.nativeCompanion.onboarding.unenrolledDetail': 'Approved enrollment is required.',
+      'evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail':
+        'Localized enrollment is waiting for broker verification.',
+      'evaos.nativeCompanion.onboarding.enrollmentFailedDetail': 'Localized enrollment failed safely.',
+      'evaos.nativeCompanion.onboarding.enrollmentSessionDetail': 'Localized Workbench session refresh required.',
       'evaos.nativeCompanion.onboarding.wrongControlPlaneTitle': 'Reconnect secure network',
       'evaos.nativeCompanion.onboarding.wrongControlPlaneDetail': 'The Mac is on the wrong private network.',
       'evaos.nativeCompanion.onboarding.aclBlockedTitle': 'Secure network access is blocked',
@@ -625,6 +629,67 @@ describe('NativeCompanionPage', () => {
       expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'secure_network_install' })
     );
     expect(bridgeMocks.runAction).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'connector_start' }));
+  });
+
+  it('routes an unenrolled Mac through the authenticated broker action for the selected customer', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-12T12:00:00.000Z',
+        readiness: 'repair_required',
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+        summaryText: 'Secure network enrollment is required.',
+        sourcePointer: 'native-companion:typed-prerequisites',
+        canOpenReleasedWorkbench: true,
+        releasedWorkbench: { installed: true },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'repair_required', running: true, reachable: false },
+        customerMac: {
+          status: 'repair_required',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'available' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+    bridgeMocks.runAction.mockResolvedValue({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Private-network enrollment was submitted.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        auditIds: [],
+        refreshRecommended: true,
+        blockerReason: 'secure_network_link_required',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    await waitFor(() =>
+      expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+        action: 'secure_network_enroll',
+        customerId: 'benjamin-kennedy',
+        agentLabel: 'evaOS Workbench',
+      })
+    );
+    expect(await screen.findByText('Localized enrollment is waiting for broker verification.')).toBeInTheDocument();
+    expect(bridgeMocks.openRepairAction).not.toHaveBeenCalled();
   });
 
   it('opens evaOS support email with Mac control state context', async () => {

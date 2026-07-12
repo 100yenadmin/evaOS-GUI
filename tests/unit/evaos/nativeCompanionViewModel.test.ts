@@ -314,6 +314,10 @@ describe('nativeCompanionViewModel', () => {
       }),
       loading: false,
       error: null,
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
     });
 
     expect(viewModel.state).toBe('repair_required');
@@ -352,8 +356,96 @@ describe('nativeCompanionViewModel', () => {
     });
   });
 
+  it('offers broker-owned one-use enrollment for an installed unenrolled client', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.title).toBe('Connect this Mac');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'secure_network_enroll',
+      label: 'Connect this Mac',
+      disabled: false,
+    });
+    expect(viewModel.nextAction.detail).toContain('approved enrollment');
+  });
+
+  it('requires an authenticated broker session before offering private-network enrollment', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      brokerAuthenticated: false,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Sign In To Workbench',
+      disabled: false,
+    });
+  });
+
+  it('routes a rejected private-network broker session to session recovery', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      actionResult: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Session refresh required.',
+        sourcePointer: 'native-companion:secure-network-enrollment-broker-session-required',
+        refreshRecommended: false,
+        auditIds: [],
+      },
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Refresh Workbench Session',
+      disabled: false,
+    });
+  });
+
   it.each([
-    ['unenrolled', 'Connect this Mac', 'approved enrollment'],
     ['wrong_control_plane', 'Reconnect secure network', 'wrong private network'],
     ['acl_blocked', 'Secure network access is blocked', 'support'],
     ['error', 'Check secure network', 'could not verify'],

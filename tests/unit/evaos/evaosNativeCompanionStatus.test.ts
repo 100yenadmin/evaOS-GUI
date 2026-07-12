@@ -7,7 +7,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { hostname } from 'node:os';
+import fs from 'node:fs';
+import { homedir, hostname } from 'node:os';
+import { join } from 'node:path';
 import {
   getEvaosWorkbenchDiagnosticPacket,
   getEvaosNativeCompanionStatus,
@@ -56,6 +58,7 @@ function depsWithResponses(
       return { stdout: json(payload), stderr: '' };
     }),
     openPath: vi.fn(async () => ''),
+    sleep: vi.fn(async () => undefined),
     probeConnectorReady: vi.fn(async () => true),
     ...overrides,
   };
@@ -3397,5 +3400,457 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result).toMatchObject({ opened: false });
     expect(openPath).not.toHaveBeenCalled();
     expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('enrolls an unenrolled signed Tailscale client with file-backed one-use material', async () => {
+    const authKey = 'one-use-private-network-key-for-test';
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_app_store' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey,
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const cancelPrivateNetworkEnrollment = vi.fn(async () => ({
+      cancelled: true as const,
+      enrollmentId: 'network-enrollment-1',
+    }));
+    let secretFilePath: string | undefined;
+    let secretFileContents: string | undefined;
+    const execFile = vi.fn(
+      async (file: string, args: string[], options: { timeout: number; env?: NodeJS.ProcessEnv }) => {
+        const key = args.join(' ');
+        if (file === bundledBridgePath && key === 'connector-service status --json') {
+          return {
+            stdout: json({
+              ok: true,
+              data: {
+                private_network: { client_installed: true, client_running: true, enrolled: false },
+              },
+            }),
+            stderr: '',
+          };
+        }
+        if (file === bundledBridgePath && key === 'customer-mac status --json') {
+          return {
+            stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+            stderr: '',
+          };
+        }
+        if (file === '/usr/bin/codesign' && args[0] === '--verify') {
+          expect(args.find((arg) => arg.startsWith('-R='))).toContain(
+            'anchor apple generic and certificate leaf[subject.OU] = "W5364U7YZB"'
+          );
+          expect(args.find((arg) => arg.startsWith('-R='))).toContain('identifier "io.tailscale.ipn.macos"');
+          return { stdout: '', stderr: '' };
+        }
+        if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+          return {
+            stdout: '',
+            stderr: 'Identifier=io.tailscale.ipn.macos\nTeamIdentifier=W5364U7YZB\n',
+          };
+        }
+        if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') {
+          const authKeyArg = args.find((arg) => arg.startsWith('--auth-key=file:'));
+          secretFilePath = authKeyArg?.slice('--auth-key=file:'.length);
+          secretFileContents = secretFilePath ? fs.readFileSync(secretFilePath, 'utf8') : undefined;
+          expect(args).toContain('--login-server=https://headscale.example');
+          expect(args.join(' ')).not.toContain(authKey);
+          expect(options.env?.TAILSCALE_BE_CLI).toBe('1');
+          expect(options.env).not.toHaveProperty('AIONUI_EVAOS_DESKTOP_SESSION');
+          return { stdout: '', stderr: '' };
+        }
+        throw new Error(`unexpected command ${file} ${key}`);
+      }
+    );
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+        cancelPrivateNetworkEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      action: 'secure_network_enroll',
+      status: 'succeeded',
+      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+      refreshRecommended: true,
+      blockerReason: 'secure_network_link_required',
+    });
+    expect(createPrivateNetworkEnrollment).toHaveBeenCalledWith({
+      customerId: 'jackie-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      deviceName,
+      clientVariant: 'tailscale_app_store',
+    });
+    expect(secretFileContents).toBe(authKey);
+    expect(secretFilePath && fs.existsSync(secretFilePath)).toBe(false);
+    expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(authKey);
+  });
+
+  it('skips a spoofable system app and uses the first Apple-anchored Tailscale candidate', async () => {
+    const systemApp = '/Applications/Tailscale.app';
+    const userApp = join(homedir(), 'Applications', 'Tailscale.app');
+    const userCommand = join(userApp, 'Contents', 'MacOS', 'Tailscale');
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_standalone' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey: 'one-use-private-network-key-for-test',
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        return {
+          stdout: json({
+            ok: true,
+            data: { private_network: { client_installed: true, client_running: true, enrolled: false } },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') {
+        const candidate = args.at(-1);
+        if (candidate === systemApp) throw new Error('metadata-only self-signed app');
+        if (candidate === userApp) return { stdout: '', stderr: '' };
+      }
+      if (file === userCommand) return { stdout: '', stderr: '' };
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === systemApp ||
+            path === join(systemApp, 'Contents', 'MacOS', 'Tailscale') ||
+            path === userApp ||
+            path === userCommand
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+    });
+    expect(createPrivateNetworkEnrollment).toHaveBeenCalledWith(
+      expect.objectContaining({ clientVariant: 'tailscale_standalone' })
+    );
+    expect(execFile).toHaveBeenCalledWith(
+      userCommand,
+      expect.arrayContaining(['--login-server=https://headscale.example']),
+      expect.any(Object)
+    );
+  });
+
+  it('cancels one-use enrollment when the local Tailscale login fails', async () => {
+    const authKey = 'one-use-private-network-key-for-test';
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-hardware-id',
+      clientVariant: 'tailscale_standalone' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey,
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const cancelPrivateNetworkEnrollment = vi.fn(async () => ({
+      cancelled: true as const,
+      enrollmentId: 'network-enrollment-1',
+    }));
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        return {
+          stdout: json({
+            ok: true,
+            data: {
+              private_network: { client_installed: true, client_running: true, enrolled: false },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') {
+        throw new Error('Tailscale login failed');
+      }
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+        cancelPrivateNetworkEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      status: 'repair_required',
+      sourcePointer: 'native-companion:secure-network-enrollment-client-failed',
+      refreshRecommended: false,
+    });
+    expect(cancelPrivateNetworkEnrollment).toHaveBeenCalledWith({
+      customerId: 'jackie-david',
+      enrollmentId: 'network-enrollment-1',
+      authKey,
+    });
+    expect(JSON.stringify(result)).not.toContain(authKey);
+  });
+
+  it('settles before cancellation when a failed CLI exit is followed by delayed enrolled local state', async () => {
+    const authKey = 'one-use-private-network-key-for-test';
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_standalone' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey,
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const cancelPrivateNetworkEnrollment = vi.fn();
+    let connectorStatusCalls = 0;
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        connectorStatusCalls += 1;
+        return {
+          stdout: json({
+            ok: true,
+            data: {
+              private_network: {
+                client_installed: true,
+                client_running: true,
+                enrolled: connectorStatusCalls >= 4,
+              },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+      if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') {
+        throw new Error('ambiguous Tailscale exit');
+      }
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+        cancelPrivateNetworkEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+      blockerReason: 'secure_network_link_required',
+    });
+    expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
+    expect(deps.sleep).toHaveBeenCalledWith(250);
+    expect(JSON.stringify(result)).not.toContain(authKey);
+  });
+
+  it('cancels before invoking Tailscale when local enrollment changes after broker mint', async () => {
+    const authKey = 'one-use-private-network-key-for-test';
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-hardware-id',
+      clientVariant: 'tailscale_standalone' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey,
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    const cancelPrivateNetworkEnrollment = vi.fn(async () => ({
+      cancelled: true as const,
+      enrollmentId: 'network-enrollment-1',
+    }));
+    let connectorStatusCalls = 0;
+    let tailscaleCalls = 0;
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        connectorStatusCalls += 1;
+        return {
+          stdout: json({
+            ok: true,
+            data: {
+              private_network: {
+                client_installed: true,
+                client_running: true,
+                enrolled: connectorStatusCalls > 1,
+              },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+      if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') {
+        tailscaleCalls += 1;
+        return { stdout: '', stderr: '' };
+      }
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+        cancelPrivateNetworkEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      status: 'repair_required',
+      sourcePointer: 'native-companion:secure-network-enrollment-state-changed',
+      refreshRecommended: true,
+    });
+    expect(cancelPrivateNetworkEnrollment).toHaveBeenCalledWith({
+      customerId: 'jackie-david',
+      enrollmentId: 'network-enrollment-1',
+      authKey,
+    });
+    expect(tailscaleCalls).toBe(0);
+  });
+
+  it('does not mint another key when local private-network state is already enrolled', async () => {
+    const createPrivateNetworkEnrollment = vi.fn();
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          data: { private_network: { client_installed: true, client_running: true, enrolled: true } },
+        },
+        'customer-mac status --json': {
+          ok: true,
+          data: { device: { hardware_uuid: 'david-mac-hardware-id' } },
+        },
+      },
+      { createPrivateNetworkEnrollment }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      status: 'repair_required',
+      sourcePointer: 'native-companion:secure-network-enrollment-state-changed',
+    });
+    expect(createPrivateNetworkEnrollment).not.toHaveBeenCalled();
   });
 });
