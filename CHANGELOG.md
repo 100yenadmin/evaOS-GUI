@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Broker-Owned Private Network Authority
+
+- Stops accepting control-plane and ACL claims from the local Desktop Bridge;
+  Workbench now merges only local installed, running, enrolled, and online
+  observations with a fresh authenticated broker attestation for the selected
+  customer and exact Mac device.
+- Rejects stale, overlong, mismatched, incomplete, or contradictory authority
+  responses and clears customer-scoped renderer status during target switches,
+  so readiness cannot reuse another customer's proof.
+- Keeps broker identifiers and Headscale policy, node, address, and endpoint
+  details in the main process; renderer output remains limited to the existing
+  classified readiness and safe recovery guidance.
+
 ### Pristine Mac Enrollment
 
 - Adds an authenticated, customer-scoped Workbench action for the typed
