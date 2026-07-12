@@ -184,7 +184,7 @@ describe('afterPack bundled resource verification', () => {
     }
   });
 
-  it('accepts native control helper resources for release-mode macOS builds', () => {
+  it('rejects a script desktop bridge for release-mode macOS builds', () => {
     const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
     const resourcesDir = makeTempResources();
     writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
@@ -195,7 +195,9 @@ describe('afterPack bundled resource verification', () => {
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'evaos-desktop-bridge'))).toBe(false);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
+        /Bridge\/evaos-desktop-bridge/
+      );
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
     }

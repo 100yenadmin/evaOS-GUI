@@ -229,6 +229,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
   }
   if (strictReleaseBridge) {
+    requireMachOExecutable(bridgePath, path.join('Bridge', 'evaos-desktop-bridge'));
     requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
     requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));
   }
