@@ -107,6 +107,21 @@ export type NativeCompanionPrerequisiteCopy = {
   offlineDetail: string;
   errorTitle: string;
   errorDetail: string;
+  refreshSessionLabel: string;
+  refreshSessionTitle: string;
+  refreshSessionDetail: string;
+  checkingSessionLabel: string;
+  checkingSessionTitle: string;
+  checkingSessionDetail: string;
+  signInLabel: string;
+  signInTitle: string;
+  signInDetail: string;
+  selectCustomerLabel: string;
+  selectCustomerTitle: string;
+  selectCustomerDetail: string;
+  chooseMacTargetLabel: string;
+  chooseMacTargetTitle: string;
+  chooseMacTargetDetail: string;
 };
 
 const PAIRING_PATTERN = /\b(?:not[_ -]?paired|pairing[_ -]?required|pairing required|device identity changed)\b/i;
@@ -318,8 +333,10 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
 function brokerCustomerNextAction(
   input: NativeCompanionRepairViewModelInput,
   actionResult: IEvaosNativeCompanionActionResult | null,
-  totalSteps: number
+  totalSteps: number,
+  step: number
 ): NativeCompanionNextAction | undefined {
+  const copy = input.prerequisiteCopy;
   if (
     actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
     actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required' ||
@@ -327,10 +344,10 @@ function brokerCustomerNextAction(
   ) {
     return {
       kind: 'reconnect',
-      label: 'Refresh Workbench Session',
-      title: 'Refresh Workbench session',
-      detail: 'Refresh the evaOS broker session so Workbench can connect Mac control for the selected customer.',
-      step: 3,
+      label: copy.refreshSessionLabel,
+      title: copy.refreshSessionTitle,
+      detail: copy.refreshSessionDetail,
+      step,
       totalSteps,
       disabled: false,
     };
@@ -339,10 +356,10 @@ function brokerCustomerNextAction(
   if (input.brokerSessionLoading) {
     return {
       kind: 'none',
-      label: 'Checking session',
-      title: 'Checking Workbench session',
-      detail: 'Workbench is checking the evaOS broker session before connecting Mac control.',
-      step: 3,
+      label: copy.checkingSessionLabel,
+      title: copy.checkingSessionTitle,
+      detail: copy.checkingSessionDetail,
+      step,
       totalSteps,
       disabled: true,
     };
@@ -351,10 +368,10 @@ function brokerCustomerNextAction(
   if (input.brokerAuthenticated === false) {
     return {
       kind: 'reconnect',
-      label: 'Sign In To Workbench',
-      title: 'Sign in to Workbench',
-      detail: 'Sign in to evaOS so Workbench can connect Mac control for the selected customer.',
-      step: 3,
+      label: copy.signInLabel,
+      title: copy.signInTitle,
+      detail: copy.signInDetail,
+      step,
       totalSteps,
       disabled: false,
     };
@@ -363,10 +380,10 @@ function brokerCustomerNextAction(
   if (!input.hasSelectedCustomer) {
     return {
       kind: 'none',
-      label: 'Select customer',
-      title: 'Choose a customer',
-      detail: 'Select the customer this Mac should connect to before enabling first-party Mac control.',
-      step: 3,
+      label: copy.selectCustomerLabel,
+      title: copy.selectCustomerTitle,
+      detail: copy.selectCustomerDetail,
+      step,
       totalSteps,
       disabled: true,
     };
@@ -375,11 +392,10 @@ function brokerCustomerNextAction(
   if (input.hasPairableCustomer === false) {
     return {
       kind: 'none',
-      label: 'Choose Mac target',
-      title: 'Choose a Mac-control customer',
-      detail:
-        'The selected account is not a VM-backed Mac-control target. Choose a customer target before connecting Mac control.',
-      step: 3,
+      label: copy.chooseMacTargetLabel,
+      title: copy.chooseMacTargetTitle,
+      detail: copy.chooseMacTargetDetail,
+      step,
       totalSteps,
       disabled: true,
     };
@@ -454,12 +470,11 @@ function nextActionForState(
   }
 
   const networkPrerequisite = blockingPrivateNetworkPrerequisite(status, input.prerequisiteCopy);
-  if (networkPrerequisite && status.prerequisites?.privateNetwork !== 'unenrolled') {
-    return networkPrerequisite.action;
-  }
-
   if (networkPrerequisite) {
-    const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps);
+    if (status.prerequisites?.privateNetwork !== 'unenrolled') {
+      return networkPrerequisite.action;
+    }
+    const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
     return brokerGate ?? networkPrerequisite.action;
   }
 
@@ -476,7 +491,7 @@ function nextActionForState(
     };
   }
 
-  const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps);
+  const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 3);
   if (brokerGate) return brokerGate;
 
   if (agentPairingStatus === 'agent_paired') {

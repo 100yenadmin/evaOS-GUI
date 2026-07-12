@@ -140,7 +140,22 @@
       "offlineTitle": "Reconectar a rede segura",
       "offlineDetail": "Reconecte o cliente de rede segura e peça ao Workbench para verificá-lo novamente.",
       "errorTitle": "Verificar a rede segura",
-      "errorDetail": "O Workbench não conseguiu verificar a rede segura. Use Relatar ao suporte; não digite comandos do Terminal nem dados de conexão."
+      "errorDetail": "O Workbench não conseguiu verificar a rede segura. Use Relatar ao suporte; não digite comandos do Terminal nem dados de conexão.",
+      "refreshSessionLabel": "Atualizar sessão do Workbench",
+      "refreshSessionTitle": "Atualize a sessão do Workbench",
+      "refreshSessionDetail": "Atualize a sessão do broker evaOS para que o Workbench conecte o controle do Mac do cliente selecionado.",
+      "checkingSessionLabel": "Verificando sessão",
+      "checkingSessionTitle": "Verificando a sessão do Workbench",
+      "checkingSessionDetail": "O Workbench está verificando a sessão do broker evaOS antes de conectar o controle do Mac.",
+      "signInLabel": "Entrar no Workbench",
+      "signInTitle": "Entre no Workbench",
+      "signInDetail": "Entre no evaOS para que o Workbench conecte o controle do Mac do cliente selecionado.",
+      "selectCustomerLabel": "Selecionar cliente",
+      "selectCustomerTitle": "Escolha um cliente",
+      "selectCustomerDetail": "Selecione o cliente ao qual este Mac deve se conectar antes de ativar o controle Mac nativo.",
+      "chooseMacTargetLabel": "Escolher Mac de destino",
+      "chooseMacTargetTitle": "Escolha um cliente de controle do Mac",
+      "chooseMacTargetDetail": "A conta selecionada não é um destino de controle do Mac baseado em VM. Escolha um cliente antes de conectar."
     }
   },
   "companyBrain": {

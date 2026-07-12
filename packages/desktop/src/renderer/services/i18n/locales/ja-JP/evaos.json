@@ -140,7 +140,22 @@
       "offlineTitle": "セキュアネットワークを再接続",
       "offlineDetail": "セキュアネットワーククライアントを再接続し、Workbench でもう一度確認してください。",
       "errorTitle": "セキュアネットワークを確認",
-      "errorDetail": "Workbench はセキュアネットワークを確認できませんでした。サポートへ報告し、ターミナルコマンドや接続情報は入力しないでください。"
+      "errorDetail": "Workbench はセキュアネットワークを確認できませんでした。サポートへ報告し、ターミナルコマンドや接続情報は入力しないでください。",
+      "refreshSessionLabel": "Workbench セッションを更新",
+      "refreshSessionTitle": "Workbench セッションを更新",
+      "refreshSessionDetail": "evaOS ブローカーセッションを更新して、選択した顧客の Mac コントロールに Workbench を接続します。",
+      "checkingSessionLabel": "セッションを確認中",
+      "checkingSessionTitle": "Workbench セッションを確認中",
+      "checkingSessionDetail": "Mac コントロールへ接続する前に、Workbench が evaOS ブローカーセッションを確認しています。",
+      "signInLabel": "Workbench にサインイン",
+      "signInTitle": "Workbench にサインイン",
+      "signInDetail": "evaOS にサインインして、選択した顧客の Mac コントロールに Workbench を接続します。",
+      "selectCustomerLabel": "顧客を選択",
+      "selectCustomerTitle": "顧客を選択",
+      "selectCustomerDetail": "ファーストパーティの Mac コントロールを有効にする前に、この Mac の接続先となる顧客を選択してください。",
+      "chooseMacTargetLabel": "Mac 対象を選択",
+      "chooseMacTargetTitle": "Mac コントロール顧客を選択",
+      "chooseMacTargetDetail": "選択したアカウントは VM ベースの Mac コントロール対象ではありません。接続前に顧客対象を選択してください。"
     }
   },
   "companyBrain": {

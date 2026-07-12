@@ -103,6 +103,11 @@ const NATIVE_COMPANION_FIXTURE_STATES = [
 const SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS = 4;
 const SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS = 250;
 
+export type EvaosNativeCompanionDiagnosticEventCode =
+  | 'secure_network_enrollment_login_failed'
+  | 'secure_network_enrollment_secret_unlink_failed'
+  | 'secure_network_enrollment_secret_directory_cleanup_failed';
+
 type ExecFileResult = {
   stdout: string;
   stderr: string;
@@ -164,6 +169,9 @@ export type EvaosNativeCompanionStatusDeps = {
   probeConnectorReady?: (host: string, port: number) => Promise<boolean>;
   readTextFile?: (path: string) => string;
   spawnConnectorProcess?: (file: string, args: string[], options: SpawnOptions) => ChildProcess;
+  recordDiagnosticEvent?: (eventCode: EvaosNativeCompanionDiagnosticEventCode) => void;
+  unlinkSync?: (path: string) => void;
+  rmSync?: (path: string, options: { force: boolean; recursive: boolean }) => void;
 };
 
 type BridgePayload = {
@@ -2149,19 +2157,22 @@ async function runSecureNetworkEnrollmentAction(
     );
     localEnrollmentSucceeded = true;
   } catch {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_login_failed');
     localEnrollmentSucceeded = false;
   } finally {
     if (secretPath) {
       try {
-        fs.unlinkSync(secretPath);
+        (deps.unlinkSync ?? fs.unlinkSync)(secretPath);
       } catch {
+        recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_unlink_failed');
         localEnrollmentSucceeded = false;
       }
     }
     if (secretDirectory) {
       try {
-        fs.rmSync(secretDirectory, { force: true, recursive: true });
+        (deps.rmSync ?? fs.rmSync)(secretDirectory, { force: true, recursive: true });
       } catch {
+        recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_directory_cleanup_failed');
         localEnrollmentSucceeded = false;
       }
     }
@@ -2209,6 +2220,17 @@ async function runSecureNetworkEnrollmentAction(
       blockerReason: 'secure_network_link_required',
     }
   );
+}
+
+function recordNativeCompanionDiagnosticEvent(
+  deps: EvaosNativeCompanionStatusDeps,
+  eventCode: EvaosNativeCompanionDiagnosticEventCode
+): void {
+  if (deps.recordDiagnosticEvent) {
+    deps.recordDiagnosticEvent(eventCode);
+    return;
+  }
+  console.warn(`[evaOS Native Companion] ${eventCode}`);
 }
 
 async function waitForSecureNetworkEnrollmentAfterAmbiguousFailure(

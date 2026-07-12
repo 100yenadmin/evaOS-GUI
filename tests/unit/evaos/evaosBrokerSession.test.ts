@@ -630,6 +630,48 @@ describe('EvaosBrokerSessionClient', () => {
     expect(JSON.stringify(result)).not.toMatch(/Bearer|desktop_session|provider_grant|access_token|refresh_token/i);
   });
 
+  it('preserves the requested customer binding when the pairing broker omits customer_id', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        enrollment_code: 'PAIR-1234',
+        enrollment_expires_at: FUTURE,
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(client.createCustomerMacEnrollment({ customerId: 'golden' })).resolves.toMatchObject({
+      customerId: 'golden',
+      pairingCode: 'PAIR-1234',
+    });
+  });
+
+  it('rejects a pairing enrollment bound to a different customer', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse({
+        customer_id: 'different-customer',
+        enrollment_code: 'PAIR-1234',
+        enrollment_expires_at: FUTURE,
+      })
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(client.createCustomerMacEnrollment({ customerId: 'golden' })).rejects.toMatchObject({
+      code: 'broker_invalid_response',
+    });
+  });
+
   it('clears stale desktop session state when Mac pairing enrollment auth is rejected', async () => {
     const fetchImpl = fetchMock();
     fetchImpl.mockResolvedValueOnce(jsonResponse({ error: 'desktop_session_expired' }, { status: 401 }));

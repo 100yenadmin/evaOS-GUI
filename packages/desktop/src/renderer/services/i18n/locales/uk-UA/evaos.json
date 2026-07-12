@@ -140,7 +140,22 @@
       "offlineTitle": "Перепідключити захищену мережу",
       "offlineDetail": "Перепідключіть клієнт захищеної мережі та попросіть Workbench перевірити його знову.",
       "errorTitle": "Перевірити захищену мережу",
-      "errorDetail": "Workbench не зміг перевірити захищену мережу. Повідомте підтримці; не вводьте команди Термінала або дані підключення."
+      "errorDetail": "Workbench не зміг перевірити захищену мережу. Повідомте підтримці; не вводьте команди Термінала або дані підключення.",
+      "refreshSessionLabel": "Оновити сеанс Workbench",
+      "refreshSessionTitle": "Оновіть сеанс Workbench",
+      "refreshSessionDetail": "Оновіть сеанс брокера evaOS, щоб Workbench міг підключити керування Mac для вибраного клієнта.",
+      "checkingSessionLabel": "Перевірка сеансу",
+      "checkingSessionTitle": "Перевірка сеансу Workbench",
+      "checkingSessionDetail": "Workbench перевіряє сеанс брокера evaOS перед підключенням керування Mac.",
+      "signInLabel": "Увійти до Workbench",
+      "signInTitle": "Увійдіть до Workbench",
+      "signInDetail": "Увійдіть до evaOS, щоб Workbench міг підключити керування Mac для вибраного клієнта.",
+      "selectCustomerLabel": "Вибрати клієнта",
+      "selectCustomerTitle": "Виберіть клієнта",
+      "selectCustomerDetail": "Перед увімкненням керування Mac виберіть клієнта, до якого має підключатися цей Mac.",
+      "chooseMacTargetLabel": "Вибрати ціль Mac",
+      "chooseMacTargetTitle": "Виберіть клієнта керування Mac",
+      "chooseMacTargetDetail": "Вибраний обліковий запис не є ціллю керування Mac на базі VM. Перед підключенням виберіть клієнта."
     }
   },
   "companyBrain": {

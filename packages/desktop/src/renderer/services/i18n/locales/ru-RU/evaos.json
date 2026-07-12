@@ -140,7 +140,22 @@
       "offlineTitle": "Переподключить защищённую сеть",
       "offlineDetail": "Переподключите клиент защищённой сети и попросите Workbench проверить его снова.",
       "errorTitle": "Проверить защищённую сеть",
-      "errorDetail": "Workbench не удалось проверить защищённую сеть. Сообщите в поддержку; не вводите команды Терминала или данные подключения."
+      "errorDetail": "Workbench не удалось проверить защищённую сеть. Сообщите в поддержку; не вводите команды Терминала или данные подключения.",
+      "refreshSessionLabel": "Обновить сеанс Workbench",
+      "refreshSessionTitle": "Обновите сеанс Workbench",
+      "refreshSessionDetail": "Обновите сеанс брокера evaOS, чтобы Workbench мог подключить управление Mac для выбранного клиента.",
+      "checkingSessionLabel": "Проверка сеанса",
+      "checkingSessionTitle": "Проверка сеанса Workbench",
+      "checkingSessionDetail": "Workbench проверяет сеанс брокера evaOS перед подключением управления Mac.",
+      "signInLabel": "Войти в Workbench",
+      "signInTitle": "Войдите в Workbench",
+      "signInDetail": "Войдите в evaOS, чтобы Workbench мог подключить управление Mac для выбранного клиента.",
+      "selectCustomerLabel": "Выбрать клиента",
+      "selectCustomerTitle": "Выберите клиента",
+      "selectCustomerDetail": "Перед включением управления Mac выберите клиента, к которому должен подключаться этот Mac.",
+      "chooseMacTargetLabel": "Выбрать цель Mac",
+      "chooseMacTargetTitle": "Выберите клиента управления Mac",
+      "chooseMacTargetDetail": "Выбранная учётная запись не является целью управления Mac на базе VM. Перед подключением выберите клиента."
     }
   },
   "companyBrain": {
