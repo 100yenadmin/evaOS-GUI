@@ -466,6 +466,41 @@ describe('nativeCompanionViewModel', () => {
     });
   });
 
+  it('keeps one-use private-network enrollment disabled while broker verification is pending', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      actionResult: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Unlocalized enrollment submission detail.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        refreshRecommended: true,
+        auditIds: [],
+      },
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'none',
+      label: 'Connect this Mac',
+      disabled: true,
+      step: 1,
+    });
+  });
+
   it.each([
     ['wrong_control_plane', 'Reconnect secure network', 'wrong private network'],
     ['acl_blocked', 'Secure network access is blocked', 'support'],

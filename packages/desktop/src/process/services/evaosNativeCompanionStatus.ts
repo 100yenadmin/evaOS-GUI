@@ -101,6 +101,7 @@ const SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS = 4;
 const SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS = 250;
 
 export type EvaosNativeCompanionDiagnosticEventCode =
+  | 'secure_network_enrollment_setup_failed'
   | 'secure_network_enrollment_login_failed'
   | 'secure_network_enrollment_secret_unlink_failed'
   | 'secure_network_enrollment_secret_directory_cleanup_failed';
@@ -2128,34 +2129,43 @@ async function runSecureNetworkEnrollmentAction(
       flag: 'wx',
       mode: 0o600,
     });
-    await execFile(
-      client.commandPath,
-      ['login', `--login-server=${enrollment.loginServer}`, `--auth-key=file:${secretPath}`, '--timeout=20s'],
-      {
-        timeout: SECURE_NETWORK_ENROLL_TIMEOUT_MS,
-        env: secureNetworkCliEnvironment(process.env),
-      }
-    );
-    localEnrollmentSucceeded = true;
   } catch {
-    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_login_failed');
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_setup_failed');
     localEnrollmentSucceeded = false;
-  } finally {
-    if (secretPath) {
-      try {
-        (deps.unlinkSync ?? fs.unlinkSync)(secretPath);
-      } catch {
-        recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_unlink_failed');
-        localEnrollmentSucceeded = false;
-      }
+  }
+
+  if (secretPath) {
+    try {
+      await execFile(
+        client.commandPath,
+        ['login', `--login-server=${enrollment.loginServer}`, `--auth-key=file:${secretPath}`, '--timeout=20s'],
+        {
+          timeout: SECURE_NETWORK_ENROLL_TIMEOUT_MS,
+          env: secureNetworkCliEnvironment(deps.env ?? process.env),
+        }
+      );
+      localEnrollmentSucceeded = true;
+    } catch {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_login_failed');
+      localEnrollmentSucceeded = false;
     }
-    if (secretDirectory) {
-      try {
-        (deps.rmSync ?? fs.rmSync)(secretDirectory, { force: true, recursive: true });
-      } catch {
-        recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_directory_cleanup_failed');
-        localEnrollmentSucceeded = false;
-      }
+  }
+
+  // Cleanup is deliberately fail-closed because the one-use secret must not remain on disk.
+  if (secretPath) {
+    try {
+      (deps.unlinkSync ?? fs.unlinkSync)(secretPath);
+    } catch {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_unlink_failed');
+      localEnrollmentSucceeded = false;
+    }
+  }
+  if (secretDirectory) {
+    try {
+      (deps.rmSync ?? fs.rmSync)(secretDirectory, { force: true, recursive: true });
+    } catch {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_directory_cleanup_failed');
+      localEnrollmentSucceeded = false;
     }
   }
 

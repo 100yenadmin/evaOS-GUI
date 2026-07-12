@@ -754,8 +754,38 @@ describe('NativeCompanionPage', () => {
         agentLabel: 'evaOS Workbench',
       })
     );
-    expect(await screen.findByText('Localized enrollment is waiting for broker verification.')).toBeInTheDocument();
+    expect((await screen.findAllByText('Localized enrollment is waiting for broker verification.')).length).toBe(2);
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
     expect(bridgeMocks.openRepairAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'native-companion:secure-network-enrollment-broker-session-required',
+      'Localized Workbench session refresh required.',
+    ],
+    ['native-companion:secure-network-enrollment-client-failed', 'Localized enrollment failed safely.'],
+  ])('localizes secure-network action result %s', async (sourcePointer, localizedMessage) => {
+    mockUnenrolledMacStatus();
+    bridgeMocks.runAction.mockResolvedValue({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Raw process message must not be rendered.',
+        sourcePointer,
+        auditIds: [],
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    expect((await screen.findAllByText(localizedMessage)).length).toBe(2);
+    expect(screen.queryByText('Raw process message must not be rendered.')).not.toBeInTheDocument();
   });
 
   it('clears secure-network session recovery after the broker session refreshes', async () => {

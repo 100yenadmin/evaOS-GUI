@@ -132,6 +132,9 @@ const NativeCompanionPage: React.FC = () => {
       actionResultForCurrentPairingCustomer(actionResult, selectedPairingCustomerId, actionResultCustomerId, status),
     [actionResult, actionResultCustomerId, selectedPairingCustomerId, status]
   );
+  const currentActionResultMessage = currentActionResult
+    ? localizedNativeCompanionActionResultMessage(currentActionResult, t)
+    : undefined;
   const selectedPairingStatus = React.useMemo(
     () => statusForSelectedPairingCustomer(status, selectedPairingCustomerId),
     [selectedPairingCustomerId, status]
@@ -187,9 +190,8 @@ const NativeCompanionPage: React.FC = () => {
     status: selectedPairingStatus,
     loading,
     error,
-    hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
-    hasPairableCustomer:
-      selectedCustomerId || selectedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
+    hasSelectedCustomer: Boolean(selectedCustomerId || lockedPairingCustomerId),
+    hasPairableCustomer: selectedCustomerId || lockedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult: currentActionResult,
@@ -211,9 +213,8 @@ const NativeCompanionPage: React.FC = () => {
     status: selectedPairingStatus,
     loading,
     error,
-    hasSelectedCustomer: Boolean(selectedCustomerId || selectedPairingCustomerId),
-    hasPairableCustomer:
-      selectedCustomerId || selectedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
+    hasSelectedCustomer: Boolean(selectedCustomerId || lockedPairingCustomerId),
+    hasPairableCustomer: selectedCustomerId || lockedPairingCustomerId ? Boolean(selectedPairingCustomerId) : undefined,
     brokerAuthenticated,
     brokerSessionLoading,
     actionResult: currentActionResult,
@@ -676,7 +677,7 @@ const NativeCompanionPage: React.FC = () => {
               <div data-testid='native-companion-action-result' className='mt-12px rounded-8px bg-fill-1 p-12px'>
                 <div className='flex flex-wrap items-center gap-8px'>
                   <Tag color={tagColorForActionStatus(currentActionResult.status)}>{currentActionResult.status}</Tag>
-                  <span className='text-12px leading-18px text-t-secondary'>{currentActionResult.message}</span>
+                  <span className='text-12px leading-18px text-t-secondary'>{currentActionResultMessage}</span>
                 </div>
                 {currentActionResult.setup ? (
                   <div className='mt-8px grid grid-cols-1 gap-6px text-12px leading-18px text-t-secondary md:grid-cols-4'>
@@ -1196,6 +1197,22 @@ function selectMacPairingTarget(input: {
     (input.isOperator ? pairableTargets.find((target) => target.customerId === 'golden') : undefined) ??
     pairableTargets[0]
   );
+}
+
+function localizedNativeCompanionActionResultMessage(
+  actionResult: IEvaosNativeCompanionActionResult,
+  translate: (key: string) => string
+): string {
+  if (actionResult.sourcePointer === 'native-companion:secure-network-enrollment-submitted') {
+    return translate('evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail');
+  }
+  if (actionResult.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required') {
+    return translate('evaos.nativeCompanion.onboarding.enrollmentSessionDetail');
+  }
+  if (actionResult.sourcePointer.startsWith('native-companion:secure-network-enrollment-')) {
+    return translate('evaos.nativeCompanion.onboarding.enrollmentFailedDetail');
+  }
+  return actionResult.message;
 }
 
 function MacPairingTargetControl({

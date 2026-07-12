@@ -474,6 +474,14 @@ function nextActionForState(
     if (status.prerequisites?.privateNetwork !== 'unenrolled') {
       return networkPrerequisite.action;
     }
+    if (actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-submitted') {
+      return {
+        ...networkPrerequisite.action,
+        kind: 'none',
+        action: undefined,
+        disabled: true,
+      };
+    }
     const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
     return brokerGate ?? networkPrerequisite.action;
   }

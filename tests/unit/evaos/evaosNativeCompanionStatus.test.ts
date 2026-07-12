@@ -3460,6 +3460,7 @@ describe('evaosNativeCompanionStatus', () => {
           expect(args).toContain('--login-server=https://headscale.example');
           expect(args.join(' ')).not.toContain(authKey);
           expect(options.env?.TAILSCALE_BE_CLI).toBe('1');
+          expect(options.env?.HOME).toBe('/custom/home');
           expect(options.env).not.toHaveProperty('AIONUI_EVAOS_DESKTOP_SESSION');
           return { stdout: '', stderr: '' };
         }
@@ -3477,6 +3478,10 @@ describe('evaosNativeCompanionStatus', () => {
             path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
         ),
         execFile,
+        env: {
+          HOME: '/custom/home',
+          AIONUI_EVAOS_DESKTOP_SESSION: 'must-not-leak',
+        },
         createPrivateNetworkEnrollment,
         cancelPrivateNetworkEnrollment,
       }
