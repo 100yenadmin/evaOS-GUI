@@ -239,7 +239,7 @@ export async function getEvaosNativeCompanionStatus(
     bridgeRuntime: {
       installed: true,
       commandSucceeded: bridge.ok,
-      compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge),
+      compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge, deps.env),
     },
     privateNetwork: privateNetworkEvidence(connectorServiceData),
     actionEngine: actionEngineEvidence(customerMac.data),
@@ -1883,8 +1883,12 @@ function actionEngineEvidence(customerMacData: unknown): NativeCompanionPrerequi
   };
 }
 
-function bundledBridgeRuntimeCompatibility(bridgePath: string, bridge: BridgeCommandResult): boolean | undefined {
-  if (!isPairingCapableBridgePath(bridgePath)) return false;
+function bundledBridgeRuntimeCompatibility(
+  bridgePath: string,
+  bridge: BridgeCommandResult,
+  env?: NodeJS.ProcessEnv
+): boolean | undefined {
+  if (!isPairingCapableBridgePath(bridgePath, env)) return false;
   return (
     readBoolean(bridge.data, 'compatible') ??
     readBooleanAlias(bridge.data, 'version_compatible', 'versionCompatible') ??
