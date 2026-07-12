@@ -244,14 +244,16 @@ export async function getEvaosNativeCompanionStatus(
     privateNetwork: privateNetworkEvidence(connectorServiceData),
     actionEngine: actionEngineEvidence(customerMac.data),
   });
+  const bridgeRuntimeExplicitlyBlocked = prerequisites.bridgeRuntime === 'incompatible';
   const privateNetworkExplicitlyBlocked = !['online', 'error'].includes(prerequisites.privateNetwork);
+  const prerequisiteExplicitlyBlocksPairing = bridgeRuntimeExplicitlyBlocked || privateNetworkExplicitlyBlocked;
   const readiness =
-    bridgeReady && connectorServiceReady && customerMacReady && !privateNetworkExplicitlyBlocked
+    bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteExplicitlyBlocksPairing
       ? 'ready'
       : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
-    !privateNetworkExplicitlyBlocked &&
+    !prerequisiteExplicitlyBlocksPairing &&
     isPairingCapableBridgePath(bridgePath, deps.env) &&
     connectorServiceHasSecureRegistrationHost(connectorServiceData);
   const reportedAgentPairingStatus = pairingCapable
@@ -299,9 +301,11 @@ export async function getEvaosNativeCompanionStatus(
       : reportedRuntimeToolReadiness;
   const pairingBlockedReason = pairingCapable
     ? undefined
-    : privateNetworkExplicitlyBlocked
-      ? 'secure_network_link_required'
-      : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
+    : bridgeRuntimeExplicitlyBlocked
+      ? 'bundled_bridge_required'
+      : privateNetworkExplicitlyBlocked
+        ? 'secure_network_link_required'
+        : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
   const blockerReason = blockerReasonForStatus({
     bridge,
     connectorService,
