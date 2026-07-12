@@ -10,6 +10,7 @@ import type { TProviderWithModel } from '@/common/config/storage';
 export type BuildAgentConversationAssistantOverrides = {
   model?: string;
   permission?: string;
+  thought_level?: string;
   skill_ids?: string[];
   disabled_builtin_skill_ids?: string[];
   mcp_ids?: string[];

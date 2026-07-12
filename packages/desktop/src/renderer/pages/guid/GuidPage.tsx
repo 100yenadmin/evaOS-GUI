@@ -43,7 +43,10 @@ import {
 } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { canSwitchAssistantAgent } from '@/renderer/utils/model/assistantSelection';
-import { resolveGuidAssistantDefaults } from './utils/assistantDefaults';
+import {
+  resolveCompatibleThoughtLevelValue,
+  resolveGuidAssistantDefaults,
+} from '@/renderer/pages/guid/utils/assistantDefaults';
 import { persistAssistantAgentBinding } from './utils/assistantAgentBinding';
 import SpeechInputButton from '@/renderer/components/chat/SpeechInputButton';
 import { useOpenFileSelector } from '@/renderer/hooks/file/useOpenFileSelector';
@@ -299,6 +302,9 @@ const GuidPage: React.FC = () => {
     selectedAgentInfo: agentSelection.selectedAgentInfo,
     is_presetAgent: agentSelection.is_presetAgent,
     selectedMode: agentSelection.selectedMode,
+    selectedThoughtLevelValue: agentSelection.selectedThoughtLevelValue,
+    thoughtLevelOptionId: agentSelection.runtimeThoughtLevelOption?.id,
+    availableThoughtLevelValues: agentSelection.runtimeThoughtLevelOption?.options.map((option) => option.value) ?? [],
     selectedAcpModel: agentSelection.selectedAcpModel,
     currentAcpCachedModelInfo: agentSelection.currentAcpCachedModelInfo,
     current_model: modelSelection.current_model,
@@ -507,8 +513,10 @@ const GuidPage: React.FC = () => {
       preferences: {
         last_model_id: selectedAssistantDetail.preferences.last_model_id,
         last_permission_value: selectedAssistantDetail.preferences.last_permission_value,
+        last_thought_level_value: selectedAssistantDetail.preferences.last_thought_level_value,
         last_mcp_ids: selectedAssistantDetail.preferences.last_mcp_ids,
       },
+      availableThoughtLevels: agentSelection.runtimeThoughtLevelOption?.options.map((option) => option.value) ?? [],
     });
     if (appliedAssistantDefaultsKeyRef.current === signature) {
       return;
@@ -545,6 +553,15 @@ const GuidPage: React.FC = () => {
       if (resolvedDefaults.permissionMode) {
         agentSelection.setSelectedMode(resolvedDefaults.permissionMode, { persistPreference: false });
       }
+      if (agentSelection.runtimeThoughtLevelOption) {
+        const selectedThoughtLevel = resolveCompatibleThoughtLevelValue(
+          agentSelection.runtimeThoughtLevelOption,
+          resolvedDefaults.thoughtLevel
+        );
+        agentSelection.setSelectedThoughtLevelValue(selectedThoughtLevel);
+      } else {
+        agentSelection.setSelectedThoughtLevelValue('');
+      }
       setGuidSelectedMcpServerIds(resolvedDefaults.mcpIds);
     };
 
@@ -553,8 +570,10 @@ const GuidPage: React.FC = () => {
     });
   }, [
     agentSelection.currentEffectiveAgentInfo.agent_type,
+    agentSelection.runtimeThoughtLevelOption,
     agentSelection.setSelectedAcpModel,
     agentSelection.setSelectedMode,
+    agentSelection.setSelectedThoughtLevelValue,
     modelSelection.modelList,
     modelSelection.resetCurrentModel,
     modelSelection.setCurrentModel,
@@ -605,6 +624,12 @@ const GuidPage: React.FC = () => {
   const setGuidSelectedAcpModel = useCallback(
     (model: React.SetStateAction<string | null>) => {
       agentSelection.setSelectedAcpModel(model, { persistPreference: !agentSelection.is_presetAgent });
+    },
+    [agentSelection]
+  );
+  const setGuidSelectedThoughtLevel = useCallback(
+    (value: string) => {
+      agentSelection.setSelectedThoughtLevelValue(value);
     },
     [agentSelection]
   );
@@ -801,6 +826,8 @@ const GuidPage: React.FC = () => {
       currentAcpCachedModelInfo={agentSelection.currentAcpCachedModelInfo}
       selectedAcpModel={agentSelection.selectedAcpModel}
       setSelectedAcpModel={setGuidSelectedAcpModel}
+      thoughtLevelOption={isGeminiMode ? null : agentSelection.currentThoughtLevelOption}
+      onThoughtLevelSelect={setGuidSelectedThoughtLevel}
     />
   );
 
@@ -826,6 +853,9 @@ const GuidPage: React.FC = () => {
       currentAcpCachedModelInfo={agentSelection.currentAcpCachedModelInfo}
       selectedAcpModel={agentSelection.selectedAcpModel}
       setSelectedAcpModel={setGuidSelectedAcpModel}
+      thoughtLevelOption={isGeminiMode ? null : agentSelection.currentThoughtLevelOption}
+      selectedThoughtLevelValue={agentSelection.selectedThoughtLevelValue}
+      onThoughtLevelSelect={setGuidSelectedThoughtLevel}
       onAddModel={handleAddModel}
       selectedAgent={agentSelection.selectedAgent}
       effectiveModeAgent={agentSelection.currentEffectiveAgentInfo.agent_type}

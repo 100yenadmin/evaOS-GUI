@@ -1,4 +1,3 @@
-import type { BuiltinAutoSkill, SkillInfo } from '../types';
 import type { IMcpServer } from '@/common/config/storage';
 import { Button, Select } from '@arco-design/web-react';
 import React from 'react';
@@ -31,12 +30,17 @@ type DefaultsSectionProps = {
   setDefaultPermissionMode: (value: 'auto' | 'fixed') => void;
   defaultPermissionValue: string;
   setDefaultPermissionValue: (value: string) => void;
+  defaultThoughtLevelMode: 'auto' | 'fixed';
+  setDefaultThoughtLevelMode: (value: 'auto' | 'fixed') => void;
+  defaultThoughtLevelValue: string;
+  setDefaultThoughtLevelValue: (value: string) => void;
   defaultSkillsMode: 'auto' | 'fixed';
   setDefaultSkillsMode: (value: 'auto' | 'fixed') => void;
   defaultMcpMode: 'auto' | 'fixed';
   setDefaultMcpMode: (value: 'auto' | 'fixed') => void;
   modelOptions: SelectOption[];
   permissionOptions: Array<{ value: string; label: string }>;
+  thoughtLevelOptions: SelectOption[];
   editableSkillOptions: EditableSkillOption[];
   selectedSkillValues: string[];
   enabledMcpServers: IMcpServer[];
@@ -59,12 +63,17 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
   setDefaultPermissionMode,
   defaultPermissionValue,
   setDefaultPermissionValue,
+  defaultThoughtLevelMode,
+  setDefaultThoughtLevelMode,
+  defaultThoughtLevelValue,
+  setDefaultThoughtLevelValue,
   defaultSkillsMode,
   setDefaultSkillsMode,
   defaultMcpMode,
   setDefaultMcpMode,
   modelOptions,
   permissionOptions,
+  thoughtLevelOptions,
   editableSkillOptions,
   selectedSkillValues,
   enabledMcpServers,
@@ -161,6 +170,43 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
             ))}
           </Select>
         </ConfigRow>
+
+        {thoughtLevelOptions.length > 0 ? (
+          <ConfigRow
+            label={t('settings.assistantDefaultThoughtLevelLabel', { defaultValue: 'Default Thinking Level' })}
+          >
+            <Select
+              getPopupContainer={getEditorSelectPopupContainer}
+              value={
+                defaultThoughtLevelMode === 'fixed' && defaultThoughtLevelValue
+                  ? defaultThoughtLevelValue
+                  : AUTO_SELECT_VALUE
+              }
+              onChange={(value) => {
+                const nextValue = value as string;
+                if (nextValue === AUTO_SELECT_VALUE) {
+                  setDefaultThoughtLevelMode('auto');
+                  setDefaultThoughtLevelValue('');
+                  return;
+                }
+                setDefaultThoughtLevelMode('fixed');
+                setDefaultThoughtLevelValue(nextValue);
+              }}
+              allowClear={false}
+              placeholder={t('settings.assistantSelectDefaultThoughtLevel', {
+                defaultValue: 'Select a thinking level',
+              })}
+              data-testid='select-assistant-default-thought-level'
+            >
+              <Select.Option value={AUTO_SELECT_VALUE}>{autoDefaultOptionLabel}</Select.Option>
+              {thoughtLevelOptions.map((option) => (
+                <Select.Option key={option.key} value={option.value}>
+                  {option.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </ConfigRow>
+        ) : null}
 
         {showSkills ? (
           <ConfigRow

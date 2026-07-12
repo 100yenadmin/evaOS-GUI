@@ -59,6 +59,7 @@ export type AssistantEditorViewModel = {
     value: string;
     setValue: (value: string) => void;
     availableBackends: AvailableBackend[];
+    isLoading?: boolean;
   };
   prompts: {
     text: string;
@@ -72,6 +73,12 @@ export type AssistantEditorViewModel = {
       setValue: (value: string) => void;
     };
     permission: {
+      mode: 'auto' | 'fixed';
+      setMode: (value: 'auto' | 'fixed') => void;
+      value: string;
+      setValue: (value: string) => void;
+    };
+    thoughtLevel: {
       mode: 'auto' | 'fixed';
       setMode: (value: 'auto' | 'fixed') => void;
       value: string;

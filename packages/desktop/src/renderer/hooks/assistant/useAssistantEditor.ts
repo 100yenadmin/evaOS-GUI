@@ -74,6 +74,8 @@ export const useAssistantEditor = ({
   const [defaultModelValue, setDefaultModelValue] = useState('');
   const [defaultPermissionMode, setDefaultPermissionMode] = useState<AssistantScalarDefaultMode>('auto');
   const [defaultPermissionValue, setDefaultPermissionValue] = useState('');
+  const [defaultThoughtLevelMode, setDefaultThoughtLevelMode] = useState<AssistantScalarDefaultMode>('auto');
+  const [defaultThoughtLevelValue, setDefaultThoughtLevelValue] = useState('');
   const [defaultSkillsMode, setDefaultSkillsMode] = useState<AssistantSkillsDefaultMode>('fixed');
   const [defaultMcpMode, setDefaultMcpMode] = useState<AssistantMcpDefaultMode>('auto');
   const [availableMcpServers, setAvailableMcpServers] = useState<IMcpServer[]>([]);
@@ -173,23 +175,22 @@ export const useAssistantEditor = ({
     setDisabledBuiltinSkills([]);
   }, []);
 
-  const resetDefaultConfigState = useCallback(() => {
-    setEditRecommendedPromptsText('');
+  const resetRuntimeDefaults = useCallback(() => {
     setDefaultModelMode('auto');
     setDefaultModelValue('');
     setDefaultPermissionMode('auto');
     setDefaultPermissionValue('');
+    setDefaultThoughtLevelMode('auto');
+    setDefaultThoughtLevelValue('');
+  }, []);
+
+  const resetDefaultConfigState = useCallback(() => {
+    setEditRecommendedPromptsText('');
+    resetRuntimeDefaults();
     setDefaultSkillsMode('fixed');
     setDefaultMcpMode('auto');
     setSelectedMcpIds([]);
-  }, []);
-
-  const resetModelAndPermissionDefaults = useCallback(() => {
-    setDefaultModelMode('auto');
-    setDefaultModelValue('');
-    setDefaultPermissionMode('auto');
-    setDefaultPermissionValue('');
-  }, []);
+  }, [resetRuntimeDefaults]);
 
   const setEditAgent = useCallback(
     (nextAgent: string) => {
@@ -197,10 +198,10 @@ export const useAssistantEditor = ({
         return;
       }
 
-      resetModelAndPermissionDefaults();
+      resetRuntimeDefaults();
       setEditAgentState(nextAgent);
     },
-    [editAgent, resetModelAndPermissionDefaults]
+    [editAgent, resetRuntimeDefaults]
   );
 
   const handleEdit = async (assistant: AssistantListItem) => {
@@ -238,6 +239,8 @@ export const useAssistantEditor = ({
       setDefaultModelValue(detail.defaults.model.value || '');
       setDefaultPermissionMode(detail.defaults.permission.mode === 'fixed' ? 'fixed' : 'auto');
       setDefaultPermissionValue(detail.defaults.permission.value || '');
+      setDefaultThoughtLevelMode(detail.defaults.thought_level?.mode === 'fixed' ? 'fixed' : 'auto');
+      setDefaultThoughtLevelValue(detail.defaults.thought_level?.value || '');
       setDefaultSkillsMode(detail.defaults.skills.mode === 'auto' ? 'auto' : 'fixed');
       setDefaultMcpMode(detail.defaults.mcps.mode === 'fixed' ? 'fixed' : 'auto');
       setSelectedMcpIds(detail.defaults.mcps.value ?? []);
@@ -310,6 +313,8 @@ export const useAssistantEditor = ({
       setDefaultModelValue(detail.defaults.model.value || '');
       setDefaultPermissionMode(detail.defaults.permission.mode === 'fixed' ? 'fixed' : 'auto');
       setDefaultPermissionValue(detail.defaults.permission.value || '');
+      setDefaultThoughtLevelMode(detail.defaults.thought_level?.mode === 'fixed' ? 'fixed' : 'auto');
+      setDefaultThoughtLevelValue(detail.defaults.thought_level?.value || '');
       setDefaultSkillsMode(detail.defaults.skills.mode === 'auto' ? 'auto' : 'fixed');
       setDefaultMcpMode(detail.defaults.mcps.mode === 'fixed' ? 'fixed' : 'auto');
       setSelectedMcpIds(detail.defaults.mcps.value ?? []);
@@ -377,6 +382,15 @@ export const useAssistantEditor = ({
         return;
       }
 
+      if (defaultThoughtLevelMode === 'fixed' && !defaultThoughtLevelValue.trim()) {
+        message.error(
+          t('settings.assistantDefaultThoughtLevelRequired', {
+            defaultValue: 'Please choose a default thinking level when using a fixed value.',
+          })
+        );
+        return;
+      }
+
       if (pendingSkills.length > 0) {
         const skillsToImport = pendingSkills.filter(
           (pending) => !availableSkills.some((available) => available.name === pending.name)
@@ -413,6 +427,10 @@ export const useAssistantEditor = ({
           defaultPermissionMode === 'fixed'
             ? { mode: 'fixed', value: defaultPermissionValue.trim() }
             : { mode: defaultPermissionMode },
+        thought_level:
+          defaultThoughtLevelMode === 'fixed'
+            ? { mode: 'fixed', value: defaultThoughtLevelValue.trim() }
+            : { mode: defaultThoughtLevelMode },
         skills: { mode: defaultSkillsMode, value: selectedSkills },
         mcps: { mode: defaultMcpMode, value: selectedMcpIds },
       };
@@ -443,14 +461,9 @@ export const useAssistantEditor = ({
               id: activeAssistant.id,
               agent_id: editAgent || undefined,
               defaults: {
-                model:
-                  defaultModelMode === 'fixed'
-                    ? { mode: 'fixed', value: defaultModelValue.trim() }
-                    : { mode: defaultModelMode },
-                permission:
-                  defaultPermissionMode === 'fixed'
-                    ? { mode: 'fixed', value: defaultPermissionValue.trim() }
-                    : { mode: defaultPermissionMode },
+                model: defaults.model,
+                permission: defaults.permission,
+                thought_level: defaults.thought_level,
               },
             }
           : isGeneratedAssistant(activeAssistant)
@@ -585,6 +598,10 @@ export const useAssistantEditor = ({
     setDefaultPermissionMode,
     defaultPermissionValue,
     setDefaultPermissionValue,
+    defaultThoughtLevelMode,
+    setDefaultThoughtLevelMode,
+    defaultThoughtLevelValue,
+    setDefaultThoughtLevelValue,
     defaultSkillsMode,
     setDefaultSkillsMode,
     defaultMcpMode,

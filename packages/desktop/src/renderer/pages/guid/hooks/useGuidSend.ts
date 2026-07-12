@@ -93,6 +93,9 @@ export type GuidSendDeps = {
   selectedAgentInfo: AvailableAgent | undefined;
   is_presetAgent: boolean;
   selectedMode: string;
+  selectedThoughtLevelValue: string;
+  thoughtLevelOptionId?: string;
+  availableThoughtLevelValues: string[];
   selectedAcpModel: string | null;
   currentAcpCachedModelInfo: AcpModelInfo | null;
   current_model: TProviderWithModel | undefined;
@@ -154,6 +157,9 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     selectedAgentInfo,
     is_presetAgent,
     selectedMode,
+    selectedThoughtLevelValue,
+    thoughtLevelOptionId,
+    availableThoughtLevelValues,
     selectedAcpModel,
     currentAcpCachedModelInfo,
     current_model,
@@ -249,9 +255,13 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     const finalEffectiveAgentType = effectiveAgentType;
     const assistantOverrideModel =
       selectedAcpModel || currentAcpCachedModelInfo?.current_model_id || current_model?.use_model || undefined;
+    const compatibleThoughtLevelValue = availableThoughtLevelValues.includes(selectedThoughtLevelValue)
+      ? selectedThoughtLevelValue
+      : undefined;
     const assistantOverrides = {
       model: assistantOverrideModel,
       permission: selectedMode || undefined,
+      ...(compatibleThoughtLevelValue ? { thought_level: compatibleThoughtLevelValue } : {}),
       skill_ids: enabled_skills_to_send,
       disabled_builtin_skill_ids: excludeBuiltinSkills,
       mcp_ids: assistantOverrideMcpIds,
@@ -419,6 +429,10 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
           selected_session_mcp_servers:
             selectedMcpServerIds !== undefined ? selectedSessionMcpServers : selectedSessionMcpServersToSend,
+          pending_config_options:
+            !is_preset && compatibleThoughtLevelValue && thoughtLevelOptionId
+              ? { [thoughtLevelOptionId]: compatibleThoughtLevelValue }
+              : undefined,
         },
       });
 
@@ -463,6 +477,9 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     selectedAgentInfo,
     is_presetAgent,
     selectedMode,
+    selectedThoughtLevelValue,
+    thoughtLevelOptionId,
+    availableThoughtLevelValues,
     selectedAcpModel,
     currentAcpCachedModelInfo,
     current_model,

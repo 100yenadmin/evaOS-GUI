@@ -7,6 +7,7 @@
 import type { IProvider, TProviderWithModel } from '@/common/config/storage';
 import GuidModelSelector from '@/renderer/pages/guid/components/GuidModelSelector';
 import type { AcpModelInfo } from '@/renderer/pages/guid/types';
+import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -142,6 +143,8 @@ const baseProps = () => ({
   currentAcpCachedModelInfo: null,
   selectedAcpModel: null,
   setSelectedAcpModel: vi.fn(),
+  thoughtLevelOption: null,
+  onThoughtLevelSelect: vi.fn(),
 });
 
 describe('GuidModelSelector desktop menus', () => {
@@ -269,5 +272,68 @@ describe('GuidModelSelector desktop menus', () => {
     expect(model2.parentElement?.querySelector('.bg-green-500')).not.toBeNull();
     fireEvent.click(model2);
     expect(setSelectedAcpModel).toHaveBeenCalledWith('model-2');
+  });
+
+  it('shows and routes compatible thought-level choices alongside ACP models', () => {
+    const onThoughtLevelSelect = vi.fn();
+    const thoughtLevelOption: AcpDerivedOption = {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'medium',
+      options: [
+        { value: 'medium', label: 'Balanced' },
+        { value: 'high', label: 'High' },
+      ],
+    };
+    const info: AcpModelInfo = {
+      current_model_id: 'model-1',
+      current_model_label: 'Model 1',
+      available_models: [{ id: 'model-1', label: 'Model 1' }],
+    };
+
+    render(
+      <GuidModelSelector
+        {...baseProps()}
+        isGeminiMode={false}
+        currentAcpCachedModelInfo={info}
+        selectedAcpModel='model-1'
+        thoughtLevelOption={thoughtLevelOption}
+        onThoughtLevelSelect={onThoughtLevelSelect}
+      />
+    );
+
+    expect(screen.getByRole('button')).toHaveTextContent('Model 1 · Balanced');
+    expect(screen.getByRole('group', { name: 'agent.thoughtLevel.label' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('High'));
+    expect(onThoughtLevelSelect).toHaveBeenCalledWith('high');
+  });
+
+  it('shows thought-level choices when the ACP runtime has no switchable models', () => {
+    const onThoughtLevelSelect = vi.fn();
+    const thoughtLevelOption: AcpDerivedOption = {
+      id: 'reasoning_effort',
+      category: 'thought_level',
+      currentValue: 'medium',
+      options: [
+        { value: 'medium', label: 'Balanced' },
+        { value: 'high', label: 'High' },
+      ],
+    };
+
+    render(
+      <GuidModelSelector
+        {...baseProps()}
+        isGeminiMode={false}
+        currentAcpCachedModelInfo={null}
+        thoughtLevelOption={thoughtLevelOption}
+        onThoughtLevelSelect={onThoughtLevelSelect}
+      />
+    );
+
+    expect(screen.getByRole('button')).toHaveTextContent('common.defaultModel · Balanced');
+    expect(screen.getByRole('group', { name: 'agent.thoughtLevel.label' })).toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-selector-menu-divider')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('High'));
+    expect(onThoughtLevelSelect).toHaveBeenCalledWith('high');
   });
 });

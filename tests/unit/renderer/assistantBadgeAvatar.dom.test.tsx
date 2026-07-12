@@ -90,7 +90,16 @@ const makeEditor = (): AssistantEditorViewModel =>
     agent: {
       value: 'codex',
       setValue: noop,
-      availableBackends: [{ id: 'codex', name: 'Codex', modelOptions: [], isExtension: false }],
+      availableBackends: [
+        {
+          id: 'codex',
+          name: 'Codex',
+          runtimeKey: 'codex',
+          modelOptions: [],
+          thoughtLevelOption: null,
+          isExtension: false,
+        },
+      ],
     },
     prompts: {
       text: '',
@@ -99,6 +108,7 @@ const makeEditor = (): AssistantEditorViewModel =>
     defaults: {
       model: { mode: 'auto', setMode: noop, value: '', setValue: noop },
       permission: { mode: 'auto', setMode: noop, value: '', setValue: noop },
+      thoughtLevel: { mode: 'auto', setMode: noop, value: '', setValue: noop },
       skills: { mode: 'auto', setMode: noop },
       mcps: {
         mode: 'auto',

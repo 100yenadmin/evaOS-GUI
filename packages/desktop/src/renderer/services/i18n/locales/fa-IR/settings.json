@@ -223,7 +223,7 @@
   "assistantNoDefaultMcpsSelected": "MCP پیش‌فرضی انتخاب نشده است",
   "assistantRecommendedPromptsLabel": "پرامپت‌های پیشنهادی",
   "assistantRecommendedPromptsPlaceholder": "هر پرامپت پیشنهادی را در یک خط وارد کنید",
-  "assistantBuiltinReadonlyTip": "این یک دستیار پیش‌فرض است. فقط ایجنت اصلی قابل تغییر است. برای سفارشی‌سازی سایر فیلدها، ",
+  "assistantBuiltinReadonlyTip": "این یک دستیار رسمی است و فقط تنظیمات مربوط به موتور قابل تغییر هستند. برای سفارشی‌سازی موارد دیگر، ",
   "assistantBuiltinReadonlyDuplicateLink": "آن را تکثیر کنید",
   "assistantBuiltinReadonlyTipSuffix": ".",
   "assistantCliReadonlyTip": "این دستیار توسط Agents ساخته شده و یک‌به‌یک به CLI خودش متصل است. نام، آواتار و ایجنت اصلی قفل هستند؛ سایر تنظیمات به‌صورت محلی قابل ویرایش‌اند و با به‌روزرسانی‌ها بازنویسی نمی‌شوند.",

@@ -15,8 +15,12 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useProvidersQuery } from '@/renderer/hooks/agent/useModelProviderList';
+import type { AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import {
+  composeRuntimeSelectorLabel,
   RUNTIME_SELECTOR_MENU_CLASS_NAME,
+  renderThoughtLevelMenuGroup,
+  RuntimeSelectorMenuDivider,
   type RuntimeSelectorModelGroup,
   useRuntimeSelectorModelMenu,
 } from '@/renderer/components/agent/runtimeSelectorOptions';
@@ -32,6 +36,8 @@ type GuidModelSelectorProps = {
   currentAcpCachedModelInfo: AcpModelInfo | null;
   selectedAcpModel: string | null;
   setSelectedAcpModel: React.Dispatch<React.SetStateAction<string | null>>;
+  thoughtLevelOption?: AcpDerivedOption | null;
+  onThoughtLevelSelect?: (value: string) => void;
 };
 
 /** Collision-safe key for provider-grouped GUID model choices. */
@@ -51,6 +57,8 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
   currentAcpCachedModelInfo,
   selectedAcpModel,
   setSelectedAcpModel,
+  thoughtLevelOption,
+  onThoughtLevelSelect,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -100,6 +108,10 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
       fallbackLabel: defaultModelLabel,
     });
   }, [acpSelectedLabel, currentAcpCachedModelInfo?.current_model_id, defaultModelLabel, selectedAcpModel]);
+  const combinedAcpButtonLabel = composeRuntimeSelectorLabel({
+    modelLabel: acpButtonLabel,
+    thoughtLevel: thoughtLevelOption,
+  });
 
   const providerModelGroups: RuntimeSelectorModelGroup[] = [];
   const providerModelLookup = new Map<string, { provider: IProvider; modelName: string }>();
@@ -191,46 +203,31 @@ const GuidModelSelector: React.FC<GuidModelSelectorProps> = ({
     );
   }
 
-  // ACP cached model selector
-  if (currentAcpCachedModelInfo && currentAcpCachedModelInfo.available_models?.length > 0) {
-    if (currentAcpCachedModelInfo.available_models.length > 0) {
-      return (
-        <Dropdown
-          trigger='click'
-          droplist={
-            <Menu
-              className={RUNTIME_SELECTOR_MENU_CLASS_NAME}
-              selectedKeys={selectedAcpModel ? [selectedAcpModel] : []}
-            >
-              {acpModelMenu}
-            </Menu>
-          }
-        >
-          <Button className={'sendbox-model-btn guid-config-btn'} shape='round' size='small'>
-            <span className='flex items-center gap-6px min-w-0'>
-              <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />
-              <span>{acpButtonLabel}</span>
-              <Down theme='outline' size='12' fill={iconColors.secondary} className='shrink-0' />
-            </span>
-          </Button>
-        </Dropdown>
-      );
-    }
-
+  const hasAcpModels = acpModels.length > 0;
+  if (hasAcpModels || thoughtLevelOption) {
     return (
-      <Tooltip content={t('conversation.welcome.modelSwitchNotSupported')} position='top'>
-        <Button
-          className={'sendbox-model-btn guid-config-btn'}
-          shape='round'
-          size='small'
-          style={{ cursor: 'default' }}
-        >
+      <Dropdown
+        trigger='click'
+        droplist={
+          <Menu className={RUNTIME_SELECTOR_MENU_CLASS_NAME} selectedKeys={selectedAcpModel ? [selectedAcpModel] : []}>
+            {renderThoughtLevelMenuGroup({
+              thoughtLevel: thoughtLevelOption,
+              title: t('agent.thoughtLevel.label'),
+              onSelect: (value) => onThoughtLevelSelect?.(value),
+            })}
+            {thoughtLevelOption && hasAcpModels ? <RuntimeSelectorMenuDivider /> : null}
+            {hasAcpModels ? acpModelMenu : null}
+          </Menu>
+        }
+      >
+        <Button className={'sendbox-model-btn guid-config-btn'} shape='round' size='small'>
           <span className='flex items-center gap-6px min-w-0'>
             <Brain theme='outline' size='14' fill={iconColors.secondary} className='shrink-0' />
-            <span>{acpButtonLabel}</span>
+            <span>{combinedAcpButtonLabel}</span>
+            <Down theme='outline' size='12' fill={iconColors.secondary} className='shrink-0' />
           </span>
         </Button>
-      </Tooltip>
+      </Dropdown>
     );
   }
 

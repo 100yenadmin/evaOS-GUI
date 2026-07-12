@@ -1,6 +1,8 @@
 import { DEFAULT_CODEX_MODELS } from '@/common/types/codex/codexModels';
 import type { AcpModelInfo } from '@/common/types/platform/acpTypes';
+import type { AcpConfigOptionDto } from '@/common/types/platform/acpTypes';
 import type { ManagedAgent } from '@/renderer/utils/model/agentTypes';
+import { deriveSelectOption, type AcpDerivedOption } from '@/renderer/hooks/agent/useAcpConfigOptions';
 import {
   ASSISTANT_AGENT_CATALOG_SWR_KEY,
   DETECTED_AGENTS_SWR_KEY,
@@ -20,7 +22,47 @@ export type AvailableBackend = {
   runtimeKey: string;
   isExtension?: boolean;
   modelOptions: AvailableBackendModelOption[];
+  thoughtLevelOption: AcpDerivedOption | null;
+  /** Whether the runtime catalog has authoritatively supplied a config-options collection. */
+  hasObservedConfigOptions?: boolean;
 };
+
+const normalizeConfigOptions = (value: unknown): AcpConfigOptionDto[] => {
+  let payload = value;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as unknown;
+    } catch {
+      return [];
+    }
+  }
+
+  if (Array.isArray(payload)) return payload as AcpConfigOptionDto[];
+  if (!payload || typeof payload !== 'object') return [];
+  const record = payload as Record<string, unknown>;
+  const options = record.config_options ?? record.configOptions;
+  return Array.isArray(options) ? (options as AcpConfigOptionDto[]) : [];
+};
+
+const hasObservedConfigOptions = (value: unknown): boolean => {
+  let payload = value;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as unknown;
+    } catch {
+      return false;
+    }
+  }
+
+  if (Array.isArray(payload)) return true;
+  if (!payload || typeof payload !== 'object') return false;
+  const record = payload as Record<string, unknown>;
+  return Array.isArray(record.config_options ?? record.configOptions);
+};
+
+/** Derives a thought-level selector from raw runtime config options, or returns null when unavailable. */
+export const deriveAssistantThoughtLevelOption = (configOptions: unknown): AcpDerivedOption | null =>
+  deriveSelectOption(normalizeConfigOptions(configOptions), 'thought_level', ['thought_level', 'reasoning_effort']);
 
 const resolveBackendModelOptions = (agent: ManagedAgent): AvailableBackendModelOption[] => {
   const handshakeModels = agent.available_models as AcpModelInfo | undefined;
@@ -71,6 +113,8 @@ export const buildAssistantEditorBackends = (agents: ManagedAgent[], currentAgen
       runtimeKey,
       isExtension: agent.agent_source === 'extension',
       modelOptions: resolveBackendModelOptions(agent),
+      thoughtLevelOption: deriveAssistantThoughtLevelOption(agent.config_options),
+      hasObservedConfigOptions: hasObservedConfigOptions(agent.config_options),
     });
   }
 

@@ -5,7 +5,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { resolveGuidAssistantDefaults } from '@/renderer/pages/guid/utils/assistantDefaults';
+import {
+  resolveCompatibleThoughtLevelValue,
+  resolveGuidAssistantDefaults,
+} from '@/renderer/pages/guid/utils/assistantDefaults';
 import type { AssistantDetail } from '@/common/types/agent/assistantTypes';
 
 const buildDetail = (
@@ -40,6 +43,7 @@ const buildDetail = (
     defaults: {
       model: { mode: 'auto' },
       permission: { mode: 'auto' },
+      thought_level: { mode: 'auto' },
       skills: { mode: 'fixed', value: [] },
       mcps: { mode: 'auto', value: [] },
       ...overrides,
@@ -52,6 +56,7 @@ const buildDetail = (
     preferences: {
       last_model_id: undefined,
       last_permission_value: undefined,
+      last_thought_level_value: undefined,
       last_skill_ids: [],
       last_disabled_builtin_skill_ids: [],
       last_mcp_ids: [],
@@ -65,6 +70,7 @@ describe('resolveGuidAssistantDefaults', () => {
       buildDetail({
         model: { mode: 'fixed', value: 'gemini-2.5-pro' },
         permission: { mode: 'fixed', value: 'yolo' },
+        thought_level: { mode: 'fixed', value: 'high' },
         mcps: { mode: 'fixed', value: ['mcp-a', 'mcp-b'] },
       })
     );
@@ -72,6 +78,7 @@ describe('resolveGuidAssistantDefaults', () => {
     expect(resolved).toEqual({
       modelId: 'gemini-2.5-pro',
       permissionMode: 'yolo',
+      thoughtLevel: 'high',
       skillIds: [],
       disabledBuiltinSkillIds: [],
       mcpIds: ['mcp-a', 'mcp-b'],
@@ -84,12 +91,14 @@ describe('resolveGuidAssistantDefaults', () => {
         {
           model: { mode: 'auto' },
           permission: { mode: 'auto' },
+          thought_level: { mode: 'auto' },
           skills: { mode: 'auto', value: [] },
           mcps: { mode: 'auto', value: [] },
         },
         {
           last_model_id: 'claude-sonnet-4',
           last_permission_value: 'plan',
+          last_thought_level_value: 'medium',
           last_skill_ids: ['skill-a'],
           last_disabled_builtin_skill_ids: ['skill-b'],
           last_mcp_ids: ['mcp-1'],
@@ -100,6 +109,7 @@ describe('resolveGuidAssistantDefaults', () => {
     expect(resolved).toEqual({
       modelId: 'claude-sonnet-4',
       permissionMode: 'plan',
+      thoughtLevel: 'medium',
       skillIds: ['skill-a'],
       disabledBuiltinSkillIds: ['skill-b'],
       mcpIds: ['mcp-1'],
@@ -112,6 +122,7 @@ describe('resolveGuidAssistantDefaults', () => {
     expect(resolved).toEqual({
       modelId: undefined,
       permissionMode: undefined,
+      thoughtLevel: undefined,
       skillIds: [],
       disabledBuiltinSkillIds: [],
       mcpIds: [],
@@ -128,9 +139,45 @@ describe('resolveGuidAssistantDefaults', () => {
     expect(resolved).toEqual({
       modelId: undefined,
       permissionMode: undefined,
+      thoughtLevel: undefined,
       skillIds: ['skill-fixed'],
       disabledBuiltinSkillIds: [],
       mcpIds: [],
     });
+  });
+
+  it('returns the remembered thought value for later runtime compatibility validation', () => {
+    const resolved = resolveGuidAssistantDefaults(buildDetail({}, { last_thought_level_value: 'obsolete' }));
+
+    expect(resolved.thoughtLevel).toBe('obsolete');
+  });
+});
+
+describe('resolveCompatibleThoughtLevelValue', () => {
+  const option = {
+    id: 'reasoning_effort',
+    category: 'thought_level',
+    currentValue: 'medium',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Balanced' },
+      { value: 'high', label: 'High' },
+    ],
+  };
+
+  it('uses an advertised assistant default before the runtime current value', () => {
+    expect(resolveCompatibleThoughtLevelValue(option, 'high')).toBe('high');
+  });
+
+  it('falls back to the advertised runtime value when a remembered default is stale', () => {
+    expect(resolveCompatibleThoughtLevelValue(option, 'obsolete')).toBe('medium');
+  });
+
+  it('returns empty when the runtime does not advertise thought-level choices', () => {
+    expect(resolveCompatibleThoughtLevelValue(null, 'high')).toBe('');
+  });
+
+  it('leaves the selection empty when the runtime advertises choices without a current or preferred value', () => {
+    expect(resolveCompatibleThoughtLevelValue({ ...option, currentValue: undefined })).toBe('');
   });
 });

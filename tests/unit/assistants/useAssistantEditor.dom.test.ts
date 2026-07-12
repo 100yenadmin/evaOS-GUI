@@ -90,6 +90,7 @@ describe('useAssistantEditor', () => {
     defaults: {
       model: { mode: 'fixed', value: 'gemini-2.5-pro' },
       permission: { mode: 'fixed', value: 'acceptEdits' },
+      thought_level: { mode: 'fixed', value: 'high' },
       skills: { mode: 'auto', value: ['skill-one'] },
       mcps: { mode: 'fixed', value: ['mcp-a'] },
     },
@@ -101,6 +102,7 @@ describe('useAssistantEditor', () => {
     preferences: {
       last_model_id: undefined,
       last_permission_value: undefined,
+      last_thought_level_value: undefined,
       last_skill_ids: [],
       last_disabled_builtin_skill_ids: [],
       last_mcp_ids: [],
@@ -144,6 +146,7 @@ describe('useAssistantEditor', () => {
     expect(result.current.isCreating).toBe(false);
     expect(result.current.defaultModelMode).toBe('auto');
     expect(result.current.defaultPermissionMode).toBe('auto');
+    expect(result.current.defaultThoughtLevelMode).toBe('auto');
     expect(result.current.defaultMcpMode).toBe('auto');
   });
 
@@ -176,6 +179,8 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultModelValue).toBe('gemini-2.5-pro');
     expect(result.current.defaultPermissionMode).toBe('fixed');
     expect(result.current.defaultPermissionValue).toBe('acceptEdits');
+    expect(result.current.defaultThoughtLevelMode).toBe('fixed');
+    expect(result.current.defaultThoughtLevelValue).toBe('high');
     expect(result.current.defaultSkillsMode).toBe('auto');
     expect(result.current.defaultMcpMode).toBe('fixed');
     expect(result.current.selectedMcpIds).toEqual(['mcp-a']);
@@ -315,6 +320,7 @@ describe('useAssistantEditor', () => {
     expect(result.current.editDescription).toBe('');
     expect(result.current.defaultModelMode).toBe('auto');
     expect(result.current.defaultPermissionMode).toBe('auto');
+    expect(result.current.defaultThoughtLevelMode).toBe('auto');
     expect(result.current.defaultMcpMode).toBe('auto');
   });
 
@@ -341,6 +347,8 @@ describe('useAssistantEditor', () => {
       result.current.setDefaultModelValue('gpt-4.1');
       result.current.setDefaultPermissionMode('fixed');
       result.current.setDefaultPermissionValue('plan');
+      result.current.setDefaultThoughtLevelMode('fixed');
+      result.current.setDefaultThoughtLevelValue('high');
       result.current.setDefaultSkillsMode('auto');
       result.current.setSelectedSkills(['skill-one']);
       result.current.setDefaultMcpMode('fixed');
@@ -359,6 +367,7 @@ describe('useAssistantEditor', () => {
         defaults: {
           model: { mode: 'fixed', value: 'gpt-4.1' },
           permission: { mode: 'fixed', value: 'plan' },
+          thought_level: { mode: 'fixed', value: 'high' },
           skills: { mode: 'auto', value: ['skill-one'] },
           mcps: { mode: 'fixed', value: ['mcp-a'] },
         },
@@ -435,7 +444,7 @@ describe('useAssistantEditor', () => {
     emitSpy.mockRestore();
   });
 
-  it('clears model and permission defaults when the main agent changes', async () => {
+  it('clears model, permission, and thought-level defaults when the main agent changes', async () => {
     const assistant: AssistantListItem = {
       id: 'a1',
       name: 'TestAssistant',
@@ -457,6 +466,8 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultModelValue).toBe('gemini-2.5-pro');
     expect(result.current.defaultPermissionMode).toBe('fixed');
     expect(result.current.defaultPermissionValue).toBe('acceptEdits');
+    expect(result.current.defaultThoughtLevelMode).toBe('fixed');
+    expect(result.current.defaultThoughtLevelValue).toBe('high');
 
     act(() => {
       result.current.setEditAgent('agent-gemini-row');
@@ -467,6 +478,8 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultModelValue).toBe('');
     expect(result.current.defaultPermissionMode).toBe('auto');
     expect(result.current.defaultPermissionValue).toBe('');
+    expect(result.current.defaultThoughtLevelMode).toBe('auto');
+    expect(result.current.defaultThoughtLevelValue).toBe('');
   });
 
   it('allows builtin assistants to persist main agent plus default model and permission', async () => {
@@ -480,6 +493,7 @@ describe('useAssistantEditor', () => {
       defaults: {
         model: { mode: 'auto' as const, value: undefined },
         permission: { mode: 'auto' as const, value: undefined },
+        thought_level: { mode: 'auto' as const, value: undefined },
         skills: { mode: 'fixed' as const, value: ['skill-one'] },
         mcps: { mode: 'auto' as const, value: [] },
       },
@@ -513,6 +527,8 @@ describe('useAssistantEditor', () => {
       result.current.setDefaultModelValue('gemini-2.5-pro');
       result.current.setDefaultPermissionMode('fixed');
       result.current.setDefaultPermissionValue('default');
+      result.current.setDefaultThoughtLevelMode('fixed');
+      result.current.setDefaultThoughtLevelValue('medium');
       result.current.setEditRecommendedPromptsText('Should not be sent');
       result.current.setSelectedSkills(['skill-two']);
       result.current.setSelectedMcpIds(['mcp-b']);
@@ -528,6 +544,7 @@ describe('useAssistantEditor', () => {
       defaults: {
         model: { mode: 'fixed', value: 'gemini-2.5-pro' },
         permission: { mode: 'fixed', value: 'default' },
+        thought_level: { mode: 'fixed', value: 'medium' },
       },
     });
   });
@@ -539,6 +556,7 @@ describe('useAssistantEditor', () => {
       defaults: {
         model: { mode: 'auto' as const, value: undefined },
         permission: { mode: 'auto' as const, value: undefined },
+        thought_level: { mode: 'auto' as const, value: undefined },
         skills: { mode: 'fixed' as const, value: ['skill-one'] },
         mcps: { mode: 'auto' as const, value: [] },
       },
@@ -569,6 +587,8 @@ describe('useAssistantEditor', () => {
     expect(result.current.defaultModelValue).toBe('');
     expect(result.current.defaultPermissionMode).toBe('auto');
     expect(result.current.defaultPermissionValue).toBe('');
+    expect(result.current.defaultThoughtLevelMode).toBe('auto');
+    expect(result.current.defaultThoughtLevelValue).toBe('');
     expect(result.current.defaultMcpMode).toBe('auto');
     expect(result.current.selectedMcpIds).toEqual([]);
   });

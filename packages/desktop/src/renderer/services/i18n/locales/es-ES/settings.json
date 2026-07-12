@@ -222,7 +222,7 @@
   "assistantNoDefaultMcpsSelected": "No hay MCP predeterminado seleccionado",
   "assistantRecommendedPromptsLabel": "Prompts recomendados",
   "assistantRecommendedPromptsPlaceholder": "Ingresa un prompt sugerido por línea",
-  "assistantBuiltinReadonlyTip": "Este es un asistente integrado. Puedes cambiar el Agente principal, el Modelo predeterminado y el Permiso predeterminado. Para personalizar otros campos, ",
+  "assistantBuiltinReadonlyTip": "Este es un asistente oficial; solo se pueden cambiar los ajustes relacionados con el motor. Para personalizar cualquier otra cosa, ",
   "assistantBuiltinReadonlyDuplicateLink": "duplícalo",
   "assistantBuiltinReadonlyTipSuffix": ".",
   "addSkills": "Agregar habilidades",
