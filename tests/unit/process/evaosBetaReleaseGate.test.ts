@@ -127,6 +127,7 @@ function writeMacosBridgeZip(
     extraEntryCount?: number;
     omitPeekaboo?: boolean;
     omitLicense?: boolean;
+    scriptBridge?: boolean;
     sourceSha256?: string;
     manifestLicenseSha256?: string;
   } = {}
@@ -143,12 +144,14 @@ function writeMacosBridgeZip(
     'omit_license = sys.argv[4] == "1"',
     'source_sha256 = sys.argv[5]',
     'manifest_license_sha256 = sys.argv[6]',
+    'script_bridge = sys.argv[7] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
     'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}}}',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
+    '    bridge_bytes = b"#!/usr/bin/env bash\\n" if script_bridge else bytes.fromhex("cffaedfe0c00000100000000")',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", bridge_bytes)',
     '    if not omit_peekaboo:',
     '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/peekaboo", bytes.fromhex("cafebabe00000000"))',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
@@ -167,6 +170,7 @@ function writeMacosBridgeZip(
     options.omitLicense ? '1' : '0',
     options.sourceSha256 || '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
     options.manifestLicenseSha256 || '',
+    options.scriptBridge ? '1' : '0',
   ]);
 }
 
@@ -475,8 +479,10 @@ describe('evaOS beta release gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-after-sign-helpers-'));
     const appPath = path.join(dir, 'evaOS Workbench.app');
     const helperDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin');
+    const bridgePath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'evaos-desktop-bridge');
     const peekabooPath = path.join(helperDir, 'peekaboo');
     const connectorHelperPath = path.join(helperDir, 'evaos-connector-helper');
+    const inspectedPaths: string[] = [];
     const signedByExpectedTeam = {
       status: 0,
       stdout: '',
@@ -491,6 +497,7 @@ describe('evaOS beta release gate', () => {
     };
 
     try {
+      writeMachOFixture(bridgePath);
       writeMachOFixture(peekabooPath);
       writeMachOFixture(connectorHelperPath);
 
@@ -501,9 +508,13 @@ describe('evaOS beta release gate', () => {
             EVAOS_MAC_CONTROL_HELPER_TEAM_ID: 'TC6MS3T6NN',
             EVAOS_MAC_CONTROL_HELPER_AUTHORITY: 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)',
           },
-          () => signedByExpectedTeam
+          (_command, args) => {
+            inspectedPaths.push(args.at(-1) || '');
+            return signedByExpectedTeam;
+          }
         )
       ).not.toThrow();
+      expect(inspectedPaths).toEqual([bridgePath, peekabooPath, connectorHelperPath]);
 
       expect(() =>
         afterSign.assertMacControlHelperSignatures(
@@ -1431,6 +1442,11 @@ describe('evaOS beta release gate', () => {
 
   it('rejects macOS release ZIPs without exact Peekaboo package proof', () => {
     const cases = [
+      {
+        name: 'script root bridge',
+        options: { scriptBridge: true },
+        expected: /executable Mach-O shape/,
+      },
       {
         name: 'missing binary',
         options: { omitPeekaboo: true },

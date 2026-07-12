@@ -1,4 +1,13 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +33,11 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     };
   }) => Record<string, unknown>;
   bridgeWrapperScript: () => string;
+  computePayloadTreeDigest: (payloadDir: string) => {
+    algorithm: 'sha256-tree-v1';
+    sha256: string;
+    fileCount: number;
+  };
   isMachOExecutable: (filePath: string) => boolean;
   installPeekabooLicense: (
     sourcePath?: string,
@@ -40,11 +54,176 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     resourceDir?: string
   ) => { peekaboo: Record<string, string> } | undefined;
   peekabooIdentity: (filePath: string, execute?: PeekabooVersionRunner) => { version: string; sourceSha256: string };
+  preparePinnedBridgePayload: (
+    payloadDir: string,
+    resourceDir: string,
+    expectedPayloadSha256: string,
+    expectedManifestSha256: string
+  ) => Record<string, unknown>;
+  resolvePinnedBridgeConfiguration: (
+    env: Record<string, string | undefined>,
+    strictRelease: boolean
+  ) => { payloadDir: string; expectedPayloadSha256: string; expectedManifestSha256: string } | undefined;
   shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
 };
 
 describe('prepareEvaosDesktopBridgeResource', () => {
+  it('computes the producer sha256-tree-v1 digest without trusting its manifest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-payload-digest-'));
+    const bridgeContents = Buffer.from('cffaedfe0c00000100000000', 'hex');
+    const licenseContents = 'bridge license\n';
+    try {
+      mkdirSync(join(dir, 'licenses'), { recursive: true });
+      writeFileSync(join(dir, 'evaos-desktop-bridge'), bridgeContents);
+      chmodSync(join(dir, 'evaos-desktop-bridge'), 0o775);
+      writeFileSync(join(dir, 'licenses', 'LICENSE'), licenseContents);
+      chmodSync(join(dir, 'licenses', 'LICENSE'), 0o664);
+      writeFileSync(join(dir, 'payload-manifest.json'), '{"untrusted":true}\n');
+
+      const bridgeSha = createHash('sha256').update(bridgeContents).digest('hex');
+      const licenseSha = createHash('sha256').update(licenseContents).digest('hex');
+      const records = [
+        `${['evaos-desktop-bridge', '0755', bridgeSha].join('\0')}\n`,
+        `${['licenses/LICENSE', '0644', licenseSha].join('\0')}\n`,
+      ].join('');
+
+      expect(bridgeResource.computePayloadTreeDigest(dir)).toEqual({
+        algorithm: 'sha256-tree-v1',
+        sha256: createHash('sha256').update(records).digest('hex'),
+        fileCount: 2,
+      });
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('copies a pinned self-contained payload and records its immutable identity', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-payload-copy-'));
+    const payloadDir = join(dir, 'payload');
+    const resourceDir = join(dir, 'Bridge');
+    try {
+      const { manifestSha256, payloadSha256, sourceCommit } = writePinnedPayloadFixture(payloadDir);
+
+      expect(
+        bridgeResource.preparePinnedBridgePayload(payloadDir, resourceDir, payloadSha256, manifestSha256)
+      ).toMatchObject({
+        schema: 'evaos-desktop-bridge-resource/v2',
+        placeholder: false,
+        sourceCommit,
+        producerManifest: 'payload-manifest.json',
+        producerManifestSha256: manifestSha256,
+        payload: {
+          algorithm: 'sha256-tree-v1',
+          sha256: payloadSha256,
+          target: { platform: 'macos', architecture: 'arm64' },
+        },
+      });
+
+      expect(existsSync(join(resourceDir, 'evaos-desktop-bridge'))).toBe(true);
+      expect(existsSync(join(resourceDir, '_internal', 'runtime.dat'))).toBe(true);
+      expect(existsSync(join(resourceDir, 'payload-manifest.json'))).toBe(true);
+      expect(JSON.parse(readFileSync(join(resourceDir, 'manifest.json'), 'utf8'))).toMatchObject({
+        sourceCommit,
+        payload: { sha256: payloadSha256 },
+      });
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a payload that differs from the approved out-of-band digest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-payload-pin-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { manifestSha256 } = writePinnedPayloadFixture(payloadDir);
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), '0'.repeat(64), manifestSha256)
+      ).toThrow(/approved release pin/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a pinned payload whose root executable is a script', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-payload-script-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { manifestSha256, payloadSha256 } = writePinnedPayloadFixture(payloadDir, { rootMachO: false });
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/root executable must be an arm64 Mach-O executable/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects symbolic links in an otherwise pinned payload', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-payload-symlink-'));
+    try {
+      writeFileSync(join(dir, 'target'), 'unexpected external target');
+      symlinkSync(join(dir, 'target'), join(dir, 'link'));
+
+      expect(() => bridgeResource.computePayloadTreeDigest(dir)).toThrow(/must not contain symbolic links/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a manifest-only mutation against the out-of-band manifest digest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-manifest-pin-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { manifestSha256, payloadSha256 } = writePinnedPayloadFixture(payloadDir);
+      const manifestPath = join(payloadDir, 'payload-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      manifest.toolchain.python = 'unexpected-python';
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/manifest digest/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('refuses the legacy host-Python wrapper path for strict release preparation', () => {
+    expect(() =>
+      bridgeResource.resolvePinnedBridgeConfiguration(
+        { EVAOS_DESKTOP_BRIDGE_SOURCE_REF: '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b' },
+        true
+      )
+    ).toThrow(/self-contained Desktop Bridge payload/);
+  });
+
+  it('requires an out-of-band digest whenever a pinned payload is configured', () => {
+    expect(() =>
+      bridgeResource.resolvePinnedBridgeConfiguration(
+        { EVAOS_DESKTOP_BRIDGE_PAYLOAD_DIR: '/tmp/evaos-desktop-bridge-payload' },
+        false
+      )
+    ).toThrow(/EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256/);
+  });
+
+  it('requires a separate manifest digest for a pinned payload', () => {
+    expect(() =>
+      bridgeResource.resolvePinnedBridgeConfiguration(
+        {
+          EVAOS_DESKTOP_BRIDGE_PAYLOAD_DIR: '/tmp/evaos-desktop-bridge-payload',
+          EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256: '1'.repeat(64),
+        },
+        false
+      )
+    ).toThrow(/EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256/);
+  });
+
+  it('keeps the legacy source wrapper available only for non-release development', () => {
+    expect(bridgeResource.resolvePinnedBridgeConfiguration({}, false)).toBeUndefined();
+  });
+
   it('isolates the packaged desktop bridge wrapper from ambient Python paths', () => {
     const wrapper = bridgeResource.bridgeWrapperScript();
 
@@ -263,6 +442,83 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(bridgeResource.peekabooBundleMetadata(undefined)).toBeUndefined();
   });
 });
+
+function writePinnedPayloadFixture(
+  payloadDir: string,
+  options: { rootMachO?: boolean } = {}
+): { manifestSha256: string; payloadSha256: string; sourceCommit: string } {
+  const sourceCommit = '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b';
+  const machO = Buffer.from('cffaedfe0c00000100000000', 'hex');
+  const license = 'MIT License\n\nPermission is hereby granted\n';
+  mkdirSync(join(payloadDir, '_internal'), { recursive: true });
+  mkdirSync(join(payloadDir, 'bin'), { recursive: true });
+  mkdirSync(join(payloadDir, 'licenses'), { recursive: true });
+  for (const relativePath of ['bin/peekaboo', 'bin/evaos-connector-helper']) {
+    writeFileSync(join(payloadDir, relativePath), machO);
+    chmodSync(join(payloadDir, relativePath), 0o755);
+  }
+  writeFileSync(join(payloadDir, 'evaos-desktop-bridge'), options.rootMachO === false ? '#!/bin/sh\nexit 0\n' : machO);
+  chmodSync(join(payloadDir, 'evaos-desktop-bridge'), 0o755);
+  writeFileSync(join(payloadDir, '_internal', 'runtime.dat'), 'private runtime\n');
+  writeFileSync(join(payloadDir, 'licenses', 'LICENSE'), license);
+
+  const payload = bridgeResource.computePayloadTreeDigest(payloadDir);
+  const sha256 = (relativePath: string) =>
+    createHash('sha256')
+      .update(readFileSync(join(payloadDir, relativePath)))
+      .digest('hex');
+  writeFileSync(
+    join(payloadDir, 'payload-manifest.json'),
+    `${JSON.stringify(
+      {
+        schema_version: 1,
+        artifact: {
+          id: 'evaos-desktop-bridge-macos-arm64',
+          format: 'onedir',
+          root_executable: 'evaos-desktop-bridge',
+        },
+        target: { platform: 'macos', architecture: 'arm64' },
+        source: {
+          repository: 'electricsheephq/evaos-desktop-bridge',
+          commit: sourceCommit,
+          version: '0.7.0',
+        },
+        toolchain: {
+          python: '3.12.12',
+          freezer: { name: 'pyinstaller', version: '6.16.0' },
+          dependencies: [{ name: 'pyobjc-core', version: '11.1' }],
+        },
+        files: {
+          root_executable: { path: 'evaos-desktop-bridge', sha256: sha256('evaos-desktop-bridge') },
+          peekaboo: { path: 'bin/peekaboo', sha256: sha256('bin/peekaboo') },
+          connector_helper: {
+            path: 'bin/evaos-connector-helper',
+            sha256: sha256('bin/evaos-connector-helper'),
+          },
+          licenses: [{ name: 'Desktop Bridge', path: 'licenses/LICENSE', sha256: sha256('licenses/LICENSE') }],
+        },
+        payload: {
+          algorithm: payload.algorithm,
+          sha256: payload.sha256,
+          file_count: payload.fileCount,
+        },
+        signing: {
+          state: 'unsigned',
+          inputs: ['evaos-desktop-bridge', 'bin/peekaboo', 'bin/evaos-connector-helper'],
+        },
+      },
+      null,
+      2
+    )}\n`
+  );
+  return {
+    manifestSha256: createHash('sha256')
+      .update(readFileSync(join(payloadDir, 'payload-manifest.json')))
+      .digest('hex'),
+    payloadSha256: payload.sha256,
+    sourceCommit,
+  };
+}
 
 function restoreEnv(name: string, value: string | undefined): void {
   if (value === undefined) {

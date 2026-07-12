@@ -1,4 +1,5 @@
 const { Arch } = require('builder-util');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -9,6 +10,7 @@ const {
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
+const { computePayloadTreeDigest } = require('./prepareEvaosDesktopBridgeResource.js');
 
 /**
  * afterPack hook for electron-builder
@@ -156,6 +158,44 @@ function requireMachOExecutable(filePath, relativePath) {
   );
 }
 
+function requirePinnedBridgePayloadIdentity(resourcesDir, manifest) {
+  const bridgeDir = path.join(resourcesDir, 'Bridge');
+  const producerManifestPath = path.join(bridgeDir, 'payload-manifest.json');
+  const payloadSha256 = String(manifest?.payload?.sha256 || '')
+    .trim()
+    .toLowerCase();
+  const validIdentity =
+    manifest?.schema === 'evaos-desktop-bridge-resource/v2' &&
+    manifest?.placeholder === false &&
+    manifest?.producerManifest === 'payload-manifest.json' &&
+    /^[0-9a-f]{64}$/.test(
+      String(manifest?.producerManifestSha256 || '')
+        .trim()
+        .toLowerCase()
+    ) &&
+    /^[0-9a-f]{40}$/i.test(String(manifest?.sourceCommit || '')) &&
+    manifest?.payload?.algorithm === 'sha256-tree-v1' &&
+    /^[0-9a-f]{64}$/.test(payloadSha256) &&
+    manifest?.payload?.target?.platform === 'macos' &&
+    manifest?.payload?.target?.architecture === 'arm64' &&
+    Number.isInteger(manifest?.payload?.fileCount) &&
+    fs.existsSync(producerManifestPath);
+  if (!validIdentity) {
+    throw new Error('Release macOS bridge resource is missing its pinned immutable payload identity.');
+  }
+  const producerManifestSha256 = crypto
+    .createHash('sha256')
+    .update(fs.readFileSync(producerManifestPath))
+    .digest('hex');
+  if (producerManifestSha256 !== manifest.producerManifestSha256) {
+    throw new Error('Release macOS bridge resource producer manifest digest does not match its approved pin.');
+  }
+  const actualPayload = computePayloadTreeDigest(bridgeDir);
+  if (actualPayload.sha256 !== payloadSha256 || actualPayload.fileCount !== manifest.payload.fileCount) {
+    throw new Error('Release macOS bridge resource does not match its pinned immutable payload identity.');
+  }
+}
+
 function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformName, missing) {
   const executableParts = getManagedNodeExecutableParts(electronPlatformName);
   const relativePath = path.join('bundled-aioncore', runtimeKey, 'managed-resources', 'node', '*', ...executableParts);
@@ -229,6 +269,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
   }
   if (strictReleaseBridge) {
+    requirePinnedBridgePayloadIdentity(resourcesDir, manifest);
     requireMachOExecutable(bridgePath, path.join('Bridge', 'evaos-desktop-bridge'));
     requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
     requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));

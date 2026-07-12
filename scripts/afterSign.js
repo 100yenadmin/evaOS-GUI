@@ -25,6 +25,7 @@ const DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_EXPECTED_TEAM_ID = 'TC6MS3T6NN';
 const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
 const MAC_CONTROL_HELPER_RELATIVE_PATHS = [
+  path.join('Contents', 'Resources', 'Bridge', 'evaos-desktop-bridge'),
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'peekaboo'),
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-connector-helper'),
 ];

@@ -1540,7 +1540,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        if part.endswith(".app") and parts[index + 1:index + 4] == ["Contents", "Resources", "Bridge"]:',
     '            return "/".join(parts[index + 4:])',
     '    return None',
-    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
+    'result = {"hasBridgeExecutable": False, "bridgeExecutableMachO": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
     'entries = {}',
     'with zipfile.ZipFile(path) as archive:',
     '    for name in archive.namelist():',
@@ -1552,6 +1552,8 @@ function inspectMacosZipBridgePayload(zipPath) {
     '    result["hasPeekaboo"] = "bin/peekaboo" in entries',
     '    result["hasConnectorHelper"] = "bin/evaos-connector-helper" in entries',
     '    result["hasPeekabooLicense"] = expected_license_path in entries',
+    '    if result["hasBridgeExecutable"]:',
+    '        result["bridgeExecutableMachO"] = archive.read(entries["evaos-desktop-bridge"], pwd=None)[:4].hex() in macho_magics',
     '    manifest = {}',
     '    if result["hasBridgeManifest"]:',
     '        try:',
@@ -1608,6 +1610,7 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
   for (const zipName of zipNames) {
     const probe = inspectMacosZipBridgePayload(path.join(outputDir, zipName));
     assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
+    assertZipBridgeProbe(probe, 'bridgeExecutableMachO', zipName, 'executable Mach-O shape');
     assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
     assertZipBridgeProbe(probe, 'hasPeekaboo', zipName, 'Peekaboo binary');
     assertZipBridgeProbe(probe, 'peekabooMachO', zipName, 'Peekaboo binary Mach-O shape');

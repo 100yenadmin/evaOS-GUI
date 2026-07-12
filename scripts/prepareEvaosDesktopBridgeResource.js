@@ -12,6 +12,8 @@ const defaultBridgeSourceRepo = 'https://github.com/electricsheephq/evaos-deskto
 const defaultBridgeSourceRef = 'main';
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
+const PAYLOAD_MANIFEST_FILENAME = 'payload-manifest.json';
+const RESOURCE_MANIFEST_FILENAME = 'manifest.json';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
@@ -34,6 +36,31 @@ function shouldRequireRealBridge() {
     truthy(process.env.EVAOS_BETA_PUBLIC_RELEASE) ||
     truthy(process.env.EVAOS_BETA_REQUIRE_SIGNING)
   );
+}
+
+function resolvePinnedBridgeConfiguration(env = process.env, strictRelease = shouldRequireRealBridge()) {
+  const payloadDir = String(env.EVAOS_DESKTOP_BRIDGE_PAYLOAD_DIR || '').trim();
+  const expectedPayloadSha256 = String(env.EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256 || '')
+    .trim()
+    .toLowerCase();
+  const expectedManifestSha256 = String(env.EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256 || '')
+    .trim()
+    .toLowerCase();
+  if (!payloadDir) {
+    if (strictRelease) {
+      throw new Error(
+        'Release builds require a pinned self-contained Desktop Bridge payload; the legacy host-Python source wrapper is not releaseable.'
+      );
+    }
+    return undefined;
+  }
+  if (!expectedPayloadSha256) {
+    throw new Error('Pinned Desktop Bridge payload preparation requires EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256.');
+  }
+  if (!expectedManifestSha256) {
+    throw new Error('Pinned Desktop Bridge payload preparation requires EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256.');
+  }
+  return { payloadDir, expectedPayloadSha256, expectedManifestSha256 };
 }
 
 function selectedBridgeSourceRef() {
@@ -375,6 +402,221 @@ function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+function payloadRelativePath(relativePath) {
+  return relativePath.split(path.sep).join('/');
+}
+
+function listPayloadFiles(payloadDir, relativeDir = '') {
+  const currentDir = path.join(payloadDir, relativeDir);
+  const files = [];
+  for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+    const relativePath = path.join(relativeDir, entry.name);
+    const absolutePath = path.join(payloadDir, relativePath);
+    const stat = fs.lstatSync(absolutePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Desktop Bridge payload must not contain symbolic links: ${payloadRelativePath(relativePath)}`);
+    }
+    if (stat.isDirectory()) {
+      files.push(...listPayloadFiles(payloadDir, relativePath));
+      continue;
+    }
+    if (!stat.isFile()) {
+      throw new Error(`Desktop Bridge payload contains a non-regular file: ${payloadRelativePath(relativePath)}`);
+    }
+    if (![PAYLOAD_MANIFEST_FILENAME, RESOURCE_MANIFEST_FILENAME].includes(payloadRelativePath(relativePath))) {
+      files.push({ absolutePath, relativePath: payloadRelativePath(relativePath), stat });
+    }
+  }
+  return files;
+}
+
+function computePayloadTreeDigest(payloadDir) {
+  const files = listPayloadFiles(payloadDir).toSorted((left, right) =>
+    Buffer.compare(Buffer.from(left.relativePath, 'utf8'), Buffer.from(right.relativePath, 'utf8'))
+  );
+  const records = files
+    .map(({ absolutePath, relativePath, stat }) => {
+      const normalizedMode = stat.mode & 0o111 ? '0755' : '0644';
+      return `${relativePath}\0${normalizedMode}\0${sha256File(absolutePath)}\n`;
+    })
+    .join('');
+  return {
+    algorithm: 'sha256-tree-v1',
+    sha256: crypto.createHash('sha256').update(records).digest('hex'),
+    fileCount: files.length,
+  };
+}
+
+function requireSha256(value, description) {
+  const digest = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw new Error(`Desktop Bridge payload requires a valid ${description} SHA-256 digest.`);
+  }
+  return digest;
+}
+
+function resolvePayloadFile(payloadDir, relativePath, description) {
+  const normalized = payloadRelativePath(String(relativePath || '').trim());
+  if (!normalized || path.isAbsolute(normalized) || normalized === '..' || normalized.startsWith('../')) {
+    throw new Error(`Desktop Bridge payload has an invalid ${description} path.`);
+  }
+  const payloadRoot = path.resolve(payloadDir);
+  const absolutePath = path.resolve(payloadRoot, normalized);
+  if (!absolutePath.startsWith(`${payloadRoot}${path.sep}`)) {
+    throw new Error(`Desktop Bridge payload ${description} escapes the payload root.`);
+  }
+  const stat = fs.lstatSync(absolutePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new Error(`Desktop Bridge payload ${description} must be a regular file: ${normalized}`);
+  }
+  return { absolutePath, relativePath: normalized };
+}
+
+function isArm64MachOExecutable(filePath) {
+  if (!isMachOExecutable(filePath)) return false;
+  const header = fs.readFileSync(filePath).subarray(0, 12);
+  if (header.length < 12) return false;
+  const magic = header.subarray(0, 4).toString('hex');
+  if (magic === 'cffaedfe') return header.readUInt32LE(4) === 0x0100000c;
+  if (magic === 'feedfacf') return header.readUInt32BE(4) === 0x0100000c;
+  return false;
+}
+
+function verifyPayloadFile(payloadDir, entry, expectedPath, description, options = {}) {
+  if (!entry || typeof entry !== 'object') {
+    throw new Error(`Desktop Bridge payload manifest is missing ${description}.`);
+  }
+  const resolved = resolvePayloadFile(payloadDir, entry.path, description);
+  if (expectedPath && resolved.relativePath !== expectedPath) {
+    throw new Error(`Desktop Bridge payload ${description} must use ${expectedPath}.`);
+  }
+  const expectedSha256 = requireSha256(entry.sha256, `${description} file`);
+  const actualSha256 = sha256File(resolved.absolutePath);
+  if (actualSha256 !== expectedSha256) {
+    throw new Error(`Desktop Bridge payload ${description} digest does not match its manifest.`);
+  }
+  if (options.arm64MachO && !isArm64MachOExecutable(resolved.absolutePath)) {
+    throw new Error(`Desktop Bridge payload ${description} must be an arm64 Mach-O executable.`);
+  }
+  return { ...resolved, sha256: actualSha256 };
+}
+
+function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expectedManifestSha256) {
+  if (fs.existsSync(path.join(payloadDir, RESOURCE_MANIFEST_FILENAME))) {
+    throw new Error(`Desktop Bridge producer payload must not contain reserved ${RESOURCE_MANIFEST_FILENAME}.`);
+  }
+  const manifestPath = path.join(payloadDir, PAYLOAD_MANIFEST_FILENAME);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Desktop Bridge payload is missing ${PAYLOAD_MANIFEST_FILENAME}.`);
+  }
+  const pinnedManifestSha256 = requireSha256(expectedManifestSha256, 'out-of-band manifest');
+  if (sha256File(manifestPath) !== pinnedManifestSha256) {
+    throw new Error('Desktop Bridge payload manifest digest does not match the approved release pin.');
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Desktop Bridge payload manifest is unreadable: ${error.message}`);
+  }
+
+  if (manifest.schema_version !== 1) throw new Error('Desktop Bridge payload schema_version must be 1.');
+  if (
+    manifest.artifact?.id !== 'evaos-desktop-bridge-macos-arm64' ||
+    manifest.artifact?.format !== 'onedir' ||
+    manifest.artifact?.root_executable !== 'evaos-desktop-bridge'
+  ) {
+    throw new Error('Desktop Bridge payload artifact identity is not the approved macOS arm64 one-directory shape.');
+  }
+  if (manifest.target?.platform !== 'macos' || manifest.target?.architecture !== 'arm64') {
+    throw new Error('Desktop Bridge payload target must be macos/arm64.');
+  }
+  if (
+    manifest.source?.repository !== 'electricsheephq/evaos-desktop-bridge' ||
+    !/^[0-9a-f]{40}$/i.test(String(manifest.source?.commit || '')) ||
+    !String(manifest.source?.version || '').trim()
+  ) {
+    throw new Error('Desktop Bridge payload source identity is incomplete or mutable.');
+  }
+  if (
+    !String(manifest.toolchain?.python || '').trim() ||
+    !String(manifest.toolchain?.freezer?.name || '').trim() ||
+    !String(manifest.toolchain?.freezer?.version || '').trim() ||
+    !Array.isArray(manifest.toolchain?.dependencies)
+  ) {
+    throw new Error('Desktop Bridge payload toolchain identity is incomplete.');
+  }
+
+  const expectedSha256 = requireSha256(expectedPayloadSha256, 'out-of-band payload');
+  const recordedSha256 = requireSha256(manifest.payload?.sha256, 'manifest payload');
+  if (manifest.payload?.algorithm !== 'sha256-tree-v1' || recordedSha256 !== expectedSha256) {
+    throw new Error('Desktop Bridge payload identity does not match the approved release pin.');
+  }
+  const actualPayload = computePayloadTreeDigest(payloadDir);
+  if (actualPayload.sha256 !== expectedSha256 || actualPayload.fileCount !== manifest.payload?.file_count) {
+    throw new Error('Desktop Bridge payload tree does not match its immutable manifest identity.');
+  }
+
+  verifyPayloadFile(payloadDir, manifest.files?.root_executable, 'evaos-desktop-bridge', 'root executable', {
+    arm64MachO: true,
+  });
+  verifyPayloadFile(payloadDir, manifest.files?.peekaboo, 'bin/peekaboo', 'Peekaboo executable', {
+    arm64MachO: true,
+  });
+  verifyPayloadFile(payloadDir, manifest.files?.connector_helper, 'bin/evaos-connector-helper', 'connector helper', {
+    arm64MachO: true,
+  });
+  if (!Array.isArray(manifest.files?.licenses) || manifest.files.licenses.length === 0) {
+    throw new Error('Desktop Bridge payload must include at least one recorded license.');
+  }
+  for (const [index, license] of manifest.files.licenses.entries()) {
+    if (!String(license?.name || '').trim() || !String(license?.path || '').startsWith('licenses/')) {
+      throw new Error(`Desktop Bridge payload license ${index + 1} has invalid identity.`);
+    }
+    verifyPayloadFile(payloadDir, license, undefined, `license ${index + 1}`);
+  }
+  const signingInputs = Array.isArray(manifest.signing?.inputs) ? manifest.signing.inputs : [];
+  for (const requiredInput of ['evaos-desktop-bridge', 'bin/peekaboo', 'bin/evaos-connector-helper']) {
+    if (manifest.signing?.state !== 'unsigned' || !signingInputs.includes(requiredInput)) {
+      throw new Error('Desktop Bridge payload signing inputs are incomplete.');
+    }
+  }
+  return { manifest, payload: actualPayload };
+}
+
+function preparePinnedBridgePayload(payloadDir, resourceDir, expectedPayloadSha256, expectedManifestSha256) {
+  const sourceDir = path.resolve(payloadDir);
+  const targetDir = path.resolve(resourceDir);
+  const validated = validatePinnedBridgePayload(sourceDir, expectedPayloadSha256, expectedManifestSha256);
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  fs.cpSync(sourceDir, targetDir, { recursive: true, preserveTimestamps: true });
+  const copiedPayload = computePayloadTreeDigest(targetDir);
+  if (copiedPayload.sha256 !== validated.payload.sha256 || copiedPayload.fileCount !== validated.payload.fileCount) {
+    throw new Error('Copied Desktop Bridge payload does not match its verified source identity.');
+  }
+  const resourceManifest = {
+    schema: 'evaos-desktop-bridge-resource/v2',
+    placeholder: false,
+    producerManifest: PAYLOAD_MANIFEST_FILENAME,
+    producerManifestSha256: requireSha256(expectedManifestSha256, 'out-of-band manifest'),
+    sourceCommit: validated.manifest.source.commit,
+    sourceVersion: validated.manifest.source.version,
+    payload: {
+      algorithm: copiedPayload.algorithm,
+      sha256: copiedPayload.sha256,
+      fileCount: copiedPayload.fileCount,
+      target: validated.manifest.target,
+      rootSha256: validated.manifest.files.root_executable.sha256,
+    },
+    generatedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(path.join(targetDir, RESOURCE_MANIFEST_FILENAME), `${JSON.stringify(resourceManifest, null, 2)}\n`);
+  return resourceManifest;
+}
+
 function peekabooIdentity(filePath, execute = execFileSync) {
   const output = execute(filePath, ['--version'], {
     encoding: 'utf8',
@@ -472,6 +714,18 @@ function removePycache(dir) {
 }
 
 function main() {
+  const payloadConfiguration = resolvePinnedBridgeConfiguration();
+  if (payloadConfiguration) {
+    preparePinnedBridgePayload(
+      payloadConfiguration.payloadDir,
+      bridgeResourceDir,
+      payloadConfiguration.expectedPayloadSha256,
+      payloadConfiguration.expectedManifestSha256
+    );
+    console.log(`Prepared pinned evaOS Desktop Bridge payload at ${bridgeResourceDir}`);
+    return;
+  }
+
   let bridgeSourceDir;
   try {
     bridgeSourceDir = resolveBridgeSourceDir();
@@ -529,10 +783,13 @@ if (require.main === module) {
 module.exports = {
   bridgeManifest,
   bridgeWrapperScript,
+  computePayloadTreeDigest,
   installPeekabooLicense,
   isMachOExecutable,
   peekabooBundleMetadata,
   peekabooIdentity,
+  preparePinnedBridgePayload,
+  resolvePinnedBridgeConfiguration,
   resolveBridgeSourceDir,
   shouldCloneBridgeRefAsBranch,
   sourceCandidates,
