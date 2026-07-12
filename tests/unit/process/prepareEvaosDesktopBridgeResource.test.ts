@@ -197,6 +197,46 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     }
   });
 
+  it('requires every nested Mach-O file to appear in signing inputs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-signing-closure-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { payloadSha256 } = writePinnedPayloadFixture(payloadDir);
+      const manifestPath = join(payloadDir, 'payload-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      manifest.signing.inputs = manifest.signing.inputs.filter(
+        (relativePath: string) => relativePath !== '_internal/libpython.dylib'
+      );
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      const manifestSha256 = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/signing inputs.*Mach-O closure/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects an incomplete or unhashed toolchain dependency lock', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-toolchain-lock-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { payloadSha256 } = writePinnedPayloadFixture(payloadDir);
+      const manifestPath = join(payloadDir, 'payload-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      manifest.toolchain.dependencies = [];
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      const manifestSha256 = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/toolchain dependency lock/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   it('refuses the legacy host-Python wrapper path for strict release preparation', () => {
     expect(() =>
       bridgeResource.resolvePinnedBridgeConfiguration(
@@ -467,7 +507,18 @@ function writePinnedPayloadFixture(
   writeFileSync(join(payloadDir, 'evaos-desktop-bridge'), options.rootMachO === false ? '#!/bin/sh\nexit 0\n' : machO);
   chmodSync(join(payloadDir, 'evaos-desktop-bridge'), 0o755);
   writeFileSync(join(payloadDir, '_internal', 'runtime.dat'), 'private runtime\n');
-  writeFileSync(join(payloadDir, 'licenses', 'Peekaboo-LICENSE.txt'), license);
+  writeFileSync(join(payloadDir, '_internal', 'libpython.dylib'), machO);
+  chmodSync(join(payloadDir, '_internal', 'libpython.dylib'), 0o644);
+  const licenseFiles = {
+    CPython: 'licenses/CPython-LICENSE.txt',
+    PyInstaller: 'licenses/PyInstaller-LICENSE.txt',
+    PyObjC: 'licenses/PyObjC-LICENSE.txt',
+    'evaos-desktop-bridge': 'licenses/evaos-desktop-bridge-LICENSE.txt',
+    Peekaboo: 'licenses/Peekaboo-LICENSE.txt',
+  };
+  for (const licensePath of Object.values(licenseFiles)) {
+    writeFileSync(join(payloadDir, licensePath), license);
+  }
 
   const payload = bridgeResource.computePayloadTreeDigest(payloadDir);
   const sha256 = (relativePath: string) =>
@@ -493,7 +544,24 @@ function writePinnedPayloadFixture(
         toolchain: {
           python: '3.12.12',
           freezer: { name: 'pyinstaller', version: '6.16.0' },
-          dependencies: [{ name: 'pyobjc-core', version: '11.1' }],
+          dependencies: [{ name: 'pyobjc-core', version: '11.1', sha256: 'a'.repeat(64) }],
+          license_components: [
+            { component: 'CPython', version: '3.12.12', license: 'PSF-2.0', path: licenseFiles.CPython },
+            {
+              component: 'PyInstaller',
+              version: '6.16.0',
+              license: 'GPL-2.0-or-later-with-bootloader-exception',
+              path: licenseFiles.PyInstaller,
+            },
+            { component: 'PyObjC', version: '11.1', license: 'MIT', path: licenseFiles.PyObjC },
+            {
+              component: 'evaos-desktop-bridge',
+              version: '0.7.0',
+              license: 'Proprietary',
+              path: licenseFiles['evaos-desktop-bridge'],
+            },
+            { component: 'Peekaboo', version: '3.8.0', license: 'MIT', path: licenseFiles.Peekaboo },
+          ],
         },
         files: {
           root_executable: { path: 'evaos-desktop-bridge', sha256: sha256('evaos-desktop-bridge') },
@@ -509,13 +577,30 @@ function writePinnedPayloadFixture(
             path: 'bin/evaos-connector-helper',
             sha256: sha256('bin/evaos-connector-helper'),
           },
-          licenses: [
-            {
-              name: 'Peekaboo',
-              path: 'licenses/Peekaboo-LICENSE.txt',
-              sha256: sha256('licenses/Peekaboo-LICENSE.txt'),
-            },
-          ],
+          licenses: Object.entries(licenseFiles).map(([component, licensePath]) => ({
+            component,
+            version:
+              component === 'CPython'
+                ? '3.12.12'
+                : component === 'PyInstaller'
+                  ? '6.16.0'
+                  : component === 'PyObjC'
+                    ? '11.1'
+                    : component === 'Peekaboo'
+                      ? '3.8.0'
+                      : '0.7.0',
+            license:
+              component === 'CPython'
+                ? 'PSF-2.0'
+                : component === 'PyInstaller'
+                  ? 'GPL-2.0-or-later-with-bootloader-exception'
+                  : component === 'evaos-desktop-bridge'
+                    ? 'Proprietary'
+                    : 'MIT',
+            name: `${component} license`,
+            path: licensePath,
+            sha256: sha256(licensePath),
+          })),
         },
         payload: {
           algorithm: payload.algorithm,
@@ -524,7 +609,7 @@ function writePinnedPayloadFixture(
         },
         signing: {
           state: 'unsigned',
-          inputs: ['evaos-desktop-bridge', 'bin/peekaboo', 'bin/evaos-connector-helper'],
+          inputs: ['_internal/libpython.dylib', 'bin/evaos-connector-helper', 'bin/peekaboo', 'evaos-desktop-bridge'],
         },
       },
       null,

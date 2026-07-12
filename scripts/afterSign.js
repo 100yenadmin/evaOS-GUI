@@ -160,12 +160,20 @@ function getAppTrustProcessTimeoutMs(env = process.env) {
   return getPositiveProcessTimeoutMs(env, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS);
 }
 
-function isMachOExecutable(filePath) {
+function isMachOFile(filePath) {
   if (!fs.existsSync(filePath)) return false;
   try {
-    fs.accessSync(filePath, fs.constants.X_OK);
     const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
     return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function isMachOExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return isMachOFile(filePath);
   } catch {
     return false;
   }
@@ -201,7 +209,7 @@ function assertMacControlHelperSignature(filePath, env = process.env, runProcess
   if (!fs.existsSync(filePath)) {
     throw new Error(`Strict evaOS beta release is missing bundled Mac-control helper: ${filePath}`);
   }
-  if (!isMachOExecutable(filePath)) {
+  if (!isMachOFile(filePath)) {
     throw new Error(
       `Strict evaOS beta release requires bundled Mac-control helper to be a native Mach-O executable: ${filePath}`
     );
@@ -221,8 +229,30 @@ function assertMacControlHelperSignature(filePath, env = process.env, runProcess
 }
 
 function assertMacControlHelperSignatures(appPath, env = process.env, runProcess = spawnSync) {
+  const bridgeDir = path.join(appPath, 'Contents', 'Resources', 'Bridge');
+  const verified = new Set();
   for (const relativePath of MAC_CONTROL_HELPER_RELATIVE_PATHS) {
-    assertMacControlHelperSignature(path.join(appPath, relativePath), env, runProcess);
+    const filePath = path.join(appPath, relativePath);
+    assertMacControlHelperSignature(filePath, env, runProcess);
+    verified.add(filePath);
+  }
+
+  const pendingDirs = [bridgeDir];
+  const nestedMachOFiles = [];
+  while (pendingDirs.length > 0) {
+    const currentDir = pendingDirs.pop();
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      const filePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        pendingDirs.push(filePath);
+      } else if (entry.isFile() && isMachOFile(filePath) && !verified.has(filePath)) {
+        nestedMachOFiles.push(filePath);
+      }
+    }
+  }
+  nestedMachOFiles.sort((left, right) => left.localeCompare(right));
+  for (const filePath of nestedMachOFiles) {
+    assertMacControlHelperSignature(filePath, env, runProcess);
   }
 }
 

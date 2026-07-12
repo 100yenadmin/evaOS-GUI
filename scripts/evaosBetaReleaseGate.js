@@ -1527,6 +1527,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     'import hashlib',
     'import json',
     'import pathlib',
+    'import re',
     'import sys',
     'import zipfile',
     'path = pathlib.Path(sys.argv[1])',
@@ -1540,28 +1541,49 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        if part.endswith(".app") and parts[index + 1:index + 4] == ["Contents", "Resources", "Bridge"]:',
     '            return "/".join(parts[index + 4:])',
     '    return None',
-    'result = {"hasBridgeExecutable": False, "bridgeExecutableMachO": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
+    'result = {"hasBridgeExecutable": False, "bridgeExecutableMachO": False, "hasBridgeManifest": False, "hasProducerManifest": False, "hasPrivateRuntime": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestV2Valid": False, "producerManifestValid": False, "producerManifestDigestValid": False, "payloadMetadataValid": False, "payloadFileCountValid": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
     'entries = {}',
+    'payload_file_count = 0',
     'with zipfile.ZipFile(path) as archive:',
     '    for name in archive.namelist():',
     '        suffix = bridge_entry_suffix(name)',
-    '        if suffix in {"evaos-desktop-bridge", "manifest.json", "bin/peekaboo", "bin/evaos-connector-helper", expected_license_path}:',
+    '        if suffix is not None and suffix not in {"manifest.json", "payload-manifest.json"} and not name.endswith("/"):',
+    '            payload_file_count += 1',
+    '        if suffix is not None and suffix.startswith("_internal/") and not name.endswith("/"):',
+    '            result["hasPrivateRuntime"] = True',
+    '        if suffix in {"evaos-desktop-bridge", "manifest.json", "payload-manifest.json", "bin/peekaboo", "bin/evaos-connector-helper", expected_license_path}:',
     '            entries[suffix] = name',
     '    result["hasBridgeExecutable"] = "evaos-desktop-bridge" in entries',
     '    result["hasBridgeManifest"] = "manifest.json" in entries',
+    '    result["hasProducerManifest"] = "payload-manifest.json" in entries',
     '    result["hasPeekaboo"] = "bin/peekaboo" in entries',
     '    result["hasConnectorHelper"] = "bin/evaos-connector-helper" in entries',
     '    result["hasPeekabooLicense"] = expected_license_path in entries',
     '    if result["hasBridgeExecutable"]:',
     '        result["bridgeExecutableMachO"] = archive.read(entries["evaos-desktop-bridge"], pwd=None)[:4].hex() in macho_magics',
     '    manifest = {}',
+    '    producer_manifest = {}',
+    '    producer_manifest_bytes = b""',
     '    if result["hasBridgeManifest"]:',
     '        try:',
     '            manifest = json.loads(archive.read(entries["manifest.json"]))',
     '        except (json.JSONDecodeError, UnicodeDecodeError):',
     '            manifest = {}',
+    '    if result["hasProducerManifest"]:',
+    '        producer_manifest_bytes = archive.read(entries["payload-manifest.json"])',
+    '        try:',
+    '            producer_manifest = json.loads(producer_manifest_bytes)',
+    '        except (json.JSONDecodeError, UnicodeDecodeError):',
+    '            producer_manifest = {}',
     '    peekaboo = manifest.get("bundledTools", {}).get("peekaboo", {}) if isinstance(manifest, dict) else {}',
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
+    '    payload = manifest.get("payload", {}) if isinstance(manifest, dict) else {}',
+    '    payload_sha256 = payload.get("sha256", "") if isinstance(payload, dict) else ""',
+    '    result["manifestV2Valid"] = manifest.get("schema") == "evaos-desktop-bridge-resource/v2" and manifest.get("producerManifest") == "payload-manifest.json" and re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("sourceCommit", ""))) is not None',
+    '    result["producerManifestValid"] = producer_manifest.get("schema_version") == 1 and producer_manifest.get("target") == {"platform": "macos", "architecture": "arm64"} if isinstance(producer_manifest, dict) else False',
+    '    result["producerManifestDigestValid"] = bool(producer_manifest_bytes) and hashlib.sha256(producer_manifest_bytes).hexdigest() == manifest.get("producerManifestSha256")',
+    '    result["payloadMetadataValid"] = payload.get("algorithm") == "sha256-tree-v1" and re.fullmatch(r"[0-9a-f]{64}", str(payload_sha256)) is not None and payload.get("target") == {"platform": "macos", "architecture": "arm64"} and isinstance(payload.get("fileCount"), int)',
+    '    result["payloadFileCountValid"] = payload.get("fileCount") == payload_file_count',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
     '    if result["hasPeekaboo"]:',
@@ -1612,6 +1634,13 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
     assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
     assertZipBridgeProbe(probe, 'bridgeExecutableMachO', zipName, 'executable Mach-O shape');
     assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
+    assertZipBridgeProbe(probe, 'manifestV2Valid', zipName, 'v2 payload manifest');
+    assertZipBridgeProbe(probe, 'hasProducerManifest', zipName, 'producer manifest');
+    assertZipBridgeProbe(probe, 'producerManifestValid', zipName, 'producer manifest identity');
+    assertZipBridgeProbe(probe, 'producerManifestDigestValid', zipName, 'producer manifest digest');
+    assertZipBridgeProbe(probe, 'payloadMetadataValid', zipName, 'payload metadata');
+    assertZipBridgeProbe(probe, 'payloadFileCountValid', zipName, 'payload file count');
+    assertZipBridgeProbe(probe, 'hasPrivateRuntime', zipName, 'private runtime');
     assertZipBridgeProbe(probe, 'hasPeekaboo', zipName, 'Peekaboo binary');
     assertZipBridgeProbe(probe, 'peekabooMachO', zipName, 'Peekaboo binary Mach-O shape');
     assertZipBridgeProbe(probe, 'hasConnectorHelper', zipName, 'connector helper');

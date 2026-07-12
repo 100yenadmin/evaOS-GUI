@@ -97,6 +97,11 @@ jobs:
       skip_code_quality: ${{ inputs.skip_code_quality }}
       aioncore_run_id: ${{ inputs.aioncore_run_id }}
       managed_resources_bundle: ${{ inputs.managed_resources_bundle }}
+      desktop_bridge_payload_repository: ${{ vars.EVAOS_DESKTOP_BRIDGE_PAYLOAD_REPOSITORY || 'electricsheephq/evaos-desktop-bridge' }}
+      desktop_bridge_payload_run_id: ${{ vars.EVAOS_DESKTOP_BRIDGE_PAYLOAD_RUN_ID }}
+      desktop_bridge_payload_artifact_name: ${{ vars.EVAOS_DESKTOP_BRIDGE_PAYLOAD_ARTIFACT_NAME || 'evaos-desktop-bridge-macos-arm64' }}
+      desktop_bridge_payload_sha256: ${{ vars.EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256 }}
+      desktop_bridge_manifest_sha256: ${{ vars.EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256 }}
       append_commit_hash: true
       upload_installers_only: true
     secrets: inherit

@@ -35,6 +35,26 @@ on:
         description: 'AionCore managed resources bundle mode: full or no-acp'
         type: string
         default: full
+      desktop_bridge_payload_repository:
+        description: 'Repository containing the reviewed Desktop Bridge payload workflow run'
+        type: string
+        default: 'electricsheephq/evaos-desktop-bridge'
+      desktop_bridge_payload_run_id:
+        description: 'Exact successful Desktop Bridge workflow run id containing the reviewed payload artifact'
+        type: string
+        default: ''
+      desktop_bridge_payload_artifact_name:
+        description: 'Exact Desktop Bridge Actions artifact name'
+        type: string
+        default: 'evaos-desktop-bridge-macos-arm64'
+      desktop_bridge_payload_sha256:
+        description: 'Approved sha256-tree-v1 payload digest'
+        type: string
+        default: ''
+      desktop_bridge_manifest_sha256:
+        description: 'Approved raw payload-manifest.json SHA-256 digest'
+        type: string
+        default: ''
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -625,6 +645,69 @@ jobs:
           rm -f /tmp/*.dmg 2>/dev/null || true
           echo "Cleanup complete"
 
+      - name: Preflight pinned Desktop Bridge payload inputs (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          REPOSITORY: ${{ inputs.desktop_bridge_payload_repository }}
+          RUN_ID: ${{ inputs.desktop_bridge_payload_run_id }}
+          ARTIFACT_NAME: ${{ inputs.desktop_bridge_payload_artifact_name }}
+          PAYLOAD_SHA256: ${{ inputs.desktop_bridge_payload_sha256 }}
+          MANIFEST_SHA256: ${{ inputs.desktop_bridge_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REPOSITORY" ] || [ -z "$RUN_ID" ] || [ -z "$ARTIFACT_NAME" ]; then
+            echo "::error::macOS release builds require an exact Desktop Bridge repository, workflow run id, and artifact name."
+            exit 1
+          fi
+          if [[ ! "$PAYLOAD_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || [[ ! "$MANIFEST_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::macOS release builds require valid payload and manifest SHA-256 pins."
+            exit 1
+          fi
+          if [ "${{ matrix.arch }}" != "arm64" ]; then
+            echo "::error::The current self-contained Desktop Bridge producer contract supports macOS arm64 only."
+            exit 1
+          fi
+
+      - name: Download pinned Desktop Bridge payload (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        uses: actions/download-artifact@v7
+        with:
+          repository: ${{ inputs.desktop_bridge_payload_repository }}
+          run-id: ${{ inputs.desktop_bridge_payload_run_id }}
+          name: ${{ inputs.desktop_bridge_payload_artifact_name }}
+          path: ${{ runner.temp }}/evaos-desktop-bridge-payload
+          github-token: ${{ secrets.EVAOS_DESKTOP_BRIDGE_ACTIONS_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
+
+      - name: Verify pinned Desktop Bridge payload identity (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          PAYLOAD_SHA256: ${{ inputs.desktop_bridge_payload_sha256 }}
+          MANIFEST_SHA256: ${{ inputs.desktop_bridge_manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          DOWNLOAD_DIR="${RUNNER_TEMP}/evaos-desktop-bridge-payload"
+          MANIFEST_PATH="$DOWNLOAD_DIR/payload-manifest.json"
+          PAYLOAD_DIR="$DOWNLOAD_DIR"
+          if [ ! -f "$MANIFEST_PATH" ] || [ -L "$MANIFEST_PATH" ]; then
+            echo "::error::Desktop Bridge artifact must place one regular payload-manifest.json at its extraction root."
+            exit 1
+          fi
+          if find "$PAYLOAD_DIR" -type l -print -quit | grep -q .; then
+            echo "::error::Desktop Bridge artifact must not contain symbolic links."
+            exit 1
+          fi
+          printf '%s  %s\n' "$MANIFEST_SHA256" "$MANIFEST_PATH" | shasum -a 256 -c -
+          PAYLOAD_SHA256_NORMALIZED="$(printf '%s' "$PAYLOAD_SHA256" | tr '[:upper:]' '[:lower:]')"
+          MANIFEST_SHA256_NORMALIZED="$(printf '%s' "$MANIFEST_SHA256" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "EVAOS_DESKTOP_BRIDGE_PAYLOAD_DIR=$PAYLOAD_DIR"
+            echo "EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256=$PAYLOAD_SHA256_NORMALIZED"
+            echo "EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256=$MANIFEST_SHA256_NORMALIZED"
+          } >> "$GITHUB_ENV"
+          echo "Pinned Desktop Bridge payload manifest identity verified."
+
       - name: Install evaOS Mac-control helper (macOS only)
         if: startsWith(matrix.platform, 'macos')
         shell: bash
@@ -769,8 +852,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
           EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: '1'
-          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
-          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
 
       - name: Validate macOS app staple inside DMG
         if: startsWith(matrix.platform, 'macos')

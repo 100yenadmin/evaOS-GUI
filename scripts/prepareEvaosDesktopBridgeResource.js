@@ -222,6 +222,15 @@ function isMachOExecutable(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return false;
   try {
     fs.accessSync(filePath, fs.constants.X_OK);
+    return isMachOFile(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function isMachOFile(filePath) {
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return false;
+  try {
     const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
     return MACHO_MAGICS.has(header);
   } catch {
@@ -458,6 +467,15 @@ function requireSha256(value, description) {
   return digest;
 }
 
+function isExactVersionIdentity(value) {
+  const version = String(value || '').trim();
+  return (
+    Boolean(version) &&
+    !/[<>=~*^/\\]/.test(version) &&
+    !/^(latest|main|master|head|dev|development|local)$/i.test(version)
+  );
+}
+
 function resolvePayloadFile(payloadDir, relativePath, description) {
   const normalized = payloadRelativePath(String(relativePath || '').trim());
   if (!normalized || path.isAbsolute(normalized) || normalized === '..' || normalized.startsWith('../')) {
@@ -475,14 +493,23 @@ function resolvePayloadFile(payloadDir, relativePath, description) {
   return { absolutePath, relativePath: normalized };
 }
 
-function isArm64MachOExecutable(filePath) {
-  if (!isMachOExecutable(filePath)) return false;
+function isArm64MachOFile(filePath) {
+  if (!isMachOFile(filePath)) return false;
   const header = fs.readFileSync(filePath).subarray(0, 12);
   if (header.length < 12) return false;
   const magic = header.subarray(0, 4).toString('hex');
   if (magic === 'cffaedfe') return header.readUInt32LE(4) === 0x0100000c;
   if (magic === 'feedfacf') return header.readUInt32BE(4) === 0x0100000c;
   return false;
+}
+
+function isArm64MachOExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return isArm64MachOFile(filePath);
+  } catch {
+    return false;
+  }
 }
 
 function verifyPayloadFile(payloadDir, entry, expectedPath, description, options = {}) {
@@ -542,12 +569,24 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
     throw new Error('Desktop Bridge payload source identity is incomplete or mutable.');
   }
   if (
-    !String(manifest.toolchain?.python || '').trim() ||
+    !isExactVersionIdentity(manifest.toolchain?.python) ||
     !String(manifest.toolchain?.freezer?.name || '').trim() ||
-    !String(manifest.toolchain?.freezer?.version || '').trim() ||
-    !Array.isArray(manifest.toolchain?.dependencies)
+    !isExactVersionIdentity(manifest.toolchain?.freezer?.version)
   ) {
     throw new Error('Desktop Bridge payload toolchain identity is incomplete.');
+  }
+  const dependencies = manifest.toolchain?.dependencies;
+  if (
+    !Array.isArray(dependencies) ||
+    dependencies.length === 0 ||
+    dependencies.some(
+      (dependency) =>
+        !String(dependency?.name || '').trim() ||
+        !isExactVersionIdentity(dependency?.version) ||
+        !/^[0-9a-f]{64}$/i.test(String(dependency?.sha256 || ''))
+    )
+  ) {
+    throw new Error('Desktop Bridge payload toolchain dependency lock is incomplete or mutable.');
   }
 
   const expectedSha256 = requireSha256(expectedPayloadSha256, 'out-of-band payload');
@@ -590,16 +629,56 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
     throw new Error('Desktop Bridge payload must include at least one recorded license.');
   }
   for (const [index, license] of manifest.files.licenses.entries()) {
-    if (!String(license?.name || '').trim() || !String(license?.path || '').startsWith('licenses/')) {
+    if (
+      !String(license?.component || '').trim() ||
+      !isExactVersionIdentity(license?.version) ||
+      !String(license?.license || '').trim() ||
+      !String(license?.name || '').trim() ||
+      !String(license?.path || '').startsWith('licenses/')
+    ) {
       throw new Error(`Desktop Bridge payload license ${index + 1} has invalid identity.`);
     }
     verifyPayloadFile(payloadDir, license, undefined, `license ${index + 1}`);
   }
-  const signingInputs = Array.isArray(manifest.signing?.inputs) ? manifest.signing.inputs : [];
-  for (const requiredInput of ['evaos-desktop-bridge', 'bin/peekaboo', 'bin/evaos-connector-helper']) {
-    if (manifest.signing?.state !== 'unsigned' || !signingInputs.includes(requiredInput)) {
-      throw new Error('Desktop Bridge payload signing inputs are incomplete.');
+  const requiredLicenseComponents = ['CPython', 'PyInstaller', 'PyObjC', 'evaos-desktop-bridge', 'Peekaboo'];
+  const licenseComponents = Array.isArray(manifest.toolchain?.license_components)
+    ? manifest.toolchain.license_components
+    : [];
+  for (const component of requiredLicenseComponents) {
+    const componentIdentity = licenseComponents.find((entry) => entry?.component === component);
+    const licenseFile = manifest.files.licenses.find((entry) => entry?.component === component);
+    if (
+      !componentIdentity ||
+      !licenseFile ||
+      !isExactVersionIdentity(componentIdentity.version) ||
+      !String(componentIdentity.license || '').trim() ||
+      !String(componentIdentity.path || '').startsWith('licenses/') ||
+      componentIdentity.version !== licenseFile.version ||
+      componentIdentity.license !== licenseFile.license ||
+      componentIdentity.path !== licenseFile.path
+    ) {
+      throw new Error(`Desktop Bridge payload license coverage is incomplete for ${component}.`);
     }
+  }
+  const machOFiles = listPayloadFiles(payloadDir)
+    .filter(({ absolutePath }) => isMachOFile(absolutePath))
+    .map(({ absolutePath, relativePath }) => {
+      if (!isArm64MachOFile(absolutePath)) {
+        throw new Error(`Desktop Bridge payload contains a non-arm64 Mach-O file: ${relativePath}`);
+      }
+      return relativePath;
+    })
+    .toSorted((left, right) => Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8')));
+  const signingInputs = Array.isArray(manifest.signing?.inputs) ? [...manifest.signing.inputs] : [];
+  signingInputs.sort((left, right) =>
+    Buffer.compare(Buffer.from(String(left), 'utf8'), Buffer.from(String(right), 'utf8'))
+  );
+  if (
+    manifest.signing?.state !== 'unsigned' ||
+    signingInputs.length !== machOFiles.length ||
+    signingInputs.some((input, index) => input !== machOFiles[index])
+  ) {
+    throw new Error('Desktop Bridge payload signing inputs do not match the complete Mach-O closure.');
   }
   return { manifest, payload: actualPayload };
 }

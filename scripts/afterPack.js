@@ -158,7 +158,7 @@ function requireMachOExecutable(filePath, relativePath) {
   );
 }
 
-function requirePinnedBridgePayloadIdentity(resourcesDir, manifest) {
+function requirePinnedBridgePayloadIdentity(resourcesDir, manifest, env = process.env, targetArch = 'arm64') {
   const bridgeDir = path.join(resourcesDir, 'Bridge');
   const producerManifestPath = path.join(bridgeDir, 'payload-manifest.json');
   const payloadSha256 = String(manifest?.payload?.sha256 || '')
@@ -182,6 +182,26 @@ function requirePinnedBridgePayloadIdentity(resourcesDir, manifest) {
     fs.existsSync(producerManifestPath);
   if (!validIdentity) {
     throw new Error('Release macOS bridge resource is missing its pinned immutable payload identity.');
+  }
+  const configuredPayloadSha256 = String(env.EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256 || '')
+    .trim()
+    .toLowerCase();
+  const configuredManifestSha256 = String(env.EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256 || '')
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(configuredPayloadSha256) || !/^[0-9a-f]{64}$/.test(configuredManifestSha256)) {
+    throw new Error('Release macOS bridge resource requires configured payload and producer manifest digests.');
+  }
+  if (payloadSha256 !== configuredPayloadSha256) {
+    throw new Error('Release macOS bridge resource does not match its configured payload digest.');
+  }
+  if (manifest.producerManifestSha256 !== configuredManifestSha256) {
+    throw new Error('Release macOS bridge resource does not match its configured producer manifest digest.');
+  }
+  if (manifest.payload.target.architecture !== targetArch) {
+    throw new Error(
+      `Release macOS bridge payload target architecture ${manifest.payload.target.architecture} does not match Workbench target ${targetArch}.`
+    );
   }
   const producerManifestSha256 = crypto
     .createHash('sha256')
@@ -218,7 +238,7 @@ function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformNam
   }
 }
 
-function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
+function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, env = process.env, targetArch = 'arm64') {
   if (electronPlatformName !== 'darwin') return;
 
   const bridgePath = path.join(resourcesDir, 'Bridge', 'evaos-desktop-bridge');
@@ -262,14 +282,14 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const strictReleaseBridge =
-    isTruthy(process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL) ||
-    isTruthy(process.env.EVAOS_BETA_PUBLIC_RELEASE) ||
-    isTruthy(process.env.EVAOS_BETA_REQUIRE_SIGNING);
+    isTruthy(env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL) ||
+    isTruthy(env.EVAOS_BETA_PUBLIC_RELEASE) ||
+    isTruthy(env.EVAOS_BETA_REQUIRE_SIGNING);
   if (strictReleaseBridge && manifest.placeholder === true) {
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
   }
   if (strictReleaseBridge) {
-    requirePinnedBridgePayloadIdentity(resourcesDir, manifest);
+    requirePinnedBridgePayloadIdentity(resourcesDir, manifest, env, targetArch);
     requireMachOExecutable(bridgePath, path.join('Bridge', 'evaos-desktop-bridge'));
     requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
     requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));
@@ -344,7 +364,7 @@ module.exports = async function afterPack(context) {
     }
 
     verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
-    verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName);
+    verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, process.env, targetArch);
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }

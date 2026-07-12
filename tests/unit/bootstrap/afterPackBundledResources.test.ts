@@ -9,7 +9,12 @@ const require = createRequire(import.meta.url);
 const afterPack = require('../../../scripts/afterPack.js') as {
   isMachOExecutable: (filePath: string) => boolean;
   verifyBundledResources: (resourcesDir: string, electronPlatformName: string, targetArch: string) => void;
-  verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string) => void;
+  verifyEvaosDesktopBridgeResource: (
+    resourcesDir: string,
+    electronPlatformName: string,
+    env?: Record<string, string | undefined>,
+    targetArch?: string
+  ) => void;
 };
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   computePayloadTreeDigest: (payloadDir: string) => { algorithm: string; sha256: string; fileCount: number };
@@ -56,7 +61,7 @@ function writeBridgeFixture(
     payloadSha256?: string;
     producerManifestSha256?: string;
   } = {}
-): void {
+): { manifestSha256?: string; payloadSha256?: string } {
   const bridgeDir = join(resourcesDir, 'Bridge');
   mkdirSync(join(bridgeDir, 'bin'), { recursive: true });
   const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
@@ -83,26 +88,30 @@ function writeBridgeFixture(
     const producerManifest = '{"schema_version":1}\n';
     writeFileSync(join(bridgeDir, 'payload-manifest.json'), producerManifest);
     const payload = bridgeResource.computePayloadTreeDigest(bridgeDir);
+    const manifestSha256 =
+      options.producerManifestSha256 || createHash('sha256').update(producerManifest).digest('hex');
+    const payloadSha256 = options.payloadSha256 || payload.sha256;
     writeFileSync(
       join(bridgeDir, 'manifest.json'),
       `${JSON.stringify({
         schema: 'evaos-desktop-bridge-resource/v2',
         placeholder: false,
         producerManifest: 'payload-manifest.json',
-        producerManifestSha256:
-          options.producerManifestSha256 || createHash('sha256').update(producerManifest).digest('hex'),
+        producerManifestSha256: manifestSha256,
         sourceCommit: '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b',
         payload: {
           algorithm: payload.algorithm,
-          sha256: options.payloadSha256 || payload.sha256,
+          sha256: payloadSha256,
           fileCount: payload.fileCount,
           target: { platform: 'macos', architecture: 'arm64' },
         },
       })}\n`
     );
+    return { manifestSha256, payloadSha256 };
   } else {
     writeFileSync(join(bridgeDir, 'manifest.json'), '{"placeholder":false}\n');
   }
+  return {};
 }
 
 afterEach(() => {
@@ -210,44 +219,29 @@ describe('afterPack bundled resource verification', () => {
   });
 
   it('rejects script control helper resources for release-mode macOS builds', () => {
-    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
     const resourcesDir = makeTempResources();
-    writeBridgeFixture(resourcesDir, { helper: true, nativeRoot: true, pinnedPayload: true });
+    const identity = writeBridgeFixture(resourcesDir, { helper: true, nativeRoot: true, pinnedPayload: true });
 
-    try {
-      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
-
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
-        /native Mach-O executable/
-      );
-    } finally {
-      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
-    }
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity))).toThrow(
+      /native Mach-O executable/
+    );
   });
 
   it('rejects a script desktop bridge for release-mode macOS builds', () => {
-    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
     const resourcesDir = makeTempResources();
-    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true, pinnedPayload: true });
+    const identity = writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true, pinnedPayload: true });
 
-    try {
-      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
-
-      expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'evaos-desktop-bridge'))).toBe(false);
-      expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
-      expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
-        /Bridge\/evaos-desktop-bridge/
-      );
-    } finally {
-      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
-    }
+    expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'evaos-desktop-bridge'))).toBe(false);
+    expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
+    expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity))).toThrow(
+      /Bridge\/evaos-desktop-bridge/
+    );
   });
 
   it('rejects a release payload whose immutable tree digest is tampered', () => {
-    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
     const resourcesDir = makeTempResources();
-    writeBridgeFixture(resourcesDir, {
+    const identity = writeBridgeFixture(resourcesDir, {
       helper: true,
       nativeHelpers: true,
       nativeRoot: true,
@@ -255,20 +249,14 @@ describe('afterPack bundled resource verification', () => {
       payloadSha256: '0'.repeat(64),
     });
 
-    try {
-      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
-        /immutable payload identity/
-      );
-    } finally {
-      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
-    }
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity))).toThrow(
+      /immutable payload identity/
+    );
   });
 
   it('rejects a release payload whose producer manifest digest is tampered', () => {
-    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
     const resourcesDir = makeTempResources();
-    writeBridgeFixture(resourcesDir, {
+    const identity = writeBridgeFixture(resourcesDir, {
       helper: true,
       nativeHelpers: true,
       nativeRoot: true,
@@ -276,32 +264,55 @@ describe('afterPack bundled resource verification', () => {
       producerManifestSha256: '0'.repeat(64),
     });
 
-    try {
-      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
-        /producer manifest digest/
-      );
-    } finally {
-      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
-    }
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity))).toThrow(
+      /producer manifest digest/
+    );
   });
 
-  it('accepts a pinned native desktop bridge payload for release-mode macOS builds', () => {
-    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+  it('rejects a release payload that differs from the configured out-of-band pin', () => {
     const resourcesDir = makeTempResources();
-    writeBridgeFixture(resourcesDir, {
+    const identity = writeBridgeFixture(resourcesDir, {
       helper: true,
       nativeHelpers: true,
       nativeRoot: true,
       pinnedPayload: true,
     });
 
-    try {
-      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
-    } finally {
-      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
-    }
+    expect(() =>
+      afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', {
+        EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: '1',
+        EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256: '0'.repeat(64),
+        EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256: identity.manifestSha256,
+      })
+    ).toThrow(/configured payload digest/);
+  });
+
+  it('accepts a pinned native desktop bridge payload for release-mode macOS builds', () => {
+    const resourcesDir = makeTempResources();
+    const identity = writeBridgeFixture(resourcesDir, {
+      helper: true,
+      nativeHelpers: true,
+      nativeRoot: true,
+      pinnedPayload: true,
+    });
+
+    expect(() =>
+      afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity))
+    ).not.toThrow();
+  });
+
+  it('rejects an arm64 Desktop Bridge payload in an x64 Workbench package', () => {
+    const resourcesDir = makeTempResources();
+    const identity = writeBridgeFixture(resourcesDir, {
+      helper: true,
+      nativeHelpers: true,
+      nativeRoot: true,
+      pinnedPayload: true,
+    });
+
+    expect(() =>
+      afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity), 'x64')
+    ).toThrow(/target architecture arm64.*Workbench target x64/);
   });
 
   it('requires the evaOS connector binary in macOS bridge resources', () => {
@@ -313,10 +324,10 @@ describe('afterPack bundled resource verification', () => {
   });
 });
 
-function restoreEnv(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-    return;
-  }
-  process.env[name] = value;
+function strictBridgeEnv(identity: { manifestSha256?: string; payloadSha256?: string }) {
+  return {
+    EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: '1',
+    EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256: identity.payloadSha256,
+    EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256: identity.manifestSha256,
+  };
 }
