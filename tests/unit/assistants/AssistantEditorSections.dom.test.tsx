@@ -321,6 +321,39 @@ describe('AssistantEditorSections', () => {
     expect(setValue).not.toHaveBeenCalled();
   });
 
+  it('preserves a fixed thought-level default when the runtime row has not observed config options', () => {
+    const setMode = vi.fn();
+    const setValue = vi.fn();
+    renderWithProviders(
+      <AssistantEditorSections
+        editor={createEditor({
+          agent: {
+            value: 'agent-runtime-row',
+            setValue: vi.fn(),
+            availableBackends: [
+              {
+                id: 'agent-runtime-row',
+                name: 'Unchecked runtime',
+                runtimeKey: 'runtime',
+                modelOptions: [],
+                thoughtLevelOption: null,
+                hasObservedConfigOptions: false,
+              },
+            ],
+            isLoading: false,
+          },
+          defaults: {
+            thoughtLevel: { mode: 'fixed', setMode, value: 'high', setValue },
+          },
+        })}
+        activeAssistant={null}
+      />
+    );
+
+    expect(setMode).not.toHaveBeenCalled();
+    expect(setValue).not.toHaveBeenCalled();
+  });
+
   it('renders auto defaults consistently for model, permission, skills, and MCP', () => {
     renderWithProviders(
       <AssistantEditorSections

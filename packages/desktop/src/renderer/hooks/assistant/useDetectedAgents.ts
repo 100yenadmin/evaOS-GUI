@@ -23,6 +23,8 @@ export type AvailableBackend = {
   isExtension?: boolean;
   modelOptions: AvailableBackendModelOption[];
   thoughtLevelOption: AcpDerivedOption | null;
+  /** Whether the runtime catalog has authoritatively supplied a config-options collection. */
+  hasObservedConfigOptions?: boolean;
 };
 
 const normalizeConfigOptions = (value: unknown): AcpConfigOptionDto[] => {
@@ -40,6 +42,22 @@ const normalizeConfigOptions = (value: unknown): AcpConfigOptionDto[] => {
   const record = payload as Record<string, unknown>;
   const options = record.config_options ?? record.configOptions;
   return Array.isArray(options) ? (options as AcpConfigOptionDto[]) : [];
+};
+
+const hasObservedConfigOptions = (value: unknown): boolean => {
+  let payload = value;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as unknown;
+    } catch {
+      return false;
+    }
+  }
+
+  if (Array.isArray(payload)) return true;
+  if (!payload || typeof payload !== 'object') return false;
+  const record = payload as Record<string, unknown>;
+  return Array.isArray(record.config_options ?? record.configOptions);
 };
 
 /** Derives a thought-level selector from raw runtime config options, or returns null when unavailable. */
@@ -96,6 +114,7 @@ export const buildAssistantEditorBackends = (agents: ManagedAgent[], currentAgen
       isExtension: agent.agent_source === 'extension',
       modelOptions: resolveBackendModelOptions(agent),
       thoughtLevelOption: deriveAssistantThoughtLevelOption(agent.config_options),
+      hasObservedConfigOptions: hasObservedConfigOptions(agent.config_options),
     });
   }
 

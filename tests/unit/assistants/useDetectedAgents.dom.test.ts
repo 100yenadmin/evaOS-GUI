@@ -128,6 +128,7 @@ describe('useDetectedAgents', () => {
       isExtension: false,
       modelOptions: [],
       thoughtLevelOption: null,
+      hasObservedConfigOptions: false,
     });
     // falls back to agent_type when backend is absent (e.g. internal engines)
     expect(result.current.availableBackends[1]).toEqual({
@@ -137,6 +138,7 @@ describe('useDetectedAgents', () => {
       isExtension: false,
       modelOptions: [],
       thoughtLevelOption: null,
+      hasObservedConfigOptions: false,
     });
   });
 
@@ -215,6 +217,7 @@ describe('useDetectedAgents', () => {
         { value: 'high', label: 'High', description: 'Most careful' },
       ],
     });
+    expect(result.current.availableBackends[0]?.hasObservedConfigOptions).toBe(true);
   });
 
   it.each([
