@@ -60,6 +60,7 @@ function writeBridgeFixture(
     pinnedPayload?: boolean;
     payloadSha256?: string;
     producerManifestSha256?: string;
+    producerSourceCommit?: string;
   } = {}
 ): { manifestSha256?: string; payloadSha256?: string } {
   const bridgeDir = join(resourcesDir, 'Bridge');
@@ -85,9 +86,18 @@ function writeBridgeFixture(
     }
   }
   if (options.pinnedPayload) {
-    const producerManifest = '{"schema_version":1}\n';
-    writeFileSync(join(bridgeDir, 'payload-manifest.json'), producerManifest);
     const payload = bridgeResource.computePayloadTreeDigest(bridgeDir);
+    const sourceCommit = '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b';
+    const producerManifest = `${JSON.stringify({
+      schema_version: 1,
+      target: { platform: 'macos', architecture: 'arm64' },
+      source: {
+        repository: 'electricsheephq/evaos-desktop-bridge',
+        commit: options.producerSourceCommit || sourceCommit,
+      },
+      payload: { algorithm: payload.algorithm, sha256: payload.sha256, file_count: payload.fileCount },
+    })}\n`;
+    writeFileSync(join(bridgeDir, 'payload-manifest.json'), producerManifest);
     const manifestSha256 =
       options.producerManifestSha256 || createHash('sha256').update(producerManifest).digest('hex');
     const payloadSha256 = options.payloadSha256 || payload.sha256;
@@ -98,7 +108,7 @@ function writeBridgeFixture(
         placeholder: false,
         producerManifest: 'payload-manifest.json',
         producerManifestSha256: manifestSha256,
-        sourceCommit: '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b',
+        sourceCommit,
         payload: {
           algorithm: payload.algorithm,
           sha256: payloadSha256,
@@ -267,6 +277,21 @@ describe('afterPack bundled resource verification', () => {
     expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity))).toThrow(
       /producer manifest digest/
     );
+  });
+
+  it('rejects a release payload whose producer and resource identities do not cross-link', () => {
+    const resourcesDir = makeTempResources();
+    const identity = writeBridgeFixture(resourcesDir, {
+      helper: true,
+      nativeHelpers: true,
+      nativeRoot: true,
+      pinnedPayload: true,
+      producerSourceCommit: '0'.repeat(40),
+    });
+
+    expect(() =>
+      afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', strictBridgeEnv(identity), 'arm64')
+    ).toThrow(/producer and resource manifests do not describe the same payload/);
   });
 
   it('rejects a release payload that differs from the configured out-of-band pin', () => {

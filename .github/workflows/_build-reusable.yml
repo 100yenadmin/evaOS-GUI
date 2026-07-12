@@ -676,7 +676,7 @@ jobs:
           repository: ${{ inputs.desktop_bridge_payload_repository }}
           run-id: ${{ inputs.desktop_bridge_payload_run_id }}
           name: ${{ inputs.desktop_bridge_payload_artifact_name }}
-          path: ${{ runner.temp }}/evaos-desktop-bridge-payload
+          path: ${{ runner.temp }}/evaos-desktop-bridge-artifact
           github-token: ${{ secrets.EVAOS_DESKTOP_BRIDGE_ACTIONS_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
 
       - name: Verify pinned Desktop Bridge payload identity (macOS only)
@@ -687,11 +687,59 @@ jobs:
           MANIFEST_SHA256: ${{ inputs.desktop_bridge_manifest_sha256 }}
         run: |
           set -euo pipefail
-          DOWNLOAD_DIR="${RUNNER_TEMP}/evaos-desktop-bridge-payload"
-          MANIFEST_PATH="$DOWNLOAD_DIR/payload-manifest.json"
-          PAYLOAD_DIR="$DOWNLOAD_DIR"
+          ARTIFACT_DIR="${RUNNER_TEMP}/evaos-desktop-bridge-artifact"
+          ARCHIVE_PATH="$ARTIFACT_DIR/evaos-desktop-bridge-macos-arm64.tar.gz"
+          PAYLOAD_DIR="${RUNNER_TEMP}/evaos-desktop-bridge-payload"
+          MANIFEST_PATH="$PAYLOAD_DIR/payload-manifest.json"
+          if [ ! -f "$ARCHIVE_PATH" ] || [ -L "$ARCHIVE_PATH" ]; then
+            echo "::error::Desktop Bridge artifact must contain the fixed payload tar archive."
+            exit 1
+          fi
+          rm -rf "$PAYLOAD_DIR"
+          mkdir -p "$PAYLOAD_DIR"
+          python3 - "$ARCHIVE_PATH" "$PAYLOAD_DIR" <<'PY'
+          import pathlib
+          import sys
+          import tarfile
+
+          archive_path = pathlib.Path(sys.argv[1])
+          payload_dir = pathlib.Path(sys.argv[2])
+          max_payload_bytes = 1024 * 1024 * 1024
+          max_file_bytes = 512 * 1024 * 1024
+          max_members = 100_000
+          max_path_bytes = 1024
+          seen = set()
+          total_bytes = 0
+          with tarfile.open(archive_path, mode="r:gz") as archive:
+              members = []
+              for member in archive:
+                  if len(members) >= max_members:
+                      raise SystemExit("desktop_bridge_archive_exceeds_member_limit")
+                  members.append(member)
+              for member in members:
+                  relative = pathlib.PurePosixPath(member.name)
+                  if relative.is_absolute() or ".." in relative.parts:
+                      raise SystemExit("unsafe_path_in_desktop_bridge_archive")
+                  if any(ord(char) < 32 or ord(char) == 127 for char in member.name):
+                      raise SystemExit("control_character_in_desktop_bridge_archive_path")
+                  if len(member.name.encode("utf-8")) > max_path_bytes:
+                      raise SystemExit("desktop_bridge_archive_path_exceeds_limit")
+                  normalized = relative.as_posix().removeprefix("./")
+                  if not normalized or normalized in seen:
+                      raise SystemExit("duplicate_or_empty_desktop_bridge_archive_path")
+                  seen.add(normalized)
+                  if not (member.isfile() or member.isdir()):
+                      raise SystemExit("link_or_special_file_in_desktop_bridge_archive")
+                  if member.isfile():
+                      if member.size > max_file_bytes:
+                          raise SystemExit("desktop_bridge_archive_file_exceeds_size_limit")
+                      total_bytes += member.size
+                      if total_bytes > max_payload_bytes:
+                          raise SystemExit("desktop_bridge_archive_exceeds_size_limit")
+              archive.extractall(payload_dir, members=members, filter="data")
+          PY
           if [ ! -f "$MANIFEST_PATH" ] || [ -L "$MANIFEST_PATH" ]; then
-            echo "::error::Desktop Bridge artifact must place one regular payload-manifest.json at its extraction root."
+            echo "::error::Desktop Bridge archive must place one regular payload-manifest.json at its extraction root."
             exit 1
           fi
           if find "$PAYLOAD_DIR" -type l -print -quit | grep -q .; then
@@ -1013,6 +1061,7 @@ jobs:
           startsWith(matrix.platform, 'macos')
         shell: bash
         run: |
+          set -euo pipefail
           shopt -s nullglob
           zips=(
             out/evaOS\ Workbench-*-mac-*.zip
@@ -1024,6 +1073,18 @@ jobs:
           fi
           printf 'Found macOS ZIP artifact(s):\n'
           printf '  %s\n' "${zips[@]}"
+          for zip_path in "${zips[@]}"; do
+            extract_dir="$(mktemp -d "${RUNNER_TEMP}/evaos-updater-zip.XXXXXX")"
+            ditto -x -k "$zip_path" "$extract_dir"
+            apps=("$extract_dir"/*.app)
+            if [ "${#apps[@]}" -ne 1 ]; then
+              echo "::error::$zip_path must contain exactly one top-level signed Workbench app."
+              rm -rf "$extract_dir"
+              exit 1
+            fi
+            codesign --verify --deep --strict --verbose=2 "${apps[0]}"
+            rm -rf "$extract_dir"
+          done
 
       - name: Write macOS arm64 updater metadata
         if: >-

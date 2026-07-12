@@ -214,6 +214,24 @@ function requirePinnedBridgePayloadIdentity(resourcesDir, manifest, env = proces
   if (actualPayload.sha256 !== payloadSha256 || actualPayload.fileCount !== manifest.payload.fileCount) {
     throw new Error('Release macOS bridge resource does not match its pinned immutable payload identity.');
   }
+  let producerManifest;
+  try {
+    producerManifest = JSON.parse(fs.readFileSync(producerManifestPath, 'utf8'));
+  } catch {
+    throw new Error('Release macOS bridge resource producer manifest is unreadable.');
+  }
+  if (
+    producerManifest?.schema_version !== 1 ||
+    producerManifest?.source?.repository !== 'electricsheephq/evaos-desktop-bridge' ||
+    producerManifest?.source?.commit !== manifest.sourceCommit ||
+    producerManifest?.target?.platform !== manifest.payload.target.platform ||
+    producerManifest?.target?.architecture !== manifest.payload.target.architecture ||
+    producerManifest?.payload?.algorithm !== manifest.payload.algorithm ||
+    producerManifest?.payload?.sha256 !== manifest.payload.sha256 ||
+    producerManifest?.payload?.file_count !== manifest.payload.fileCount
+  ) {
+    throw new Error('Release macOS bridge producer and resource manifests do not describe the same payload.');
+  }
 }
 
 function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformName, missing) {

@@ -237,6 +237,76 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     }
   });
 
+  it('requires the exact CPython implementation and version shape', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-python-identity-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { payloadSha256 } = writePinnedPayloadFixture(payloadDir);
+      const manifestPath = join(payloadDir, 'payload-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      manifest.toolchain.python.implementation = 'unexpected-runtime';
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      const manifestSha256 = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/CPython toolchain identity/);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('requires every locked dependency to map to one authenticated license file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-dependency-license-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { payloadSha256 } = writePinnedPayloadFixture(payloadDir);
+      const manifestPath = join(payloadDir, 'payload-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      manifest.toolchain.license_components.find(
+        (entry: { component: string }) => entry.component === 'PyObjC'
+      ).dependency_names = [];
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      const manifestSha256 = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/license coverage.*pyobjc-core/i);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects license components that alias one physical license path', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-license-alias-'));
+    try {
+      const payloadDir = join(dir, 'payload');
+      const { payloadSha256 } = writePinnedPayloadFixture(payloadDir);
+      const manifestPath = join(payloadDir, 'payload-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const cpythonLicense = manifest.files.licenses.find(
+        (entry: { component: string }) => entry.component === 'CPython'
+      );
+      const pyobjcLicense = manifest.files.licenses.find(
+        (entry: { component: string }) => entry.component === 'PyObjC'
+      );
+      const pyobjcComponent = manifest.toolchain.license_components.find(
+        (entry: { component: string }) => entry.component === 'PyObjC'
+      );
+      pyobjcLicense.path = cpythonLicense.path;
+      pyobjcLicense.sha256 = cpythonLicense.sha256;
+      pyobjcComponent.path = cpythonLicense.path;
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      const manifestSha256 = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+
+      expect(() =>
+        bridgeResource.preparePinnedBridgePayload(payloadDir, join(dir, 'Bridge'), payloadSha256, manifestSha256)
+      ).toThrow(/duplicate license paths/i);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   it('refuses the legacy host-Python wrapper path for strict release preparation', () => {
     expect(() =>
       bridgeResource.resolvePinnedBridgeConfiguration(
@@ -542,25 +612,45 @@ function writePinnedPayloadFixture(
           version: '0.7.0',
         },
         toolchain: {
-          python: '3.12.12',
+          python: { implementation: 'CPython', version: '3.12.13' },
           freezer: { name: 'pyinstaller', version: '6.16.0' },
           dependencies: [{ name: 'pyobjc-core', version: '11.1', sha256: 'a'.repeat(64) }],
           license_components: [
-            { component: 'CPython', version: '3.12.12', license: 'PSF-2.0', path: licenseFiles.CPython },
+            {
+              component: 'CPython',
+              version: '3.12.13',
+              license: 'PSF-2.0',
+              path: licenseFiles.CPython,
+              dependency_names: [],
+            },
             {
               component: 'PyInstaller',
               version: '6.16.0',
               license: 'GPL-2.0-or-later-with-bootloader-exception',
               path: licenseFiles.PyInstaller,
+              dependency_names: [],
             },
-            { component: 'PyObjC', version: '11.1', license: 'MIT', path: licenseFiles.PyObjC },
+            {
+              component: 'PyObjC',
+              version: '11.1',
+              license: 'MIT',
+              path: licenseFiles.PyObjC,
+              dependency_names: ['pyobjc-core'],
+            },
             {
               component: 'evaos-desktop-bridge',
               version: '0.7.0',
               license: 'Proprietary',
               path: licenseFiles['evaos-desktop-bridge'],
+              dependency_names: [],
             },
-            { component: 'Peekaboo', version: '3.8.0', license: 'MIT', path: licenseFiles.Peekaboo },
+            {
+              component: 'Peekaboo',
+              version: '3.8.0',
+              license: 'MIT',
+              path: licenseFiles.Peekaboo,
+              dependency_names: [],
+            },
           ],
         },
         files: {
@@ -581,7 +671,7 @@ function writePinnedPayloadFixture(
             component,
             version:
               component === 'CPython'
-                ? '3.12.12'
+                ? '3.12.13'
                 : component === 'PyInstaller'
                   ? '6.16.0'
                   : component === 'PyObjC'

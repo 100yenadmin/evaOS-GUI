@@ -1,6 +1,6 @@
 # Workbench Fresh-Mac Zero-Touch Design
 
-Status: proposed for written-spec review
+Status: approved for implementation by the product owner on 2026-07-12
 
 Date: 2026-07-12
 
@@ -94,16 +94,16 @@ The main process owns probing and classification. The renderer receives typed, r
 
 Workbench presents the first unmet prerequisite with one primary action:
 
-| State | Customer action | Workbench behavior |
-| --- | --- | --- |
-| Bridge missing/incompatible | Reinstall/Update Workbench | Open the approved updater or public artifact; never request Python |
-| Network client missing | Install secure network | Open the approved macOS installation surface and recheck after installation |
-| Network client stopped | Open secure network | Open/activate the client and recheck |
-| Unenrolled | Connect this Mac | Request short-lived broker-owned enrollment material only after the click; keep it in the main process and redact all output |
-| Wrong control plane | Reconnect correctly | Fail closed, revoke unusable pending material, and run the approved re-enrollment flow |
-| ACL blocked/offline | Retry or contact support | Report the exact layer without displaying addresses or ACL contents |
-| CUA absent, Peekaboo ready | Continue | Mark CUA optional and automatically select bundled Peekaboo |
-| No action engine | Repair Workbench | Fail before pairing/control, with a precise packaged-resource error |
+| State                       | Customer action            | Workbench behavior                                                                                                           |
+| --------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Bridge missing/incompatible | Reinstall/Update Workbench | Open the approved updater or public artifact; never request Python                                                           |
+| Network client missing      | Install secure network     | Open the approved macOS installation surface and recheck after installation                                                  |
+| Network client stopped      | Open secure network        | Open/activate the client and recheck                                                                                         |
+| Unenrolled                  | Connect this Mac           | Request short-lived broker-owned enrollment material only after the click; keep it in the main process and redact all output |
+| Wrong control plane         | Reconnect correctly        | Fail closed, revoke unusable pending material, and run the approved re-enrollment flow                                       |
+| ACL blocked/offline         | Retry or contact support   | Report the exact layer without displaying addresses or ACL contents                                                          |
+| CUA absent, Peekaboo ready  | Continue                   | Mark CUA optional and automatically select bundled Peekaboo                                                                  |
+| No action engine            | Repair Workbench           | Fail before pairing/control, with a precise packaged-resource error                                                          |
 
 The first release does not silently install system extensions or enroll a Mac without a user click. Any privilege or macOS VPN approval remains an unavoidable signed OS prompt for the correct identity.
 

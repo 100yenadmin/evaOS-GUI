@@ -476,6 +476,22 @@ function isExactVersionIdentity(value) {
   );
 }
 
+function normalizedDistributionName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[-_.]+/g, '-');
+}
+
+function isCanonicalLicensePath(value) {
+  const licensePath = String(value || '');
+  return (
+    licensePath.startsWith('licenses/') &&
+    !path.posix.isAbsolute(licensePath) &&
+    path.posix.normalize(licensePath) === licensePath
+  );
+}
+
 function resolvePayloadFile(payloadDir, relativePath, description) {
   const normalized = payloadRelativePath(String(relativePath || '').trim());
   if (!normalized || path.isAbsolute(normalized) || normalized === '..' || normalized.startsWith('../')) {
@@ -568,11 +584,16 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
   ) {
     throw new Error('Desktop Bridge payload source identity is incomplete or mutable.');
   }
+  const pythonToolchain = manifest.toolchain?.python;
   if (
-    !isExactVersionIdentity(manifest.toolchain?.python) ||
+    pythonToolchain?.implementation !== 'CPython' ||
+    !isExactVersionIdentity(pythonToolchain?.version) ||
     !String(manifest.toolchain?.freezer?.name || '').trim() ||
     !isExactVersionIdentity(manifest.toolchain?.freezer?.version)
   ) {
+    if (pythonToolchain?.implementation !== 'CPython' || !isExactVersionIdentity(pythonToolchain?.version)) {
+      throw new Error('Desktop Bridge payload CPython toolchain identity is incomplete or invalid.');
+    }
     throw new Error('Desktop Bridge payload toolchain identity is incomplete.');
   }
   const dependencies = manifest.toolchain?.dependencies;
@@ -587,6 +608,10 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
     )
   ) {
     throw new Error('Desktop Bridge payload toolchain dependency lock is incomplete or mutable.');
+  }
+  const dependencyNames = dependencies.map((dependency) => normalizedDistributionName(dependency.name));
+  if (new Set(dependencyNames).size !== dependencyNames.length) {
+    throw new Error('Desktop Bridge payload toolchain dependency lock contains duplicate names.');
   }
 
   const expectedSha256 = requireSha256(expectedPayloadSha256, 'out-of-band payload');
@@ -634,7 +659,7 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
       !isExactVersionIdentity(license?.version) ||
       !String(license?.license || '').trim() ||
       !String(license?.name || '').trim() ||
-      !String(license?.path || '').startsWith('licenses/')
+      !isCanonicalLicensePath(license?.path)
     ) {
       throw new Error(`Desktop Bridge payload license ${index + 1} has invalid identity.`);
     }
@@ -644,6 +669,44 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
   const licenseComponents = Array.isArray(manifest.toolchain?.license_components)
     ? manifest.toolchain.license_components
     : [];
+  const licenseFilePaths = manifest.files.licenses.map((entry) => String(entry?.path || ''));
+  const componentLicensePaths = licenseComponents.map((entry) => String(entry?.path || ''));
+  if (
+    new Set(licenseFilePaths).size !== licenseFilePaths.length ||
+    new Set(componentLicensePaths).size !== componentLicensePaths.length
+  ) {
+    throw new Error('Desktop Bridge payload license inventory contains duplicate license paths.');
+  }
+  const licensedDependencyNames = new Set();
+  for (const componentIdentity of licenseComponents) {
+    const licenseFile = manifest.files.licenses.find((entry) => entry?.component === componentIdentity?.component);
+    const mappedDependencies = componentIdentity?.dependency_names;
+    if (
+      !licenseFile ||
+      !Array.isArray(mappedDependencies) ||
+      mappedDependencies.some(
+        (dependencyName) =>
+          !String(dependencyName || '').trim() || dependencyName !== normalizedDistributionName(dependencyName)
+      ) ||
+      new Set(mappedDependencies).size !== mappedDependencies.length ||
+      !isExactVersionIdentity(componentIdentity.version) ||
+      !String(componentIdentity.license || '').trim() ||
+      !isCanonicalLicensePath(componentIdentity.path) ||
+      componentIdentity.version !== licenseFile.version ||
+      componentIdentity.license !== licenseFile.license ||
+      componentIdentity.path !== licenseFile.path
+    ) {
+      throw new Error(
+        `Desktop Bridge payload license identity is incomplete for ${String(componentIdentity?.component || 'unknown component')}.`
+      );
+    }
+    for (const dependencyName of mappedDependencies) {
+      if (!dependencyNames.includes(dependencyName) || licensedDependencyNames.has(dependencyName)) {
+        throw new Error(`Desktop Bridge payload dependency license mapping is invalid for ${dependencyName}.`);
+      }
+      licensedDependencyNames.add(dependencyName);
+    }
+  }
   for (const component of requiredLicenseComponents) {
     const componentIdentity = licenseComponents.find((entry) => entry?.component === component);
     const licenseFile = manifest.files.licenses.find((entry) => entry?.component === component);
@@ -652,12 +715,17 @@ function validatePinnedBridgePayload(payloadDir, expectedPayloadSha256, expected
       !licenseFile ||
       !isExactVersionIdentity(componentIdentity.version) ||
       !String(componentIdentity.license || '').trim() ||
-      !String(componentIdentity.path || '').startsWith('licenses/') ||
+      !isCanonicalLicensePath(componentIdentity.path) ||
       componentIdentity.version !== licenseFile.version ||
       componentIdentity.license !== licenseFile.license ||
       componentIdentity.path !== licenseFile.path
     ) {
       throw new Error(`Desktop Bridge payload license coverage is incomplete for ${component}.`);
+    }
+  }
+  for (const dependencyName of dependencyNames) {
+    if (!licensedDependencyNames.has(dependencyName)) {
+      throw new Error(`Desktop Bridge payload license coverage is incomplete for dependency ${dependencyName}.`);
     }
   }
   const machOFiles = listPayloadFiles(payloadDir)

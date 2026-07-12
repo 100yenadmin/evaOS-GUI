@@ -132,6 +132,8 @@ function writeMacosBridgeZip(
     scriptBridge?: boolean;
     sourceSha256?: string;
     manifestLicenseSha256?: string;
+    producerSourceCommit?: string;
+    tamperTransitiveLicense?: boolean;
   } = {}
 ) {
   const script = [
@@ -153,10 +155,21 @@ function writeMacosBridgeZip(
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
     'peekaboo = {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}',
-    'producer_manifest = {"schema_version": 1, "target": {"platform": "macos", "architecture": "arm64"}, "source": {"repository": "electricsheephq/evaos-desktop-bridge", "commit": "60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b", "version": "0.7.0"}}',
+    'producer_source_commit = sys.argv[10]',
+    'tamper_transitive_license = sys.argv[11] == "1"',
+    'license_specs = [',
+    '    {"component": "CPython", "version": "3.12.13", "license": "Python-2.0", "path": "licenses/CPython-LICENSE.txt", "dependency_names": []},',
+    '    {"component": "PyInstaller", "version": "6.21.0", "license": "GPL-2.0-or-later WITH Bootloader-exception", "path": "licenses/PyInstaller-COPYING.txt", "dependency_names": []},',
+    '    {"component": "PyObjC", "version": "12.2.1", "license": "MIT", "path": "licenses/PyObjC-LICENSE.txt", "dependency_names": ["pyobjc-core"]},',
+    '    {"component": "evaos-desktop-bridge", "version": "0.7.0", "license": "MIT", "path": "licenses/evaos-desktop-bridge-MIT.txt", "dependency_names": []},',
+    '    {"component": "Peekaboo", "version": "3.8.0", "license": "MIT", "path": "licenses/Peekaboo-LICENSE.txt", "dependency_names": []},',
+    ']',
+    'license_files = [{**item, "name": item["component"] + " license", "sha256": hashlib.sha256(license_bytes).hexdigest()} for item in license_specs]',
+    'for item in license_files: item.pop("dependency_names")',
+    'payload_file_count = 9 - int(omit_peekaboo) - int(omit_license) - int(omit_internal_runtime)',
+    'producer_manifest = {"schema_version": 1, "target": {"platform": "macos", "architecture": "arm64"}, "source": {"repository": "electricsheephq/evaos-desktop-bridge", "commit": producer_source_commit, "version": "0.7.0"}, "toolchain": {"dependencies": [{"name": "pyobjc-core", "version": "12.2.1", "sha256": "a" * 64}], "license_components": license_specs}, "files": {"licenses": license_files}, "payload": {"algorithm": "sha256-tree-v1", "sha256": "1" * 64, "file_count": payload_file_count}}',
     'producer_manifest_bytes = (json.dumps(producer_manifest, sort_keys=True) + "\\n").encode()',
     'producer_manifest_sha256 = hashlib.sha256(producer_manifest_bytes).hexdigest()',
-    'payload_file_count = 5 - int(omit_peekaboo) - int(omit_license) - int(omit_internal_runtime)',
     'manifest = {"placeholder": False, "bundledTools": {"peekaboo": peekaboo}} if legacy_manifest else {"schema": "evaos-desktop-bridge-resource/v2", "placeholder": False, "producerManifest": "payload-manifest.json", "producerManifestSha256": producer_manifest_sha256, "sourceCommit": "60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b", "payload": {"algorithm": "sha256-tree-v1", "sha256": "1" * 64, "fileCount": payload_file_count, "target": {"platform": "macos", "architecture": "arm64"}}, "bundledTools": {"peekaboo": peekaboo}}',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    bridge_bytes = b"#!/usr/bin/env bash\\n" if script_bridge else bytes.fromhex("cffaedfe0c00000100000000")',
@@ -166,6 +179,11 @@ function writeMacosBridgeZip(
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
     '    if not omit_license:',
     '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt", license_bytes)',
+    '    for item in license_specs:',
+    '        if item["component"] != "Peekaboo":',
+    '            contents = b"tampered transitive license" if tamper_transitive_license and item["component"] == "PyObjC" else license_bytes',
+    '            license_path = item["path"]',
+    '            archive.writestr(f"{app_root}/Contents/Resources/Bridge/{license_path}", contents)',
     '    if not omit_internal_runtime:',
     '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/_internal/runtime.dat", b"private runtime")',
     '    if not legacy_manifest:',
@@ -186,6 +204,8 @@ function writeMacosBridgeZip(
     options.scriptBridge ? '1' : '0',
     options.omitInternalRuntime ? '1' : '0',
     options.legacyManifest ? '1' : '0',
+    options.producerSourceCommit || '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b',
+    options.tamperTransitiveLicense ? '1' : '0',
   ]);
 }
 
@@ -463,8 +483,15 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('repository: ${{ inputs.desktop_bridge_payload_repository }}');
     expect(workflow).toContain('run-id: ${{ inputs.desktop_bridge_payload_run_id }}');
     expect(workflow).toContain('github-token: ${{ secrets.EVAOS_DESKTOP_BRIDGE_ACTIONS_TOKEN');
-    expect(workflow).toContain('MANIFEST_PATH="$DOWNLOAD_DIR/payload-manifest.json"');
-    expect(workflow).toContain('PAYLOAD_DIR="$DOWNLOAD_DIR"');
+    expect(workflow).toContain('ARCHIVE_PATH="$ARTIFACT_DIR/evaos-desktop-bridge-macos-arm64.tar.gz"');
+    expect(workflow).toContain('MANIFEST_PATH="$PAYLOAD_DIR/payload-manifest.json"');
+    expect(workflow).toContain('archive.extractall(payload_dir, members=members, filter="data")');
+    expect(workflow).toContain('link_or_special_file_in_desktop_bridge_archive');
+    expect(workflow).toContain('desktop_bridge_archive_exceeds_member_limit');
+    expect(workflow).toContain('desktop_bridge_archive_path_exceeds_limit');
+    expect(workflow).toContain('desktop_bridge_archive_file_exceeds_size_limit');
+    expect(workflow).toContain('ditto -x -k "$zip_path" "$extract_dir"');
+    expect(workflow).toContain('codesign --verify --deep --strict --verbose=2 "${apps[0]}"');
     expect(workflow).toContain('EVAOS_DESKTOP_BRIDGE_PAYLOAD_DIR=');
     expect(workflow).toContain('EVAOS_DESKTOP_BRIDGE_PAYLOAD_SHA256=');
     expect(workflow).toContain('EVAOS_DESKTOP_BRIDGE_MANIFEST_SHA256=');
@@ -1481,6 +1508,11 @@ describe('evaOS beta release gate', () => {
         expected: /v2 payload manifest/,
       },
       {
+        name: 'producer and resource manifest source mismatch',
+        options: { producerSourceCommit: '0'.repeat(40) },
+        expected: /producer manifest cross-link/,
+      },
+      {
         name: 'missing private runtime',
         options: { omitInternalRuntime: true },
         expected: /private runtime/,
@@ -1499,6 +1531,11 @@ describe('evaOS beta release gate', () => {
         name: 'missing license',
         options: { omitLicense: true },
         expected: /Peekaboo license/,
+      },
+      {
+        name: 'tampered transitive license',
+        options: { tamperTransitiveLicense: true },
+        expected: /producer license coverage/,
       },
       {
         name: 'mismatched license digest',

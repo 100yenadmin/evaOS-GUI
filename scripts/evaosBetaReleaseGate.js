@@ -1541,12 +1541,17 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        if part.endswith(".app") and parts[index + 1:index + 4] == ["Contents", "Resources", "Bridge"]:',
     '            return "/".join(parts[index + 4:])',
     '    return None',
-    'result = {"hasBridgeExecutable": False, "bridgeExecutableMachO": False, "hasBridgeManifest": False, "hasProducerManifest": False, "hasPrivateRuntime": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestV2Valid": False, "producerManifestValid": False, "producerManifestDigestValid": False, "payloadMetadataValid": False, "payloadFileCountValid": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
+    'result = {"hasBridgeExecutable": False, "bridgeExecutableMachO": False, "hasBridgeManifest": False, "hasProducerManifest": False, "hasPrivateRuntime": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestV2Valid": False, "producerManifestValid": False, "producerManifestDigestValid": False, "producerManifestCrossLinkValid": False, "producerLicenseCoverageValid": False, "bridgeEntryNamesUnique": True, "payloadMetadataValid": False, "payloadFileCountValid": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
     'entries = {}',
+    'bridge_entries = {}',
     'payload_file_count = 0',
     'with zipfile.ZipFile(path) as archive:',
     '    for name in archive.namelist():',
     '        suffix = bridge_entry_suffix(name)',
+    '        if suffix is not None and not name.endswith("/"):',
+    '            if suffix in bridge_entries:',
+    '                result["bridgeEntryNamesUnique"] = False',
+    '            bridge_entries[suffix] = name',
     '        if suffix is not None and suffix not in {"manifest.json", "payload-manifest.json"} and not name.endswith("/"):',
     '            payload_file_count += 1',
     '        if suffix is not None and suffix.startswith("_internal/") and not name.endswith("/"):',
@@ -1582,6 +1587,42 @@ function inspectMacosZipBridgePayload(zipPath) {
     '    result["manifestV2Valid"] = manifest.get("schema") == "evaos-desktop-bridge-resource/v2" and manifest.get("producerManifest") == "payload-manifest.json" and re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("sourceCommit", ""))) is not None',
     '    result["producerManifestValid"] = producer_manifest.get("schema_version") == 1 and producer_manifest.get("target") == {"platform": "macos", "architecture": "arm64"} if isinstance(producer_manifest, dict) else False',
     '    result["producerManifestDigestValid"] = bool(producer_manifest_bytes) and hashlib.sha256(producer_manifest_bytes).hexdigest() == manifest.get("producerManifestSha256")',
+    '    producer_source = producer_manifest.get("source", {}) if isinstance(producer_manifest, dict) else {}',
+    '    producer_payload = producer_manifest.get("payload", {}) if isinstance(producer_manifest, dict) else {}',
+    '    result["producerManifestCrossLinkValid"] = producer_source.get("repository") == "electricsheephq/evaos-desktop-bridge" and producer_source.get("commit") == manifest.get("sourceCommit") and producer_manifest.get("target") == payload.get("target") and producer_payload.get("algorithm") == payload.get("algorithm") and producer_payload.get("sha256") == payload.get("sha256") and producer_payload.get("file_count") == payload.get("fileCount")',
+    '    producer_toolchain = producer_manifest.get("toolchain", {}) if isinstance(producer_manifest, dict) else {}',
+    '    producer_files = producer_manifest.get("files", {}) if isinstance(producer_manifest, dict) else {}',
+    '    dependencies = producer_toolchain.get("dependencies", []) if isinstance(producer_toolchain, dict) else []',
+    '    license_components = producer_toolchain.get("license_components", []) if isinstance(producer_toolchain, dict) else []',
+    '    license_files = producer_files.get("licenses", []) if isinstance(producer_files, dict) else []',
+    '    def normalized_distribution_name(value):',
+    '        return re.sub(r"[-_.]+", "-", str(value).strip().lower())',
+    '    try:',
+    '        dependency_names = [normalized_distribution_name(item["name"]) for item in dependencies]',
+    '        component_names = [item["component"] for item in license_components]',
+    '        file_components = [item["component"] for item in license_files]',
+    '        component_license_paths = [str(item["path"]) for item in license_components]',
+    '        file_license_paths = [str(item["path"]) for item in license_files]',
+    '        coverage_valid = bool(dependency_names) and len(dependency_names) == len(set(dependency_names)) and len(component_names) == len(set(component_names)) and len(file_components) == len(set(file_components)) and set(component_names) == set(file_components) and len(component_license_paths) == len(set(component_license_paths)) and len(file_license_paths) == len(set(file_license_paths))',
+    '        files_by_component = {item["component"]: item for item in license_files}',
+    '        covered_dependencies = set()',
+    '        for component in license_components:',
+    '            license_file = files_by_component.get(component["component"], {})',
+    '            mapped = component.get("dependency_names")',
+    '            license_path = component.get("path")',
+    '            path_parts = pathlib.PurePosixPath(str(license_path)).parts',
+    '            coverage_valid = coverage_valid and isinstance(mapped, list) and len(mapped) == len(set(mapped)) and all(name == normalized_distribution_name(name) for name in mapped) and str(license_path).startswith("licenses/") and pathlib.PurePosixPath(str(license_path)).as_posix() == str(license_path) and ".." not in path_parts and component.get("version") == license_file.get("version") and component.get("license") == license_file.get("license") and license_path == license_file.get("path")',
+    '            for dependency_name in mapped if isinstance(mapped, list) else []:',
+    '                coverage_valid = coverage_valid and dependency_name in dependency_names and dependency_name not in covered_dependencies',
+    '                covered_dependencies.add(dependency_name)',
+    '            license_entry = bridge_entries.get(str(license_path))',
+    '            coverage_valid = coverage_valid and license_entry is not None and re.fullmatch(r"[0-9a-f]{64}", str(license_file.get("sha256", ""))) is not None',
+    '            if license_entry is not None:',
+    '                coverage_valid = coverage_valid and hashlib.sha256(archive.read(license_entry)).hexdigest() == license_file.get("sha256")',
+    '        required_components = {"CPython", "PyInstaller", "PyObjC", "evaos-desktop-bridge", "Peekaboo"}',
+    '        result["producerLicenseCoverageValid"] = coverage_valid and required_components.issubset(set(component_names)) and covered_dependencies == set(dependency_names)',
+    '    except (KeyError, TypeError, ValueError):',
+    '        result["producerLicenseCoverageValid"] = False',
     '    result["payloadMetadataValid"] = payload.get("algorithm") == "sha256-tree-v1" and re.fullmatch(r"[0-9a-f]{64}", str(payload_sha256)) is not None and payload.get("target") == {"platform": "macos", "architecture": "arm64"} and isinstance(payload.get("fileCount"), int)',
     '    result["payloadFileCountValid"] = payload.get("fileCount") == payload_file_count',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
@@ -1638,6 +1679,8 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
     assertZipBridgeProbe(probe, 'hasProducerManifest', zipName, 'producer manifest');
     assertZipBridgeProbe(probe, 'producerManifestValid', zipName, 'producer manifest identity');
     assertZipBridgeProbe(probe, 'producerManifestDigestValid', zipName, 'producer manifest digest');
+    assertZipBridgeProbe(probe, 'producerManifestCrossLinkValid', zipName, 'producer manifest cross-link');
+    assertZipBridgeProbe(probe, 'bridgeEntryNamesUnique', zipName, 'unique Bridge entry names');
     assertZipBridgeProbe(probe, 'payloadMetadataValid', zipName, 'payload metadata');
     assertZipBridgeProbe(probe, 'payloadFileCountValid', zipName, 'payload file count');
     assertZipBridgeProbe(probe, 'hasPrivateRuntime', zipName, 'private runtime');
@@ -1646,6 +1689,7 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
     assertZipBridgeProbe(probe, 'hasConnectorHelper', zipName, 'connector helper');
     assertZipBridgeProbe(probe, 'connectorHelperMachO', zipName, 'connector helper Mach-O shape');
     assertZipBridgeProbe(probe, 'hasPeekabooLicense', zipName, 'Peekaboo license');
+    assertZipBridgeProbe(probe, 'producerLicenseCoverageValid', zipName, 'producer license coverage');
     assertZipBridgeProbe(probe, 'manifestPlaceholderFalse', zipName, 'non-placeholder manifest');
     assertZipBridgeProbe(probe, 'manifestSourceDigestValid', zipName, 'Peekaboo source digest');
     assertZipBridgeProbe(probe, 'manifestLicenseMetadataValid', zipName, 'Peekaboo license metadata');
