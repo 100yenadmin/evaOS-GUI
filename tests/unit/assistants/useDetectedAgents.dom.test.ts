@@ -23,8 +23,6 @@ vi.mock('swr', () => ({
 vi.mock('@/common', () => ({
   ipcBridge: {
     acpConversation: {
-      getManagedAgents: { invoke: vi.fn() },
-      checkAgentHealth: { invoke: vi.fn() },
       getAssistantAgentCatalog: { invoke: vi.fn() },
     },
   },
@@ -181,7 +179,6 @@ describe('useDetectedAgents', () => {
       await result.current.refreshAgentDetection();
     });
 
-    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).not.toHaveBeenCalled();
     expect(mutate).toHaveBeenNthCalledWith(1, ASSISTANT_AGENT_CATALOG_SWR_KEY);
     expect(mutate).toHaveBeenNthCalledWith(2, DETECTED_AGENTS_SWR_KEY);
   });

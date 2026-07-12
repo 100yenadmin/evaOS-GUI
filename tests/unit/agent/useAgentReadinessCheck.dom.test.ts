@@ -56,6 +56,15 @@ describe('agent readiness checks', () => {
         available: false,
       },
       {
+        id: 'gemini-row',
+        name: 'Gemini',
+        backend: 'gemini',
+        agent_type: 'acp',
+        agent_source: 'builtin',
+        enabled: true,
+        available: true,
+      },
+      {
         id: 'codex-row',
         name: 'Codex',
         backend: 'codex',
@@ -65,13 +74,18 @@ describe('agent readiness checks', () => {
         available: true,
       },
     ]);
-    vi.mocked(ipcBridge.acpConversation.checkAgentHealth.invoke).mockResolvedValue({ available: true });
+    vi.mocked(ipcBridge.acpConversation.checkAgentHealth.invoke).mockImplementation(async ({ id }) => ({
+      available: id === 'codex-row',
+      error: id === 'codex-row' ? undefined : 'not ready',
+    }));
     const { result } = renderHook(() => useAgentReadinessCheck({ backend: 'claude', conversation_type: 'acp' }));
 
     await act(async () => {
       await result.current.findAlternatives();
     });
 
-    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenCalledWith({ id: 'codex-row' });
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenNthCalledWith(1, { id: 'gemini-row' });
+    expect(ipcBridge.acpConversation.checkAgentHealth.invoke).toHaveBeenNthCalledWith(2, { id: 'codex-row' });
+    expect(result.current.bestAgent).toMatchObject({ backend: 'codex', available: true });
   });
 });
