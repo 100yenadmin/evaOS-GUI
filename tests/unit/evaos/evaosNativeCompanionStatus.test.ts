@@ -138,7 +138,13 @@ describe('evaosNativeCompanionStatus', () => {
       'status --json': {
         ok: true,
         data: {
-          compatible: true,
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version: '0.1.1',
+            version_compatible: true,
+            compatible: true,
+          },
           permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
         },
       },
@@ -189,7 +195,13 @@ describe('evaosNativeCompanionStatus', () => {
       'status --json': {
         ok: true,
         data: {
-          compatible: false,
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version: '0.0.9',
+            version_compatible: false,
+            compatible: false,
+          },
           permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
         },
       },
@@ -233,7 +245,13 @@ describe('evaosNativeCompanionStatus', () => {
         ok: true,
         audit_id: 'audit-bridge',
         data: {
-          compatible: true,
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version: '0.1.1',
+            version_compatible: true,
+            compatible: true,
+          },
           permissions: {
             accessibility: { status: 'granted', guidance: 'secret-looking token guidance should not be used' },
             screen_recording: { status: 'granted' },

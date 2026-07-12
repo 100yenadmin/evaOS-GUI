@@ -1889,6 +1889,19 @@ function bundledBridgeRuntimeCompatibility(
   env?: NodeJS.ProcessEnv
 ): boolean | undefined {
   if (!isPairingCapableBridgePath(bridgePath, env)) return false;
+  const runtime = readRecord(bridge.data, 'bridge_runtime');
+  if (runtime) {
+    if (
+      readString(runtime, 'schema') !== 'evaos.desktop_bridge.workbench_runtime.v1' ||
+      readNumber(runtime, 'contract_version') !== 1
+    ) {
+      return false;
+    }
+    return (
+      readBoolean(runtime, 'compatible') === true &&
+      readBooleanAlias(runtime, 'version_compatible', 'versionCompatible') === true
+    );
+  }
   return (
     readBoolean(bridge.data, 'compatible') ??
     readBooleanAlias(bridge.data, 'version_compatible', 'versionCompatible') ??
@@ -2929,6 +2942,12 @@ function readBoolean(input: unknown, key: string): boolean | undefined {
 
 function readBooleanAlias(input: unknown, snakeCaseKey: string, camelCaseKey: string): boolean | undefined {
   return readBoolean(input, snakeCaseKey) ?? readBoolean(input, camelCaseKey);
+}
+
+function readNumber(input: unknown, key: string): number | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = (input as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function readRecord(input: unknown, key: string): Record<string, unknown> | undefined {
