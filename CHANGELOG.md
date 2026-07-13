@@ -1,5 +1,35 @@
 # Changelog
 
+## evaOS Workbench 2.1.35 (2026-07-13)
+
+### Installed Connector Recovery
+
+- Carries forward the corrected connector-host consistency and serialized
+  start/stop recovery behavior from the held v2.1.34 candidate so Workbench
+  probes the same bundled Desktop Bridge it starts.
+- Preserves the broker-owned grant model, authenticated runtime proof,
+  stop/revoke and kill-switch authority, CUA-primary control path, and Peekaboo
+  fallback. This candidate does not introduce a new Mac-control architecture.
+- Keeps Python execution self-contained through the bundled pinned runtime and
+  keeps secure-network enrollment Workbench-owned, avoiding a
+  customer-installed Python package or manual tailnet enrollment.
+
+### Release Integrity
+
+- Accepts safe ZIP-normalized permissions for declared bundled-Python symlinks
+  while continuing to enforce entry type, exact link target, safe resolution,
+  and regular-file and directory permissions.
+- Runs the authoritative final-ZIP manifest, updater metadata, checksum,
+  provenance, and bundled-runtime verification before creating any non-dev
+  beta or RC draft.
+
+### Release Boundary
+
+- This entry identifies a new immutable v2.1.35 candidate source. The held
+  v2.1.34 tag and draft remain unchanged. Signed, notarized, stapled,
+  installed-app, live broker/Mac-control, distribution, pristine-Mac setup,
+  and customer-readiness claims remain bound to their exact release evidence.
+
 ## evaOS Workbench 2.1.34 (2026-07-13)
 
 ### Installed Connector Readiness
