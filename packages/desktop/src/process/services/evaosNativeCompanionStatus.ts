@@ -235,22 +235,19 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
-  const redactedPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
-  const prerequisites = classifyNativeCompanionPrerequisites({
-    bridgeRuntime: {
-      installed: true,
-      commandSucceeded: bridge.ok,
-      compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge, deps.env),
-    },
-    privateNetwork: redactedPrivateNetworkEvidence,
-    actionEngine: actionEngineEvidence(customerMac.data),
+  const prerequisiteGate = nativeCompanionPrerequisiteGate({
+    bridgePath,
+    bridge,
+    connectorServiceData,
+    customerMacData: customerMac.data,
+    env: deps.env,
   });
+  const prerequisites = prerequisiteGate.prerequisites;
   const bridgeRuntimeBlocksPairing = prerequisites.bridgeRuntime !== 'ready';
   const privateNetworkBlocksPairing = prerequisites.privateNetwork !== 'online';
   const actionEngineBlocksPairing =
     prerequisites.actionEngine !== 'cua_ready' && prerequisites.actionEngine !== 'peekaboo_ready';
-  const prerequisiteBlocksPairing =
-    bridgeRuntimeBlocksPairing || privateNetworkBlocksPairing || actionEngineBlocksPairing;
+  const prerequisiteBlocksPairing = !prerequisiteGate.ready;
   const readiness =
     bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteBlocksPairing
       ? 'ready'
@@ -1192,7 +1189,8 @@ async function runSetupCheckAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
-  const [connectorService, customerMac, controlSession, audit] = await Promise.all([
+  const [bridge, connectorService, customerMac, controlSession, audit] = await Promise.all([
+    runBridgeCommand(bridgePath, ['status', '--json'], deps),
     runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
@@ -1200,6 +1198,13 @@ async function runSetupCheckAction(
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
   const connectorReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
+  const prerequisiteGate = nativeCompanionPrerequisiteGate({
+    bridgePath,
+    bridge,
+    connectorServiceData: connectorService.data,
+    customerMacData: customerMac.data,
+    env: deps.env,
+  });
   const setup = {
     connectorReady,
     macReady:
@@ -1207,7 +1212,7 @@ async function runSetupCheckAction(
     controlReady: controlSession.ok,
     iPhoneDeferred: true,
   };
-  const ready = setup.connectorReady && setup.macReady && setup.controlReady;
+  const ready = prerequisiteGate.ready && setup.connectorReady && setup.macReady && setup.controlReady;
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
   const reportedAgentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession) : 'not_ready';
   const agentPairingProofScopeId = agentPairingProofScopeIdFromControlSession(controlSession);
@@ -1237,7 +1242,8 @@ async function runSetupCheckAction(
       agentPairingStatus,
       blockerReason: ready
         ? undefined
-        : (blockerReasonForStatus({
+        : (prerequisiteGate.blockerReason ??
+          blockerReasonForStatus({
             bridge: { ok: true, data: {} },
             connectorService,
             customerMac,
@@ -1246,7 +1252,8 @@ async function runSetupCheckAction(
             connectorServiceReady: setup.connectorReady,
             customerMacReady: setup.macReady,
             bridgePath,
-          }) ?? 'unknown'),
+          }) ??
+          'unknown'),
     }
   );
 }
@@ -1333,10 +1340,37 @@ async function ensureCustomerMacConnectorGrantAction(
     );
   }
 
+  const [bridge, typedCustomerMac] = await Promise.all([
+    runBridgeCommand(bridgePath, ['status', '--json'], deps),
+    prepared?.customerMac
+      ? Promise.resolve(prepared.customerMac)
+      : runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
+  ]);
+  const prerequisiteGate = nativeCompanionPrerequisiteGate({
+    bridgePath,
+    bridge,
+    connectorServiceData: sessionConnector.data,
+    customerMacData: typedCustomerMac.data,
+    env: deps.env,
+  });
+  if (!prerequisiteGate.ready) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Mac Access typed bridge, private-network, and action-engine prerequisites must be ready before Workbench can connect Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-prerequisites-required',
+        agentPairingStatus: 'not_ready',
+        refreshRecommended: false,
+        blockerReason: prerequisiteGate.blockerReason,
+      }
+    );
+  }
+
   const controlSession =
     prepared?.controlSession ??
     (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
-  let localCustomerMac = prepared?.customerMac;
+  let localCustomerMac = typedCustomerMac;
   let localPermissions = localCustomerMac
     ? effectiveCustomerMacPermissions(permissionView(localCustomerMac.data?.permissions), controlSession)
     : undefined;
@@ -1563,7 +1597,10 @@ async function createPairingPromptAction(
     );
   }
 
-  const connector = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  const [bridge, connector] = await Promise.all([
+    runBridgeCommand(bridgePath, ['status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
+  ]);
   if (!connectorServiceIsReady(connector)) {
     return nativeActionResult(
       'create_pairing_prompt',
@@ -1590,6 +1627,26 @@ async function createPairingPromptAction(
   }
 
   const customerMac = await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps);
+  const prerequisiteGate = nativeCompanionPrerequisiteGate({
+    bridgePath,
+    bridge,
+    connectorServiceData: connector.data,
+    customerMacData: customerMac.data,
+    env: deps.env,
+  });
+  if (!prerequisiteGate.ready) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Mac Access typed bridge, private-network, and action-engine prerequisites must be ready before Workbench can create an agent pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-prerequisites-required',
+        agentPairingStatus: 'not_ready',
+        refreshRecommended: false,
+        blockerReason: prerequisiteGate.blockerReason,
+      }
+    );
+  }
   const permissions = permissionView(customerMac.data?.permissions);
   const deviceIdentifier = connectorDeviceIdentifier(customerMac.data);
   if (!hasGrantedCorePermissions(permissions)) {
@@ -1887,6 +1944,37 @@ function actionEngineEvidence(customerMacData: unknown): NativeCompanionPrerequi
     peekabooAvailable: readBoolean(peekaboo, 'available'),
     nativeFallbackAvailable: activePrimary ? nativeFallbacks.has(activePrimary) : false,
   };
+}
+
+function nativeCompanionPrerequisiteGate(input: {
+  bridgePath: string;
+  bridge: BridgeCommandResult;
+  connectorServiceData: unknown;
+  customerMacData: unknown;
+  env?: NodeJS.ProcessEnv;
+}): {
+  ready: boolean;
+  prerequisites: ReturnType<typeof classifyNativeCompanionPrerequisites>;
+  blockerReason?: IEvaosMacControlBlockerReason;
+} {
+  const prerequisites = classifyNativeCompanionPrerequisites({
+    bridgeRuntime: {
+      installed: true,
+      commandSucceeded: input.bridge.ok,
+      compatible: bundledBridgeRuntimeCompatibility(input.bridgePath, input.bridge, input.env),
+    },
+    privateNetwork: privateNetworkEvidence(input.connectorServiceData),
+    actionEngine: actionEngineEvidence(input.customerMacData),
+  });
+  const blockerReason =
+    prerequisites.bridgeRuntime !== 'ready'
+      ? 'bundled_bridge_required'
+      : prerequisites.privateNetwork !== 'online'
+        ? 'secure_network_link_required'
+        : prerequisites.actionEngine !== 'cua_ready' && prerequisites.actionEngine !== 'peekaboo_ready'
+          ? 'runtime_not_configured'
+          : undefined;
+  return { ready: blockerReason === undefined, prerequisites, blockerReason };
 }
 
 function bundledBridgeRuntimeCompatibility(
