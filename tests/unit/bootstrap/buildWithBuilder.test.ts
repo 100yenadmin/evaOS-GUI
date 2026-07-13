@@ -13,6 +13,88 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = resolve(__dirname, '../../..');
 
 describe('build-with-builder', () => {
+  it.each([
+    {
+      name: 'unexpected key',
+      extraLine: 'NODE_OPTIONS=--require=/tmp/untrusted.cjs',
+      expected: /unexpected environment metadata key/i,
+    },
+    {
+      name: 'duplicate key',
+      extraLine: 'EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=/tmp/duplicate-runtime',
+      expected: /duplicate environment metadata key/i,
+    },
+  ])('rejects $name from prepared Python runtime environment metadata', ({ extraLine, expected }) => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'aionui-runtime-env-test-'));
+    const hookPath = join(tempDir, 'hook.cjs');
+
+    writeFileSync(
+      hookPath,
+      `
+const childProcess = require('node:child_process');
+const fs = require('node:fs');
+const Module = require('node:module');
+const path = require('node:path');
+const originalLoad = Module._load;
+Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request.endsWith('packages/shared-scripts/src/prepare-aioncore.js')) {
+    return { prepareAioncore: () => ({ prepared: true, dir: 'mock-bundled-aioncore', sourceType: 'mock' }), readManagedResourcesBundle: () => 'no-acp' };
+  }
+  if (request.endsWith('/resolveAioncoreVersion.js') || request === './resolveAioncoreVersion.js') {
+    return { resolveAioncoreVersion: () => 'v-test' };
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
+
+function ensurePlaceholder(relativePath) {
+  const target = path.join(process.cwd(), relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (!fs.existsSync(target)) fs.writeFileSync(target, '');
+}
+
+childProcess.execFileSync = function mockedExecFileSync(command, args, options) {
+  if (!String(command).endsWith('prepareEvaosDesktopBridgePythonRuntime.sh')) return Buffer.from('');
+  const runtimeDir = path.join(options.env.RUNNER_TEMP, 'prepared-arm64');
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.writeFileSync(args[1], 'EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=' + runtimeDir + '\\n' + process.env.EVAOS_TEST_RUNTIME_ENV_EXTRA + '\\n');
+  return Buffer.from('');
+};
+
+childProcess.execSync = function mockedExecSync(command) {
+  const commandText = String(command);
+  if (commandText.includes('electron-vite build')) {
+    ensurePlaceholder('out/main/index.js');
+    ensurePlaceholder('out/renderer/index.html');
+  }
+  return Buffer.from('');
+};
+`,
+      'utf8'
+    );
+
+    try {
+      const result = spawnSync(process.execPath, ['scripts/build-with-builder.js', 'arm64', '--mac', '--arm64'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          EVAOS_APP_COMMIT: 'test-candidate-sha',
+          EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR: '',
+          EVAOS_SKIP_BUILD_CLEANUP: '1',
+          EVAOS_TEST_RUNTIME_ENV_EXTRA: extraLine,
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${hookPath}`].filter(Boolean).join(' '),
+        },
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(expected);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('prepares architecture-specific Mac resources for every requested target', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'aionui-multi-arch-build-test-'));
     const hookPath = join(tempDir, 'hook.cjs');

@@ -107,6 +107,12 @@ for runtime_path in sorted(runtime_root.rglob("*")):
             "mode": 0o777,
             "target": runtime_path.readlink().as_posix(),
         })
+    elif runtime_path.is_dir():
+        inventory_entries.append({
+            "path": relative_path,
+            "type": "directory",
+            "mode": stat.S_IMODE(metadata.st_mode),
+        })
     elif runtime_path.is_file():
         contents = runtime_path.read_bytes()
         inventory_entries.append({

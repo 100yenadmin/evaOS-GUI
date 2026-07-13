@@ -48,6 +48,11 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   }) => Record<string, unknown>;
   bridgeWrapperScript: () => string;
   installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
+  writePythonRuntimeInventory: (resourceDir: string) => {
+    inventoryPath: string;
+    inventorySha256: string;
+    inventoryEntryCount: number;
+  };
   verifyPythonRuntimeInventory: (resourceDir: string, metadata: PythonRuntimeMetadata) => boolean;
   isMachOExecutable: (filePath: string) => boolean;
   installPeekabooLicense: (
@@ -124,7 +129,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       expect(metadata).toMatchObject({
         version: '3.12.13',
         inventoryPath: 'python-runtime-inventory.json',
-        inventoryEntryCount: 5,
+        inventoryEntryCount: 10,
         inventorySha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       });
       expect(readlinkSync(join(resourceDir, 'python', 'bin', 'python3'))).toBe('python3.12');
@@ -137,6 +142,11 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       expect(inventory.entries.map(({ path }) => path)).toEqual(inventory.entries.map(({ path }) => path).toSorted());
       expect(inventory.entries).toEqual(
         expect.arrayContaining([
+          {
+            path: 'bin',
+            type: 'directory',
+            mode: 0o755,
+          },
           {
             path: 'bin/python3',
             type: 'symlink',
@@ -153,6 +163,63 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       );
       expect(bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata!)).toBe(true);
     } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a bundled Python runtime whose directory mode changes after inventory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-directory-tamper-'));
+    const sourceDir = join(dir, 'source');
+    const resourceDir = join(dir, 'Bridge');
+    try {
+      mkdirSync(join(sourceDir, 'bin'), { recursive: true });
+      mkdirSync(join(sourceDir, 'lib', 'python3.12'), { recursive: true });
+      writeFileSync(join(sourceDir, 'bin', 'python3.12'), '#!/bin/sh\necho "Python 3.12.13"\n');
+      chmodSync(join(sourceDir, 'bin', 'python3.12'), 0o755);
+      symlinkSync('python3.12', join(sourceDir, 'bin', 'python3'));
+      writeFileSync(join(sourceDir, 'lib', 'python3.12', 'LICENSE.txt'), 'Python Software Foundation License\n');
+
+      const metadata = bridgeResource.installPythonRuntime(sourceDir, resourceDir);
+      expect(metadata).toBeDefined();
+      chmodSync(join(resourceDir, 'python', 'lib'), 0o700);
+
+      expect(() => bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata!)).toThrow(/inventory.*mismatch/i);
+    } finally {
+      chmodSync(join(resourceDir, 'python', 'lib'), 0o755);
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a non-traversable bundled Python runtime directory before inventory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-directory-mode-'));
+    const resourceDir = join(dir, 'Bridge');
+    const blockedDir = join(resourceDir, 'python', 'blocked');
+    try {
+      mkdirSync(blockedDir, { recursive: true });
+      chmodSync(blockedDir, 0o600);
+
+      expect(() => bridgeResource.writePythonRuntimeInventory(resourceDir)).toThrow(
+        /directory.*owner-readable and owner-executable/i
+      );
+    } finally {
+      chmodSync(blockedDir, 0o755);
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a non-traversable bundled Python runtime root before inventory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-root-mode-'));
+    const resourceDir = join(dir, 'Bridge');
+    const runtimeDir = join(resourceDir, 'python');
+    try {
+      mkdirSync(runtimeDir, { recursive: true });
+      chmodSync(runtimeDir, 0o600);
+
+      expect(() => bridgeResource.writePythonRuntimeInventory(resourceDir)).toThrow(
+        /directory.*owner-readable and owner-executable/i
+      );
+    } finally {
+      chmodSync(runtimeDir, 0o755);
       rmSync(dir, { force: true, recursive: true });
     }
   });

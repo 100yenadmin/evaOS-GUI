@@ -337,18 +337,38 @@ function createDmgWithPrepackaged(appDir, targetArch) {
 }
 
 function installPreparedRuntimeEnvironment(envFile) {
-  const previousValues = new Map();
+  const allowedKeys = new Set([
+    'EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_VERSION',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_SOURCE_URL',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_ARCH',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_LICENSE_SHA256',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_PACKAGES_JSON',
+  ]);
+  const preparedValues = new Map();
   const lines = fs.readFileSync(envFile, 'utf8').split(/\r?\n/);
   for (const line of lines) {
     if (!line) continue;
     const separator = line.indexOf('=');
     if (separator <= 0) throw new Error('Bundled Python runtime preparation emitted invalid environment metadata.');
     const key = line.slice(0, separator);
+    if (!allowedKeys.has(key)) {
+      throw new Error(`Bundled Python runtime preparation emitted unexpected environment metadata key: ${key}`);
+    }
+    if (preparedValues.has(key)) {
+      throw new Error(`Bundled Python runtime preparation emitted duplicate environment metadata key: ${key}`);
+    }
+    preparedValues.set(key, line.slice(separator + 1));
+  }
+
+  const previousValues = new Map();
+  for (const [key, value] of preparedValues.entries()) {
     previousValues.set(key, {
       exists: Object.prototype.hasOwnProperty.call(process.env, key),
       value: process.env[key],
     });
-    process.env[key] = line.slice(separator + 1);
+    process.env[key] = value;
   }
   return () => {
     for (const [key, previous] of previousValues.entries()) {

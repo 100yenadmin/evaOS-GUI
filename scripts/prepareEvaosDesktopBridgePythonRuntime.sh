@@ -67,6 +67,9 @@ for wheel_spec in "${pyobjc_wheels[@]}"; do
   printf '%s  %s\n' "$wheel_sha256" "$wheel_path" | shasum -a 256 -c -
 done
 
+# This hash-pinned wheel set must remain the complete transitive PyObjC
+# dependency closure. pip check, exact distribution equality, and the import
+# smoke below fail closed if a future version adds another requirement.
 "$runtime_dir/bin/python3" -m pip install \
   --disable-pip-version-check \
   --no-compile \

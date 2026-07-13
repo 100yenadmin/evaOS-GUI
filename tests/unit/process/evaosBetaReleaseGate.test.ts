@@ -135,6 +135,10 @@ function writeMacosBridgeZip(
     omitCoreText?: boolean;
     wrongObjcArchitecture?: boolean;
     wrongPythonLauncherArchitecture?: boolean;
+    regularPythonLauncher?: boolean;
+    nonTraversablePythonDirectory?: boolean;
+    nonTraversablePythonRoot?: boolean;
+    normalizedPythonEntryCollision?: boolean;
     wrongPythonSourceUrl?: boolean;
     nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'python';
     omitFoundationNative?: boolean;
@@ -172,6 +176,10 @@ function writeMacosBridgeZip(
     'second_app_root = sys.argv[18] == "1"',
     'omit_stdlib_sentinel = sys.argv[19] == "1"',
     'signed_python_mutation = sys.argv[20] == "1"',
+    'regular_python_launcher = sys.argv[21] == "1"',
+    'non_traversable_python_directory = sys.argv[22] == "1"',
+    'non_traversable_python_root = sys.argv[23] == "1"',
+    'normalized_python_entry_collision = sys.argv[24] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
@@ -198,6 +206,8 @@ function writeMacosBridgeZip(
     'if wrong_python_source_url:',
     '    python_source_url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz"',
     'runtime_entries = []',
+    'def add_runtime_directory(relative_path, mode=0o755):',
+    '    runtime_entries.append({"path": relative_path, "type": "directory", "mode": mode, "include": True})',
     'def add_runtime_file(relative_path, data, mode=0o644, include_in_zip=True, archive_data=None):',
     '    entry = {"path": relative_path, "type": "file", "mode": mode, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "data": data, "include": include_in_zip, "archiveData": archive_data}',
     '    if data[:4].hex() in {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}:',
@@ -205,8 +215,12 @@ function writeMacosBridgeZip(
     '    runtime_entries.append(entry)',
     'def add_runtime_symlink(relative_path, target):',
     '    runtime_entries.append({"path": relative_path, "type": "symlink", "mode": 0o777, "target": target, "data": target.encode(), "include": True})',
+    'for runtime_directory in ["bin", "lib", "lib/python3.12", "lib/python3.12/encodings", "lib/python3.12/site-packages", "lib/python3.12/site-packages/ApplicationServices", "lib/python3.12/site-packages/Cocoa", "lib/python3.12/site-packages/CoreText", "lib/python3.12/site-packages/Foundation", "lib/python3.12/site-packages/HIServices", "lib/python3.12/site-packages/Quartz", "lib/python3.12/site-packages/Quartz/CoreGraphics", "lib/python3.12/site-packages/objc"]:',
+    '    add_runtime_directory(runtime_directory, 0o600 if non_traversable_python_directory and runtime_directory == "bin" else 0o755)',
     'if wrong_python_launcher_architecture:',
     '    add_runtime_file("bin/python3", wrong_python_launcher_header, 0o755)',
+    'elif regular_python_launcher:',
+    '    add_runtime_file("bin/python3", python_header, 0o755)',
     'else:',
     '    add_runtime_symlink("bin/python3", "python3.12")',
     'add_runtime_file("bin/python3.12", python_header, 0o644 if non_executable_payload == "python" else 0o755, True, python_header + b"signed" if signed_python_mutation else None)',
@@ -244,17 +258,28 @@ function writeMacosBridgeZip(
     '    info.external_attr = (stat.S_IFLNK | 0o777) << 16',
     '    info.compress_type = zipfile.ZIP_DEFLATED',
     '    archive.writestr(info, target.encode())',
+    'def write_directory(archive, name, mode=0o755):',
+    '    info = zipfile.ZipInfo(name.rstrip("/") + "/")',
+    '    info.create_system = 3',
+    '    info.external_attr = (stat.S_IFDIR | mode) << 16',
+    '    info.compress_type = zipfile.ZIP_STORED',
+    '    archive.writestr(info, b"")',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    bridge_prefix = f"{app_root}/Contents/Resources/Bridge"',
     '    write_regular(archive, f"{bridge_prefix}/evaos-desktop-bridge", b"#!/usr/bin/env bash\\n", 0o644 if non_executable_payload == "bridge" else 0o755)',
     '    if not omit_peekaboo:',
     '        write_regular(archive, f"{bridge_prefix}/bin/peekaboo", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "peekaboo" else 0o755)',
     '    write_regular(archive, f"{bridge_prefix}/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "helper" else 0o755)',
+    '    write_directory(archive, f"{bridge_prefix}/python", 0o600 if non_traversable_python_root else 0o755)',
+    '    if normalized_python_entry_collision:',
+    '        write_regular(archive, f"{bridge_prefix}/python/bin", b"shadowed runtime entry")',
     '    for entry in runtime_entries:',
     '        if not entry["include"]:',
     '            continue',
-    '        entry_name = f"{bridge_prefix}/python/{entry["path"]}"',
-    '        if entry["type"] == "symlink":',
+    '        entry_name = f"{bridge_prefix}/python/{entry[\'path\']}"',
+    '        if entry["type"] == "directory":',
+    '            write_directory(archive, entry_name, entry["mode"])',
+    '        elif entry["type"] == "symlink":',
     '            write_symlink(archive, entry_name, entry["target"])',
     '        else:',
     '            write_regular(archive, entry_name, entry["archiveData"] if entry["archiveData"] is not None else entry["data"], entry["mode"])',
@@ -291,6 +316,10 @@ function writeMacosBridgeZip(
     options.secondAppRoot ? '1' : '0',
     options.omitStdlibSentinel ? '1' : '0',
     options.signedPythonMutation ? '1' : '0',
+    options.regularPythonLauncher ? '1' : '0',
+    options.nonTraversablePythonDirectory ? '1' : '0',
+    options.nonTraversablePythonRoot ? '1' : '0',
+    options.normalizedPythonEntryCollision ? '1' : '0',
   ]);
 }
 
@@ -1683,6 +1712,26 @@ describe('evaOS beta release gate', () => {
         expected: /relocatable bundled Python launcher/,
       },
       {
+        name: 'regular-file Python launcher',
+        options: { regularPythonLauncher: true },
+        expected: /relocatable bundled Python launcher/,
+      },
+      {
+        name: 'non-traversable Python directory',
+        options: { nonTraversablePythonDirectory: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'non-traversable Python runtime root',
+        options: { nonTraversablePythonRoot: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'normalized Python entry collision',
+        options: { normalizedPythonEntryCollision: true },
+        expected: /Python runtime inventory/,
+      },
+      {
         name: 'multiple app roots',
         options: { secondAppRoot: true },
         expected: /exactly one \.app root/,
@@ -1725,7 +1774,7 @@ describe('evaOS beta release gate', () => {
         fs.rmSync(dir, { recursive: true, force: true });
       }
     }
-  });
+  }, 20_000);
 
   it('accepts a universal Mach-O Python runtime containing the target slice', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-universal-python-'));

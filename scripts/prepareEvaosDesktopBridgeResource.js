@@ -193,6 +193,11 @@ function copyDirectory(source, target) {
 
 function pythonRuntimeInventoryEntries(runtimeDir) {
   const resolvedRuntimeDir = path.resolve(runtimeDir);
+  const runtimeMetadata = fs.lstatSync(resolvedRuntimeDir);
+  const runtimeMode = runtimeMetadata.mode & 0o777;
+  if (!runtimeMetadata.isDirectory() || (runtimeMode & 0o500) !== 0o500) {
+    throw new Error('Bundled Python runtime directory must be owner-readable and owner-executable: .');
+  }
   const entries = [];
   const pending = [resolvedRuntimeDir];
 
@@ -206,6 +211,18 @@ function pythonRuntimeInventoryEntries(runtimeDir) {
       }
 
       if (entry.isDirectory()) {
+        const metadata = fs.lstatSync(entryPath);
+        const mode = metadata.mode & 0o777;
+        if ((mode & 0o500) !== 0o500) {
+          throw new Error(
+            `Bundled Python runtime directory must be owner-readable and owner-executable: ${relativePath}`
+          );
+        }
+        entries.push({
+          path: relativePath,
+          type: 'directory',
+          mode,
+        });
         pending.push(entryPath);
         continue;
       }
