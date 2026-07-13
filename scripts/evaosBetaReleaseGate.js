@@ -95,6 +95,11 @@ const PYTHON_RUNTIME_SOURCE_SHA256 = {
   arm64: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
   x64: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894',
 };
+const PYTHON_RUNTIME_SOURCE_URL = {
+  arm64:
+    'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-aarch64-apple-darwin-install_only.tar.gz',
+  x64: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-x86_64-apple-darwin-install_only.tar.gz',
+};
 const PYTHON_RUNTIME_LICENSE_PATH = 'licenses/CPython-LICENSE.txt';
 const PYTHON_RUNTIME_LICENSE_SHA256 = '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf';
 const PYTHON_RUNTIME_PACKAGES = [
@@ -1612,6 +1617,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     `expected_license_path = "${PEEKABOO_LICENSE_PATH}"`,
     `expected_python_version = "${PYTHON_RUNTIME_VERSION}"`,
     `expected_python_source_sha256 = ${JSON.stringify(PYTHON_RUNTIME_SOURCE_SHA256)}`,
+    `expected_python_source_url = ${JSON.stringify(PYTHON_RUNTIME_SOURCE_URL)}`,
     `expected_python_license_path = "${PYTHON_RUNTIME_LICENSE_PATH}"`,
     `expected_python_license_sha256 = "${PYTHON_RUNTIME_LICENSE_SHA256}"`,
     `expected_python_packages = ${JSON.stringify(PYTHON_RUNTIME_PACKAGES)}`,
@@ -1688,7 +1694,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
-    '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("license") == "Python-2.0" and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("licenseSha256") == expected_python_license_sha256 and python_runtime.get("packages") == expected_python_packages',
+    '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("sourceUrl") == expected_python_source_url[expected_python_arch] and python_runtime.get("license") == "Python-2.0" and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("licenseSha256") == expected_python_license_sha256 and python_runtime.get("packages") == expected_python_packages',
     '    if result["hasPeekaboo"]:',
     '        result["peekabooMachO"] = archive.read(entries["bin/peekaboo"], pwd=None)[:4].hex() in macho_magics',
     '    if result["hasConnectorHelper"]:',
@@ -1696,7 +1702,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     '    if result["hasPythonRuntime"]:',
     '        python_bytes = archive.read(entries["python/bin/python3.12"], pwd=None)',
     '        result["pythonRuntimeMachO"] = python_bytes[:4].hex() in macho_magics',
-    '        result["pythonRuntimeArchValid"] = python_bytes[:8].hex().startswith("cffaedfe0c000001" if expected_python_arch == "arm64" else "cffaedfe07000001")',
+    '        result["pythonRuntimeArchValid"] = macho_has_arch(python_bytes, expected_python_arch)',
     '    if result["hasPythonLauncher"]:',
     '        launcher_bytes = archive.read(entries["python/bin/python3"], pwd=None)',
     '        launcher_mode = archive.getinfo(entries["python/bin/python3"]).external_attr >> 16',

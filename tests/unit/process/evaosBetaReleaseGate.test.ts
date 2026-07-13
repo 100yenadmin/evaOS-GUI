@@ -130,7 +130,9 @@ function writeMacosBridgeZip(
     sourceSha256?: string;
     manifestLicenseSha256?: string;
     tamperPythonLicense?: boolean;
+    universalPythonRuntime?: boolean;
     wrongObjcArchitecture?: boolean;
+    wrongPythonSourceUrl?: boolean;
   } = {}
 ) {
   const script = [
@@ -138,6 +140,7 @@ function writeMacosBridgeZip(
     'import json',
     'import pathlib',
     'import stat',
+    'import struct',
     'import sys',
     'import zipfile',
     'zip_path = pathlib.Path(sys.argv[1])',
@@ -149,10 +152,22 @@ function writeMacosBridgeZip(
     'python_license_path = pathlib.Path(sys.argv[7])',
     'tamper_python_license = sys.argv[8] == "1"',
     'wrong_objc_architecture = sys.argv[9] == "1"',
+    'wrong_python_source_url = sys.argv[10] == "1"',
+    'universal_python_runtime = sys.argv[11] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
-    'python_header = bytes.fromhex("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001")',
+    'def fat_macho():',
+    '    slices = [(0x0100000c, bytes.fromhex("cffaedfe0c000001")), (0x01000007, bytes.fromhex("cffaedfe07000001"))]',
+    '    offset = 8 + len(slices) * 20',
+    '    records = []',
+    '    payload = []',
+    '    for cpu_type, thin_header in slices:',
+    '        records.append(struct.pack(">IIIII", cpu_type, 0, offset, len(thin_header), 0))',
+    '        payload.append(thin_header)',
+    '        offset += len(thin_header)',
+    '    return struct.pack(">II", 0xcafebabe, len(slices)) + b"".join(records) + b"".join(payload)',
+    'python_header = fat_macho() if universal_python_runtime else bytes.fromhex("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001")',
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
     'python_license_bytes = python_license_path.read_bytes() + (b"tampered\\n" if tamper_python_license else b"")',
@@ -161,6 +176,8 @@ function writeMacosBridgeZip(
     'python_packages = [{"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},{"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},{"name":"pyobjc-framework-Quartz","version":"12.2.1","sha256":"de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9"},{"name":"pyobjc-framework-ApplicationServices","version":"12.2.1","sha256":"f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b"},{"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"}]',
     'python_asset_arch = "aarch64" if python_arch == "arm64" else "x86_64"',
     'python_source_url = f"https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-{python_asset_arch}-apple-darwin-install_only.tar.gz"',
+    'if wrong_python_source_url:',
+    '    python_source_url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz"',
     'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": python_source_url, "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256}}}',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
@@ -195,6 +212,8 @@ function writeMacosBridgeZip(
     path.join(repoRoot, 'tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt'),
     options.tamperPythonLicense ? '1' : '0',
     options.wrongObjcArchitecture ? '1' : '0',
+    options.wrongPythonSourceUrl ? '1' : '0',
+    options.universalPythonRuntime ? '1' : '0',
   ]);
 }
 
@@ -1535,6 +1554,11 @@ describe('evaOS beta release gate', () => {
         options: { wrongObjcArchitecture: true },
         expected: /PyObjC native runtime architecture/,
       },
+      {
+        name: 'wrong Python source URL',
+        options: { wrongPythonSourceUrl: true },
+        expected: /Python runtime provenance/,
+      },
     ];
 
     for (const testCase of cases) {
@@ -1552,6 +1576,23 @@ describe('evaOS beta release gate', () => {
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('accepts a universal Mach-O Python runtime containing the target slice', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-universal-python-'));
+    try {
+      const tag = writeMacosArm64ReleaseFixture(dir, { universalPythonRuntime: true });
+      expect(
+        releaseGate.verifyReleaseManifest(dir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 

@@ -9,10 +9,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const { hasCompletedAfterPack, markCompletedAfterPack } = require('../../../scripts/dmgRetryEligibility.js') as {
-  hasCompletedAfterPack: (appOutDir: string) => boolean;
-  markCompletedAfterPack: (appOutDir: string) => void;
-};
+const { clearCompletedAfterPack, hasCompletedAfterPack, markCompletedAfterPack } =
+  require('../../../scripts/dmgRetryEligibility.js') as {
+    clearCompletedAfterPack: (appOutDir: string) => void;
+    hasCompletedAfterPack: (appOutDir: string) => boolean;
+    markCompletedAfterPack: (appOutDir: string) => void;
+  };
 
 describe('DMG retry eligibility', () => {
   it('rejects a partial app until afterPack completes successfully', () => {
@@ -23,6 +25,8 @@ describe('DMG retry eligibility', () => {
       expect(hasCompletedAfterPack(appOutDir)).toBe(false);
       markCompletedAfterPack(appOutDir);
       expect(hasCompletedAfterPack(appOutDir)).toBe(true);
+      clearCompletedAfterPack(appOutDir);
+      expect(hasCompletedAfterPack(appOutDir)).toBe(false);
     } finally {
       rmSync(appOutDir, { recursive: true, force: true });
     }
