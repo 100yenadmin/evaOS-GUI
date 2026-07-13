@@ -11,6 +11,7 @@ const {
 } = require('./rebuildNativeModules');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 const { clearDmgRetryCompletionMarkers, markCompletedAfterPack } = require('./dmgRetryEligibility');
+const { verifyPythonRuntimeInventory } = require('./prepareEvaosDesktopBridgeResource');
 
 /**
  * afterPack hook for electron-builder
@@ -413,6 +414,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     if (!pythonLink.isSymbolicLink() || fs.readlinkSync(pythonPath) !== 'python3.12') {
       throw new Error('Packaged evaOS desktop bridge Python launcher symlink is not relocatable.');
     }
+    verifyPythonRuntimeInventory(path.join(resourcesDir, 'Bridge'), pythonMetadata);
   }
 
   console.log('   ✓ evaOS desktop bridge resource verified');

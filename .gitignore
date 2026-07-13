@@ -204,6 +204,7 @@ docs/superpowers/
 resources/bundled-bun
 resources/bundled-aioncore
 resources/Bridge
+resources/Bridge-*
 resources/hub
 
 # Server build output

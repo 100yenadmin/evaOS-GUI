@@ -136,6 +136,12 @@ function writeMacosBridgeZip(
     wrongObjcArchitecture?: boolean;
     wrongPythonLauncherArchitecture?: boolean;
     wrongPythonSourceUrl?: boolean;
+    nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'python';
+    omitFoundationNative?: boolean;
+    omitInventoriedRuntimeFile?: boolean;
+    omitStdlibSentinel?: boolean;
+    signedPythonMutation?: boolean;
+    secondAppRoot?: boolean;
   } = {}
 ) {
   const script = [
@@ -160,6 +166,12 @@ function writeMacosBridgeZip(
     'omit_cocoa = sys.argv[12] == "1"',
     'omit_core_text = sys.argv[13] == "1"',
     'wrong_python_launcher_architecture = sys.argv[14] == "1"',
+    'non_executable_payload = sys.argv[15]',
+    'omit_foundation_native = sys.argv[16] == "1"',
+    'omit_inventoried_runtime_file = sys.argv[17] == "1"',
+    'second_app_root = sys.argv[18] == "1"',
+    'omit_stdlib_sentinel = sys.argv[19] == "1"',
+    'signed_python_mutation = sys.argv[20] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
@@ -185,35 +197,76 @@ function writeMacosBridgeZip(
     'python_source_url = f"https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-{python_asset_arch}-apple-darwin-install_only.tar.gz"',
     'if wrong_python_source_url:',
     '    python_source_url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz"',
-    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": python_source_url, "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256}}}',
+    'runtime_entries = []',
+    'def add_runtime_file(relative_path, data, mode=0o644, include_in_zip=True, archive_data=None):',
+    '    entry = {"path": relative_path, "type": "file", "mode": mode, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "data": data, "include": include_in_zip, "archiveData": archive_data}',
+    '    if data[:4].hex() in {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}:',
+    '        entry["signedMachO"] = True',
+    '    runtime_entries.append(entry)',
+    'def add_runtime_symlink(relative_path, target):',
+    '    runtime_entries.append({"path": relative_path, "type": "symlink", "mode": 0o777, "target": target, "data": target.encode(), "include": True})',
+    'if wrong_python_launcher_architecture:',
+    '    add_runtime_file("bin/python3", wrong_python_launcher_header, 0o755)',
+    'else:',
+    '    add_runtime_symlink("bin/python3", "python3.12")',
+    'add_runtime_file("bin/python3.12", python_header, 0o644 if non_executable_payload == "python" else 0o755, True, python_header + b"signed" if signed_python_mutation else None)',
+    'add_runtime_file("lib/python3.12/LICENSE.txt", python_license_bytes)',
+    'if not omit_stdlib_sentinel:',
+    '    add_runtime_file("lib/python3.12/encodings/__init__.py", b"# encodings fixture\\n")',
+    'add_runtime_file("lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
+    'if not omit_cocoa:',
+    '    add_runtime_file("lib/python3.12/site-packages/Cocoa/__init__.py", b"")',
+    'if not omit_core_text:',
+    '    add_runtime_file("lib/python3.12/site-packages/CoreText/__init__.py", b"")',
+    'add_runtime_file("lib/python3.12/site-packages/Quartz/__init__.py", b"")',
+    'add_runtime_file("lib/python3.12/site-packages/objc/__init__.py", b"")',
+    'add_runtime_file("lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", objc_header, 0o755)',
+    'if not omit_foundation_native:',
+    '    add_runtime_file("lib/python3.12/site-packages/Foundation/_Foundation.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/Quartz/CoreGraphics/_coregraphics.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/HIServices/_HIServices.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/CoreText/_manual.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/runtime-only.py", b"runtime closure\\n", 0o644, not omit_inventoried_runtime_file)',
+    'inventory_entries = [{key: value for key, value in entry.items() if key not in {"data", "include", "archiveData"}} for entry in sorted(runtime_entries, key=lambda item: item["path"])]',
+    'inventory = {"schema": "evaos-python-runtime-inventory/v1", "entries": inventory_entries}',
+    'inventory_bytes = (json.dumps(inventory, indent=2) + "\\n").encode()',
+    'python_metadata = {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": python_source_url, "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256, "inventoryPath": "python-runtime-inventory.json", "inventorySha256": hashlib.sha256(inventory_bytes).hexdigest(), "inventoryEntryCount": len(inventory_entries)}',
+    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
+    'def write_regular(archive, name, data, mode=0o644):',
+    '    info = zipfile.ZipInfo(name)',
+    '    info.create_system = 3',
+    '    info.external_attr = (stat.S_IFREG | mode) << 16',
+    '    info.compress_type = zipfile.ZIP_DEFLATED',
+    '    archive.writestr(info, data)',
+    'def write_symlink(archive, name, target):',
+    '    info = zipfile.ZipInfo(name)',
+    '    info.create_system = 3',
+    '    info.external_attr = (stat.S_IFLNK | 0o777) << 16',
+    '    info.compress_type = zipfile.ZIP_DEFLATED',
+    '    archive.writestr(info, target.encode())',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
+    '    bridge_prefix = f"{app_root}/Contents/Resources/Bridge"',
+    '    write_regular(archive, f"{bridge_prefix}/evaos-desktop-bridge", b"#!/usr/bin/env bash\\n", 0o644 if non_executable_payload == "bridge" else 0o755)',
     '    if not omit_peekaboo:',
-    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/peekaboo", bytes.fromhex("cafebabe00000000"))',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
-    '    python_launcher = zipfile.ZipInfo(f"{app_root}/Contents/Resources/Bridge/python/bin/python3")',
-    '    python_launcher.create_system = 3',
-    '    if wrong_python_launcher_architecture:',
-    '        python_launcher.external_attr = (stat.S_IFREG | 0o755) << 16',
-    '        archive.writestr(python_launcher, wrong_python_launcher_header)',
-    '    else:',
-    '        python_launcher.external_attr = (stat.S_IFLNK | 0o777) << 16',
-    '        archive.writestr(python_launcher, b"python3.12")',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/bin/python3.12", python_header)',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
-    '    if not omit_cocoa:',
-    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/Cocoa/__init__.py", b"")',
-    '    if not omit_core_text:',
-    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/CoreText/__init__.py", b"")',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/Quartz/__init__.py", b"")',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/__init__.py", b"")',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", objc_header)',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/CPython-LICENSE.txt", python_license_bytes)',
+    '        write_regular(archive, f"{bridge_prefix}/bin/peekaboo", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "peekaboo" else 0o755)',
+    '    write_regular(archive, f"{bridge_prefix}/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "helper" else 0o755)',
+    '    for entry in runtime_entries:',
+    '        if not entry["include"]:',
+    '            continue',
+    '        entry_name = f"{bridge_prefix}/python/{entry["path"]}"',
+    '        if entry["type"] == "symlink":',
+    '            write_symlink(archive, entry_name, entry["target"])',
+    '        else:',
+    '            write_regular(archive, entry_name, entry["archiveData"] if entry["archiveData"] is not None else entry["data"], entry["mode"])',
+    '    write_regular(archive, f"{bridge_prefix}/python-runtime-inventory.json", inventory_bytes)',
+    '    write_regular(archive, f"{bridge_prefix}/licenses/CPython-LICENSE.txt", python_license_bytes)',
     '    if not omit_license:',
-    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt", license_bytes)',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", json.dumps(manifest) + "\\n")',
+    '        write_regular(archive, f"{bridge_prefix}/licenses/Peekaboo-LICENSE.txt", license_bytes)',
+    '    write_regular(archive, f"{bridge_prefix}/manifest.json", (json.dumps(manifest) + "\\n").encode())',
+    '    if second_app_root:',
+    '        write_regular(archive, "Stale Workbench.app/Contents/Info.plist", b"stale")',
     '    for index in range(extra_entry_count):',
-    '        archive.writestr(f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", "x\\n")',
+    '        write_regular(archive, f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", b"x\\n")',
   ].join('\n');
   execFileSync('python3', [
     '-c',
@@ -232,6 +285,12 @@ function writeMacosBridgeZip(
     options.omitCocoa ? '1' : '0',
     options.omitCoreText ? '1' : '0',
     options.wrongPythonLauncherArchitecture ? '1' : '0',
+    options.nonExecutablePayload || '',
+    options.omitFoundationNative ? '1' : '0',
+    options.omitInventoriedRuntimeFile ? '1' : '0',
+    options.secondAppRoot ? '1' : '0',
+    options.omitStdlibSentinel ? '1' : '0',
+    options.signedPythonMutation ? '1' : '0',
   ]);
 }
 
@@ -1623,6 +1682,31 @@ describe('evaOS beta release gate', () => {
         options: { wrongPythonLauncherArchitecture: true },
         expected: /relocatable bundled Python launcher/,
       },
+      {
+        name: 'multiple app roots',
+        options: { secondAppRoot: true },
+        expected: /exactly one \.app root/,
+      },
+      ...(['bridge', 'peekaboo', 'helper', 'python'] as const).map((payload) => ({
+        name: `non-executable ${payload}`,
+        options: { nonExecutablePayload: payload },
+        expected: /executable ZIP mode/,
+      })),
+      {
+        name: 'missing inventoried runtime file',
+        options: { omitInventoriedRuntimeFile: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'self-consistent missing stdlib sentinel',
+        options: { omitStdlibSentinel: true },
+        expected: /Python stdlib sentinel/,
+      },
+      {
+        name: 'self-consistent missing Foundation native sentinel',
+        options: { omitFoundationNative: true },
+        expected: /PyObjC native sentinel/,
+      },
     ];
 
     for (const testCase of cases) {
@@ -1647,6 +1731,23 @@ describe('evaOS beta release gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-universal-python-'));
     try {
       const tag = writeMacosArm64ReleaseFixture(dir, { universalPythonRuntime: true });
+      expect(
+        releaseGate.verifyReleaseManifest(dir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a code-signed Mach-O runtime whose signature bytes changed after the pre-sign inventory', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-signed-python-'));
+    try {
+      const tag = writeMacosArm64ReleaseFixture(dir, { signedPythonMutation: true });
       expect(
         releaseGate.verifyReleaseManifest(dir, tag, {
           GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',

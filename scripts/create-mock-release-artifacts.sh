@@ -46,6 +46,7 @@ create_mock_macos_zip() {
 import hashlib
 import json
 import pathlib
+import stat
 import sys
 
 bridge = pathlib.Path(sys.argv[1])
@@ -78,7 +79,47 @@ for package in ("ApplicationServices", "Cocoa", "CoreText", "Quartz", "objc"):
     package_dir = site_packages / package
     package_dir.mkdir(parents=True, exist_ok=True)
     (package_dir / "__init__.py").write_text("", encoding="utf-8")
-(site_packages / "objc" / "_objc.cpython-312-darwin.so").write_bytes(python_header)
+(bridge / "python" / "lib" / "python3.12" / "LICENSE.txt").write_bytes(python_license_bytes)
+encodings_dir = bridge / "python" / "lib" / "python3.12" / "encodings"
+encodings_dir.mkdir(parents=True, exist_ok=True)
+(encodings_dir / "__init__.py").write_text("# encodings fixture\n", encoding="utf-8")
+native_paths = [
+    site_packages / "objc" / "_objc.cpython-312-darwin.so",
+    site_packages / "Foundation" / "_Foundation.cpython-312-darwin.so",
+    site_packages / "Quartz" / "CoreGraphics" / "_coregraphics.cpython-312-darwin.so",
+    site_packages / "HIServices" / "_HIServices.cpython-312-darwin.so",
+    site_packages / "CoreText" / "_manual.cpython-312-darwin.so",
+]
+for native_path in native_paths:
+    native_path.parent.mkdir(parents=True, exist_ok=True)
+    native_path.write_bytes(python_header)
+    native_path.chmod(0o755)
+(site_packages / "runtime-only.py").write_text("runtime closure\n", encoding="utf-8")
+runtime_root = bridge / "python"
+inventory_entries = []
+for runtime_path in sorted(runtime_root.rglob("*")):
+    relative_path = runtime_path.relative_to(runtime_root).as_posix()
+    metadata = runtime_path.lstat()
+    if runtime_path.is_symlink():
+        inventory_entries.append({
+            "path": relative_path,
+            "type": "symlink",
+            "mode": 0o777,
+            "target": runtime_path.readlink().as_posix(),
+        })
+    elif runtime_path.is_file():
+        contents = runtime_path.read_bytes()
+        inventory_entries.append({
+            "path": relative_path,
+            "type": "file",
+            "mode": stat.S_IMODE(metadata.st_mode),
+            "size": len(contents),
+            "sha256": hashlib.sha256(contents).hexdigest(),
+            **({"signedMachO": True} if contents[:4].hex() in {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"} else {}),
+        })
+inventory = {"schema": "evaos-python-runtime-inventory/v1", "entries": inventory_entries}
+inventory_bytes = (json.dumps(inventory, indent=2) + "\n").encode()
+(bridge / "python-runtime-inventory.json").write_bytes(inventory_bytes)
 python_packages = [
     {"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},
     {"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},
@@ -106,6 +147,9 @@ manifest = {
             "license": "Python-2.0",
             "licensePath": "licenses/CPython-LICENSE.txt",
             "licenseSha256": hashlib.sha256(python_license_bytes).hexdigest(),
+            "inventoryPath": "python-runtime-inventory.json",
+            "inventorySha256": hashlib.sha256(inventory_bytes).hexdigest(),
+            "inventoryEntryCount": len(inventory_entries),
         },
     },
 }

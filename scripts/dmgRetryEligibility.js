@@ -37,7 +37,18 @@ function clearDmgRetryCompletionMarkers(appOutDir) {
   clearCompletedAfterSign(appOutDir);
 }
 
-function isDmgRetryEligible(appOutDir) {
+function clearDmgRetryCompletionMarkersInDirectory(outDir) {
+  if (!fs.existsSync(outDir)) return;
+
+  for (const entry of fs.readdirSync(outDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && /^mac(?:-|$)/.test(entry.name)) {
+      clearDmgRetryCompletionMarkers(path.join(outDir, entry.name));
+    }
+  }
+}
+
+function isDmgRetryEligible(appOutDir, { multiArch = false } = {}) {
+  if (multiArch) return false;
   return hasCompletedAfterPack(appOutDir) && hasCompletedAfterSign(appOutDir);
 }
 
@@ -52,6 +63,7 @@ module.exports = {
   AFTER_PACK_MARKER,
   AFTER_SIGN_MARKER,
   clearDmgRetryCompletionMarkers,
+  clearDmgRetryCompletionMarkersInDirectory,
   clearCompletedAfterPack,
   clearCompletedAfterSign,
   hasCompletedAfterPack,

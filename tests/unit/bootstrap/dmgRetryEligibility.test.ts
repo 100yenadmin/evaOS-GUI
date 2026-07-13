@@ -11,9 +11,10 @@ import { describe, expect, it } from 'vitest';
 
 const retryEligibility = require('../../../scripts/dmgRetryEligibility.js') as {
   clearDmgRetryCompletionMarkers: (appOutDir: string) => void;
+  clearDmgRetryCompletionMarkersInDirectory?: (outDir: string) => void;
   clearCompletedAfterPack: (appOutDir: string) => void;
   hasCompletedAfterSign: (appOutDir: string) => boolean;
-  isDmgRetryEligible: (appOutDir: string) => boolean;
+  isDmgRetryEligible: (appOutDir: string, options?: { multiArch?: boolean }) => boolean;
   markCompletedAfterPack: (appOutDir: string) => void;
   markCompletedAfterSign: (appOutDir: string) => void;
   withAfterSignCompletion: <T>(appOutDir: string, operation: () => Promise<T>) => Promise<T>;
@@ -44,6 +45,40 @@ describe('DMG retry eligibility', () => {
       retryEligibility.clearDmgRetryCompletionMarkers(appOutDir);
       expect(retryEligibility.hasCompletedAfterSign(appOutDir)).toBe(false);
       expect(retryEligibility.isDmgRetryEligible(appOutDir)).toBe(false);
+    } finally {
+      rmSync(appOutDir, { recursive: true, force: true });
+    }
+  });
+
+  it('clears stale retry markers from every prior macOS app output', () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'evaos-stale-packaging-'));
+    const appOutDirs = [join(outDir, 'mac-arm64'), join(outDir, 'mac-x64')];
+
+    try {
+      expect(retryEligibility.clearDmgRetryCompletionMarkersInDirectory).toBeTypeOf('function');
+      if (!retryEligibility.clearDmgRetryCompletionMarkersInDirectory) return;
+
+      for (const appOutDir of appOutDirs) {
+        mkdirSync(appOutDir, { recursive: true });
+        retryEligibility.markCompletedAfterPack(appOutDir);
+        retryEligibility.markCompletedAfterSign(appOutDir);
+      }
+
+      retryEligibility.clearDmgRetryCompletionMarkersInDirectory(outDir);
+      expect(appOutDirs.every((appOutDir) => !retryEligibility.isDmgRetryEligible(appOutDir))).toBe(true);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it('disables single-app DMG retry for multi-architecture builds', () => {
+    const appOutDir = mkdtempSync(join(tmpdir(), 'evaos-multi-arch-packaging-'));
+
+    try {
+      retryEligibility.markCompletedAfterPack(appOutDir);
+      retryEligibility.markCompletedAfterSign(appOutDir);
+      expect(retryEligibility.isDmgRetryEligible(appOutDir)).toBe(true);
+      expect(retryEligibility.isDmgRetryEligible(appOutDir, { multiArch: true })).toBe(false);
     } finally {
       rmSync(appOutDir, { recursive: true, force: true });
     }

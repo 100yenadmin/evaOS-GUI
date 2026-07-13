@@ -6,13 +6,17 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..');
-const bridgeResourceDir = path.join(projectRoot, 'resources', 'Bridge');
+const bridgeResourceDir = process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR
+  ? path.resolve(process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR)
+  : path.join(projectRoot, 'resources', 'Bridge');
 const bridgeSourceCacheDir = path.join(projectRoot, '.cache', 'evaos-desktop-bridge-source');
 const defaultBridgeSourceRepo = 'https://github.com/electricsheephq/evaos-desktop-bridge.git';
 const defaultBridgeSourceRef = 'main';
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
+const PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH = 'python-runtime-inventory.json';
+const PYTHON_RUNTIME_INVENTORY_SCHEMA = 'evaos-python-runtime-inventory/v1';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set([
@@ -187,6 +191,120 @@ function copyDirectory(source, target) {
   });
 }
 
+function pythonRuntimeInventoryEntries(runtimeDir) {
+  const resolvedRuntimeDir = path.resolve(runtimeDir);
+  const entries = [];
+  const pending = [resolvedRuntimeDir];
+
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      const relativePath = path.relative(resolvedRuntimeDir, entryPath).split(path.sep).join('/');
+      if (!relativePath || relativePath.startsWith('../') || path.posix.isAbsolute(relativePath)) {
+        throw new Error(`Bundled Python runtime inventory contains an unsafe path: ${entryPath}`);
+      }
+
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+
+      const metadata = fs.lstatSync(entryPath);
+      if (metadata.isSymbolicLink()) {
+        const target = fs.readlinkSync(entryPath);
+        const resolvedTarget = path.resolve(path.dirname(entryPath), target);
+        if (
+          path.isAbsolute(target) ||
+          (resolvedTarget !== resolvedRuntimeDir && !resolvedTarget.startsWith(`${resolvedRuntimeDir}${path.sep}`))
+        ) {
+          throw new Error(`Bundled Python runtime inventory contains an unsafe symlink: ${relativePath} -> ${target}`);
+        }
+        entries.push({ path: relativePath, type: 'symlink', mode: 0o777, target });
+      } else if (metadata.isFile()) {
+        const contents = fs.readFileSync(entryPath);
+        const inventoryEntry = {
+          path: relativePath,
+          type: 'file',
+          mode: metadata.mode & 0o777,
+          size: metadata.size,
+          sha256: crypto.createHash('sha256').update(contents).digest('hex'),
+        };
+        if (MACHO_MAGICS.has(contents.subarray(0, 4).toString('hex'))) {
+          // Developer ID signing mutates Mach-O signature bytes after afterPack.
+          // The pre-sign verifier still binds the exact digest; distribution
+          // verification binds the same path/type/mode and signed architecture.
+          inventoryEntry.signedMachO = true;
+        }
+        entries.push(inventoryEntry);
+      } else {
+        throw new Error(`Bundled Python runtime inventory contains an unsupported entry: ${relativePath}`);
+      }
+    }
+  }
+
+  return entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+}
+
+function writePythonRuntimeInventory(resourceDir = bridgeResourceDir) {
+  const runtimeDir = path.join(resourceDir, 'python');
+  if (!fs.existsSync(runtimeDir)) {
+    throw new Error(`Bundled Python runtime inventory source is missing: ${runtimeDir}`);
+  }
+  const inventory = {
+    schema: PYTHON_RUNTIME_INVENTORY_SCHEMA,
+    entries: pythonRuntimeInventoryEntries(runtimeDir),
+  };
+  const inventoryPath = path.join(resourceDir, PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH);
+  const inventoryBytes = `${JSON.stringify(inventory, null, 2)}\n`;
+  fs.writeFileSync(inventoryPath, inventoryBytes);
+  return {
+    inventoryPath: PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH,
+    inventorySha256: crypto.createHash('sha256').update(inventoryBytes).digest('hex'),
+    inventoryEntryCount: inventory.entries.length,
+  };
+}
+
+function verifyPythonRuntimeInventory(resourceDir, metadata) {
+  if (
+    metadata?.inventoryPath !== PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH ||
+    !/^[0-9a-f]{64}$/i.test(String(metadata?.inventorySha256 || '')) ||
+    !Number.isSafeInteger(metadata?.inventoryEntryCount) ||
+    metadata.inventoryEntryCount < 1
+  ) {
+    throw new Error('Bundled Python runtime inventory metadata is missing or invalid.');
+  }
+
+  const inventoryPath = path.join(resourceDir, PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH);
+  if (!fs.existsSync(inventoryPath)) {
+    throw new Error(`Bundled Python runtime inventory is missing: ${inventoryPath}`);
+  }
+  const inventoryBytes = fs.readFileSync(inventoryPath);
+  if (crypto.createHash('sha256').update(inventoryBytes).digest('hex') !== metadata.inventorySha256) {
+    throw new Error('Bundled Python runtime inventory digest mismatch.');
+  }
+
+  let inventory;
+  try {
+    inventory = JSON.parse(inventoryBytes.toString('utf8'));
+  } catch (error) {
+    throw new Error(`Bundled Python runtime inventory is not valid JSON: ${error.message}`);
+  }
+  if (
+    inventory?.schema !== PYTHON_RUNTIME_INVENTORY_SCHEMA ||
+    !Array.isArray(inventory.entries) ||
+    inventory.entries.length !== metadata.inventoryEntryCount
+  ) {
+    throw new Error('Bundled Python runtime inventory metadata mismatch.');
+  }
+
+  const actualEntries = pythonRuntimeInventoryEntries(path.join(resourceDir, 'python'));
+  if (JSON.stringify(inventory.entries) !== JSON.stringify(actualEntries)) {
+    throw new Error('Bundled Python runtime inventory content mismatch.');
+  }
+  return true;
+}
+
 function copyOptionalBinary(name, targetDir) {
   const explicit = process.env[`EVAOS_${name.toUpperCase()}_BIN`];
   const candidates = [explicit, findOnPath(name)].filter(Boolean);
@@ -350,6 +468,7 @@ function installPythonRuntime(
   const licenseTarget = path.join(resourceDir, ...PYTHON_LICENSE_RELATIVE_PATH.split('/'));
   fs.mkdirSync(path.dirname(licenseTarget), { recursive: true });
   fs.copyFileSync(licenseSource, licenseTarget);
+  const inventoryMetadata = writePythonRuntimeInventory(resourceDir);
 
   const sourceSha256 = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256 || '').trim();
   const sourceUrl = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_SOURCE_URL || '').trim();
@@ -390,6 +509,7 @@ function installPythonRuntime(
     license: 'Python-2.0',
     licensePath: PYTHON_LICENSE_RELATIVE_PATH,
     licenseSha256: sha256File(licenseTarget),
+    ...inventoryMetadata,
   };
 }
 
@@ -624,4 +744,6 @@ module.exports = {
   resolveBridgeSourceDir,
   shouldCloneBridgeRefAsBranch,
   sourceCandidates,
+  verifyPythonRuntimeInventory,
+  writePythonRuntimeInventory,
 };

@@ -11,6 +11,13 @@ const afterPack = require('../../../scripts/afterPack.js') as {
   verifyBundledResources: (resourcesDir: string, electronPlatformName: string, targetArch: string) => void;
   verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string, targetArch?: string) => void;
 };
+const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
+  writePythonRuntimeInventory: (resourceDir: string) => {
+    inventoryPath: string;
+    inventorySha256: string;
+    inventoryEntryCount: number;
+  };
+};
 
 const tempDirs: string[] = [];
 
@@ -62,7 +69,10 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
     writeExecutableScript(join(bridgeDir, 'python', 'bin', 'python3.12'));
   }
   symlinkSync('python3.12', join(bridgeDir, 'python', 'bin', 'python3'));
+  mkdirSync(join(bridgeDir, 'python', 'lib', 'python3.12', 'encodings'), { recursive: true });
+  writeFileSync(join(bridgeDir, 'python', 'lib', 'python3.12', 'encodings', '__init__.py'), '# fixture\n');
   writeFileSync(join(bridgeDir, 'licenses', 'CPython-LICENSE.txt'), cpythonLicense);
+  const inventoryMetadata = bridgeResource.writePythonRuntimeInventory(bridgeDir);
   writeFileSync(
     join(bridgeDir, 'manifest.json'),
     JSON.stringify({
@@ -104,6 +114,7 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
           license: 'Python-2.0',
           licensePath: 'licenses/CPython-LICENSE.txt',
           licenseSha256: '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf',
+          ...inventoryMetadata,
         },
       },
     }) + '\n'
@@ -260,6 +271,25 @@ describe('afterPack bundled resource verification', () => {
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
       expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).not.toThrow();
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a strict packaged runtime that changed after its inventory was written', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    writeFileSync(
+      join(resourcesDir, 'Bridge', 'python', 'lib', 'python3.12', 'encodings', '__init__.py'),
+      '# tampered\n'
+    );
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /inventory.*mismatch/i
+      );
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
     }

@@ -1,4 +1,13 @@
-import { chmodSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +24,9 @@ type PythonRuntimeMetadata = {
   license: string;
   licensePath: string;
   licenseSha256: string;
+  inventoryPath: string;
+  inventorySha256: string;
+  inventoryEntryCount: number;
 };
 
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
@@ -36,6 +48,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   }) => Record<string, unknown>;
   bridgeWrapperScript: () => string;
   installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
+  verifyPythonRuntimeInventory: (resourceDir: string, metadata: PythonRuntimeMetadata) => boolean;
   isMachOExecutable: (filePath: string) => boolean;
   installPeekabooLicense: (
     sourcePath?: string,
@@ -98,14 +111,70 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     const versionedExecutable = join(sourceDir, 'bin', 'python3.12');
     try {
       mkdirSync(join(sourceDir, 'bin'), { recursive: true });
+      mkdirSync(join(sourceDir, 'include', 'python3.12'), { recursive: true });
+      mkdirSync(join(sourceDir, 'lib', 'python3.12'), { recursive: true });
+      writeFileSync(versionedExecutable, '#!/bin/sh\necho "Python 3.12.13"\n');
+      chmodSync(versionedExecutable, 0o755);
+      symlinkSync('python3.12', join(sourceDir, 'bin', 'python3'));
+      writeFileSync(join(sourceDir, 'include', 'python3.12', 'Python.h'), '# Python\n');
+      writeFileSync(join(sourceDir, 'include', 'python3.12', 'abstract.h'), '# abstract\n');
+      writeFileSync(join(sourceDir, 'lib', 'python3.12', 'LICENSE.txt'), 'Python Software Foundation License\n');
+
+      const metadata = bridgeResource.installPythonRuntime(sourceDir, resourceDir);
+      expect(metadata).toMatchObject({
+        version: '3.12.13',
+        inventoryPath: 'python-runtime-inventory.json',
+        inventoryEntryCount: 5,
+        inventorySha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
+      expect(readlinkSync(join(resourceDir, 'python', 'bin', 'python3'))).toBe('python3.12');
+
+      const inventory = JSON.parse(readFileSync(join(resourceDir, 'python-runtime-inventory.json'), 'utf8')) as {
+        schema: string;
+        entries: Array<{ path: string; type: string; mode: number; target?: string; sha256?: string }>;
+      };
+      expect(inventory.schema).toBe('evaos-python-runtime-inventory/v1');
+      expect(inventory.entries.map(({ path }) => path)).toEqual(inventory.entries.map(({ path }) => path).toSorted());
+      expect(inventory.entries).toEqual(
+        expect.arrayContaining([
+          {
+            path: 'bin/python3',
+            type: 'symlink',
+            mode: 0o777,
+            target: 'python3.12',
+          },
+          expect.objectContaining({
+            path: 'bin/python3.12',
+            type: 'file',
+            mode: 0o755,
+            sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+          }),
+        ])
+      );
+      expect(bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata!)).toBe(true);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a bundled Python runtime that changes after its inventory is written', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-tamper-'));
+    const sourceDir = join(dir, 'source');
+    const resourceDir = join(dir, 'Bridge');
+    const versionedExecutable = join(sourceDir, 'bin', 'python3.12');
+    try {
+      mkdirSync(join(sourceDir, 'bin'), { recursive: true });
       mkdirSync(join(sourceDir, 'lib', 'python3.12'), { recursive: true });
       writeFileSync(versionedExecutable, '#!/bin/sh\necho "Python 3.12.13"\n');
       chmodSync(versionedExecutable, 0o755);
       symlinkSync('python3.12', join(sourceDir, 'bin', 'python3'));
       writeFileSync(join(sourceDir, 'lib', 'python3.12', 'LICENSE.txt'), 'Python Software Foundation License\n');
 
-      expect(bridgeResource.installPythonRuntime(sourceDir, resourceDir)).toMatchObject({ version: '3.12.13' });
-      expect(readlinkSync(join(resourceDir, 'python', 'bin', 'python3'))).toBe('python3.12');
+      const metadata = bridgeResource.installPythonRuntime(sourceDir, resourceDir);
+      expect(metadata).toBeDefined();
+      writeFileSync(join(resourceDir, 'python', 'lib', 'python3.12', 'LICENSE.txt'), 'tampered\n');
+
+      expect(() => bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata!)).toThrow(/inventory.*mismatch/i);
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }

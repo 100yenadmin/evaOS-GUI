@@ -114,7 +114,7 @@ extraResources:
   - from: resources/hub
     to: hub
   # evaOS Mac connector bridge, generated from evaos-desktop-bridge by scripts/prepareEvaosDesktopBridgeResource.js
-  - from: resources/Bridge
+  - from: resources/Bridge-${arch}
     to: Bridge
 win:
   executableName: EvaOSWorkbench
