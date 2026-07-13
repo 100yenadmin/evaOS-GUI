@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +24,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     };
   }) => Record<string, unknown>;
   bridgeWrapperScript: () => string;
+  installPythonRuntime: (sourcePath?: string, resourceDir?: string) => Record<string, string> | undefined;
   isMachOExecutable: (filePath: string) => boolean;
   installPeekabooLicense: (
     sourcePath?: string,
@@ -48,15 +49,55 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('isolates the packaged desktop bridge wrapper from ambient Python paths', () => {
     const wrapper = bridgeResource.bridgeWrapperScript();
 
+    expect(wrapper).toContain('PYTHON_BIN="$BRIDGE_DIR/python/bin/python3"');
+    expect(wrapper).toContain('bundled Python runtime is missing');
     expect(wrapper).toContain('unset PYTHONHOME');
     expect(wrapper).toContain('unset PYTHONUSERBASE');
     expect(wrapper).toContain('export PYTHONNOUSERSITE=1');
     expect(wrapper).toContain('export PYTHONPATH="$BRIDGE_DIR/src"');
     expect(wrapper).toContain('CACHE_ROOT="$HOME/Library/Caches/evaos-desktop-bridge"');
     expect(wrapper).toContain('export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"');
-    expect(wrapper).toContain('exec "$PYTHON_BIN" -S -m evaos_desktop_bridge.cli "$@"');
+    expect(wrapper).toContain('exec "$PYTHON_BIN" -P -m evaos_desktop_bridge.cli "$@"');
     expect(wrapper).not.toContain('${PYTHONPATH:+:$PYTHONPATH}');
     expect(wrapper).not.toContain('site-packages');
+    expect(wrapper).not.toContain('/opt/homebrew/bin/python3');
+    expect(wrapper).not.toContain('/usr/local/bin/python3');
+    expect(wrapper).not.toContain('/usr/bin/python3');
+    expect(wrapper).not.toContain('Install Python 3');
+  });
+
+  it('requires a bundled Python runtime for strict release packaging', () => {
+    const previousRequireReal = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const previousRuntimeDir = process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR;
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      delete process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR;
+
+      expect(() => bridgeResource.installPythonRuntime()).toThrow(/bundled Python runtime/);
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previousRequireReal);
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR', previousRuntimeDir);
+    }
+  });
+
+  it('preserves relative Python runtime symlinks for relocation into the installed app', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-'));
+    const sourceDir = join(dir, 'source');
+    const resourceDir = join(dir, 'Bridge');
+    const versionedExecutable = join(sourceDir, 'bin', 'python3.12');
+    try {
+      mkdirSync(join(sourceDir, 'bin'), { recursive: true });
+      mkdirSync(join(sourceDir, 'lib', 'python3.12'), { recursive: true });
+      writeFileSync(versionedExecutable, '#!/bin/sh\necho "Python 3.12.13"\n');
+      chmodSync(versionedExecutable, 0o755);
+      symlinkSync('python3.12', join(sourceDir, 'bin', 'python3'));
+      writeFileSync(join(sourceDir, 'lib', 'python3.12', 'LICENSE.txt'), 'Python Software Foundation License\n');
+
+      expect(bridgeResource.installPythonRuntime(sourceDir, resourceDir)).toMatchObject({ version: '3.12.13' });
+      expect(readlinkSync(join(resourceDir, 'python', 'bin', 'python3'))).toBe('python3.12');
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 
   it('detects native Mach-O executables before release packaging trusts a control helper', () => {

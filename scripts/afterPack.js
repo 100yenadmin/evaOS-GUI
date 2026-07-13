@@ -178,13 +178,39 @@ function requireManagedNodeRuntime(resourcesDir, runtimeKey, electronPlatformNam
   }
 }
 
-function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
+const PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH = {
+  arm64: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
+  x64: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894',
+};
+const PYTHON_RUNTIME_PACKAGES = [
+  ['pyobjc-core', '12.2.1', 'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b'],
+  ['pyobjc-framework-Cocoa', '12.2.1', '28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080'],
+  ['pyobjc-framework-Quartz', '12.2.1', 'de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9'],
+  [
+    'pyobjc-framework-ApplicationServices',
+    '12.2.1',
+    'f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b',
+  ],
+  ['pyobjc-framework-CoreText', '12.2.1', 'ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6'],
+].map(([name, version, sha256]) => ({ name, version, sha256 }));
+
+function thinMachOArchitecture(filePath) {
+  const header = fs.readFileSync(filePath).subarray(0, 8).toString('hex');
+  if (header.startsWith('cffaedfe0c000001')) return 'arm64';
+  if (header.startsWith('cffaedfe07000001')) return 'x64';
+  return undefined;
+}
+
+function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, targetArch) {
   if (electronPlatformName !== 'darwin') return;
 
   const bridgePath = path.join(resourcesDir, 'Bridge', 'evaos-desktop-bridge');
   const peekabooPath = path.join(resourcesDir, 'Bridge', 'bin', 'peekaboo');
   const helperPath = path.join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper');
   const manifestPath = path.join(resourcesDir, 'Bridge', 'manifest.json');
+  const pythonPath = path.join(resourcesDir, 'Bridge', 'python', 'bin', 'python3');
+  const versionedPythonPath = path.join(resourcesDir, 'Bridge', 'python', 'bin', 'python3.12');
+  const pythonLicensePath = path.join(resourcesDir, 'Bridge', 'licenses', 'CPython-LICENSE.txt');
   const missing = [];
   if (!fs.existsSync(bridgePath)) {
     missing.push(path.join('Bridge', 'evaos-desktop-bridge'));
@@ -216,6 +242,21 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
   if (!fs.existsSync(manifestPath)) {
     missing.push(path.join('Bridge', 'manifest.json'));
   }
+  if (!fs.existsSync(pythonPath)) {
+    missing.push(path.join('Bridge', 'python', 'bin', 'python3'));
+  } else {
+    try {
+      fs.accessSync(pythonPath, fs.constants.X_OK);
+    } catch {
+      throw new Error(`Packaged evaOS desktop bridge Python runtime is not executable: ${pythonPath}`);
+    }
+  }
+  if (!fs.existsSync(versionedPythonPath)) {
+    missing.push(path.join('Bridge', 'python', 'bin', 'python3.12'));
+  }
+  if (!fs.existsSync(pythonLicensePath)) {
+    missing.push(path.join('Bridge', 'licenses', 'CPython-LICENSE.txt'));
+  }
   if (missing.length > 0) {
     throw new Error(`Packaged app is missing required evaOS desktop bridge resource(s): ${missing.join(', ')}`);
   }
@@ -231,6 +272,34 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName) {
   if (strictReleaseBridge) {
     requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
     requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));
+    requireMachOExecutable(pythonPath, path.join('Bridge', 'python', 'bin', 'python3'));
+    const pythonMetadata = manifest.bundledTools?.python;
+    if (
+      !pythonMetadata?.version ||
+      !/^[0-9a-f]{64}$/i.test(String(pythonMetadata.sourceSha256 || '')) ||
+      !String(pythonMetadata.sourceUrl || '').startsWith('https://github.com/astral-sh/python-build-standalone/') ||
+      pythonMetadata.licensePath !== 'licenses/CPython-LICENSE.txt' ||
+      JSON.stringify(pythonMetadata.packages) !== JSON.stringify(PYTHON_RUNTIME_PACKAGES)
+    ) {
+      throw new Error('Packaged evaOS desktop bridge manifest is missing pinned bundled Python runtime provenance.');
+    }
+    if (targetArch) {
+      const expectedDigest = PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH[targetArch];
+      if (
+        !expectedDigest ||
+        pythonMetadata.architecture !== targetArch ||
+        pythonMetadata.sourceSha256 !== expectedDigest ||
+        thinMachOArchitecture(versionedPythonPath) !== targetArch
+      ) {
+        throw new Error(
+          `Packaged evaOS desktop bridge Python runtime does not match target architecture ${targetArch}.`
+        );
+      }
+    }
+    const pythonLink = fs.lstatSync(pythonPath);
+    if (pythonLink.isSymbolicLink() && fs.readlinkSync(pythonPath) !== 'python3.12') {
+      throw new Error('Packaged evaOS desktop bridge Python launcher symlink is not relocatable.');
+    }
   }
 
   console.log('   ✓ evaOS desktop bridge resource verified');
@@ -302,7 +371,7 @@ module.exports = async function afterPack(context) {
     }
 
     verifyBundledResources(resourcesDir, electronPlatformName, targetArch);
-    verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName);
+    verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, targetArch);
   } else {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }
@@ -457,4 +526,5 @@ module.exports = async function afterPack(context) {
 
 module.exports.verifyBundledResources = verifyBundledResources;
 module.exports.verifyEvaosDesktopBridgeResource = verifyEvaosDesktopBridgeResource;
+module.exports.thinMachOArchitecture = thinMachOArchitecture;
 module.exports.isMachOExecutable = isMachOExecutable;

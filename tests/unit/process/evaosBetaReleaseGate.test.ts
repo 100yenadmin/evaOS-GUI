@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
@@ -135,6 +135,7 @@ function writeMacosBridgeZip(
     'import hashlib',
     'import json',
     'import pathlib',
+    'import stat',
     'import sys',
     'import zipfile',
     'zip_path = pathlib.Path(sys.argv[1])',
@@ -144,14 +145,30 @@ function writeMacosBridgeZip(
     'source_sha256 = sys.argv[5]',
     'manifest_license_sha256 = sys.argv[6]',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
+    'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
+    'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
+    'python_header = bytes.fromhex("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001")',
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
-    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}}}',
+    'python_license_bytes = b"Python Software Foundation License Version 2\\n"',
+    'python_license_sha256 = hashlib.sha256(python_license_bytes).hexdigest()',
+    'python_packages = [{"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},{"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},{"name":"pyobjc-framework-Quartz","version":"12.2.1","sha256":"de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9"},{"name":"pyobjc-framework-ApplicationServices","version":"12.2.1","sha256":"f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b"},{"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"}]',
+    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz", "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256}}}',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
     '    if not omit_peekaboo:',
     '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/peekaboo", bytes.fromhex("cafebabe00000000"))',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
+    '    python_launcher = zipfile.ZipInfo(f"{app_root}/Contents/Resources/Bridge/python/bin/python3")',
+    '    python_launcher.create_system = 3',
+    '    python_launcher.external_attr = (stat.S_IFLNK | 0o777) << 16',
+    '    archive.writestr(python_launcher, b"python3.12")',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/bin/python3.12", python_header)',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/Quartz/__init__.py", b"")',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/__init__.py", b"")',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", bytes.fromhex("cafebabe00000000"))',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/CPython-LICENSE.txt", python_license_bytes)',
     '    if not omit_license:',
     '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt", license_bytes)',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", json.dumps(manifest) + "\\n")',
@@ -416,6 +433,14 @@ describe('evaOS beta release gate', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/_build-reusable.yml'), 'utf8');
 
     expect(workflow).toContain("PEEKABOO_VERSION: '3.8.0'");
+    expect(workflow).toContain("PYTHON_RUNTIME_VERSION: '3.12.13'");
+    expect(workflow).toContain("PYTHON_RUNTIME_RELEASE: '20260510'");
+    expect(workflow).toContain(
+      "PYTHON_RUNTIME_ARM64_SHA256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17'"
+    );
+    expect(workflow).toContain(
+      "PYTHON_RUNTIME_X64_SHA256: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894'"
+    );
     expect(workflow).toContain("PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'");
     expect(workflow).toContain(
       "PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'"
@@ -428,11 +453,19 @@ describe('evaOS beta release gate', () => {
 
   it('verifies the pinned Peekaboo digest before exporting the packaging path', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/_build-reusable.yml'), 'utf8');
+    const runtimePrep = fs.readFileSync(
+      path.join(repoRoot, 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh'),
+      'utf8'
+    );
 
     expect(workflow).toContain('shasum -a 256 -c');
     expect(workflow).toContain('EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN');
     expect(workflow).toContain('EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256');
     expect(workflow).toContain('EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE');
+    expect(workflow).toContain('scripts/prepareEvaosDesktopBridgePythonRuntime.sh "${{ matrix.arch }}"');
+    expect(runtimePrep).toContain('EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=$runtime_dir');
+    expect(runtimePrep).toContain('EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256');
+    expect(runtimePrep).toContain('import ApplicationServices, Quartz');
   });
 
   it('requires functional smoke to verify the packaged Peekaboo version', () => {
@@ -477,6 +510,16 @@ describe('evaOS beta release gate', () => {
     const helperDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin');
     const peekabooPath = path.join(helperDir, 'peekaboo');
     const connectorHelperPath = path.join(helperDir, 'evaos-connector-helper');
+    const pythonPath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'python', 'bin', 'python3.12');
+    const pythonDylibPath = path.join(
+      appPath,
+      'Contents',
+      'Resources',
+      'Bridge',
+      'python',
+      'lib',
+      'libpython3.12.dylib'
+    );
     const signedByExpectedTeam = {
       status: 0,
       stdout: '',
@@ -493,6 +536,12 @@ describe('evaOS beta release gate', () => {
     try {
       writeMachOFixture(peekabooPath);
       writeMachOFixture(connectorHelperPath);
+      writeMachOFixture(pythonPath);
+      fs.mkdirSync(path.dirname(pythonDylibPath), { recursive: true });
+      fs.writeFileSync(pythonDylibPath, Buffer.from('cffaedfe0c000001', 'hex'));
+      fs.chmodSync(pythonDylibPath, 0o644);
+
+      const signedRuntimeClosure = vi.fn(() => signedByExpectedTeam);
 
       expect(() =>
         afterSign.assertMacControlHelperSignatures(
@@ -501,9 +550,14 @@ describe('evaOS beta release gate', () => {
             EVAOS_MAC_CONTROL_HELPER_TEAM_ID: 'TC6MS3T6NN',
             EVAOS_MAC_CONTROL_HELPER_AUTHORITY: 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)',
           },
-          () => signedByExpectedTeam
+          signedRuntimeClosure
         )
       ).not.toThrow();
+      expect(signedRuntimeClosure).toHaveBeenCalledWith(
+        'codesign',
+        ['-dv', '--verbose=4', pythonDylibPath],
+        expect.any(Object)
+      );
 
       expect(() =>
         afterSign.assertMacControlHelperSignatures(

@@ -44,6 +44,10 @@ env:
   PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'
   PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'
   PEEKABOO_LICENSE_SHA256: '62316704df7426e5a79d2827ff8aca36e9abb3a73b8e68557030749ebefec667'
+  PYTHON_RUNTIME_VERSION: '3.12.13'
+  PYTHON_RUNTIME_RELEASE: '20260510'
+  PYTHON_RUNTIME_ARM64_SHA256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17'
+  PYTHON_RUNTIME_X64_SHA256: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894'
 
 jobs:
   code-quality:
@@ -665,6 +669,13 @@ jobs:
             echo "EVAOS_REQUIRED_PEEKABOO_VERSION=$PEEKABOO_VERSION"
             echo "EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256"
           } >> "$GITHUB_ENV"
+
+      - name: Install pinned evaOS desktop bridge Python runtime (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/prepareEvaosDesktopBridgePythonRuntime.sh "${{ matrix.arch }}" "$GITHUB_ENV"
 
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only
       # macOS: 构建并公证 - DMG 失败 = CI 失败，公证失败 = 仅警告

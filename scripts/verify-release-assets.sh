@@ -227,6 +227,27 @@ assert_macos_zip_bridge_payload() {
     else
       echo "PASS: $(basename "$zip_path") contains bundled evaOS desktop bridge manifest"
     fi
+
+    if ! zip_contains_entry_matching "$zip_path" '(^|/)[^/]+\.app/Contents/Resources/Bridge/python/bin/python3\.12$'; then
+      echo "FAIL: $(basename "$zip_path") is missing the self-contained desktop bridge Python runtime"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $(basename "$zip_path") contains the self-contained desktop bridge Python runtime"
+    fi
+
+    if ! zip_contains_entry_matching "$zip_path" '(^|/)[^/]+\.app/Contents/Resources/Bridge/python/bin/python3$'; then
+      echo "FAIL: $(basename "$zip_path") is missing the self-contained desktop bridge Python launcher"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $(basename "$zip_path") contains the self-contained desktop bridge Python launcher"
+    fi
+
+    if ! zip_contains_entry_matching "$zip_path" '(^|/)[^/]+\.app/Contents/Resources/Bridge/licenses/CPython-LICENSE\.txt$'; then
+      echo "FAIL: $(basename "$zip_path") is missing the CPython license notice"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "PASS: $(basename "$zip_path") contains the CPython license notice"
+    fi
   done
 }
 

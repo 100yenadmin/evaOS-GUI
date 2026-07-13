@@ -12,6 +12,7 @@ const defaultBridgeSourceRepo = 'https://github.com/electricsheephq/evaos-deskto
 const defaultBridgeSourceRef = 'main';
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
+const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
@@ -172,6 +173,7 @@ function copyDirectory(source, target) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.cpSync(source, target, {
     recursive: true,
+    verbatimSymlinks: true,
     filter: (sourcePath) => !sourcePath.includes(`${path.sep}__pycache__${path.sep}`),
   });
 }
@@ -268,21 +270,10 @@ function bridgeWrapperScript() {
 set -eu
 
 BRIDGE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+PYTHON_BIN="$BRIDGE_DIR/python/bin/python3"
 
-if [ -n "\${EVAOS_DESKTOP_BRIDGE_PYTHON:-}" ] && [ -x "\${EVAOS_DESKTOP_BRIDGE_PYTHON:-}" ]; then
-  PYTHON_BIN="$EVAOS_DESKTOP_BRIDGE_PYTHON"
-else
-  PYTHON_BIN=""
-  for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
-    if [ -x "$candidate" ]; then
-      PYTHON_BIN="$candidate"
-      break
-    fi
-  done
-fi
-
-if [ -z "$PYTHON_BIN" ]; then
-  echo "evaos-desktop-bridge: python3 was not found. Install Python 3 or contact Electric Sheep support." >&2
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "evaos-desktop-bridge: bundled Python runtime is missing. Reinstall evaOS Workbench or contact Electric Sheep support." >&2
   exit 127
 fi
 
@@ -304,8 +295,93 @@ fi
 mkdir -p "$CACHE_ROOT/pycache" 2>/dev/null || true
 export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 
-exec "$PYTHON_BIN" -S -m evaos_desktop_bridge.cli "$@"
+exec "$PYTHON_BIN" -P -m evaos_desktop_bridge.cli "$@"
 `;
+}
+
+function installPythonRuntime(
+  sourcePath = process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR,
+  resourceDir = bridgeResourceDir
+) {
+  if (!sourcePath) {
+    if (shouldRequireRealBridge()) {
+      throw new Error('Release builds require a bundled Python runtime via EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR.');
+    }
+    return undefined;
+  }
+
+  const sourceDir = path.resolve(sourcePath);
+  const sourceExecutable = path.join(sourceDir, 'bin', 'python3');
+  if (!fs.existsSync(sourceExecutable)) {
+    throw new Error(`Bundled Python runtime is missing bin/python3: ${sourceDir}`);
+  }
+  fs.accessSync(sourceExecutable, fs.constants.X_OK);
+
+  const versionOutput = execFileSync(sourceExecutable, ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  const versionMatch = versionOutput.match(/^Python\s+(\d+\.\d+\.\d+)$/);
+  if (!versionMatch) {
+    throw new Error(`Bundled Python runtime reported an unexpected version: ${versionOutput}`);
+  }
+  const version = versionMatch[1];
+  const requiredVersion = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_VERSION || '').trim();
+  if (requiredVersion && version !== requiredVersion) {
+    throw new Error(`Bundled Python runtime ${version} does not match required version ${requiredVersion}.`);
+  }
+
+  const licenseSource = path.join(sourceDir, 'lib', `python${version.split('.').slice(0, 2).join('.')}`, 'LICENSE.txt');
+  if (!fs.existsSync(licenseSource)) {
+    throw new Error(`Bundled Python runtime is missing its CPython license: ${licenseSource}`);
+  }
+
+  const targetDir = path.join(resourceDir, 'python');
+  copyDirectory(sourceDir, targetDir);
+  const licenseTarget = path.join(resourceDir, ...PYTHON_LICENSE_RELATIVE_PATH.split('/'));
+  fs.mkdirSync(path.dirname(licenseTarget), { recursive: true });
+  fs.copyFileSync(licenseSource, licenseTarget);
+
+  const sourceSha256 = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256 || '').trim();
+  const sourceUrl = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_SOURCE_URL || '').trim();
+  const architecture = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_ARCH || '').trim();
+  let packages = [];
+  const packagesJson = String(process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_PACKAGES_JSON || '').trim();
+  if (packagesJson) {
+    try {
+      packages = JSON.parse(packagesJson);
+    } catch (error) {
+      throw new Error(`Bundled Python runtime package provenance is not valid JSON: ${error.message}`);
+    }
+  }
+  if (shouldRequireRealBridge()) {
+    if (!/^[0-9a-f]{64}$/i.test(sourceSha256) || !sourceUrl || !['arm64', 'x64'].includes(architecture)) {
+      throw new Error('Release builds require pinned bundled Python runtime source and architecture provenance.');
+    }
+    if (
+      !Array.isArray(packages) ||
+      packages.length < 5 ||
+      packages.some(
+        (entry) =>
+          !entry ||
+          typeof entry.name !== 'string' ||
+          typeof entry.version !== 'string' ||
+          !/^[0-9a-f]{64}$/i.test(String(entry.sha256 || ''))
+      )
+    ) {
+      throw new Error('Release builds require pinned bundled PyObjC package provenance.');
+    }
+  }
+  return {
+    version,
+    sourceSha256,
+    sourceUrl,
+    architecture,
+    packages,
+    license: 'Python-2.0',
+    licensePath: PYTHON_LICENSE_RELATIVE_PATH,
+    licenseSha256: sha256File(licenseTarget),
+  };
 }
 
 function writeWrapper() {
@@ -487,6 +563,7 @@ function main() {
   fs.mkdirSync(bridgeBinDir, { recursive: true });
   copyDirectory(bridgePackageSource, bridgePackageTarget);
   removePycache(bridgeResourceDir);
+  const pythonRuntime = installPythonRuntime();
   const bridgeExecutable = writeBridgeExecutable();
   const peekabooBinary = copyOptionalBinary('peekaboo', bridgeBinDir);
   const helperPath = path.join(bridgeBinDir, 'evaos-connector-helper');
@@ -507,7 +584,8 @@ function main() {
     requireMachOReleaseBinary(path.join(bridgeBinDir, 'peekaboo'), 'bundled Peekaboo helper');
     requireMachOReleaseBinary(helperPath, 'bundled evaOS connector helper');
   }
-  const bundledTools = peekabooBundleMetadata(peekabooBinary);
+  const bundledTools = peekabooBundleMetadata(peekabooBinary) || {};
+  if (pythonRuntime) bundledTools.python = pythonRuntime;
 
   const manifest = bridgeManifest({
     sourcePath: bridgeSourceDir,
@@ -529,6 +607,7 @@ if (require.main === module) {
 module.exports = {
   bridgeManifest,
   bridgeWrapperScript,
+  installPythonRuntime,
   installPeekabooLicense,
   isMachOExecutable,
   peekabooBundleMetadata,

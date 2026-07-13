@@ -159,12 +159,20 @@ function getAppTrustProcessTimeoutMs(env = process.env) {
   return getPositiveProcessTimeoutMs(env, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS);
 }
 
-function isMachOExecutable(filePath) {
+function isMachOFile(filePath) {
   if (!fs.existsSync(filePath)) return false;
   try {
-    fs.accessSync(filePath, fs.constants.X_OK);
     const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
     return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function isMachOExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return isMachOFile(filePath);
   } catch {
     return false;
   }
@@ -196,11 +204,16 @@ function codeSignatureDetails(filePath, runProcess = spawnSync) {
   return output;
 }
 
-function assertMacControlHelperSignature(filePath, env = process.env, runProcess = spawnSync) {
+function assertMacControlHelperSignature(
+  filePath,
+  env = process.env,
+  runProcess = spawnSync,
+  requireExecutable = true
+) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Strict evaOS beta release is missing bundled Mac-control helper: ${filePath}`);
   }
-  if (!isMachOExecutable(filePath)) {
+  if (!(requireExecutable ? isMachOExecutable(filePath) : isMachOFile(filePath))) {
     throw new Error(
       `Strict evaOS beta release requires bundled Mac-control helper to be a native Mach-O executable: ${filePath}`
     );
@@ -222,6 +235,32 @@ function assertMacControlHelperSignature(filePath, env = process.env, runProcess
 function assertMacControlHelperSignatures(appPath, env = process.env, runProcess = spawnSync) {
   for (const relativePath of MAC_CONTROL_HELPER_RELATIVE_PATHS) {
     assertMacControlHelperSignature(path.join(appPath, relativePath), env, runProcess);
+  }
+
+  const pythonRuntimeDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'python');
+  if (!fs.existsSync(pythonRuntimeDir)) {
+    throw new Error(`Strict evaOS beta release is missing bundled Python runtime: ${pythonRuntimeDir}`);
+  }
+  const runtimeMachOPaths = [];
+  const pending = [pythonRuntimeDir];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (entry.isFile() && isMachOFile(entryPath)) {
+        runtimeMachOPaths.push(entryPath);
+      }
+    }
+  }
+  if (runtimeMachOPaths.length === 0) {
+    throw new Error(
+      `Strict evaOS beta release bundled Python runtime has no native Mach-O closure: ${pythonRuntimeDir}`
+    );
+  }
+  for (const runtimePath of runtimeMachOPaths) {
+    assertMacControlHelperSignature(runtimePath, env, runProcess, false);
   }
 }
 

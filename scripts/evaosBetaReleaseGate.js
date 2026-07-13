@@ -90,6 +90,23 @@ const LOCAL_SIGNED_DMG_FALLBACK_ACK = 'evaos-local-signed-dmg';
 const PEEKABOO_PACKAGE_VERSION = '3.8.0';
 const PEEKABOO_SOURCE_SHA256 = '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383';
 const PEEKABOO_LICENSE_PATH = 'licenses/Peekaboo-LICENSE.txt';
+const PYTHON_RUNTIME_VERSION = '3.12.13';
+const PYTHON_RUNTIME_SOURCE_SHA256 = {
+  arm64: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
+  x64: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894',
+};
+const PYTHON_RUNTIME_LICENSE_PATH = 'licenses/CPython-LICENSE.txt';
+const PYTHON_RUNTIME_PACKAGES = [
+  ['pyobjc-core', '12.2.1', 'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b'],
+  ['pyobjc-framework-Cocoa', '12.2.1', '28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080'],
+  ['pyobjc-framework-Quartz', '12.2.1', 'de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9'],
+  [
+    'pyobjc-framework-ApplicationServices',
+    '12.2.1',
+    'f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b',
+  ],
+  ['pyobjc-framework-CoreText', '12.2.1', 'ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6'],
+].map(([name, version, sha256]) => ({ name, version, sha256 }));
 const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'macos-arm64-dmg-codesign',
@@ -458,6 +475,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const localSignedDmgManifest = readText(rootDir, '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml');
   const reusableBuild = readText(rootDir, '.github/workflows/_build-reusable.yml');
   const functionalSmoke = readText(rootDir, '.github/workflows/workbench-functional-smoke.yml');
+  const pythonRuntimePrep = readText(rootDir, 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh');
   const afterSign = readText(rootDir, 'scripts/afterSign.js');
   const dmgFinalizer = readText(rootDir, 'scripts/evaosFinalizeMacDmg.js');
   const prepareAssets = readText(rootDir, 'scripts/prepare-release-assets.sh');
@@ -1017,6 +1035,62 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'Peekaboo source digest exported for packaging verification'
   );
   requireText(
+    reusableBuild,
+    "PYTHON_RUNTIME_VERSION: '3.12.13'",
+    '.github/workflows/_build-reusable.yml',
+    issues,
+    'self-contained desktop bridge Python runtime version pin'
+  );
+  requireText(
+    pythonRuntimePrep,
+    'EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=$runtime_dir',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'verified desktop bridge Python runtime exported for packaging'
+  );
+  requireText(
+    pythonRuntimePrep,
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'desktop bridge Python runtime source digest exported for manifest provenance'
+  );
+  requireText(
+    pythonRuntimePrep,
+    'import ApplicationServices, Quartz',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'bundled runtime must prove direct Accessibility dependencies without host packages'
+  );
+  requireText(
+    pythonRuntimePrep,
+    '--no-index',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'bundled PyObjC install must be offline from verified wheels'
+  );
+  requireText(
+    pythonRuntimePrep,
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_PACKAGES_JSON=$packages_json',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'bundled PyObjC package hashes must be recorded in the bridge manifest'
+  );
+  requireText(
+    pythonRuntimePrep,
+    'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'pinned PyObjC core wheel digest'
+  );
+  requireText(
+    functionalSmoke,
+    'prepareEvaosDesktopBridgePythonRuntime.sh arm64',
+    '.github/workflows/workbench-functional-smoke.yml',
+    issues,
+    'functional smoke must build the same pinned self-contained Python runtime'
+  );
+  requireText(
     functionalSmoke,
     'BUNDLED_PEEKABOO_LICENSE_SHA256',
     '.github/workflows/workbench-functional-smoke.yml',
@@ -1527,12 +1601,18 @@ function inspectMacosZipBridgePayload(zipPath) {
     'import hashlib',
     'import json',
     'import pathlib',
+    'import stat',
     'import sys',
     'import zipfile',
     'path = pathlib.Path(sys.argv[1])',
+    'expected_python_arch = "arm64" if "arm64" in path.name else "x64"',
     `expected_source_sha256 = "${PEEKABOO_SOURCE_SHA256}"`,
     `expected_version = "${PEEKABOO_PACKAGE_VERSION}"`,
     `expected_license_path = "${PEEKABOO_LICENSE_PATH}"`,
+    `expected_python_version = "${PYTHON_RUNTIME_VERSION}"`,
+    `expected_python_source_sha256 = ${JSON.stringify(PYTHON_RUNTIME_SOURCE_SHA256)}`,
+    `expected_python_license_path = "${PYTHON_RUNTIME_LICENSE_PATH}"`,
+    `expected_python_packages = ${JSON.stringify(PYTHON_RUNTIME_PACKAGES)}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf"}',
     'def bridge_entry_suffix(name):',
     '    parts = name.split("/")',
@@ -1540,18 +1620,23 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        if part.endswith(".app") and parts[index + 1:index + 4] == ["Contents", "Resources", "Bridge"]:',
     '            return "/".join(parts[index + 4:])',
     '    return None',
-    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False}',
+    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcMachO": False}',
     'entries = {}',
     'with zipfile.ZipFile(path) as archive:',
     '    for name in archive.namelist():',
     '        suffix = bridge_entry_suffix(name)',
-    '        if suffix in {"evaos-desktop-bridge", "manifest.json", "bin/peekaboo", "bin/evaos-connector-helper", expected_license_path}:',
+    '        if suffix in {"evaos-desktop-bridge", "manifest.json", "bin/peekaboo", "bin/evaos-connector-helper", expected_license_path, "python/bin/python3", "python/bin/python3.12", expected_python_license_path, "python/lib/python3.12/site-packages/ApplicationServices/__init__.py", "python/lib/python3.12/site-packages/Quartz/__init__.py", "python/lib/python3.12/site-packages/objc/__init__.py", "python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so"}:',
     '            entries[suffix] = name',
     '    result["hasBridgeExecutable"] = "evaos-desktop-bridge" in entries',
     '    result["hasBridgeManifest"] = "manifest.json" in entries',
     '    result["hasPeekaboo"] = "bin/peekaboo" in entries',
     '    result["hasConnectorHelper"] = "bin/evaos-connector-helper" in entries',
     '    result["hasPeekabooLicense"] = expected_license_path in entries',
+    '    result["hasPythonRuntime"] = "python/bin/python3.12" in entries',
+    '    result["hasPythonLauncher"] = "python/bin/python3" in entries',
+    '    result["hasPythonLicense"] = expected_python_license_path in entries',
+    '    control_module_paths = {"python/lib/python3.12/site-packages/ApplicationServices/__init__.py", "python/lib/python3.12/site-packages/Quartz/__init__.py", "python/lib/python3.12/site-packages/objc/__init__.py", "python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so"}',
+    '    result["hasPythonControlModules"] = control_module_paths.issubset(entries)',
     '    manifest = {}',
     '    if result["hasBridgeManifest"]:',
     '        try:',
@@ -1559,13 +1644,25 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        except (json.JSONDecodeError, UnicodeDecodeError):',
     '            manifest = {}',
     '    peekaboo = manifest.get("bundledTools", {}).get("peekaboo", {}) if isinstance(manifest, dict) else {}',
+    '    python_runtime = manifest.get("bundledTools", {}).get("python", {}) if isinstance(manifest, dict) else {}',
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
+    '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("packages") == expected_python_packages',
     '    if result["hasPeekaboo"]:',
     '        result["peekabooMachO"] = archive.read(entries["bin/peekaboo"], pwd=None)[:4].hex() in macho_magics',
     '    if result["hasConnectorHelper"]:',
     '        result["connectorHelperMachO"] = archive.read(entries["bin/evaos-connector-helper"], pwd=None)[:4].hex() in macho_magics',
+    '    if result["hasPythonRuntime"]:',
+    '        python_bytes = archive.read(entries["python/bin/python3.12"], pwd=None)',
+    '        result["pythonRuntimeMachO"] = python_bytes[:4].hex() in macho_magics',
+    '        result["pythonRuntimeArchValid"] = python_bytes[:8].hex().startswith("cffaedfe0c000001" if expected_python_arch == "arm64" else "cffaedfe07000001")',
+    '    if result["hasPythonLauncher"]:',
+    '        launcher_bytes = archive.read(entries["python/bin/python3"], pwd=None)',
+    '        launcher_mode = archive.getinfo(entries["python/bin/python3"]).external_attr >> 16',
+    '        result["pythonLauncherValid"] = (stat.S_ISLNK(launcher_mode) and launcher_bytes == b"python3.12") or (stat.S_ISREG(launcher_mode) and bool(launcher_mode & 0o111) and launcher_bytes[:4].hex() in macho_magics)',
+    '    if result["hasPythonControlModules"]:',
+    '        result["pythonObjcMachO"] = archive.read(entries["python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so"], pwd=None)[:4].hex() in macho_magics',
     '    if result["hasPeekabooLicense"]:',
     '        license_bytes = archive.read(entries[expected_license_path], pwd=None)',
     '        result["licenseDigestValid"] = hashlib.sha256(license_bytes).hexdigest() == peekaboo.get("licenseSha256")',
@@ -1574,6 +1671,9 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        except UnicodeDecodeError:',
     '            license_text = ""',
     '        result["licenseNoticeValid"] = license_text.startswith("MIT License") and "Permission is hereby granted" in license_text',
+    '    if result["hasPythonLicense"]:',
+    '        python_license_bytes = archive.read(entries[expected_python_license_path], pwd=None)',
+    '        result["pythonLicenseDigestValid"] = hashlib.sha256(python_license_bytes).hexdigest() == python_runtime.get("licenseSha256")',
     'print(json.dumps(result))',
   ].join('\n');
   try {
@@ -1619,6 +1719,16 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
     assertZipBridgeProbe(probe, 'manifestLicenseMetadataValid', zipName, 'Peekaboo license metadata');
     assertZipBridgeProbe(probe, 'licenseDigestValid', zipName, 'Peekaboo license digest');
     assertZipBridgeProbe(probe, 'licenseNoticeValid', zipName, 'Peekaboo license notice');
+    assertZipBridgeProbe(probe, 'hasPythonRuntime', zipName, 'bundled Python runtime');
+    assertZipBridgeProbe(probe, 'hasPythonLauncher', zipName, 'bundled Python launcher');
+    assertZipBridgeProbe(probe, 'pythonLauncherValid', zipName, 'relocatable bundled Python launcher');
+    assertZipBridgeProbe(probe, 'pythonRuntimeMachO', zipName, 'bundled Python runtime Mach-O shape');
+    assertZipBridgeProbe(probe, 'pythonRuntimeArchValid', zipName, 'bundled Python runtime architecture');
+    assertZipBridgeProbe(probe, 'hasPythonLicense', zipName, 'CPython license');
+    assertZipBridgeProbe(probe, 'pythonManifestValid', zipName, 'bundled Python runtime provenance');
+    assertZipBridgeProbe(probe, 'pythonLicenseDigestValid', zipName, 'CPython license digest');
+    assertZipBridgeProbe(probe, 'hasPythonControlModules', zipName, 'bundled PyObjC control modules');
+    assertZipBridgeProbe(probe, 'pythonObjcMachO', zipName, 'bundled PyObjC native runtime');
   }
 }
 
