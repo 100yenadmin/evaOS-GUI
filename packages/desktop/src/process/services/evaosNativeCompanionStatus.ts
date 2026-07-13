@@ -319,16 +319,19 @@ export async function getEvaosNativeCompanionStatus(
     privateNetwork: privateNetworkAuthorityResult.evidence,
     actionEngine: actionEngineEvidence(customerMac.data),
   });
-  const bridgeRuntimeExplicitlyBlocked = prerequisites.bridgeRuntime === 'incompatible';
-  const privateNetworkExplicitlyBlocked = prerequisites.privateNetwork !== 'online';
-  const prerequisiteExplicitlyBlocksPairing = bridgeRuntimeExplicitlyBlocked || privateNetworkExplicitlyBlocked;
+  const bridgeRuntimeBlocksPairing = prerequisites.bridgeRuntime !== 'ready';
+  const privateNetworkBlocksPairing = prerequisites.privateNetwork !== 'online';
+  const actionEngineBlocksPairing =
+    prerequisites.actionEngine !== 'cua_ready' && prerequisites.actionEngine !== 'peekaboo_ready';
+  const prerequisiteBlocksPairing =
+    bridgeRuntimeBlocksPairing || privateNetworkBlocksPairing || actionEngineBlocksPairing;
   const readiness =
-    bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteExplicitlyBlocksPairing
+    bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteBlocksPairing
       ? 'ready'
       : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
-    !prerequisiteExplicitlyBlocksPairing &&
+    !prerequisiteBlocksPairing &&
     isPairingCapableBridgePath(bridgePath, deps.env) &&
     connectorServiceHasSecureRegistrationHost(connectorServiceData);
   const reportedAgentPairingStatus = pairingCapable
@@ -376,11 +379,13 @@ export async function getEvaosNativeCompanionStatus(
       : reportedRuntimeToolReadiness;
   const pairingBlockedReason = pairingCapable
     ? undefined
-    : bridgeRuntimeExplicitlyBlocked
+    : bridgeRuntimeBlocksPairing
       ? 'bundled_bridge_required'
-      : privateNetworkExplicitlyBlocked
+      : privateNetworkBlocksPairing
         ? 'secure_network_link_required'
-        : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
+        : actionEngineBlocksPairing
+          ? 'runtime_not_configured'
+          : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
   const blockerReason = blockerReasonForStatus({
     bridge,
     connectorService,
