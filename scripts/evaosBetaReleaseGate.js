@@ -1077,6 +1077,20 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     pythonRuntimePrep,
+    '-I -m pip check',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'bundled PyObjC dependencies must form a complete installed closure'
+  );
+  requireText(
+    pythonRuntimePrep,
+    'distributions(path=[sys.argv[1]])',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'bundled PyObjC closure must be scoped to the packaged site-packages directory'
+  );
+  requireText(
+    pythonRuntimePrep,
     'EVAOS_REQUIRED_PYTHON_RUNTIME_PACKAGES_JSON=$packages_json',
     'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
     issues,

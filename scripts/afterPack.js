@@ -410,7 +410,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     }
     verifyPythonMachOClosureArchitecture(path.join(resourcesDir, 'Bridge', 'python'), targetArch);
     const pythonLink = fs.lstatSync(pythonPath);
-    if (pythonLink.isSymbolicLink() && fs.readlinkSync(pythonPath) !== 'python3.12') {
+    if (!pythonLink.isSymbolicLink() || fs.readlinkSync(pythonPath) !== 'python3.12') {
       throw new Error('Packaged evaOS desktop bridge Python launcher symlink is not relocatable.');
     }
   }

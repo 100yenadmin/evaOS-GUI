@@ -239,7 +239,9 @@ assert_macos_zip_bridge_payload() {
       echo "FAIL: $(basename "$zip_path") is missing the self-contained desktop bridge Python launcher"
       ERRORS=$((ERRORS + 1))
     else
-      echo "PASS: $(basename "$zip_path") contains the self-contained desktop bridge Python launcher"
+      # This is intentionally a coarse archive-entry sanity check. The authoritative
+      # symlink-or-Mach-O launcher validation runs in evaosBetaReleaseGate.js.
+      echo "PASS: $(basename "$zip_path") contains the desktop bridge Python launcher entry; authoritative shape validation is performed by the release gate"
     fi
 
     if ! zip_contains_entry_matching "$zip_path" '(^|/)[^/]+\.app/Contents/Resources/Bridge/licenses/CPython-LICENSE\.txt$'; then

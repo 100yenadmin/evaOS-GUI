@@ -360,6 +360,24 @@ describe('afterPack bundled resource verification', () => {
     }
   });
 
+  it('rejects a regular-file bundled Python launcher in a strict release', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const pythonPath = join(resourcesDir, 'Bridge', 'python', 'bin', 'python3');
+    rmSync(pythonPath);
+    writeMachOFixture(pythonPath);
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /launcher symlink is not relocatable/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
   it('requires the evaOS connector binary in macOS bridge resources', () => {
     const resourcesDir = makeTempResources();
     writeBridgeFixture(resourcesDir, { helper: true });

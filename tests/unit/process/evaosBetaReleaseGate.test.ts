@@ -496,6 +496,10 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('scripts/prepareEvaosDesktopBridgePythonRuntime.sh "$TARGET_ARCH"');
     expect(runtimePrep).toContain('EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=$runtime_dir');
     expect(runtimePrep).toContain('EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256');
+    expect(runtimePrep).toContain('-I -m pip check');
+    expect(runtimePrep).toContain('distributions(path=[sys.argv[1]])');
+    expect(runtimePrep).toContain('installed_pyobjc');
+    expect(runtimePrep).toContain('expected_pyobjc');
     expect(runtimePrep).toContain('import ApplicationServices, Quartz');
   });
 
