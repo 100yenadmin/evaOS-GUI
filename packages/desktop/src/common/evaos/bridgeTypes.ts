@@ -204,6 +204,7 @@ export type IEvaosMacControlBlockerReason =
   | 'runtime_not_configured'
   | 'bundled_bridge_required'
   | 'connector_service_not_ready'
+  | 'listener_replacement_unproven'
   | 'bridge_cli_missing'
   | 'bridge_diagnostics_unavailable'
   | 'pairing_not_ready'

@@ -92,6 +92,14 @@ describe('evaOS broker bridge renderer secret boundary', () => {
         message: 'evaOS desktop session is active.',
       })
     ).not.toThrow();
+
+    expect(() =>
+      assertEvaosRendererSafePayload({
+        action: 'connector_start',
+        status: 'repair_required',
+        blockerReason: 'listener_replacement_unproven',
+      })
+    ).not.toThrow();
   });
 
   it('rejects secret-looking fields and values before they can cross generic IPC', async () => {

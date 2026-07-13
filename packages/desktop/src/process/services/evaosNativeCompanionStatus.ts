@@ -89,6 +89,7 @@ const SAFE_MAC_CONTROL_BLOCKER_REASONS = new Set<IEvaosMacControlBlockerReason>(
   'runtime_not_configured',
   'bundled_bridge_required',
   'connector_service_not_ready',
+  'listener_replacement_unproven',
   'bridge_cli_missing',
   'bridge_diagnostics_unavailable',
   'pairing_not_ready',
@@ -794,6 +795,7 @@ async function runConnectorStartAction(
   const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before, lifecycleGeneration);
   const ready =
     lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration &&
+    connectorServiceHasSecureRegistrationHost(status.data) &&
     (await connectorServiceIsReadyForWorkbenchSession(bridgePath, status, deps)) &&
     lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration;
   if (ready) {
@@ -829,7 +831,9 @@ async function ensureWorkbenchManagedConnectorReady(
     return connectorStartCancelledResult(before ?? { ok: false });
   }
   const current = before ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
-  const alreadyReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, current, deps);
+  const alreadyReady =
+    connectorServiceHasSecureRegistrationHost(current.data) &&
+    (await connectorServiceIsReadyForWorkbenchSession(bridgePath, current, deps));
   if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
     return connectorStartCancelledResult(current);
   }
@@ -837,25 +841,55 @@ async function ensureWorkbenchManagedConnectorReady(
     return current;
   }
 
-  const reportedHost = connectorSessionHostFromStatus(current.data);
-  const requiresPrivateTailnetHost = !reportedHost && connectorStatusDeclaresPrivateTailnetAvailability(current.data);
-  const privatelyResolvedHost = requiresPrivateTailnetHost ? await resolvePrivateTailnetHost(deps) : undefined;
-  if (requiresPrivateTailnetHost && !privatelyResolvedHost) return current;
-  if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
-    return connectorStartCancelledResult(current);
+  if (connectorStartTransition(current) === 'preserve') {
+    return connectorReplacementUnprovenResult(current);
   }
-  const host = reportedHost ?? privatelyResolvedHost ?? '127.0.0.1';
 
-  await runWorkbenchManagedConnectorStopCommand(bridgePath, deps);
+  const privateTailnetHost = connectorPrivateTailnetHostFromStatus(current.data);
+  const requiresPrivateTailnetHost = !privateTailnetHost;
+  const canResolvePrivateTailnetHost = connectorStatusDeclaresPrivateTailnetAvailability(current.data);
+  const privatelyResolvedHost =
+    requiresPrivateTailnetHost && canResolvePrivateTailnetHost ? await resolvePrivateTailnetHost(deps) : undefined;
+  if (requiresPrivateTailnetHost && !privatelyResolvedHost) return connectorReplacementUnprovenResult(current);
   if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
     return connectorStartCancelledResult(current);
   }
-  stopWorkbenchManagedConnector();
-  startWorkbenchManagedConnector(bridgePath, host, deps);
+  const host = privateTailnetHost ?? privatelyResolvedHost;
+  if (!host) return connectorReplacementUnprovenResult(current);
+
+  if (!startWorkbenchManagedConnector(bridgePath, host, deps)) {
+    return connectorReplacementUnprovenResult(current);
+  }
   const ready = await waitForConnectorServiceReadyAfterStart(bridgePath, deps, current, lifecycleGeneration);
   return lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration
     ? ready
     : connectorStartCancelledResult(current);
+}
+
+type ConnectorStartTransition = 'preserve' | 'cold_start';
+
+function connectorStartTransition(current: BridgeCommandResult): ConnectorStartTransition {
+  if (!connectorServiceStatusAvailable(current)) return 'preserve';
+  if (liveTrackedWorkbenchManagedConnector()) return 'preserve';
+  if (readBoolean(current.data, 'loaded') !== false) return 'preserve';
+  if (readBoolean(current.data, 'running') !== false) return 'preserve';
+  if (readNestedBoolean(current.data, ['health', 'reachable']) !== false) return 'preserve';
+  return 'cold_start';
+}
+
+function liveTrackedWorkbenchManagedConnector(): boolean {
+  return Boolean(workbenchManagedConnector?.process.exitCode === null && !workbenchManagedConnector.process.killed);
+}
+
+function connectorReplacementUnprovenResult(current: BridgeCommandResult): BridgeCommandResult {
+  return {
+    ok: false,
+    auditId: current.auditId,
+    data: current.data,
+    errorCode: 'listener_replacement_unproven',
+    errorMessage:
+      'The existing Mac Access owner was preserved because a safe private listener handoff was not proven. Refresh status or contact support.',
+  };
 }
 
 function connectorStartCancelledResult(current: BridgeCommandResult): BridgeCommandResult {
@@ -867,17 +901,15 @@ function connectorStartCancelledResult(current: BridgeCommandResult): BridgeComm
   };
 }
 
-function startWorkbenchManagedConnector(bridgePath: string, host: string, deps: EvaosNativeCompanionStatusDeps): void {
-  if (
-    workbenchManagedConnector?.bridgePath === bridgePath &&
-    workbenchManagedConnector.host === host &&
-    workbenchManagedConnector.process.exitCode === null &&
-    !workbenchManagedConnector.process.killed
-  ) {
-    return;
+function startWorkbenchManagedConnector(
+  bridgePath: string,
+  host: string,
+  deps: EvaosNativeCompanionStatusDeps
+): boolean {
+  if (liveTrackedWorkbenchManagedConnector()) {
+    return workbenchManagedConnector?.bridgePath === bridgePath && workbenchManagedConnector.host === host;
   }
 
-  stopWorkbenchManagedConnector();
   const spawnConnectorProcess = deps.spawnConnectorProcess ?? defaultSpawnConnectorProcess;
   const args = ['serve', '--host', host, '--port', String(CONNECTOR_PORT)];
   const child = spawnConnectorProcess(bridgePath, args, {
@@ -893,6 +925,7 @@ function startWorkbenchManagedConnector(bridgePath: string, host: string, deps: 
   });
   child.unref?.();
   workbenchManagedConnector = { bridgePath, host, process: child };
+  return true;
 }
 
 function stopWorkbenchManagedConnector(): void {
@@ -1241,6 +1274,9 @@ function classifyConnectorServiceBlocker(
   result: BridgeCommandResult,
   fallback: IEvaosMacControlBlockerReason
 ): IEvaosMacControlBlockerReason {
+  if (result.errorCode === 'listener_replacement_unproven') {
+    return 'listener_replacement_unproven';
+  }
   if (connectorStatusHasExplicitOwnerMismatch(bridgePath, result.data)) {
     const managedBy = readString(result.data, 'managed_by')?.toLowerCase();
     if (connectorResponsibleBundleId(result.data) || connectorOwnerPaths(result.data).length > 0) {
@@ -1258,6 +1294,15 @@ function connectorSessionHostFromStatus(input: unknown): string | undefined {
     normalizeConnectorHost(readString(input, 'tailnet_ip')) ??
     normalizeConnectorHost(readNestedString(input, ['health', 'host']))
   );
+}
+
+function connectorPrivateTailnetHostFromStatus(input: unknown): string | undefined {
+  const tailnetIp = normalizeConnectorHost(readString(input, 'tailnet_ip'));
+  if (isSafeConnectorRegistrationHost(tailnetIp)) return tailnetIp;
+  const hostKind = readNestedString(input, ['health', 'host_kind']) ?? readNestedString(input, ['health', 'hostKind']);
+  if (hostKind !== 'tailnet') return undefined;
+  const healthHost = normalizeConnectorHost(readNestedString(input, ['health', 'host']));
+  return isSafeConnectorRegistrationHost(healthHost) ? healthHost : undefined;
 }
 
 async function runConnectorStopAction(
@@ -1422,7 +1467,9 @@ async function runSetupCheckAction(
     runBridgeCommand(bridgePath, ['audit-tail', '--json', '--limit', '12'], deps),
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
-  const connectorReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
+  const connectorReady =
+    connectorServiceHasSecureRegistrationHost(connectorService.data) &&
+    (await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps));
   const prerequisiteGate = await nativeCompanionPrerequisiteGateWithAuthority({
     bridgePath,
     bridge,
@@ -1611,7 +1658,7 @@ async function ensureCustomerMacConnectorGrantAction(
       return nativeActionResult(
         resultAction,
         'repair_required',
-        'Mac control is ready locally, but Workbench could not replace the stale connector with this signed app session. Stop Mac access, then reconnect Mac control.',
+        'Mac control is ready locally, but Workbench could not confirm a safe signed-app connector session. The current listener was preserved. Refresh status or contact support before retrying.',
         {
           sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
           auditId: localCustomerMac?.auditId ?? controlSession.auditId,
@@ -1668,7 +1715,7 @@ async function ensureCustomerMacConnectorGrantAction(
         return nativeActionResult(
           resultAction,
           'repair_required',
-          'Mac control is ready locally, but Workbench could not replace the stale connector with this signed app session. Stop Mac access, then reconnect Mac control.',
+          'Mac control is ready locally, but Workbench could not confirm a safe signed-app connector session. The current listener was preserved. Refresh status or contact support before retrying.',
           {
             sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
             auditId: localCustomerMac.auditId,

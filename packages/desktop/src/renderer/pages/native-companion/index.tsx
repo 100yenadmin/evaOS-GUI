@@ -209,6 +209,9 @@ const NativeCompanionPage: React.FC = () => {
   const runtimeToolReadiness = selectedPairingStatus?.runtimeToolReadiness ?? 'not_ready';
   const shouldShowAgentProof = selectedPairingStatus?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(currentActionResult);
+  const connectorStartAvailable =
+    !nativeCompanionConnectorReady(selectedPairingStatus) &&
+    currentActionResult?.blockerReason !== 'listener_replacement_unproven';
   const canCreatePairingPrompt = canCreateNativeCompanionPairingPrompt({
     status: selectedPairingStatus,
     loading,
@@ -244,6 +247,7 @@ const NativeCompanionPage: React.FC = () => {
       setCopyMessage(null);
       setTakeoverCueWarning(null);
       const targetsMacControlCustomer =
+        request.action === 'connector_start' ||
         request.action === 'create_pairing_prompt' ||
         request.action === 'secure_network_enroll' ||
         request.action === 'ensure_customer_mac_connector_grant' ||
@@ -596,13 +600,15 @@ const NativeCompanionPage: React.FC = () => {
 
             {connectorActionsOpen ? (
               <div className='mt-12px flex flex-wrap gap-8px' aria-label='Advanced Workbench connector actions'>
-                <Button
-                  type='secondary'
-                  loading={actionInFlight === 'connector_start'}
-                  onClick={() => void handleRunAction({ action: 'connector_start' })}
-                >
-                  Turn On Mac Access
-                </Button>
+                {connectorStartAvailable ? (
+                  <Button
+                    type='secondary'
+                    loading={actionInFlight === 'connector_start'}
+                    onClick={() => void handleRunAction({ action: 'connector_start' })}
+                  >
+                    Turn On Mac Access
+                  </Button>
+                ) : null}
                 <Button
                   type='secondary'
                   loading={actionInFlight === 'setup_check'}
@@ -1093,6 +1099,14 @@ function statusForSelectedPairingCustomer(
     agentPairingStatus: scopedAgentPairingStatus,
     runtimeToolReadiness: scopedRuntimeToolReadiness,
   };
+}
+
+function nativeCompanionConnectorReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  return (
+    status?.connectorService?.status === 'ready' &&
+    status.connectorService.running === true &&
+    status.connectorService.reachable === true
+  );
 }
 
 function actionResultForCurrentPairingCustomer(

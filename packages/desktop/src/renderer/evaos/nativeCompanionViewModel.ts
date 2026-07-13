@@ -441,15 +441,7 @@ function nextActionForState(
   }
 
   if (!status || state === 'offline') {
-    return {
-      kind: 'refresh',
-      label: 'Refresh status',
-      title: 'Reconnect Mac control',
-      detail: 'Workbench cannot read current Mac control status. Refresh before pairing or agent control.',
-      step: 1,
-      totalSteps,
-      disabled: false,
-    };
+    return offlineStatusRefreshAction(totalSteps);
   }
 
   if (state === 'unsupported' || !status.bridgeCli.installed) {
@@ -506,6 +498,10 @@ function nextActionForState(
     }
     const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
     return brokerGate ?? networkPrerequisite.action;
+  }
+
+  if (actionResult?.blockerReason === 'listener_replacement_unproven' && !connectorServiceReady(status)) {
+    return offlineStatusRefreshAction(totalSteps);
   }
 
   if (!connectorServiceReady(status)) {
@@ -627,6 +623,18 @@ function nextActionForState(
     step: 3,
     totalSteps,
     disabled: !pairingReady,
+  };
+}
+
+function offlineStatusRefreshAction(totalSteps: number): NativeCompanionNextAction {
+  return {
+    kind: 'refresh',
+    label: 'Refresh status',
+    title: 'Reconnect Mac control',
+    detail: 'Workbench cannot read current Mac control status. Refresh before pairing or agent control.',
+    step: 1,
+    totalSteps,
+    disabled: false,
   };
 }
 

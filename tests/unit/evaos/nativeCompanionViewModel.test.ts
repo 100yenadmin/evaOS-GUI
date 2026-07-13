@@ -688,6 +688,64 @@ describe('nativeCompanionViewModel', () => {
     });
   });
 
+  it('offers refresh instead of another restart after preserving an unproven listener handoff', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'repair_required',
+        agentPairingStatus: 'not_ready',
+        connectorService: { status: 'repair_required', running: true, reachable: false },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+      actionResult: {
+        action: 'connector_start',
+        status: 'repair_required',
+        message: 'The existing Mac Access owner was preserved.',
+        sourcePointer: 'native-companion:workbench-session-connector-start',
+        auditIds: [],
+        refreshRecommended: true,
+        blockerReason: 'listener_replacement_unproven',
+      },
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'refresh',
+      label: 'Refresh status',
+      title: 'Reconnect Mac control',
+      detail: 'Workbench cannot read current Mac control status. Refresh before pairing or agent control.',
+      disabled: false,
+    });
+    expect(viewModel.nextAction).not.toHaveProperty('action');
+  });
+
+  it('lets refreshed ready connector truth supersede a stale unproven-listener result', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+      hasSelectedCustomer: true,
+      actionResult: {
+        action: 'connector_start',
+        status: 'repair_required',
+        message: 'The existing Mac Access owner was preserved.',
+        sourcePointer: 'native-companion:workbench-session-connector-start',
+        auditIds: [],
+        refreshRecommended: true,
+        blockerReason: 'listener_replacement_unproven',
+      },
+    });
+
+    expect(viewModel.nextAction.kind).not.toBe('refresh');
+    expect(viewModel.nextAction.label).not.toBe('Refresh status');
+  });
+
   it('distinguishes proven runtime tools from local connector readiness', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
