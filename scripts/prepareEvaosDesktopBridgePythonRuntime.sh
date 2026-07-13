@@ -97,7 +97,7 @@ if installed_pyobjc != expected_pyobjc:
     raise SystemExit(1)
 print("bundled-pyobjc-closure-ok")
 PY
-"$runtime_dir/bin/python3" -I -c 'import ApplicationServices, Quartz; print("bundled-pyobjc-ok")'
+"$runtime_dir/bin/python3" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz; print("bundled-pyobjc-ok")'
 
 packages_json='[{"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},{"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},{"name":"pyobjc-framework-Quartz","version":"12.2.1","sha256":"de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9"},{"name":"pyobjc-framework-ApplicationServices","version":"12.2.1","sha256":"f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b"},{"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"}]'
 {

@@ -459,6 +459,20 @@ function writeProofReleaseAssetsReference(
 }
 
 describe('evaOS beta release gate', () => {
+  it('recognizes little-endian fat Mach-O helpers during signing closure validation', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-after-sign-fat-mach-o-'));
+    try {
+      for (const [index, magic] of ['bebafeca', 'bfbafeca'].entries()) {
+        const helperPath = path.join(dir, `helper-${index}`);
+        fs.writeFileSync(helperPath, Buffer.from(`${magic}00000000`, 'hex'));
+        fs.chmodSync(helperPath, 0o755);
+        expect(afterSign.isMachOExecutable(helperPath)).toBe(true);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('pins the stable Peekaboo fallback asset and published digest', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/_build-reusable.yml'), 'utf8');
 
@@ -500,7 +514,7 @@ describe('evaOS beta release gate', () => {
     expect(runtimePrep).toContain('distributions(path=[sys.argv[1]])');
     expect(runtimePrep).toContain('installed_pyobjc');
     expect(runtimePrep).toContain('expected_pyobjc');
-    expect(runtimePrep).toContain('import ApplicationServices, Quartz');
+    expect(runtimePrep).toContain('import ApplicationServices, Cocoa, CoreText, Quartz');
   });
 
   it('requires functional smoke to verify the packaged Peekaboo version', () => {
@@ -523,6 +537,14 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.collectFunctionalSmokeConfigIssues(decoyWorkflow)).toEqual([
       '.github/workflows/workbench-functional-smoke.yml: macos-arm64-app must run on macos-15',
     ]);
+
+    const mutableBridgeRefWorkflow = workflow.replace(
+      '[[ ! "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]',
+      'true'
+    );
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(mutableBridgeRefWorkflow)).toContain(
+      '.github/workflows/workbench-functional-smoke.yml: bridge ref must be a full immutable commit SHA'
+    );
   });
 
   it('detects strict public beta release mode', () => {

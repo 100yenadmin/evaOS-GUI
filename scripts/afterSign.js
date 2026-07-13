@@ -23,7 +23,16 @@ const DEFAULT_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
 const DEFAULT_APP_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
 const DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_EXPECTED_TEAM_ID = 'TC6MS3T6NN';
-const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+const MACHO_MAGICS = new Set([
+  'feedface',
+  'feedfacf',
+  'cefaedfe',
+  'cffaedfe',
+  'cafebabe',
+  'bebafeca',
+  'cafebabf',
+  'bfbafeca',
+]);
 const MAC_CONTROL_HELPER_RELATIVE_PATHS = [
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'peekaboo'),
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-connector-helper'),

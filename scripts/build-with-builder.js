@@ -344,17 +344,28 @@ function installPreparedRuntimeEnvironment(envFile) {
   }
 }
 
-function ensureDesktopBridgePythonRuntime(targetArch) {
-  if (process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR) return;
-  if (process.platform !== 'darwin') return;
+function withDesktopBridgePythonRuntime(targetArch, operation) {
+  if (process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR || process.platform !== 'darwin') {
+    return operation();
+  }
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-python-runtime-'));
   const envFile = path.join(tempRoot, 'runtime.env');
-  execFileSync(path.join(__dirname, 'prepareEvaosDesktopBridgePythonRuntime.sh'), [targetArch, envFile], {
-    stdio: 'inherit',
-    env: { ...process.env, RUNNER_TEMP: tempRoot },
-  });
-  installPreparedRuntimeEnvironment(envFile);
+  try {
+    execFileSync(path.join(__dirname, 'prepareEvaosDesktopBridgePythonRuntime.sh'), [targetArch, envFile], {
+      stdio: 'inherit',
+      env: { ...process.env, RUNNER_TEMP: tempRoot },
+    });
+    installPreparedRuntimeEnvironment(envFile);
+    return operation();
+  } finally {
+    delete process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR;
+    try {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    } catch (cleanupError) {
+      console.warn(`Failed to clean temporary desktop bridge Python runtime ${tempRoot}: ${cleanupError.message}`);
+    }
+  }
 }
 
 function buildWithDmgRetry(cmd, targetArch) {
@@ -611,8 +622,9 @@ try {
   // 7. Prepare the bundled evaOS desktop bridge for macOS Workbench pairing/control parity.
   // The packaged app must resolve Contents/Resources/Bridge/evaos-desktop-bridge before Homebrew.
   if (builderArgs.includes('--mac') || builderArgs.includes('--all')) {
-    ensureDesktopBridgePythonRuntime(targetArch);
-    execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env });
+    withDesktopBridgePythonRuntime(targetArch, () =>
+      execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env })
+    );
   }
 
   // 8. 运行 electron-builder 生成分发包（DMG/ZIP/EXE等）

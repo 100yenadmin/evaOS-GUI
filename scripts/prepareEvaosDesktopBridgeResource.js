@@ -15,7 +15,16 @@ const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
-const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+const MACHO_MAGICS = new Set([
+  'feedface',
+  'feedfacf',
+  'cefaedfe',
+  'cffaedfe',
+  'cafebabe',
+  'bebafeca',
+  'cafebabf',
+  'bfbafeca',
+]);
 
 function truthy(value) {
   return TRUE_VALUES.has(

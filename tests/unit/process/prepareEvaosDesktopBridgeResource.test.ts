@@ -113,15 +113,17 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
   it('detects native Mach-O executables before release packaging trusts a control helper', () => {
     const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-mach-o-'));
-    const machO = join(dir, 'peekaboo');
     const script = join(dir, 'peekaboo.sh');
     try {
-      writeFileSync(machO, Buffer.from('cffaedfe00000000', 'hex'));
-      chmodSync(machO, 0o755);
+      for (const [index, magic] of ['cffaedfe', 'cafebabe', 'bebafeca', 'bfbafeca'].entries()) {
+        const machO = join(dir, `peekaboo-${index}`);
+        writeFileSync(machO, Buffer.from(`${magic}00000000`, 'hex'));
+        chmodSync(machO, 0o755);
+        expect(bridgeResource.isMachOExecutable(machO)).toBe(true);
+      }
       writeFileSync(script, '#!/bin/sh\nexit 0\n');
       chmodSync(script, 0o755);
 
-      expect(bridgeResource.isMachOExecutable(machO)).toBe(true);
       expect(bridgeResource.isMachOExecutable(script)).toBe(false);
     } finally {
       rmSync(dir, { force: true, recursive: true });

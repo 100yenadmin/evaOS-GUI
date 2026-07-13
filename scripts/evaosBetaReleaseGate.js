@@ -460,10 +460,14 @@ function getWorkflowJobRunner(workflow, jobName) {
 
 function collectFunctionalSmokeConfigIssues(workflow) {
   const jobs = getTopLevelYamlSection(workflow, 'jobs');
-  if (getWorkflowJobRunner(jobs, 'macos-arm64-app') === 'macos-15') {
-    return [];
+  const issues = [];
+  if (getWorkflowJobRunner(jobs, 'macos-arm64-app') !== 'macos-15') {
+    issues.push('.github/workflows/workbench-functional-smoke.yml: macos-arm64-app must run on macos-15');
   }
-  return ['.github/workflows/workbench-functional-smoke.yml: macos-arm64-app must run on macos-15'];
+  if (!String(workflow || '').includes('[[ ! "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]')) {
+    issues.push('.github/workflows/workbench-functional-smoke.yml: bridge ref must be a full immutable commit SHA');
+  }
+  return issues;
 }
 
 function collectReleaseConfigIssues(rootDir = process.cwd()) {
@@ -1063,7 +1067,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     pythonRuntimePrep,
-    'import ApplicationServices, Quartz',
+    'import ApplicationServices, Cocoa, CoreText, Quartz',
     'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
     issues,
     'bundled runtime must prove direct Accessibility dependencies without host packages'
