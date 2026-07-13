@@ -1023,7 +1023,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "网关托管工具",
+    "workbenchSessionMcpUnsupported": "Workbench 会话 MCP 不受支持",
+    "desktopBridgeGatewayPluginRequired": "需要 Desktop Bridge 网关插件",
+    "sessionMcpSupportDeterminedAtConnection": "会话 MCP 支持在连接时确定"
   },
   "remoteAgent": {
     "title": "远程 Agent",

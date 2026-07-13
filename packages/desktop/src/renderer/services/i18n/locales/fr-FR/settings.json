@@ -1022,7 +1022,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "Tous",
     "filterAvailable": "Disponible",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "Outils gérés par la passerelle",
+    "workbenchSessionMcpUnsupported": "Le MCP de session Workbench n’est pas pris en charge",
+    "desktopBridgeGatewayPluginRequired": "Le plug-in de passerelle Desktop Bridge est requis",
+    "sessionMcpSupportDeterminedAtConnection": "La prise en charge du MCP de session est déterminée lors de la connexion"
   },
   "remoteAgent": {
     "title": "Agents distants",

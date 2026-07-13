@@ -1146,7 +1146,11 @@
     "nativeRepairAction": "Repair in Mac & iPhone",
     "nativeRepairBadge": "Repair",
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
-    "filterSetupNeeded": "نیاز به راه‌اندازی"
+    "filterSetupNeeded": "نیاز به راه‌اندازی",
+    "gatewayManagedTools": "ابزارهای مدیریت‌شده توسط دروازه",
+    "workbenchSessionMcpUnsupported": "MCP نشست Workbench پشتیبانی نمی‌شود",
+    "desktopBridgeGatewayPluginRequired": "افزونه دروازه Desktop Bridge الزامی است",
+    "sessionMcpSupportDeterminedAtConnection": "پشتیبانی MCP نشست هنگام اتصال تعیین می‌شود"
   },
   "repair": {
     "pathLabel": "مسیر راه‌اندازی",

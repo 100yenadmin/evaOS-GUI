@@ -1012,7 +1012,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "게이트웨이 관리 도구",
+    "workbenchSessionMcpUnsupported": "Workbench 세션 MCP는 지원되지 않음",
+    "desktopBridgeGatewayPluginRequired": "Desktop Bridge 게이트웨이 플러그인 필요",
+    "sessionMcpSupportDeterminedAtConnection": "세션 MCP 지원은 연결 시 결정됩니다"
   },
   "remoteAgent": {
     "title": "원격 에이전트",

@@ -1024,7 +1024,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "閘道管理的工具",
+    "workbenchSessionMcpUnsupported": "Workbench 工作階段 MCP 不受支援",
+    "desktopBridgeGatewayPluginRequired": "需要 Desktop Bridge 閘道外掛程式",
+    "sessionMcpSupportDeterminedAtConnection": "工作階段 MCP 支援會在連線時決定"
   },
   "remoteAgent": {
     "title": "遠端 Agent",
