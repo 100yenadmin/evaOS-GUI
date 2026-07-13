@@ -222,6 +222,7 @@ export type IEvaosPrivateNetworkAuthorityDiagnosticReason =
   | 'policy_unavailable'
   | 'policy_hash_mismatch'
   | 'authority_unavailable'
+  | 'broker_session_expired'
   | 'local_evidence_unavailable'
   | 'local_scope_unavailable'
   | 'authority_proof_invalid';

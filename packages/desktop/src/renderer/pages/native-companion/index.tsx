@@ -277,15 +277,7 @@ const NativeCompanionPage: React.FC = () => {
         }
         setActionResult(result);
         setActionResultCustomerId(targetsMacControlCustomer ? requestCustomerId : undefined);
-        setHandoffMessage(
-          result.sourcePointer === 'native-companion:secure-network-enrollment-submitted'
-            ? t('evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail')
-            : result.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
-              ? t('evaos.nativeCompanion.onboarding.enrollmentSessionDetail')
-              : result.sourcePointer.startsWith('native-companion:secure-network-enrollment-')
-                ? t('evaos.nativeCompanion.onboarding.enrollmentFailedDetail')
-                : result.message
-        );
+        setHandoffMessage(localizedNativeCompanionActionResultMessage(result, t));
         if (result.refreshRecommended) {
           await refresh();
         }

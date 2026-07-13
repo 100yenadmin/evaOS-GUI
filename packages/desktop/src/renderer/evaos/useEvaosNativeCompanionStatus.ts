@@ -46,6 +46,7 @@ const SAFE_AUTHORITY_DIAGNOSTIC_REASONS = new Set<IEvaosPrivateNetworkAuthorityD
   'policy_unavailable',
   'policy_hash_mismatch',
   'authority_unavailable',
+  'broker_session_expired',
   'local_evidence_unavailable',
   'local_scope_unavailable',
   'authority_proof_invalid',
@@ -91,6 +92,7 @@ function safeRendererDiagnosticPacket(packet: IEvaosWorkbenchDiagnosticPacketV1)
   };
 }
 
+/** Returns customer-scoped native companion state and rejects stale refresh results after customer switches. */
 export function useEvaosNativeCompanionStatus(enabled = true, customerId?: string): EvaosNativeCompanionStatusState {
   const scopeKey = customerId ?? '';
   const [scopedStatus, setScopedStatus] = useState<{

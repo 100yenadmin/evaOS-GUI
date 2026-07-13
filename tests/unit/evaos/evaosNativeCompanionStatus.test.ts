@@ -776,6 +776,46 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
+  it('surfaces broker-session recovery when private-network authority authentication expires', async () => {
+    const deps = depsWithTypedReadyResponses(
+      {
+        'status --json': { ok: true, data: {} },
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+        },
+        'customer-mac status --json': {
+          ok: true,
+          data: {
+            device: { hardware_uuid: 'session-device' },
+            permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          data: { active: false, kill_switch: false, active_mac_control_scope_id: 'grant-session' },
+        },
+        'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+        'ready --json': { ok: true, data: { ready: true } },
+      },
+      {
+        getPrivateNetworkReadiness: vi.fn(async () => {
+          throw new EvaosBrokerSessionError('expired_session', 'expired');
+        }),
+      }
+    );
+
+    const status = await getEvaosNativeCompanionStatus(deps, { customerId: 'session-customer' });
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      blockerReason: 'broker_session_expired',
+      privateNetworkAuthority: { reason: 'broker_session_expired' },
+    });
+  });
+
   it('rejects mixed grant scopes and aborts a timed-out authority request', async () => {
     const deps = depsWithResponses({
       'status --json': {
@@ -4282,10 +4322,7 @@ describe('evaosNativeCompanionStatus', () => {
       deps
     );
 
-    expect(result).toMatchObject({
-      status: 'succeeded',
-      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
-    });
+    expect(result).toMatchObject({ status: 'succeeded' });
     expect(createPrivateNetworkEnrollment).toHaveBeenCalledWith(
       expect.objectContaining({ clientVariant: 'tailscale_standalone' })
     );
@@ -4467,12 +4504,12 @@ describe('evaosNativeCompanionStatus', () => {
     );
 
     expect(result).toMatchObject({
-      status: 'succeeded',
-      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
     });
     expect(diagnosticEvents).toEqual([expectedEvent]);
     expect(JSON.stringify(diagnosticEvents)).not.toMatch(/auth-key|one-use-private-network-key|evaos-private-network/i);
-    expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
+    expect(cancelPrivateNetworkEnrollment).toHaveBeenCalled();
   });
 
   it('settles before cancellation when a failed CLI exit is followed by delayed enrolled local state', async () => {

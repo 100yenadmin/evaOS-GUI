@@ -386,17 +386,20 @@ export async function getEvaosNativeCompanionStatus(
         : actionEngineBlocksPairing
           ? 'runtime_not_configured'
           : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
-  const blockerReason = blockerReasonForStatus({
-    bridge,
-    connectorService,
-    customerMac,
-    controlSession,
-    bridgeReady,
-    connectorServiceReady,
-    customerMacReady,
-    pairingBlockedReason,
-    bridgePath,
-  });
+  const blockerReason =
+    privateNetworkAuthorityResult.diagnostic.reason === 'broker_session_expired'
+      ? 'broker_session_expired'
+      : blockerReasonForStatus({
+          bridge,
+          connectorService,
+          customerMac,
+          controlSession,
+          bridgeReady,
+          connectorServiceReady,
+          customerMacReady,
+          pairingBlockedReason,
+          bridgePath,
+        });
   const summaryText = nativeCompanionSummaryText({
     readiness,
     pairingCapable,
@@ -2231,6 +2234,8 @@ async function runSecureNetworkEnrollmentAction(
   const execFile = deps.execFile ?? defaultExecFile;
   let secretDirectory: string | undefined;
   let secretPath: string | undefined;
+  let secretReady = false;
+  let cleanupFailed = false;
   let localEnrollmentSucceeded = false;
   try {
     secretDirectory = fs.mkdtempSync(join(tmpdir(), 'evaos-private-network-'));
@@ -2241,12 +2246,13 @@ async function runSecureNetworkEnrollmentAction(
       flag: 'wx',
       mode: 0o600,
     });
+    secretReady = true;
   } catch {
     recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_setup_failed');
     localEnrollmentSucceeded = false;
   }
 
-  if (secretPath) {
+  if (secretReady && secretPath) {
     try {
       await execFile(
         client.commandPath,
@@ -2270,6 +2276,7 @@ async function runSecureNetworkEnrollmentAction(
     } catch {
       recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_unlink_failed');
       localEnrollmentSucceeded = false;
+      cleanupFailed = true;
     }
   }
   if (secretDirectory) {
@@ -2278,10 +2285,11 @@ async function runSecureNetworkEnrollmentAction(
     } catch {
       recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_directory_cleanup_failed');
       localEnrollmentSucceeded = false;
+      cleanupFailed = true;
     }
   }
 
-  if (!localEnrollmentSucceeded) {
+  if (!localEnrollmentSucceeded && !cleanupFailed) {
     localEnrollmentSucceeded = await waitForSecureNetworkEnrollmentAfterAmbiguousFailure(bridgePath, deps);
   }
 
@@ -2474,10 +2482,13 @@ async function privateNetworkEvidenceWithAuthority(input: {
       },
       diagnostic,
     };
-  } catch {
+  } catch (error) {
     return {
       evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
-      diagnostic: { classification: 'unavailable', reason: 'authority_unavailable' },
+      diagnostic: {
+        classification: 'unavailable',
+        reason: isBrokerSessionReconnectRequired(error) ? 'broker_session_expired' : 'authority_unavailable',
+      },
     };
   }
 }
