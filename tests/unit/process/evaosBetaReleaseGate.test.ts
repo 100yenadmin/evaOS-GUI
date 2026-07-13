@@ -1075,6 +1075,14 @@ describe('evaOS beta release gate', () => {
     ]);
   });
 
+  it('fails closed on an existing release tag instead of mutating the version after build', () => {
+    const buildRelease = fs.readFileSync(path.join(repoRoot, '.github/workflows/build-and-release.yml'), 'utf8');
+
+    expect(buildRelease).not.toContain('bun pm version');
+    expect(buildRelease).toContain('Refusing post-build version mutation because tag $TAG_NAME already exists.');
+    expect(buildRelease).toContain('Bump package.json and bun.lock in a reviewed source commit');
+  });
+
   it('does not require optional Business Browser action proof in the release workflow config audit', () => {
     const issues = releaseGate.collectReleaseConfigIssues(repoRoot);
 

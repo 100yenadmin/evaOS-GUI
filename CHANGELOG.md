@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## evaOS Workbench 2.1.33 (2026-07-13)
 
 ### Broker-Owned Private Network Authority
 
@@ -44,6 +44,13 @@
 - Preserve the existing broker grant, stop/revoke, kill-switch, diagnostics,
   TCC, and no-ACP boundaries while preventing local readiness from masking a
   broken VM/WebChat tool path.
+
+### Release Boundary
+
+- This entry identifies the v2.1.33 release candidate source. Signed,
+  notarized, stapled, installed-app, live broker/Mac-control, distribution, and
+  customer-readiness claims remain bound to their exact release evidence and
+  are not implied by the version bump.
 
 ## evaOS Workbench 2.1.32 (2026-07-11)
 
