@@ -481,6 +481,61 @@ describe('NativeCompanionPage', () => {
     expect(screen.queryByText('audit-mac, audit-iphone')).not.toBeInTheDocument();
   });
 
+  it('shows authorized support diagnostics to a global admin without exposing operator-only customer details', async () => {
+    localStorage.setItem('evaos.supportDiagnostics', '1');
+    customerContextMock.brokerSession = {
+      state: 'authenticated',
+      authenticated: true,
+      expired: false,
+      sessionKey: 'evaos-session-global-admin',
+      source: 'beta-storage',
+      userEmail: 'admin@100yen.org',
+      message: 'Authenticated',
+    };
+    customerContextMock.customerContext.roles = ['member'];
+    customerContextMock.customerContext.isOperator = false;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-14T03:00:00.000Z',
+        readiness: 'ready',
+        summaryText: 'Native bridge ready from read-only adapter proof.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: true,
+        releasedWorkbench: { installed: true, running: false, path: '/Applications/evaOS Workbench.app' },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          auditId: 'audit-bridge',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          auditId: 'audit-mac',
+          deviceLabel: 'EVAs-Mac-mini.local',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'available', auditId: 'audit-iphone', installed: true, running: false },
+        audit: { status: 'ready', auditIds: ['audit-mac', 'audit-iphone'] },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    expect(await screen.findByText('Advanced diagnostics')).toBeInTheDocument();
+    expect(screen.queryByText('Mac control repair')).not.toBeInTheDocument();
+    expect(screen.queryByText('Guided Mac control setup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show advanced connector controls' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Advanced diagnostics'));
+    expect(screen.getByText('EVAs-Mac-mini.local')).toBeInTheDocument();
+    expect(screen.getByText('audit-mac, audit-iphone')).toBeInTheDocument();
+  });
+
   it('shows an agent setup blocker without failing local Mac Access', async () => {
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
@@ -709,24 +764,23 @@ describe('NativeCompanionPage', () => {
     expect(bridgeMocks.runAction).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'connector_start' }));
   });
 
-  it('requires an explicit choice when multiple VM-backed targets are available', async () => {
+  it('requires a local human choice when customer context auto-selects one of multiple VM-backed targets', async () => {
+    const benjaminTarget = {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Benjamin Kennedy',
+      isDefault: true,
+    };
+    const goldenTarget = {
+      customerId: 'golden',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Golden Test VM',
+      isDefault: false,
+    };
     customerContextMock.customerContext.isOperator = false;
-    customerContextMock.customerContext.selectedCustomerId = undefined;
-    customerContextMock.customerContext.selectedTarget = undefined;
-    customerContextMock.customerContext.targets = [
-      {
-        customerId: 'benjamin-kennedy',
-        targetKind: 'customer_vm',
-        displayName: 'Benjamin Kennedy',
-        isDefault: true,
-      },
-      {
-        customerId: 'golden',
-        targetKind: 'customer_vm',
-        displayName: 'Golden Test VM',
-        isDefault: false,
-      },
-    ];
+    customerContextMock.customerContext.selectedCustomerId = benjaminTarget.customerId;
+    customerContextMock.customerContext.selectedTarget = benjaminTarget;
+    customerContextMock.customerContext.targets = [benjaminTarget, goldenTarget];
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -754,11 +808,18 @@ describe('NativeCompanionPage', () => {
       },
     });
 
+    const user = userEvent.setup();
     renderNativeCompanion();
 
-    expect(await screen.findByTestId('native-companion-mac-target-select')).toHaveValue('');
+    const targetSelect = await screen.findByTestId('native-companion-mac-target-select');
+    expect(targetSelect).toHaveValue('');
     expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
     expect(bridgeMocks.getStatus).toHaveBeenCalledWith({ customerId: undefined });
+
+    await user.selectOptions(targetSelect, goldenTarget.customerId);
+
+    expect(targetSelect).toHaveValue(goldenTarget.customerId);
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalledWith({ customerId: goldenTarget.customerId }));
   });
 
   it('keeps existing stop and kill-switch actions customer-visible with their exact wiring', async () => {
@@ -1327,7 +1388,14 @@ describe('NativeCompanionPage', () => {
     });
   });
 
-  it('clears a customer-scoped pairing prompt when the selected customer changes', async () => {
+  it('clears a customer-scoped pairing prompt when the human switches Mac targets', async () => {
+    const mattTarget = {
+      customerId: 'matt-calderon',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Matt Calderon',
+      isDefault: false,
+    };
+    customerContextMock.customerContext.targets = [...customerContextMock.customerContext.targets, mattTarget];
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -1394,25 +1462,16 @@ describe('NativeCompanionPage', () => {
     });
 
     const user = userEvent.setup();
-    const view = renderNativeCompanion();
+    renderNativeCompanion();
 
+    const targetSelect = await screen.findByTestId('native-companion-mac-target-select');
+    await user.selectOptions(targetSelect, 'benjamin-kennedy');
     await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(await screen.findByRole('button', { name: 'Export Pairing Prompt' }));
     expect(await screen.findByText('Agent setup prompt')).toBeInTheDocument();
     expect(screen.getByText(/Pairing code: PAIR-1234/)).toBeInTheDocument();
 
-    customerContextMock.customerContext.selectedCustomerId = 'matt-calderon';
-    customerContextMock.customerContext.selectedTarget = {
-      customerId: 'matt-calderon',
-      targetKind: 'customer_vm',
-      displayName: 'Matt Calderon',
-      isDefault: false,
-    };
-    view.rerender(
-      <ConfigProvider>
-        <NativeCompanionPage />
-      </ConfigProvider>
-    );
+    await user.selectOptions(targetSelect, mattTarget.customerId);
 
     await waitFor(() => expect(screen.queryByText('Agent setup prompt')).not.toBeInTheDocument());
     expect(screen.queryByText(/Pairing code: PAIR-1234/)).not.toBeInTheDocument();
@@ -1619,6 +1678,7 @@ describe('NativeCompanionPage', () => {
     const user = userEvent.setup();
     const view = renderNativeCompanion();
 
+    await user.selectOptions(await screen.findByTestId('native-companion-mac-target-select'), davidTarget.customerId);
     expect(await screen.findByText(/Mac control target: David Dorman/)).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: 'Connect Mac Control' }));
 
@@ -2496,6 +2556,7 @@ describe('NativeCompanionPage', () => {
   });
 
   it('keeps proof cards pending for a grant and marks them proven only with runtime tool proof', async () => {
+    const user = userEvent.setup();
     const pairedStatus = {
       schemaVersion: 'evaos.native_companion_status.v1' as const,
       generatedAt: '2026-06-07T03:45:00.000Z',
@@ -2607,6 +2668,7 @@ describe('NativeCompanionPage', () => {
     });
     renderNativeCompanion();
 
+    await user.selectOptions(await screen.findByTestId('native-companion-mac-target-select'), 'customer-b');
     expect(await screen.findByText('Setup needed')).toBeInTheDocument();
     expect(screen.queryByText('Grant active; test needed')).not.toBeInTheDocument();
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
@@ -2630,6 +2692,7 @@ describe('NativeCompanionPage', () => {
     });
     renderNativeCompanion();
 
+    await user.selectOptions(await screen.findByTestId('native-companion-mac-target-select'), 'benjamin-kennedy');
     expect(await screen.findAllByText('Grant active; test needed')).toHaveLength(2);
     expect(screen.queryByText('Proven')).not.toBeInTheDocument();
     expect(screen.queryByText('End-to-end ready')).not.toBeInTheDocument();

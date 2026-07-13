@@ -766,7 +766,7 @@ const NativeCompanionPage: React.FC = () => {
           ) : null}
         </section>
 
-        {showOperatorDetails && showDiagnostics ? (
+        {showDiagnostics ? (
           <section className='rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-1 p-16px'>
             <button
               type='button'
@@ -1215,17 +1215,18 @@ function selectMacPairingTarget(input: {
   isOperator?: boolean;
 }): IEvaosCustomerTargetView | undefined {
   const pairableTargets = input.targets;
+  const lockedTargetFromList = input.lockedPairingCustomerId
+    ? pairableTargets.find((target) => target.customerId === input.lockedPairingCustomerId)
+    : undefined;
+  if (lockedTargetFromList) return lockedTargetFromList;
+  if (pairableTargets.length > 1) return undefined;
+
   const selectedTargetFromList = input.selectedCustomerId
     ? pairableTargets.find((target) => target.customerId === input.selectedCustomerId)
     : undefined;
   if (selectedTargetFromList) return selectedTargetFromList;
   if (input.selectedTarget && isPairableMacControlTarget(input.selectedTarget)) return input.selectedTarget;
-  const lockedTargetFromList = input.lockedPairingCustomerId
-    ? pairableTargets.find((target) => target.customerId === input.lockedPairingCustomerId)
-    : undefined;
-  if (lockedTargetFromList) return lockedTargetFromList;
   if (input.selectedCustomerId) return undefined;
-  if (pairableTargets.length > 1) return undefined;
 
   return (
     pairableTargets.find((target) => target.isDefault) ??
