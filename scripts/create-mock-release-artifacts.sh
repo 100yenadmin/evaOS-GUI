@@ -74,7 +74,7 @@ python_bin.mkdir(parents=True)
 (python_bin / "python3.12").write_bytes(python_header)
 (python_bin / "python3.12").chmod(0o755)
 (python_bin / "python3").symlink_to("python3.12")
-for package in ("ApplicationServices", "Quartz", "objc"):
+for package in ("ApplicationServices", "Cocoa", "CoreText", "Quartz", "objc"):
     package_dir = site_packages / package
     package_dir.mkdir(parents=True, exist_ok=True)
     (package_dir / "__init__.py").write_text("", encoding="utf-8")
