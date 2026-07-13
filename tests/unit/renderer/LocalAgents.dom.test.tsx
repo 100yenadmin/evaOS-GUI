@@ -32,6 +32,16 @@ vi.mock('react-i18next', () => ({
       if (key === 'settings.agentManagement.nativeNotRequiredReason') {
         return 'Agent does not depend on evaOS Mac control pairing.';
       }
+      if (key === 'settings.agentManagement.gatewayManagedTools') return 'Gateway-managed tools';
+      if (key === 'settings.agentManagement.workbenchSessionMcpUnsupported') {
+        return 'Workbench session MCP unsupported';
+      }
+      if (key === 'settings.agentManagement.desktopBridgeGatewayPluginRequired') {
+        return 'Desktop Bridge gateway plugin required';
+      }
+      if (key === 'settings.agentManagement.sessionMcpSupportDeterminedAtConnection') {
+        return 'Session MCP support is determined at connection time';
+      }
       return key;
     },
   }),
@@ -156,6 +166,50 @@ describe('LocalAgents', () => {
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
     expect(screen.getByText('Hermes')).toBeInTheDocument();
     expect(screen.getAllByText('Go to Chat').length).toBeGreaterThan(0);
+  });
+
+  it('shows the gateway-managed OpenClaw transport contract', () => {
+    managedAgentsMock.mockReturnValue({
+      agents: [
+        agent({
+          id: 'openclaw',
+          name: 'OpenClaw',
+          backend: 'openclaw',
+          available: true,
+        }),
+      ],
+      isLoading: false,
+      error: null,
+      revalidate: revalidateMock,
+      refreshCustomAgents: vi.fn(),
+    });
+
+    render(<LocalAgents />);
+
+    expect(screen.getByText('Gateway-managed tools')).toBeInTheDocument();
+    expect(screen.getByText('Workbench session MCP unsupported')).toBeInTheDocument();
+    expect(screen.getByText('Desktop Bridge gateway plugin required')).toBeInTheDocument();
+  });
+
+  it('shows connection-time session MCP truth for a generic ACP agent', () => {
+    managedAgentsMock.mockReturnValue({
+      agents: [
+        agent({
+          id: 'generic-acp',
+          name: 'Generic ACP',
+          backend: 'generic',
+          available: true,
+        }),
+      ],
+      isLoading: false,
+      error: null,
+      revalidate: revalidateMock,
+      refreshCustomAgents: vi.fn(),
+    });
+
+    render(<LocalAgents />);
+
+    expect(screen.getByText('Session MCP support is determined at connection time')).toBeInTheDocument();
   });
 
   it('shows a retryable error instead of an empty catalog when loading fails', () => {

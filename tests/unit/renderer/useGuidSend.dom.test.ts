@@ -143,7 +143,7 @@ describe('useGuidSend', () => {
     expect(sessionStorage.getItem('acp_initial_message_conv-1')).toBe(JSON.stringify({ input: 'hello' }));
   });
 
-  it('auto-attaches built-in Mac-control tools to evaOS/OpenClaw ACP conversations', async () => {
+  it('preserves a selected user MCP without sending Workbench session MCP to OpenClaw', async () => {
     const deps = createDeps();
     deps.selectedAgent = 'openclaw-gateway';
     deps.selectedAgentKey = 'openclaw-gateway';
@@ -165,7 +165,42 @@ describe('useGuidSend', () => {
       { id: 'mcp-user', name: 'User MCP', enabled: true, builtin: false } as IMcpServer,
       { id: 'mac-control-mcp', name: BUILTIN_EVAOS_MAC_CONTROL_NAME, enabled: true, builtin: true } as IMcpServer,
     ];
-    deps.selectedMcpServerIds = [];
+    deps.selectedMcpServerIds = ['mcp-user'];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.extra.selected_mcp_server_ids).toEqual(['mcp-user']);
+    expect(payload.extra.selected_session_mcp_servers).toEqual([]);
+  });
+
+  it('omits selected built-in MCP servers from the unsupported OpenClaw session payload', async () => {
+    const deps = createDeps();
+    deps.selectedAgent = 'openclaw-gateway';
+    deps.selectedAgentKey = 'openclaw-gateway';
+    deps.selectedAgentInfo = {
+      id: 'openclaw-gateway',
+      key: 'openclaw-gateway',
+      name: 'evaOS',
+      agent_type: 'openclaw-gateway',
+      backend: 'openclaw-gateway',
+      cli_path: '/opt/evaos/openclaw',
+      isExtension: false,
+    } as never;
+    deps.is_presetAgent = false;
+    deps.getEffectiveAgentType = vi.fn(() => ({
+      agent_type: 'openclaw-gateway',
+      isAvailable: true,
+    }));
+    deps.availableMcpServers = [
+      { id: 'builtin-unrelated', name: 'Unrelated Builtin', enabled: true, builtin: true } as IMcpServer,
+      { id: 'mac-control-mcp', name: BUILTIN_EVAOS_MAC_CONTROL_NAME, enabled: true, builtin: true } as IMcpServer,
+    ];
+    deps.selectedMcpServerIds = ['builtin-unrelated', 'mac-control-mcp'];
 
     const { result } = renderHook(() => useGuidSend(deps));
 
@@ -175,9 +210,7 @@ describe('useGuidSend', () => {
 
     const payload = createConversationInvokeMock.mock.calls[0][0];
     expect(payload.extra.selected_mcp_server_ids).toEqual([]);
-    expect(payload.extra.selected_session_mcp_servers).toEqual([
-      expect.objectContaining({ id: 'mac-control-mcp', name: BUILTIN_EVAOS_MAC_CONTROL_NAME }),
-    ]);
+    expect(payload.extra.selected_session_mcp_servers).toEqual([]);
   });
 
   it('does not auto-attach Mac-control tools to unrelated ACP conversations', async () => {
@@ -196,6 +229,74 @@ describe('useGuidSend', () => {
     const payload = createConversationInvokeMock.mock.calls[0][0];
     expect(payload.assistant?.conversation_overrides?.mcp_ids).toEqual([]);
     expect(payload.extra.selected_session_mcp_servers).toEqual([]);
+  });
+
+  it('preserves session MCP for a non-OpenClaw backend even when its display name mentions OpenClaw', async () => {
+    const deps = createDeps();
+    deps.selectedAgent = 'custom';
+    deps.selectedAgentKey = 'custom-openclaw-helper';
+    deps.selectedAgentInfo = {
+      id: 'custom-openclaw-helper',
+      key: 'custom-openclaw-helper',
+      name: 'OpenClaw Helper',
+      agent_type: 'acp',
+      backend: 'custom',
+      isExtension: true,
+    } as never;
+    deps.is_presetAgent = false;
+    deps.getEffectiveAgentType = vi.fn(() => ({
+      agent_type: 'acp',
+      isAvailable: true,
+    }));
+    deps.availableMcpServers = [
+      { id: 'builtin-unrelated', name: 'Unrelated Builtin', enabled: true, builtin: true } as IMcpServer,
+    ];
+    deps.selectedMcpServerIds = ['builtin-unrelated'];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.extra.selected_session_mcp_servers).toEqual([
+      expect.objectContaining({ id: 'builtin-unrelated', name: 'Unrelated Builtin' }),
+    ]);
+  });
+
+  it('preserves session MCP when a custom ACP row id and key collide with the OpenClaw backend name', async () => {
+    const deps = createDeps();
+    deps.selectedAgent = 'openclaw';
+    deps.selectedAgentKey = 'openclaw';
+    deps.selectedAgentInfo = {
+      id: 'openclaw',
+      key: 'openclaw',
+      name: 'Custom OpenClaw',
+      agent_type: 'acp',
+      backend: 'custom',
+      isExtension: true,
+    } as never;
+    deps.is_presetAgent = false;
+    deps.getEffectiveAgentType = vi.fn(() => ({
+      agent_type: 'acp',
+      isAvailable: true,
+    }));
+    deps.availableMcpServers = [
+      { id: 'builtin-unrelated', name: 'Unrelated Builtin', enabled: true, builtin: true } as IMcpServer,
+    ];
+    deps.selectedMcpServerIds = ['builtin-unrelated'];
+
+    const { result } = renderHook(() => useGuidSend(deps));
+
+    await act(async () => {
+      await result.current.handleSend();
+    });
+
+    const payload = createConversationInvokeMock.mock.calls[0][0];
+    expect(payload.extra.selected_session_mcp_servers).toEqual([
+      expect.objectContaining({ id: 'builtin-unrelated', name: 'Unrelated Builtin' }),
+    ]);
   });
 
   it('passes selected mode into assistant conversation overrides when creating a preset ACP conversation', async () => {

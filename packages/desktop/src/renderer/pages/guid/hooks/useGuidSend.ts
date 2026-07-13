@@ -25,6 +25,7 @@ import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation
 import type { AcpModelInfo, AvailableAgent, EffectiveAgentInfo } from '../types';
 
 const EVAOS_MAC_CONTROL_AGENT_PATTERN = /(evaos|openclaw)/i;
+const OPENCLAW_AGENT_TYPES = new Set(['openclaw', 'openclaw-gateway']);
 
 function isBuiltinEvaosMacControlServer(server: IMcpServer): boolean {
   return (
@@ -52,6 +53,15 @@ function isEvaosMacControlAgent(params: {
     selectedAgentInfo?.custom_agent_id,
   ];
   return candidates.some((candidate) => EVAOS_MAC_CONTROL_AGENT_PATTERN.test(String(candidate || '')));
+}
+
+function isOpenClawAgent(params: {
+  selectedAgentInfo: AvailableAgent | undefined;
+  effectiveAgentType: string;
+}): boolean {
+  const { selectedAgentInfo, effectiveAgentType } = params;
+  const candidates = [effectiveAgentType, selectedAgentInfo?.agent_type, selectedAgentInfo?.backend];
+  return candidates.some((candidate) => OPENCLAW_AGENT_TYPES.has(String(candidate || '').toLowerCase()));
 }
 
 function appendEvaosMacControlMcpId(
@@ -212,12 +222,14 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
     const excludeBuiltinSkills =
       guidDisabledBuiltinSkills ??
       (is_presetAgent ? assistantDefaultDisabledBuiltinSkillIds : resolveDisabledBuiltinSkills(agentInfo));
-    const shouldAttachEvaosMacControl = isEvaosMacControlAgent({
+    const agentIdentity = {
       selectedAgent,
       selectedAgentKey,
       selectedAgentInfo: agentInfo,
       effectiveAgentType,
-    });
+    };
+    const isOpenClaw = isOpenClawAgent(agentIdentity);
+    const shouldAttachEvaosMacControl = !isOpenClaw && isEvaosMacControlAgent(agentIdentity);
     const selectedAllMcpServerIds = appendEvaosMacControlMcpId(
       selectedMcpServerIds ?? [],
       availableMcpServers,
@@ -251,6 +263,11 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         : availableMcpServers
             .filter((server) => (defaultSelectedMcpServerIds ?? []).includes(server.id))
             .map((server) => toSessionMcpServer(server));
+    const acpSelectedSessionMcpServersToSend = isOpenClaw
+      ? []
+      : selectedMcpServerIds !== undefined
+        ? selectedSessionMcpServers
+        : selectedSessionMcpServersToSend;
 
     const finalEffectiveAgentType = effectiveAgentType;
     const assistantOverrideModel =
@@ -427,8 +444,7 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
           default_files: files,
           ...nonPresetSkillExtra,
           selected_mcp_server_ids: selectedUserMcpServerIdsToSend,
-          selected_session_mcp_servers:
-            selectedMcpServerIds !== undefined ? selectedSessionMcpServers : selectedSessionMcpServersToSend,
+          selected_session_mcp_servers: acpSelectedSessionMcpServersToSend,
           pending_config_options:
             !is_preset && compatibleThoughtLevelValue && thoughtLevelOptionId
               ? { [thoughtLevelOptionId]: compatibleThoughtLevelValue }

@@ -1136,7 +1136,11 @@
     "nativeRepairAction": "Repair in Mac & iPhone",
     "nativeRepairBadge": "Repair",
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "Herramientas administradas por el gateway",
+    "workbenchSessionMcpUnsupported": "El MCP de sesión de Workbench no es compatible",
+    "desktopBridgeGatewayPluginRequired": "Se requiere el complemento de gateway de Desktop Bridge",
+    "sessionMcpSupportDeterminedAtConnection": "La compatibilidad con MCP de sesión se determina al conectarse"
   },
   "remoteAgent": {
     "title": "Agentes remotos",
