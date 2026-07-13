@@ -33,6 +33,11 @@ const SAFE_MAC_CONTROL_BLOCKER_FIELDS = new Set([
   'lastStartupCategory',
   'ownerClassification',
 ]);
+const PRIVATE_NETWORK_SECRET_PATTERNS = [
+  /auth[_-]?key/i,
+  /\b(?:tskey-auth|hskey-auth)-[A-Za-z0-9_-]{8,}\b/i,
+  /\b[a-f0-9]{48}\b/i,
+];
 
 export function assertEvaosRendererSafePayload(value: unknown): void {
   assertEvaosRendererSafePayloadAt(value, '$', new WeakSet<object>(), 0);
@@ -56,7 +61,7 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
     if (isSafeMacControlBlockerReason(path, value)) {
       return;
     }
-    if (containsEvaosSecretMaterial(value)) {
+    if (containsRendererSecretMaterial(value)) {
       throwRendererSecretError(path);
     }
     return;
@@ -77,11 +82,15 @@ function assertEvaosRendererSafePayloadAt(value: unknown, path: string, seen: We
   }
 
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (containsEvaosSecretMaterial(key) && !isSafeSecretMetadata(key, child)) {
+    if (containsRendererSecretMaterial(key) && !isSafeSecretMetadata(key, child)) {
       throwRendererSecretError(`${path}.${key}`);
     }
     assertEvaosRendererSafePayloadAt(child, `${path}.${key}`, seen, depth + 1);
   }
+}
+
+function containsRendererSecretMaterial(value: string): boolean {
+  return containsEvaosSecretMaterial(value) || PRIVATE_NETWORK_SECRET_PATTERNS.some((pattern) => pattern.test(value));
 }
 
 function isSafeSecretMetadata(key: string, value: unknown): boolean {

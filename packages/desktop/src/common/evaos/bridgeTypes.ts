@@ -165,6 +165,11 @@ export type IEvaosNativeCompanionStatusValue =
   | 'unavailable'
   | 'error';
 
+export type IEvaosNativeCompanionStatusRequest = {
+  customerId?: string;
+  bootstrapGrantId?: string;
+};
+
 export type NativeCompanionBridgeRuntimePrerequisite = 'missing' | 'incompatible' | 'ready' | 'error';
 export type NativeCompanionPrivateNetworkPrerequisite =
   | 'client_missing'
@@ -205,6 +210,29 @@ export type IEvaosMacControlBlockerReason =
   | 'stale_connector_port_conflict'
   | 'unknown';
 
+export type IEvaosPrivateNetworkAuthorityDiagnosticReason =
+  | 'ready'
+  | 'mac_node_missing'
+  | 'mac_node_offline'
+  | 'mac_node_expired'
+  | 'vm_node_missing'
+  | 'vm_node_offline'
+  | 'vm_node_expired'
+  | 'grant_binding_mismatch'
+  | 'policy_unavailable'
+  | 'policy_hash_mismatch'
+  | 'authority_unavailable'
+  | 'broker_session_expired'
+  | 'local_evidence_unavailable'
+  | 'local_scope_unavailable'
+  | 'authority_proof_invalid';
+
+export type IEvaosPrivateNetworkAuthorityDiagnostic = {
+  classification: 'observed' | 'unavailable' | 'stale';
+  reason: IEvaosPrivateNetworkAuthorityDiagnosticReason;
+  auditId?: string;
+};
+
 export interface IEvaosNativeCompanionPermissionView {
   accessibility?: string;
   screenRecording?: string;
@@ -224,6 +252,7 @@ export interface IEvaosNativeCompanionStatusView {
   pairingCapable?: boolean;
   pairingBlockedReason?: IEvaosMacControlBlockerReason;
   blockerReason?: IEvaosMacControlBlockerReason;
+  privateNetworkAuthority?: IEvaosPrivateNetworkAuthorityDiagnostic;
   prerequisites?: NativeCompanionPrerequisites;
   summaryText: string;
   sourcePointer: string;
@@ -291,7 +320,12 @@ export interface IEvaosNativeCompanionOpenResult {
   path?: string;
 }
 
-export type IEvaosNativeCompanionRepairAction = 'accessibility' | 'screen_recording' | 'released_workbench_fallback';
+export type IEvaosNativeCompanionRepairAction =
+  | 'accessibility'
+  | 'screen_recording'
+  | 'released_workbench_fallback'
+  | 'secure_network_install'
+  | 'secure_network_open';
 
 export interface IEvaosNativeCompanionRepairActionRequest {
   action: IEvaosNativeCompanionRepairAction;
@@ -315,7 +349,8 @@ export type IEvaosNativeCompanionAction =
   | 'control_stop'
   | 'kill_switch'
   | 'audit_tail'
-  | 'create_pairing_prompt';
+  | 'create_pairing_prompt'
+  | 'secure_network_enroll';
 
 export interface IEvaosNativeCompanionActionRequest {
   action: IEvaosNativeCompanionAction;
@@ -378,6 +413,7 @@ export interface IEvaosNativeCompanionActionResult {
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   events?: IEvaosNativeCompanionAuditEvent[];
   blockerReason?: IEvaosMacControlBlockerReason;
+  bootstrapGrantId?: string;
 }
 
 export interface IEvaosWorkbenchDiagnosticPacketV1 {
@@ -418,6 +454,7 @@ export interface IEvaosWorkbenchDiagnosticPacketV1 {
     agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
     sourcePointer?: string;
     auditIds: string[];
+    privateNetworkAuthority?: IEvaosPrivateNetworkAuthorityDiagnostic;
   };
   bridge: {
     installed: boolean;

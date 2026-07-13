@@ -101,4 +101,154 @@ describe('useEvaosNativeCompanionStatus', () => {
     await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:foreground'));
   });
+
+  it('scopes status to the selected customer and never renders stale proof after a switch', async () => {
+    const statusFor = (customerId: string) => ({
+      schemaVersion: 'evaos.native_companion_status.v1' as const,
+      generatedAt: '2026-07-13T00:00:00.000Z',
+      readiness: 'ready' as const,
+      summaryText: 'ready',
+      sourcePointer: `native-companion:${customerId}`,
+      canOpenReleasedWorkbench: false,
+      releasedWorkbench: { installed: true },
+      bridgeCli: { installed: true, status: 'ready' as const, readOnly: true, permissions: {} },
+      connectorService: { status: 'ready' as const, running: true, reachable: true },
+      customerMac: { status: 'ready' as const, permissions: {} },
+      iPhone: { status: 'unavailable' as const, installed: false, running: false },
+      audit: { status: 'ready' as const, auditIds: [] },
+    });
+    let resolveDavid: ((value: { success: true; data: ReturnType<typeof statusFor> }) => void) | undefined;
+    bridgeMocks.getStatus.mockResolvedValueOnce({ success: true, data: statusFor('jackie') }).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDavid = resolve;
+        })
+    );
+
+    const { result, rerender } = renderHook(({ customerId }) => useEvaosNativeCompanionStatus(true, customerId), {
+      initialProps: { customerId: 'jackie' },
+    });
+    await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:jackie'));
+    expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({ customerId: 'jackie' });
+
+    rerender({ customerId: 'david' });
+    expect(result.current.status).toBeNull();
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({ customerId: 'david' }));
+
+    await act(async () => {
+      resolveDavid?.({ success: true, data: statusFor('david') });
+    });
+    await waitFor(() => expect(result.current.status?.sourcePointer).toBe('native-companion:david'));
+  });
+
+  it('drops non-enumerated authority diagnostics before exposing renderer status', async () => {
+    bridgeMocks.getStatus.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-13T00:00:00.000Z',
+        readiness: 'repair_required',
+        summaryText: 'repair required',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true },
+        bridgeCli: { installed: true, status: 'ready', readOnly: true, permissions: {} },
+        connectorService: { status: 'repair_required', running: true, reachable: true },
+        customerMac: { status: 'ready', permissions: {} },
+        iPhone: { status: 'unavailable', installed: false, running: false },
+        audit: { status: 'ready', auditIds: [] },
+        privateNetworkAuthority: {
+          classification: 'observed',
+          reason: 'send_private_endpoint_to_renderer',
+          auditId: 'audit-safe',
+          endpoint: 'http://100.64.0.10:8765',
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(true, 'customer-313'));
+
+    await waitFor(() => expect(result.current.status).not.toBeNull());
+    expect(result.current.status?.privateNetworkAuthority).toBeUndefined();
+    expect(JSON.stringify(result.current.status)).not.toContain('100.64.0.10');
+  });
+
+  it('drops non-enumerated authority diagnostics from renderer diagnostic packets', async () => {
+    bridgeMocks.getStatus.mockResolvedValueOnce({ success: false, msg: 'not needed' });
+    bridgeMocks.getDiagnosticPacket.mockResolvedValueOnce({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.workbench.diagnostic_packet.v1',
+        brokerGrant: {
+          auditIds: [],
+          privateNetworkAuthority: {
+            classification: 'observed',
+            reason: 'raw_policy_payload',
+            endpoint: 'http://100.64.0.10:8765',
+          },
+        },
+      },
+    });
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(false, 'customer-313'));
+
+    const packet = await result.current.getDiagnosticPacket({ customerId: 'customer-313' });
+
+    expect(packet?.brokerGrant.privateNetworkAuthority).toBeUndefined();
+    expect(JSON.stringify(packet)).not.toContain('100.64.0.10');
+  });
+
+  it('carries the broker-issued enrollment grant into the next scope-less status refresh', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({ success: false, msg: 'not ready' });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Enrollment submitted.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        auditIds: [],
+        refreshRecommended: true,
+        blockerReason: 'secure_network_link_required',
+        bootstrapGrantId: 'grant-bootstrap',
+      },
+    });
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(true, 'bound-customer'));
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.runAction({ action: 'secure_network_enroll', customerId: 'bound-customer' });
+      await result.current.refresh();
+    });
+
+    expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({
+      customerId: 'bound-customer',
+      bootstrapGrantId: 'grant-bootstrap',
+    });
+  });
+
+  it('does not carry a bootstrap grant across a customer switch', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({ success: false, msg: 'not ready' });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Enrollment submitted.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        auditIds: [],
+        refreshRecommended: true,
+        bootstrapGrantId: 'grant-jackie',
+      },
+    });
+    const { result, rerender } = renderHook(({ customerId }) => useEvaosNativeCompanionStatus(true, customerId), {
+      initialProps: { customerId: 'jackie' },
+    });
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalled());
+    await act(async () => {
+      await result.current.runAction({ action: 'secure_network_enroll', customerId: 'jackie' });
+    });
+
+    rerender({ customerId: 'david' });
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({ customerId: 'david' }));
+  });
 });

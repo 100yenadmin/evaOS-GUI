@@ -24,6 +24,7 @@ import {
   getEvaosNativeAgentAvailability,
 } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
+import { useEvaosSelectedCustomerId } from '@/renderer/hooks/context/EvaosCustomerContext';
 
 type AgentAvailabilityFilter = 'all' | 'available' | 'setup';
 
@@ -43,7 +44,8 @@ const LocalAgents: React.FC = () => {
   const navigate = useNavigate();
   const [hubModalVisible, setHubModalVisible] = useState(false);
   const [agentFilter, setAgentFilter] = useState<AgentAvailabilityFilter>('all');
-  const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus();
+  const selectedEvaosCustomerId = useEvaosSelectedCustomerId();
+  const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus(true, selectedEvaosCustomerId);
 
   // Settings management view includes disabled custom agents so they remain
   // visible and can be re-enabled; chat/team pickers still use useAgents().

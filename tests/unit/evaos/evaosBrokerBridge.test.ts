@@ -42,6 +42,18 @@ vi.mock('@office-ai/platform', () => ({
 
 vi.mock('@process/services/evaosRuntimeSurfaceRegistry', () => runtimeSurfaceRegistryMock);
 vi.mock('@process/services/evaosProviderAuthWindow', () => providerAuthWindowMock);
+vi.mock('electron', () => ({
+  app: {
+    isReady: vi.fn(() => false),
+    getPath: vi.fn(() => '/tmp/evaos-workbench-test'),
+    isPackaged: true,
+  },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn(() => false),
+    encryptString: vi.fn((plainText: string) => Buffer.from(plainText)),
+    decryptString: vi.fn((encrypted: Buffer) => encrypted.toString('utf8')),
+  },
+}));
 
 async function loadBrokerBridge() {
   vi.resetModules();
@@ -104,6 +116,24 @@ describe('evaOS broker bridge renderer secret boundary', () => {
         actions: ['open', 'provider_grant_handle=epg_raw_provider_grant'],
       })
     ).toThrow(/renderer-visible secret material/);
+
+    for (const payload of [
+      { authKey: 'opaque-one-use-key' },
+      { auth_key: 'opaque-one-use-key' },
+      { detail: 'tskey-auth-example-12345678' },
+      { detail: 'hskey-auth-prefix-secret1234' },
+      { detail: '67ba496fdb8f7cda2bd3e682f976e7087bbbdd1844a6dcff' },
+    ]) {
+      expect(() => assertEvaosRendererSafePayload(payload)).toThrow(/renderer-visible secret material/);
+    }
+
+    expect(() =>
+      assertEvaosRendererSafePayload({
+        enrollmentId: 'network-enrollment-1',
+        loginServer: 'https://headscale.example',
+        clientVariant: 'tailscale_standalone',
+      })
+    ).not.toThrow();
   });
 
   it('allows code-only Mac pairing prompts but rejects connector material inside them', async () => {
