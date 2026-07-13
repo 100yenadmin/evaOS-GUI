@@ -187,7 +187,7 @@ function copyDirectory(source, target) {
   fs.cpSync(source, target, {
     recursive: true,
     verbatimSymlinks: true,
-    filter: (sourcePath) => !sourcePath.includes(`${path.sep}__pycache__${path.sep}`),
+    filter: (sourcePath) => !path.relative(source, sourcePath).split(path.sep).includes('__pycache__'),
   });
 }
 
