@@ -49,6 +49,20 @@ import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from '@renderer/hooks/system/use
 import { openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
+const MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS: ReadonlySet<IEvaosNativeCompanionActionRequest['action']> = new Set([
+  'connector_start',
+  'connector_stop',
+  'setup_check',
+  'ensure_customer_mac_connector_grant',
+  'control_status',
+  'control_start',
+  'control_stop',
+  'kill_switch',
+  'audit_tail',
+  'create_pairing_prompt',
+  'secure_network_enroll',
+]);
+
 const NativeCompanionPage: React.FC = () => {
   const { t } = useTranslation();
   const layout = useLayoutContext();
@@ -249,12 +263,7 @@ const NativeCompanionPage: React.FC = () => {
       setActionInFlight(request.action);
       setCopyMessage(null);
       setTakeoverCueWarning(null);
-      const targetsMacControlCustomer =
-        request.action === 'connector_start' ||
-        request.action === 'create_pairing_prompt' ||
-        request.action === 'secure_network_enroll' ||
-        request.action === 'ensure_customer_mac_connector_grant' ||
-        request.action === 'setup_check';
+      const targetsMacControlCustomer = MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS.has(request.action);
       const requestCustomerId =
         request.customerId ?? (targetsMacControlCustomer ? selectedPairingCustomerId : selectedCustomerId);
       if (targetsMacControlCustomer && requestCustomerId) {

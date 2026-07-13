@@ -822,6 +822,98 @@ describe('NativeCompanionPage', () => {
     await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalledWith({ customerId: goldenTarget.customerId }));
   });
 
+  it('routes every visible Mac-control action to the human-selected target instead of the context default', async () => {
+    const benjaminTarget = {
+      customerId: 'benjamin-kennedy',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Benjamin Kennedy',
+      isDefault: true,
+    };
+    const goldenTarget = {
+      customerId: 'golden',
+      targetKind: 'customer_vm' as const,
+      displayName: 'Golden Test VM',
+      isDefault: false,
+    };
+    customerContextMock.customerContext.selectedCustomerId = benjaminTarget.customerId;
+    customerContextMock.customerContext.selectedTarget = benjaminTarget;
+    customerContextMock.customerContext.targets = [benjaminTarget, goldenTarget];
+    customerContextMock.customerContext.isOperator = true;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-14T04:00:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'agent_paired',
+        agentPairingCustomerId: goldenTarget.customerId,
+        agentPairingProofScopeId: 'grant-golden',
+        activeMacControlScopeId: 'grant-golden',
+        runtimeToolReadiness: 'tools_ready',
+        runtimeToolProofCustomerId: goldenTarget.customerId,
+        runtimeToolProofScopeId: 'grant-golden',
+        prerequisites: { bridgeRuntime: 'ready', privateNetwork: 'online', actionEngine: 'cua_ready' },
+        summaryText: 'Mac control is active for the selected target.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          killSwitchAvailable: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        controlSession: { status: 'ready', active: true, mode: 'full-access', killSwitch: false },
+        iPhone: { status: 'unavailable' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+    bridgeMocks.runAction.mockImplementation(async (request) => ({
+      success: true,
+      data: {
+        action: request.action,
+        status: 'succeeded',
+        message: `${request.action} completed.`,
+        sourcePointer: `native-companion:${request.action}`,
+        auditIds: [],
+        refreshRecommended: false,
+      },
+    }));
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    const targetSelect = await screen.findByTestId('native-companion-mac-target-select');
+    await user.selectOptions(targetSelect, goldenTarget.customerId);
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalledWith({ customerId: goldenTarget.customerId }));
+
+    await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Full Access' }));
+    await user.click(screen.getByRole('button', { name: 'Show Audit Tail' }));
+    await user.click(screen.getByRole('button', { name: 'Stop Agent Control' }));
+    await user.click(screen.getByRole('button', { name: 'Kill Switch' }));
+    await user.click(screen.getByRole('button', { name: 'Stop Mac Access' }));
+
+    await waitFor(() => expect(bridgeMocks.runAction).toHaveBeenCalledTimes(5));
+    expect(
+      bridgeMocks.runAction.mock.calls
+        .map(([request]) => request)
+        .toSorted((left, right) => left.action.localeCompare(right.action))
+    ).toEqual([
+      { action: 'audit_tail', customerId: 'golden', agentLabel: 'evaOS Workbench' },
+      { action: 'connector_stop', customerId: 'golden', agentLabel: 'evaOS Workbench' },
+      { action: 'control_start', mode: 'full-access', customerId: 'golden', agentLabel: 'evaOS Workbench' },
+      { action: 'control_stop', customerId: 'golden', agentLabel: 'evaOS Workbench' },
+      { action: 'kill_switch', customerId: 'golden', agentLabel: 'evaOS Workbench' },
+    ]);
+  });
+
   it('keeps existing stop and kill-switch actions customer-visible with their exact wiring', async () => {
     customerContextMock.customerContext.isOperator = false;
     bridgeMocks.getStatus.mockResolvedValue({
