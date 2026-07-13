@@ -73,6 +73,9 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
 };
+const { copyDir } = require('builder-util/out/fs') as {
+  copyDir: (source: string, destination: string) => Promise<void>;
+};
 
 describe('prepareEvaosDesktopBridgeResource', () => {
   it('isolates the packaged desktop bridge wrapper from ambient Python paths', () => {
@@ -109,21 +112,24 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     }
   });
 
-  it('preserves relative Python runtime symlinks for relocation into the installed app', () => {
+  it('preserves relative Python runtime symlinks and inventory through electron-builder copying', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-'));
     const sourceDir = join(dir, 'source');
     const resourceDir = join(dir, 'Bridge');
+    const packagedResourceDir = join(dir, 'PackagedBridge');
     const versionedExecutable = join(sourceDir, 'bin', 'python3.12');
     try {
       mkdirSync(join(sourceDir, 'bin'), { recursive: true });
       mkdirSync(join(sourceDir, 'include', 'python3.12'), { recursive: true });
       mkdirSync(join(sourceDir, 'lib', 'python3.12'), { recursive: true });
+      mkdirSync(join(sourceDir, 'lib', 'python3.12', '__pycache__'), { recursive: true });
       writeFileSync(versionedExecutable, '#!/bin/sh\necho "Python 3.12.13"\n');
       chmodSync(versionedExecutable, 0o755);
       symlinkSync('python3.12', join(sourceDir, 'bin', 'python3'));
       writeFileSync(join(sourceDir, 'include', 'python3.12', 'Python.h'), '# Python\n');
       writeFileSync(join(sourceDir, 'include', 'python3.12', 'abstract.h'), '# abstract\n');
       writeFileSync(join(sourceDir, 'lib', 'python3.12', 'LICENSE.txt'), 'Python Software Foundation License\n');
+      writeFileSync(join(sourceDir, 'lib', 'python3.12', '__pycache__', 'ignored.cpython-312.pyc'), 'cache');
 
       const metadata = bridgeResource.installPythonRuntime(sourceDir, resourceDir);
       expect(metadata).toMatchObject({
@@ -140,6 +146,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       };
       expect(inventory.schema).toBe('evaos-python-runtime-inventory/v1');
       expect(inventory.entries.map(({ path }) => path)).toEqual(inventory.entries.map(({ path }) => path).toSorted());
+      expect(inventory.entries.some(({ path }) => path.split('/').includes('__pycache__'))).toBe(false);
       expect(inventory.entries).toEqual(
         expect.arrayContaining([
           {
@@ -162,6 +169,8 @@ describe('prepareEvaosDesktopBridgeResource', () => {
         ])
       );
       expect(bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata!)).toBe(true);
+      await copyDir(resourceDir, packagedResourceDir);
+      expect(bridgeResource.verifyPythonRuntimeInventory(packagedResourceDir, metadata!)).toBe(true);
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }
