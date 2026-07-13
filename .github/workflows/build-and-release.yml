@@ -434,6 +434,14 @@ jobs:
           EVAOS_BETA_RELEASE_PUBLISH_ENABLED: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
         run: node scripts/evaosBetaReleaseGate.js write-manifest release-assets "$TAG_NAME"
 
+      - name: Verify evaOS beta release manifest before draft release
+        if: steps.version.outputs.is_dev != 'true'
+        env:
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          EXPECTED_RELEASE_COMMIT: ${{ needs.create-tag.outputs.tag_commit || github.sha }}
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1'
+        run: node scripts/evaosBetaReleaseGate.js verify-manifest release-assets "$TAG_NAME"
+
       - name: Upload trusted evaOS beta release manifest artifact
         uses: actions/upload-artifact@v4
         with:
