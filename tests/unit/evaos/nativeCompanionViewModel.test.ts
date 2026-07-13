@@ -7,19 +7,67 @@
 import { describe, expect, it } from 'vitest';
 import {
   getNativeCompanionRepairViewModel as buildNativeCompanionRepairViewModel,
+  type NativeCompanionPrerequisiteCopy,
   type NativeCompanionRepairViewModelInput,
   type NativeCompanionUserState,
 } from '@/renderer/evaos/nativeCompanionViewModel';
 import type { IEvaosNativeCompanionStatusView } from '@/common/evaos/bridgeTypes';
 
-type TestViewModelInput = Omit<NativeCompanionRepairViewModelInput, 'permissionGuideDetail'> & {
+type TestViewModelInput = Omit<NativeCompanionRepairViewModelInput, 'permissionGuideDetail' | 'prerequisiteCopy'> & {
   permissionGuideDetail?: string;
+};
+
+const prerequisiteCopy: NativeCompanionPrerequisiteCopy = {
+  repairWorkbenchTitle: 'Repair Workbench',
+  repairWorkbenchMissingDetail:
+    'This Workbench installation is missing its bundled Mac connector. Reinstall or update Workbench; do not install Python or Homebrew.',
+  repairWorkbenchIncompatibleDetail:
+    'The bundled Mac connector is not compatible with this Workbench build. Reinstall or update the signed Workbench app.',
+  repairControlToolsTitle: 'Repair Mac control tools',
+  repairControlToolsDetail:
+    'Neither the preferred CUA engine nor the bundled Peekaboo fallback is available. Repair Workbench before pairing this Mac.',
+  clientMissingTitle: 'Install secure network',
+  clientMissingDetail:
+    'Open the official Tailscale macOS download page and follow the normal installer. No terminal, Python, pip, or Homebrew is required.',
+  clientStoppedTitle: 'Open secure network',
+  clientStoppedDetail:
+    'Open the installed secure-network app, allow the normal macOS VPN prompt if shown, then check again.',
+  unenrolledTitle: 'Connect this Mac',
+  unenrolledDetail:
+    'Workbench needs approved enrollment from the selected customer before it can connect this Mac safely.',
+  wrongControlPlaneTitle: 'Reconnect secure network',
+  wrongControlPlaneDetail:
+    'This Mac is on the wrong private network. Workbench needs approved enrollment before reconnecting correctly.',
+  aclBlockedTitle: 'Secure network access is blocked',
+  aclBlockedDetail:
+    'Use Report to support so the customer-scoped network policy can be repaired without exposing private details.',
+  offlineTitle: 'Reconnect secure network',
+  offlineDetail: 'Reconnect the secure-network client, then ask Workbench to verify it again.',
+  errorTitle: 'Check secure network',
+  errorDetail:
+    'Workbench could not verify the secure network. Use Report to support; do not enter terminal commands or connection details.',
+  refreshSessionLabel: 'Localized refresh session label',
+  refreshSessionTitle: 'Localized refresh session title',
+  refreshSessionDetail: 'Localized refresh session detail',
+  checkingSessionLabel: 'Localized checking session label',
+  checkingSessionTitle: 'Localized checking session title',
+  checkingSessionDetail: 'Localized checking session detail',
+  signInLabel: 'Localized sign-in label',
+  signInTitle: 'Localized sign-in title',
+  signInDetail: 'Localized sign-in detail',
+  selectCustomerLabel: 'Localized select customer label',
+  selectCustomerTitle: 'Localized select customer title',
+  selectCustomerDetail: 'Localized select customer detail',
+  chooseMacTargetLabel: 'Localized choose Mac target label',
+  chooseMacTargetTitle: 'Localized choose Mac target title',
+  chooseMacTargetDetail: 'Localized choose Mac target detail',
 };
 
 const getNativeCompanionRepairViewModel = (input: TestViewModelInput) =>
   buildNativeCompanionRepairViewModel({
     ...input,
     permissionGuideDetail: input.permissionGuideDetail ?? 'Localized permission guidance.',
+    prerequisiteCopy,
   });
 
 const baseStatus = (overrides: Partial<IEvaosNativeCompanionStatusView> = {}): IEvaosNativeCompanionStatusView => ({
@@ -268,6 +316,315 @@ describe('nativeCompanionViewModel', () => {
     });
   });
 
+  it('guides a pristine Mac to the official secure-network download page before starting the connector', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'client_missing',
+          actionEngine: 'peekaboo_ready',
+        },
+      }),
+      loading: false,
+      error: null,
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+    });
+
+    expect(viewModel.state).toBe('repair_required');
+    expect(viewModel.title).toBe('Install secure network');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'repair',
+      repairAction: 'secure_network_install',
+      label: 'Install secure network',
+      step: 1,
+      disabled: false,
+    });
+    expect(viewModel.nextAction.detail).toContain('official Tailscale macOS download page');
+  });
+
+  it('opens an installed but stopped secure-network client before starting the connector', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'client_stopped',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.title).toBe('Open secure network');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'repair',
+      repairAction: 'secure_network_open',
+      label: 'Open secure network',
+      disabled: false,
+    });
+  });
+
+  it('offers broker-owned one-use enrollment for an installed unenrolled client', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.title).toBe('Connect this Mac');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'run',
+      action: 'secure_network_enroll',
+      label: 'Connect this Mac',
+      disabled: false,
+    });
+    expect(viewModel.nextAction.detail).toContain('approved enrollment');
+  });
+
+  it('requires an authenticated broker session before offering private-network enrollment', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      brokerAuthenticated: false,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Localized sign-in label',
+      title: 'Localized sign-in title',
+      detail: 'Localized sign-in detail',
+      step: 1,
+      disabled: false,
+    });
+  });
+
+  it('routes a rejected private-network broker session to session recovery', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      actionResult: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Session refresh required.',
+        sourcePointer: 'native-companion:secure-network-enrollment-broker-session-required',
+        refreshRecommended: false,
+        auditIds: [],
+      },
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Localized refresh session label',
+      title: 'Localized refresh session title',
+      detail: 'Localized refresh session detail',
+      step: 1,
+      disabled: false,
+    });
+  });
+
+  it('keeps one-use private-network enrollment disabled while broker verification is pending', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'unenrolled',
+          actionEngine: 'cua_ready',
+        },
+      }),
+      actionResult: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Unlocalized enrollment submission detail.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        refreshRecommended: true,
+        auditIds: [],
+      },
+      brokerAuthenticated: true,
+      brokerSessionLoading: false,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'none',
+      label: 'Connect this Mac',
+      disabled: true,
+      step: 1,
+    });
+  });
+
+  it.each([
+    ['wrong_control_plane', 'Reconnect secure network', 'wrong private network'],
+    ['acl_blocked', 'Secure network access is blocked', 'support'],
+    ['error', 'Check secure network', 'could not verify'],
+  ] as const)(
+    'keeps %s fail closed with precise guidance and no unsafe local enrollment action',
+    (privateNetwork, title, detail) => {
+      const viewModel = getNativeCompanionRepairViewModel({
+        status: baseStatus({
+          pairingCapable: false,
+          pairingBlockedReason: 'secure_network_link_required',
+          prerequisites: {
+            bridgeRuntime: 'ready',
+            privateNetwork,
+            actionEngine: 'native_fallback_ready',
+          },
+        }),
+        loading: false,
+        error: null,
+      });
+
+      expect(viewModel.state).toBe('repair_required');
+      expect(viewModel.title).toBe(title);
+      expect(viewModel.nextAction).toMatchObject({ kind: 'none', disabled: true });
+      expect(viewModel.nextAction.detail.toLowerCase()).toContain(detail);
+    }
+  );
+
+  it('routes enrolled authority-session expiry to Workbench session refresh before generic network repair', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        blockerReason: 'broker_session_expired',
+        privateNetworkAuthority: { classification: 'unavailable', reason: 'broker_session_expired' },
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'error',
+          actionEngine: 'peekaboo_ready',
+        },
+      }),
+      brokerAuthenticated: true,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Localized refresh session label',
+      title: 'Localized refresh session title',
+      disabled: false,
+    });
+  });
+
+  it('does not render local-ready when explicit prerequisite proof is incomplete', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        readiness: 'repair_required',
+        pairingCapable: false,
+        pairingBlockedReason: 'secure_network_link_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'error',
+          actionEngine: 'peekaboo_ready',
+        },
+        bridgeCli: { installed: true, status: 'ready', readOnly: true },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: { status: 'ready' },
+      }),
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.state).toBe('repair_required');
+    expect(viewModel.title).toBe('Check secure network');
+    expect(viewModel.statusLabel).not.toBe('local ready');
+  });
+
+  it('treats a missing packaged bridge as a Workbench release defect instead of asking for Python', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'bundled_bridge_required',
+        prerequisites: {
+          bridgeRuntime: 'missing',
+          privateNetwork: 'online',
+          actionEngine: 'peekaboo_ready',
+        },
+      }),
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.title).toBe('Repair Workbench');
+    expect(viewModel.summary).toContain('do not install Python or Homebrew');
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'none',
+      label: 'Repair Workbench',
+      disabled: true,
+    });
+    expect(viewModel.nextAction.detail).not.toMatch(/pip install|brew install|terminal command/i);
+  });
+
+  it('keeps an unavailable CUA and Peekaboo toolchain blocked without changing the engine preference', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        pairingCapable: false,
+        pairingBlockedReason: 'bundled_bridge_required',
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'online',
+          actionEngine: 'unavailable',
+        },
+      }),
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.title).toBe('Repair Mac control tools');
+    expect(viewModel.summary).toContain('CUA');
+    expect(viewModel.summary).toContain('Peekaboo fallback');
+    expect(viewModel.nextAction).toMatchObject({ kind: 'none', disabled: true });
+  });
+
   it('does not enable pairing for account-only customer targets', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
@@ -286,12 +643,12 @@ describe('nativeCompanionViewModel', () => {
 
     expect(viewModel.nextAction).toMatchObject({
       kind: 'none',
-      label: 'Choose Mac target',
-      title: 'Choose a Mac-control customer',
+      label: 'Localized choose Mac target label',
+      title: 'Localized choose Mac target title',
       step: 3,
       disabled: true,
     });
-    expect(viewModel.nextAction.detail).toContain('not a VM-backed Mac-control target');
+    expect(viewModel.nextAction.detail).toBe('Localized choose Mac target detail');
   });
 
   it('does not overclaim ready when the connector service is offline', () => {
@@ -421,7 +778,7 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'reconnect',
-      label: 'Sign In To Workbench',
+      label: 'Localized sign-in label',
       disabled: false,
     });
 
@@ -434,7 +791,7 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'none',
-      label: 'Select customer',
+      label: 'Localized select customer label',
       disabled: true,
     });
 
@@ -458,8 +815,8 @@ describe('nativeCompanionViewModel', () => {
       }).nextAction
     ).toMatchObject({
       kind: 'reconnect',
-      label: 'Refresh Workbench Session',
-      title: 'Refresh Workbench session',
+      label: 'Localized refresh session label',
+      title: 'Localized refresh session title',
     });
 
     expect(

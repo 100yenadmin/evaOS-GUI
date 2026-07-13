@@ -27,6 +27,7 @@ import {
 } from '@/renderer/evaos/evaosAgentPresentation';
 import { applyEvaosNativeCompanionStatusToAgent } from '@/renderer/evaos/evaosNativeAgentAvailability';
 import { useEvaosNativeCompanionStatus } from '@/renderer/evaos/useEvaosNativeCompanionStatus';
+import { useEvaosSelectedCustomerId } from '@/renderer/hooks/context/EvaosCustomerContext';
 import { getAgentModes } from '@/renderer/utils/model/agentModes';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useSWR from 'swr';
@@ -160,7 +161,8 @@ export const useGuidAgentSelection = ({
   const initialRestoreDoneRef = useRef(false);
   const [selectedAcpModel, _setSelectedAcpModel] = useState<string | null>(null);
   const [selectedThoughtLevelValue, _setSelectedThoughtLevelValue] = useState('');
-  const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus();
+  const selectedEvaosCustomerId = useEvaosSelectedCustomerId();
+  const { status: nativeCompanionStatus } = useEvaosNativeCompanionStatus(true, selectedEvaosCustomerId);
 
   // Wrap setSelectedAgentKey to also save to storage
   const setSelectedAgentKey = useCallback((key: string) => {

@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Broker-Owned Private Network Authority
+
+- Stops accepting control-plane and ACL claims from the local Desktop Bridge;
+  Workbench now merges only local installed, running, enrolled, and online
+  observations with a fresh authenticated broker attestation for the selected
+  customer and exact Mac device.
+- Rejects stale, overlong, mismatched, incomplete, or contradictory authority
+  responses and clears customer-scoped renderer status during target switches,
+  so readiness cannot reuse another customer's proof.
+- Keeps broker identifiers and Headscale policy, node, address, and endpoint
+  details in the main process; renderer output remains limited to the existing
+  classified readiness and safe recovery guidance.
+
+### Pristine Mac Enrollment
+
+- Adds an authenticated, customer-scoped Workbench action for the typed
+  `unenrolled` secure-network state; wrong-control-plane, ACL, missing-client,
+  and incomplete-evidence states remain fail closed.
+- Verifies the installed Tailscale app against the official macOS team and
+  bundle identifiers, passes a broker-issued one-use key through a mode-0600
+  temporary file, and attempts fail-closed removal without exposing the key to
+  renderer state, logs, shell history, or process arguments.
+- Attempts broker cancellation after a local enrollment failure, reports any
+  unconfirmed cleanup or cancellation, and keeps the Mac blocked pending
+  authoritative Headscale node and access-policy proof; this is source
+  behavior, not customer-ready or production-runtime proof.
+
 ### Mac Control Runtime Proof
 
 - Keep local connector and macOS permission readiness visibly separate from

@@ -92,6 +92,10 @@ function snapshot(): EvaosCustomerContextState {
   return state;
 }
 
+export function useEvaosSelectedCustomerId(): string | undefined {
+  return useSyncExternalStore(subscribe, snapshot, snapshot).selectedCustomerId;
+}
+
 function safeUiText(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();

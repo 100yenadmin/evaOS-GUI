@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
-import { homedir, hostname } from 'node:os';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
@@ -27,23 +27,45 @@ import type {
   IEvaosMacControlBlockerReason,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
+  IEvaosPrivateNetworkAuthorityDiagnostic,
   IEvaosNativeCompanionReadiness,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionRuntimeToolReadiness,
+  IEvaosNativeCompanionStatusRequest,
   IEvaosNativeCompanionStatusView,
   IEvaosWorkbenchDiagnosticPacketRequest,
   IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
-import { getDefaultEvaosBrokerSessionClient, isEvaosBrokerSessionError } from './evaosBrokerSession';
+import {
+  classifyNativeCompanionPrerequisites,
+  type NativeCompanionPrerequisiteEvidence,
+} from '@/common/evaos/nativeCompanionPrerequisites';
+import { getPlatformServices } from '@/common/platform';
+import {
+  getDefaultEvaosBrokerSessionClient,
+  isEvaosBrokerSessionError,
+  type EvaosPrivateNetworkClientVariant,
+  type EvaosPrivateNetworkAuthorityAttestation,
+  type EvaosPrivateNetworkEnrollment,
+} from './evaosBrokerSession';
 
 const execFileAsync = promisify(execFileCallback);
 
 const HOMEBREW_BRIDGE_PATHS = ['/opt/homebrew/bin/evaos-desktop-bridge', '/usr/local/bin/evaos-desktop-bridge'];
 const DEFAULT_RELEASED_WORKBENCH_PATH = `/Applications/${EVAOS_BETA_IDENTITY.macAppBundleName}`;
+const SECURE_NETWORK_INSTALL_URL = 'https://tailscale.com/download/mac';
+const SECURE_NETWORK_APP_NAME = 'Tailscale.app';
+const SECURE_NETWORK_APP_TEAM_ID = 'W5364U7YZB';
+const SECURE_NETWORK_APP_IDENTIFIERS: Record<string, EvaosPrivateNetworkClientVariant> = {
+  'io.tailscale.ipn.macsys': 'tailscale_standalone',
+  'io.tailscale.ipn.macos': 'tailscale_app_store',
+};
 const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
+const SECURE_NETWORK_ENROLL_TIMEOUT_MS = 30000;
+const PRIVATE_NETWORK_AUTHORITY_TIMEOUT_MS = 8000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
 const CONNECTOR_PORT = 8765;
@@ -79,10 +101,23 @@ const NATIVE_COMPANION_FIXTURE_STATES = [
   'permission_needed',
   'offline',
 ] as const;
+const SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS = 4;
+const SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS = 250;
+
+export type EvaosNativeCompanionDiagnosticEventCode =
+  | 'secure_network_enrollment_setup_failed'
+  | 'secure_network_enrollment_login_failed'
+  | 'secure_network_enrollment_secret_unlink_failed'
+  | 'secure_network_enrollment_secret_directory_cleanup_failed';
 
 type ExecFileResult = {
   stdout: string;
   stderr: string;
+};
+
+type ExecFileOptions = {
+  timeout: number;
+  env?: NodeJS.ProcessEnv;
 };
 
 type NativeCompanionFixtureState = (typeof NATIVE_COMPANION_FIXTURE_STATES)[number];
@@ -90,10 +125,12 @@ type NativeCompanionFixtureState = (typeof NATIVE_COMPANION_FIXTURE_STATES)[numb
 export type EvaosNativeCompanionStatusDeps = {
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
+  isPackaged?: boolean;
+  detectIsPackaged?: () => boolean;
   bridgePaths?: string[];
   releasedWorkbenchPath?: string;
   existsSync?: (path: string) => boolean;
-  execFile?: (file: string, args: string[], options: { timeout: number }) => Promise<ExecFileResult>;
+  execFile?: (file: string, args: string[], options: ExecFileOptions) => Promise<ExecFileResult>;
   sleep?: (durationMs: number) => Promise<void>;
   openPath?: (path: string) => Promise<string>;
   openExternal?: (url: string) => Promise<void>;
@@ -110,6 +147,22 @@ export type EvaosNativeCompanionStatusDeps = {
     permissionState?: Record<string, unknown>;
     screenSharingOptIn?: boolean;
   }) => Promise<IEvaosNativeCompanionConnectorGrant>;
+  createPrivateNetworkEnrollment?: (request: {
+    customerId: string;
+    deviceIdentifier: string;
+    deviceName?: string;
+    clientVariant: EvaosPrivateNetworkClientVariant;
+  }) => Promise<EvaosPrivateNetworkEnrollment>;
+  cancelPrivateNetworkEnrollment?: (request: {
+    customerId: string;
+    enrollmentId: string;
+    authKey: string;
+  }) => Promise<{ cancelled: true; enrollmentId: string }>;
+  getPrivateNetworkReadiness?: (request: {
+    customerId: string;
+    deviceIdentifier: string;
+    signal?: AbortSignal;
+  }) => Promise<EvaosPrivateNetworkAuthorityAttestation>;
   runConnectorCommand?: (request: {
     connectorUrl: string;
     connectorToken: string;
@@ -119,6 +172,9 @@ export type EvaosNativeCompanionStatusDeps = {
   probeConnectorReady?: (host: string, port: number) => Promise<boolean>;
   readTextFile?: (path: string) => string;
   spawnConnectorProcess?: (file: string, args: string[], options: SpawnOptions) => ChildProcess;
+  recordDiagnosticEvent?: (eventCode: EvaosNativeCompanionDiagnosticEventCode) => void;
+  unlinkSync?: (path: string) => void;
+  rmSync?: (path: string, options: { force: boolean; recursive: boolean }) => void;
 };
 
 type BridgePayload = {
@@ -148,9 +204,11 @@ let workbenchManagedConnector:
       process: ChildProcess;
     }
   | undefined;
+const privateNetworkBootstrapGrants = new Map<string, string>();
 
 export async function getEvaosNativeCompanionStatus(
-  deps: EvaosNativeCompanionStatusDeps = {}
+  deps: EvaosNativeCompanionStatusDeps = {},
+  request: IEvaosNativeCompanionStatusRequest = {}
 ): Promise<IEvaosNativeCompanionStatusView> {
   const now = deps.now ?? (() => new Date());
   const fixtureState = nativeCompanionFixtureState(deps.env);
@@ -160,7 +218,10 @@ export async function getEvaosNativeCompanionStatus(
   }
 
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   const releasedWorkbenchPath = deps.releasedWorkbenchPath ?? DEFAULT_RELEASED_WORKBENCH_PATH;
   const releasedWorkbenchInstalled = existsSync(releasedWorkbenchPath);
 
@@ -174,6 +235,9 @@ export async function getEvaosNativeCompanionStatus(
       pairingCapable: false,
       pairingBlockedReason: 'bundled_bridge_required',
       blockerReason: 'bridge_cli_missing',
+      prerequisites: classifyNativeCompanionPrerequisites({
+        bridgeRuntime: { installed: false },
+      }),
       summaryText: 'Workbench connector tools are not installed. Use setup or support to repair Mac control.',
       sourcePointer: 'native-companion:bridge-cli-missing',
       canOpenReleasedWorkbench: releasedWorkbenchInstalled,
@@ -223,10 +287,49 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
-  const readiness = bridgeReady && connectorServiceReady && customerMacReady ? 'ready' : 'repair_required';
+  const localPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
+  const localGrantId = controlSession.ok ? activeMacControlScopeIdFromControlSession(controlSession) : undefined;
+  const bootstrapGrantKey = privateNetworkBootstrapGrantKey(
+    request.customerId,
+    privateNetworkDeviceIdentifier(customerMac.data)
+  );
+  const trustedBootstrapGrantId = bootstrapGrantKey ? privateNetworkBootstrapGrants.get(bootstrapGrantKey) : undefined;
+  const requestedBootstrapGrantId =
+    request.bootstrapGrantId && request.bootstrapGrantId === trustedBootstrapGrantId
+      ? request.bootstrapGrantId
+      : undefined;
+  if (bootstrapGrantKey && localGrantId && trustedBootstrapGrantId === localGrantId) {
+    privateNetworkBootstrapGrants.delete(bootstrapGrantKey);
+  }
+  const privateNetworkAuthorityResult = await privateNetworkEvidenceWithAuthority({
+    customerId: request.customerId,
+    deviceIdentifier: privateNetworkDeviceIdentifier(customerMac.data),
+    expectedGrantId: localGrantId ?? requestedBootstrapGrantId,
+    bootstrapGrantId: request.bootstrapGrantId,
+    localGrantId,
+    localEvidence: localPrivateNetworkEvidence,
+    now,
+    deps,
+  });
+  const prerequisiteGate = nativeCompanionPrerequisiteGate({
+    bridgePath,
+    bridge,
+    connectorServiceData,
+    customerMacData: customerMac.data,
+    env: deps.env,
+    privateNetworkEvidence: privateNetworkAuthorityResult.evidence,
+  });
+  const prerequisites = prerequisiteGate.prerequisites;
+  const prerequisiteBlocksPairing = !prerequisiteGate.ready;
+  const readiness =
+    bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteBlocksPairing
+      ? 'ready'
+      : 'repair_required';
   const auditIds = auditIdsFromPayload(audit);
   const pairingCapable =
-    isPairingCapableBridgePath(bridgePath, deps.env) && connectorServiceHasSecureRegistrationHost(connectorServiceData);
+    !prerequisiteBlocksPairing &&
+    isPairingCapableBridgePath(bridgePath, deps.env) &&
+    connectorServiceHasSecureRegistrationHost(connectorServiceData);
   const reportedAgentPairingStatus = pairingCapable
     ? agentPairingStatusFromStatus(readiness, controlSession)
     : 'not_ready';
@@ -272,25 +375,28 @@ export async function getEvaosNativeCompanionStatus(
       : reportedRuntimeToolReadiness;
   const pairingBlockedReason = pairingCapable
     ? undefined
-    : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
-  const blockerReason = blockerReasonForStatus({
-    bridge,
-    connectorService,
-    customerMac,
-    controlSession,
-    bridgeReady,
-    connectorServiceReady,
-    customerMacReady,
-    pairingBlockedReason,
-    bridgePath,
-  });
+    : (prerequisiteGate.blockerReason ??
+      pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env }));
+  const blockerReason =
+    privateNetworkAuthorityResult.diagnostic.reason === 'broker_session_expired'
+      ? 'broker_session_expired'
+      : blockerReasonForStatus({
+          bridge,
+          connectorService,
+          customerMac,
+          controlSession,
+          bridgeReady,
+          connectorServiceReady,
+          customerMacReady,
+          pairingBlockedReason,
+          bridgePath,
+        });
   const summaryText = nativeCompanionSummaryText({
     readiness,
     pairingCapable,
     pairingBlockedReason,
     agentPairingStatus,
   });
-
   return {
     schemaVersion: 'evaos.native_companion_status.v1',
     generatedAt,
@@ -305,8 +411,13 @@ export async function getEvaosNativeCompanionStatus(
     pairingCapable,
     pairingBlockedReason,
     blockerReason,
+    privateNetworkAuthority: privateNetworkAuthorityResult.diagnostic,
+    prerequisites,
     summaryText,
-    sourcePointer: 'native-companion:read-only-bridge',
+    sourcePointer:
+      prerequisites.privateNetwork === 'online'
+        ? 'native-companion:broker-authority-merged'
+        : 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
     releasedWorkbench: {
       installed: releasedWorkbenchInstalled,
@@ -330,7 +441,7 @@ export async function getEvaosNativeCompanionStatus(
       running: connectorServiceReady || readBoolean(connectorServiceData, 'running'),
       reachable: connectorServiceReady || readNestedBoolean(connectorServiceData, ['health', 'reachable']),
       managedBy: readString(connectorServiceData, 'managed_by'),
-      tailnetIp: readString(connectorServiceData, 'tailnet_ip'),
+      privateNetworkAvailable: privateNetworkAvailable(connectorServiceData),
       permissionTarget: readString(connectorServiceData, 'permission_target'),
     },
     customerMac: {
@@ -371,8 +482,11 @@ export async function getEvaosWorkbenchDiagnosticPacket(
   const now = deps.now ?? (() => new Date());
   const generatedAt = now().toISOString();
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
-  const status = await getEvaosNativeCompanionStatus({ ...deps, now });
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
+  const status = await getEvaosNativeCompanionStatus({ ...deps, now }, { customerId: request.customerId });
   const bridgeDiagnostics = bridgePath
     ? await runOptionalBridgeDiagnostics(bridgePath, ['diagnostics', '--json'], deps)
     : optionalBridgeDiagnosticsUnavailable('bridge-cli-missing');
@@ -419,6 +533,7 @@ export async function getEvaosWorkbenchDiagnosticPacket(
       agentPairingStatus: status.agentPairingStatus,
       sourcePointer: safeDiagnosticText(status.sourcePointer),
       auditIds: safeDiagnosticAuditIds(status.audit.auditIds),
+      privateNetworkAuthority: status.privateNetworkAuthority,
     },
     bridge: {
       installed: status.bridgeCli.installed,
@@ -500,6 +615,11 @@ function nativeCompanionFixtureStatus(
     agentPairingStatus: 'not_ready',
     runtimeToolReadiness: 'not_ready',
     blockerReason: fixtureState === 'permission_needed' ? 'permission_missing' : 'connector_service_not_ready',
+    prerequisites: {
+      bridgeRuntime: 'ready',
+      privateNetwork: 'offline',
+      actionEngine: 'peekaboo_ready',
+    },
     summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion repair state fixture.',
     sourcePointer: `local-fixture:native-companion:${fixtureState}`,
     canOpenReleasedWorkbench: true,
@@ -526,7 +646,7 @@ function nativeCompanionFixtureStatus(
       running: fixtureState === 'ready',
       reachable: fixtureState === 'ready',
       managedBy: 'fixture',
-      tailnetIp: '100.64.0.10',
+      privateNetworkAvailable: fixtureState === 'ready',
       permissionTarget: 'evaOS Workbench',
     },
     customerMac: {
@@ -569,6 +689,7 @@ function nativeCompanionFixtureStatus(
       agentPairingStatus: 'ready_for_agent_pairing',
       runtimeToolReadiness: 'pairing_ready',
       blockerReason: undefined,
+      prerequisites: { ...base.prerequisites!, privateNetwork: 'online' },
       summaryText: 'LOCAL FIXTURE - NOT LIVE BETA PROOF: Native companion ready from fixture proof.',
       bridgeCli: { ...base.bridgeCli, status: 'ready' },
       connectorService: { ...base.connectorService, status: 'ready', running: true, reachable: true },
@@ -1144,7 +1265,8 @@ async function runSetupCheckAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
-  const [connectorService, customerMac, controlSession, audit] = await Promise.all([
+  const [bridge, connectorService, customerMac, controlSession, audit] = await Promise.all([
+    runBridgeCommand(bridgePath, ['status', '--json'], deps),
     runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
     runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps),
@@ -1152,6 +1274,16 @@ async function runSetupCheckAction(
   ]);
   const permissions = effectiveCustomerMacPermissions(permissionView(customerMac.data?.permissions), controlSession);
   const connectorReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, connectorService, deps);
+  const prerequisiteGate = await nativeCompanionPrerequisiteGateWithAuthority({
+    bridgePath,
+    bridge,
+    connectorServiceData: connectorService.data,
+    customerMacData: customerMac.data,
+    controlSession,
+    customerId: request.customerId,
+    deps,
+    env: deps.env,
+  });
   const setup = {
     connectorReady,
     macReady:
@@ -1159,7 +1291,7 @@ async function runSetupCheckAction(
     controlReady: controlSession.ok,
     iPhoneDeferred: true,
   };
-  const ready = setup.connectorReady && setup.macReady && setup.controlReady;
+  const ready = prerequisiteGate.ready && setup.connectorReady && setup.macReady && setup.controlReady;
   const auditIds = compactStrings([customerMac.auditId, controlSession.auditId, ...auditIdsFromPayload(audit)]);
   const reportedAgentPairingStatus = ready ? agentPairingStatusFromStatus('ready', controlSession) : 'not_ready';
   const agentPairingProofScopeId = agentPairingProofScopeIdFromControlSession(controlSession);
@@ -1189,7 +1321,8 @@ async function runSetupCheckAction(
       agentPairingStatus,
       blockerReason: ready
         ? undefined
-        : (blockerReasonForStatus({
+        : (prerequisiteGate.blockerReason ??
+          blockerReasonForStatus({
             bridge: { ok: true, data: {} },
             connectorService,
             customerMac,
@@ -1198,7 +1331,8 @@ async function runSetupCheckAction(
             connectorServiceReady: setup.connectorReady,
             customerMacReady: setup.macReady,
             bridgePath,
-          }) ?? 'unknown'),
+          }) ??
+          'unknown'),
     }
   );
 }
@@ -1285,10 +1419,40 @@ async function ensureCustomerMacConnectorGrantAction(
     );
   }
 
+  const [bridge, typedCustomerMac] = await Promise.all([
+    runBridgeCommand(bridgePath, ['status', '--json'], deps),
+    prepared?.customerMac
+      ? Promise.resolve(prepared.customerMac)
+      : runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
+  ]);
   const controlSession =
     prepared?.controlSession ??
     (await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps));
-  let localCustomerMac = prepared?.customerMac;
+  const prerequisiteGate = await nativeCompanionPrerequisiteGateWithAuthority({
+    bridgePath,
+    bridge,
+    connectorServiceData: sessionConnector.data,
+    customerMacData: typedCustomerMac.data,
+    controlSession,
+    customerId,
+    deps,
+    env: deps.env,
+  });
+  if (!prerequisiteGate.ready) {
+    return nativeActionResult(
+      resultAction,
+      'repair_required',
+      'Mac Access typed bridge, private-network, and action-engine prerequisites must be ready before Workbench can connect Mac control.',
+      {
+        sourcePointer: 'native-companion:connector-grant-prerequisites-required',
+        agentPairingStatus: 'not_ready',
+        refreshRecommended: false,
+        blockerReason: prerequisiteGate.blockerReason,
+      }
+    );
+  }
+
+  let localCustomerMac = typedCustomerMac;
   let localPermissions = localCustomerMac
     ? effectiveCustomerMacPermissions(permissionView(localCustomerMac.data?.permissions), controlSession)
     : undefined;
@@ -1515,7 +1679,10 @@ async function createPairingPromptAction(
     );
   }
 
-  const connector = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  const [bridge, connector] = await Promise.all([
+    runBridgeCommand(bridgePath, ['status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
+  ]);
   if (!connectorServiceIsReady(connector)) {
     return nativeActionResult(
       'create_pairing_prompt',
@@ -1542,10 +1709,33 @@ async function createPairingPromptAction(
   }
 
   const customerMac = await runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps);
+  const controlSession = await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps);
+  const prerequisiteGate = await nativeCompanionPrerequisiteGateWithAuthority({
+    bridgePath,
+    bridge,
+    connectorServiceData: connector.data,
+    customerMacData: customerMac.data,
+    controlSession,
+    customerId,
+    deps,
+    env: deps.env,
+  });
+  if (!prerequisiteGate.ready) {
+    return nativeActionResult(
+      'create_pairing_prompt',
+      'repair_required',
+      'Mac Access typed bridge, private-network, and action-engine prerequisites must be ready before Workbench can create an agent pairing prompt.',
+      {
+        sourcePointer: 'native-companion:pairing-prerequisites-required',
+        agentPairingStatus: 'not_ready',
+        refreshRecommended: false,
+        blockerReason: prerequisiteGate.blockerReason,
+      }
+    );
+  }
   const permissions = permissionView(customerMac.data?.permissions);
   const deviceIdentifier = connectorDeviceIdentifier(customerMac.data);
   if (!hasGrantedCorePermissions(permissions)) {
-    const controlSession = await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps);
     if (controlSessionHasPermissionProof(controlSession)) {
       return createPairingPromptWithReadyMac({ bridgePath, customerId, deps, deviceIdentifier });
     }
@@ -1682,7 +1872,10 @@ async function primeRepairPermission(
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<void> {
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   if (!bridgePath) return;
   if (action === 'accessibility') {
     await runBridgeCommand(bridgePath, ['permissions', 'prime', '--json', '--permission', 'accessibility'], deps);
@@ -1726,7 +1919,10 @@ export async function runNativeCompanionAction(
   deps: EvaosNativeCompanionStatusDeps = {}
 ): Promise<IEvaosNativeCompanionActionResult> {
   const existsSync = deps.existsSync ?? fs.existsSync;
-  const bridgePath = resolveBridgeExecutable(deps.bridgePaths ?? defaultBridgePaths(deps.env), existsSync);
+  const bridgePath = resolveBridgeExecutable(
+    deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
+    existsSync
+  );
   if (!bridgePath) {
     return nativeActionResult(request.action, 'repair_required', 'Workbench connector tools are not installed.', {
       sourcePointer: 'native-companion:bridge-cli-missing',
@@ -1769,6 +1965,8 @@ export async function runNativeCompanionAction(
       return runAuditTailAction(bridgePath, deps);
     case 'create_pairing_prompt':
       return createPairingPromptAction(request, bridgePath, deps);
+    case 'secure_network_enroll':
+      return runSecureNetworkEnrollmentAction(request, bridgePath, deps);
     default:
       return nativeActionResult(request.action, 'unsupported', 'Workbench connector action is not supported.', {
         sourcePointer: 'native-companion:unsupported-action',
@@ -1790,6 +1988,20 @@ export async function openNativeCompanionRepairAction(
     };
   }
 
+  if (request.action === 'secure_network_install') {
+    const openExternal = deps.openExternal ?? defaultOpenExternal;
+    await openExternal(SECURE_NETWORK_INSTALL_URL);
+    return {
+      opened: true,
+      target: SECURE_NETWORK_INSTALL_URL,
+      message: 'Opened the official secure-network download page.',
+    };
+  }
+
+  if (request.action === 'secure_network_open') {
+    return openSecureNetworkApp(deps);
+  }
+
   const target = systemSettingsUrlForRepairAction(request.action);
   await primeRepairPermission(request.action, deps);
   const openExternal = deps.openExternal ?? defaultOpenExternal;
@@ -1804,12 +2016,625 @@ export async function openNativeCompanionRepairAction(
   };
 }
 
-function defaultBridgePaths(env: NodeJS.ProcessEnv = process.env): string[] {
+async function openSecureNetworkApp(
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionRepairActionResult> {
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const openPath = deps.openPath ?? defaultOpenPath;
+  const appPath = [
+    join('/Applications', SECURE_NETWORK_APP_NAME),
+    join(homedir(), 'Applications', SECURE_NETWORK_APP_NAME),
+  ].find((candidate) => existsSync(candidate));
+  if (!appPath) {
+    return {
+      opened: false,
+      message: 'The secure-network app is not installed at an approved application path.',
+    };
+  }
+
+  const error = await openPath(appPath);
+  if (error) {
+    return {
+      opened: false,
+      target: appPath,
+      message: 'The secure-network app could not be opened. Recheck the installation, then try again.',
+    };
+  }
+  return {
+    opened: true,
+    target: appPath,
+    message: 'Opened the secure-network app. Return to Workbench after it reports connected.',
+  };
+}
+
+type VerifiedSecureNetworkClient = {
+  appPath: string;
+  commandPath: string;
+  clientVariant: EvaosPrivateNetworkClientVariant;
+};
+
+async function verifiedSecureNetworkClient(
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<VerifiedSecureNetworkClient | undefined> {
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const execFile = deps.execFile ?? defaultExecFile;
+  const appPaths = [
+    join('/Applications', SECURE_NETWORK_APP_NAME),
+    join(homedir(), 'Applications', SECURE_NETWORK_APP_NAME),
+  ];
+
+  for (const appPath of appPaths) {
+    if (!existsSync(appPath)) continue;
+    const commandPath = join(appPath, 'Contents', 'MacOS', 'Tailscale');
+    if (!existsSync(commandPath)) continue;
+
+    try {
+      const details = await execFile('/usr/bin/codesign', ['-dv', '--verbose=4', appPath], {
+        timeout: COMMAND_TIMEOUT_MS,
+      });
+      const metadata = `${details.stdout}\n${details.stderr}`;
+      const identifier = /^Identifier=(.+)$/m.exec(metadata)?.[1]?.trim();
+      const teamIdentifier = /^TeamIdentifier=(.+)$/m.exec(metadata)?.[1]?.trim();
+      const clientVariant = identifier ? SECURE_NETWORK_APP_IDENTIFIERS[identifier] : undefined;
+      if (teamIdentifier !== SECURE_NETWORK_APP_TEAM_ID || !clientVariant) continue;
+      const requirement =
+        `anchor apple generic and certificate leaf[subject.OU] = "${SECURE_NETWORK_APP_TEAM_ID}" ` +
+        `and identifier "${identifier}"`;
+      await execFile('/usr/bin/codesign', ['--verify', '--deep', '--strict', `-R=${requirement}`, appPath], {
+        timeout: COMMAND_TIMEOUT_MS,
+      });
+      return { appPath, commandPath, clientVariant };
+    } catch {
+      continue;
+    }
+  }
+
+  return undefined;
+}
+
+async function runSecureNetworkEnrollmentAction(
+  request: IEvaosNativeCompanionActionRequest,
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<IEvaosNativeCompanionActionResult> {
+  const customerId = request.customerId?.trim();
+  if (!customerId || isAccountLikeCustomerId(customerId)) {
+    return nativeActionResult(
+      'secure_network_enroll',
+      'repair_required',
+      'Choose a VM-backed Mac-control customer before connecting the private Mac network.',
+      {
+        sourcePointer: 'native-companion:secure-network-enrollment-customer-required',
+        refreshRecommended: false,
+        blockerReason: 'runtime_not_configured',
+      }
+    );
+  }
+
+  const [connectorService, customerMac] = await Promise.all([
+    runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps),
+    runBridgeCommand(bridgePath, ['customer-mac', 'status', '--json'], deps),
+  ]);
+  const localNetwork = privateNetworkEvidence(connectorService.data);
+  const deviceIdentifier = privateNetworkDeviceIdentifier(customerMac.data);
+  if (
+    localNetwork?.clientInstalled !== true ||
+    localNetwork.clientRunning !== true ||
+    localNetwork.enrolled !== false ||
+    !deviceIdentifier
+  ) {
+    return nativeActionResult(
+      'secure_network_enroll',
+      'repair_required',
+      'Private-network state changed or this Mac could not be identified. Refresh setup before retrying enrollment.',
+      {
+        sourcePointer: 'native-companion:secure-network-enrollment-state-changed',
+        refreshRecommended: true,
+        blockerReason: 'secure_network_link_required',
+      }
+    );
+  }
+
+  const client = await verifiedSecureNetworkClient(deps);
+  if (!client) {
+    return nativeActionResult(
+      'secure_network_enroll',
+      'repair_required',
+      'Workbench could not verify the installed Tailscale app as an approved signed client.',
+      {
+        sourcePointer: 'native-companion:secure-network-enrollment-client-unverified',
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+      }
+    );
+  }
+
+  const createEnrollment =
+    deps.createPrivateNetworkEnrollment ??
+    ((input) => getDefaultEvaosBrokerSessionClient().createPrivateNetworkEnrollment(input));
+  const cancelEnrollment =
+    deps.cancelPrivateNetworkEnrollment ??
+    ((input) => getDefaultEvaosBrokerSessionClient().cancelPrivateNetworkEnrollment(input));
+  let enrollment: EvaosPrivateNetworkEnrollment;
+  try {
+    enrollment = await createEnrollment({
+      customerId,
+      deviceIdentifier,
+      deviceName: hostname() || 'Customer Mac',
+      clientVariant: client.clientVariant,
+    });
+  } catch (error) {
+    if (isBrokerSessionReconnectRequired(error)) {
+      return nativeActionResult(
+        'secure_network_enroll',
+        'repair_required',
+        'Workbench needs a fresh evaOS session before it can connect the private Mac network.',
+        {
+          sourcePointer: 'native-companion:secure-network-enrollment-broker-session-required',
+          refreshRecommended: false,
+          blockerReason: 'broker_session_expired',
+        }
+      );
+    }
+    return nativeActionResult(
+      'secure_network_enroll',
+      'repair_required',
+      'The evaOS broker could not create a safe one-use private-network enrollment.',
+      {
+        sourcePointer: 'native-companion:secure-network-enrollment-broker-failed',
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+      }
+    );
+  }
+
+  const latestConnectorService = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+  const latestNetwork = privateNetworkEvidence(latestConnectorService.data);
+  if (
+    latestNetwork?.clientInstalled !== true ||
+    latestNetwork.clientRunning !== true ||
+    latestNetwork.enrolled !== false
+  ) {
+    let cancelled = false;
+    try {
+      const cancellation = await cancelEnrollment({
+        customerId,
+        enrollmentId: enrollment.enrollmentId,
+        authKey: enrollment.authKey,
+      });
+      cancelled = cancellation.cancelled;
+    } catch {
+      cancelled = false;
+    }
+    return nativeActionResult(
+      'secure_network_enroll',
+      'repair_required',
+      cancelled
+        ? 'Private-network state changed before enrollment. Workbench cancelled the unused key safely; refresh before retrying.'
+        : 'Private-network state changed before enrollment, and cancellation could not be confirmed. Wait for the short enrollment expiry before retrying.',
+      {
+        sourcePointer: cancelled
+          ? 'native-companion:secure-network-enrollment-state-changed'
+          : 'native-companion:secure-network-enrollment-cancel-unconfirmed',
+        refreshRecommended: true,
+        blockerReason: 'secure_network_link_required',
+      }
+    );
+  }
+
+  const execFile = deps.execFile ?? defaultExecFile;
+  let secretDirectory: string | undefined;
+  let secretPath: string | undefined;
+  let secretReady = false;
+  let cleanupFailed = false;
+  let localEnrollmentSucceeded = false;
+  try {
+    secretDirectory = fs.mkdtempSync(join(tmpdir(), 'evaos-private-network-'));
+    secretPath = join(secretDirectory, 'auth-key');
+    fs.chmodSync(secretDirectory, 0o700);
+    fs.writeFileSync(secretPath, enrollment.authKey, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+    secretReady = true;
+  } catch {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_setup_failed');
+    localEnrollmentSucceeded = false;
+  }
+
+  if (secretReady && secretPath) {
+    try {
+      await execFile(
+        client.commandPath,
+        ['login', `--login-server=${enrollment.loginServer}`, `--auth-key=file:${secretPath}`, '--timeout=20s'],
+        {
+          timeout: SECURE_NETWORK_ENROLL_TIMEOUT_MS,
+          env: secureNetworkCliEnvironment(deps.env ?? process.env),
+        }
+      );
+      localEnrollmentSucceeded = true;
+    } catch {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_login_failed');
+      localEnrollmentSucceeded = false;
+    }
+  }
+
+  // Cleanup is deliberately fail-closed because the one-use secret must not remain on disk.
+  if (secretPath) {
+    try {
+      (deps.unlinkSync ?? fs.unlinkSync)(secretPath);
+    } catch {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_unlink_failed');
+      localEnrollmentSucceeded = false;
+      cleanupFailed = true;
+    }
+  }
+  if (secretDirectory) {
+    try {
+      (deps.rmSync ?? fs.rmSync)(secretDirectory, { force: true, recursive: true });
+    } catch {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_directory_cleanup_failed');
+      localEnrollmentSucceeded = false;
+      cleanupFailed = true;
+    }
+  }
+
+  if (!localEnrollmentSucceeded && !cleanupFailed) {
+    localEnrollmentSucceeded = await waitForSecureNetworkEnrollmentAfterAmbiguousFailure(bridgePath, deps);
+  }
+
+  if (!localEnrollmentSucceeded) {
+    let cancelled = false;
+    try {
+      const cancellation = await cancelEnrollment({
+        customerId,
+        enrollmentId: enrollment.enrollmentId,
+        authKey: enrollment.authKey,
+      });
+      cancelled = cancellation.cancelled;
+    } catch {
+      cancelled = false;
+    }
+    return nativeActionResult(
+      'secure_network_enroll',
+      'repair_required',
+      cancelled
+        ? 'Tailscale could not use the one-use enrollment. Workbench cancelled it safely; reopen Tailscale and retry.'
+        : 'Tailscale could not use the one-use enrollment, and cancellation could not be confirmed. Wait for the short enrollment expiry before retrying.',
+      {
+        sourcePointer: cancelled
+          ? 'native-companion:secure-network-enrollment-client-failed'
+          : 'native-companion:secure-network-enrollment-cancel-unconfirmed',
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+      }
+    );
+  }
+
+  privateNetworkBootstrapGrants.set(privateNetworkBootstrapGrantKey(customerId, deviceIdentifier), enrollment.grantId);
+
+  return nativeActionResult(
+    'secure_network_enroll',
+    'succeeded',
+    'Private-network enrollment was submitted. Workbench is waiting for broker node and access-policy verification.',
+    {
+      sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+      refreshRecommended: true,
+      blockerReason: 'secure_network_link_required',
+      bootstrapGrantId: enrollment.grantId,
+    }
+  );
+}
+
+function recordNativeCompanionDiagnosticEvent(
+  deps: EvaosNativeCompanionStatusDeps,
+  eventCode: EvaosNativeCompanionDiagnosticEventCode
+): void {
+  if (deps.recordDiagnosticEvent) {
+    deps.recordDiagnosticEvent(eventCode);
+    return;
+  }
+  console.warn(`[evaOS Native Companion] ${eventCode}`);
+}
+
+async function waitForSecureNetworkEnrollmentAfterAmbiguousFailure(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<boolean> {
+  const sleep = deps.sleep ?? defaultSleep;
+  for (let attempt = 0; attempt < SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) await sleep(SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS);
+    const connectorService = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+    if (privateNetworkEvidence(connectorService.data)?.enrolled === true) return true;
+  }
+  return false;
+}
+
+function secureNetworkCliEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const safeEnvironment: NodeJS.ProcessEnv = { TAILSCALE_BE_CLI: '1' };
+  for (const name of ['HOME', 'LANG', 'LC_ALL', 'LOGNAME', 'TMPDIR', 'USER'] as const) {
+    const value = env[name];
+    if (typeof value === 'string') safeEnvironment[name] = value;
+  }
+  return safeEnvironment;
+}
+
+function privateNetworkEvidence(input: unknown): NativeCompanionPrerequisiteEvidence['privateNetwork'] {
+  const network = readRecord(input, 'private_network') ?? readRecord(input, 'secure_network');
+  if (!network) return undefined;
+  return {
+    clientInstalled: readBooleanAlias(network, 'client_installed', 'clientInstalled'),
+    clientRunning: readBooleanAlias(network, 'client_running', 'clientRunning'),
+    enrolled: readBoolean(network, 'enrolled'),
+    online: readBoolean(network, 'online'),
+  };
+}
+
+async function privateNetworkEvidenceWithAuthority(input: {
+  customerId?: string;
+  deviceIdentifier?: string;
+  expectedGrantId?: string;
+  bootstrapGrantId?: string;
+  localGrantId?: string;
+  localEvidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
+  now: () => Date;
+  deps: EvaosNativeCompanionStatusDeps;
+}): Promise<{
+  evidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
+  diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic;
+}> {
+  const { customerId, deviceIdentifier, expectedGrantId, bootstrapGrantId, localGrantId, localEvidence, now, deps } =
+    input;
+  if (
+    !localEvidence ||
+    localEvidence.clientInstalled !== true ||
+    localEvidence.clientRunning !== true ||
+    localEvidence.enrolled !== true ||
+    !customerId ||
+    !deviceIdentifier
+  ) {
+    return {
+      evidence: localEvidence,
+      diagnostic: { classification: 'unavailable', reason: 'local_evidence_unavailable' },
+    };
+  }
+  if (!expectedGrantId) {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'local_scope_unavailable' },
+    };
+  }
+  if (localGrantId && bootstrapGrantId && localGrantId !== bootstrapGrantId) {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'grant_binding_mismatch' },
+    };
+  }
+  const getPrivateNetworkReadiness =
+    deps.getPrivateNetworkReadiness ??
+    ((requestInput) => getDefaultEvaosBrokerSessionClient().getPrivateNetworkReadiness(requestInput));
+  const abortController = new AbortController();
+  try {
+    const authority = await promiseWithTimeout(
+      getPrivateNetworkReadiness({ customerId, deviceIdentifier, signal: abortController.signal }),
+      PRIVATE_NETWORK_AUTHORITY_TIMEOUT_MS,
+      () => abortController.abort()
+    );
+    const expiresAtMs = Date.parse(authority.expiresAt);
+    const observedAtMs = Date.parse(authority.observedAt);
+    const nowMs = now().getTime();
+    const diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic = {
+      classification: 'observed',
+      reason: authority.reason,
+      auditId: safeDiagnosticText(authority.auditId),
+    };
+    const authorityIsStale =
+      Number.isFinite(observedAtMs) &&
+      Number.isFinite(expiresAtMs) &&
+      (observedAtMs < nowMs - 60_000 || expiresAtMs <= nowMs);
+    const authorityBindingMismatch = authority.grantId !== expectedGrantId;
+    if (
+      authority.customerId !== customerId ||
+      authority.deviceIdentifier !== deviceIdentifier ||
+      !authority.deviceId ||
+      !authority.enrollmentId ||
+      !authority.grantId ||
+      authority.grantId !== expectedGrantId ||
+      !authority.auditId ||
+      !Number.isFinite(observedAtMs) ||
+      !Number.isFinite(expiresAtMs) ||
+      observedAtMs > nowMs + 5_000 ||
+      observedAtMs < nowMs - 60_000 ||
+      expiresAtMs <= nowMs ||
+      expiresAtMs - nowMs > 60_000 ||
+      expiresAtMs <= observedAtMs ||
+      expiresAtMs - observedAtMs > 60_000
+    ) {
+      return {
+        evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+        diagnostic: {
+          classification: authorityIsStale ? 'stale' : 'unavailable',
+          reason: authorityBindingMismatch
+            ? 'grant_binding_mismatch'
+            : authorityIsStale
+              ? authority.reason
+              : 'authority_proof_invalid',
+          auditId: diagnostic.auditId,
+        },
+      };
+    }
+    return {
+      evidence: {
+        ...localEvidence,
+        correctControlPlane: authority.correctControlPlane,
+        aclAllowed: authority.aclAllowed,
+        online: localEvidence.online === true && authority.online === true,
+      },
+      diagnostic,
+    };
+  } catch (error) {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: {
+        classification: 'unavailable',
+        reason: isBrokerSessionReconnectRequired(error) ? 'broker_session_expired' : 'authority_unavailable',
+      },
+    };
+  }
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      onTimeout();
+      reject(new Error('operation timed out'));
+    }, timeoutMs);
+    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
+}
+
+function actionEngineEvidence(customerMacData: unknown): NativeCompanionPrerequisiteEvidence['actionEngine'] {
+  const engines = readRecord(customerMacData, 'control_engines') ?? readRecord(customerMacData, 'engines');
+  if (!engines) return undefined;
+
+  const cua = readRecord(engines, 'cua_driver');
+  const peekaboo = readRecord(engines, 'peekaboo');
+  const activePrimary = readString(engines, 'active_primary');
+  const nativeFallbacks = new Set(['post_to_pid_helper', 'accessibility', 'system_events']);
+  return {
+    cuaAvailable: readBoolean(cua, 'available'),
+    cuaActiveForActions:
+      readBooleanAlias(cua, 'active_for_actions', 'activeForActions') ??
+      (activePrimary === 'cua_driver' ? true : undefined),
+    peekabooAvailable: readBoolean(peekaboo, 'available'),
+    nativeFallbackAvailable: activePrimary ? nativeFallbacks.has(activePrimary) : false,
+  };
+}
+
+function nativeCompanionPrerequisiteGate(input: {
+  bridgePath: string;
+  bridge: BridgeCommandResult;
+  connectorServiceData: unknown;
+  customerMacData: unknown;
+  env?: NodeJS.ProcessEnv;
+  privateNetworkEvidence?: NativeCompanionPrerequisiteEvidence['privateNetwork'];
+}): {
+  ready: boolean;
+  prerequisites: ReturnType<typeof classifyNativeCompanionPrerequisites>;
+  blockerReason?: IEvaosMacControlBlockerReason;
+} {
+  const prerequisites = classifyNativeCompanionPrerequisites({
+    bridgeRuntime: {
+      installed: true,
+      commandSucceeded: input.bridge.ok,
+      compatible: bundledBridgeRuntimeCompatibility(input.bridgePath, input.bridge, input.env),
+    },
+    privateNetwork: input.privateNetworkEvidence ?? privateNetworkEvidence(input.connectorServiceData),
+    actionEngine: actionEngineEvidence(input.customerMacData),
+  });
+  const blockerReason =
+    prerequisites.bridgeRuntime !== 'ready'
+      ? 'bundled_bridge_required'
+      : prerequisites.privateNetwork !== 'online'
+        ? 'secure_network_link_required'
+        : prerequisites.actionEngine !== 'cua_ready' && prerequisites.actionEngine !== 'peekaboo_ready'
+          ? 'runtime_not_configured'
+          : undefined;
+  return { ready: blockerReason === undefined, prerequisites, blockerReason };
+}
+
+async function nativeCompanionPrerequisiteGateWithAuthority(input: {
+  bridgePath: string;
+  bridge: BridgeCommandResult;
+  connectorServiceData: unknown;
+  customerMacData: unknown;
+  controlSession: BridgeCommandResult;
+  customerId?: string;
+  deps: EvaosNativeCompanionStatusDeps;
+  env?: NodeJS.ProcessEnv;
+}): Promise<ReturnType<typeof nativeCompanionPrerequisiteGate>> {
+  const deviceIdentifier = privateNetworkDeviceIdentifier(input.customerMacData);
+  const localGrantId = input.controlSession.ok
+    ? activeMacControlScopeIdFromControlSession(input.controlSession)
+    : undefined;
+  const bootstrapGrantKey = privateNetworkBootstrapGrantKey(input.customerId, deviceIdentifier);
+  const trustedBootstrapGrantId = bootstrapGrantKey ? privateNetworkBootstrapGrants.get(bootstrapGrantKey) : undefined;
+  if (bootstrapGrantKey && localGrantId && trustedBootstrapGrantId === localGrantId) {
+    privateNetworkBootstrapGrants.delete(bootstrapGrantKey);
+  }
+  const localEvidence = privateNetworkEvidence(input.connectorServiceData);
+  const authority = await privateNetworkEvidenceWithAuthority({
+    customerId: input.customerId,
+    deviceIdentifier,
+    expectedGrantId: localGrantId ?? trustedBootstrapGrantId,
+    localGrantId,
+    localEvidence,
+    now: input.deps.now ?? (() => new Date()),
+    deps: input.deps,
+  });
+  return nativeCompanionPrerequisiteGate({
+    bridgePath: input.bridgePath,
+    bridge: input.bridge,
+    connectorServiceData: input.connectorServiceData,
+    customerMacData: input.customerMacData,
+    env: input.env,
+    privateNetworkEvidence: authority.evidence,
+  });
+}
+
+function bundledBridgeRuntimeCompatibility(
+  bridgePath: string,
+  bridge: BridgeCommandResult,
+  env?: NodeJS.ProcessEnv
+): boolean | undefined {
+  if (!isPairingCapableBridgePath(bridgePath, env)) return false;
+  const runtime = readRecord(bridge.data, 'bridge_runtime');
+  if (runtime) {
+    if (
+      readString(runtime, 'schema') !== 'evaos.desktop_bridge.workbench_runtime.v1' ||
+      readNumber(runtime, 'contract_version') !== 1
+    ) {
+      return false;
+    }
+    return (
+      readBoolean(runtime, 'compatible') === true &&
+      readBooleanAlias(runtime, 'version_compatible', 'versionCompatible') === true
+    );
+  }
+  return (
+    readBoolean(bridge.data, 'compatible') ??
+    readBooleanAlias(bridge.data, 'version_compatible', 'versionCompatible') ??
+    readBooleanAlias(bridge.data, 'workbench_compatible', 'workbenchCompatible')
+  );
+}
+
+function privateNetworkAvailable(input: unknown): boolean | undefined {
+  const explicit = readBooleanAlias(input, 'tailnet_available', 'privateNetworkAvailable');
+  if (explicit !== undefined) return explicit;
+  const evidence = privateNetworkEvidence(input);
+  if (evidence?.clientRunning !== undefined) return evidence.clientRunning;
+  return readString(input, 'tailnet_ip') ? true : undefined;
+}
+
+function nativeCompanionIsPackaged(deps: EvaosNativeCompanionStatusDeps): boolean {
+  if (deps.isPackaged !== undefined) return deps.isPackaged;
+  if (deps.env?.IS_PACKAGED === 'true') return true;
+  try {
+    return deps.detectIsPackaged?.() ?? getPlatformServices().paths.isPackaged();
+  } catch {
+    return true;
+  }
+}
+
+function defaultBridgePaths(env: NodeJS.ProcessEnv = process.env, isPackaged = false): string[] {
   const resourcesPath = readProcessResourcesPath();
+  const bundledBridgePath = resourcesPath ? join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined;
+  if (isPackaged) return compactStrings([bundledBridgePath]);
   return compactStrings([
     env.EVAOS_DESKTOP_BRIDGE_PATH,
     env.EVAOS_WORKBENCH_BRIDGE_PATH,
-    resourcesPath ? join(resourcesPath, 'Bridge', 'evaos-desktop-bridge') : undefined,
+    bundledBridgePath,
     resolve(process.cwd(), 'resources', 'Bridge', 'evaos-desktop-bridge'),
     ...HOMEBREW_BRIDGE_PATHS,
   ]);
@@ -2088,6 +2913,22 @@ function connectorDeviceIdentifier(customerMacData: unknown): string | undefined
   );
 }
 
+function privateNetworkDeviceIdentifier(customerMacData: unknown): string | undefined {
+  return (
+    readNestedString(customerMacData, ['device', 'hardware_uuid']) ??
+    readNestedString(customerMacData, ['device', 'id'])
+  );
+}
+
+function privateNetworkBootstrapGrantKey(customerId?: string, deviceIdentifier?: string): string | undefined {
+  if (!customerId || !deviceIdentifier) return undefined;
+  return `${customerId}\u0000${deviceIdentifier}`;
+}
+
+export function clearPrivateNetworkBootstrapGrantsForTest(): void {
+  privateNetworkBootstrapGrants.clear();
+}
+
 function permissionStateForGrant(
   permissions: IEvaosNativeCompanionPermissionView | undefined
 ): Record<string, unknown> {
@@ -2346,8 +3187,9 @@ function isAccountLikeCustomerId(customerId: string): boolean {
   return customerId.includes('@');
 }
 
-async function defaultExecFile(file: string, args: string[], options: { timeout: number }): Promise<ExecFileResult> {
+async function defaultExecFile(file: string, args: string[], options: ExecFileOptions): Promise<ExecFileResult> {
   const result = await execFileAsync(file, args, {
+    env: options.env,
     timeout: options.timeout,
     maxBuffer: 1024 * 1024,
   });
@@ -2478,6 +3320,7 @@ function nativeActionResult(
     agentPairingStatus: options.agentPairingStatus,
     events: options.events,
     blockerReason: rendererSafeMacControlBlockerReason(options.blockerReason),
+    bootstrapGrantId: safeDiagnosticText(options.bootstrapGrantId),
   };
 }
 
@@ -2813,6 +3656,22 @@ function readBoolean(input: unknown, key: string): boolean | undefined {
   if (!input || typeof input !== 'object') return undefined;
   const value = (input as Record<string, unknown>)[key];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function readBooleanAlias(input: unknown, snakeCaseKey: string, camelCaseKey: string): boolean | undefined {
+  return readBoolean(input, snakeCaseKey) ?? readBoolean(input, camelCaseKey);
+}
+
+function readNumber(input: unknown, key: string): number | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = (input as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readRecord(input: unknown, key: string): Record<string, unknown> | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = (input as Record<string, unknown>)[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 function readNestedBoolean(input: unknown, path: string[]): boolean | undefined {

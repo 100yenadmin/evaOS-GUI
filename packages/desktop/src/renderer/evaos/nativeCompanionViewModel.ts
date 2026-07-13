@@ -84,7 +84,45 @@ export interface NativeCompanionRepairViewModelInput {
   actionResult?: IEvaosNativeCompanionActionResult | null;
   pairingPromptCopied?: boolean;
   permissionGuideDetail: string;
+  prerequisiteCopy: NativeCompanionPrerequisiteCopy;
 }
+
+export type NativeCompanionPrerequisiteCopy = {
+  repairWorkbenchTitle: string;
+  repairWorkbenchMissingDetail: string;
+  repairWorkbenchIncompatibleDetail: string;
+  repairControlToolsTitle: string;
+  repairControlToolsDetail: string;
+  clientMissingTitle: string;
+  clientMissingDetail: string;
+  clientStoppedTitle: string;
+  clientStoppedDetail: string;
+  unenrolledTitle: string;
+  unenrolledDetail: string;
+  wrongControlPlaneTitle: string;
+  wrongControlPlaneDetail: string;
+  aclBlockedTitle: string;
+  aclBlockedDetail: string;
+  offlineTitle: string;
+  offlineDetail: string;
+  errorTitle: string;
+  errorDetail: string;
+  refreshSessionLabel: string;
+  refreshSessionTitle: string;
+  refreshSessionDetail: string;
+  checkingSessionLabel: string;
+  checkingSessionTitle: string;
+  checkingSessionDetail: string;
+  signInLabel: string;
+  signInTitle: string;
+  signInDetail: string;
+  selectCustomerLabel: string;
+  selectCustomerTitle: string;
+  selectCustomerDetail: string;
+  chooseMacTargetLabel: string;
+  chooseMacTargetTitle: string;
+  chooseMacTargetDetail: string;
+};
 
 const PAIRING_PATTERN = /\b(?:not[_ -]?paired|pairing[_ -]?required|pairing required|device identity changed)\b/i;
 const OFFLINE_PATTERN = /\b(?:offline|unavailable|stale|could not be reached|status source required)\b/i;
@@ -99,8 +137,8 @@ export function getNativeCompanionRepairViewModel(
 
   return {
     state,
-    title: titleForState(state, input.loading, input.status),
-    summary: summaryForState(state, input.loading, input.status),
+    title: titleForState(state, input.loading, input.status, input.prerequisiteCopy),
+    summary: summaryForState(state, input.loading, input.status, input.prerequisiteCopy),
     statusLabel: labelForState(state, input.loading, input.status),
     statusTone,
     readinessStrip: readinessStripForState(input.status, state, input.loading),
@@ -133,9 +171,12 @@ export function collapseNativeCompanionState(input: NativeCompanionRepairViewMod
 function titleForState(
   state: NativeCompanionUserState,
   loading: boolean,
-  status: IEvaosNativeCompanionStatusView | null | undefined
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  copy: NativeCompanionPrerequisiteCopy
 ): string {
   if (loading) return 'Checking Mac control';
+  const prerequisite = blockingPrerequisite(status, copy);
+  if (prerequisite) return prerequisite.title;
   if (state !== 'ready' && secureConnectorLinkRequired(status)) return 'Connect secure Mac link';
   switch (state) {
     case 'ready':
@@ -156,9 +197,12 @@ function titleForState(
 function summaryForState(
   state: NativeCompanionUserState,
   loading: boolean,
-  status: IEvaosNativeCompanionStatusView | null | undefined
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  copy: NativeCompanionPrerequisiteCopy
 ): string {
   if (loading) return 'Checking the Workbench connector before evaOS or Hermes uses local Mac control.';
+  const prerequisite = blockingPrerequisite(status, copy);
+  if (prerequisite) return prerequisite.summary;
   if (state !== 'ready' && secureConnectorLinkRequired(status)) {
     return 'Local Mac permissions and connector status are ready, but this Mac still needs the broker-owned private connector link before Workbench can connect Mac control.';
   }
@@ -286,6 +330,94 @@ function primaryActionForState(state: NativeCompanionUserState, loading: boolean
   };
 }
 
+function brokerCustomerNextAction(
+  input: NativeCompanionRepairViewModelInput,
+  actionResult: IEvaosNativeCompanionActionResult | null,
+  totalSteps: number,
+  step: number
+): NativeCompanionNextAction | undefined {
+  const copy = input.prerequisiteCopy;
+  if (
+    input.status?.blockerReason === 'broker_session_expired' ||
+    input.status?.privateNetworkAuthority?.reason === 'broker_session_expired'
+  ) {
+    return {
+      kind: 'reconnect',
+      label: copy.refreshSessionLabel,
+      title: copy.refreshSessionTitle,
+      detail: copy.refreshSessionDetail,
+      step,
+      totalSteps,
+      disabled: false,
+    };
+  }
+  if (
+    actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required' ||
+    actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
+  ) {
+    return {
+      kind: 'reconnect',
+      label: copy.refreshSessionLabel,
+      title: copy.refreshSessionTitle,
+      detail: copy.refreshSessionDetail,
+      step,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (input.brokerSessionLoading) {
+    return {
+      kind: 'none',
+      label: copy.checkingSessionLabel,
+      title: copy.checkingSessionTitle,
+      detail: copy.checkingSessionDetail,
+      step,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (input.brokerAuthenticated === false) {
+    return {
+      kind: 'reconnect',
+      label: copy.signInLabel,
+      title: copy.signInTitle,
+      detail: copy.signInDetail,
+      step,
+      totalSteps,
+      disabled: false,
+    };
+  }
+
+  if (!input.hasSelectedCustomer) {
+    return {
+      kind: 'none',
+      label: copy.selectCustomerLabel,
+      title: copy.selectCustomerTitle,
+      detail: copy.selectCustomerDetail,
+      step,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  if (input.hasPairableCustomer === false) {
+    return {
+      kind: 'none',
+      label: copy.chooseMacTargetLabel,
+      title: copy.chooseMacTargetTitle,
+      detail: copy.chooseMacTargetDetail,
+      step,
+      totalSteps,
+      disabled: true,
+    };
+  }
+
+  return undefined;
+}
+
 function nextActionForState(
   input: NativeCompanionRepairViewModelInput,
   state: NativeCompanionUserState
@@ -332,17 +464,9 @@ function nextActionForState(
     };
   }
 
-  if (!connectorServiceReady(status)) {
-    return {
-      kind: 'run',
-      action: 'connector_start',
-      label: 'Turn On Mac Access',
-      title: 'Turn on Mac access',
-      detail: 'Start the local Workbench connector before connecting Mac control.',
-      step: 1,
-      totalSteps,
-      disabled: false,
-    };
+  const packagedPrerequisite = blockingPackagedPrerequisite(status, input.prerequisiteCopy);
+  if (packagedPrerequisite) {
+    return packagedPrerequisite.action;
   }
 
   if (!permissionsReady(status)) {
@@ -360,68 +484,45 @@ function nextActionForState(
   }
 
   if (
-    actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
-    actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required'
+    status.blockerReason === 'broker_session_expired' ||
+    status.privateNetworkAuthority?.reason === 'broker_session_expired'
   ) {
+    const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
+    if (brokerGate) return brokerGate;
+  }
+
+  const networkPrerequisite = blockingPrivateNetworkPrerequisite(status, input.prerequisiteCopy);
+  if (networkPrerequisite) {
+    if (status.prerequisites?.privateNetwork !== 'unenrolled') {
+      return networkPrerequisite.action;
+    }
+    if (actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-submitted') {
+      return {
+        ...networkPrerequisite.action,
+        kind: 'none',
+        action: undefined,
+        disabled: true,
+      };
+    }
+    const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
+    return brokerGate ?? networkPrerequisite.action;
+  }
+
+  if (!connectorServiceReady(status)) {
     return {
-      kind: 'reconnect',
-      label: 'Refresh Workbench Session',
-      title: 'Refresh Workbench session',
-      detail: 'Refresh the evaOS broker session so Workbench can connect Mac control for the selected customer.',
-      step: 3,
+      kind: 'run',
+      action: 'connector_start',
+      label: 'Turn On Mac Access',
+      title: 'Turn on Mac access',
+      detail: 'Start the local Workbench connector before connecting Mac control.',
+      step: 1,
       totalSteps,
       disabled: false,
     };
   }
 
-  if (input.brokerSessionLoading) {
-    return {
-      kind: 'none',
-      label: 'Checking session',
-      title: 'Checking Workbench session',
-      detail: 'Workbench is checking the evaOS broker session before connecting Mac control.',
-      step: 3,
-      totalSteps,
-      disabled: true,
-    };
-  }
-
-  if (input.brokerAuthenticated === false) {
-    return {
-      kind: 'reconnect',
-      label: 'Sign In To Workbench',
-      title: 'Sign in to Workbench',
-      detail: 'Sign in to evaOS so Workbench can connect Mac control for the selected customer.',
-      step: 3,
-      totalSteps,
-      disabled: false,
-    };
-  }
-
-  if (!input.hasSelectedCustomer) {
-    return {
-      kind: 'none',
-      label: 'Select customer',
-      title: 'Choose a customer',
-      detail: 'Select the customer this Mac should connect to before enabling first-party Mac control.',
-      step: 3,
-      totalSteps,
-      disabled: true,
-    };
-  }
-
-  if (input.hasPairableCustomer === false) {
-    return {
-      kind: 'none',
-      label: 'Choose Mac target',
-      title: 'Choose a Mac-control customer',
-      detail:
-        'The selected account is not a VM-backed Mac-control target. Choose a customer target before connecting Mac control.',
-      step: 3,
-      totalSteps,
-      disabled: true,
-    };
-  }
+  const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 3);
+  if (brokerGate) return brokerGate;
 
   if (agentPairingStatus === 'agent_paired') {
     if (status.controlSession?.active) {
@@ -719,12 +820,190 @@ function canCreatePairingPrompt(
 }
 
 function localMacAccessReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+  const prerequisites = status?.prerequisites;
+  if (
+    prerequisites &&
+    (prerequisites.bridgeRuntime !== 'ready' ||
+      prerequisites.privateNetwork !== 'online' ||
+      prerequisites.actionEngine === 'unavailable')
+  ) {
+    return false;
+  }
   return (
     status?.bridgeCli.installed === true &&
     status.bridgeCli.status !== 'error' &&
     connectorServiceReady(status) &&
     permissionsReady(status)
   );
+}
+
+type BlockingPrerequisite = {
+  title: string;
+  summary: string;
+  action: NativeCompanionNextAction;
+};
+
+function blockingPrerequisite(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  copy: NativeCompanionPrerequisiteCopy
+): BlockingPrerequisite | undefined {
+  const packaged = blockingPackagedPrerequisite(status, copy);
+  if (packaged) return packaged;
+  if (!permissionsReady(status)) return undefined;
+  return blockingPrivateNetworkPrerequisite(status, copy);
+}
+
+function blockingPackagedPrerequisite(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  copy: NativeCompanionPrerequisiteCopy
+): BlockingPrerequisite | undefined {
+  const prerequisites = status?.prerequisites;
+  if (!prerequisites) return undefined;
+  if (prerequisites.bridgeRuntime !== 'ready') {
+    return {
+      title: copy.repairWorkbenchTitle,
+      summary:
+        prerequisites.bridgeRuntime === 'missing'
+          ? copy.repairWorkbenchMissingDetail
+          : copy.repairWorkbenchIncompatibleDetail,
+      action: {
+        kind: 'none',
+        label: copy.repairWorkbenchTitle,
+        title: copy.repairWorkbenchTitle,
+        detail:
+          prerequisites.bridgeRuntime === 'missing'
+            ? copy.repairWorkbenchMissingDetail
+            : copy.repairWorkbenchIncompatibleDetail,
+        step: 1,
+        totalSteps: 5,
+        disabled: true,
+      },
+    };
+  }
+  if (prerequisites.actionEngine === 'unavailable') {
+    return {
+      title: copy.repairControlToolsTitle,
+      summary: copy.repairControlToolsDetail,
+      action: {
+        kind: 'none',
+        label: copy.repairControlToolsTitle,
+        title: copy.repairControlToolsTitle,
+        detail: copy.repairControlToolsDetail,
+        step: 1,
+        totalSteps: 5,
+        disabled: true,
+      },
+    };
+  }
+  return undefined;
+}
+
+function blockingPrivateNetworkPrerequisite(
+  status: IEvaosNativeCompanionStatusView | null | undefined,
+  copy: NativeCompanionPrerequisiteCopy
+): BlockingPrerequisite | undefined {
+  const privateNetwork = status?.prerequisites?.privateNetwork;
+  if (!privateNetwork || privateNetwork === 'online') return undefined;
+  const baseAction = {
+    step: 1,
+    totalSteps: 5,
+  };
+  switch (privateNetwork) {
+    case 'client_missing':
+      return {
+        title: copy.clientMissingTitle,
+        summary: copy.clientMissingDetail,
+        action: {
+          ...baseAction,
+          kind: 'repair',
+          repairAction: 'secure_network_install',
+          label: copy.clientMissingTitle,
+          title: copy.clientMissingTitle,
+          detail: copy.clientMissingDetail,
+          disabled: false,
+        },
+      };
+    case 'client_stopped':
+      return {
+        title: copy.clientStoppedTitle,
+        summary: copy.clientStoppedDetail,
+        action: {
+          ...baseAction,
+          kind: 'repair',
+          repairAction: 'secure_network_open',
+          label: copy.clientStoppedTitle,
+          title: copy.clientStoppedTitle,
+          detail: copy.clientStoppedDetail,
+          disabled: false,
+        },
+      };
+    case 'unenrolled':
+      return {
+        title: copy.unenrolledTitle,
+        summary: copy.unenrolledDetail,
+        action: {
+          ...baseAction,
+          kind: 'run',
+          action: 'secure_network_enroll',
+          label: copy.unenrolledTitle,
+          title: copy.unenrolledTitle,
+          detail: copy.unenrolledDetail,
+          disabled: false,
+        },
+      };
+    case 'wrong_control_plane':
+      return {
+        title: copy.wrongControlPlaneTitle,
+        summary: copy.wrongControlPlaneDetail,
+        action: {
+          ...baseAction,
+          kind: 'none',
+          label: copy.wrongControlPlaneTitle,
+          title: copy.wrongControlPlaneTitle,
+          detail: copy.wrongControlPlaneDetail,
+          disabled: true,
+        },
+      };
+    case 'acl_blocked':
+      return {
+        title: copy.aclBlockedTitle,
+        summary: copy.aclBlockedDetail,
+        action: {
+          ...baseAction,
+          kind: 'none',
+          label: copy.aclBlockedTitle,
+          title: copy.aclBlockedTitle,
+          detail: copy.aclBlockedDetail,
+          disabled: true,
+        },
+      };
+    case 'offline':
+      return {
+        title: copy.offlineTitle,
+        summary: copy.offlineDetail,
+        action: {
+          ...baseAction,
+          kind: 'refresh',
+          label: copy.offlineTitle,
+          title: copy.offlineTitle,
+          detail: copy.offlineDetail,
+          disabled: false,
+        },
+      };
+    case 'error':
+      return {
+        title: copy.errorTitle,
+        summary: copy.errorDetail,
+        action: {
+          ...baseAction,
+          kind: 'none',
+          label: copy.errorTitle,
+          title: copy.errorTitle,
+          detail: copy.errorDetail,
+          disabled: true,
+        },
+      };
+  }
 }
 
 function macPairingPrerequisitesReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {

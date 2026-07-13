@@ -276,6 +276,7 @@ import type {
   IEvaosApprovalDenyRequest,
   IEvaosApprovalDecisionResult,
   IEvaosNativeCompanionStatusView,
+  IEvaosNativeCompanionStatusRequest,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
@@ -350,6 +351,7 @@ export type {
   IEvaosApprovalDenyRequest,
   IEvaosApprovalDecisionResult,
   IEvaosNativeCompanionStatusView,
+  IEvaosNativeCompanionStatusRequest,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
@@ -1575,7 +1577,7 @@ export const evaosCompanyBrain = {
 };
 
 export const evaosNativeCompanion = {
-  getStatus: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionStatusView>, void>(
+  getStatus: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionStatusView>, IEvaosNativeCompanionStatusRequest>(
     'evaos.native-companion.status'
   ),
   getDiagnosticPacket: buildEvaosProvider<
