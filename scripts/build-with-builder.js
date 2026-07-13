@@ -10,10 +10,12 @@
  * - Packaging only: use --pack-only to skip electron-builder distributable creation
  */
 
-const { execSync, spawnSync } = require('child_process');
+const { execFileSync, execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
+const { hasCompletedAfterPack } = require('./dmgRetryEligibility');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -332,6 +334,29 @@ function createDmgWithPrepackaged(appDir, targetArch) {
   );
 }
 
+function installPreparedRuntimeEnvironment(envFile) {
+  const lines = fs.readFileSync(envFile, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    if (!line) continue;
+    const separator = line.indexOf('=');
+    if (separator <= 0) throw new Error('Bundled Python runtime preparation emitted invalid environment metadata.');
+    process.env[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+}
+
+function ensureDesktopBridgePythonRuntime(targetArch) {
+  if (process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR) return;
+  if (process.platform !== 'darwin') return;
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-python-runtime-'));
+  const envFile = path.join(tempRoot, 'runtime.env');
+  execFileSync(path.join(__dirname, 'prepareEvaosDesktopBridgePythonRuntime.sh'), [targetArch, envFile], {
+    stdio: 'inherit',
+    env: { ...process.env, RUNNER_TEMP: tempRoot },
+  });
+  installPreparedRuntimeEnvironment(envFile);
+}
+
 function buildWithDmgRetry(cmd, targetArch) {
   const isMac = process.platform === 'darwin';
   const outDir = path.resolve(__dirname, '../out');
@@ -344,7 +369,12 @@ function buildWithDmgRetry(cmd, targetArch) {
     const appDir = isMac ? findAppDir(outDir) : null;
     if (!appDir || dmgExists(outDir)) throw error;
 
-    // .app exists but no .dmg → DMG creation failed
+    // A partial .app can exist when afterPack or another packaging hook failed.
+    // Retrying that bundle as --prepackaged would turn a real validation failure
+    // into a false-green DMG, so require the exact successful afterPack marker.
+    if (!hasCompletedAfterPack(appDir)) throw error;
+
+    // Verified .app exists but no .dmg → DMG creation failed
     console.log('\n🔄 Build failed during DMG creation (.app exists, .dmg missing)');
     console.log('   Retrying DMG creation with --prepackaged...');
 
@@ -581,6 +611,7 @@ try {
   // 7. Prepare the bundled evaOS desktop bridge for macOS Workbench pairing/control parity.
   // The packaged app must resolve Contents/Resources/Bridge/evaos-desktop-bridge before Homebrew.
   if (builderArgs.includes('--mac') || builderArgs.includes('--all')) {
+    ensureDesktopBridgePythonRuntime(targetArch);
     execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env });
   }
 

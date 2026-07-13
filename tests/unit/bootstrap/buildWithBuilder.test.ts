@@ -96,6 +96,7 @@ childProcess.execSync = function mockedExecSync(command) {
           ...process.env,
           AIONUI_PREPARE_CALLS_FILE: callsPath,
           EVAOS_APP_COMMIT: 'test-candidate-sha',
+          EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR: tempDir,
           EVAOS_SKIP_BUILD_CLEANUP: '1',
           NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${hookPath}`].filter(Boolean).join(' '),
         },

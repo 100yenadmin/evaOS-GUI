@@ -9,6 +9,7 @@ const {
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
+const { clearCompletedAfterPack, markCompletedAfterPack } = require('./dmgRetryEligibility');
 
 /**
  * afterPack hook for electron-builder
@@ -339,6 +340,7 @@ module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
   const targetArch = normalizeArch(typeof arch === 'string' ? arch : Arch[arch] || process.arch);
   const buildArch = normalizeArch(os.arch());
+  clearCompletedAfterPack(appOutDir);
 
   console.log(`\n🔧 afterPack hook started`);
   console.log(`   Platform: ${electronPlatformName}, Build arch: ${buildArch}, Target arch: ${targetArch}`);
@@ -377,6 +379,7 @@ module.exports = async function afterPack(context) {
   }
 
   if (!isCrossCompile && !needsSameArchRebuild && !forceRebuild) {
+    markCompletedAfterPack(appOutDir);
     console.log(`   ✓ Same architecture, rebuild skipped (set FORCE_NATIVE_REBUILD=true to override)\n`);
     return;
   }
@@ -521,6 +524,7 @@ module.exports = async function afterPack(context) {
     throw new Error(`Failed to rebuild modules for ${electronPlatformName}-${targetArch}: ${failedModules.join(', ')}`);
   }
 
+  markCompletedAfterPack(appOutDir);
   console.log(`✅ All native modules rebuilt successfully for ${targetArch}\n`);
 };
 
