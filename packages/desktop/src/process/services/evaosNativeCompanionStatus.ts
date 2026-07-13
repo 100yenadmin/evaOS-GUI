@@ -27,10 +27,12 @@ import type {
   IEvaosMacControlBlockerReason,
   IEvaosNativeCompanionOpenResult,
   IEvaosNativeCompanionPermissionView,
+  IEvaosPrivateNetworkAuthorityDiagnostic,
   IEvaosNativeCompanionReadiness,
   IEvaosNativeCompanionRepairActionRequest,
   IEvaosNativeCompanionRepairActionResult,
   IEvaosNativeCompanionRuntimeToolReadiness,
+  IEvaosNativeCompanionStatusRequest,
   IEvaosNativeCompanionStatusView,
   IEvaosWorkbenchDiagnosticPacketRequest,
   IEvaosWorkbenchDiagnosticPacketV1,
@@ -45,6 +47,7 @@ import {
   getDefaultEvaosBrokerSessionClient,
   isEvaosBrokerSessionError,
   type EvaosPrivateNetworkClientVariant,
+  type EvaosPrivateNetworkAuthorityAttestation,
   type EvaosPrivateNetworkEnrollment,
 } from './evaosBrokerSession';
 
@@ -62,6 +65,7 @@ const SECURE_NETWORK_APP_IDENTIFIERS: Record<string, EvaosPrivateNetworkClientVa
 const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const SECURE_NETWORK_ENROLL_TIMEOUT_MS = 30000;
+const PRIVATE_NETWORK_AUTHORITY_TIMEOUT_MS = 8000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 4;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
 const CONNECTOR_PORT = 8765;
@@ -153,6 +157,11 @@ export type EvaosNativeCompanionStatusDeps = {
     enrollmentId: string;
     authKey: string;
   }) => Promise<{ cancelled: true; enrollmentId: string }>;
+  getPrivateNetworkReadiness?: (request: {
+    customerId: string;
+    deviceIdentifier: string;
+    signal?: AbortSignal;
+  }) => Promise<EvaosPrivateNetworkAuthorityAttestation>;
   runConnectorCommand?: (request: {
     connectorUrl: string;
     connectorToken: string;
@@ -196,7 +205,8 @@ let workbenchManagedConnector:
   | undefined;
 
 export async function getEvaosNativeCompanionStatus(
-  deps: EvaosNativeCompanionStatusDeps = {}
+  deps: EvaosNativeCompanionStatusDeps = {},
+  request: IEvaosNativeCompanionStatusRequest = {}
 ): Promise<IEvaosNativeCompanionStatusView> {
   const now = deps.now ?? (() => new Date());
   const fixtureState = nativeCompanionFixtureState(deps.env);
@@ -275,19 +285,26 @@ export async function getEvaosNativeCompanionStatus(
   const customerMacReady =
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
-  const redactedPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
+  const localPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
+  const privateNetworkAuthorityResult = await privateNetworkEvidenceWithAuthority({
+    customerId: request.customerId,
+    deviceIdentifier: privateNetworkDeviceIdentifier(customerMac.data),
+    expectedGrantId: controlSession.ok ? activeMacControlScopeIdFromControlSession(controlSession) : undefined,
+    localEvidence: localPrivateNetworkEvidence,
+    now,
+    deps,
+  });
   const prerequisites = classifyNativeCompanionPrerequisites({
     bridgeRuntime: {
       installed: true,
       commandSucceeded: bridge.ok,
       compatible: bundledBridgeRuntimeCompatibility(bridgePath, bridge, deps.env),
     },
-    privateNetwork: redactedPrivateNetworkEvidence,
+    privateNetwork: privateNetworkAuthorityResult.evidence,
     actionEngine: actionEngineEvidence(customerMac.data),
   });
   const bridgeRuntimeExplicitlyBlocked = prerequisites.bridgeRuntime === 'incompatible';
-  const privateNetworkExplicitlyBlocked =
-    redactedPrivateNetworkEvidence !== undefined && prerequisites.privateNetwork !== 'online';
+  const privateNetworkExplicitlyBlocked = prerequisites.privateNetwork !== 'online';
   const prerequisiteExplicitlyBlocksPairing = bridgeRuntimeExplicitlyBlocked || privateNetworkExplicitlyBlocked;
   const readiness =
     bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteExplicitlyBlocksPairing
@@ -379,9 +396,13 @@ export async function getEvaosNativeCompanionStatus(
     pairingCapable,
     pairingBlockedReason,
     blockerReason,
+    privateNetworkAuthority: privateNetworkAuthorityResult.diagnostic,
     prerequisites,
     summaryText,
-    sourcePointer: 'native-companion:read-only-bridge',
+    sourcePointer:
+      prerequisites.privateNetwork === 'online'
+        ? 'native-companion:broker-authority-merged'
+        : 'native-companion:read-only-bridge',
     canOpenReleasedWorkbench: releasedWorkbenchInstalled,
     releasedWorkbench: {
       installed: releasedWorkbenchInstalled,
@@ -450,7 +471,7 @@ export async function getEvaosWorkbenchDiagnosticPacket(
     deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),
     existsSync
   );
-  const status = await getEvaosNativeCompanionStatus({ ...deps, now });
+  const status = await getEvaosNativeCompanionStatus({ ...deps, now }, { customerId: request.customerId });
   const bridgeDiagnostics = bridgePath
     ? await runOptionalBridgeDiagnostics(bridgePath, ['diagnostics', '--json'], deps)
     : optionalBridgeDiagnosticsUnavailable('bridge-cli-missing');
@@ -497,6 +518,7 @@ export async function getEvaosWorkbenchDiagnosticPacket(
       agentPairingStatus: status.agentPairingStatus,
       sourcePointer: safeDiagnosticText(status.sourcePointer),
       auditIds: safeDiagnosticAuditIds(status.audit.auditIds),
+      privateNetworkAuthority: status.privateNetworkAuthority,
     },
     bridge: {
       installed: status.bridgeCli.installed,
@@ -2253,10 +2275,119 @@ function privateNetworkEvidence(input: unknown): NativeCompanionPrerequisiteEvid
     clientInstalled: readBooleanAlias(network, 'client_installed', 'clientInstalled'),
     clientRunning: readBooleanAlias(network, 'client_running', 'clientRunning'),
     enrolled: readBoolean(network, 'enrolled'),
-    correctControlPlane: readBooleanAlias(network, 'correct_control_plane', 'correctControlPlane'),
-    aclAllowed: readBooleanAlias(network, 'acl_allowed', 'aclAllowed'),
     online: readBoolean(network, 'online'),
   };
+}
+
+async function privateNetworkEvidenceWithAuthority(input: {
+  customerId?: string;
+  deviceIdentifier?: string;
+  expectedGrantId?: string;
+  localEvidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
+  now: () => Date;
+  deps: EvaosNativeCompanionStatusDeps;
+}): Promise<{
+  evidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
+  diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic;
+}> {
+  const { customerId, deviceIdentifier, expectedGrantId, localEvidence, now, deps } = input;
+  if (
+    !localEvidence ||
+    localEvidence.clientInstalled !== true ||
+    localEvidence.clientRunning !== true ||
+    localEvidence.enrolled !== true ||
+    !customerId ||
+    !deviceIdentifier
+  ) {
+    return {
+      evidence: localEvidence,
+      diagnostic: { classification: 'unavailable', reason: 'local_evidence_unavailable' },
+    };
+  }
+  if (!expectedGrantId) {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'local_scope_unavailable' },
+    };
+  }
+  const getPrivateNetworkReadiness =
+    deps.getPrivateNetworkReadiness ??
+    ((requestInput) => getDefaultEvaosBrokerSessionClient().getPrivateNetworkReadiness(requestInput));
+  const abortController = new AbortController();
+  try {
+    const authority = await promiseWithTimeout(
+      getPrivateNetworkReadiness({ customerId, deviceIdentifier, signal: abortController.signal }),
+      PRIVATE_NETWORK_AUTHORITY_TIMEOUT_MS,
+      () => abortController.abort()
+    );
+    const expiresAtMs = Date.parse(authority.expiresAt);
+    const observedAtMs = Date.parse(authority.observedAt);
+    const nowMs = now().getTime();
+    const diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic = {
+      classification: 'observed',
+      reason: authority.reason,
+      auditId: safeDiagnosticText(authority.auditId),
+    };
+    const authorityIsStale =
+      Number.isFinite(observedAtMs) &&
+      Number.isFinite(expiresAtMs) &&
+      (observedAtMs < nowMs - 60_000 || expiresAtMs <= nowMs);
+    const authorityBindingMismatch = authority.grantId !== expectedGrantId;
+    if (
+      authority.customerId !== customerId ||
+      authority.deviceIdentifier !== deviceIdentifier ||
+      !authority.deviceId ||
+      !authority.enrollmentId ||
+      !authority.grantId ||
+      authority.grantId !== expectedGrantId ||
+      !authority.auditId ||
+      !Number.isFinite(observedAtMs) ||
+      !Number.isFinite(expiresAtMs) ||
+      observedAtMs > nowMs + 5_000 ||
+      observedAtMs < nowMs - 60_000 ||
+      expiresAtMs <= nowMs ||
+      expiresAtMs - nowMs > 60_000 ||
+      expiresAtMs <= observedAtMs ||
+      expiresAtMs - observedAtMs > 60_000
+    ) {
+      return {
+        evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+        diagnostic: {
+          classification: authorityIsStale ? 'stale' : 'unavailable',
+          reason: authorityBindingMismatch
+            ? 'grant_binding_mismatch'
+            : authorityIsStale
+              ? authority.reason
+              : 'authority_proof_invalid',
+          auditId: diagnostic.auditId,
+        },
+      };
+    }
+    return {
+      evidence: {
+        ...localEvidence,
+        correctControlPlane: authority.correctControlPlane,
+        aclAllowed: authority.aclAllowed,
+        online: localEvidence.online === true && authority.online === true,
+      },
+      diagnostic,
+    };
+  } catch {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'authority_unavailable' },
+    };
+  }
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      onTimeout();
+      reject(new Error('operation timed out'));
+    }, timeoutMs);
+    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
 }
 
 function actionEngineEvidence(customerMacData: unknown): NativeCompanionPrerequisiteEvidence['actionEngine'] {

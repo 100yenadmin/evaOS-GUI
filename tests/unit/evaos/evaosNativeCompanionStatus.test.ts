@@ -66,6 +66,7 @@ function depsWithResponses(
 
 describe('evaosNativeCompanionStatus', () => {
   afterEach(() => {
+    vi.useRealTimers();
     stopEvaosNativeCompanionSessionConnector();
   });
 
@@ -136,7 +137,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
-  it('demotes legacy-ready pairing when explicit private-network evidence is offline', async () => {
+  it('requires local online proof even when fresh broker authority is ready', async () => {
     const deps = depsWithResponses({
       'status --json': {
         ok: true,
@@ -168,6 +169,7 @@ describe('evaosNativeCompanionStatus', () => {
       'customer-mac status --json': {
         ok: true,
         data: {
+          device: { hardware_uuid: 'david-mac-hardware-id' },
           permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
           control_engines: { peekaboo: { available: true }, active_primary: 'peekaboo' },
         },
@@ -178,7 +180,22 @@ describe('evaosNativeCompanionStatus', () => {
       'ready --json': { ok: true, data: { ready: true } },
     });
 
-    const status = await getEvaosNativeCompanionStatus(deps);
+    deps.getPrivateNetworkReadiness = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      enrollmentId: 'network-enrollment-1',
+      grantId: 'grant-david',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready',
+      observedAt: '2026-06-07T03:45:00.000Z',
+      expiresAt: '2026-06-07T03:45:45.000Z',
+      auditId: 'audit-network-ready',
+    }));
+
+    const status = await getEvaosNativeCompanionStatus(deps, { customerId: 'jackie-david' });
 
     expect(status).toMatchObject({
       readiness: 'repair_required',
@@ -187,10 +204,86 @@ describe('evaosNativeCompanionStatus', () => {
       blockerReason: 'secure_network_link_required',
       prerequisites: {
         bridgeRuntime: 'ready',
-        privateNetwork: 'offline',
+        privateNetwork: 'error',
         actionEngine: 'peekaboo_ready',
       },
     });
+  });
+
+  it.each([
+    ['missing', { ok: false, errors: [{ code: 'control_status_unavailable' }] }],
+    ['scope-less', { ok: true, data: { active: false, kill_switch: false } }],
+  ])('does not merge ready broker authority when local control status is %s', async (_case, controlStatus) => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        data: {
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version_compatible: true,
+            compatible: true,
+          },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        data: {
+          running: true,
+          health: { reachable: true },
+          secure_registration_host: 'connector.evaos.example',
+          private_network: {
+            client_installed: true,
+            client_running: true,
+            enrolled: true,
+            online: true,
+          },
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        data: {
+          device: { hardware_uuid: 'bound-device' },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          control_engines: { peekaboo: { available: true }, active_primary: 'peekaboo' },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+      'customer-mac control status --json': controlStatus,
+      'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+      'ready --json': { ok: true, data: { ready: true } },
+    });
+    deps.getPrivateNetworkReadiness = vi.fn(async () => ({
+      customerId: 'bound-customer',
+      deviceId: 'device-id',
+      deviceIdentifier: 'bound-device',
+      enrollmentId: 'enrollment-id',
+      grantId: 'grant-ready',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready',
+      observedAt: '2026-06-07T03:45:00.000Z',
+      expiresAt: '2026-06-07T03:45:45.000Z',
+      auditId: 'audit-authority-ready',
+    }));
+
+    const status = await getEvaosNativeCompanionStatus(deps, { customerId: 'bound-customer' });
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      pairingCapable: false,
+      pairingBlockedReason: 'secure_network_link_required',
+      blockerReason: 'secure_network_link_required',
+      prerequisites: { privateNetwork: 'error' },
+      privateNetworkAuthority: {
+        classification: 'unavailable',
+        reason: 'local_scope_unavailable',
+      },
+    });
+    expect(status.sourcePointer).toBe('native-companion:read-only-bridge');
+    expect(deps.getPrivateNetworkReadiness).not.toHaveBeenCalled();
   });
 
   it('demotes pairing when explicit private-network evidence cannot prove control-plane and ACL state', async () => {
@@ -245,6 +338,93 @@ describe('evaosNativeCompanionStatus', () => {
         privateNetwork: 'error',
         actionEngine: 'peekaboo_ready',
       },
+    });
+  });
+
+  it('rejects mixed grant scopes and aborts a timed-out authority request', async () => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        data: {
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version_compatible: true,
+            compatible: true,
+          },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        running: true,
+        health: { reachable: true },
+        private_network: {
+          client_installed: true,
+          client_running: true,
+          enrolled: true,
+          online: true,
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        data: {
+          device: { hardware_uuid: 'david-mac-hardware-id' },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          control_engines: { cua_driver: { available: true, active_for_actions: true } },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+      'customer-mac control status --json': {
+        ok: true,
+        data: { active: false, kill_switch: false, active_mac_control_scope_id: 'grant-current' },
+      },
+      'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+      'ready --json': { ok: true, data: { ready: true } },
+    });
+    const authority = {
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      enrollmentId: 'network-enrollment-1',
+      grantId: 'grant-other',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready' as const,
+      observedAt: '2026-06-07T03:45:00.000Z',
+      expiresAt: '2026-06-07T03:45:45.000Z',
+      auditId: 'audit-network-ready',
+    };
+    deps.getPrivateNetworkReadiness = vi.fn(async () => authority);
+
+    const mixedScope = await getEvaosNativeCompanionStatus(deps, { customerId: 'jackie-david' });
+    expect(mixedScope).toMatchObject({
+      readiness: 'repair_required',
+      pairingCapable: false,
+      prerequisites: { privateNetwork: 'error' },
+    });
+
+    let aborted = false;
+    deps.getPrivateNetworkReadiness = vi.fn(
+      ({ signal }) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            aborted = true;
+            reject(new Error('aborted'));
+          });
+        })
+    );
+    vi.useFakeTimers();
+    const pending = getEvaosNativeCompanionStatus(deps, { customerId: 'jackie-david' });
+    await vi.advanceTimersByTimeAsync(8_000);
+    const timedOut = await pending;
+
+    expect(aborted).toBe(true);
+    expect(timedOut).toMatchObject({
+      readiness: 'repair_required',
+      pairingCapable: false,
+      prerequisites: { privateNetwork: 'error' },
     });
   });
 
@@ -518,7 +698,23 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
 
-    const status = await getEvaosNativeCompanionStatus(deps);
+    deps.getPrivateNetworkReadiness = vi.fn(async () => ({
+      customerId: 'friendly',
+      deviceId: 'device-friendly',
+      deviceIdentifier: 'mac-3bf1c1b451434bcf',
+      enrollmentId: 'network-enrollment-friendly',
+      grantId: 'grant-current',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready',
+      observedAt: '2026-06-07T03:45:00.000Z',
+      expiresAt: '2026-06-07T03:45:45.000Z',
+      auditId: 'audit-network-authority',
+    }));
+    const getStatus = () => getEvaosNativeCompanionStatus(deps, { customerId: 'friendly' });
+
+    const status = await getStatus();
 
     expect(status).toMatchObject({
       schemaVersion: 'evaos.native_companion_status.v1',
@@ -526,6 +722,12 @@ describe('evaosNativeCompanionStatus', () => {
       agentPairingStatus: 'agent_paired',
       runtimeToolReadiness: 'pairing_ready',
       generatedAt: '2026-06-07T03:45:00.000Z',
+      sourcePointer: 'native-companion:broker-authority-merged',
+      privateNetworkAuthority: {
+        classification: 'observed',
+        reason: 'ready',
+        auditId: 'audit-network-authority',
+      },
       prerequisites: {
         bridgeRuntime: 'ready',
         privateNetwork: 'online',
@@ -571,7 +773,7 @@ describe('evaosNativeCompanionStatus', () => {
       /Bearer|token|secret|hardware_uuid|mac-3bf1c1b451434bcf|100\.64\.0\.10/i
     );
 
-    const provenStatus = await getEvaosNativeCompanionStatus(deps);
+    const provenStatus = await getStatus();
     expect(provenStatus).toMatchObject({
       agentPairingStatus: 'agent_paired',
       agentPairingCustomerId: 'friendly',
@@ -583,7 +785,7 @@ describe('evaosNativeCompanionStatus', () => {
       controlSession: { auditId: 'audit-control-proven' },
     });
 
-    const camelCaseProvenStatus = await getEvaosNativeCompanionStatus(deps);
+    const camelCaseProvenStatus = await getStatus();
     expect(camelCaseProvenStatus).toMatchObject({
       agentPairingStatus: 'agent_paired',
       agentPairingCustomerId: 'friendly',
@@ -595,28 +797,33 @@ describe('evaosNativeCompanionStatus', () => {
       controlSession: { auditId: 'audit-control-proven-camel-case' },
     });
 
-    const failedPairingStatus = await getEvaosNativeCompanionStatus(deps);
+    const failedPairingStatus = await getStatus();
     expect(failedPairingStatus).toMatchObject({
       agentPairingStatus: 'proof_failed',
       runtimeToolReadiness: 'proof_failed',
       controlSession: { auditId: 'audit-control-failed-stale-proof' },
     });
 
-    const incompletePairingStatus = await getEvaosNativeCompanionStatus(deps);
+    const incompletePairingStatus = await getStatus();
     expect(incompletePairingStatus).toMatchObject({
-      agentPairingStatus: 'ready_for_agent_pairing',
-      runtimeToolReadiness: 'pairing_ready',
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      runtimeToolReadiness: 'not_ready',
+      privateNetworkAuthority: {
+        classification: 'unavailable',
+        reason: 'local_scope_unavailable',
+      },
       controlSession: { auditId: 'audit-control-unpaired-stale-proof' },
     });
 
-    const killSwitchStatus = await getEvaosNativeCompanionStatus(deps);
+    const killSwitchStatus = await getStatus();
     expect(killSwitchStatus).toMatchObject({
       agentPairingStatus: 'agent_paired',
       runtimeToolReadiness: 'not_ready',
       controlSession: { auditId: 'audit-control-kill-switch-stale-proof', killSwitch: true },
     });
 
-    const staleGrantProofStatus = await getEvaosNativeCompanionStatus(deps);
+    const staleGrantProofStatus = await getStatus();
     expect(staleGrantProofStatus).toMatchObject({
       agentPairingStatus: 'agent_paired',
       agentPairingCustomerId: 'friendly',
@@ -625,7 +832,7 @@ describe('evaosNativeCompanionStatus', () => {
       controlSession: { auditId: 'audit-control-stale-grant-proof' },
     });
 
-    const identicalStaleProofStatus = await getEvaosNativeCompanionStatus(deps);
+    const identicalStaleProofStatus = await getStatus();
     expect(identicalStaleProofStatus).toMatchObject({
       agentPairingStatus: 'ready_for_agent_pairing',
       agentPairingCustomerId: 'friendly',
@@ -635,10 +842,15 @@ describe('evaosNativeCompanionStatus', () => {
       controlSession: { auditId: 'audit-control-identical-stale-proof' },
     });
 
-    const failedCommandStatus = await getEvaosNativeCompanionStatus(deps);
+    const failedCommandStatus = await getStatus();
     expect(failedCommandStatus).toMatchObject({
-      agentPairingStatus: 'ready_for_agent_pairing',
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
       runtimeToolReadiness: 'not_ready',
+      privateNetworkAuthority: {
+        classification: 'unavailable',
+        reason: 'local_scope_unavailable',
+      },
       controlSession: { auditId: 'audit-control-command-failed-stale-proof', status: 'unavailable' },
     });
   });
@@ -711,11 +923,11 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
-      runtimeToolReadiness: 'pairing_ready',
-      pairingCapable: true,
-      pairingBlockedReason: undefined,
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      runtimeToolReadiness: 'not_ready',
+      pairingCapable: false,
+      pairingBlockedReason: 'secure_network_link_required',
       connectorService: {
         status: 'ready',
         running: true,
@@ -976,6 +1188,12 @@ describe('evaosNativeCompanionStatus', () => {
         diagnosticsStatus: 'available',
         readyStatus: 'not_ready',
       },
+      brokerGrant: {
+        privateNetworkAuthority: {
+          classification: 'unavailable',
+          reason: 'local_evidence_unavailable',
+        },
+      },
       redaction: {
         rawSecretsStoredInWorkbench: false,
         urlsIpsPortsRedacted: true,
@@ -1049,9 +1267,9 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
-      pairingCapable: true,
-      agentPairingStatus: 'ready_for_agent_pairing',
+      readiness: 'repair_required',
+      pairingCapable: false,
+      agentPairingStatus: 'not_ready',
       customerMac: {
         status: 'ready',
         permissions: {
@@ -1125,8 +1343,8 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
       bridgeCli: {
         status: 'ready',
         permissions: {
@@ -1217,8 +1435,8 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
       connectorService: {
         status: 'ready',
         running: true,
@@ -1536,7 +1754,7 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
+      readiness: 'repair_required',
       agentPairingStatus: 'not_ready',
       pairingCapable: false,
       pairingBlockedReason: 'secure_network_link_required',
@@ -1546,7 +1764,7 @@ describe('evaosNativeCompanionStatus', () => {
         reachable: true,
       },
     });
-    expect(status.summaryText).toContain('private connector link');
+    expect(status.summaryText).toContain('connector repair is required');
   });
 
   it('accepts private connector hosts when the bridge reports a URL or port', async () => {
@@ -1608,9 +1826,9 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
-      pairingCapable: true,
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      pairingCapable: false,
     });
   });
 
@@ -2054,7 +2272,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:workbench-session-connector-start',
     });
     expect(status).toMatchObject({
-      readiness: 'ready',
+      readiness: 'repair_required',
       connectorService: {
         status: 'ready',
         running: true,
