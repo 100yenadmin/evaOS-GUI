@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Восстановить инструменты управления Mac",
       "repairControlToolsDetail": "Недоступны ни основной движок CUA, ни встроенный резервный Peekaboo. Восстановите Workbench перед сопряжением этого Mac.",
       "clientMissingTitle": "Установить защищённую сеть",
+      "clientMissingStateTitle": "Требуется защищённая сеть",
       "clientMissingDetail": "Откройте официальную страницу загрузки Tailscale для macOS и следуйте обычному установщику. Терминал, Python, pip и Homebrew не требуются.",
       "clientStoppedTitle": "Открыть защищённую сеть",
       "clientStoppedDetail": "Откройте установленное приложение защищённой сети, подтвердите запрос VPN macOS, если он появится, и проверьте снова.",

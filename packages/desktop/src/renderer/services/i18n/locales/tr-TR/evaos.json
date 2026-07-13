@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Mac kontrol araçlarını onar",
       "repairControlToolsDetail": "Ne tercih edilen CUA motoru ne de paketli Peekaboo yedeği kullanılabilir. Bu Mac’i eşleştirmeden önce Workbench’i onarın.",
       "clientMissingTitle": "Güvenli ağı yükle",
+      "clientMissingStateTitle": "Güvenli ağ gerekli",
       "clientMissingDetail": "Tailscale’in resmi macOS indirme sayfasını açın ve normal yükleyiciyi izleyin. Terminal, Python, pip veya Homebrew gerekmez.",
       "clientStoppedTitle": "Güvenli ağı aç",
       "clientStoppedDetail": "Yüklü güvenli ağ uygulamasını açın, görünürse macOS VPN istemine izin verin ve tekrar kontrol edin.",

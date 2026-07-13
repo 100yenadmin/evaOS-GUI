@@ -853,6 +853,7 @@ export type I18nKey =
   | 'evaos.nativeCompanion.onboarding.chooseMacTargetLabel'
   | 'evaos.nativeCompanion.onboarding.chooseMacTargetTitle'
   | 'evaos.nativeCompanion.onboarding.clientMissingDetail'
+  | 'evaos.nativeCompanion.onboarding.clientMissingStateTitle'
   | 'evaos.nativeCompanion.onboarding.clientMissingTitle'
   | 'evaos.nativeCompanion.onboarding.clientStoppedDetail'
   | 'evaos.nativeCompanion.onboarding.clientStoppedTitle'

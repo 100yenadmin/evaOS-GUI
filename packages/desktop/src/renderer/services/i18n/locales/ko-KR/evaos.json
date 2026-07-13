@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Mac 제어 도구 복구",
       "repairControlToolsDetail": "기본 CUA 엔진과 번들 Peekaboo 대체 엔진을 모두 사용할 수 없습니다. 이 Mac을 페어링하기 전에 Workbench를 복구하세요.",
       "clientMissingTitle": "보안 네트워크 설치",
+      "clientMissingStateTitle": "보안 네트워크 필요",
       "clientMissingDetail": "Tailscale 공식 macOS 다운로드 페이지를 열고 일반 설치 절차를 따르세요. 터미널, Python, pip 또는 Homebrew가 필요하지 않습니다.",
       "clientStoppedTitle": "보안 네트워크 열기",
       "clientStoppedDetail": "설치된 보안 네트워크 앱을 열고 macOS VPN 메시지가 표시되면 허용한 다음 다시 확인하세요.",

@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "تعمیر ابزارهای کنترل Mac",
       "repairControlToolsDetail": "نه موتور اصلی CUA و نه جایگزین همراه Peekaboo در دسترس نیست. پیش از جفت‌کردن این Mac، Workbench را تعمیر کنید.",
       "clientMissingTitle": "نصب شبکه امن",
+      "clientMissingStateTitle": "شبکه امن لازم است",
       "clientMissingDetail": "صفحه رسمی دانلود Tailscale برای macOS را باز کنید و مراحل نصب معمول را دنبال کنید. Terminal، Python، pip یا Homebrew لازم نیست.",
       "clientStoppedTitle": "باز کردن شبکه امن",
       "clientStoppedDetail": "برنامه شبکه امن نصب‌شده را باز کنید، در صورت نمایش درخواست VPN در macOS آن را بپذیرید و دوباره بررسی کنید.",

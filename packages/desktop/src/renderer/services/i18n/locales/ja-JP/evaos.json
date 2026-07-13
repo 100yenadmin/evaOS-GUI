@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Mac コントロールツールを修復",
       "repairControlToolsDetail": "優先 CUA エンジンと同梱の Peekaboo フォールバックのどちらも利用できません。この Mac をペアリングする前に Workbench を修復してください。",
       "clientMissingTitle": "セキュアネットワークをインストール",
+      "clientMissingStateTitle": "セキュアネットワークが必要です",
       "clientMissingDetail": "Tailscale 公式の macOS ダウンロードページを開き、通常のインストーラに従ってください。ターミナル、Python、pip、Homebrew は不要です。",
       "clientStoppedTitle": "セキュアネットワークを開く",
       "clientStoppedDetail": "インストール済みのセキュアネットワークアプリを開き、macOS の VPN 確認が表示されたら許可して、もう一度確認してください。",

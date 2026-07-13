@@ -44,6 +44,7 @@ const i18nMocks = vi.hoisted(() => ({
       'evaos.nativeCompanion.onboarding.repairControlToolsTitle': 'Repair Mac control tools',
       'evaos.nativeCompanion.onboarding.repairControlToolsDetail': 'Repair CUA or the bundled Peekaboo fallback.',
       'evaos.nativeCompanion.onboarding.clientMissingTitle': 'Install secure network',
+      'evaos.nativeCompanion.onboarding.clientMissingStateTitle': 'Secure network needed',
       'evaos.nativeCompanion.onboarding.clientMissingDetail':
         'Open the official Tailscale macOS download page. No terminal commands are required.',
       'evaos.nativeCompanion.onboarding.clientStoppedTitle': 'Open secure network',
@@ -265,7 +266,7 @@ describe('NativeCompanionPage', () => {
         isDefault: true,
       },
     ];
-    customerContextMock.customerContext.isOperator = false;
+    customerContextMock.customerContext.isOperator = true;
     customerContextMock.customerContext.roles = ['admin'];
     customerContextMock.customerContext.scopes = ['access_technical_diagnostics'];
     customerContextMock.customerContext.refreshTargets.mockResolvedValue(undefined);
@@ -391,7 +392,7 @@ describe('NativeCompanionPage', () => {
     expect(screen.queryByRole('button', { name: 'Export Pairing Prompt' })).not.toBeInTheDocument();
     expect(screen.queryByText('Test with evaOS / OpenClaw')).not.toBeInTheDocument();
     expect(screen.queryByText('Test with Hermes')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Kill Switch' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Kill Switch' })).toBeDisabled();
     expect(container.textContent).not.toMatch(
       /Native companion|Native bridge|released Workbench|\/Applications\/evaOS\.app/i
     );
@@ -554,6 +555,7 @@ describe('NativeCompanionPage', () => {
   });
 
   it('defaults repair-required users to one repair action and hides diagnostics until disclosure', async () => {
+    customerContextMock.customerContext.isOperator = false;
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -617,7 +619,7 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
 
     expect(await screen.findByRole('button', { name: 'Open Screen Recording' })).toBeInTheDocument();
-    expect(screen.getByText('Mac control repair')).toBeInTheDocument();
+    expect(screen.queryByText('Mac control repair')).not.toBeInTheDocument();
     expect(screen.queryByText('Mac control status matrix')).not.toBeInTheDocument();
     expect(screen.queryByText('RC native canary contract')).not.toBeInTheDocument();
     expect(screen.queryByText('Advanced diagnostics')).not.toBeInTheDocument();
@@ -627,7 +629,7 @@ describe('NativeCompanionPage', () => {
 
     const repairCard = screen.getByTestId('native-companion-repair-card');
     expect(within(repairCard).getByTestId('native-companion-next-action')).toHaveTextContent('Open Screen Recording');
-    expect(within(repairCard).getByText('Localized permission guidance.')).toBeInTheDocument();
+    expect(within(repairCard).queryByText('Localized permission guidance.')).not.toBeInTheDocument();
     expect(i18nMocks.t).toHaveBeenCalledWith('evaos.nativeCompanion.permissionGuideDetail');
     expect(within(repairCard).queryByRole('button', { name: 'Open Accessibility' })).not.toBeInTheDocument();
 
@@ -639,6 +641,7 @@ describe('NativeCompanionPage', () => {
   });
 
   it('shows a one-click official secure-network install handoff before connector startup', async () => {
+    customerContextMock.customerContext.isOperator = false;
     bridgeMocks.getStatus.mockResolvedValue({
       success: true,
       data: {
@@ -684,6 +687,15 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
 
     const action = await screen.findByRole('button', { name: 'Install secure network' });
+    expect(screen.getByRole('heading', { name: 'Secure network needed' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Mac control readiness' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Turn on Mac access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Guided Mac control setup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show advanced connector controls' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop Agent Control' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stop Mac Access' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Kill Switch' })).toBeDisabled();
+    expect(screen.getAllByRole('button').filter((button) => !button.hasAttribute('disabled'))).toEqual([action]);
     expect(
       screen.getAllByText('Open the official Tailscale macOS download page. No terminal commands are required.').length
     ).toBeGreaterThan(0);
@@ -695,6 +707,159 @@ describe('NativeCompanionPage', () => {
       expect(bridgeMocks.openRepairAction).toHaveBeenCalledWith({ action: 'secure_network_install' })
     );
     expect(bridgeMocks.runAction).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'connector_start' }));
+  });
+
+  it('requires an explicit choice when multiple VM-backed targets are available', async () => {
+    customerContextMock.customerContext.isOperator = false;
+    customerContextMock.customerContext.selectedCustomerId = undefined;
+    customerContextMock.customerContext.selectedTarget = undefined;
+    customerContextMock.customerContext.targets = [
+      {
+        customerId: 'benjamin-kennedy',
+        targetKind: 'customer_vm',
+        displayName: 'Benjamin Kennedy',
+        isDefault: true,
+      },
+      {
+        customerId: 'golden',
+        targetKind: 'customer_vm',
+        displayName: 'Golden Test VM',
+        isDefault: false,
+      },
+    ];
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-14T02:00:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        summaryText: 'Workbench connector ready for customer selection.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        iPhone: { status: 'unavailable' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+
+    renderNativeCompanion();
+
+    expect(await screen.findByTestId('native-companion-mac-target-select')).toHaveValue('');
+    expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
+    expect(bridgeMocks.getStatus).toHaveBeenCalledWith({ customerId: undefined });
+  });
+
+  it('keeps existing stop and kill-switch actions customer-visible with their exact wiring', async () => {
+    customerContextMock.customerContext.isOperator = false;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-14T02:15:00.000Z',
+        readiness: 'ready',
+        agentPairingStatus: 'agent_paired',
+        runtimeToolReadiness: 'tools_ready',
+        prerequisites: { bridgeRuntime: 'ready', privateNetwork: 'online', actionEngine: 'cua_ready' },
+        summaryText: 'Mac control is active.',
+        sourcePointer: 'native-companion:read-only-bridge',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true },
+        bridgeCli: {
+          installed: true,
+          status: 'ready',
+          readOnly: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        connectorService: { status: 'ready', running: true, reachable: true },
+        customerMac: {
+          status: 'ready',
+          killSwitchAvailable: true,
+          permissions: { accessibility: 'granted', screenRecording: 'granted' },
+        },
+        controlSession: { status: 'ready', active: true, mode: 'full-access', killSwitch: false },
+        iPhone: { status: 'unavailable' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+    bridgeMocks.runAction.mockImplementation(async (request) => ({
+      success: true,
+      data: {
+        action: request.action,
+        status: 'succeeded',
+        message: `${request.action} completed.`,
+        sourcePointer: `native-companion:${request.action}`,
+        auditIds: [],
+        refreshRecommended: false,
+      },
+    }));
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+
+    await user.click(await screen.findByRole('button', { name: 'Stop Agent Control' }));
+    await user.click(screen.getByRole('button', { name: 'Kill Switch' }));
+    await user.click(screen.getByRole('button', { name: 'Stop Mac Access' }));
+
+    expect(bridgeMocks.runAction).toHaveBeenNthCalledWith(1, {
+      action: 'control_stop',
+      customerId: 'benjamin-kennedy',
+      agentLabel: 'evaOS Workbench',
+    });
+    expect(bridgeMocks.runAction).toHaveBeenNthCalledWith(2, {
+      action: 'kill_switch',
+      customerId: 'benjamin-kennedy',
+      agentLabel: 'evaOS Workbench',
+    });
+    expect(bridgeMocks.runAction).toHaveBeenNthCalledWith(3, {
+      action: 'connector_stop',
+      customerId: 'benjamin-kennedy',
+      agentLabel: 'evaOS Workbench',
+    });
+    expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
+  });
+
+  it('routes a damaged packaged runtime to redacted support without terminal repair', async () => {
+    customerContextMock.customerContext.isOperator = false;
+    bridgeMocks.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        schemaVersion: 'evaos.native_companion_status.v1',
+        generatedAt: '2026-07-14T02:20:00.000Z',
+        readiness: 'repair_required',
+        pairingCapable: false,
+        pairingBlockedReason: 'bundled_bridge_required',
+        prerequisites: { bridgeRuntime: 'missing', privateNetwork: 'online', actionEngine: 'peekaboo_ready' },
+        summaryText: 'The packaged connector runtime is missing.',
+        sourcePointer: 'native-companion:typed-prerequisites',
+        canOpenReleasedWorkbench: false,
+        releasedWorkbench: { installed: true },
+        bridgeCli: { installed: false, status: 'missing', readOnly: true },
+        connectorService: { status: 'repair_required', running: false, reachable: false },
+        customerMac: { status: 'repair_required' },
+        iPhone: { status: 'unavailable' },
+        audit: { status: 'ready', auditIds: [] },
+      },
+    });
+
+    renderNativeCompanion();
+
+    expect(await screen.findByRole('heading', { name: 'Repair Workbench' })).toBeInTheDocument();
+    expect(screen.getByTestId('native-companion-next-action')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Report to support' })).toBeEnabled();
+    expect(document.body.textContent).not.toMatch(/pip install|brew install|terminal command/i);
+    expect(bridgeMocks.runAction).not.toHaveBeenCalled();
   });
 
   it('replaces Turn On Mac Access with refresh after preserving an unproven listener handoff', async () => {

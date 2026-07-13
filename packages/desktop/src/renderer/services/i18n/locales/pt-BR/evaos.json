@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Reparar as ferramentas de controle do Mac",
       "repairControlToolsDetail": "Nem o mecanismo CUA principal nem o fallback Peekaboo incluído estão disponíveis. Repare o Workbench antes de parear este Mac.",
       "clientMissingTitle": "Instalar rede segura",
+      "clientMissingStateTitle": "Rede segura necessária",
       "clientMissingDetail": "Abra a página oficial de download do Tailscale para macOS e siga o instalador normal. Não é necessário usar Terminal, Python, pip ou Homebrew.",
       "clientStoppedTitle": "Abrir rede segura",
       "clientStoppedDetail": "Abra o app de rede segura instalado, permita o aviso de VPN do macOS se aparecer e verifique novamente.",

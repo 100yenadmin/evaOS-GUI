@@ -94,6 +94,7 @@ export type NativeCompanionPrerequisiteCopy = {
   repairControlToolsTitle: string;
   repairControlToolsDetail: string;
   clientMissingTitle: string;
+  clientMissingStateTitle: string;
   clientMissingDetail: string;
   clientStoppedTitle: string;
   clientStoppedDetail: string;
@@ -444,6 +445,11 @@ function nextActionForState(
     return offlineStatusRefreshAction(totalSteps);
   }
 
+  const packagedPrerequisite = blockingPackagedPrerequisite(status, input.prerequisiteCopy);
+  if (packagedPrerequisite) {
+    return packagedPrerequisite.action;
+  }
+
   if (state === 'unsupported' || !status.bridgeCli.installed) {
     return {
       kind: 'refresh',
@@ -454,11 +460,6 @@ function nextActionForState(
       totalSteps,
       disabled: false,
     };
-  }
-
-  const packagedPrerequisite = blockingPackagedPrerequisite(status, input.prerequisiteCopy);
-  if (packagedPrerequisite) {
-    return packagedPrerequisite.action;
   }
 
   if (!permissionsReady(status)) {
@@ -919,14 +920,14 @@ function blockingPrivateNetworkPrerequisite(
   switch (privateNetwork) {
     case 'client_missing':
       return {
-        title: copy.clientMissingTitle,
+        title: copy.clientMissingStateTitle,
         summary: copy.clientMissingDetail,
         action: {
           ...baseAction,
           kind: 'repair',
           repairAction: 'secure_network_install',
           label: copy.clientMissingTitle,
-          title: copy.clientMissingTitle,
+          title: copy.clientMissingStateTitle,
           detail: copy.clientMissingDetail,
           disabled: false,
         },
