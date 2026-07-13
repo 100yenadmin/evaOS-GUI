@@ -1,5 +1,24 @@
 # Changelog
 
+## evaOS Workbench 2.1.36 (2026-07-13)
+
+### Listener-Safe Mac Access Recovery
+
+- Preserves any live Workbench-tracked Mac Access listener when bridge
+  discovery changes paths or current ownership cannot be proven, instead of
+  implicitly stopping or replacing the fixed-port listener.
+- Requires normal Workbench connector starts and grant recovery to use a proven
+  private tailnet host; loopback-only and unresolved listener evidence fails
+  closed without spawning, stopping, or granting.
+- Removes repeated start actions after an unproven handoff or once Mac Access
+  is already ready, and routes recovery through the existing status refresh.
+
+### Release Boundary
+
+- This entry identifies candidate source only. Signed, notarized, stapled,
+  installed-app, live broker/Mac-control, distribution, pristine-Mac setup,
+  and customer-readiness claims remain bound to exact release evidence.
+
 ## evaOS Workbench 2.1.35 (2026-07-13)
 
 ### Installed Connector Recovery

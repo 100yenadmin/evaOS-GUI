@@ -2380,7 +2380,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:setup-check',
       auditIds: ['audit-mac', 'audit-control'],
       setup: {
-        connectorReady: true,
+        connectorReady: false,
         macReady: true,
         controlReady: true,
         iPhoneDeferred: true,
@@ -2461,9 +2461,12 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('starts then reuses a tracked Workbench-managed Mac Access connector', async () => {
     const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    let statusCalls = 0;
     const execFile = vi.fn(async (_file, args) => {
       const key = args.join(' ');
       if (key === 'connector-service status --json') {
+        statusCalls += 1;
+        const ready = statusCalls > 1;
         return {
           stdout: json({
             ok: true,
@@ -2472,16 +2475,13 @@ describe('evaosNativeCompanionStatus', () => {
             running: false,
             managed_by: 'workbench-or-manual',
             tailnet_ip: '100.64.0.4',
-            health: { reachable: true, host: '100.64.0.4' },
+            health: { reachable: ready, ready, host: '100.64.0.4' },
           }),
           stderr: '',
         };
       }
-      if (key === 'connector-service stop --json') {
-        return {
-          stdout: json({ ok: true, action: 'stop' }),
-          stderr: '',
-        };
+      if (key === 'ready --json') {
+        return { stdout: json({ ok: false, ready: false, service: 'evaos-desktop-bridge-connector' }), stderr: '' };
       }
       throw new Error(`unexpected command ${key}`);
     });
@@ -2506,7 +2506,79 @@ describe('evaosNativeCompanionStatus', () => {
     expect(spawnConnectorProcess).toHaveBeenCalledTimes(1);
     expect(
       execFile.mock.calls.filter(([, callArgs]) => callArgs.join(' ') === 'connector-service stop --json')
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+  });
+
+  it('preserves a live tracked connector when bridge discovery changes paths', async () => {
+    const oldBridgePath = bundledBridgePath;
+    const newBridgePath = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/v2/evaos-desktop-bridge';
+    const trackedChild = mockChildProcess();
+    const firstSpawn = vi.fn(() => trackedChild);
+    let firstStatusCalls = 0;
+    const firstExecFile = vi.fn(async (_file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (key === 'connector-service status --json') {
+        firstStatusCalls += 1;
+        return {
+          stdout: json({
+            ok: true,
+            loaded: false,
+            running: false,
+            managed_by: firstStatusCalls === 1 ? 'offline' : 'workbench-or-manual',
+            tailnet_ip: '100.64.0.4',
+            health: {
+              reachable: firstStatusCalls > 1,
+              ready: firstStatusCalls > 1,
+              host: '100.64.0.4',
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (key === 'ready --json') {
+        return { stdout: json({ ok: false, ready: false, service: 'evaos-desktop-bridge-connector' }), stderr: '' };
+      }
+      throw new Error(`unexpected command ${key}`);
+    });
+    const firstResult = await runNativeCompanionAction(
+      { action: 'connector_start' },
+      depsWithResponses({}, { execFile: firstExecFile, spawnConnectorProcess: firstSpawn })
+    );
+    expect(firstResult.status).toBe('succeeded');
+
+    const replacementSpawn = vi.fn(() => mockChildProcess());
+    const replacementDeps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          loaded: false,
+          running: false,
+          managed_by: 'offline',
+          tailnet_ip: '100.64.0.5',
+          health: { reachable: false, ready: false, host: '100.64.0.5' },
+        },
+        'ready --json': { ok: false, ready: false, service: 'evaos-desktop-bridge-connector' },
+      },
+      {
+        bridgePaths: [newBridgePath],
+        existsSync: vi.fn((path: string) => path === newBridgePath),
+        spawnConnectorProcess: replacementSpawn,
+      }
+    );
+
+    const replacementResult = await runNativeCompanionAction({ action: 'connector_start' }, replacementDeps);
+
+    expect(replacementResult).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_replacement_unproven',
+    });
+    expect(trackedChild.kill).not.toHaveBeenCalled();
+    expect(replacementSpawn).not.toHaveBeenCalled();
+    expect(
+      (replacementDeps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+    expect(firstSpawn).toHaveBeenCalledWith(oldBridgePath, expect.any(Array), expect.any(Object));
   });
 
   it('adopts an exact signed Workbench-owned connector after app relaunch without respawning it', async () => {
@@ -2547,7 +2619,305 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
-  it('accepts bridge ready proof when connector-service status is stale during connector start', async () => {
+  it.each([
+    [
+      'reachable ownerless loopback status',
+      {
+        ok: true,
+        loaded: false,
+        running: true,
+        health: { reachable: true, ready: true, host: '127.0.0.1' },
+      },
+    ],
+    [
+      'loopback-only bridge-ready fallback',
+      {
+        ok: true,
+        loaded: false,
+        running: true,
+        managed_by: 'workbench-or-manual',
+        health: { reachable: false, ready: false },
+      },
+    ],
+  ])('preserves %s without claiming connector start success', async (_label, connectorStatus) => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': connectorStatus,
+        'ready --json': {
+          ok: true,
+          ready: true,
+          service: 'evaos-desktop-bridge-connector',
+          connector_service: { running: true, ready: true, health: { reachable: true } },
+        },
+      },
+      { probeConnectorReady: vi.fn(async () => true), spawnConnectorProcess }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_replacement_unproven',
+    });
+    expect(spawnConnectorProcess).not.toHaveBeenCalled();
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+  });
+
+  it('preserves the current listener when authenticated diagnostics time out', async () => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const execFile = vi.fn(async (_file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (key === 'connector-service status --json') {
+        throw new Error('simulated authenticated diagnostics timeout');
+      }
+      if (key === 'ready --json') {
+        return {
+          stdout: json({ ok: false, ready: false, service: 'evaos-desktop-bridge-connector' }),
+          stderr: '',
+        };
+      }
+      if (key === 'connector-service stop --json') {
+        return { stdout: json({ ok: true, action: 'stop' }), stderr: '' };
+      }
+      throw new Error(`unexpected command ${key}`);
+    });
+    const deps = depsWithResponses({}, { execFile, spawnConnectorProcess });
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_replacement_unproven',
+    });
+    expect(execFile.mock.calls.map(([, callArgs]) => callArgs.join(' '))).not.toContain(
+      'connector-service stop --json'
+    );
+    expect(spawnConnectorProcess.mock.calls.length).toBe(0);
+  });
+
+  it.each([
+    ['authentication rejected', false],
+    ['authentication incomplete', undefined],
+  ])('preserves a reachable private listener when %s', async (_label, authenticated) => {
+    const privateListener = {
+      ok: true,
+      audit_id: 'audit-private-listener-uncertain',
+      loaded: false,
+      running: false,
+      managed_by: 'offline',
+      tailnet_ip: '100.64.0.4',
+      health: {
+        reachable: true,
+        ready: false,
+        host: '100.64.0.4',
+        ...(authenticated === undefined ? {} : { authenticated }),
+      },
+    };
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': privateListener,
+        'ready --json': {
+          ok: false,
+          ready: false,
+          service: 'evaos-desktop-bridge-connector',
+          connector_service: { health: { reachable: true, ready: false, host_kind: 'tailnet' } },
+        },
+        'connector-service stop --json': { ok: true, action: 'stop' },
+      },
+      { probeConnectorReady: vi.fn(async () => false), spawnConnectorProcess }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({ action: 'connector_start', status: 'repair_required' });
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+    expect(spawnConnectorProcess.mock.calls.length).toBe(0);
+  });
+
+  it('does not fall back to loopback when private host evidence is unresolved', async () => {
+    const privateListener = {
+      ok: true,
+      audit_id: 'audit-private-host-unresolved',
+      loaded: false,
+      running: false,
+      managed_by: 'offline',
+      tailnet_available: true,
+      private_network: { client_installed: true, client_running: true, enrolled: true, online: true },
+      health: { reachable: true, ready: false, authenticated: false, host_kind: 'tailnet' },
+    };
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': privateListener,
+        'ready --json': {
+          ok: false,
+          ready: false,
+          service: 'evaos-desktop-bridge-connector',
+          connector_service: { health: { reachable: true, ready: false, host_kind: 'tailnet' } },
+        },
+        'connector-service stop --json': { ok: true, action: 'stop' },
+      },
+      {
+        execFile: vi.fn(async (file: string, args: string[]) => {
+          const key = args.join(' ');
+          if (file === bundledBridgePath && key === 'connector-service status --json') {
+            return { stdout: json(privateListener), stderr: '' };
+          }
+          if (file === bundledBridgePath && key === 'ready --json') {
+            return {
+              stdout: json({ ok: false, ready: false, service: 'evaos-desktop-bridge-connector' }),
+              stderr: '',
+            };
+          }
+          if (file === bundledBridgePath && key === 'connector-service stop --json') {
+            return { stdout: json({ ok: true, action: 'stop' }), stderr: '' };
+          }
+          if (key === 'ip -4') return { stdout: '', stderr: '' };
+          if (file === '/sbin/ifconfig') return { stdout: '', stderr: '' };
+          throw new Error(`unexpected command ${file} ${key}`);
+        }),
+        probeConnectorReady: vi.fn(async () => false),
+        spawnConnectorProcess,
+      }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({ action: 'connector_start', status: 'repair_required' });
+    expect(spawnConnectorProcess.mock.calls.length).toBe(0);
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+  });
+
+  it.each([
+    ['loopback', '127.0.0.1'],
+    ['public', '8.8.8.8'],
+  ])('rejects an offline %s listener for an unscoped connector start', async (_label, host) => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          loaded: false,
+          running: false,
+          managed_by: 'offline',
+          health: { reachable: false, ready: false, host },
+        },
+        'ready --json': { ok: false, ready: false, service: 'evaos-desktop-bridge-connector' },
+      },
+      { spawnConnectorProcess }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_replacement_unproven',
+    });
+    expect(spawnConnectorProcess).not.toHaveBeenCalled();
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+  });
+
+  it('cold-starts a private connector only when the previous owner is proven offline', async () => {
+    const offlineStatus = {
+      ok: true,
+      audit_id: 'audit-connector-offline',
+      loaded: false,
+      running: false,
+      managed_by: 'offline',
+      tailnet_ip: '100.64.0.4',
+      health: { reachable: false, ready: false, host: '100.64.0.4' },
+    };
+    const readyStatus = {
+      ...offlineStatus,
+      audit_id: 'audit-connector-cold-start-ready',
+      managed_by: 'workbench-or-manual',
+      health: { reachable: true, ready: true, host: '100.64.0.4' },
+    };
+    let statusCalls = 0;
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const execFile = vi.fn(async (_file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (key === 'connector-service status --json') {
+        statusCalls += 1;
+        return { stdout: json(statusCalls === 1 ? offlineStatus : readyStatus), stderr: '' };
+      }
+      if (key === 'ready --json') {
+        return {
+          stdout: json({ ok: false, ready: false, service: 'evaos-desktop-bridge-connector' }),
+          stderr: '',
+        };
+      }
+      if (key === 'connector-service stop --json') {
+        return { stdout: json({ ok: true, action: 'stop' }), stderr: '' };
+      }
+      throw new Error(`unexpected command ${key}`);
+    });
+    const deps = depsWithResponses({}, { execFile, spawnConnectorProcess });
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({ action: 'connector_start', status: 'succeeded' });
+    expect(spawnConnectorProcess).toHaveBeenCalledWith(
+      bundledBridgePath,
+      ['serve', '--host', '100.64.0.4', '--port', '8765'],
+      expect.any(Object)
+    );
+    expect(execFile.mock.calls.map(([, callArgs]) => callArgs.join(' '))).not.toContain(
+      'connector-service stop --json'
+    );
+  });
+
+  it('preserves an unloaded-but-present owner instead of attempting an unproven replacement', async () => {
+    const offlineStatus = {
+      ok: true,
+      audit_id: 'audit-offline-owner-stop-failed',
+      loaded: true,
+      running: false,
+      managed_by: 'launchagent',
+      tailnet_ip: '100.64.0.4',
+      health: { reachable: false, ready: false, host: '100.64.0.4' },
+    };
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': offlineStatus,
+        'ready --json': {
+          ok: false,
+          ready: false,
+          service: 'evaos-desktop-bridge-connector',
+        },
+        'connector-service stop --json': { ok: true, action: 'stop' },
+      },
+      { spawnConnectorProcess }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'connector_start' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_replacement_unproven',
+    });
+    expect(spawnConnectorProcess.mock.calls.length).toBe(0);
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+  });
+
+  it('does not accept stale bridge-ready proof without a current secure registration host', async () => {
     const spawnConnectorProcess = vi.fn(() => {
       throw new Error('unexpected connector spawn');
     });
@@ -2588,8 +2958,9 @@ describe('evaosNativeCompanionStatus', () => {
 
     expect(result).toMatchObject({
       action: 'connector_start',
-      status: 'succeeded',
+      status: 'repair_required',
       sourcePointer: 'native-companion:workbench-session-connector-start',
+      blockerReason: 'listener_replacement_unproven',
     });
     expect(
       (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
@@ -2600,9 +2971,9 @@ describe('evaosNativeCompanionStatus', () => {
     const startingStatus = {
       ok: true,
       audit_id: 'audit-redacted-connector-starting',
-      loaded: true,
-      running: true,
-      managed_by: 'launchagent',
+      loaded: false,
+      running: false,
+      managed_by: 'offline',
       tailnet_available: true,
       private_network: {
         client_installed: true,
@@ -2751,9 +3122,9 @@ describe('evaosNativeCompanionStatus', () => {
     const redactedStatus = {
       ok: true,
       audit_id: 'audit-concurrent-stop',
-      loaded: true,
-      running: true,
-      managed_by: 'launchagent',
+      loaded: false,
+      running: false,
+      managed_by: 'offline',
       tailnet_available: true,
       private_network: {
         client_installed: true,
@@ -2806,8 +3177,8 @@ describe('evaosNativeCompanionStatus', () => {
     expect(startResult).toMatchObject({ action: 'connector_start', status: 'repair_required' });
   });
 
-  it('waits for an older in-flight connector stop before a newer start reports readiness', async () => {
-    const unreadyStatus = {
+  it('keeps overlapping starts from replacing an uncertain private owner', async () => {
+    const uncertainStatus = {
       ok: true,
       audit_id: 'audit-overlapping-start-unready',
       loaded: true,
@@ -2816,62 +3187,34 @@ describe('evaosNativeCompanionStatus', () => {
       tailnet_ip: '100.64.0.4',
       health: { reachable: false, ready: false, host: '100.64.0.4' },
     };
-    const readyStatus = {
-      ok: true,
-      audit_id: 'audit-overlapping-start-ready',
-      loaded: false,
-      running: false,
-      managed_by: 'workbench-or-manual',
-      tailnet_ip: '100.64.0.4',
-      health: { reachable: true, ready: true, host: '100.64.0.4' },
-    };
-    let firstStopResolved = false;
-    let resolveFirstStop!: (value: { stdout: string; stderr: string }) => void;
-    const firstStop = new Promise<{ stdout: string; stderr: string }>((resolve) => {
-      resolveFirstStop = resolve;
-    });
-    let statusCalls = 0;
-    let stopCalls = 0;
-    let spawned = false;
-    const spawnConnectorProcess = vi.fn(() => {
-      spawned = true;
-      return mockChildProcess();
-    });
-    const execFile = vi.fn(async (file: string, args: string[]) => {
-      const key = args.join(' ');
-      if (file === bundledBridgePath && key === 'connector-service status --json') {
-        statusCalls += 1;
-        if (!firstStopResolved) return { stdout: json(statusCalls === 1 ? unreadyStatus : readyStatus), stderr: '' };
-        return { stdout: json(spawned ? readyStatus : unreadyStatus), stderr: '' };
-      }
-      if (file === bundledBridgePath && key === 'connector-service stop --json') {
-        stopCalls += 1;
-        if (stopCalls === 1) return firstStop;
-        return { stdout: json({ ok: true, action: 'stop' }), stderr: '' };
-      }
-      if (file === bundledBridgePath && key === 'ready --json') {
-        return {
-          stdout: json({ ok: false, ready: false, service: 'evaos-desktop-bridge-connector' }),
-          stderr: '',
-        };
-      }
-      throw new Error(`unexpected command ${file} ${key}`);
-    });
-    const deps = depsWithResponses({}, { execFile, spawnConnectorProcess });
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': uncertainStatus,
+        'ready --json': { ok: false, ready: false, service: 'evaos-desktop-bridge-connector' },
+        'connector-service stop --json': { ok: true, action: 'stop' },
+      },
+      { spawnConnectorProcess }
+    );
 
-    const olderStart = runNativeCompanionAction({ action: 'connector_start' }, deps);
-    await vi.waitFor(() => expect(stopCalls).toBe(1));
-    const newerStart = runNativeCompanionAction({ action: 'connector_start' }, deps);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const [olderResult, newerResult] = await Promise.all([
+      runNativeCompanionAction({ action: 'connector_start' }, deps),
+      runNativeCompanionAction({ action: 'connector_start' }, deps),
+    ]);
 
-    expect(statusCalls).toBe(1);
-    firstStopResolved = true;
-    resolveFirstStop({ stdout: json({ ok: true, action: 'stop' }), stderr: '' });
-    const [olderResult, newerResult] = await Promise.all([olderStart, newerStart]);
-
-    expect(olderResult).toMatchObject({ action: 'connector_start', status: 'repair_required' });
-    expect(newerResult).toMatchObject({ action: 'connector_start', status: 'succeeded' });
-    expect(spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect(olderResult).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+    });
+    expect(newerResult).toMatchObject({
+      action: 'connector_start',
+      status: 'repair_required',
+      blockerReason: 'listener_replacement_unproven',
+    });
+    expect(spawnConnectorProcess.mock.calls.length).toBe(0);
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
   });
 
   it.each(['100.63.255.255', '100.128.0.1'])(
@@ -2934,9 +3277,9 @@ describe('evaosNativeCompanionStatus', () => {
           return {
             stdout: json({
               ok: true,
-              loaded: true,
-              running: true,
-              managed_by: 'launchagent',
+              loaded: false,
+              running: false,
+              managed_by: 'offline',
               tailnet_ip: '100.64.0.4',
               health: { reachable: false, host: '100.64.0.4' },
             }),
@@ -3005,7 +3348,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result).toMatchObject({
       action: 'connector_start',
       status: 'repair_required',
-      blockerReason: 'listener_owner_mismatch',
+      blockerReason: 'listener_replacement_unproven',
     });
   });
 
@@ -3022,9 +3365,9 @@ describe('evaosNativeCompanionStatus', () => {
           stdout: json({
             ok: true,
             audit_id: ready ? 'audit-cold-connector-ready' : 'audit-cold-connector-starting',
-            loaded: statusCalls === 1,
-            running: statusCalls === 1,
-            managed_by: statusCalls === 1 ? 'launchagent' : 'workbench-or-manual',
+            loaded: false,
+            running: false,
+            managed_by: statusCalls === 1 ? 'offline' : 'workbench-or-manual',
             tailnet_ip: '100.64.0.4',
             health: { reachable: ready, ready, host: '100.64.0.4' },
           }),
@@ -3094,10 +3437,10 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result).toMatchObject({
       action: 'connector_start',
       status: 'repair_required',
-      blockerReason: 'listener_owner_mismatch',
+      blockerReason: 'listener_replacement_unproven',
     });
     expect(result.message).toContain('Mac Access connector could not start');
-    expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect((deps.spawnConnectorProcess as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
   });
 
   it('rejects a health-only listener when /ready does not prove the Workbench bridge', async () => {
@@ -3137,10 +3480,10 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result).toMatchObject({
       action: 'connector_start',
       status: 'repair_required',
-      blockerReason: 'stale_connector_port_conflict',
+      blockerReason: 'listener_replacement_unproven',
     });
     expect(result.message).toContain('Mac Access connector could not start');
-    expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect((deps.spawnConnectorProcess as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
     expect(deps.probeConnectorReady).toHaveBeenCalledWith('100.64.0.4', 8765);
   });
 
@@ -3151,10 +3494,11 @@ describe('evaosNativeCompanionStatus', () => {
         'connector-service status --json': [
           {
             ok: true,
-            running: true,
-            managed_by: 'launchagent',
+            loaded: false,
+            running: false,
+            managed_by: 'offline',
             tailnet_ip: '100.64.0.4',
-            health: { reachable: true, host: '100.64.0.4' },
+            health: { reachable: false, host: '100.64.0.4' },
             private_network: {
               client_installed: true,
               client_running: true,
@@ -3274,7 +3618,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
-  it('stops launchd and starts a Workbench-owned session connector for Mac Access', async () => {
+  it('starts a Workbench-owned session connector only after launchd is proven offline', async () => {
     const child = mockChildProcess();
     const spawnConnectorProcess = vi.fn(() => child);
     const execFile = vi.fn(async (_file, args) => {
@@ -3296,9 +3640,9 @@ describe('evaosNativeCompanionStatus', () => {
           stdout: json({
             ok: true,
             audit_id: statusCalls > 1 ? 'audit-connector-ready' : 'audit-connector-starting',
-            loaded: statusCalls <= 1,
-            running: statusCalls <= 1,
-            managed_by: statusCalls > 1 ? 'workbench-or-manual' : 'launchagent',
+            loaded: false,
+            running: false,
+            managed_by: statusCalls > 1 ? 'workbench-or-manual' : 'offline',
             tailnet_ip: '100.64.0.4',
             health: { reachable: statusCalls > 1, host: '100.64.0.4' },
           }),
@@ -3345,7 +3689,10 @@ describe('evaosNativeCompanionStatus', () => {
       EVAOS_DESKTOP_BRIDGE_MANAGED_BY: 'workbench-session',
       EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID: 'com.evaos.workbench',
     });
-    expect(execFile).toHaveBeenCalledTimes(4);
+    expect(execFile).toHaveBeenCalledTimes(3);
+    expect(execFile.mock.calls.map(([, callArgs]) => callArgs.join(' '))).not.toContain(
+      'connector-service stop --json'
+    );
     expect(sleep).not.toHaveBeenCalled();
   });
 
@@ -3417,12 +3764,59 @@ describe('evaosNativeCompanionStatus', () => {
     expect(result.message).toContain('Agent control could not start');
   });
 
+  it('fails setup check closed when an otherwise-ready connector is reachable only on loopback', async () => {
+    const ensureCustomerMacConnectorGrant = vi.fn();
+    const deps = depsWithTypedReadyResponses(
+      {
+        'status --json': { ok: true, data: {} },
+        'connector-service status --json': {
+          ok: true,
+          loaded: false,
+          running: true,
+          tailnet_ip: '127.0.0.1',
+          health: { reachable: true, ready: true, host: '127.0.0.1' },
+        },
+        'customer-mac status --json': {
+          ok: true,
+          audit_id: 'audit-loopback-mac',
+          data: {
+            permissions: {
+              accessibility: { status: 'granted' },
+              screen_recording: { status: 'granted' },
+            },
+          },
+        },
+        'customer-mac control status --json': {
+          ok: true,
+          audit_id: 'audit-loopback-control',
+          data: { ready: true, active: false, kill_switch: false },
+        },
+        'audit-tail --json --limit 12': {
+          ok: true,
+          data: { records: [{ audit_id: 'audit-loopback-mac' }, { audit_id: 'audit-loopback-control' }] },
+        },
+      },
+      { ensureCustomerMacConnectorGrant }
+    );
+
+    const result = await runNativeCompanionAction({ action: 'setup_check', customerId: 'typed-ready-customer' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'setup_check',
+      status: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      setup: { connectorReady: false, macReady: true, controlReady: true },
+    });
+    expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
+  });
+
   it('marks setup check as agent paired only when control status carries explicit proof', async () => {
     const deps = depsWithTypedReadyResponses({
       'status --json': { ok: true, data: {} },
       'connector-service status --json': {
         ok: true,
         running: true,
+        tailnet_ip: '100.64.0.4',
         health: { reachable: true },
       },
       'customer-mac status --json': {
@@ -3476,6 +3870,7 @@ describe('evaosNativeCompanionStatus', () => {
       'connector-service status --json': {
         ok: true,
         running: true,
+        tailnet_ip: '100.64.0.4',
         health: { reachable: true },
       },
       'customer-mac status --json': {
@@ -3531,6 +3926,7 @@ describe('evaosNativeCompanionStatus', () => {
       'connector-service status --json': {
         ok: true,
         running: true,
+        tailnet_ip: '100.64.0.4',
         health: { reachable: true },
       },
       'customer-mac status --json': {
@@ -3708,9 +4104,13 @@ describe('evaosNativeCompanionStatus', () => {
         'connector-service status --json': [
           {
             ok: true,
+            loaded: true,
             running: true,
-            health: { reachable: true },
+            health: { authenticated: true, reachable: true, ready: true },
             managed_by: 'launchagent',
+            responsible_bundle_id: 'com.evaos.workbench',
+            responsible_app_path: '/Applications/evaOS Workbench.app',
+            process_path: bundledBridgePath,
             tailnet_ip: '100.64.0.10',
             token_path: '~/Library/Application Support/evaos-desktop-bridge/connector.token',
           },
@@ -3792,7 +4192,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(result.message).toContain('live connector endpoint');
     expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
-    expect(deps.spawnConnectorProcess).toHaveBeenCalledTimes(1);
+    expect((deps.spawnConnectorProcess as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
     expect(deps.runConnectorCommand).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(result)).not.toMatch(/secret-token|100\.64\.0\.10|8765|token_path/i);
   });
@@ -3904,7 +4304,7 @@ describe('evaosNativeCompanionStatus', () => {
     ['LaunchAgent-managed', 'launchagent'],
     ['untracked Workbench/manual', 'workbench-or-manual'],
   ])(
-    'restarts a stale %s connector before explicit first-party grant when local permission proof is green',
+    'preserves a stale %s connector before explicit first-party grant when replacement is unproven',
     async (_label, staleManagedBy) => {
       const ensureCustomerMacConnectorGrant = vi.fn(async () => ({
         ok: true,
@@ -4001,40 +4401,58 @@ describe('evaosNativeCompanionStatus', () => {
 
       expect(result).toMatchObject({
         action: 'ensure_customer_mac_connector_grant',
-        status: 'succeeded',
-        sourcePointer: 'native-companion:connector-grant-ready',
-        connectorGrant: {
-          customerId: 'golden',
-          grantId: 'grant-golden',
-        },
+        status: 'repair_required',
+        sourcePointer: 'native-companion:connector-grant-workbench-session-start-required',
+        blockerReason: 'listener_replacement_unproven',
       });
-      expect(result.connectorGrant).not.toHaveProperty('sourcePointer');
-      expect(result.connectorGrant).not.toHaveProperty('connectorToken');
+      expect(result.message).not.toMatch(/stop mac access|stop.*connector/i);
+      expect(result.message).toMatch(/preserved/i);
+      expect(result.message).toMatch(/refresh/i);
+      expect(result.message).toMatch(/support/i);
       expect(JSON.stringify(result)).not.toMatch(/secret-token|connector_token|100\.64\.0\.10|8765/i);
-      expect(deps.spawnConnectorProcess).toHaveBeenCalledWith(
-        bundledBridgePath,
-        ['serve', '--host', '100.64.0.10', '--port', '8765'],
-        expect.objectContaining({
-          env: expect.objectContaining({
-            EVAOS_DESKTOP_BRIDGE_MANAGED_BY: 'workbench-session',
-            EVAOS_DESKTOP_BRIDGE_RESPONSIBLE_BUNDLE_ID: 'com.evaos.workbench',
-          }),
-        })
-      );
-      expect(runConnectorCommand).toHaveBeenCalledTimes(1);
-      expect(ensureCustomerMacConnectorGrant).toHaveBeenCalledWith(
-        expect.objectContaining({
-          customerId: 'golden',
-          deviceIdentifier: 'Proof-Mac.local',
-          permissionState: {
-            accessibility: 'granted',
-            screen_recording: 'granted',
-          },
-        })
-      );
+      expect((deps.spawnConnectorProcess as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+      expect(runConnectorCommand).not.toHaveBeenCalled();
+      expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
+      expect(
+        (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+      ).not.toContain('connector-service stop --json');
       expect(JSON.stringify(result)).not.toMatch(/secret-token|100\.64\.0\.10|8765|token_path/i);
     }
   );
+
+  it('does not spawn or grant from an offline loopback-only connector in the customer grant flow', async () => {
+    const spawnConnectorProcess = vi.fn(() => mockChildProcess());
+    const ensureCustomerMacConnectorGrant = vi.fn();
+    const deps = depsWithResponses(
+      {
+        'connector-service status --json': {
+          ok: true,
+          loaded: false,
+          running: false,
+          managed_by: 'offline',
+          health: { reachable: false, ready: false, host: '127.0.0.1' },
+        },
+        'ready --json': { ok: false, ready: false, service: 'evaos-desktop-bridge-connector' },
+      },
+      { spawnConnectorProcess, ensureCustomerMacConnectorGrant }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'ensure_customer_mac_connector_grant', customerId: 'golden' },
+      deps
+    );
+
+    expect(result).toMatchObject({
+      action: 'ensure_customer_mac_connector_grant',
+      status: 'repair_required',
+      blockerReason: 'not_workbench_managed',
+    });
+    expect(spawnConnectorProcess).not.toHaveBeenCalled();
+    expect(ensureCustomerMacConnectorGrant).not.toHaveBeenCalled();
+    expect(
+      (deps.execFile as ReturnType<typeof vi.fn>).mock.calls.map(([, callArgs]) => callArgs.join(' '))
+    ).not.toContain('connector-service stop --json');
+  });
 
   it('does not create a pairing prompt when typed prerequisite evidence is missing', async () => {
     const createCustomerMacEnrollment = vi.fn(async () => ({

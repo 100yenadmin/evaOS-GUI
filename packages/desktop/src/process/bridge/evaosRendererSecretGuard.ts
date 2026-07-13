@@ -5,27 +5,10 @@
  */
 
 import { containsEvaosSecretMaterial, EvaosBrokerSessionError } from '@process/services/evaosBrokerSession';
+import { EVAOS_MAC_CONTROL_BLOCKER_REASONS } from '@/common/evaos/bridgeTypes';
 
 const SAFE_SECRET_METADATA_KEYS = new Set(['rawSecretsStoredInWorkbench', 'hasBrokeredGrant']);
-const SAFE_MAC_CONTROL_BLOCKER_REASONS = new Set([
-  'listener_owner_mismatch',
-  'port_in_use',
-  'token_missing',
-  'not_workbench_managed',
-  'secure_network_link_required',
-  'permission_missing',
-  'broker_session_expired',
-  'agent_cli_config_invalid',
-  'runtime_not_configured',
-  'bundled_bridge_required',
-  'connector_service_not_ready',
-  'bridge_cli_missing',
-  'bridge_diagnostics_unavailable',
-  'pairing_not_ready',
-  'stale_connector_port_conflict',
-  'missing_live_listener',
-  'unknown',
-]);
+const SAFE_MAC_CONTROL_BLOCKER_REASONS = new Set<string>(EVAOS_MAC_CONTROL_BLOCKER_REASONS);
 const SAFE_MAC_CONTROL_BLOCKER_FIELDS = new Set([
   'blockerReason',
   'pairingBlockedReason',
