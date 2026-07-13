@@ -33,6 +33,7 @@ export type NativeCompanionPrerequisiteEvidence = {
   };
 };
 
+/** Classifies bridge evidence, failing closed to `missing`, `error`, or `incompatible` unless readiness is explicit. */
 export function classifyNativeCompanionBridgeRuntime(
   evidence: NativeCompanionPrerequisiteEvidence['bridgeRuntime']
 ): NativeCompanionBridgeRuntimePrerequisite {
@@ -42,6 +43,7 @@ export function classifyNativeCompanionBridgeRuntime(
   return evidence.compatible === true ? 'ready' : 'error';
 }
 
+/** Classifies private-network evidence and returns `online` only when every required field is explicitly true. */
 export function classifyNativeCompanionPrivateNetwork(
   evidence: NativeCompanionPrerequisiteEvidence['privateNetwork']
 ): NativeCompanionPrivateNetworkPrerequisite {
@@ -60,6 +62,7 @@ export function classifyNativeCompanionPrivateNetwork(
   return evidence.online === true ? 'online' : 'error';
 }
 
+/** Classifies action-engine evidence, returning a ready state only for an explicitly available accepted engine. */
 export function classifyNativeCompanionActionEngine(
   evidence: NativeCompanionPrerequisiteEvidence['actionEngine']
 ): NativeCompanionActionEnginePrerequisite {
@@ -69,6 +72,7 @@ export function classifyNativeCompanionActionEngine(
   return 'unavailable';
 }
 
+/** Classifies the complete typed prerequisite evidence without inferring readiness from missing or unknown values. */
 export function classifyNativeCompanionPrerequisites(
   evidence: NativeCompanionPrerequisiteEvidence
 ): NativeCompanionPrerequisites {

@@ -96,6 +96,7 @@ export type EvaosNativeCompanionStatusDeps = {
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
   isPackaged?: boolean;
+  detectIsPackaged?: () => boolean;
   bridgePaths?: string[];
   releasedWorkbenchPath?: string;
   existsSync?: (path: string) => boolean;
@@ -2015,9 +2016,9 @@ function nativeCompanionIsPackaged(deps: EvaosNativeCompanionStatusDeps): boolea
   if (deps.isPackaged !== undefined) return deps.isPackaged;
   if (deps.env?.IS_PACKAGED === 'true') return true;
   try {
-    return getPlatformServices().paths.isPackaged();
+    return deps.detectIsPackaged?.() ?? getPlatformServices().paths.isPackaged();
   } catch {
-    return false;
+    return true;
   }
 }
 

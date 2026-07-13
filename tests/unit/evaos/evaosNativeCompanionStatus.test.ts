@@ -65,9 +65,14 @@ function depsWithTypedReadyResponses(
   responses: Record<string, unknown>,
   overrides: Partial<EvaosNativeCompanionStatusDeps> = {}
 ): EvaosNativeCompanionStatusDeps {
-  const bridge = (responses['status --json'] ??= { ok: true, data: {} }) as {
-    data?: Record<string, unknown>;
-  };
+  const bridge = responses['status --json'] as { data?: Record<string, unknown> } | undefined;
+  const connectorResponse = responses['connector-service status --json'];
+  const customerMac = responses['customer-mac status --json'] as { data?: Record<string, unknown> } | undefined;
+  if (!bridge || !connectorResponse || !customerMac) {
+    throw new Error(
+      "depsWithTypedReadyResponses requires 'status --json', 'connector-service status --json', and 'customer-mac status --json' responses"
+    );
+  }
   bridge.data ??= {};
   bridge.data.bridge_runtime ??= {
     schema: 'evaos.desktop_bridge.workbench_runtime.v1',
@@ -77,9 +82,9 @@ function depsWithTypedReadyResponses(
     compatible: true,
   };
 
-  const connectorResponses = Array.isArray(responses['connector-service status --json'])
-    ? (responses['connector-service status --json'] as Array<Record<string, unknown>>)
-    : [responses['connector-service status --json'] as Record<string, unknown>];
+  const connectorResponses = Array.isArray(connectorResponse)
+    ? (connectorResponse as Array<Record<string, unknown>>)
+    : [connectorResponse as Record<string, unknown>];
   for (const connector of connectorResponses) {
     connector.private_network ??= {
       client_installed: true,
@@ -91,7 +96,6 @@ function depsWithTypedReadyResponses(
     };
   }
 
-  const customerMac = responses['customer-mac status --json'] as { data?: Record<string, unknown> };
   customerMac.data ??= {};
   customerMac.data.control_engines ??= {
     cua_driver: { available: true, active_for_actions: true },
@@ -104,6 +108,10 @@ function depsWithTypedReadyResponses(
 describe('evaosNativeCompanionStatus', () => {
   afterEach(() => {
     stopEvaosNativeCompanionSessionConnector();
+  });
+
+  it('reports missing canonical fixtures clearly when typed-ready test responses are incomplete', () => {
+    expect(() => depsWithTypedReadyResponses({})).toThrow(/requires 'status --json'.*connector-service.*customer-mac/);
   });
 
   it('exposes native companion state fixtures only under the local product proof gate', async () => {
@@ -157,6 +165,22 @@ describe('evaosNativeCompanionStatus', () => {
 
     expect(status.sourcePointer).toBe('native-companion:bridge-cli-missing');
     expect(status.bridgeCli.installed).toBe(false);
+  });
+
+  it('restricts bridge lookup to bundled paths when packaging detection is unavailable', async () => {
+    const existsSync = vi.fn(() => false);
+
+    await getEvaosNativeCompanionStatus({
+      env: { EVAOS_DESKTOP_BRIDGE_PATH: '/tmp/untrusted/evaos-desktop-bridge' } as NodeJS.ProcessEnv,
+      existsSync,
+      detectIsPackaged: () => {
+        throw new Error('packaging state unavailable');
+      },
+    });
+
+    expect(existsSync).not.toHaveBeenCalledWith('/tmp/untrusted/evaos-desktop-bridge');
+    expect(existsSync).not.toHaveBeenCalledWith('/opt/homebrew/bin/evaos-desktop-bridge');
+    expect(existsSync).not.toHaveBeenCalledWith('/usr/local/bin/evaos-desktop-bridge');
   });
 
   it('classifies a missing bundled bridge without claiming any other prerequisite is ready', async () => {
@@ -1815,6 +1839,7 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('runs setup check with legacy top-level connector-service status payloads', async () => {
     const deps = depsWithTypedReadyResponses({
+      'status --json': { ok: true, data: {} },
       'connector-service status --json': {
         domain: 'gui/502',
         label: 'com.electricsheep.evaos-desktop-bridge',
@@ -2373,6 +2398,7 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('marks setup check as agent paired only when control status carries explicit proof', async () => {
     const deps = depsWithTypedReadyResponses({
+      'status --json': { ok: true, data: {} },
       'connector-service status --json': {
         ok: true,
         running: true,
@@ -2425,6 +2451,7 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('marks setup check ready when control-status permission proof supersedes stale customer status', async () => {
     const deps = depsWithTypedReadyResponses({
+      'status --json': { ok: true, data: {} },
       'connector-service status --json': {
         ok: true,
         running: true,
@@ -2479,6 +2506,7 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('does not treat local-ready control status as agent pairing proof', async () => {
     const deps = depsWithTypedReadyResponses({
+      'status --json': { ok: true, data: {} },
       'connector-service status --json': {
         ok: true,
         running: true,
@@ -2545,6 +2573,7 @@ describe('evaosNativeCompanionStatus', () => {
     }));
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': [
           {
             ok: true,
@@ -2654,6 +2683,7 @@ describe('evaosNativeCompanionStatus', () => {
     }));
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': [
           {
             ok: true,
@@ -2880,6 +2910,7 @@ describe('evaosNativeCompanionStatus', () => {
       });
       const deps = depsWithTypedReadyResponses(
         {
+          'status --json': { ok: true, data: {} },
           'connector-service status --json': [
             {
               ok: true,
@@ -3048,6 +3079,7 @@ describe('evaosNativeCompanionStatus', () => {
   it('creates a pairing prompt when control-status permission proof supersedes stale customer status', async () => {
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': {
           ok: true,
           running: true,
@@ -3180,6 +3212,7 @@ describe('evaosNativeCompanionStatus', () => {
   it('does not expose a dead pairing prompt when local connector registration fails', async () => {
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': {
           ok: true,
           running: true,
@@ -3239,6 +3272,7 @@ describe('evaosNativeCompanionStatus', () => {
   it('redacts bridge enrollment error bodies before surfacing local connector registration failures', async () => {
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': {
           ok: true,
           running: true,
@@ -3296,6 +3330,7 @@ describe('evaosNativeCompanionStatus', () => {
   it('maps broker 401 enrollment denial to reconnect without completing enrollment', async () => {
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': {
           ok: true,
           running: true,
@@ -3348,6 +3383,7 @@ describe('evaosNativeCompanionStatus', () => {
   it('surfaces broker 403 enrollment denial without reconnect copy', async () => {
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': {
           ok: true,
           running: true,
@@ -3389,6 +3425,7 @@ describe('evaosNativeCompanionStatus', () => {
     }));
     const deps = depsWithTypedReadyResponses(
       {
+        'status --json': { ok: true, data: {} },
         'connector-service status --json': {
           ok: true,
           running: true,
