@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { hasCompletedAfterPack } = require('./dmgRetryEligibility');
+const { isDmgRetryEligible } = require('./dmgRetryEligibility');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -384,8 +384,9 @@ function buildWithDmgRetry(cmd, targetArch) {
 
     // A partial .app can exist when afterPack or another packaging hook failed.
     // Retrying that bundle as --prepackaged would turn a real validation failure
-    // into a false-green DMG, so require the exact successful afterPack marker.
-    if (!hasCompletedAfterPack(appDir)) throw error;
+    // into a false-green DMG, so require successful completion of both the
+    // afterPack resource gate and the afterSign trust gate.
+    if (!isDmgRetryEligible(appDir)) throw error;
 
     // Verified .app exists but no .dmg → DMG creation failed
     console.log('\n🔄 Build failed during DMG creation (.app exists, .dmg missing)');

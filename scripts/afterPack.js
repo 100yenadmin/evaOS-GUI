@@ -10,7 +10,7 @@ const {
   getModulesToRebuild,
 } = require('./rebuildNativeModules');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
-const { clearCompletedAfterPack, markCompletedAfterPack } = require('./dmgRetryEligibility');
+const { clearDmgRetryCompletionMarkers, markCompletedAfterPack } = require('./dmgRetryEligibility');
 
 /**
  * afterPack hook for electron-builder
@@ -452,7 +452,7 @@ module.exports = async function afterPack(context) {
   const { arch, electronPlatformName, appOutDir, packager } = context;
   const targetArch = normalizeArch(typeof arch === 'string' ? arch : Arch[arch] || process.arch);
   const buildArch = normalizeArch(os.arch());
-  clearCompletedAfterPack(appOutDir);
+  clearDmgRetryCompletionMarkers(appOutDir);
 
   console.log(`\n🔧 afterPack hook started`);
   console.log(`   Platform: ${electronPlatformName}, Build arch: ${buildArch}, Target arch: ${targetArch}`);

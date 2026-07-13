@@ -7,6 +7,7 @@ const {
   getEnvValue,
   isStrictPublicBetaReleaseEnv,
 } = require('./evaosBetaReleaseGate');
+const { withAfterSignCompletion } = require('./dmgRetryEligibility');
 
 const AMBIENT_APPLE_API_ENV_KEYS = [
   'APPLE_API_KEY',
@@ -518,12 +519,8 @@ function notarizeAndStapleApp(appPath, notarizationOptions, env = process.env, r
   }
 }
 
-async function afterSign(context) {
-  const { electronPlatformName, appOutDir } = context;
-
-  if (electronPlatformName !== 'darwin') {
-    return;
-  }
+async function performMacAfterSign(context) {
+  const { appOutDir } = context;
   const appName = context.packager.appInfo.productFilename;
   const appBundleId = context.packager.appInfo.id;
   const appPath = `${appOutDir}/${appName}.app`;
@@ -544,6 +541,7 @@ async function afterSign(context) {
       console.log(`Ad-hoc signature applied successfully to ${appName}`);
     } catch (adHocError) {
       console.error('Ad-hoc signing failed:', adHocError.message);
+      throw adHocError;
     }
     return;
   }
@@ -582,6 +580,16 @@ async function afterSign(context) {
     console.error('Notarization failed:', error);
     throw error;
   }
+}
+
+async function afterSign(context) {
+  const { electronPlatformName, appOutDir } = context;
+
+  if (electronPlatformName !== 'darwin') {
+    return;
+  }
+
+  return withAfterSignCompletion(appOutDir, () => performMacAfterSign(context));
 }
 
 module.exports = afterSign;

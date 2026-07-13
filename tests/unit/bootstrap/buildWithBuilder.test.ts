@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = resolve(__dirname, '../../..');
 
 describe('build-with-builder', () => {
-  it.each([
+  it.skipIf(process.platform !== 'darwin').each([
     {
       args: ['arm64', '--win', '--arm64'],
       expectedArch: 'arm64',

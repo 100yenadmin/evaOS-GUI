@@ -131,7 +131,10 @@ function writeMacosBridgeZip(
     manifestLicenseSha256?: string;
     tamperPythonLicense?: boolean;
     universalPythonRuntime?: boolean;
+    omitCocoa?: boolean;
+    omitCoreText?: boolean;
     wrongObjcArchitecture?: boolean;
+    wrongPythonLauncherArchitecture?: boolean;
     wrongPythonSourceUrl?: boolean;
   } = {}
 ) {
@@ -154,6 +157,9 @@ function writeMacosBridgeZip(
     'wrong_objc_architecture = sys.argv[9] == "1"',
     'wrong_python_source_url = sys.argv[10] == "1"',
     'universal_python_runtime = sys.argv[11] == "1"',
+    'omit_cocoa = sys.argv[12] == "1"',
+    'omit_core_text = sys.argv[13] == "1"',
+    'wrong_python_launcher_architecture = sys.argv[14] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
@@ -168,6 +174,7 @@ function writeMacosBridgeZip(
     '        offset += len(thin_header)',
     '    return struct.pack(">II", 0xcafebabe, len(slices)) + b"".join(records) + b"".join(payload)',
     'python_header = fat_macho() if universal_python_runtime else bytes.fromhex("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001")',
+    'wrong_python_launcher_header = bytes.fromhex("cffaedfe07000001" if python_arch == "arm64" else "cffaedfe0c000001")',
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
     'python_license_bytes = python_license_path.read_bytes() + (b"tampered\\n" if tamper_python_license else b"")',
@@ -186,10 +193,18 @@ function writeMacosBridgeZip(
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
     '    python_launcher = zipfile.ZipInfo(f"{app_root}/Contents/Resources/Bridge/python/bin/python3")',
     '    python_launcher.create_system = 3',
-    '    python_launcher.external_attr = (stat.S_IFLNK | 0o777) << 16',
-    '    archive.writestr(python_launcher, b"python3.12")',
+    '    if wrong_python_launcher_architecture:',
+    '        python_launcher.external_attr = (stat.S_IFREG | 0o755) << 16',
+    '        archive.writestr(python_launcher, wrong_python_launcher_header)',
+    '    else:',
+    '        python_launcher.external_attr = (stat.S_IFLNK | 0o777) << 16',
+    '        archive.writestr(python_launcher, b"python3.12")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/bin/python3.12", python_header)',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
+    '    if not omit_cocoa:',
+    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/Cocoa/__init__.py", b"")',
+    '    if not omit_core_text:',
+    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/CoreText/__init__.py", b"")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/Quartz/__init__.py", b"")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/__init__.py", b"")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", objc_header)',
@@ -214,6 +229,9 @@ function writeMacosBridgeZip(
     options.wrongObjcArchitecture ? '1' : '0',
     options.wrongPythonSourceUrl ? '1' : '0',
     options.universalPythonRuntime ? '1' : '0',
+    options.omitCocoa ? '1' : '0',
+    options.omitCoreText ? '1' : '0',
+    options.wrongPythonLauncherArchitecture ? '1' : '0',
   ]);
 }
 
@@ -1553,7 +1571,7 @@ describe('evaOS beta release gate', () => {
     }
   });
 
-  it('rejects macOS release ZIPs without exact Peekaboo package proof', () => {
+  it('rejects macOS release ZIPs without exact Mac-control package proof', () => {
     const cases = [
       {
         name: 'missing binary',
@@ -1589,6 +1607,21 @@ describe('evaOS beta release gate', () => {
         name: 'wrong Python source URL',
         options: { wrongPythonSourceUrl: true },
         expected: /Python runtime provenance/,
+      },
+      {
+        name: 'missing Cocoa payload',
+        options: { omitCocoa: true },
+        expected: /bundled PyObjC control modules/,
+      },
+      {
+        name: 'missing CoreText payload',
+        options: { omitCoreText: true },
+        expected: /bundled PyObjC control modules/,
+      },
+      {
+        name: 'wrong Python launcher architecture',
+        options: { wrongPythonLauncherArchitecture: true },
+        expected: /relocatable bundled Python launcher/,
       },
     ];
 
