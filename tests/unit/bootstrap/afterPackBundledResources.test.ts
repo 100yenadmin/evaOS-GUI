@@ -71,7 +71,8 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
         python: {
           version: '3.12.13',
           sourceSha256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
-          sourceUrl: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz',
+          sourceUrl:
+            'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-aarch64-apple-darwin-install_only.tar.gz',
           architecture: 'arm64',
           packages: [
             {
@@ -239,7 +240,7 @@ describe('afterPack bundled resource verification', () => {
     try {
       process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
 
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
         /native Mach-O executable/
       );
     } finally {
@@ -259,6 +260,68 @@ describe('afterPack bundled resource verification', () => {
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
       expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).not.toThrow();
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('requires a target architecture for release-mode macOS bridge validation', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() =>
+        afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', undefined as unknown as string)
+      ).toThrow(/target architecture is required/);
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects bundled Python native extensions without the target architecture', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const nativeExtension = join(
+      resourcesDir,
+      'Bridge',
+      'python',
+      'lib',
+      'python3.12',
+      'site-packages',
+      'objc',
+      '_objc.cpython-312-darwin.so'
+    );
+    mkdirSync(join(nativeExtension, '..'), { recursive: true });
+    writeFileSync(nativeExtension, Buffer.from('cffaedfe07000001', 'hex'));
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /native runtime does not contain target architecture arm64/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a bundled Python source URL that does not name the pinned architecture asset', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const manifestPath = join(resourcesDir, 'Bridge', 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.bundledTools.python.sourceUrl =
+      'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz';
+    writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /pinned bundled Python runtime provenance/
+      );
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
     }

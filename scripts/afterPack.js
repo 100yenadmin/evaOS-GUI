@@ -17,7 +17,16 @@ const { clearCompletedAfterPack, markCompletedAfterPack } = require('./dmgRetryE
  * Rebuilds native modules for cross-architecture builds
  */
 
-const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+const MACHO_MAGICS = new Set([
+  'feedface',
+  'feedfacf',
+  'cefaedfe',
+  'cffaedfe',
+  'cafebabe',
+  'bebafeca',
+  'cafebabf',
+  'bfbafeca',
+]);
 
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on', 'evaos-beta'].includes(
@@ -144,6 +153,15 @@ function isMachOExecutable(filePath) {
   if (!fs.existsSync(filePath)) return false;
   try {
     fs.accessSync(filePath, fs.constants.X_OK);
+    return isMachOFile(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function isMachOFile(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  try {
     const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
     return MACHO_MAGICS.has(header);
   } catch {
@@ -184,6 +202,11 @@ const PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH = {
   arm64: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
   x64: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894',
 };
+const PYTHON_RUNTIME_SOURCE_URL_BY_ARCH = {
+  arm64:
+    'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-aarch64-apple-darwin-install_only.tar.gz',
+  x64: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-x86_64-apple-darwin-install_only.tar.gz',
+};
 const PYTHON_RUNTIME_LICENSE_SHA256 = '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf';
 const PYTHON_RUNTIME_PACKAGES = [
   ['pyobjc-core', '12.2.1', 'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b'],
@@ -202,6 +225,81 @@ function thinMachOArchitecture(filePath) {
   if (header.startsWith('cffaedfe0c000001')) return 'arm64';
   if (header.startsWith('cffaedfe07000001')) return 'x64';
   return undefined;
+}
+
+function readUInt32(buffer, offset, byteOrder) {
+  return byteOrder === 'little' ? buffer.readUInt32LE(offset) : buffer.readUInt32BE(offset);
+}
+
+function thinMachOCpuType(buffer) {
+  if (buffer.length < 8) return undefined;
+  const magic = buffer.subarray(0, 4).toString('hex');
+  if (magic === 'cffaedfe' || magic === 'cefaedfe') return buffer.readUInt32LE(4);
+  if (magic === 'feedfacf' || magic === 'feedface') return buffer.readUInt32BE(4);
+  return undefined;
+}
+
+function machOContainsArchitecture(filePath, targetArch) {
+  const expectedCpuType = targetArch === 'arm64' ? 0x0100000c : targetArch === 'x64' ? 0x01000007 : undefined;
+  if (!expectedCpuType) return false;
+  const buffer = fs.readFileSync(filePath);
+  const thinCpuType = thinMachOCpuType(buffer);
+  if (thinCpuType !== undefined) return thinCpuType === expectedCpuType;
+  if (buffer.length < 8) return false;
+
+  const magic = buffer.subarray(0, 4).toString('hex');
+  const fatShape = {
+    cafebabe: { byteOrder: 'big', recordSize: 20, fat64: false },
+    bebafeca: { byteOrder: 'little', recordSize: 20, fat64: false },
+    cafebabf: { byteOrder: 'big', recordSize: 32, fat64: true },
+    bfbafeca: { byteOrder: 'little', recordSize: 32, fat64: true },
+  }[magic];
+  if (!fatShape) return false;
+
+  const count = readUInt32(buffer, 4, fatShape.byteOrder);
+  if (count === 0 || count > 64 || 8 + count * fatShape.recordSize > buffer.length) return false;
+  for (let index = 0; index < count; index += 1) {
+    const recordOffset = 8 + index * fatShape.recordSize;
+    const cpuType = readUInt32(buffer, recordOffset, fatShape.byteOrder);
+    if (cpuType !== expectedCpuType) continue;
+    const sliceOffset = fatShape.fat64
+      ? Number(
+          fatShape.byteOrder === 'little'
+            ? buffer.readBigUInt64LE(recordOffset + 8)
+            : buffer.readBigUInt64BE(recordOffset + 8)
+        )
+      : readUInt32(buffer, recordOffset + 8, fatShape.byteOrder);
+    const sliceSize = fatShape.fat64
+      ? Number(
+          fatShape.byteOrder === 'little'
+            ? buffer.readBigUInt64LE(recordOffset + 16)
+            : buffer.readBigUInt64BE(recordOffset + 16)
+        )
+      : readUInt32(buffer, recordOffset + 12, fatShape.byteOrder);
+    if (sliceSize >= 8 && sliceOffset + sliceSize <= buffer.length) {
+      return thinMachOCpuType(buffer.subarray(sliceOffset, sliceOffset + sliceSize)) === expectedCpuType;
+    }
+  }
+  return false;
+}
+
+function verifyPythonMachOClosureArchitecture(pythonRuntimeDir, targetArch) {
+  const pending = [pythonRuntimeDir];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (entry.isFile() && isMachOFile(entryPath)) {
+        if (!machOContainsArchitecture(entryPath, targetArch)) {
+          throw new Error(
+            `Packaged evaOS desktop bridge Python native runtime does not contain target architecture ${targetArch}: ${entryPath}`
+          );
+        }
+      }
+    }
+  }
 }
 
 function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, targetArch) {
@@ -279,6 +377,9 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
   }
   if (strictReleaseBridge) {
+    if (!targetArch || !PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH[targetArch]) {
+      throw new Error('Packaged evaOS desktop bridge target architecture is required for strict release validation.');
+    }
     requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
     requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));
     requireMachOExecutable(pythonPath, path.join('Bridge', 'python', 'bin', 'python3'));
@@ -287,7 +388,6 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     if (
       !pythonMetadata?.version ||
       !/^[0-9a-f]{64}$/i.test(String(pythonMetadata.sourceSha256 || '')) ||
-      !String(pythonMetadata.sourceUrl || '').startsWith('https://github.com/astral-sh/python-build-standalone/') ||
       pythonMetadata.license !== 'Python-2.0' ||
       pythonMetadata.licensePath !== 'licenses/CPython-LICENSE.txt' ||
       pythonMetadata.licenseSha256 !== PYTHON_RUNTIME_LICENSE_SHA256 ||
@@ -297,19 +397,18 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     ) {
       throw new Error('Packaged evaOS desktop bridge manifest is missing pinned bundled Python runtime provenance.');
     }
-    if (targetArch) {
-      const expectedDigest = PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH[targetArch];
-      if (
-        !expectedDigest ||
-        pythonMetadata.architecture !== targetArch ||
-        pythonMetadata.sourceSha256 !== expectedDigest ||
-        thinMachOArchitecture(versionedPythonPath) !== targetArch
-      ) {
-        throw new Error(
-          `Packaged evaOS desktop bridge Python runtime does not match target architecture ${targetArch}.`
-        );
-      }
+    const expectedDigest = PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH[targetArch];
+    if (
+      pythonMetadata.architecture !== targetArch ||
+      pythonMetadata.sourceSha256 !== expectedDigest ||
+      thinMachOArchitecture(versionedPythonPath) !== targetArch
+    ) {
+      throw new Error(`Packaged evaOS desktop bridge Python runtime does not match target architecture ${targetArch}.`);
     }
+    if (pythonMetadata.sourceUrl !== PYTHON_RUNTIME_SOURCE_URL_BY_ARCH[targetArch]) {
+      throw new Error('Packaged evaOS desktop bridge manifest is missing pinned bundled Python runtime provenance.');
+    }
+    verifyPythonMachOClosureArchitecture(path.join(resourcesDir, 'Bridge', 'python'), targetArch);
     const pythonLink = fs.lstatSync(pythonPath);
     if (pythonLink.isSymbolicLink() && fs.readlinkSync(pythonPath) !== 'python3.12') {
       throw new Error('Packaged evaOS desktop bridge Python launcher symlink is not relocatable.');
@@ -544,4 +643,5 @@ module.exports = async function afterPack(context) {
 module.exports.verifyBundledResources = verifyBundledResources;
 module.exports.verifyEvaosDesktopBridgeResource = verifyEvaosDesktopBridgeResource;
 module.exports.thinMachOArchitecture = thinMachOArchitecture;
+module.exports.machOContainsArchitecture = machOContainsArchitecture;
 module.exports.isMachOExecutable = isMachOExecutable;

@@ -57,6 +57,7 @@ runtime_sha256 = (
     if architecture == "arm64"
     else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"
 )
+runtime_arch = "aarch64" if architecture == "arm64" else "x86_64"
 python_header = bytes.fromhex("cffaedfe0c000001" if architecture == "arm64" else "cffaedfe07000001")
 macho = bytes.fromhex("cafebabe00000000")
 license_bytes = b"MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\n"
@@ -100,7 +101,7 @@ manifest = {
             "version": "3.12.13",
             "architecture": architecture,
             "sourceSha256": runtime_sha256,
-            "sourceUrl": "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz",
+            "sourceUrl": f"https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-{runtime_arch}-apple-darwin-install_only.tar.gz",
             "packages": python_packages,
             "license": "Python-2.0",
             "licensePath": "licenses/CPython-LICENSE.txt",
