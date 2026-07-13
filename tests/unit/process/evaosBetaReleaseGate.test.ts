@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
@@ -129,12 +129,31 @@ function writeMacosBridgeZip(
     omitLicense?: boolean;
     sourceSha256?: string;
     manifestLicenseSha256?: string;
+    tamperPythonLicense?: boolean;
+    universalPythonRuntime?: boolean;
+    omitCocoa?: boolean;
+    omitCoreText?: boolean;
+    wrongObjcArchitecture?: boolean;
+    wrongPythonLauncherArchitecture?: boolean;
+    regularPythonLauncher?: boolean;
+    nonTraversablePythonDirectory?: boolean;
+    nonTraversablePythonRoot?: boolean;
+    normalizedPythonEntryCollision?: boolean;
+    wrongPythonSourceUrl?: boolean;
+    nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'python';
+    omitFoundationNative?: boolean;
+    omitInventoriedRuntimeFile?: boolean;
+    omitStdlibSentinel?: boolean;
+    signedPythonMutation?: boolean;
+    secondAppRoot?: boolean;
   } = {}
 ) {
   const script = [
     'import hashlib',
     'import json',
     'import pathlib',
+    'import stat',
+    'import struct',
     'import sys',
     'import zipfile',
     'zip_path = pathlib.Path(sys.argv[1])',
@@ -143,20 +162,136 @@ function writeMacosBridgeZip(
     'omit_license = sys.argv[4] == "1"',
     'source_sha256 = sys.argv[5]',
     'manifest_license_sha256 = sys.argv[6]',
+    'python_license_path = pathlib.Path(sys.argv[7])',
+    'tamper_python_license = sys.argv[8] == "1"',
+    'wrong_objc_architecture = sys.argv[9] == "1"',
+    'wrong_python_source_url = sys.argv[10] == "1"',
+    'universal_python_runtime = sys.argv[11] == "1"',
+    'omit_cocoa = sys.argv[12] == "1"',
+    'omit_core_text = sys.argv[13] == "1"',
+    'wrong_python_launcher_architecture = sys.argv[14] == "1"',
+    'non_executable_payload = sys.argv[15]',
+    'omit_foundation_native = sys.argv[16] == "1"',
+    'omit_inventoried_runtime_file = sys.argv[17] == "1"',
+    'second_app_root = sys.argv[18] == "1"',
+    'omit_stdlib_sentinel = sys.argv[19] == "1"',
+    'signed_python_mutation = sys.argv[20] == "1"',
+    'regular_python_launcher = sys.argv[21] == "1"',
+    'non_traversable_python_directory = sys.argv[22] == "1"',
+    'non_traversable_python_root = sys.argv[23] == "1"',
+    'normalized_python_entry_collision = sys.argv[24] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
+    'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
+    'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
+    'def fat_macho():',
+    '    slices = [(0x0100000c, bytes.fromhex("cffaedfe0c000001")), (0x01000007, bytes.fromhex("cffaedfe07000001"))]',
+    '    offset = 8 + len(slices) * 20',
+    '    records = []',
+    '    payload = []',
+    '    for cpu_type, thin_header in slices:',
+    '        records.append(struct.pack(">IIIII", cpu_type, 0, offset, len(thin_header), 0))',
+    '        payload.append(thin_header)',
+    '        offset += len(thin_header)',
+    '    return struct.pack(">II", 0xcafebabe, len(slices)) + b"".join(records) + b"".join(payload)',
+    'python_header = fat_macho() if universal_python_runtime else bytes.fromhex("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001")',
+    'wrong_python_launcher_header = bytes.fromhex("cffaedfe07000001" if python_arch == "arm64" else "cffaedfe0c000001")',
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
-    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}}}',
+    'python_license_bytes = python_license_path.read_bytes() + (b"tampered\\n" if tamper_python_license else b"")',
+    'python_license_sha256 = hashlib.sha256(python_license_bytes).hexdigest()',
+    'objc_header = bytes.fromhex(("cffaedfe07000001" if python_arch == "arm64" else "cffaedfe0c000001") if wrong_objc_architecture else ("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001"))',
+    'python_packages = [{"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},{"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},{"name":"pyobjc-framework-Quartz","version":"12.2.1","sha256":"de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9"},{"name":"pyobjc-framework-ApplicationServices","version":"12.2.1","sha256":"f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b"},{"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"}]',
+    'python_asset_arch = "aarch64" if python_arch == "arm64" else "x86_64"',
+    'python_source_url = f"https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-{python_asset_arch}-apple-darwin-install_only.tar.gz"',
+    'if wrong_python_source_url:',
+    '    python_source_url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz"',
+    'runtime_entries = []',
+    'def add_runtime_directory(relative_path, mode=0o755):',
+    '    runtime_entries.append({"path": relative_path, "type": "directory", "mode": mode, "include": True})',
+    'def add_runtime_file(relative_path, data, mode=0o644, include_in_zip=True, archive_data=None):',
+    '    entry = {"path": relative_path, "type": "file", "mode": mode, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "data": data, "include": include_in_zip, "archiveData": archive_data}',
+    '    if data[:4].hex() in {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}:',
+    '        entry["signedMachO"] = True',
+    '    runtime_entries.append(entry)',
+    'def add_runtime_symlink(relative_path, target):',
+    '    runtime_entries.append({"path": relative_path, "type": "symlink", "mode": 0o777, "target": target, "data": target.encode(), "include": True})',
+    'for runtime_directory in ["bin", "lib", "lib/python3.12", "lib/python3.12/encodings", "lib/python3.12/site-packages", "lib/python3.12/site-packages/ApplicationServices", "lib/python3.12/site-packages/Cocoa", "lib/python3.12/site-packages/CoreText", "lib/python3.12/site-packages/Foundation", "lib/python3.12/site-packages/HIServices", "lib/python3.12/site-packages/Quartz", "lib/python3.12/site-packages/Quartz/CoreGraphics", "lib/python3.12/site-packages/objc"]:',
+    '    add_runtime_directory(runtime_directory, 0o600 if non_traversable_python_directory and runtime_directory == "bin" else 0o755)',
+    'if wrong_python_launcher_architecture:',
+    '    add_runtime_file("bin/python3", wrong_python_launcher_header, 0o755)',
+    'elif regular_python_launcher:',
+    '    add_runtime_file("bin/python3", python_header, 0o755)',
+    'else:',
+    '    add_runtime_symlink("bin/python3", "python3.12")',
+    'add_runtime_file("bin/python3.12", python_header, 0o644 if non_executable_payload == "python" else 0o755, True, python_header + b"signed" if signed_python_mutation else None)',
+    'add_runtime_file("lib/python3.12/LICENSE.txt", python_license_bytes)',
+    'if not omit_stdlib_sentinel:',
+    '    add_runtime_file("lib/python3.12/encodings/__init__.py", b"# encodings fixture\\n")',
+    'add_runtime_file("lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
+    'if not omit_cocoa:',
+    '    add_runtime_file("lib/python3.12/site-packages/Cocoa/__init__.py", b"")',
+    'if not omit_core_text:',
+    '    add_runtime_file("lib/python3.12/site-packages/CoreText/__init__.py", b"")',
+    'add_runtime_file("lib/python3.12/site-packages/Quartz/__init__.py", b"")',
+    'add_runtime_file("lib/python3.12/site-packages/objc/__init__.py", b"")',
+    'add_runtime_file("lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", objc_header, 0o755)',
+    'if not omit_foundation_native:',
+    '    add_runtime_file("lib/python3.12/site-packages/Foundation/_Foundation.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/Quartz/CoreGraphics/_coregraphics.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/HIServices/_HIServices.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/CoreText/_manual.cpython-312-darwin.so", python_header, 0o755)',
+    'add_runtime_file("lib/python3.12/site-packages/runtime-only.py", b"runtime closure\\n", 0o644, not omit_inventoried_runtime_file)',
+    'inventory_entries = [{key: value for key, value in entry.items() if key not in {"data", "include", "archiveData"}} for entry in sorted(runtime_entries, key=lambda item: item["path"])]',
+    'inventory = {"schema": "evaos-python-runtime-inventory/v1", "entries": inventory_entries}',
+    'inventory_bytes = (json.dumps(inventory, indent=2) + "\\n").encode()',
+    'python_metadata = {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": python_source_url, "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256, "inventoryPath": "python-runtime-inventory.json", "inventorySha256": hashlib.sha256(inventory_bytes).hexdigest(), "inventoryEntryCount": len(inventory_entries)}',
+    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
+    'def write_regular(archive, name, data, mode=0o644):',
+    '    info = zipfile.ZipInfo(name)',
+    '    info.create_system = 3',
+    '    info.external_attr = (stat.S_IFREG | mode) << 16',
+    '    info.compress_type = zipfile.ZIP_DEFLATED',
+    '    archive.writestr(info, data)',
+    'def write_symlink(archive, name, target):',
+    '    info = zipfile.ZipInfo(name)',
+    '    info.create_system = 3',
+    '    info.external_attr = (stat.S_IFLNK | 0o777) << 16',
+    '    info.compress_type = zipfile.ZIP_DEFLATED',
+    '    archive.writestr(info, target.encode())',
+    'def write_directory(archive, name, mode=0o755):',
+    '    info = zipfile.ZipInfo(name.rstrip("/") + "/")',
+    '    info.create_system = 3',
+    '    info.external_attr = (stat.S_IFDIR | mode) << 16',
+    '    info.compress_type = zipfile.ZIP_STORED',
+    '    archive.writestr(info, b"")',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/evaos-desktop-bridge", "#!/usr/bin/env bash\\n")',
+    '    bridge_prefix = f"{app_root}/Contents/Resources/Bridge"',
+    '    write_regular(archive, f"{bridge_prefix}/evaos-desktop-bridge", b"#!/usr/bin/env bash\\n", 0o644 if non_executable_payload == "bridge" else 0o755)',
     '    if not omit_peekaboo:',
-    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/peekaboo", bytes.fromhex("cafebabe00000000"))',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"))',
+    '        write_regular(archive, f"{bridge_prefix}/bin/peekaboo", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "peekaboo" else 0o755)',
+    '    write_regular(archive, f"{bridge_prefix}/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "helper" else 0o755)',
+    '    write_directory(archive, f"{bridge_prefix}/python", 0o600 if non_traversable_python_root else 0o755)',
+    '    if normalized_python_entry_collision:',
+    '        write_regular(archive, f"{bridge_prefix}/python/bin", b"shadowed runtime entry")',
+    '    for entry in runtime_entries:',
+    '        if not entry["include"]:',
+    '            continue',
+    '        entry_name = f"{bridge_prefix}/python/{entry[\'path\']}"',
+    '        if entry["type"] == "directory":',
+    '            write_directory(archive, entry_name, entry["mode"])',
+    '        elif entry["type"] == "symlink":',
+    '            write_symlink(archive, entry_name, entry["target"])',
+    '        else:',
+    '            write_regular(archive, entry_name, entry["archiveData"] if entry["archiveData"] is not None else entry["data"], entry["mode"])',
+    '    write_regular(archive, f"{bridge_prefix}/python-runtime-inventory.json", inventory_bytes)',
+    '    write_regular(archive, f"{bridge_prefix}/licenses/CPython-LICENSE.txt", python_license_bytes)',
     '    if not omit_license:',
-    '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt", license_bytes)',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/manifest.json", json.dumps(manifest) + "\\n")',
+    '        write_regular(archive, f"{bridge_prefix}/licenses/Peekaboo-LICENSE.txt", license_bytes)',
+    '    write_regular(archive, f"{bridge_prefix}/manifest.json", (json.dumps(manifest) + "\\n").encode())',
+    '    if second_app_root:',
+    '        write_regular(archive, "Stale Workbench.app/Contents/Info.plist", b"stale")',
     '    for index in range(extra_entry_count):',
-    '        archive.writestr(f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", "x\\n")',
+    '        write_regular(archive, f"{app_root}/Contents/Resources/noise/entry-{index:05d}.txt", b"x\\n")',
   ].join('\n');
   execFileSync('python3', [
     '-c',
@@ -167,6 +302,24 @@ function writeMacosBridgeZip(
     options.omitLicense ? '1' : '0',
     options.sourceSha256 || '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
     options.manifestLicenseSha256 || '',
+    path.join(repoRoot, 'tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt'),
+    options.tamperPythonLicense ? '1' : '0',
+    options.wrongObjcArchitecture ? '1' : '0',
+    options.wrongPythonSourceUrl ? '1' : '0',
+    options.universalPythonRuntime ? '1' : '0',
+    options.omitCocoa ? '1' : '0',
+    options.omitCoreText ? '1' : '0',
+    options.wrongPythonLauncherArchitecture ? '1' : '0',
+    options.nonExecutablePayload || '',
+    options.omitFoundationNative ? '1' : '0',
+    options.omitInventoriedRuntimeFile ? '1' : '0',
+    options.secondAppRoot ? '1' : '0',
+    options.omitStdlibSentinel ? '1' : '0',
+    options.signedPythonMutation ? '1' : '0',
+    options.regularPythonLauncher ? '1' : '0',
+    options.nonTraversablePythonDirectory ? '1' : '0',
+    options.nonTraversablePythonRoot ? '1' : '0',
+    options.normalizedPythonEntryCollision ? '1' : '0',
   ]);
 }
 
@@ -412,10 +565,32 @@ function writeProofReleaseAssetsReference(
 }
 
 describe('evaOS beta release gate', () => {
+  it('recognizes little-endian fat Mach-O helpers during signing closure validation', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-after-sign-fat-mach-o-'));
+    try {
+      for (const [index, magic] of ['bebafeca', 'bfbafeca'].entries()) {
+        const helperPath = path.join(dir, `helper-${index}`);
+        fs.writeFileSync(helperPath, Buffer.from(`${magic}00000000`, 'hex'));
+        fs.chmodSync(helperPath, 0o755);
+        expect(afterSign.isMachOExecutable(helperPath)).toBe(true);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('pins the stable Peekaboo fallback asset and published digest', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/_build-reusable.yml'), 'utf8');
 
     expect(workflow).toContain("PEEKABOO_VERSION: '3.8.0'");
+    expect(workflow).toContain("PYTHON_RUNTIME_VERSION: '3.12.13'");
+    expect(workflow).toContain("PYTHON_RUNTIME_RELEASE: '20260510'");
+    expect(workflow).toContain(
+      "PYTHON_RUNTIME_ARM64_SHA256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17'"
+    );
+    expect(workflow).toContain(
+      "PYTHON_RUNTIME_X64_SHA256: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894'"
+    );
     expect(workflow).toContain("PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'");
     expect(workflow).toContain(
       "PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'"
@@ -428,11 +603,28 @@ describe('evaOS beta release gate', () => {
 
   it('verifies the pinned Peekaboo digest before exporting the packaging path', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/_build-reusable.yml'), 'utf8');
+    const runtimePrep = fs.readFileSync(
+      path.join(repoRoot, 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh'),
+      'utf8'
+    );
 
     expect(workflow).toContain('shasum -a 256 -c');
     expect(workflow).toContain('EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN');
     expect(workflow).toContain('EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256');
     expect(workflow).toContain('EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE');
+    expect(workflow).toContain('TARGET_ARCH: ${{ matrix.arch }}');
+    expect(workflow).toContain('scripts/prepareEvaosDesktopBridgePythonRuntime.sh "$TARGET_ARCH"');
+    expect(runtimePrep).toContain('EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=$runtime_dir');
+    expect(runtimePrep).toContain('EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256');
+    expect(runtimePrep).toContain(
+      'PYTHON_RUNTIME_LICENSE_SHA256:=3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf'
+    );
+    expect(runtimePrep).toContain('"$PYTHON_RUNTIME_LICENSE_SHA256" "$python_license_path"');
+    expect(runtimePrep).toContain('-I -m pip check');
+    expect(runtimePrep).toContain('distributions(path=[sys.argv[1]])');
+    expect(runtimePrep).toContain('installed_pyobjc');
+    expect(runtimePrep).toContain('expected_pyobjc');
+    expect(runtimePrep).toContain('import ApplicationServices, Cocoa, CoreText, Quartz');
   });
 
   it('requires functional smoke to verify the packaged Peekaboo version', () => {
@@ -441,6 +633,7 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('BUNDLED_PEEKABOO_SOURCE_SHA256');
     expect(workflow).toContain('BUNDLED_PEEKABOO_LICENSE_SHA256');
     expect(workflow).toContain('3.8.0');
+    expect(workflow).toContain('import ApplicationServices, Cocoa, CoreText, Quartz');
   });
 
   it('requires the functional-smoke app job itself to run on Sequoia', () => {
@@ -455,6 +648,14 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.collectFunctionalSmokeConfigIssues(decoyWorkflow)).toEqual([
       '.github/workflows/workbench-functional-smoke.yml: macos-arm64-app must run on macos-15',
     ]);
+
+    const mutableBridgeRefWorkflow = workflow.replace(
+      '[[ ! "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]',
+      'true'
+    );
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(mutableBridgeRefWorkflow)).toContain(
+      '.github/workflows/workbench-functional-smoke.yml: bridge ref must be a full immutable commit SHA'
+    );
   });
 
   it('detects strict public beta release mode', () => {
@@ -477,6 +678,16 @@ describe('evaOS beta release gate', () => {
     const helperDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin');
     const peekabooPath = path.join(helperDir, 'peekaboo');
     const connectorHelperPath = path.join(helperDir, 'evaos-connector-helper');
+    const pythonPath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'python', 'bin', 'python3.12');
+    const pythonDylibPath = path.join(
+      appPath,
+      'Contents',
+      'Resources',
+      'Bridge',
+      'python',
+      'lib',
+      'libpython3.12.dylib'
+    );
     const signedByExpectedTeam = {
       status: 0,
       stdout: '',
@@ -493,6 +704,12 @@ describe('evaOS beta release gate', () => {
     try {
       writeMachOFixture(peekabooPath);
       writeMachOFixture(connectorHelperPath);
+      writeMachOFixture(pythonPath);
+      fs.mkdirSync(path.dirname(pythonDylibPath), { recursive: true });
+      fs.writeFileSync(pythonDylibPath, Buffer.from('cffaedfe0c000001', 'hex'));
+      fs.chmodSync(pythonDylibPath, 0o644);
+
+      const signedRuntimeClosure = vi.fn(() => signedByExpectedTeam);
 
       expect(() =>
         afterSign.assertMacControlHelperSignatures(
@@ -501,9 +718,14 @@ describe('evaOS beta release gate', () => {
             EVAOS_MAC_CONTROL_HELPER_TEAM_ID: 'TC6MS3T6NN',
             EVAOS_MAC_CONTROL_HELPER_AUTHORITY: 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)',
           },
-          () => signedByExpectedTeam
+          signedRuntimeClosure
         )
       ).not.toThrow();
+      expect(signedRuntimeClosure).toHaveBeenCalledWith(
+        'codesign',
+        ['-dv', '--verbose=4', pythonDylibPath],
+        expect.any(Object)
+      );
 
       expect(() =>
         afterSign.assertMacControlHelperSignatures(
@@ -1437,7 +1659,7 @@ describe('evaOS beta release gate', () => {
     }
   });
 
-  it('rejects macOS release ZIPs without exact Peekaboo package proof', () => {
+  it('rejects macOS release ZIPs without exact Mac-control package proof', () => {
     const cases = [
       {
         name: 'missing binary',
@@ -1459,6 +1681,81 @@ describe('evaOS beta release gate', () => {
         options: { sourceSha256: '0'.repeat(64) },
         expected: /source digest/,
       },
+      {
+        name: 'self-consistent altered CPython license',
+        options: { tamperPythonLicense: true },
+        expected: /Python runtime provenance|CPython license digest/,
+      },
+      {
+        name: 'wrong PyObjC architecture',
+        options: { wrongObjcArchitecture: true },
+        expected: /PyObjC native runtime architecture/,
+      },
+      {
+        name: 'wrong Python source URL',
+        options: { wrongPythonSourceUrl: true },
+        expected: /Python runtime provenance/,
+      },
+      {
+        name: 'missing Cocoa payload',
+        options: { omitCocoa: true },
+        expected: /bundled PyObjC control modules/,
+      },
+      {
+        name: 'missing CoreText payload',
+        options: { omitCoreText: true },
+        expected: /bundled PyObjC control modules/,
+      },
+      {
+        name: 'wrong Python launcher architecture',
+        options: { wrongPythonLauncherArchitecture: true },
+        expected: /relocatable bundled Python launcher/,
+      },
+      {
+        name: 'regular-file Python launcher',
+        options: { regularPythonLauncher: true },
+        expected: /relocatable bundled Python launcher/,
+      },
+      {
+        name: 'non-traversable Python directory',
+        options: { nonTraversablePythonDirectory: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'non-traversable Python runtime root',
+        options: { nonTraversablePythonRoot: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'normalized Python entry collision',
+        options: { normalizedPythonEntryCollision: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'multiple app roots',
+        options: { secondAppRoot: true },
+        expected: /exactly one \.app root/,
+      },
+      ...(['bridge', 'peekaboo', 'helper', 'python'] as const).map((payload) => ({
+        name: `non-executable ${payload}`,
+        options: { nonExecutablePayload: payload },
+        expected: /executable ZIP mode/,
+      })),
+      {
+        name: 'missing inventoried runtime file',
+        options: { omitInventoriedRuntimeFile: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'self-consistent missing stdlib sentinel',
+        options: { omitStdlibSentinel: true },
+        expected: /Python stdlib sentinel/,
+      },
+      {
+        name: 'self-consistent missing Foundation native sentinel',
+        options: { omitFoundationNative: true },
+        expected: /PyObjC native sentinel/,
+      },
     ];
 
     for (const testCase of cases) {
@@ -1476,6 +1773,40 @@ describe('evaOS beta release gate', () => {
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
       }
+    }
+  }, 20_000);
+
+  it('accepts a universal Mach-O Python runtime containing the target slice', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-universal-python-'));
+    try {
+      const tag = writeMacosArm64ReleaseFixture(dir, { universalPythonRuntime: true });
+      expect(
+        releaseGate.verifyReleaseManifest(dir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a code-signed Mach-O runtime whose signature bytes changed after the pre-sign inventory', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-signed-python-'));
+    try {
+      const tag = writeMacosArm64ReleaseFixture(dir, { signedPythonMutation: true });
+      expect(
+        releaseGate.verifyReleaseManifest(dir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 

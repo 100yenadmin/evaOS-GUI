@@ -1,14 +1,22 @@
 import { createRequire } from 'node:module';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
+const cpythonLicense = readFileSync(join(__dirname, '../../fixtures/licenses/CPython-3.12.13-LICENSE.txt'));
 const afterPack = require('../../../scripts/afterPack.js') as {
   isMachOExecutable: (filePath: string) => boolean;
   verifyBundledResources: (resourcesDir: string, electronPlatformName: string, targetArch: string) => void;
-  verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string) => void;
+  verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string, targetArch?: string) => void;
+};
+const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
+  writePythonRuntimeInventory: (resourceDir: string) => {
+    inventoryPath: string;
+    inventorySha256: string;
+    inventoryEntryCount: number;
+  };
 };
 
 const tempDirs: string[] = [];
@@ -38,13 +46,15 @@ function writeExecutableScript(path: string): void {
 }
 
 function writeMachOFixture(path: string): void {
-  writeFileSync(path, Buffer.from('cffaedfe00000000', 'hex'));
+  writeFileSync(path, Buffer.from('cffaedfe0c000001', 'hex'));
   chmodSync(path, 0o755);
 }
 
 function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; nativeHelpers?: boolean } = {}): void {
   const bridgeDir = join(resourcesDir, 'Bridge');
   mkdirSync(join(bridgeDir, 'bin'), { recursive: true });
+  mkdirSync(join(bridgeDir, 'python', 'bin'), { recursive: true });
+  mkdirSync(join(bridgeDir, 'licenses'), { recursive: true });
   const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
   const peekabooPath = join(bridgeDir, 'bin', 'peekaboo');
   writeExecutableScript(bridgePath);
@@ -53,7 +63,62 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
   } else {
     writeExecutableScript(peekabooPath);
   }
-  writeFileSync(join(bridgeDir, 'manifest.json'), '{"placeholder":false}\n');
+  if (options.nativeHelpers) {
+    writeMachOFixture(join(bridgeDir, 'python', 'bin', 'python3.12'));
+  } else {
+    writeExecutableScript(join(bridgeDir, 'python', 'bin', 'python3.12'));
+  }
+  symlinkSync('python3.12', join(bridgeDir, 'python', 'bin', 'python3'));
+  mkdirSync(join(bridgeDir, 'python', 'lib', 'python3.12', 'encodings'), { recursive: true });
+  writeFileSync(join(bridgeDir, 'python', 'lib', 'python3.12', 'encodings', '__init__.py'), '# fixture\n');
+  writeFileSync(join(bridgeDir, 'licenses', 'CPython-LICENSE.txt'), cpythonLicense);
+  const inventoryMetadata = bridgeResource.writePythonRuntimeInventory(bridgeDir);
+  writeFileSync(
+    join(bridgeDir, 'manifest.json'),
+    JSON.stringify({
+      placeholder: false,
+      bundledTools: {
+        python: {
+          version: '3.12.13',
+          sourceSha256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
+          sourceUrl:
+            'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13+20260510-aarch64-apple-darwin-install_only.tar.gz',
+          architecture: 'arm64',
+          packages: [
+            {
+              name: 'pyobjc-core',
+              version: '12.2.1',
+              sha256: 'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b',
+            },
+            {
+              name: 'pyobjc-framework-Cocoa',
+              version: '12.2.1',
+              sha256: '28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080',
+            },
+            {
+              name: 'pyobjc-framework-Quartz',
+              version: '12.2.1',
+              sha256: 'de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9',
+            },
+            {
+              name: 'pyobjc-framework-ApplicationServices',
+              version: '12.2.1',
+              sha256: 'f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b',
+            },
+            {
+              name: 'pyobjc-framework-CoreText',
+              version: '12.2.1',
+              sha256: 'ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6',
+            },
+          ],
+          license: 'Python-2.0',
+          licensePath: 'licenses/CPython-LICENSE.txt',
+          licenseSha256: '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf',
+          ...inventoryMetadata,
+        },
+      },
+    }) + '\n'
+  );
   if (options.helper) {
     const helperPath = join(bridgeDir, 'bin', 'evaos-connector-helper');
     if (options.nativeHelpers) {
@@ -168,6 +233,16 @@ describe('afterPack bundled resource verification', () => {
     expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
   });
 
+  it('requires the self-contained Python runtime in macOS bridge resources', () => {
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true });
+    rmSync(join(resourcesDir, 'Bridge', 'python'), { force: true, recursive: true });
+
+    expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
+      /Bridge\/python\/bin\/python3/
+    );
+  });
+
   it('rejects script control helper resources for release-mode macOS builds', () => {
     const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
     const resourcesDir = makeTempResources();
@@ -176,7 +251,7 @@ describe('afterPack bundled resource verification', () => {
     try {
       process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
 
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).toThrow(
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
         /native Mach-O executable/
       );
     } finally {
@@ -195,7 +270,139 @@ describe('afterPack bundled resource verification', () => {
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'evaos-desktop-bridge'))).toBe(false);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
-      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin')).not.toThrow();
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).not.toThrow();
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a strict packaged runtime that changed after its inventory was written', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    writeFileSync(
+      join(resourcesDir, 'Bridge', 'python', 'lib', 'python3.12', 'encodings', '__init__.py'),
+      '# tampered\n'
+    );
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /inventory.*mismatch/i
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('requires a target architecture for release-mode macOS bridge validation', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() =>
+        afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', undefined as unknown as string)
+      ).toThrow(/target architecture is required/);
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects bundled Python native extensions without the target architecture', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const nativeExtension = join(
+      resourcesDir,
+      'Bridge',
+      'python',
+      'lib',
+      'python3.12',
+      'site-packages',
+      'objc',
+      '_objc.cpython-312-darwin.so'
+    );
+    mkdirSync(join(nativeExtension, '..'), { recursive: true });
+    writeFileSync(nativeExtension, Buffer.from('cffaedfe07000001', 'hex'));
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /native runtime does not contain target architecture arm64/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a bundled Python source URL that does not name the pinned architecture asset', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const manifestPath = join(resourcesDir, 'Bridge', 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.bundledTools.python.sourceUrl =
+      'https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz';
+    writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /pinned bundled Python runtime provenance/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a bundled Python runtime that does not match the target architecture', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'x64')).toThrow(
+        /target architecture x64/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a non-relocatable bundled Python launcher symlink', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const pythonPath = join(resourcesDir, 'Bridge', 'python', 'bin', 'python3');
+    rmSync(pythonPath);
+    symlinkSync(join(resourcesDir, 'Bridge', 'python', 'bin', 'python3.12'), pythonPath);
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /launcher symlink is not relocatable/
+      );
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a regular-file bundled Python launcher in a strict release', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    const pythonPath = join(resourcesDir, 'Bridge', 'python', 'bin', 'python3');
+    rmSync(pythonPath);
+    writeMachOFixture(pythonPath);
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /launcher symlink is not relocatable/
+      );
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
     }

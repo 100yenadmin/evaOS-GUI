@@ -41,6 +41,10 @@ env:
   PEEKABOO_SHA256: '5be06117ed861ac7a87ea1d1e552122db4231bf2cd618ec516d77c66acd39620'
   PEEKABOO_BINARY_SHA256: '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383'
   PEEKABOO_LICENSE_SHA256: '62316704df7426e5a79d2827ff8aca36e9abb3a73b8e68557030749ebefec667'
+  PYTHON_RUNTIME_VERSION: '3.12.13'
+  PYTHON_RUNTIME_RELEASE: '20260510'
+  PYTHON_RUNTIME_ARM64_SHA256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17'
+  PYTHON_RUNTIME_X64_SHA256: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894'
   WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref || vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
   WORKBENCH_SMOKE_REF: ${{ inputs.ref }}
 
@@ -65,6 +69,15 @@ jobs:
           SHORT="$(git rev-parse --short HEAD)"
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate immutable bridge ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::Workbench functional smoke requires a full immutable evaos-desktop-bridge commit SHA."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -149,6 +162,12 @@ jobs:
             echo "EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256"
           } >> "$GITHUB_ENV"
 
+      - name: Install pinned desktop bridge Python runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/prepareEvaosDesktopBridgePythonRuntime.sh arm64 "$GITHUB_ENV"
+
       - name: evaOS guardrail audit
         if: ${{ inputs.run_guardrails }}
         shell: bash
@@ -188,6 +207,8 @@ jobs:
           BRIDGE_HELPER="$APP_PATH/Contents/Resources/Bridge/bin/evaos-connector-helper"
           BRIDGE_PEEKABOO_LICENSE="$APP_PATH/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt"
           BRIDGE_MANIFEST="$APP_PATH/Contents/Resources/Bridge/manifest.json"
+          BRIDGE_PYTHON="$APP_PATH/Contents/Resources/Bridge/python/bin/python3"
+          BRIDGE_PYTHON_LICENSE="$APP_PATH/Contents/Resources/Bridge/licenses/CPython-LICENSE.txt"
           AIONCORE_DIR="$APP_PATH/Contents/Resources/bundled-aioncore"
           HUB_DIR="$APP_PATH/Contents/Resources/hub"
 
@@ -196,6 +217,8 @@ jobs:
           test -x "$BRIDGE_HELPER"
           test -f "$BRIDGE_PEEKABOO_LICENSE"
           test -f "$BRIDGE_MANIFEST"
+          test -x "$BRIDGE_PYTHON"
+          test -f "$BRIDGE_PYTHON_LICENSE"
           test -d "$AIONCORE_DIR"
           test -d "$HUB_DIR"
 
@@ -209,6 +232,8 @@ jobs:
           BUNDLED_PEEKABOO_LICENSE_SHA256="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.peekaboo?.licenseSha256 || 'unknown')" "$BRIDGE_MANIFEST")"
           PACKAGED_PEEKABOO_SHA256="$(shasum -a 256 "$BRIDGE_PEEKABOO" | awk '{print $1}')"
           ACTUAL_PEEKABOO_LICENSE_SHA256="$(shasum -a 256 "$BRIDGE_PEEKABOO_LICENSE" | awk '{print $1}')"
+          BUNDLED_PYTHON_VERSION="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.python?.version || 'unknown')" "$BRIDGE_MANIFEST")"
+          BUNDLED_PYTHON_SOURCE_SHA256="$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(m.bundledTools?.python?.sourceSha256 || 'unknown')" "$BRIDGE_MANIFEST")"
 
           if [ "$BRIDGE_VERSION" != "$WORKBENCH_SMOKE_BRIDGE_REF" ]; then
             echo "::error::Bundled bridge manifest ($BRIDGE_VERSION) does not match requested bridge ref ($WORKBENCH_SMOKE_BRIDGE_REF)"
@@ -238,6 +263,14 @@ jobs:
             echo "::error::Bundled Peekaboo license digest does not match the bridge manifest."
             exit 1
           fi
+          if [ "$BUNDLED_PYTHON_VERSION" != "$PYTHON_RUNTIME_VERSION" ] || [ "$BUNDLED_PYTHON_SOURCE_SHA256" != "$PYTHON_RUNTIME_ARM64_SHA256" ]; then
+            echo "::error::Bundled Python runtime identity does not match the pinned arm64 release."
+            exit 1
+          fi
+          test "$(readlink "$BRIDGE_PYTHON")" = python3.12
+          test "$(lipo -archs "$APP_PATH/Contents/Resources/Bridge/python/bin/python3.12")" = arm64
+          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz'
+          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE" status --json | jq -e '.ok == true or .ok == false' >/dev/null
 
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_OUTPUT"

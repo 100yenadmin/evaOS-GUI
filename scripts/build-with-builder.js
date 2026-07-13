@@ -10,10 +10,12 @@
  * - Packaging only: use --pack-only to skip electron-builder distributable creation
  */
 
-const { execSync, spawnSync } = require('child_process');
+const { execFileSync, execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
+const { clearDmgRetryCompletionMarkersInDirectory, isDmgRetryEligible } = require('./dmgRetryEligibility');
 
 // DMG retry logic for macOS: detects DMG creation failures by checking artifacts
 // (.app exists but .dmg missing) and retries only the DMG step using
@@ -298,6 +300,8 @@ function cleanupGeneratedPackageOutputs({ preserveViteOutputs = false } = {}) {
     'resources/bundled-aioncore',
     'resources/hub',
     'resources/Bridge',
+    'resources/Bridge-arm64',
+    'resources/Bridge-x64',
   ]) {
     removeTarget(relativePath);
   }
@@ -332,9 +336,79 @@ function createDmgWithPrepackaged(appDir, targetArch) {
   );
 }
 
-function buildWithDmgRetry(cmd, targetArch) {
+function installPreparedRuntimeEnvironment(envFile) {
+  const allowedKeys = new Set([
+    'EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_VERSION',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_SOURCE_URL',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_ARCH',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_LICENSE_SHA256',
+    'EVAOS_REQUIRED_PYTHON_RUNTIME_PACKAGES_JSON',
+  ]);
+  const preparedValues = new Map();
+  const lines = fs.readFileSync(envFile, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    if (!line) continue;
+    const separator = line.indexOf('=');
+    if (separator <= 0) throw new Error('Bundled Python runtime preparation emitted invalid environment metadata.');
+    const key = line.slice(0, separator);
+    if (!allowedKeys.has(key)) {
+      throw new Error(`Bundled Python runtime preparation emitted unexpected environment metadata key: ${key}`);
+    }
+    if (preparedValues.has(key)) {
+      throw new Error(`Bundled Python runtime preparation emitted duplicate environment metadata key: ${key}`);
+    }
+    preparedValues.set(key, line.slice(separator + 1));
+  }
+
+  const previousValues = new Map();
+  for (const [key, value] of preparedValues.entries()) {
+    previousValues.set(key, {
+      exists: Object.prototype.hasOwnProperty.call(process.env, key),
+      value: process.env[key],
+    });
+    process.env[key] = value;
+  }
+  return () => {
+    for (const [key, previous] of previousValues.entries()) {
+      if (previous.exists && typeof previous.value === 'string') process.env[key] = previous.value;
+      else delete process.env[key];
+    }
+  };
+}
+
+function withDesktopBridgePythonRuntime(targetArch, operation, { allowExistingRuntime = true } = {}) {
+  // A caller-supplied runtime is caller-owned: use it for the copy operation,
+  // but never delete or otherwise assume lifecycle ownership of that path.
+  if ((allowExistingRuntime && process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR) || process.platform !== 'darwin') {
+    return operation();
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-python-runtime-'));
+  const envFile = path.join(tempRoot, 'runtime.env');
+  let restoreEnvironment = () => {};
+  try {
+    execFileSync(path.join(__dirname, 'prepareEvaosDesktopBridgePythonRuntime.sh'), [targetArch, envFile], {
+      stdio: 'inherit',
+      env: { ...process.env, RUNNER_TEMP: tempRoot },
+    });
+    restoreEnvironment = installPreparedRuntimeEnvironment(envFile);
+    return operation();
+  } finally {
+    restoreEnvironment();
+    try {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    } catch (cleanupError) {
+      console.warn(`Failed to clean temporary desktop bridge Python runtime ${tempRoot}: ${cleanupError.message}`);
+    }
+  }
+}
+
+function buildWithDmgRetry(cmd, targetArch, { multiArch = false } = {}) {
   const isMac = process.platform === 'darwin';
   const outDir = path.resolve(__dirname, '../out');
+  clearDmgRetryCompletionMarkersInDirectory(outDir);
 
   try {
     execSync(cmd, { stdio: 'inherit', shell: process.platform === 'win32' });
@@ -344,7 +418,13 @@ function buildWithDmgRetry(cmd, targetArch) {
     const appDir = isMac ? findAppDir(outDir) : null;
     if (!appDir || dmgExists(outDir)) throw error;
 
-    // .app exists but no .dmg → DMG creation failed
+    // A partial .app can exist when afterPack or another packaging hook failed.
+    // Retrying that bundle as --prepackaged would turn a real validation failure
+    // into a false-green DMG, so require successful completion of both the
+    // afterPack resource gate and the afterSign trust gate.
+    if (!isDmgRetryEligible(appDir, { multiArch })) throw error;
+
+    // Verified .app exists but no .dmg → DMG creation failed
     console.log('\n🔄 Build failed during DMG creation (.app exists, .dmg missing)');
     console.log('   Retrying DMG creation with --prepackaged...');
 
@@ -566,22 +646,42 @@ try {
   const { prepareAioncore, readManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
   const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
   const projectRoot = path.resolve(__dirname, '..');
-  prepareAioncore({
-    projectRoot,
-    platform: process.platform,
-    arch: targetArch,
-    version: resolveAioncoreVersion(projectRoot),
-    env: process.env,
-    managedResourcesBundle: readManagedResourcesBundle({ env: process.env }),
-  });
+  const isMacBuild = builderArgs.includes('--mac') || builderArgs.includes('--all');
+  const resourceArches = isMacBuild && multiArch ? archArgs : [targetArch];
+  for (const resourceArch of resourceArches) {
+    prepareAioncore({
+      projectRoot,
+      platform: process.platform,
+      arch: resourceArch,
+      version: resolveAioncoreVersion(projectRoot),
+      env: process.env,
+      managedResourcesBundle: readManagedResourcesBundle({ env: process.env }),
+    });
+  }
 
   // 6. Prepare hub resources (index.json + extension zips for offline fallback)
   execSync('node scripts/prepareHubResources.js', { stdio: 'inherit', env: process.env });
 
   // 7. Prepare the bundled evaOS desktop bridge for macOS Workbench pairing/control parity.
   // The packaged app must resolve Contents/Resources/Bridge/evaos-desktop-bridge before Homebrew.
-  if (builderArgs.includes('--mac') || builderArgs.includes('--all')) {
-    execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env });
+  if (isMacBuild) {
+    for (const resourceArch of resourceArches) {
+      const previousResourceDir = process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR;
+      process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR = path.join(projectRoot, 'resources', `Bridge-${resourceArch}`);
+      try {
+        withDesktopBridgePythonRuntime(
+          resourceArch,
+          () => execSync('node scripts/prepareEvaosDesktopBridgeResource.js', { stdio: 'inherit', env: process.env }),
+          { allowExistingRuntime: !multiArch }
+        );
+      } finally {
+        if (typeof previousResourceDir === 'string') {
+          process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR = previousResourceDir;
+        } else {
+          delete process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR;
+        }
+      }
+    }
   }
 
   // 8. 运行 electron-builder 生成分发包（DMG/ZIP/EXE等）
@@ -668,7 +768,7 @@ try {
 
   const builderCommand = `bunx electron-builder --config packages/desktop/electron-builder.yml ${builderArgs} ${archFlag} ${nsisInclude} ${publishArg}`;
   try {
-    buildWithDmgRetry(builderCommand, targetArch);
+    buildWithDmgRetry(builderCommand, targetArch, { multiArch });
     if (process.platform === 'darwin' && (builderArgs.includes('--mac') || builderArgs.includes('--all'))) {
       require('./evaosFinalizeMacDmg').finalizeMacDmgs({ outDir, env: process.env });
     }
@@ -699,7 +799,7 @@ try {
     cleanupWindowsPackOutput();
 
     try {
-      buildWithDmgRetry(`${builderCommand} --config.win.signAndEditExecutable=false`, targetArch);
+      buildWithDmgRetry(`${builderCommand} --config.win.signAndEditExecutable=false`, targetArch, { multiArch });
     } catch (retryError) {
       const retryFailure = formatExecError(retryError);
       throw new Error(

@@ -17,6 +17,12 @@
 
 ### Pristine Mac Enrollment
 
+- Bundles a pinned, checksum-verified CPython 3.12 runtime with the desktop
+  bridge, including the pinned PyObjC frameworks used by direct Accessibility
+  control, so connector setup no longer depends on Homebrew, a system Python,
+  or a customer-installed Python package; release packaging fails closed if
+  the runtime, architecture, dependency provenance, native signing closure, or
+  license notices are missing.
 - Adds an authenticated, customer-scoped Workbench action for the typed
   `unenrolled` secure-network state; wrong-control-plane, ACL, missing-client,
   and incomplete-evidence states remain fail closed.

@@ -7,6 +7,7 @@ const {
   getEnvValue,
   isStrictPublicBetaReleaseEnv,
 } = require('./evaosBetaReleaseGate');
+const { withAfterSignCompletion } = require('./dmgRetryEligibility');
 
 const AMBIENT_APPLE_API_ENV_KEYS = [
   'APPLE_API_KEY',
@@ -23,7 +24,16 @@ const DEFAULT_APP_NOTARY_COMMAND_PROCESS_TIMEOUT_MS = 90 * 1000;
 const DEFAULT_APP_NOTARY_POLL_INTERVAL_MS = 15 * 1000;
 const DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_EXPECTED_TEAM_ID = 'TC6MS3T6NN';
-const MACHO_MAGICS = new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'cafebabf']);
+const MACHO_MAGICS = new Set([
+  'feedface',
+  'feedfacf',
+  'cefaedfe',
+  'cffaedfe',
+  'cafebabe',
+  'bebafeca',
+  'cafebabf',
+  'bfbafeca',
+]);
 const MAC_CONTROL_HELPER_RELATIVE_PATHS = [
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'peekaboo'),
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-connector-helper'),
@@ -159,12 +169,20 @@ function getAppTrustProcessTimeoutMs(env = process.env) {
   return getPositiveProcessTimeoutMs(env, 'EVAOS_APP_TRUST_PROCESS_TIMEOUT_MS', DEFAULT_APP_TRUST_PROCESS_TIMEOUT_MS);
 }
 
-function isMachOExecutable(filePath) {
+function isMachOFile(filePath) {
   if (!fs.existsSync(filePath)) return false;
   try {
-    fs.accessSync(filePath, fs.constants.X_OK);
     const header = fs.readFileSync(filePath, { encoding: null, flag: 'r' }).subarray(0, 4).toString('hex');
     return MACHO_MAGICS.has(header);
+  } catch {
+    return false;
+  }
+}
+
+function isMachOExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return isMachOFile(filePath);
   } catch {
     return false;
   }
@@ -196,11 +214,16 @@ function codeSignatureDetails(filePath, runProcess = spawnSync) {
   return output;
 }
 
-function assertMacControlHelperSignature(filePath, env = process.env, runProcess = spawnSync) {
+function assertMacControlHelperSignature(
+  filePath,
+  env = process.env,
+  runProcess = spawnSync,
+  requireExecutable = true
+) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Strict evaOS beta release is missing bundled Mac-control helper: ${filePath}`);
   }
-  if (!isMachOExecutable(filePath)) {
+  if (!(requireExecutable ? isMachOExecutable(filePath) : isMachOFile(filePath))) {
     throw new Error(
       `Strict evaOS beta release requires bundled Mac-control helper to be a native Mach-O executable: ${filePath}`
     );
@@ -222,6 +245,32 @@ function assertMacControlHelperSignature(filePath, env = process.env, runProcess
 function assertMacControlHelperSignatures(appPath, env = process.env, runProcess = spawnSync) {
   for (const relativePath of MAC_CONTROL_HELPER_RELATIVE_PATHS) {
     assertMacControlHelperSignature(path.join(appPath, relativePath), env, runProcess);
+  }
+
+  const pythonRuntimeDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'python');
+  if (!fs.existsSync(pythonRuntimeDir)) {
+    throw new Error(`Strict evaOS beta release is missing bundled Python runtime: ${pythonRuntimeDir}`);
+  }
+  const runtimeMachOPaths = [];
+  const pending = [pythonRuntimeDir];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (entry.isFile() && isMachOFile(entryPath)) {
+        runtimeMachOPaths.push(entryPath);
+      }
+    }
+  }
+  if (runtimeMachOPaths.length === 0) {
+    throw new Error(
+      `Strict evaOS beta release bundled Python runtime has no native Mach-O closure: ${pythonRuntimeDir}`
+    );
+  }
+  for (const runtimePath of runtimeMachOPaths) {
+    assertMacControlHelperSignature(runtimePath, env, runProcess, false);
   }
 }
 
@@ -470,12 +519,8 @@ function notarizeAndStapleApp(appPath, notarizationOptions, env = process.env, r
   }
 }
 
-async function afterSign(context) {
-  const { electronPlatformName, appOutDir } = context;
-
-  if (electronPlatformName !== 'darwin') {
-    return;
-  }
+async function performMacAfterSign(context) {
+  const { appOutDir } = context;
   const appName = context.packager.appInfo.productFilename;
   const appBundleId = context.packager.appInfo.id;
   const appPath = `${appOutDir}/${appName}.app`;
@@ -496,6 +541,7 @@ async function afterSign(context) {
       console.log(`Ad-hoc signature applied successfully to ${appName}`);
     } catch (adHocError) {
       console.error('Ad-hoc signing failed:', adHocError.message);
+      throw adHocError;
     }
     return;
   }
@@ -534,6 +580,16 @@ async function afterSign(context) {
     console.error('Notarization failed:', error);
     throw error;
   }
+}
+
+async function afterSign(context) {
+  const { electronPlatformName, appOutDir } = context;
+
+  if (electronPlatformName !== 'darwin') {
+    return;
+  }
+
+  return withAfterSignCompletion(appOutDir, () => performMacAfterSign(context));
 }
 
 module.exports = afterSign;
