@@ -49,6 +49,20 @@ import { EVAOS_DESKTOP_SESSION_IMPORTED_EVENT } from '@renderer/hooks/system/use
 import { openExternalUrl } from '@/renderer/utils/platform';
 import { evaosBroker } from '@/common/adapter/ipcBridge';
 
+const MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS: ReadonlySet<IEvaosNativeCompanionActionRequest['action']> = new Set([
+  'connector_start',
+  'connector_stop',
+  'setup_check',
+  'ensure_customer_mac_connector_grant',
+  'control_status',
+  'control_start',
+  'control_stop',
+  'kill_switch',
+  'audit_tail',
+  'create_pairing_prompt',
+  'secure_network_enroll',
+]);
+
 const NativeCompanionPage: React.FC = () => {
   const { t } = useTranslation();
   const layout = useLayoutContext();
@@ -156,6 +170,7 @@ const NativeCompanionPage: React.FC = () => {
       repairControlToolsTitle: t('evaos.nativeCompanion.onboarding.repairControlToolsTitle'),
       repairControlToolsDetail: t('evaos.nativeCompanion.onboarding.repairControlToolsDetail'),
       clientMissingTitle: t('evaos.nativeCompanion.onboarding.clientMissingTitle'),
+      clientMissingStateTitle: t('evaos.nativeCompanion.onboarding.clientMissingStateTitle'),
       clientMissingDetail: t('evaos.nativeCompanion.onboarding.clientMissingDetail'),
       clientStoppedTitle: t('evaos.nativeCompanion.onboarding.clientStoppedTitle'),
       clientStoppedDetail: t('evaos.nativeCompanion.onboarding.clientStoppedDetail'),
@@ -206,6 +221,7 @@ const NativeCompanionPage: React.FC = () => {
     roles: customerContext.roles,
     isOperator,
   });
+  const showOperatorDetails = Boolean(isOperator);
   const agentPairingStatus = effectiveAgentPairingStatus(selectedPairingStatus, currentActionResult);
   const runtimeToolReadiness = selectedPairingStatus?.runtimeToolReadiness ?? 'not_ready';
   const shouldShowAgentProof = selectedPairingStatus?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
@@ -247,12 +263,7 @@ const NativeCompanionPage: React.FC = () => {
       setActionInFlight(request.action);
       setCopyMessage(null);
       setTakeoverCueWarning(null);
-      const targetsMacControlCustomer =
-        request.action === 'connector_start' ||
-        request.action === 'create_pairing_prompt' ||
-        request.action === 'secure_network_enroll' ||
-        request.action === 'ensure_customer_mac_connector_grant' ||
-        request.action === 'setup_check';
+      const targetsMacControlCustomer = MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS.has(request.action);
       const requestCustomerId =
         request.customerId ?? (targetsMacControlCustomer ? selectedPairingCustomerId : selectedCustomerId);
       if (targetsMacControlCustomer && requestCustomerId) {
@@ -455,19 +466,23 @@ const NativeCompanionPage: React.FC = () => {
               Check Mac control readiness for evaOS and Hermes. iPhone Mirroring is deferred for this Mac release.
             </p>
           </div>
-          <div className='flex flex-wrap items-center gap-8px'>
-            <Tag color={tagColorForTone(viewModel.statusTone)}>{viewModel.statusLabel}</Tag>
-            <Tag color={violations.length === 0 ? 'green' : 'orange'}>
-              {violations.length === 0 ? 'Boundary clean' : 'Boundary blocked'}
-            </Tag>
-          </div>
+          {showOperatorDetails ? (
+            <div className='flex flex-wrap items-center gap-8px'>
+              <Tag color={tagColorForTone(viewModel.statusTone)}>{viewModel.statusLabel}</Tag>
+              <Tag color={violations.length === 0 ? 'green' : 'orange'}>
+                {violations.length === 0 ? 'Boundary clean' : 'Boundary blocked'}
+              </Tag>
+            </div>
+          ) : null}
         </header>
 
-        <section className='grid grid-cols-1 gap-10px md:grid-cols-3' aria-label='Mac control readiness'>
-          {viewModel.readinessStrip.map((item) => (
-            <ReadinessTile key={item.label} item={item} />
-          ))}
-        </section>
+        {showOperatorDetails ? (
+          <section className='grid grid-cols-1 gap-10px md:grid-cols-3' aria-label='Mac control readiness'>
+            {viewModel.readinessStrip.map((item) => (
+              <ReadinessTile key={item.label} item={item} />
+            ))}
+          </section>
+        ) : null}
 
         <section
           data-testid='native-companion-repair-card'
@@ -475,10 +490,12 @@ const NativeCompanionPage: React.FC = () => {
         >
           <div className='flex flex-wrap items-start justify-between gap-12px'>
             <div className='min-w-0'>
-              <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>Mac control repair</p>
+              {showOperatorDetails ? (
+                <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>Mac control repair</p>
+              ) : null}
               <h2 className='m-0 mt-4px text-20px font-semibold leading-26px text-t-primary'>{viewModel.title}</h2>
               <p className='m-0 mt-6px max-w-760px text-13px leading-20px text-t-secondary'>{viewModel.summary}</p>
-              {viewModel.reportedSummary && (
+              {showOperatorDetails && viewModel.reportedSummary && (
                 <p className='m-0 mt-6px max-w-760px text-12px leading-18px text-t-secondary'>
                   Connector report: {viewModel.reportedSummary}
                 </p>
@@ -513,20 +530,28 @@ const NativeCompanionPage: React.FC = () => {
             </div>
           </div>
 
-          <div className='mt-16px grid grid-cols-1 gap-10px md:grid-cols-4'>
-            {viewModel.repairSteps.map((step, index) => (
-              <RepairStep key={step.title} step={step} index={index + 1} />
-            ))}
-          </div>
+          {showOperatorDetails ? (
+            <div className='mt-16px grid grid-cols-1 gap-10px md:grid-cols-4'>
+              {viewModel.repairSteps.map((step, index) => (
+                <RepairStep key={step.title} step={step} index={index + 1} />
+              ))}
+            </div>
+          ) : null}
 
           <div className='mt-14px rounded-8px border border-solid border-[var(--color-border-2)] bg-fill-2 p-12px'>
             <div className='flex flex-wrap items-start justify-between gap-10px'>
               <div className='min-w-0'>
-                <h3 className='m-0 text-14px font-semibold leading-20px text-t-primary'>Guided Mac control setup</h3>
-                <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
-                  Workbench starts the local connector, then connects Mac control to the selected account-scoped
-                  evaOS/OpenClaw and Hermes agent context.
-                </p>
+                {showOperatorDetails ? (
+                  <>
+                    <h3 className='m-0 text-14px font-semibold leading-20px text-t-primary'>
+                      Guided Mac control setup
+                    </h3>
+                    <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
+                      Workbench starts the local connector, then connects Mac control to the selected account-scoped
+                      evaOS/OpenClaw and Hermes agent context.
+                    </p>
+                  </>
+                ) : null}
                 <MacPairingTargetControl
                   targets={pairableMacControlTargets}
                   selectedCustomerId={selectedPairingCustomerId}
@@ -534,28 +559,34 @@ const NativeCompanionPage: React.FC = () => {
                   onChange={handlePairingTargetChange}
                 />
               </div>
-              <Tag color={guidedSetupReady ? 'green' : 'orange'}>
-                {guidedSetupReady
-                  ? 'End-to-end ready'
-                  : guidedGrantActive
-                    ? 'Grant active; test needed'
-                    : 'Setup needed'}
-              </Tag>
+              {showOperatorDetails ? (
+                <Tag color={guidedSetupReady ? 'green' : 'orange'}>
+                  {guidedSetupReady
+                    ? 'End-to-end ready'
+                    : guidedGrantActive
+                      ? 'Grant active; test needed'
+                      : 'Setup needed'}
+                </Tag>
+              ) : null}
             </div>
 
             <div className='mt-12px rounded-8px bg-fill-1 p-12px'>
-              <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>
-                Step {viewModel.nextAction.step} of {viewModel.nextAction.totalSteps}
-              </p>
-              <div className='mt-6px flex flex-wrap items-start justify-between gap-10px'>
-                <div className='min-w-0'>
-                  <h4 className='m-0 text-16px font-semibold leading-22px text-t-primary'>
-                    {viewModel.nextAction.title}
-                  </h4>
-                  <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
-                    {viewModel.nextAction.detail}
+              {showOperatorDetails ? (
+                <>
+                  <p className='m-0 text-12px font-semibold uppercase tracking-1px text-t-tertiary'>
+                    Step {viewModel.nextAction.step} of {viewModel.nextAction.totalSteps}
                   </p>
-                </div>
+                  <div className='mt-6px min-w-0'>
+                    <h4 className='m-0 text-16px font-semibold leading-22px text-t-primary'>
+                      {viewModel.nextAction.title}
+                    </h4>
+                    <p className='m-0 mt-4px max-w-720px text-12px leading-18px text-t-secondary'>
+                      {viewModel.nextAction.detail}
+                    </p>
+                  </div>
+                </>
+              ) : null}
+              <div className={showOperatorDetails ? 'mt-6px flex justify-end' : 'flex justify-end'}>
                 <Button
                   data-testid='native-companion-next-action'
                   type='primary'
@@ -574,7 +605,7 @@ const NativeCompanionPage: React.FC = () => {
               </div>
             </div>
 
-            {shouldShowAgentProof ? (
+            {showOperatorDetails && shouldShowAgentProof ? (
               <div className='mt-12px grid grid-cols-1 gap-10px md:grid-cols-2' aria-label='Agent connector proof'>
                 <AgentProofCard
                   title='Test with evaOS / OpenClaw'
@@ -589,17 +620,19 @@ const NativeCompanionPage: React.FC = () => {
               </div>
             ) : null}
 
-            <Button
-              type='text'
-              size='small'
-              aria-expanded={connectorActionsOpen}
-              className='mt-12px !px-0 text-12px font-semibold leading-18px text-t-secondary hover:text-t-primary'
-              onClick={() => setConnectorActionsOpen((open) => !open)}
-            >
-              {connectorActionsOpen ? 'Hide advanced connector controls' : 'Show advanced connector controls'}
-            </Button>
+            {showOperatorDetails ? (
+              <Button
+                type='text'
+                size='small'
+                aria-expanded={connectorActionsOpen}
+                className='mt-12px !px-0 text-12px font-semibold leading-18px text-t-secondary hover:text-t-primary'
+                onClick={() => setConnectorActionsOpen((open) => !open)}
+              >
+                {connectorActionsOpen ? 'Hide advanced connector controls' : 'Show advanced connector controls'}
+              </Button>
+            ) : null}
 
-            {connectorActionsOpen ? (
+            {showOperatorDetails && connectorActionsOpen ? (
               <div className='mt-12px flex flex-wrap gap-8px' aria-label='Advanced Workbench connector actions'>
                 {connectorStartAvailable ? (
                   <Button
@@ -643,36 +676,15 @@ const NativeCompanionPage: React.FC = () => {
                 </Button>
                 <Button
                   type='secondary'
-                  loading={actionInFlight === 'control_stop'}
-                  onClick={() => void handleRunAction({ action: 'control_stop' })}
-                >
-                  Stop Agent Control
-                </Button>
-                <Button
-                  type='secondary'
-                  loading={actionInFlight === 'kill_switch'}
-                  onClick={() => void handleRunAction({ action: 'kill_switch' })}
-                >
-                  Kill Switch
-                </Button>
-                <Button
-                  type='secondary'
                   loading={actionInFlight === 'audit_tail'}
                   onClick={() => void handleRunAction({ action: 'audit_tail' })}
                 >
                   Show Audit Tail
                 </Button>
-                <Button
-                  type='secondary'
-                  loading={actionInFlight === 'connector_stop'}
-                  onClick={() => void handleRunAction({ action: 'connector_stop' })}
-                >
-                  Stop Mac Access
-                </Button>
               </div>
             ) : null}
 
-            {currentActionResult ? (
+            {showOperatorDetails && currentActionResult ? (
               <div data-testid='native-companion-action-result' className='mt-12px rounded-8px bg-fill-1 p-12px'>
                 <div className='flex flex-wrap items-center gap-8px'>
                   <Tag color={tagColorForActionStatus(currentActionResult.status)}>{currentActionResult.status}</Tag>
@@ -712,9 +724,39 @@ const NativeCompanionPage: React.FC = () => {
                 ) : null}
               </div>
             ) : null}
+
+            <div className='mt-12px flex flex-wrap gap-8px' aria-label='Mac control safety controls'>
+              <Button
+                type='secondary'
+                disabled={selectedPairingStatus?.controlSession?.active !== true}
+                loading={actionInFlight === 'control_stop'}
+                onClick={() => void handleRunAction({ action: 'control_stop' })}
+              >
+                Stop Agent Control
+              </Button>
+              <Button
+                type='secondary'
+                disabled={
+                  selectedPairingStatus?.customerMac.killSwitchAvailable !== true &&
+                  selectedPairingStatus?.controlSession?.active !== true
+                }
+                loading={actionInFlight === 'kill_switch'}
+                onClick={() => void handleRunAction({ action: 'kill_switch' })}
+              >
+                Kill Switch
+              </Button>
+              <Button
+                type='secondary'
+                disabled={selectedPairingStatus?.connectorService?.running !== true}
+                loading={actionInFlight === 'connector_stop'}
+                onClick={() => void handleRunAction({ action: 'connector_stop' })}
+              >
+                Stop Mac Access
+              </Button>
+            </div>
           </div>
 
-          {viewModel.statusTone !== 'ready' ? (
+          {viewModel.statusTone !== 'ready' && viewModel.nextAction.repairAction !== 'secure_network_install' ? (
             <div className='mt-14px flex flex-wrap gap-8px' aria-label='Mac repair support'>
               <Button
                 type='secondary'
@@ -726,9 +768,11 @@ const NativeCompanionPage: React.FC = () => {
             </div>
           ) : null}
 
-          <div className='mt-14px rounded-8px bg-fill-2 px-14px py-12px text-12px leading-18px text-t-secondary'>
-            {viewModel.supportText}
-          </div>
+          {showOperatorDetails ? (
+            <div className='mt-14px rounded-8px bg-fill-2 px-14px py-12px text-12px leading-18px text-t-secondary'>
+              {viewModel.supportText}
+            </div>
+          ) : null}
         </section>
 
         {showDiagnostics ? (
@@ -1180,15 +1224,17 @@ function selectMacPairingTarget(input: {
   isOperator?: boolean;
 }): IEvaosCustomerTargetView | undefined {
   const pairableTargets = input.targets;
+  const lockedTargetFromList = input.lockedPairingCustomerId
+    ? pairableTargets.find((target) => target.customerId === input.lockedPairingCustomerId)
+    : undefined;
+  if (lockedTargetFromList) return lockedTargetFromList;
+  if (pairableTargets.length > 1) return undefined;
+
   const selectedTargetFromList = input.selectedCustomerId
     ? pairableTargets.find((target) => target.customerId === input.selectedCustomerId)
     : undefined;
   if (selectedTargetFromList) return selectedTargetFromList;
   if (input.selectedTarget && isPairableMacControlTarget(input.selectedTarget)) return input.selectedTarget;
-  const lockedTargetFromList = input.lockedPairingCustomerId
-    ? pairableTargets.find((target) => target.customerId === input.lockedPairingCustomerId)
-    : undefined;
-  if (lockedTargetFromList) return lockedTargetFromList;
   if (input.selectedCustomerId) return undefined;
 
   return (

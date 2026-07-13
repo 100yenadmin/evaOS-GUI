@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "修复 Mac 控制工具",
       "repairControlToolsDetail": "首选 CUA 引擎和内置 Peekaboo 备用引擎均不可用。请先修复 Workbench，再配对此 Mac。",
       "clientMissingTitle": "安装安全网络",
+      "clientMissingStateTitle": "需要安全网络",
       "clientMissingDetail": "打开 Tailscale 官方 macOS 下载页面并按正常安装流程操作。无需终端、Python、pip 或 Homebrew。",
       "clientStoppedTitle": "打开安全网络",
       "clientStoppedDetail": "打开已安装的安全网络应用；如果出现 macOS VPN 提示，请批准，然后再次检查。",

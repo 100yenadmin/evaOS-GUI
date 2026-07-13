@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Réparer les outils de contrôle du Mac",
       "repairControlToolsDetail": "Ni le moteur CUA principal ni le secours Peekaboo intégré ne sont disponibles. Réparez Workbench avant d’associer ce Mac.",
       "clientMissingTitle": "Installer le réseau sécurisé",
+      "clientMissingStateTitle": "Réseau sécurisé requis",
       "clientMissingDetail": "Ouvrez la page officielle de téléchargement Tailscale pour macOS et suivez l’installeur normal. Aucun Terminal, Python, pip ou Homebrew n’est nécessaire.",
       "clientStoppedTitle": "Ouvrir le réseau sécurisé",
       "clientStoppedDetail": "Ouvrez l’app de réseau sécurisé installée, acceptez l’invite VPN macOS si elle apparaît, puis vérifiez à nouveau.",

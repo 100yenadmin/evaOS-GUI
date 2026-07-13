@@ -125,6 +125,7 @@
       "repairControlToolsTitle": "Repair Mac control tools",
       "repairControlToolsDetail": "Neither the preferred CUA engine nor the bundled Peekaboo fallback is available. Repair Workbench before pairing this Mac.",
       "clientMissingTitle": "Install secure network",
+      "clientMissingStateTitle": "Secure network needed",
       "clientMissingDetail": "Open the official Tailscale macOS download page and follow the normal installer. No terminal, Python, pip, or Homebrew is required.",
       "clientStoppedTitle": "Open secure network",
       "clientStoppedDetail": "Open the installed secure-network app, allow the normal macOS VPN prompt if shown, then check again.",

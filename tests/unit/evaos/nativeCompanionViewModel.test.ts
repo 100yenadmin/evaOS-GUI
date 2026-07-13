@@ -28,6 +28,7 @@ const prerequisiteCopy: NativeCompanionPrerequisiteCopy = {
   repairControlToolsDetail:
     'Neither the preferred CUA engine nor the bundled Peekaboo fallback is available. Repair Workbench before pairing this Mac.',
   clientMissingTitle: 'Install secure network',
+  clientMissingStateTitle: 'Secure network needed',
   clientMissingDetail:
     'Open the official Tailscale macOS download page and follow the normal installer. No terminal, Python, pip, or Homebrew is required.',
   clientStoppedTitle: 'Open secure network',
@@ -352,7 +353,7 @@ describe('nativeCompanionViewModel', () => {
     });
 
     expect(viewModel.state).toBe('repair_required');
-    expect(viewModel.title).toBe('Install secure network');
+    expect(viewModel.title).toBe('Secure network needed');
     expect(viewModel.nextAction).toMatchObject({
       kind: 'repair',
       repairAction: 'secure_network_install',
