@@ -1,5 +1,30 @@
 # Changelog
 
+## evaOS Workbench 2.1.34 (2026-07-13)
+
+### Installed Connector Readiness
+
+- Reconciles the intentionally redacted public connector-status envelope with
+  the private bind host selected inside the Workbench main process, so a
+  healthy bundled Desktop Bridge is no longer started on one interface and
+  probed on another.
+- Keeps private addresses out of renderer state and fails closed when no safe
+  local bind host can be resolved or when a concrete foreign process owns the
+  connector endpoint.
+- Extends cold-start readiness polling to a bounded elapsed-time deadline and
+  accepts a healthy same-bridge child without changing the broker contract,
+  Mac-control grant model, CUA-primary route, or Peekaboo fallback.
+- Serializes connector stop operations and cancels stale start generations so
+  explicit Stop, overlapping Start, stop/revoke, and kill-switch boundaries
+  remain authoritative during recovery races.
+
+### Release Boundary
+
+- This entry identifies the corrected v2.1.34 release candidate source.
+  Signed, notarized, stapled, installed-app, live broker/Mac-control,
+  distribution, pristine-Mac setup, and customer-readiness claims remain bound
+  to their exact release evidence and are not implied by the version bump.
+
 ## evaOS Workbench 2.1.33 (2026-07-13)
 
 ### Broker-Owned Private Network Authority
