@@ -338,6 +338,20 @@ function brokerCustomerNextAction(
 ): NativeCompanionNextAction | undefined {
   const copy = input.prerequisiteCopy;
   if (
+    input.status?.blockerReason === 'broker_session_expired' ||
+    input.status?.privateNetworkAuthority?.reason === 'broker_session_expired'
+  ) {
+    return {
+      kind: 'reconnect',
+      label: copy.refreshSessionLabel,
+      title: copy.refreshSessionTitle,
+      detail: copy.refreshSessionDetail,
+      step,
+      totalSteps,
+      disabled: false,
+    };
+  }
+  if (
     actionResult?.sourcePointer === 'native-companion:pairing-broker-session-required' ||
     actionResult?.sourcePointer === 'native-companion:connector-grant-broker-session-required' ||
     actionResult?.sourcePointer === 'native-companion:secure-network-enrollment-broker-session-required'
@@ -467,6 +481,14 @@ function nextActionForState(
       totalSteps,
       disabled: false,
     };
+  }
+
+  if (
+    status.blockerReason === 'broker_session_expired' ||
+    status.privateNetworkAuthority?.reason === 'broker_session_expired'
+  ) {
+    const brokerGate = brokerCustomerNextAction(input, actionResult, totalSteps, 1);
+    if (brokerGate) return brokerGate;
   }
 
   const networkPrerequisite = blockingPrivateNetworkPrerequisite(status, input.prerequisiteCopy);

@@ -529,6 +529,32 @@ describe('nativeCompanionViewModel', () => {
     }
   );
 
+  it('routes enrolled authority-session expiry to Workbench session refresh before generic network repair', () => {
+    const viewModel = getNativeCompanionRepairViewModel({
+      status: baseStatus({
+        blockerReason: 'broker_session_expired',
+        privateNetworkAuthority: { classification: 'unavailable', reason: 'broker_session_expired' },
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'error',
+          actionEngine: 'peekaboo_ready',
+        },
+      }),
+      brokerAuthenticated: true,
+      hasSelectedCustomer: true,
+      hasPairableCustomer: true,
+      loading: false,
+      error: null,
+    });
+
+    expect(viewModel.nextAction).toMatchObject({
+      kind: 'reconnect',
+      label: 'Localized refresh session label',
+      title: 'Localized refresh session title',
+      disabled: false,
+    });
+  });
+
   it('does not render local-ready when explicit prerequisite proof is incomplete', () => {
     const viewModel = getNativeCompanionRepairViewModel({
       status: baseStatus({
