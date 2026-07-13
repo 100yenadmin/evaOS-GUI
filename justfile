@@ -338,9 +338,9 @@ lint-strict:
 # Testing
 # ============================================================
 
-# Run all tests
-test:
-    bun run test
+# Run all tests, or pass one or more focused test paths/patterns
+test *ARGS:
+    bun run test -- {{ ARGS }}
 
 # Run tests in watch mode
 test-watch:

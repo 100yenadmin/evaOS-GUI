@@ -114,7 +114,7 @@ node scripts/check-i18n.js
 
 ### Before Pushing
 
-Always use `just push` instead of `git push`:
+For human-driven local development, `just push` remains the convenient full local gate:
 
 ```bash
 just push                          # lint → format-check → typecheck → test → git push
@@ -124,6 +124,20 @@ just push -u origin feat/branch    # same checks, with extra git push args
 Any step that fails aborts the push. Fix the issue, commit, then retry.
 
 > **Note for AI agents**: `just push` uses `--quiet` for lint — only errors cause failure. The project has many pre-existing lint _warnings_ which do NOT indicate failure. Judge success by exit code, not by output volume.
+
+Coding agents must not run `just push` by default. To avoid turning a developer
+machine into a parallel CI runner, an agent should run the narrowest test or
+smoke check that owns its change plus `git diff --check`, then push the branch so
+GitHub Actions can run the complete gate. Use a broad local suite only when
+reproducing a CI failure, when no focused harness exists, or when the user
+explicitly requests it.
+
+The six protected GitHub checks are the authoritative complete validation gate.
+Draft PRs may still receive the docs-only `Unit Tests` placeholder, but the
+complete PR Checks gate is deferred until changing the PR to ready for review
+triggers the `ready_for_review` event. A focused local pass is not a substitute
+for those protected checks, and a draft PR with deferred checks is not ready to
+merge.
 
 ### Before PR (optional stricter check)
 
