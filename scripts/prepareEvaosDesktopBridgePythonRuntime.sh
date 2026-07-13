@@ -12,6 +12,7 @@ fi
 : "${PYTHON_RUNTIME_RELEASE:=20260510}"
 : "${PYTHON_RUNTIME_ARM64_SHA256:=5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17}"
 : "${PYTHON_RUNTIME_X64_SHA256:=cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894}"
+: "${PYTHON_RUNTIME_LICENSE_SHA256:=3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf}"
 : "${RUNNER_TEMP:=${TMPDIR:-/tmp}}"
 
 case "$target_arch" in
@@ -44,8 +45,10 @@ rm -rf "$runtime_root" "$wheelhouse"
 mkdir -p "$runtime_root" "$wheelhouse"
 tar -xzf "$runtime_archive" -C "$runtime_root"
 runtime_dir="$runtime_root/python"
+python_license_path="$runtime_dir/lib/python${python_minor}/LICENSE.txt"
 test -x "$runtime_dir/bin/python3"
-test -f "$runtime_dir/lib/python${python_minor}/LICENSE.txt"
+test -f "$python_license_path"
+printf '%s  %s\n' "$PYTHON_RUNTIME_LICENSE_SHA256" "$python_license_path" | shasum -a 256 -c -
 test "$("$runtime_dir/bin/python3" --version)" = "Python ${PYTHON_RUNTIME_VERSION}"
 test "$(lipo -archs "$runtime_dir/bin/python${python_minor}")" = "$expected_lipo_arch"
 
@@ -106,5 +109,6 @@ packages_json='[{"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed1
   echo "EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256"
   echo "EVAOS_REQUIRED_PYTHON_RUNTIME_SOURCE_URL=$runtime_url"
   echo "EVAOS_REQUIRED_PYTHON_RUNTIME_ARCH=$target_arch"
+  echo "EVAOS_REQUIRED_PYTHON_RUNTIME_LICENSE_SHA256=$PYTHON_RUNTIME_LICENSE_SHA256"
   echo "EVAOS_REQUIRED_PYTHON_RUNTIME_PACKAGES_JSON=$packages_json"
 } >> "$env_output"

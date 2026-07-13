@@ -510,6 +510,10 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('scripts/prepareEvaosDesktopBridgePythonRuntime.sh "$TARGET_ARCH"');
     expect(runtimePrep).toContain('EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=$runtime_dir');
     expect(runtimePrep).toContain('EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256');
+    expect(runtimePrep).toContain(
+      'PYTHON_RUNTIME_LICENSE_SHA256:=3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf'
+    );
+    expect(runtimePrep).toContain('"$PYTHON_RUNTIME_LICENSE_SHA256" "$python_license_path"');
     expect(runtimePrep).toContain('-I -m pip check');
     expect(runtimePrep).toContain('distributions(path=[sys.argv[1]])');
     expect(runtimePrep).toContain('installed_pyobjc');
@@ -523,6 +527,7 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('BUNDLED_PEEKABOO_SOURCE_SHA256');
     expect(workflow).toContain('BUNDLED_PEEKABOO_LICENSE_SHA256');
     expect(workflow).toContain('3.8.0');
+    expect(workflow).toContain('import ApplicationServices, Cocoa, CoreText, Quartz');
   });
 
   it('requires the functional-smoke app job itself to run on Sequoia', () => {

@@ -345,6 +345,8 @@ function installPreparedRuntimeEnvironment(envFile) {
 }
 
 function withDesktopBridgePythonRuntime(targetArch, operation) {
+  // A caller-supplied runtime is caller-owned: use it for the copy operation,
+  // but never delete or otherwise assume lifecycle ownership of that path.
   if (process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR || process.platform !== 'darwin') {
     return operation();
   }

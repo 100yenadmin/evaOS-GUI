@@ -1067,6 +1067,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     pythonRuntimePrep,
+    'PYTHON_RUNTIME_LICENSE_SHA256:=3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf',
+    'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
+    issues,
+    'downloaded CPython license must match the pinned release bytes before packaging'
+  );
+  requireText(
+    pythonRuntimePrep,
     'import ApplicationServices, Cocoa, CoreText, Quartz',
     'scripts/prepareEvaosDesktopBridgePythonRuntime.sh',
     issues,
