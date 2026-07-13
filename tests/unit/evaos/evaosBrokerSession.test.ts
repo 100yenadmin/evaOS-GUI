@@ -718,6 +718,7 @@ describe('EvaosBrokerSessionClient', () => {
           customer_id: 'jackie-david',
           device_id: 'device-david',
           device_identifier: 'david-mac-hardware-id',
+          grant_id: 'grant-network-1',
           client_variant: 'tailscale_standalone',
           network_enrollment: {
             enrollment_id: 'network-enrollment-1',
@@ -749,6 +750,7 @@ describe('EvaosBrokerSessionClient', () => {
       customerId: 'jackie-david',
       deviceId: 'device-david',
       deviceIdentifier: 'david-mac-hardware-id',
+      grantId: 'grant-network-1',
       clientVariant: 'tailscale_standalone',
       enrollmentId: 'network-enrollment-1',
       loginServer: 'https://headscale.example',

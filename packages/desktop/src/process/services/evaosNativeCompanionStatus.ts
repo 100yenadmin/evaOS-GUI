@@ -203,6 +203,7 @@ let workbenchManagedConnector:
       process: ChildProcess;
     }
   | undefined;
+const privateNetworkBootstrapGrants = new Map<string, string>();
 
 export async function getEvaosNativeCompanionStatus(
   deps: EvaosNativeCompanionStatusDeps = {},
@@ -286,10 +287,25 @@ export async function getEvaosNativeCompanionStatus(
     (customerMac.ok && hasGrantedCorePermissions(customerMacPermissions)) ||
     controlSessionHasPermissionProof(controlSession);
   const localPrivateNetworkEvidence = privateNetworkEvidence(connectorServiceData);
+  const localGrantId = controlSession.ok ? activeMacControlScopeIdFromControlSession(controlSession) : undefined;
+  const bootstrapGrantKey = privateNetworkBootstrapGrantKey(
+    request.customerId,
+    privateNetworkDeviceIdentifier(customerMac.data)
+  );
+  const trustedBootstrapGrantId = bootstrapGrantKey ? privateNetworkBootstrapGrants.get(bootstrapGrantKey) : undefined;
+  const requestedBootstrapGrantId =
+    request.bootstrapGrantId && request.bootstrapGrantId === trustedBootstrapGrantId
+      ? request.bootstrapGrantId
+      : undefined;
+  if (bootstrapGrantKey && localGrantId && trustedBootstrapGrantId === localGrantId) {
+    privateNetworkBootstrapGrants.delete(bootstrapGrantKey);
+  }
   const privateNetworkAuthorityResult = await privateNetworkEvidenceWithAuthority({
     customerId: request.customerId,
     deviceIdentifier: privateNetworkDeviceIdentifier(customerMac.data),
-    expectedGrantId: controlSession.ok ? activeMacControlScopeIdFromControlSession(controlSession) : undefined,
+    expectedGrantId: localGrantId ?? requestedBootstrapGrantId,
+    bootstrapGrantId: request.bootstrapGrantId,
+    localGrantId,
     localEvidence: localPrivateNetworkEvidence,
     now,
     deps,
@@ -2223,6 +2239,8 @@ async function runSecureNetworkEnrollmentAction(
     );
   }
 
+  privateNetworkBootstrapGrants.set(privateNetworkBootstrapGrantKey(customerId, deviceIdentifier), enrollment.grantId);
+
   return nativeActionResult(
     'secure_network_enroll',
     'succeeded',
@@ -2231,6 +2249,7 @@ async function runSecureNetworkEnrollmentAction(
       sourcePointer: 'native-companion:secure-network-enrollment-submitted',
       refreshRecommended: true,
       blockerReason: 'secure_network_link_required',
+      bootstrapGrantId: enrollment.grantId,
     }
   );
 }
@@ -2283,6 +2302,8 @@ async function privateNetworkEvidenceWithAuthority(input: {
   customerId?: string;
   deviceIdentifier?: string;
   expectedGrantId?: string;
+  bootstrapGrantId?: string;
+  localGrantId?: string;
   localEvidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
   now: () => Date;
   deps: EvaosNativeCompanionStatusDeps;
@@ -2290,7 +2311,8 @@ async function privateNetworkEvidenceWithAuthority(input: {
   evidence: NativeCompanionPrerequisiteEvidence['privateNetwork'];
   diagnostic: IEvaosPrivateNetworkAuthorityDiagnostic;
 }> {
-  const { customerId, deviceIdentifier, expectedGrantId, localEvidence, now, deps } = input;
+  const { customerId, deviceIdentifier, expectedGrantId, bootstrapGrantId, localGrantId, localEvidence, now, deps } =
+    input;
   if (
     !localEvidence ||
     localEvidence.clientInstalled !== true ||
@@ -2308,6 +2330,12 @@ async function privateNetworkEvidenceWithAuthority(input: {
     return {
       evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
       diagnostic: { classification: 'unavailable', reason: 'local_scope_unavailable' },
+    };
+  }
+  if (localGrantId && bootstrapGrantId && localGrantId !== bootstrapGrantId) {
+    return {
+      evidence: { ...localEvidence, correctControlPlane: undefined, aclAllowed: undefined },
+      diagnostic: { classification: 'unavailable', reason: 'grant_binding_mismatch' },
     };
   }
   const getPrivateNetworkReadiness =
@@ -2745,6 +2773,15 @@ function privateNetworkDeviceIdentifier(customerMacData: unknown): string | unde
   );
 }
 
+function privateNetworkBootstrapGrantKey(customerId?: string, deviceIdentifier?: string): string | undefined {
+  if (!customerId || !deviceIdentifier) return undefined;
+  return `${customerId}\u0000${deviceIdentifier}`;
+}
+
+export function clearPrivateNetworkBootstrapGrantsForTest(): void {
+  privateNetworkBootstrapGrants.clear();
+}
+
 function permissionStateForGrant(
   permissions: IEvaosNativeCompanionPermissionView | undefined
 ): Record<string, unknown> {
@@ -3136,6 +3173,7 @@ function nativeActionResult(
     agentPairingStatus: options.agentPairingStatus,
     events: options.events,
     blockerReason: rendererSafeMacControlBlockerReason(options.blockerReason),
+    bootstrapGrantId: safeDiagnosticText(options.bootstrapGrantId),
   };
 }
 

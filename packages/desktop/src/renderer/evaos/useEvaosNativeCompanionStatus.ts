@@ -103,6 +103,7 @@ export function useEvaosNativeCompanionStatus(enabled = true, customerId?: strin
   currentScopeRef.current = enabled ? scopeKey : undefined;
   const refreshInFlightScopesRef = useRef(new Set<string>());
   const queuedForegroundScopesRef = useRef(new Set<string>());
+  const bootstrapGrantRef = useRef<{ scopeKey: string; grantId: string } | null>(null);
 
   const refresh = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -121,14 +122,23 @@ export function useEvaosNativeCompanionStatus(enabled = true, customerId?: strin
       if (!options.silent) setLoading(true);
       setError(null);
       try {
-        const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke({ customerId });
+        const bootstrapGrantId =
+          bootstrapGrantRef.current?.scopeKey === scopeKey ? bootstrapGrantRef.current.grantId : undefined;
+        const response = await ipcBridge.evaosNativeCompanion.getStatus.invoke({
+          customerId,
+          ...(bootstrapGrantId ? { bootstrapGrantId } : {}),
+        });
         if (currentScopeRef.current !== scopeKey) return;
         if (!response.success || !response.data) {
           setScopedStatus(null);
           setError(response.msg || 'Workbench connector status failed safely.');
           return;
         }
-        setScopedStatus({ scopeKey, status: safeRendererStatus(response.data) });
+        const safeStatus = safeRendererStatus(response.data);
+        if (bootstrapGrantId && safeStatus.activeMacControlScopeId === bootstrapGrantId) {
+          bootstrapGrantRef.current = null;
+        }
+        setScopedStatus({ scopeKey, status: safeStatus });
       } catch {
         if (currentScopeRef.current === scopeKey) {
           setScopedStatus(null);
@@ -180,9 +190,18 @@ export function useEvaosNativeCompanionStatus(enabled = true, customerId?: strin
           refreshRecommended: true,
         };
       }
+      if (
+        response.data.action === 'secure_network_enroll' &&
+        response.data.status === 'succeeded' &&
+        request.customerId === customerId &&
+        typeof response.data.bootstrapGrantId === 'string' &&
+        /^[A-Za-z0-9._:-]{1,160}$/.test(response.data.bootstrapGrantId)
+      ) {
+        bootstrapGrantRef.current = { scopeKey, grantId: response.data.bootstrapGrantId };
+      }
       return response.data;
     },
-    []
+    [customerId, scopeKey]
   );
 
   const getDiagnosticPacket = useCallback(

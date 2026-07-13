@@ -167,6 +167,7 @@ export type IEvaosNativeCompanionStatusValue =
 
 export type IEvaosNativeCompanionStatusRequest = {
   customerId?: string;
+  bootstrapGrantId?: string;
 };
 
 export type NativeCompanionBridgeRuntimePrerequisite = 'missing' | 'incompatible' | 'ready' | 'error';
@@ -411,6 +412,7 @@ export interface IEvaosNativeCompanionActionResult {
   agentPairingStatus?: IEvaosNativeCompanionAgentPairingStatus;
   events?: IEvaosNativeCompanionAuditEvent[];
   blockerReason?: IEvaosMacControlBlockerReason;
+  bootstrapGrantId?: string;
 }
 
 export interface IEvaosWorkbenchDiagnosticPacketV1 {

@@ -196,4 +196,59 @@ describe('useEvaosNativeCompanionStatus', () => {
     expect(packet?.brokerGrant.privateNetworkAuthority).toBeUndefined();
     expect(JSON.stringify(packet)).not.toContain('100.64.0.10');
   });
+
+  it('carries the broker-issued enrollment grant into the next scope-less status refresh', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({ success: false, msg: 'not ready' });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Enrollment submitted.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        auditIds: [],
+        refreshRecommended: true,
+        blockerReason: 'secure_network_link_required',
+        bootstrapGrantId: 'grant-bootstrap',
+      },
+    });
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(true, 'bound-customer'));
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.runAction({ action: 'secure_network_enroll', customerId: 'bound-customer' });
+      await result.current.refresh();
+    });
+
+    expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({
+      customerId: 'bound-customer',
+      bootstrapGrantId: 'grant-bootstrap',
+    });
+  });
+
+  it('does not carry a bootstrap grant across a customer switch', async () => {
+    bridgeMocks.getStatus.mockResolvedValue({ success: false, msg: 'not ready' });
+    bridgeMocks.runAction.mockResolvedValueOnce({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'succeeded',
+        message: 'Enrollment submitted.',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        auditIds: [],
+        refreshRecommended: true,
+        bootstrapGrantId: 'grant-jackie',
+      },
+    });
+    const { result, rerender } = renderHook(({ customerId }) => useEvaosNativeCompanionStatus(true, customerId), {
+      initialProps: { customerId: 'jackie' },
+    });
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenCalled());
+    await act(async () => {
+      await result.current.runAction({ action: 'secure_network_enroll', customerId: 'jackie' });
+    });
+
+    rerender({ customerId: 'david' });
+    await waitFor(() => expect(bridgeMocks.getStatus).toHaveBeenLastCalledWith({ customerId: 'david' }));
+  });
 });

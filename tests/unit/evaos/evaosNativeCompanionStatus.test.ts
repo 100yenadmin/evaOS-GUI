@@ -12,6 +12,7 @@ import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 import {
   getEvaosWorkbenchDiagnosticPacket,
+  clearPrivateNetworkBootstrapGrantsForTest,
   getEvaosNativeCompanionStatus,
   openNativeCompanionRepairAction,
   openReleasedEvaosWorkbench,
@@ -68,6 +69,7 @@ describe('evaosNativeCompanionStatus', () => {
   afterEach(() => {
     vi.useRealTimers();
     stopEvaosNativeCompanionSessionConnector();
+    clearPrivateNetworkBootstrapGrantsForTest();
   });
 
   it('exposes native companion state fixtures only under the local product proof gate', async () => {
@@ -232,7 +234,7 @@ describe('evaosNativeCompanionStatus', () => {
         data: {
           running: true,
           health: { reachable: true },
-          secure_registration_host: 'connector.evaos.example',
+          tailnet_ip: '100.64.0.10',
           private_network: {
             client_installed: true,
             client_running: true,
@@ -284,6 +286,191 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(status.sourcePointer).toBe('native-companion:read-only-bridge');
     expect(deps.getPrivateNetworkReadiness).not.toHaveBeenCalled();
+  });
+
+  it('uses the trusted one-use enrollment grant to bootstrap scope-less broker authority', async () => {
+    const enrollmentDeps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile: vi.fn(async (file: string, args: string[]) => {
+          const key = args.join(' ');
+          if (file === bundledBridgePath && key === 'connector-service status --json') {
+            return {
+              stdout: json({
+                ok: true,
+                data: { private_network: { client_installed: true, client_running: true, enrolled: false } },
+              }),
+              stderr: '',
+            };
+          }
+          if (file === bundledBridgePath && key === 'customer-mac status --json') {
+            return {
+              stdout: json({ ok: true, data: { device: { hardware_uuid: 'bound-device' } } }),
+              stderr: '',
+            };
+          }
+          if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+            return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+          }
+          if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+          if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') return { stdout: '', stderr: '' };
+          throw new Error(`unexpected command ${file} ${key}`);
+        }),
+        createPrivateNetworkEnrollment: vi.fn(async () => ({
+          customerId: 'bound-customer',
+          deviceId: 'device-id',
+          deviceIdentifier: 'bound-device',
+          grantId: 'grant-bootstrap',
+          clientVariant: 'tailscale_standalone' as const,
+          enrollmentId: 'enrollment-id',
+          loginServer: 'https://headscale.example',
+          authKey: 'one-use-private-network-key-for-test',
+          expiresAt: '2026-06-07T04:00:00.000Z',
+        })),
+      }
+    );
+    await expect(
+      runNativeCompanionAction({ action: 'secure_network_enroll', customerId: 'bound-customer' }, enrollmentDeps)
+    ).resolves.toMatchObject({ status: 'succeeded', bootstrapGrantId: 'grant-bootstrap' });
+
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        data: {
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version_compatible: true,
+            compatible: true,
+          },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        data: {
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+          private_network: { client_installed: true, client_running: true, enrolled: true, online: true },
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        data: {
+          device: { hardware_uuid: 'bound-device' },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          control_engines: { cua_driver: { available: true, active_for_actions: true } },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+      'customer-mac control status --json': { ok: true, data: { active: false, kill_switch: false } },
+      'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+      'ready --json': { ok: true, data: { ready: true } },
+    });
+    deps.getPrivateNetworkReadiness = vi.fn(async () => ({
+      customerId: 'bound-customer',
+      deviceId: 'device-id',
+      deviceIdentifier: 'bound-device',
+      enrollmentId: 'enrollment-id',
+      grantId: 'grant-bootstrap',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready',
+      observedAt: '2026-06-07T03:45:00.000Z',
+      expiresAt: '2026-06-07T03:45:45.000Z',
+      auditId: 'audit-authority-ready',
+    }));
+
+    const status = await getEvaosNativeCompanionStatus(deps, {
+      customerId: 'bound-customer',
+      bootstrapGrantId: 'grant-bootstrap',
+    });
+
+    expect(status).toMatchObject({
+      readiness: 'ready',
+      pairingCapable: true,
+      prerequisites: { privateNetwork: 'online' },
+      privateNetworkAuthority: { classification: 'observed', reason: 'ready' },
+    });
+  });
+
+  it.each([
+    ['mismatched bootstrap grant', 'grant-other', 'grant-local'],
+    ['arbitrary bootstrap grant without a trusted enrollment', 'grant-bootstrap', undefined],
+    ['missing bootstrap grant after restart', undefined, undefined],
+  ])('keeps scope-less bootstrap authority repair-required for %s', async (_label, bootstrapGrantId, localGrantId) => {
+    const deps = depsWithResponses({
+      'status --json': {
+        ok: true,
+        data: {
+          bridge_runtime: {
+            schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+            contract_version: 1,
+            version_compatible: true,
+            compatible: true,
+          },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+        },
+      },
+      'connector-service status --json': {
+        ok: true,
+        data: {
+          running: true,
+          health: { reachable: true },
+          secure_registration_host: 'connector.evaos.example',
+          private_network: { client_installed: true, client_running: true, enrolled: true, online: true },
+        },
+      },
+      'customer-mac status --json': {
+        ok: true,
+        data: {
+          device: { hardware_uuid: 'bound-device' },
+          permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          control_engines: { cua_driver: { available: true, active_for_actions: true } },
+        },
+      },
+      'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+      'customer-mac control status --json': {
+        ok: true,
+        data: { active: false, kill_switch: false, active_mac_control_scope_id: localGrantId },
+      },
+      'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+      'ready --json': { ok: true, data: { ready: true } },
+    });
+    deps.getPrivateNetworkReadiness = vi.fn(async () => ({
+      customerId: 'bound-customer',
+      deviceId: 'device-id',
+      deviceIdentifier: 'bound-device',
+      enrollmentId: 'enrollment-id',
+      grantId: 'grant-bootstrap',
+      correctControlPlane: true,
+      aclAllowed: true,
+      online: true,
+      reason: 'ready',
+      observedAt: '2026-06-07T03:45:00.000Z',
+      expiresAt: '2026-06-07T03:45:45.000Z',
+      auditId: 'audit-authority-ready',
+    }));
+
+    const status = await getEvaosNativeCompanionStatus(deps, {
+      customerId: 'bound-customer',
+      bootstrapGrantId,
+    });
+
+    expect(status).toMatchObject({
+      readiness: 'repair_required',
+      pairingCapable: false,
+      prerequisites: { privateNetwork: 'error' },
+    });
   });
 
   it('demotes pairing when explicit private-network evidence cannot prove control-plane and ACL state', async () => {
@@ -3626,6 +3813,7 @@ describe('evaosNativeCompanionStatus', () => {
       customerId: 'jackie-david',
       deviceId: 'device-david',
       deviceIdentifier: 'david-mac-hardware-id',
+      grantId: 'grant-network-1',
       clientVariant: 'tailscale_app_store' as const,
       enrollmentId: 'network-enrollment-1',
       loginServer: 'https://headscale.example',
@@ -3716,6 +3904,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:secure-network-enrollment-submitted',
       refreshRecommended: true,
       blockerReason: 'secure_network_link_required',
+      bootstrapGrantId: 'grant-network-1',
     });
     expect(createPrivateNetworkEnrollment).toHaveBeenCalledWith({
       customerId: 'jackie-david',

@@ -163,6 +163,7 @@ export type EvaosPrivateNetworkEnrollment = {
   customerId: string;
   deviceId: string;
   deviceIdentifier: string;
+  grantId: string;
   clientVariant: EvaosPrivateNetworkClientVariant;
   enrollmentId: string;
   loginServer: string;
@@ -1462,6 +1463,7 @@ function sanitizePrivateNetworkEnrollment(
   const customerId = safeText(response?.customer_id);
   const deviceId = safeText(response?.device_id);
   const deviceIdentifier = safeText(response?.device_identifier);
+  const grantId = safeText(response?.grant_id);
   const clientVariant = normalizePrivateNetworkClientVariant(response?.client_variant);
   const enrollmentId = safeText(enrollment?.enrollment_id);
   const loginServer = safeHttpsOrigin(enrollment?.login_server);
@@ -1473,6 +1475,7 @@ function sanitizePrivateNetworkEnrollment(
     customerId !== expectedCustomerId ||
     !deviceId ||
     deviceIdentifier !== expectedDeviceIdentifier ||
+    !grantId ||
     clientVariant !== expectedClientVariant ||
     !enrollmentId ||
     !loginServer ||
@@ -1494,6 +1497,7 @@ function sanitizePrivateNetworkEnrollment(
     customerId,
     deviceId,
     deviceIdentifier,
+    grantId,
     clientVariant,
     enrollmentId,
     loginServer,
