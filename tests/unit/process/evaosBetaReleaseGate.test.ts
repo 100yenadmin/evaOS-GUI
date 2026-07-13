@@ -139,6 +139,12 @@ function writeMacosBridgeZip(
     nonTraversablePythonDirectory?: boolean;
     nonTraversablePythonRoot?: boolean;
     normalizedPythonEntryCollision?: boolean;
+    inventorySymlinkArchiveMode?: number;
+    inventorySymlinkArchiveTarget?: string;
+    inventorySymlinkDeclaredTarget?: string;
+    regularInventorySymlink?: boolean;
+    inventoryDirectoryArchiveMode?: number;
+    inventoryFileArchiveMode?: number;
     wrongPythonSourceUrl?: boolean;
     nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'python';
     omitFoundationNative?: boolean;
@@ -180,6 +186,12 @@ function writeMacosBridgeZip(
     'non_traversable_python_directory = sys.argv[22] == "1"',
     'non_traversable_python_root = sys.argv[23] == "1"',
     'normalized_python_entry_collision = sys.argv[24] == "1"',
+    'inventory_symlink_archive_mode = int(sys.argv[25])',
+    'inventory_symlink_archive_target = sys.argv[26]',
+    'inventory_symlink_declared_target = sys.argv[27]',
+    'regular_inventory_symlink = sys.argv[28] == "1"',
+    'inventory_directory_archive_mode = int(sys.argv[29]) if sys.argv[29] else None',
+    'inventory_file_archive_mode = int(sys.argv[30]) if sys.argv[30] else None',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
@@ -225,6 +237,7 @@ function writeMacosBridgeZip(
     '    add_runtime_symlink("bin/python3", "python3.12")',
     'add_runtime_file("bin/python3.12", python_header, 0o644 if non_executable_payload == "python" else 0o755, True, python_header + b"signed" if signed_python_mutation else None)',
     'add_runtime_file("lib/python3.12/LICENSE.txt", python_license_bytes)',
+    'add_runtime_symlink("lib/python3.12/LICENSE-link.txt", inventory_symlink_declared_target)',
     'if not omit_stdlib_sentinel:',
     '    add_runtime_file("lib/python3.12/encodings/__init__.py", b"# encodings fixture\\n")',
     'add_runtime_file("lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
@@ -252,10 +265,10 @@ function writeMacosBridgeZip(
     '    info.external_attr = (stat.S_IFREG | mode) << 16',
     '    info.compress_type = zipfile.ZIP_DEFLATED',
     '    archive.writestr(info, data)',
-    'def write_symlink(archive, name, target):',
+    'def write_symlink(archive, name, target, mode=0o777):',
     '    info = zipfile.ZipInfo(name)',
     '    info.create_system = 3',
-    '    info.external_attr = (stat.S_IFLNK | 0o777) << 16',
+    '    info.external_attr = (stat.S_IFLNK | mode) << 16',
     '    info.compress_type = zipfile.ZIP_DEFLATED',
     '    archive.writestr(info, target.encode())',
     'def write_directory(archive, name, mode=0o755):',
@@ -278,11 +291,20 @@ function writeMacosBridgeZip(
     '            continue',
     '        entry_name = f"{bridge_prefix}/python/{entry[\'path\']}"',
     '        if entry["type"] == "directory":',
-    '            write_directory(archive, entry_name, entry["mode"])',
+    '            archive_mode = inventory_directory_archive_mode if entry["path"] == "lib/python3.12" and inventory_directory_archive_mode is not None else entry["mode"]',
+    '            write_directory(archive, entry_name, archive_mode)',
     '        elif entry["type"] == "symlink":',
-    '            write_symlink(archive, entry_name, entry["target"])',
+    '            if entry["path"] == "lib/python3.12/LICENSE-link.txt":',
+    '                archive_target = inventory_symlink_archive_target or entry["target"]',
+    '                if regular_inventory_symlink:',
+    '                    write_regular(archive, entry_name, archive_target.encode(), inventory_symlink_archive_mode)',
+    '                else:',
+    '                    write_symlink(archive, entry_name, archive_target, inventory_symlink_archive_mode)',
+    '            else:',
+    '                write_symlink(archive, entry_name, entry["target"])',
     '        else:',
-    '            write_regular(archive, entry_name, entry["archiveData"] if entry["archiveData"] is not None else entry["data"], entry["mode"])',
+    '            archive_mode = inventory_file_archive_mode if entry["path"] == "lib/python3.12/site-packages/runtime-only.py" and inventory_file_archive_mode is not None else entry["mode"]',
+    '            write_regular(archive, entry_name, entry["archiveData"] if entry["archiveData"] is not None else entry["data"], archive_mode)',
     '    write_regular(archive, f"{bridge_prefix}/python-runtime-inventory.json", inventory_bytes)',
     '    write_regular(archive, f"{bridge_prefix}/licenses/CPython-LICENSE.txt", python_license_bytes)',
     '    if not omit_license:',
@@ -320,6 +342,12 @@ function writeMacosBridgeZip(
     options.nonTraversablePythonDirectory ? '1' : '0',
     options.nonTraversablePythonRoot ? '1' : '0',
     options.normalizedPythonEntryCollision ? '1' : '0',
+    String(options.inventorySymlinkArchiveMode ?? 0o777),
+    options.inventorySymlinkArchiveTarget || '',
+    options.inventorySymlinkDeclaredTarget || 'LICENSE.txt',
+    options.regularInventorySymlink ? '1' : '0',
+    String(options.inventoryDirectoryArchiveMode ?? ''),
+    String(options.inventoryFileArchiveMode ?? ''),
   ]);
 }
 
@@ -1717,6 +1745,34 @@ describe('evaOS beta release gate', () => {
         expected: /relocatable bundled Python launcher/,
       },
       {
+        name: 'regular-file substitution for an inventoried Python symlink',
+        options: { regularInventorySymlink: true },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'wrong inventoried Python symlink target',
+        options: { inventorySymlinkArchiveTarget: 'encodings/__init__.py' },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'escaping inventoried Python symlink target',
+        options: {
+          inventorySymlinkArchiveTarget: '../../../outside',
+          inventorySymlinkDeclaredTarget: '../../../outside',
+        },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'traversable Python directory with mismatched inventory mode',
+        options: { inventoryDirectoryArchiveMode: 0o700 },
+        expected: /Python runtime inventory/,
+      },
+      {
+        name: 'ordinary Python file with mismatched inventory mode',
+        options: { inventoryFileArchiveMode: 0o600 },
+        expected: /Python runtime inventory/,
+      },
+      {
         name: 'non-traversable Python directory',
         options: { nonTraversablePythonDirectory: true },
         expected: /Python runtime inventory/,
@@ -1780,6 +1836,23 @@ describe('evaOS beta release gate', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-universal-python-'));
     try {
       const tag = writeMacosArm64ReleaseFixture(dir, { universalPythonRuntime: true });
+      expect(
+        releaseGate.verifyReleaseManifest(dir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: 'abc123',
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts an inventoried Python symlink whose archive-normalized mode differs', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-python-symlink-mode-'));
+    try {
+      const tag = writeMacosArm64ReleaseFixture(dir, { inventorySymlinkArchiveMode: 0o755 });
       expect(
         releaseGate.verifyReleaseManifest(dir, tag, {
           GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
