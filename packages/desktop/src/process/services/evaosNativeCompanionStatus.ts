@@ -66,8 +66,9 @@ const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
 const SECURE_NETWORK_ENROLL_TIMEOUT_MS = 30000;
 const PRIVATE_NETWORK_AUTHORITY_TIMEOUT_MS = 8000;
-const CONNECTOR_START_STATUS_ATTEMPTS = 4;
+const CONNECTOR_START_STATUS_ATTEMPTS = 12;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
+const CONNECTOR_START_DEADLINE_MS = 12_000;
 const CONNECTOR_PORT = 8765;
 const CONNECTOR_READY_PROBE_TIMEOUT_MS = 2000;
 const CONNECTOR_READY_PROBE_DEADLINE_MS = 2500;
@@ -204,6 +205,8 @@ let workbenchManagedConnector:
       process: ChildProcess;
     }
   | undefined;
+let workbenchManagedConnectorLifecycleGeneration = 0;
+let workbenchManagedConnectorStopBarrier: Promise<void> = Promise.resolve();
 const privateNetworkBootstrapGrants = new Map<string, string>();
 
 export async function getEvaosNativeCompanionStatus(
@@ -782,9 +785,17 @@ async function runConnectorStartAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
-  const before = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before);
-  const ready = await connectorServiceIsReadyForWorkbenchSession(bridgePath, status, deps);
+  const lifecycleGeneration = ++workbenchManagedConnectorLifecycleGeneration;
+  await waitForWorkbenchManagedConnectorStopBarrier();
+  const before =
+    lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration
+      ? await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps)
+      : connectorStartCancelledResult({ ok: false });
+  const status = await ensureWorkbenchManagedConnectorReady(bridgePath, deps, before, lifecycleGeneration);
+  const ready =
+    lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration &&
+    (await connectorServiceIsReadyForWorkbenchSession(bridgePath, status, deps)) &&
+    lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration;
   if (ready) {
     return nativeActionResult(
       'connector_start',
@@ -810,19 +821,50 @@ async function runConnectorStartAction(
 async function ensureWorkbenchManagedConnectorReady(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps,
-  before?: BridgeCommandResult
+  before?: BridgeCommandResult,
+  lifecycleGeneration = ++workbenchManagedConnectorLifecycleGeneration
 ): Promise<BridgeCommandResult> {
+  await waitForWorkbenchManagedConnectorStopBarrier();
+  if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
+    return connectorStartCancelledResult(before ?? { ok: false });
+  }
   const current = before ?? (await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps));
-  if (await connectorServiceIsReadyForWorkbenchSession(bridgePath, current, deps)) {
+  const alreadyReady = await connectorServiceIsReadyForWorkbenchSession(bridgePath, current, deps);
+  if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
+    return connectorStartCancelledResult(current);
+  }
+  if (alreadyReady) {
     return current;
   }
 
-  await runBridgeCommand(bridgePath, ['connector-service', 'stop', '--json'], deps);
-  stopWorkbenchManagedConnector();
+  const reportedHost = connectorSessionHostFromStatus(current.data);
+  const requiresPrivateTailnetHost = !reportedHost && connectorStatusDeclaresPrivateTailnetAvailability(current.data);
+  const privatelyResolvedHost = requiresPrivateTailnetHost ? await resolvePrivateTailnetHost(deps) : undefined;
+  if (requiresPrivateTailnetHost && !privatelyResolvedHost) return current;
+  if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
+    return connectorStartCancelledResult(current);
+  }
+  const host = reportedHost ?? privatelyResolvedHost ?? '127.0.0.1';
 
-  const host = connectorSessionHostFromStatus(current.data) ?? '127.0.0.1';
+  await runWorkbenchManagedConnectorStopCommand(bridgePath, deps);
+  if (lifecycleGeneration !== workbenchManagedConnectorLifecycleGeneration) {
+    return connectorStartCancelledResult(current);
+  }
+  stopWorkbenchManagedConnector();
   startWorkbenchManagedConnector(bridgePath, host, deps);
-  return waitForConnectorServiceReadyAfterStart(bridgePath, deps, current);
+  const ready = await waitForConnectorServiceReadyAfterStart(bridgePath, deps, current, lifecycleGeneration);
+  return lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration
+    ? ready
+    : connectorStartCancelledResult(current);
+}
+
+function connectorStartCancelledResult(current: BridgeCommandResult): BridgeCommandResult {
+  return {
+    ok: false,
+    auditId: current.auditId,
+    errorCode: 'connector_start_cancelled',
+    errorMessage: 'Connector start was cancelled.',
+  };
 }
 
 function startWorkbenchManagedConnector(bridgePath: string, host: string, deps: EvaosNativeCompanionStatusDeps): void {
@@ -860,25 +902,61 @@ function stopWorkbenchManagedConnector(): void {
   current.process.kill();
 }
 
+async function waitForWorkbenchManagedConnectorStopBarrier(): Promise<void> {
+  while (true) {
+    const barrier = workbenchManagedConnectorStopBarrier;
+    await barrier;
+    if (barrier === workbenchManagedConnectorStopBarrier) return;
+  }
+}
+
+async function runWorkbenchManagedConnectorStopCommand(
+  bridgePath: string,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<BridgeCommandResult> {
+  const previousBarrier = workbenchManagedConnectorStopBarrier;
+  const operation = previousBarrier.then(() =>
+    runBridgeCommand(bridgePath, ['connector-service', 'stop', '--json'], deps)
+  );
+  workbenchManagedConnectorStopBarrier = operation.then(
+    (): void => undefined,
+    (): void => undefined
+  );
+  return operation;
+}
+
 export function stopEvaosNativeCompanionSessionConnector(): void {
+  workbenchManagedConnectorLifecycleGeneration += 1;
   stopWorkbenchManagedConnector();
 }
 
 function workbenchManagedConnectorMatchesStatus(bridgePath: string, status: unknown): boolean {
-  const host = connectorSessionHostFromStatus(status);
-  if (!host) return false;
   if (connectorStatusHasExplicitOwnerMismatch(bridgePath, status)) {
     return false;
   }
-  if (connectorStatusOwnedByCurrentWorkbench(bridgePath, status)) {
+  if (connectorSessionHostFromStatus(status) && connectorStatusOwnedByCurrentWorkbench(bridgePath, status)) {
     return true;
   }
-  return (
-    workbenchManagedConnector?.bridgePath === bridgePath &&
-    workbenchManagedConnector.host === host &&
-    workbenchManagedConnector.process.exitCode === null &&
-    !workbenchManagedConnector.process.killed
-  );
+  return trackedWorkbenchManagedConnectorHost(bridgePath, status) !== undefined;
+}
+
+function trackedWorkbenchManagedConnectorHost(bridgePath: string, status: unknown): string | undefined {
+  const current = workbenchManagedConnector;
+  if (
+    !current ||
+    current.bridgePath !== bridgePath ||
+    current.process.exitCode !== null ||
+    current.process.killed ||
+    connectorStatusHasExplicitOwnerMismatch(bridgePath, status)
+  ) {
+    return undefined;
+  }
+
+  const reportedHost = connectorSessionHostFromStatus(status);
+  if (reportedHost) return reportedHost === current.host ? current.host : undefined;
+  return connectorStatusDeclaresPrivateTailnetAvailability(status) && isSafeConnectorRegistrationHost(current.host)
+    ? current.host
+    : undefined;
 }
 
 function workbenchManagedConnectorIsReady(bridgePath: string, result: BridgeCommandResult): boolean {
@@ -892,11 +970,12 @@ function workbenchManagedConnectorIsReady(bridgePath: string, result: BridgeComm
 async function workbenchManagedConnectorIsReadyWithEndpoint(
   bridgePath: string,
   result: BridgeCommandResult,
-  deps: EvaosNativeCompanionStatusDeps
+  deps: EvaosNativeCompanionStatusDeps,
+  options: { allowBridgeReadyFallback?: boolean } = {}
 ): Promise<boolean> {
   if (
     workbenchManagedConnectorIsReady(bridgePath, result) &&
-    (await connectorReadyEndpointIsReady(result.data, deps))
+    (await connectorReadyEndpointIsReady(bridgePath, result.data, deps))
   ) {
     return true;
   }
@@ -904,6 +983,9 @@ async function workbenchManagedConnectorIsReadyWithEndpoint(
     return false;
   }
   if (connectorStatusHasExplicitOwnerMismatch(bridgePath, result.data)) {
+    return false;
+  }
+  if (options.allowBridgeReadyFallback === false) {
     return false;
   }
   const ready = await runBridgeCommand(bridgePath, ['ready', '--json'], deps);
@@ -915,8 +997,11 @@ async function connectorServiceIsReadyForWorkbenchSession(
   result: BridgeCommandResult,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<boolean> {
+  if (connectorStatusHasConcreteForeignOwner(bridgePath, result.data)) {
+    return false;
+  }
   if (connectorServiceStatusAvailable(result) && readNestedBoolean(result.data, ['health', 'reachable']) === true) {
-    const endpointReady = await connectorReadyEndpointIsReady(result.data, deps);
+    const endpointReady = await connectorReadyEndpointIsReady(bridgePath, result.data, deps);
     if (endpointReady) {
       if (workbenchManagedConnectorIsReady(bridgePath, result)) {
         return true;
@@ -986,10 +1071,17 @@ function bridgeReadyCommandShowsConnectorReady(bridgePath: string, result: Bridg
   );
 }
 
-async function connectorReadyEndpointIsReady(input: unknown, deps: EvaosNativeCompanionStatusDeps): Promise<boolean> {
-  const host =
-    connectorSessionHostFromStatus(input) ??
-    (readNestedBoolean(input, ['health', 'reachable']) === true ? '127.0.0.1' : undefined);
+async function connectorReadyEndpointIsReady(
+  bridgePath: string,
+  input: unknown,
+  deps: EvaosNativeCompanionStatusDeps
+): Promise<boolean> {
+  const reportedHost = connectorSessionHostFromStatus(input);
+  const trackedHost = trackedWorkbenchManagedConnectorHost(bridgePath, input);
+  const mayUseLoopback =
+    readNestedBoolean(input, ['health', 'reachable']) === true &&
+    !connectorStatusDeclaresPrivateTailnetAvailability(input);
+  const host = reportedHost ?? trackedHost ?? (mayUseLoopback ? '127.0.0.1' : undefined);
   if (!host) return false;
   const probe = deps.probeConnectorReady ?? defaultProbeConnectorReady;
   return probe(host, CONNECTOR_PORT);
@@ -1060,6 +1152,14 @@ function connectorStatusHasExplicitOwnerMismatch(bridgePath: string, status: unk
   }
 
   return false;
+}
+
+function connectorStatusHasConcreteForeignOwner(bridgePath: string, status: unknown): boolean {
+  const bundleId = connectorResponsibleBundleId(status);
+  if (bundleId && bundleId !== WORKBENCH_BUNDLE_ID) {
+    return true;
+  }
+  return connectorOwnerPathMatchesWorkbench(bridgePath, status) === false;
 }
 
 function connectorStatusOwnedByCurrentWorkbench(bridgePath: string, status: unknown): boolean {
@@ -1164,31 +1264,80 @@ async function runConnectorStopAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
+  workbenchManagedConnectorLifecycleGeneration += 1;
   stopWorkbenchManagedConnector();
-  return runCommandAction('connector_stop', bridgePath, ['connector-service', 'stop', '--json'], deps, {
-    successMessage: 'Mac Access connector stopped.',
-    failureMessage: 'Mac Access connector could not stop.',
-  });
+  const result = await runWorkbenchManagedConnectorStopCommand(bridgePath, deps);
+  return nativeActionResult(
+    'connector_stop',
+    result.ok ? 'succeeded' : 'repair_required',
+    result.ok ? 'Mac Access connector stopped.' : 'Mac Access connector could not stop.',
+    {
+      sourcePointer: 'native-companion:connector-service-stop',
+      auditId: result.auditId,
+      auditIds: compactStrings([result.auditId]),
+      blockerReason: result.ok ? undefined : classifyBridgeBlocker(result, 'unknown'),
+    }
+  );
 }
 
 async function waitForConnectorServiceReadyAfterStart(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps,
-  started: BridgeCommandResult
+  started: BridgeCommandResult,
+  lifecycleGeneration: number
 ): Promise<BridgeCommandResult> {
+  const now = deps.now ?? (() => new Date());
+  const deadlineMs = now().getTime() + CONNECTOR_START_DEADLINE_MS;
+  const lifecycleIsCurrent = (): boolean => lifecycleGeneration === workbenchManagedConnectorLifecycleGeneration;
+  const remainingMs = (): number => Math.max(0, deadlineMs - now().getTime());
+  const pollStatus = async (): Promise<BridgeCommandResult | undefined> => {
+    if (!lifecycleIsCurrent()) return undefined;
+    const timeoutMs = remainingMs();
+    if (timeoutMs <= 0) return undefined;
+    return runBridgeCommand(
+      bridgePath,
+      ['connector-service', 'status', '--json'],
+      deps,
+      Math.max(1, Math.min(COMMAND_TIMEOUT_MS, timeoutMs))
+    );
+  };
+
   const startedStatus = connectorServiceStatusFromStartResult(started);
-  if (startedStatus && (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, startedStatus, deps))) {
+  if (
+    startedStatus &&
+    (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, startedStatus, deps, {
+      allowBridgeReadyFallback: false,
+    }))
+  ) {
     return startedStatus;
   }
+  if (!lifecycleIsCurrent()) return connectorStartCancelledResult(started);
 
-  let latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-  if (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, latest, deps)) return latest;
+  let latest = (await pollStatus()) ?? started;
+  if (
+    await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, latest, deps, {
+      allowBridgeReadyFallback: false,
+    })
+  ) {
+    return latest;
+  }
 
   const sleep = deps.sleep ?? defaultSleep;
   for (let attempt = 1; attempt < CONNECTOR_START_STATUS_ATTEMPTS; attempt++) {
-    await sleep(CONNECTOR_START_STATUS_RETRY_DELAY_MS);
-    latest = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
-    if (await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, latest, deps)) return latest;
+    if (!lifecycleIsCurrent()) return connectorStartCancelledResult(started);
+    const beforeSleepMs = remainingMs();
+    if (beforeSleepMs <= 0) break;
+    await sleep(Math.min(CONNECTOR_START_STATUS_RETRY_DELAY_MS, beforeSleepMs));
+    const polled = await pollStatus();
+    if (!polled) break;
+    latest = polled;
+    if (
+      await workbenchManagedConnectorIsReadyWithEndpoint(bridgePath, latest, deps, {
+        allowBridgeReadyFallback: false,
+      })
+    ) {
+      return latest;
+    }
   }
 
   return latest;
@@ -2777,6 +2926,15 @@ function connectorStatusAllowsPrivateTailnetHostResolution(input: unknown): bool
   return hostKind === 'tailnet' && readNestedBoolean(input, ['health', 'authenticated']) !== false;
 }
 
+function connectorStatusDeclaresPrivateTailnetAvailability(input: unknown): boolean {
+  const hostKind = readNestedString(input, ['health', 'host_kind']) ?? readNestedString(input, ['health', 'hostKind']);
+  return (
+    hostKind === 'tailnet' &&
+    privateNetworkAvailable(input) === true &&
+    readNestedBoolean(input, ['health', 'authenticated']) !== false
+  );
+}
+
 async function resolvePrivateTailnetHost(deps: EvaosNativeCompanionStatusDeps): Promise<string | undefined> {
   const envHost = normalizeConnectorHost(deps.env?.EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST);
   if (isSafeConnectorRegistrationHost(envHost)) return envHost;
@@ -2948,7 +3106,7 @@ function isSafeConnectorRegistrationHost(value: string | undefined): boolean {
   const parts = host.split('.').map((part) => Number(part));
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
   if (parts[0] === 127 || parts[0] === 0 || parts[0] >= 224) return false;
-  if (parts[0] === 100) return true;
+  if (parts[0] === 100) return parts[1] >= 64 && parts[1] <= 127;
   if (parts[0] === 10) return true;
   if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
   return parts[0] === 192 && parts[1] === 168;
