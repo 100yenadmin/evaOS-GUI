@@ -320,10 +320,6 @@ export async function getEvaosNativeCompanionStatus(
     privateNetworkEvidence: privateNetworkAuthorityResult.evidence,
   });
   const prerequisites = prerequisiteGate.prerequisites;
-  const bridgeRuntimeBlocksPairing = prerequisites.bridgeRuntime !== 'ready';
-  const privateNetworkBlocksPairing = prerequisites.privateNetwork !== 'online';
-  const actionEngineBlocksPairing =
-    prerequisites.actionEngine !== 'cua_ready' && prerequisites.actionEngine !== 'peekaboo_ready';
   const prerequisiteBlocksPairing = !prerequisiteGate.ready;
   const readiness =
     bridgeReady && connectorServiceReady && customerMacReady && !prerequisiteBlocksPairing
@@ -379,13 +375,8 @@ export async function getEvaosNativeCompanionStatus(
       : reportedRuntimeToolReadiness;
   const pairingBlockedReason = pairingCapable
     ? undefined
-    : bridgeRuntimeBlocksPairing
-      ? 'bundled_bridge_required'
-      : privateNetworkBlocksPairing
-        ? 'secure_network_link_required'
-        : actionEngineBlocksPairing
-          ? 'runtime_not_configured'
-          : pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env });
+    : (prerequisiteGate.blockerReason ??
+      pairingBlockedReasonForStatus({ bridgePath, connectorService, env: deps.env }));
   const blockerReason =
     privateNetworkAuthorityResult.diagnostic.reason === 'broker_session_expired'
       ? 'broker_session_expired'
