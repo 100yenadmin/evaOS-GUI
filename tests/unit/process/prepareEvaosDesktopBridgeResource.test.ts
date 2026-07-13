@@ -6,6 +6,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 type PeekabooVersionRunner = (filePath: string, args: string[], options: Record<string, unknown>) => string;
 
+type PythonRuntimeMetadata = {
+  version: string;
+  sourceSha256: string;
+  sourceUrl: string;
+  architecture: string;
+  packages: Array<{ name: string; version: string; sha256: string }>;
+  license: string;
+  licensePath: string;
+  licenseSha256: string;
+};
+
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   bridgeManifest: (input: {
     sourcePath: string;
@@ -24,7 +35,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     };
   }) => Record<string, unknown>;
   bridgeWrapperScript: () => string;
-  installPythonRuntime: (sourcePath?: string, resourceDir?: string) => Record<string, string> | undefined;
+  installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
   isMachOExecutable: (filePath: string) => boolean;
   installPeekabooLicense: (
     sourcePath?: string,

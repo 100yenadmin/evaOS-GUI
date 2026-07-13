@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module';
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
+const cpythonLicense = readFileSync(join(__dirname, '../../fixtures/licenses/CPython-3.12.13-LICENSE.txt'));
 const afterPack = require('../../../scripts/afterPack.js') as {
   isMachOExecutable: (filePath: string) => boolean;
   verifyBundledResources: (resourcesDir: string, electronPlatformName: string, targetArch: string) => void;
@@ -61,7 +62,7 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
     writeExecutableScript(join(bridgeDir, 'python', 'bin', 'python3.12'));
   }
   symlinkSync('python3.12', join(bridgeDir, 'python', 'bin', 'python3'));
-  writeFileSync(join(bridgeDir, 'licenses', 'CPython-LICENSE.txt'), 'Python Software Foundation License\n');
+  writeFileSync(join(bridgeDir, 'licenses', 'CPython-LICENSE.txt'), cpythonLicense);
   writeFileSync(
     join(bridgeDir, 'manifest.json'),
     JSON.stringify({
@@ -99,7 +100,9 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
               sha256: 'ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6',
             },
           ],
+          license: 'Python-2.0',
           licensePath: 'licenses/CPython-LICENSE.txt',
+          licenseSha256: '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf',
         },
       },
     }) + '\n'
@@ -282,12 +285,12 @@ describe('afterPack bundled resource verification', () => {
     writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
     const pythonPath = join(resourcesDir, 'Bridge', 'python', 'bin', 'python3');
     rmSync(pythonPath);
-    symlinkSync('/tmp/build-machine/python3.12', pythonPath);
+    symlinkSync(join(resourcesDir, 'Bridge', 'python', 'bin', 'python3.12'), pythonPath);
 
     try {
       process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
       expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
-        /python3|launcher symlink/
+        /launcher symlink is not relocatable/
       );
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);

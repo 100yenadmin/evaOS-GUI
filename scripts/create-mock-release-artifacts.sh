@@ -42,7 +42,7 @@ create_mock_macos_zip() {
   mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/licenses"
   printf '#!/usr/bin/env bash\nprintf "{}\\n"\n' > "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
   chmod +x "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
-  python3 - "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge" "$output_path" <<'PY'
+  python3 - "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge" "$output_path" "tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -50,6 +50,7 @@ import sys
 
 bridge = pathlib.Path(sys.argv[1])
 output_path = pathlib.Path(sys.argv[2])
+python_license_path = pathlib.Path(sys.argv[3])
 architecture = "arm64" if "arm64" in output_path.name else "x64"
 runtime_sha256 = (
     "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17"
@@ -59,7 +60,7 @@ runtime_sha256 = (
 python_header = bytes.fromhex("cffaedfe0c000001" if architecture == "arm64" else "cffaedfe07000001")
 macho = bytes.fromhex("cafebabe00000000")
 license_bytes = b"MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\n"
-python_license_bytes = b"Python Software Foundation License Version 2\n"
+python_license_bytes = python_license_path.read_bytes()
 (bridge / "bin" / "peekaboo").write_bytes(macho)
 (bridge / "bin" / "evaos-connector-helper").write_bytes(macho)
 (bridge / "bin" / "peekaboo").chmod(0o755)
@@ -76,7 +77,7 @@ for package in ("ApplicationServices", "Quartz", "objc"):
     package_dir = site_packages / package
     package_dir.mkdir(parents=True, exist_ok=True)
     (package_dir / "__init__.py").write_text("", encoding="utf-8")
-(site_packages / "objc" / "_objc.cpython-312-darwin.so").write_bytes(macho)
+(site_packages / "objc" / "_objc.cpython-312-darwin.so").write_bytes(python_header)
 python_packages = [
     {"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},
     {"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},
@@ -111,6 +112,7 @@ manifest = {
 PY
   python3 - "$tmp_dir" "$output_path" <<'PY'
 import pathlib
+import stat
 import sys
 import zipfile
 
@@ -118,7 +120,15 @@ root = pathlib.Path(sys.argv[1])
 output = pathlib.Path(sys.argv[2])
 with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(root.rglob("*")):
-        archive.write(path, path.relative_to(root))
+        relative = path.relative_to(root)
+        if path.is_symlink():
+            info = zipfile.ZipInfo(str(relative))
+            info.create_system = 3
+            info.external_attr = (stat.S_IFLNK | 0o777) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, path.readlink().as_posix())
+        else:
+            archive.write(path, relative)
 PY
   rm -rf "$tmp_dir"
 }

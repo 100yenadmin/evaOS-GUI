@@ -129,6 +129,8 @@ function writeMacosBridgeZip(
     omitLicense?: boolean;
     sourceSha256?: string;
     manifestLicenseSha256?: string;
+    tamperPythonLicense?: boolean;
+    wrongObjcArchitecture?: boolean;
   } = {}
 ) {
   const script = [
@@ -144,14 +146,18 @@ function writeMacosBridgeZip(
     'omit_license = sys.argv[4] == "1"',
     'source_sha256 = sys.argv[5]',
     'manifest_license_sha256 = sys.argv[6]',
+    'python_license_path = pathlib.Path(sys.argv[7])',
+    'tamper_python_license = sys.argv[8] == "1"',
+    'wrong_objc_architecture = sys.argv[9] == "1"',
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
     'python_header = bytes.fromhex("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001")',
     'license_bytes = b"MIT License\\n\\nPermission is hereby granted, free of charge, to any person obtaining a copy\\n"',
     'license_sha256 = manifest_license_sha256 or hashlib.sha256(license_bytes).hexdigest()',
-    'python_license_bytes = b"Python Software Foundation License Version 2\\n"',
+    'python_license_bytes = python_license_path.read_bytes() + (b"tampered\\n" if tamper_python_license else b"")',
     'python_license_sha256 = hashlib.sha256(python_license_bytes).hexdigest()',
+    'objc_header = bytes.fromhex(("cffaedfe07000001" if python_arch == "arm64" else "cffaedfe0c000001") if wrong_objc_architecture else ("cffaedfe0c000001" if python_arch == "arm64" else "cffaedfe07000001"))',
     'python_packages = [{"name":"pyobjc-core","version":"12.2.1","sha256":"a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b"},{"name":"pyobjc-framework-Cocoa","version":"12.2.1","sha256":"28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080"},{"name":"pyobjc-framework-Quartz","version":"12.2.1","sha256":"de9c8cca7e95290c8d540466af11c7cdfe3a5458e6f56c34006d5b45243f9ed9"},{"name":"pyobjc-framework-ApplicationServices","version":"12.2.1","sha256":"f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b"},{"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"}]',
     'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython.tar.gz", "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256}}}',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
@@ -167,7 +173,7 @@ function writeMacosBridgeZip(
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/ApplicationServices/__init__.py", b"")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/Quartz/__init__.py", b"")',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/__init__.py", b"")',
-    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", bytes.fromhex("cafebabe00000000"))',
+    '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so", objc_header)',
     '    archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/CPython-LICENSE.txt", python_license_bytes)',
     '    if not omit_license:',
     '        archive.writestr(f"{app_root}/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt", license_bytes)',
@@ -184,6 +190,9 @@ function writeMacosBridgeZip(
     options.omitLicense ? '1' : '0',
     options.sourceSha256 || '4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383',
     options.manifestLicenseSha256 || '',
+    path.join(repoRoot, 'tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt'),
+    options.tamperPythonLicense ? '1' : '0',
+    options.wrongObjcArchitecture ? '1' : '0',
   ]);
 }
 
@@ -462,7 +471,8 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('EVAOS_PEEKABOO_BIN=$PEEKABOO_BIN');
     expect(workflow).toContain('EVAOS_REQUIRED_PEEKABOO_SOURCE_SHA256=$PEEKABOO_BINARY_SHA256');
     expect(workflow).toContain('EVAOS_PEEKABOO_LICENSE=$PEEKABOO_LICENSE');
-    expect(workflow).toContain('scripts/prepareEvaosDesktopBridgePythonRuntime.sh "${{ matrix.arch }}"');
+    expect(workflow).toContain('TARGET_ARCH: ${{ matrix.arch }}');
+    expect(workflow).toContain('scripts/prepareEvaosDesktopBridgePythonRuntime.sh "$TARGET_ARCH"');
     expect(runtimePrep).toContain('EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR=$runtime_dir');
     expect(runtimePrep).toContain('EVAOS_REQUIRED_PYTHON_RUNTIME_SHA256=$runtime_sha256');
     expect(runtimePrep).toContain('import ApplicationServices, Quartz');
@@ -1512,6 +1522,16 @@ describe('evaOS beta release gate', () => {
         name: 'mismatched source digest',
         options: { sourceSha256: '0'.repeat(64) },
         expected: /source digest/,
+      },
+      {
+        name: 'self-consistent altered CPython license',
+        options: { tamperPythonLicense: true },
+        expected: /Python runtime provenance|CPython license digest/,
+      },
+      {
+        name: 'wrong PyObjC architecture',
+        options: { wrongObjcArchitecture: true },
+        expected: /PyObjC native runtime architecture/,
       },
     ];
 

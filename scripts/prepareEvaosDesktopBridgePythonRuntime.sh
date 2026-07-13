@@ -36,6 +36,7 @@ runtime_url="https://github.com/astral-sh/python-build-standalone/releases/downl
 runtime_archive="${RUNNER_TEMP:?RUNNER_TEMP is required}/${runtime_asset}"
 runtime_root="${RUNNER_TEMP}/evaos-python-${PYTHON_RUNTIME_VERSION}-${runtime_arch}"
 wheelhouse="${RUNNER_TEMP}/evaos-python-wheelhouse-${PYTHON_RUNTIME_VERSION}"
+python_minor="${PYTHON_RUNTIME_VERSION%.*}"
 
 curl --fail --location --retry 3 --output "$runtime_archive" "$runtime_url"
 printf '%s  %s\n' "$runtime_sha256" "$runtime_archive" | shasum -a 256 -c -
@@ -44,9 +45,9 @@ mkdir -p "$runtime_root" "$wheelhouse"
 tar -xzf "$runtime_archive" -C "$runtime_root"
 runtime_dir="$runtime_root/python"
 test -x "$runtime_dir/bin/python3"
-test -f "$runtime_dir/lib/python3.12/LICENSE.txt"
+test -f "$runtime_dir/lib/python${python_minor}/LICENSE.txt"
 test "$("$runtime_dir/bin/python3" --version)" = "Python ${PYTHON_RUNTIME_VERSION}"
-test "$(lipo -archs "$runtime_dir/bin/python3.12")" = "$expected_lipo_arch"
+test "$(lipo -archs "$runtime_dir/bin/python${python_minor}")" = "$expected_lipo_arch"
 
 pyobjc_wheels=(
   'pyobjc_core-12.2.1-cp312-cp312-macosx_10_13_universal2.whl|a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b|https://files.pythonhosted.org/packages/8c/88/300ad283bed0c971c52dcac6f70113e138169d4ce6d856ddd03d16081e51/pyobjc_core-12.2.1-cp312-cp312-macosx_10_13_universal2.whl'
@@ -68,7 +69,7 @@ done
   --no-compile \
   --no-deps \
   --no-index \
-  --target "$runtime_dir/lib/python3.12/site-packages" \
+  --target "$runtime_dir/lib/python${python_minor}/site-packages" \
   "$wheelhouse"/*.whl
 "$runtime_dir/bin/python3" -I -c 'import ApplicationServices, Quartz; print("bundled-pyobjc-ok")'
 

@@ -673,9 +673,11 @@ jobs:
       - name: Install pinned evaOS desktop bridge Python runtime (macOS only)
         if: startsWith(matrix.platform, 'macos')
         shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          scripts/prepareEvaosDesktopBridgePythonRuntime.sh "${{ matrix.arch }}" "$GITHUB_ENV"
+          scripts/prepareEvaosDesktopBridgePythonRuntime.sh "$TARGET_ARCH" "$GITHUB_ENV"
 
       # macOS: Build with notarization - DMG failure = CI failure, notarization failure = warning only
       # macOS: 构建并公证 - DMG 失败 = CI 失败，公证失败 = 仅警告

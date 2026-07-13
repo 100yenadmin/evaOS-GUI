@@ -96,6 +96,7 @@ const PYTHON_RUNTIME_SOURCE_SHA256 = {
   x64: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894',
 };
 const PYTHON_RUNTIME_LICENSE_PATH = 'licenses/CPython-LICENSE.txt';
+const PYTHON_RUNTIME_LICENSE_SHA256 = '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf';
 const PYTHON_RUNTIME_PACKAGES = [
   ['pyobjc-core', '12.2.1', 'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b'],
   ['pyobjc-framework-Cocoa', '12.2.1', '28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080'],
@@ -1612,15 +1613,54 @@ function inspectMacosZipBridgePayload(zipPath) {
     `expected_python_version = "${PYTHON_RUNTIME_VERSION}"`,
     `expected_python_source_sha256 = ${JSON.stringify(PYTHON_RUNTIME_SOURCE_SHA256)}`,
     `expected_python_license_path = "${PYTHON_RUNTIME_LICENSE_PATH}"`,
+    `expected_python_license_sha256 = "${PYTHON_RUNTIME_LICENSE_SHA256}"`,
     `expected_python_packages = ${JSON.stringify(PYTHON_RUNTIME_PACKAGES)}`,
-    'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf"}',
+    'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
+    'expected_cpu_types = {"arm64": 0x0100000c, "x64": 0x01000007}',
+    'def thin_macho_cpu(data):',
+    '    if len(data) < 8:',
+    '        return None',
+    '    magic = data[:4].hex()',
+    '    if magic in {"cffaedfe", "cefaedfe"}:',
+    '        return int.from_bytes(data[4:8], "little")',
+    '    if magic in {"feedfacf", "feedface"}:',
+    '        return int.from_bytes(data[4:8], "big")',
+    '    return None',
+    'def macho_has_arch(data, expected_arch):',
+    '    expected_cpu = expected_cpu_types[expected_arch]',
+    '    thin_cpu = thin_macho_cpu(data)',
+    '    if thin_cpu is not None:',
+    '        return thin_cpu == expected_cpu',
+    '    if len(data) < 8:',
+    '        return False',
+    '    magic = data[:4].hex()',
+    '    fat_shapes = {"cafebabe": ("big", 20, False), "bebafeca": ("little", 20, False), "cafebabf": ("big", 32, True), "bfbafeca": ("little", 32, True)}',
+    '    if magic not in fat_shapes:',
+    '        return False',
+    '    byteorder, record_size, is_fat64 = fat_shapes[magic]',
+    '    count = int.from_bytes(data[4:8], byteorder)',
+    '    if count <= 0 or count > 64 or 8 + count * record_size > len(data):',
+    '        return False',
+    '    for index in range(count):',
+    '        record = 8 + index * record_size',
+    '        cpu_type = int.from_bytes(data[record:record + 4], byteorder)',
+    '        if is_fat64:',
+    '            offset = int.from_bytes(data[record + 8:record + 16], byteorder)',
+    '            size = int.from_bytes(data[record + 16:record + 24], byteorder)',
+    '        else:',
+    '            offset = int.from_bytes(data[record + 8:record + 12], byteorder)',
+    '            size = int.from_bytes(data[record + 12:record + 16], byteorder)',
+    '        if cpu_type == expected_cpu and size >= 8 and offset + size <= len(data):',
+    '            if thin_macho_cpu(data[offset:offset + size]) == expected_cpu:',
+    '                return True',
+    '    return False',
     'def bridge_entry_suffix(name):',
     '    parts = name.split("/")',
     '    for index, part in enumerate(parts):',
     '        if part.endswith(".app") and parts[index + 1:index + 4] == ["Contents", "Resources", "Bridge"]:',
     '            return "/".join(parts[index + 4:])',
     '    return None',
-    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcMachO": False}',
+    'result = {"hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False}',
     'entries = {}',
     'with zipfile.ZipFile(path) as archive:',
     '    for name in archive.namelist():',
@@ -1648,7 +1688,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
-    '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("packages") == expected_python_packages',
+    '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("license") == "Python-2.0" and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("licenseSha256") == expected_python_license_sha256 and python_runtime.get("packages") == expected_python_packages',
     '    if result["hasPeekaboo"]:',
     '        result["peekabooMachO"] = archive.read(entries["bin/peekaboo"], pwd=None)[:4].hex() in macho_magics',
     '    if result["hasConnectorHelper"]:',
@@ -1662,7 +1702,8 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        launcher_mode = archive.getinfo(entries["python/bin/python3"]).external_attr >> 16',
     '        result["pythonLauncherValid"] = (stat.S_ISLNK(launcher_mode) and launcher_bytes == b"python3.12") or (stat.S_ISREG(launcher_mode) and bool(launcher_mode & 0o111) and launcher_bytes[:4].hex() in macho_magics)',
     '    if result["hasPythonControlModules"]:',
-    '        result["pythonObjcMachO"] = archive.read(entries["python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so"], pwd=None)[:4].hex() in macho_magics',
+    '        objc_bytes = archive.read(entries["python/lib/python3.12/site-packages/objc/_objc.cpython-312-darwin.so"], pwd=None)',
+    '        result["pythonObjcArchValid"] = macho_has_arch(objc_bytes, expected_python_arch)',
     '    if result["hasPeekabooLicense"]:',
     '        license_bytes = archive.read(entries[expected_license_path], pwd=None)',
     '        result["licenseDigestValid"] = hashlib.sha256(license_bytes).hexdigest() == peekaboo.get("licenseSha256")',
@@ -1673,7 +1714,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        result["licenseNoticeValid"] = license_text.startswith("MIT License") and "Permission is hereby granted" in license_text',
     '    if result["hasPythonLicense"]:',
     '        python_license_bytes = archive.read(entries[expected_python_license_path], pwd=None)',
-    '        result["pythonLicenseDigestValid"] = hashlib.sha256(python_license_bytes).hexdigest() == python_runtime.get("licenseSha256")',
+    '        result["pythonLicenseDigestValid"] = hashlib.sha256(python_license_bytes).hexdigest() == expected_python_license_sha256',
     'print(json.dumps(result))',
   ].join('\n');
   try {
@@ -1728,7 +1769,7 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
     assertZipBridgeProbe(probe, 'pythonManifestValid', zipName, 'bundled Python runtime provenance');
     assertZipBridgeProbe(probe, 'pythonLicenseDigestValid', zipName, 'CPython license digest');
     assertZipBridgeProbe(probe, 'hasPythonControlModules', zipName, 'bundled PyObjC control modules');
-    assertZipBridgeProbe(probe, 'pythonObjcMachO', zipName, 'bundled PyObjC native runtime');
+    assertZipBridgeProbe(probe, 'pythonObjcArchValid', zipName, 'bundled PyObjC native runtime architecture');
   }
 }
 

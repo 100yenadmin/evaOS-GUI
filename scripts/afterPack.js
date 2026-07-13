@@ -1,5 +1,6 @@
 const { Arch } = require('builder-util');
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const os = require('os');
 const {
@@ -183,6 +184,7 @@ const PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH = {
   arm64: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
   x64: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894',
 };
+const PYTHON_RUNTIME_LICENSE_SHA256 = '3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf';
 const PYTHON_RUNTIME_PACKAGES = [
   ['pyobjc-core', '12.2.1', 'a64232bb27ed101d4adc7d42b0e64a6d3331aac7bee7861c037a6777a163f10b'],
   ['pyobjc-framework-Cocoa', '12.2.1', '28b9b8bab1c36efb94744786918752d0c1842f5fbb67e7d5ca97b5f736512080'],
@@ -254,6 +256,12 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
   }
   if (!fs.existsSync(versionedPythonPath)) {
     missing.push(path.join('Bridge', 'python', 'bin', 'python3.12'));
+  } else {
+    try {
+      fs.accessSync(versionedPythonPath, fs.constants.X_OK);
+    } catch {
+      throw new Error(`Packaged evaOS desktop bridge Python runtime is not executable: ${versionedPythonPath}`);
+    }
   }
   if (!fs.existsSync(pythonLicensePath)) {
     missing.push(path.join('Bridge', 'licenses', 'CPython-LICENSE.txt'));
@@ -274,12 +282,17 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     requireMachOExecutable(peekabooPath, path.join('Bridge', 'bin', 'peekaboo'));
     requireMachOExecutable(helperPath, path.join('Bridge', 'bin', 'evaos-connector-helper'));
     requireMachOExecutable(pythonPath, path.join('Bridge', 'python', 'bin', 'python3'));
+    requireMachOExecutable(versionedPythonPath, path.join('Bridge', 'python', 'bin', 'python3.12'));
     const pythonMetadata = manifest.bundledTools?.python;
     if (
       !pythonMetadata?.version ||
       !/^[0-9a-f]{64}$/i.test(String(pythonMetadata.sourceSha256 || '')) ||
       !String(pythonMetadata.sourceUrl || '').startsWith('https://github.com/astral-sh/python-build-standalone/') ||
+      pythonMetadata.license !== 'Python-2.0' ||
       pythonMetadata.licensePath !== 'licenses/CPython-LICENSE.txt' ||
+      pythonMetadata.licenseSha256 !== PYTHON_RUNTIME_LICENSE_SHA256 ||
+      crypto.createHash('sha256').update(fs.readFileSync(pythonLicensePath)).digest('hex') !==
+        PYTHON_RUNTIME_LICENSE_SHA256 ||
       JSON.stringify(pythonMetadata.packages) !== JSON.stringify(PYTHON_RUNTIME_PACKAGES)
     ) {
       throw new Error('Packaged evaOS desktop bridge manifest is missing pinned bundled Python runtime provenance.');
