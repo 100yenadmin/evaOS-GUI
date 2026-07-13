@@ -922,7 +922,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "Інструменти під керуванням шлюзу",
+    "workbenchSessionMcpUnsupported": "MCP сеансу Workbench не підтримується",
+    "desktopBridgeGatewayPluginRequired": "Потрібен плагін шлюзу Desktop Bridge",
+    "sessionMcpSupportDeterminedAtConnection": "Підтримка MCP сеансу визначається під час підключення"
   },
   "remoteAgent": {
     "title": "Віддалені агенти",

@@ -1022,7 +1022,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "Gateway-managed tools",
+    "workbenchSessionMcpUnsupported": "Workbench session MCP unsupported",
+    "desktopBridgeGatewayPluginRequired": "Desktop Bridge gateway plugin required",
+    "sessionMcpSupportDeterminedAtConnection": "Session MCP support is determined at connection time"
   },
   "remoteAgent": {
     "title": "Remote Agents",

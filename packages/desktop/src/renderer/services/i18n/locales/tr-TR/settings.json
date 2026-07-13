@@ -1010,7 +1010,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "Ağ geçidi tarafından yönetilen araçlar",
+    "workbenchSessionMcpUnsupported": "Workbench oturum MCP'si desteklenmiyor",
+    "desktopBridgeGatewayPluginRequired": "Desktop Bridge ağ geçidi eklentisi gerekli",
+    "sessionMcpSupportDeterminedAtConnection": "Oturum MCP desteği bağlantı sırasında belirlenir"
   },
   "remoteAgent": {
     "title": "Uzak Ajanlar",

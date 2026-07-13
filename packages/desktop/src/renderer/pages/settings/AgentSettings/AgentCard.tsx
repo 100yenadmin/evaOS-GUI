@@ -12,6 +12,7 @@ import { resolveAgentLogo } from '@/renderer/utils/model/agentLogo';
 import { resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { getEvaosAgentDisplayName, isEvaosCustomAgentPresentation } from '@/renderer/evaos/evaosAgentPresentation';
 import type { EvaosNativeAgentAvailability } from '@/renderer/evaos/evaosNativeAgentAvailability';
+import { getCatalogMcpTransportPresentation } from '@/renderer/utils/model/agentTypes';
 
 type DetectedAgent = {
   agent_type: string;
@@ -74,6 +75,7 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
       : t('settings.agentManagement.goToChat');
     const isRepairRequired = nativeAvailability?.status === 'repair_required';
     const extensionAvatar = resolveExtensionAssetUrl(agent.isExtension ? agent.avatar : undefined);
+    const mcpTransportPresentation = getCatalogMcpTransportPresentation(agent);
     const logo = useNeutralCustomVisual
       ? undefined
       : extensionAvatar ||
@@ -105,6 +107,18 @@ const AgentCard: React.FC<AgentCardProps> = (props) => {
             <Typography.Text className='mt-4px block text-10px leading-14px text-t-tertiary'>
               {repairReason}
             </Typography.Text>
+          ) : null}
+          {mcpTransportPresentation ? (
+            <div className='mt-6px flex flex-col gap-2px'>
+              <Typography.Text className='block text-10px font-medium leading-14px text-t-secondary'>
+                {t(mcpTransportPresentation.labelKey)}
+              </Typography.Text>
+              {mcpTransportPresentation.detailKeys.map((key) => (
+                <Typography.Text key={key} className='block text-10px leading-14px text-t-tertiary'>
+                  {t(key)}
+                </Typography.Text>
+              ))}
+            </div>
           ) : null}
         </div>
 

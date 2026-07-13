@@ -31,6 +31,42 @@ export const DETECTED_AGENTS_SWR_KEY = 'agents.detected';
 export const MANAGED_AGENTS_SWR_KEY = 'agents.managed';
 export const ASSISTANT_AGENT_CATALOG_SWR_KEY = 'agents.assistant-management-catalog';
 
+export type CatalogMcpTransportPresentation = {
+  kind: 'gateway-managed' | 'connection-time';
+  labelKey:
+    | 'settings.agentManagement.gatewayManagedTools'
+    | 'settings.agentManagement.sessionMcpSupportDeterminedAtConnection';
+  detailKeys: Array<
+    | 'settings.agentManagement.workbenchSessionMcpUnsupported'
+    | 'settings.agentManagement.desktopBridgeGatewayPluginRequired'
+  >;
+};
+
+/** Catalog-time MCP copy must not infer transport support from absent handshake capabilities. */
+export function getCatalogMcpTransportPresentation(agent: {
+  agent_type: string;
+  backend?: string;
+}): CatalogMcpTransportPresentation | undefined {
+  if (agent.backend === 'openclaw' || agent.agent_type === 'openclaw-gateway') {
+    return {
+      kind: 'gateway-managed',
+      labelKey: 'settings.agentManagement.gatewayManagedTools',
+      detailKeys: [
+        'settings.agentManagement.workbenchSessionMcpUnsupported',
+        'settings.agentManagement.desktopBridgeGatewayPluginRequired',
+      ],
+    };
+  }
+  if (agent.agent_type === 'acp') {
+    return {
+      kind: 'connection-time',
+      labelKey: 'settings.agentManagement.sessionMcpSupportDeterminedAtConnection',
+      detailKeys: [],
+    };
+  }
+  return undefined;
+}
+
 function projectManagementAgent(agent: ManagedAgent): AgentMetadata {
   const {
     installed: _installed,

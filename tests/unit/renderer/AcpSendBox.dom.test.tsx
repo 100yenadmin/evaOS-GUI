@@ -19,6 +19,7 @@ const {
   setSendBoxHandlerMock,
   queueSendNowMock,
   stopInvokeMock,
+  conversationContextRef,
 } = vi.hoisted(() => ({
   sendMessageInvokeMock: vi.fn(),
   addOrUpdateMessageMock: vi.fn(),
@@ -27,6 +28,7 @@ const {
   setSendBoxHandlerMock: vi.fn(),
   queueSendNowMock: vi.fn(),
   stopInvokeMock: vi.fn(),
+  conversationContextRef: { current: null as unknown },
 }));
 
 vi.mock('@/common', () => ({
@@ -45,15 +47,18 @@ vi.mock('@/common', () => ({
 }));
 
 vi.mock('@/renderer/components/chat/SendBox', () => ({
-  default: ({ onSend }: { onSend: (message: string) => Promise<void> }) => (
-    <button
-      type='button'
-      onClick={() => {
-        void onSend('Hello').catch(() => {});
-      }}
-    >
-      send
-    </button>
+  default: ({ onSend, tools }: { onSend: (message: string) => Promise<void>; tools?: React.ReactNode }) => (
+    <>
+      {tools}
+      <button
+        type='button'
+        onClick={() => {
+          void onSend('Hello').catch(() => {});
+        }}
+      >
+        send
+      </button>
+    </>
   ),
 }));
 
@@ -70,7 +75,19 @@ vi.mock('@/renderer/components/chat/MobileActionSheet', () => ({
   useAttachEntry: () => ({ entries: [], hiddenFileInput: null }),
 }));
 vi.mock('@/renderer/components/chat/ThoughtDisplay', () => ({ default: () => null }));
-vi.mock('@/renderer/components/media/FileAttachButton', () => ({ default: () => null }));
+vi.mock('@/renderer/components/media/FileAttachButton', () => ({
+  default: ({
+    loadedMcpStatuses,
+  }: {
+    loadedMcpStatuses?: Array<{ id: string; name: string; status: string; reason?: string }>;
+  }) => (
+    <div data-testid='mcp-statuses'>
+      {(loadedMcpStatuses ?? []).map((item) => (
+        <span key={item.id}>{`${item.name}|${item.status}|${item.reason ?? ''}`}</span>
+      ))}
+    </div>
+  ),
+}));
 vi.mock('@/renderer/components/media/FilePreview', () => ({ default: () => null }));
 vi.mock('@/renderer/components/media/HorizontalFileList', () => ({
   default: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -108,7 +125,7 @@ vi.mock('@/renderer/hooks/chat/useAutoTitle', () => ({
   }),
 }));
 vi.mock('@/renderer/hooks/context/ConversationContext', () => ({
-  useConversationContextSafe: () => null,
+  useConversationContextSafe: () => conversationContextRef.current,
 }));
 vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
   useLayoutContext: () => ({ isMobile: false }),
@@ -204,6 +221,35 @@ describe('AcpSendBox', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stopInvokeMock.mockResolvedValue({ runtime: undefined });
+    conversationContextRef.current = null;
+  });
+
+  it('keeps exact post-session MCP statuses and reasons visible', () => {
+    conversationContextRef.current = {
+      loadedMcpServers: ['stale-fallback'],
+      loadedMcpStatuses: [
+        {
+          id: 'mac-control',
+          name: 'evaos-mac-control',
+          status: 'unsupported',
+          reason: "transport 'stdio' is not supported by this agent",
+        },
+        {
+          id: 'other-mcp',
+          name: 'Other MCP',
+          status: 'failed',
+          reason: 'authentication failed',
+        },
+      ],
+    };
+
+    render(<AcpSendBox conversation_id='conv-1' backend='openclaw' messageState={makeMessageState()} />);
+
+    expect(screen.getByTestId('mcp-statuses')).toHaveTextContent(
+      "evaos-mac-control|unsupported|transport 'stdio' is not supported by this agent"
+    );
+    expect(screen.getByTestId('mcp-statuses')).toHaveTextContent('Other MCP|failed|authentication failed');
+    expect(screen.getByTestId('mcp-statuses')).not.toHaveTextContent('stale-fallback');
   });
 
   it('resets ACP loading state when sendMessage fails before any stream error arrives', async () => {

@@ -1002,7 +1002,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "Инструменты под управлением шлюза",
+    "workbenchSessionMcpUnsupported": "MCP сеанса Workbench не поддерживается",
+    "desktopBridgeGatewayPluginRequired": "Требуется плагин шлюза Desktop Bridge",
+    "sessionMcpSupportDeterminedAtConnection": "Поддержка MCP сеанса определяется при подключении"
   },
   "remoteAgent": {
     "title": "Удалённые агенты",

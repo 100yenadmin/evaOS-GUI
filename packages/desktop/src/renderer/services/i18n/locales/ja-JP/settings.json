@@ -1012,7 +1012,11 @@
     "nativeRepairTitle": "{{displayName}} Mac control needs pairing",
     "filterAll": "All",
     "filterAvailable": "Available",
-    "filterSetupNeeded": "Needs setup"
+    "filterSetupNeeded": "Needs setup",
+    "gatewayManagedTools": "ゲートウェイ管理ツール",
+    "workbenchSessionMcpUnsupported": "Workbench セッション MCP はサポートされていません",
+    "desktopBridgeGatewayPluginRequired": "Desktop Bridge ゲートウェイプラグインが必要です",
+    "sessionMcpSupportDeterminedAtConnection": "セッション MCP のサポートは接続時に決定されます"
   },
   "remoteAgent": {
     "title": "リモートエージェント",

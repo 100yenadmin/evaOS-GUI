@@ -12,7 +12,9 @@ vi.mock('@/common', () => ({
 
 import { ipcBridge } from '@/common';
 import type { ManagedAgent } from '@/common/types/agent/agentMetadata';
-import { fetchDetectedAgents, fetchManagedAgents, reprobeEnabledAgents } from '@/renderer/utils/model/agentTypes';
+import * as agentTypes from '@/renderer/utils/model/agentTypes';
+
+const { fetchDetectedAgents, fetchManagedAgents, reprobeEnabledAgents } = agentTypes;
 
 const onlineAgent: ManagedAgent = {
   id: 'claude-row',
@@ -93,6 +95,35 @@ describe('detected agent catalog projection', () => {
     await expect(fetchDetectedAgents()).resolves.toEqual([
       expect.objectContaining({ id: 'unchecked-row', available: true }),
     ]);
+  });
+
+  it('presents OpenClaw catalog rows as gateway-managed without inferring session MCP support', async () => {
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([
+      { ...onlineAgent, id: 'openclaw-row', name: 'OpenClaw', backend: 'openclaw' },
+    ]);
+
+    const [openclaw] = await fetchManagedAgents();
+
+    expect(agentTypes.getCatalogMcpTransportPresentation(openclaw)).toEqual({
+      kind: 'gateway-managed',
+      labelKey: 'settings.agentManagement.gatewayManagedTools',
+      detailKeys: [
+        'settings.agentManagement.workbenchSessionMcpUnsupported',
+        'settings.agentManagement.desktopBridgeGatewayPluginRequired',
+      ],
+    });
+  });
+
+  it('presents generic ACP session MCP support as connection-time truth', async () => {
+    vi.mocked(ipcBridge.acpConversation.getManagedAgents.invoke).mockResolvedValue([onlineAgent]);
+
+    const [genericAcp] = await fetchManagedAgents();
+
+    expect(agentTypes.getCatalogMcpTransportPresentation(genericAcp)).toEqual({
+      kind: 'connection-time',
+      labelKey: 'settings.agentManagement.sessionMcpSupportDeterminedAtConnection',
+      detailKeys: [],
+    });
   });
 
   it('re-probes every enabled row before an explicit catalog refresh', async () => {
