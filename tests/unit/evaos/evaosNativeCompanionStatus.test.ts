@@ -61,6 +61,40 @@ function depsWithResponses(
   };
 }
 
+function depsWithTypedReadyResponses(
+  responses: Record<string, unknown>,
+  overrides: Partial<EvaosNativeCompanionStatusDeps> = {}
+): EvaosNativeCompanionStatusDeps {
+  const bridge = responses['status --json'] as { data?: Record<string, unknown> };
+  bridge.data ??= {};
+  bridge.data.bridge_runtime ??= {
+    schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+    contract_version: 1,
+    version: '0.1.1',
+    version_compatible: true,
+    compatible: true,
+  };
+
+  const connector = responses['connector-service status --json'] as Record<string, unknown>;
+  connector.private_network ??= {
+    client_installed: true,
+    client_running: true,
+    enrolled: true,
+    correct_control_plane: true,
+    acl_allowed: true,
+    online: true,
+  };
+
+  const customerMac = responses['customer-mac status --json'] as { data?: Record<string, unknown> };
+  customerMac.data ??= {};
+  customerMac.data.control_engines ??= {
+    cua_driver: { available: true, active_for_actions: true },
+    active_primary: 'cua_driver',
+  };
+
+  return depsWithResponses(responses, overrides);
+}
+
 describe('evaosNativeCompanionStatus', () => {
   afterEach(() => {
     stopEvaosNativeCompanionSessionConnector();
@@ -189,6 +223,83 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
   });
+
+  it.each([
+    {
+      label: 'CUA primary',
+      controlEngines: {
+        cua_driver: { available: true, active_for_actions: true },
+        peekaboo: { available: true },
+        active_primary: 'cua_driver',
+      },
+      expectedActionEngine: 'cua_ready',
+    },
+    {
+      label: 'Peekaboo fallback',
+      controlEngines: { peekaboo: { available: true }, active_primary: 'peekaboo' },
+      expectedActionEngine: 'peekaboo_ready',
+    },
+  ] as const)(
+    'accepts $label when all typed prerequisites are ready',
+    async ({ controlEngines, expectedActionEngine }) => {
+      const deps = depsWithResponses({
+        'status --json': {
+          ok: true,
+          data: {
+            bridge_runtime: {
+              schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+              contract_version: 1,
+              version: '0.1.1',
+              version_compatible: true,
+              compatible: true,
+            },
+            permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+          },
+        },
+        'connector-service status --json': {
+          ok: true,
+          running: true,
+          health: { reachable: true },
+          tailnet_ip: '100.64.0.10',
+          private_network: {
+            client_installed: true,
+            client_running: true,
+            enrolled: true,
+            correct_control_plane: true,
+            acl_allowed: true,
+            online: true,
+          },
+        },
+        'customer-mac status --json': {
+          ok: true,
+          data: {
+            permissions: { accessibility: { status: 'granted' }, screen_recording: { status: 'granted' } },
+            control_engines: controlEngines,
+          },
+        },
+        'customer-mac iphone-mirroring status --json': { ok: true, data: { installed: true, running: false } },
+        'customer-mac control status --json': { ok: true, data: { active: false, kill_switch: false } },
+        'audit-tail --json --limit 5': { ok: true, data: { records: [] } },
+        'ready --json': { ok: true, data: { ready: true } },
+      });
+
+      const status = await getEvaosNativeCompanionStatus(deps);
+
+      expect(status).toMatchObject({
+        readiness: 'ready',
+        agentPairingStatus: 'ready_for_agent_pairing',
+        runtimeToolReadiness: 'pairing_ready',
+        pairingCapable: true,
+        pairingBlockedReason: undefined,
+        blockerReason: undefined,
+        prerequisites: {
+          bridgeRuntime: 'ready',
+          privateNetwork: 'online',
+          actionEngine: expectedActionEngine,
+        },
+      });
+    }
+  );
 
   it('demotes pairing when explicit private-network evidence cannot prove control-plane and ACL state', async () => {
     const deps = depsWithResponses({
@@ -640,7 +751,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
   });
 
-  it('uses bridge ready as connector truth when legacy connector-service status is stale', async () => {
+  it('fails closed when legacy connector readiness lacks typed prerequisite evidence', async () => {
     const deps = depsWithResponses({
       'status --json': {
         ok: true,
@@ -708,11 +819,17 @@ describe('evaosNativeCompanionStatus', () => {
     const status = await getEvaosNativeCompanionStatus(deps);
 
     expect(status).toMatchObject({
-      readiness: 'ready',
-      agentPairingStatus: 'ready_for_agent_pairing',
-      runtimeToolReadiness: 'pairing_ready',
-      pairingCapable: true,
-      pairingBlockedReason: undefined,
+      readiness: 'repair_required',
+      agentPairingStatus: 'not_ready',
+      runtimeToolReadiness: 'not_ready',
+      pairingCapable: false,
+      pairingBlockedReason: 'bundled_bridge_required',
+      blockerReason: 'bundled_bridge_required',
+      prerequisites: {
+        bridgeRuntime: 'error',
+        privateNetwork: 'error',
+        actionEngine: 'unavailable',
+      },
       connectorService: {
         status: 'ready',
         running: true,
@@ -988,7 +1105,7 @@ describe('evaosNativeCompanionStatus', () => {
   });
 
   it('uses control-status permission proof when customer-mac status is stale', async () => {
-    const deps = depsWithResponses({
+    const deps = depsWithTypedReadyResponses({
       'status --json': {
         ok: true,
         audit_id: 'audit-bridge',
@@ -1064,7 +1181,7 @@ describe('evaosNativeCompanionStatus', () => {
   });
 
   it('uses current control permission proof when bridge status permission state is stale', async () => {
-    const deps = depsWithResponses({
+    const deps = depsWithTypedReadyResponses({
       'status --json': {
         ok: true,
         audit_id: 'audit-bridge-stale',
@@ -1148,7 +1265,7 @@ describe('evaosNativeCompanionStatus', () => {
   });
 
   it('treats legacy top-level connector-service status as ready when reachable', async () => {
-    const deps = depsWithResponses({
+    const deps = depsWithTypedReadyResponses({
       'status --json': {
         ok: true,
         audit_id: 'audit-bridge',
@@ -1475,7 +1592,7 @@ describe('evaosNativeCompanionStatus', () => {
   });
 
   it('does not report pairing capable when the connector only exposes loopback', async () => {
-    const deps = depsWithResponses({
+    const deps = depsWithTypedReadyResponses({
       'status --json': {
         ok: true,
         audit_id: 'audit-bridge',
@@ -1547,7 +1664,7 @@ describe('evaosNativeCompanionStatus', () => {
   });
 
   it('accepts private connector hosts when the bridge reports a URL or port', async () => {
-    const deps = depsWithResponses({
+    const deps = depsWithTypedReadyResponses({
       'status --json': {
         ok: true,
         audit_id: 'audit-bridge',
@@ -1973,6 +2090,14 @@ describe('evaosNativeCompanionStatus', () => {
             managed_by: 'launchagent',
             tailnet_ip: '100.64.0.4',
             health: { reachable: true, host: '100.64.0.4' },
+            private_network: {
+              client_installed: true,
+              client_running: true,
+              enrolled: true,
+              correct_control_plane: true,
+              acl_allowed: true,
+              online: true,
+            },
           },
           {
             ok: true,
@@ -1982,6 +2107,14 @@ describe('evaosNativeCompanionStatus', () => {
             managed_by: 'workbench-or-manual',
             tailnet_ip: '100.64.0.4',
             health: { reachable: true, host: '100.64.0.4' },
+            private_network: {
+              client_installed: true,
+              client_running: true,
+              enrolled: true,
+              correct_control_plane: true,
+              acl_allowed: true,
+              online: true,
+            },
           },
           {
             ok: true,
@@ -1991,6 +2124,14 @@ describe('evaosNativeCompanionStatus', () => {
             managed_by: 'workbench-or-manual',
             tailnet_ip: '100.64.0.4',
             health: { reachable: true, host: '100.64.0.4' },
+            private_network: {
+              client_installed: true,
+              client_running: true,
+              enrolled: true,
+              correct_control_plane: true,
+              acl_allowed: true,
+              online: true,
+            },
           },
         ],
         'connector-service stop --json': {
@@ -2000,6 +2141,13 @@ describe('evaosNativeCompanionStatus', () => {
         'status --json': {
           ok: true,
           data: {
+            bridge_runtime: {
+              schema: 'evaos.desktop_bridge.workbench_runtime.v1',
+              contract_version: 1,
+              version: '0.1.1',
+              version_compatible: true,
+              compatible: true,
+            },
             permissions: {
               accessibility: { status: 'granted' },
               screen_recording: { status: 'granted' },
@@ -2011,6 +2159,10 @@ describe('evaosNativeCompanionStatus', () => {
           ok: true,
           audit_id: 'audit-mac',
           data: {
+            control_engines: {
+              cua_driver: { available: true, active_for_actions: true },
+              active_primary: 'cua_driver',
+            },
             permissions: {
               accessibility: { status: 'granted' },
               screen_recording: { status: 'granted' },
