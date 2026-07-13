@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  connectorServiceReady,
   getNativeCompanionRepairViewModel as buildNativeCompanionRepairViewModel,
   type NativeCompanionPrerequisiteCopy,
   type NativeCompanionRepairViewModelInput,
@@ -69,6 +70,21 @@ const getNativeCompanionRepairViewModel = (input: TestViewModelInput) =>
     permissionGuideDetail: input.permissionGuideDetail ?? 'Localized permission guidance.',
     prerequisiteCopy,
   });
+
+describe('connectorServiceReady', () => {
+  it('requires one shared ready, running, and reachable predicate', () => {
+    expect(
+      connectorServiceReady({
+        connectorService: { status: 'ready', running: true, reachable: true },
+      } as IEvaosNativeCompanionStatusView)
+    ).toBe(true);
+    expect(
+      connectorServiceReady({
+        connectorService: { status: 'ready', running: true, reachable: false },
+      } as IEvaosNativeCompanionStatusView)
+    ).toBe(false);
+  });
+});
 
 const baseStatus = (overrides: Partial<IEvaosNativeCompanionStatusView> = {}): IEvaosNativeCompanionStatusView => ({
   schemaVersion: 'evaos.native_companion_status.v1',

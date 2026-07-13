@@ -192,24 +192,28 @@ export type NativeCompanionPrerequisites = {
   actionEngine: NativeCompanionActionEnginePrerequisite;
 };
 
-export type IEvaosMacControlBlockerReason =
-  | 'listener_owner_mismatch'
-  | 'port_in_use'
-  | 'token_missing'
-  | 'not_workbench_managed'
-  | 'secure_network_link_required'
-  | 'permission_missing'
-  | 'broker_session_expired'
-  | 'agent_cli_config_invalid'
-  | 'runtime_not_configured'
-  | 'bundled_bridge_required'
-  | 'connector_service_not_ready'
-  | 'listener_replacement_unproven'
-  | 'bridge_cli_missing'
-  | 'bridge_diagnostics_unavailable'
-  | 'pairing_not_ready'
-  | 'stale_connector_port_conflict'
-  | 'unknown';
+export const EVAOS_MAC_CONTROL_BLOCKER_REASONS = [
+  'listener_owner_mismatch',
+  'port_in_use',
+  'token_missing',
+  'not_workbench_managed',
+  'secure_network_link_required',
+  'permission_missing',
+  'broker_session_expired',
+  'agent_cli_config_invalid',
+  'runtime_not_configured',
+  'bundled_bridge_required',
+  'connector_service_not_ready',
+  'listener_replacement_unproven',
+  'bridge_cli_missing',
+  'bridge_diagnostics_unavailable',
+  'pairing_not_ready',
+  'stale_connector_port_conflict',
+  'missing_live_listener',
+  'unknown',
+] as const;
+
+export type IEvaosMacControlBlockerReason = (typeof EVAOS_MAC_CONTROL_BLOCKER_REASONS)[number];
 
 export type IEvaosPrivateNetworkAuthorityDiagnosticReason =
   | 'ready'

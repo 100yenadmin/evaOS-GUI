@@ -34,6 +34,7 @@ import { canShowEvaosSupportDiagnostics } from '@/renderer/evaos/supportDiagnost
 import { buildEvaosSupportReportContext } from '@/renderer/evaos/supportReportContext';
 import {
   canCreateNativeCompanionPairingPrompt,
+  connectorServiceReady,
   getNativeCompanionRepairViewModel,
   type NativeCompanionReadinessItem,
   type NativeCompanionRepairStep,
@@ -210,7 +211,7 @@ const NativeCompanionPage: React.FC = () => {
   const shouldShowAgentProof = selectedPairingStatus?.readiness === 'ready' && isAgentProofVisible(agentPairingStatus);
   const brokerSessionRequired = isPairingBrokerSessionRequired(currentActionResult);
   const connectorStartAvailable =
-    !nativeCompanionConnectorReady(selectedPairingStatus) &&
+    !connectorServiceReady(selectedPairingStatus) &&
     currentActionResult?.blockerReason !== 'listener_replacement_unproven';
   const canCreatePairingPrompt = canCreateNativeCompanionPairingPrompt({
     status: selectedPairingStatus,
@@ -1099,14 +1100,6 @@ function statusForSelectedPairingCustomer(
     agentPairingStatus: scopedAgentPairingStatus,
     runtimeToolReadiness: scopedRuntimeToolReadiness,
   };
-}
-
-function nativeCompanionConnectorReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
-  return (
-    status?.connectorService?.status === 'ready' &&
-    status.connectorService.running === true &&
-    status.connectorService.reachable === true
-  );
 }
 
 function actionResultForCurrentPairingCustomer(

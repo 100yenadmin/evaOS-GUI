@@ -798,7 +798,7 @@ function runtimeToolsReady(status: IEvaosNativeCompanionStatusView | null | unde
   return status?.runtimeToolReadiness === 'tools_ready';
 }
 
-function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
+export function connectorServiceReady(status: IEvaosNativeCompanionStatusView | null | undefined): boolean {
   if (!status) return false;
   return (
     status.connectorService?.status === 'ready' &&

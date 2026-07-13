@@ -7,6 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { EVAOS_MAC_CONTROL_BLOCKER_REASONS } from '@/common/evaos/bridgeTypes';
 import type { EvaosBrokerSessionClient } from '@/process/services/evaosBrokerSession';
 
 const runtimeSurfaceRegistryMock = vi.hoisted(() => ({
@@ -77,6 +78,12 @@ describe('evaOS broker bridge renderer secret boundary', () => {
     runtimeSurfaceRegistryMock.clearEvaosRuntimeSurfacesForCustomer.mockReset();
     runtimeSurfaceRegistryMock.createEvaosRuntimeSurface.mockReset();
     providerAuthWindowMock.clearEvaosProviderAuthSessionData.mockReset();
+  });
+
+  it('keeps one unique shared blocker-reason source including live-listener diagnostics', () => {
+    expect(new Set(EVAOS_MAC_CONTROL_BLOCKER_REASONS).size).toBe(EVAOS_MAC_CONTROL_BLOCKER_REASONS.length);
+    expect(EVAOS_MAC_CONTROL_BLOCKER_REASONS).toContain('missing_live_listener');
+    expect(EVAOS_MAC_CONTROL_BLOCKER_REASONS).toContain('listener_replacement_unproven');
   });
 
   it('accepts sanitized broker status payloads', async () => {

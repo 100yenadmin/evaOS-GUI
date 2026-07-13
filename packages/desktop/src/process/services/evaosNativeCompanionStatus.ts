@@ -37,6 +37,7 @@ import type {
   IEvaosWorkbenchDiagnosticPacketRequest,
   IEvaosWorkbenchDiagnosticPacketV1,
 } from '@/common/evaos/bridgeTypes';
+import { EVAOS_MAC_CONTROL_BLOCKER_REASONS } from '@/common/evaos/bridgeTypes';
 import { EVAOS_BETA_IDENTITY } from '@/common/evaos/betaIdentity';
 import {
   classifyNativeCompanionPrerequisites,
@@ -77,25 +78,7 @@ const WORKBENCH_BUNDLE_ID = 'com.evaos.workbench';
 const WORKBENCH_PROTOCOL = 'evaos-workbench';
 const DIAGNOSTIC_SCHEMA_VERSION = 'evaos.workbench.diagnostic_packet.v1';
 const WORKBENCH_CONNECTOR_MANAGERS = new Set(['workbench-session', 'workbench-or-manual']);
-const SAFE_MAC_CONTROL_BLOCKER_REASONS = new Set<IEvaosMacControlBlockerReason>([
-  'listener_owner_mismatch',
-  'port_in_use',
-  'token_missing',
-  'not_workbench_managed',
-  'secure_network_link_required',
-  'permission_missing',
-  'broker_session_expired',
-  'agent_cli_config_invalid',
-  'runtime_not_configured',
-  'bundled_bridge_required',
-  'connector_service_not_ready',
-  'listener_replacement_unproven',
-  'bridge_cli_missing',
-  'bridge_diagnostics_unavailable',
-  'pairing_not_ready',
-  'stale_connector_port_conflict',
-  'unknown',
-]);
+const SAFE_MAC_CONTROL_BLOCKER_REASONS = new Set<IEvaosMacControlBlockerReason>(EVAOS_MAC_CONTROL_BLOCKER_REASONS);
 const NATIVE_COMPANION_FIXTURE_STATES = [
   'ready',
   'repair_required',
