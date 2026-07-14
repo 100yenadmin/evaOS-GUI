@@ -93,11 +93,15 @@ function assertVendoredBridgeSourceMatchesHead(runGit = execFileSync) {
   const sourcePath = path.relative(projectRoot, vendoredBridgeSourceDir).split(path.sep).join('/');
   let status;
   try {
-    status = runGit('git', ['status', '--porcelain=v1', '--untracked-files=all', '--', sourcePath], {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    status = runGit(
+      'git',
+      ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching', '--', sourcePath],
+      {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
   } catch (error) {
     throw new Error(`Unable to verify the vendored Workbench bridge against the evaOS-GUI HEAD: ${error.message}`);
   }
@@ -164,6 +168,20 @@ function verifyWorkbenchBridgeIdentity(bridgePackageDir) {
     throw new Error('Vendored Workbench bridge still targets the legacy /Applications/evaOS.app bundle.');
   }
   return { sourceSha256: directorySha256(packageDir) };
+}
+
+function verifyWorkbenchBridgeSourceRoot(sourceRoot) {
+  const resolvedSourceRoot = path.resolve(sourceRoot);
+  const entries = fs.readdirSync(resolvedSourceRoot, { withFileTypes: true });
+  if (
+    entries.length !== 1 ||
+    entries[0].name !== 'evaos_desktop_bridge' ||
+    !entries[0].isDirectory() ||
+    entries[0].isSymbolicLink()
+  ) {
+    throw new Error('Packaged Workbench bridge src root contains unexpected importable entries.');
+  }
+  return verifyWorkbenchBridgeIdentity(path.join(resolvedSourceRoot, 'evaos_desktop_bridge'));
 }
 
 function vendoredBridgeSourceMetadata(sourceDir = vendoredBridgeSourceDir) {
@@ -420,8 +438,8 @@ fi
 
 unset PYTHONHOME
 unset PYTHONUSERBASE
+unset PYTHONPATH
 export PYTHONNOUSERSITE=1
-export PYTHONPATH="$BRIDGE_DIR/src"
 export PATH="$BRIDGE_DIR/bin:$PATH"
 export PYTHONDONTWRITEBYTECODE=1
 
@@ -448,7 +466,8 @@ case "\${1:-}" in
     ;;
 esac
 
-exec "$PYTHON_BIN" -P -B -m "$PYTHON_MODULE" "$@"
+PYTHON_BOOTSTRAP='import runpy, sys; source_root = sys.argv.pop(1); module = sys.argv.pop(1); sys.path.insert(0, source_root); runpy.run_module(module, run_name="__main__", alter_sys=True)'
+exec "$PYTHON_BIN" -I -B -c "$PYTHON_BOOTSTRAP" "$BRIDGE_DIR/src" "$PYTHON_MODULE" "$@"
 `;
 }
 
@@ -819,5 +838,6 @@ module.exports = {
   vendoredBridgeSourceMetadata,
   verifyPythonRuntimeInventory,
   verifyWorkbenchBridgeIdentity,
+  verifyWorkbenchBridgeSourceRoot,
   writePythonRuntimeInventory,
 };

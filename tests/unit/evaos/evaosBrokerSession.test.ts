@@ -765,6 +765,7 @@ describe('EvaosBrokerSessionClient', () => {
       device_identifier: 'david-mac-hardware-id',
       client_variant: 'tailscale_standalone',
     });
+    expect(fetchImpl.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('rejects private-network material unless the broker proves one-use no-store semantics', async () => {
@@ -947,7 +948,40 @@ describe('EvaosBrokerSessionClient', () => {
       enrollment_id: 'network-enrollment-1',
       auth_key: 'one-use-network-key-for-test',
     });
+    expect(fetchImpl.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.stringify(result)).not.toContain('one-use-network-key-for-test');
+  });
+
+  it('preserves a safe broker code when Headscale key cancellation is unconfirmed', async () => {
+    const fetchImpl = fetchMock();
+    fetchImpl.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          error: 'headscale_preauth_expiry_unconfirmed',
+          message: 'raw 503 detail must not cross the broker boundary',
+        },
+        { status: 503 }
+      )
+    );
+    const client = new EvaosBrokerSessionClient({ fetchImpl, env: {}, now: () => NOW });
+    client.importDesktopSessionFromCallbackUrl(
+      `http://127.0.0.1:49201/auth/evaos-workbench/callback?desktop_session=eds_callback_session_secret_for_test&desktop_session_expires_at=${encodeURIComponent(
+        FUTURE
+      )}`
+    );
+
+    await expect(
+      client.cancelPrivateNetworkEnrollment({
+        customerId: 'jackie-david',
+        enrollmentId: 'network-enrollment-1',
+        authKey: 'one-use-network-key-for-test',
+      })
+    ).rejects.toMatchObject({
+      code: 'broker_http_error',
+      status: 503,
+      brokerErrorCode: 'headscale_preauth_expiry_unconfirmed',
+      message: 'The evaOS broker is temporarily unavailable.',
+    });
   });
 
   it('returns only fresh customer-bound private-network authority proof', async () => {

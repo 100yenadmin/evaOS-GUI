@@ -87,6 +87,7 @@ export const EVAOS_CUSTOMER_MAC_CONTROL_ENDPOINT =
   'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/customer-mac-control';
 
 const PROVIDER_CONNECTION_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const PRIVATE_NETWORK_ENROLLMENT_BROKER_TIMEOUT_MS = 20_000;
 type EvaosBusinessBrowserActionKind = 'runtime_launch' | 'browser_open_url' | 'browser_stop';
 const RELEASED_WORKBENCH_KEYCHAIN_SERVICE = 'com.electricsheephq.EvaDesktop.session';
 const RELEASED_WORKBENCH_KEYCHAIN_ACCOUNT = 'desktop-session';
@@ -135,12 +136,14 @@ export type EvaosBrokerErrorCode =
 export class EvaosBrokerSessionError extends Error {
   readonly code: EvaosBrokerErrorCode;
   readonly status?: number;
+  readonly brokerErrorCode?: string;
 
-  constructor(code: EvaosBrokerErrorCode, message: string, status?: number) {
+  constructor(code: EvaosBrokerErrorCode, message: string, status?: number, brokerErrorCode?: string) {
     super(message);
     this.name = 'EvaosBrokerSessionError';
     this.code = code;
     this.status = status;
+    this.brokerErrorCode = safeBrokerResponseCode(brokerErrorCode);
   }
 }
 
@@ -881,7 +884,8 @@ export class EvaosBrokerSessionClient {
           device_identifier: deviceIdentifier,
           client_variant: clientVariant,
         },
-        session
+        session,
+        { signal: AbortSignal.timeout(PRIVATE_NETWORK_ENROLLMENT_BROKER_TIMEOUT_MS) }
       );
     } catch (error) {
       if (error instanceof EvaosBrokerSessionError && error.status === 401) {
@@ -943,7 +947,8 @@ export class EvaosBrokerSessionClient {
           enrollment_id: enrollmentId,
           auth_key: authKey,
         },
-        session
+        session,
+        { signal: AbortSignal.timeout(PRIVATE_NETWORK_ENROLLMENT_BROKER_TIMEOUT_MS) }
       );
     } catch (error) {
       if (error instanceof EvaosBrokerSessionError && error.status === 401) {
@@ -1206,8 +1211,8 @@ export class EvaosBrokerSessionClient {
       if (response.status === 401 && session) {
         this.clearRejectedSession(session);
       }
-      const message = await brokerHttpMessageFromResponse(response);
-      throw new EvaosBrokerSessionError('broker_http_error', message, response.status);
+      const details = await brokerHttpDetailsFromResponse(response);
+      throw new EvaosBrokerSessionError('broker_http_error', details.message, response.status, details.brokerErrorCode);
     }
 
     try {
@@ -1236,7 +1241,8 @@ export class EvaosBrokerSessionClient {
         enrollment_id: enrollmentId,
         auth_key: authKey,
       },
-      session
+      session,
+      { signal: AbortSignal.timeout(PRIVATE_NETWORK_ENROLLMENT_BROKER_TIMEOUT_MS) }
     ).catch((): void => undefined);
   }
 
@@ -4884,20 +4890,28 @@ function stripUndefined<T extends object>(record: T): T {
   return record;
 }
 
-async function brokerHttpMessageFromResponse(response: Response): Promise<string> {
+async function brokerHttpDetailsFromResponse(
+  response: Response
+): Promise<{ message: string; brokerErrorCode?: string }> {
   const fallback = brokerHttpMessage(response.status);
-
-  if (!canSurfaceBrokerResponseMessage(response.status)) {
-    return fallback;
-  }
 
   try {
     const record = asRecord(await response.clone().json());
-    const message = safeText(record?.error ?? record?.message, 180);
-    return message ?? fallback;
+    const brokerErrorCode = safeBrokerResponseCode(record?.error_code ?? record?.code ?? record?.error);
+    const message = canSurfaceBrokerResponseMessage(response.status)
+      ? (safeText(record?.message ?? record?.error, 180) ?? fallback)
+      : fallback;
+    return { message, brokerErrorCode };
   } catch {
-    return fallback;
+    return { message: fallback };
   }
+}
+
+function safeBrokerResponseCode(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const code = value.trim();
+  if (!/^[a-z][a-z0-9_]{0,79}$/.test(code) || containsSecretMaterial(code)) return undefined;
+  return code;
 }
 
 function canSurfaceBrokerResponseMessage(status: number): boolean {

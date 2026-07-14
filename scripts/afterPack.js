@@ -14,7 +14,7 @@ const { clearDmgRetryCompletionMarkers, markCompletedAfterPack } = require('./dm
 const {
   bridgeWrapperScript,
   verifyPythonRuntimeInventory,
-  verifyWorkbenchBridgeIdentity,
+  verifyWorkbenchBridgeSourceRoot,
 } = require('./prepareEvaosDesktopBridgeResource');
 
 /**
@@ -387,9 +387,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     const bridgeWrapper = manifest.bundledTools?.bridgeWrapper;
     const packagedBridgeWrapperSha256 = crypto.createHash('sha256').update(fs.readFileSync(bridgePath)).digest('hex');
     const expectedBridgeWrapperSha256 = crypto.createHash('sha256').update(bridgeWrapperScript()).digest('hex');
-    const packagedSourceIdentity = verifyWorkbenchBridgeIdentity(
-      path.join(resourcesDir, 'Bridge', 'src', 'evaos_desktop_bridge')
-    );
+    const packagedSourceIdentity = verifyWorkbenchBridgeSourceRoot(path.join(resourcesDir, 'Bridge', 'src'));
     if (
       !/^[0-9a-f]{40}$/i.test(expectedSourceCommit) ||
       manifest.sourceCommit !== expectedSourceCommit ||

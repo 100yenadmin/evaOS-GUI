@@ -41,6 +41,7 @@ describe('evaOS IPC bridge provider wrapper', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     delete (window as typeof window & { electronAPI?: unknown }).electronAPI;
     delete (
@@ -109,6 +110,32 @@ describe('evaOS IPC bridge provider wrapper', () => {
     );
 
     expect(platformMock.providers.get('evaos.broker.session-status')?.invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps native-companion actions alive beyond the default provider deadline', async () => {
+    vi.useFakeTimers();
+    (window as typeof window & { electronAPI?: unknown }).electronAPI = {
+      on: vi.fn((callback: (event: { value: string }) => void) => {
+        callbacks.push(callback);
+      }),
+      emit: vi.fn(),
+    };
+    const { evaosNativeCompanion } = await import('@/common/adapter/ipcBridge');
+    let outcome = 'pending';
+
+    void evaosNativeCompanion.runAction.invoke({ action: 'secure_network_enroll', customerId: 'bound-customer' }).then(
+      () => {
+        outcome = 'resolved';
+      },
+      (error: unknown) => {
+        outcome = error instanceof Error ? error.message : 'rejected';
+      }
+    );
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(outcome).toBe('pending');
+    await vi.advanceTimersByTimeAsync(9 * 60 * 1000 + 45_000);
+    expect(outcome).toBe('Timed out waiting for evaOS provider response: evaos.native-companion.run-action');
   });
 
   it('blocks evaOS runtime surface URLs from external-open bridge calls', async () => {

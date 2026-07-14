@@ -7,6 +7,10 @@ const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 const { bridgeWrapperScript } = require('./prepareEvaosDesktopBridgeResource');
 
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+const WORKBENCH_BRIDGE_SOURCE_DIR = 'resources/evaos-beta/bridge/src/evaos_desktop_bridge';
+const committedBridgeSourceIdentityCache = new Map();
+
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const LIVE_CANARY_VERIFIER_SHA256 = '692d88c72217b44f7957d78228748991ff65a12afda253c03b365a30b63e6127';
 const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '427e7ad95cf5d10399620463f3b789d2ef62f7f30e0c49ae14d68c10de0663a6';
@@ -152,9 +156,49 @@ const REQUIRED_RC_PROOF_CHECKS = [
     requiredText: ['accepted'],
   },
   {
+    id: 'macos-arm64-updater-zip-trust',
+    evidence: 'updater-zip-macos-arm64.json',
+    requiredText: [
+      'evaos-updater-zip-trust/v1',
+      '"codesignVerified": true',
+      '"staplerVerified": true',
+      '"gatekeeperVerified": true',
+    ],
+  },
+  {
+    id: 'macos-arm64-updater-zip-codesign',
+    evidence: 'codesign-updater-zip-macos-arm64.txt',
+    requiredText: ['valid on disk', 'satisfies its Designated Requirement'],
+  },
+  {
+    id: 'macos-arm64-updater-zip-stapler',
+    evidence: 'stapler-updater-zip-macos-arm64.txt',
+    requiredText: ['The validate action worked'],
+  },
+  {
+    id: 'macos-arm64-updater-zip-gatekeeper',
+    evidence: 'spctl-updater-zip-macos-arm64.txt',
+    requiredText: ['accepted'],
+  },
+  {
     id: 'install-smoke',
     evidence: 'install-smoke.md',
     requiredText: ['PASS', '/Applications/evaOS Workbench.app', 'released fallback app'],
+  },
+  {
+    id: 'installed-candidate-pre-canary',
+    evidence: 'installed-candidate-pre-canary.json',
+    requiredText: [
+      '"ok": true',
+      'packaged_bridge_source_integrity_verified',
+      '"source_integrity_valid": true',
+      'com.evaos.workbench',
+    ],
+  },
+  {
+    id: 'installed-candidate-connector',
+    evidence: 'installed-candidate-connector.json',
+    requiredText: ['"ok": true', 'candidate.bridge_status', '"source_commit_under_test"', '"candidate_binding"'],
   },
   {
     id: 'launch-smoke',
@@ -237,6 +281,10 @@ const MAC_CONTROL_LIVE_CANARY_ASSERTIONS = Object.freeze([
   'expectedLaunchTarget',
   'callbackAccepted',
   'proxySessionAccepted',
+  'candidateIdentityMatched',
+  'controlSessionReady',
+  'directMacActionPassed',
+  'controlSessionRestored',
 ]);
 
 function normalizeBoolean(value) {
@@ -1445,6 +1493,41 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     rcCanary,
+    'updater-zip-macos-arm64.json',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'updater ZIP trust proof bound to the release manifest checksum'
+  );
+  requireText(
+    rcCanary,
+    'codesign --verify --deep --strict',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'updater ZIP extracted app codesign verification'
+  );
+  requireText(
+    rcCanary,
+    'pre-canary',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'installed candidate pre-canary invocation'
+  );
+  requireText(
+    rcCanary,
+    '--suite candidate',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'installed connector candidate identity invocation'
+  );
+  requireText(
+    rcCanary,
+    'installed-candidate-connector.json',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'installed connector candidate proof artifact'
+  );
+  requireText(
+    rcCanary,
     'cp release-assets/evaos-beta-release-manifest.json',
     '.github/workflows/evaos-beta-rc-canary.yml',
     issues,
@@ -2226,7 +2309,98 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
   }
 }
 
-function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit) {
+function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSync, rootDir = PROJECT_ROOT) {
+  const commit = String(expectedSourceCommit || '').trim();
+  if (!/^[0-9a-f]{40}$/i.test(commit)) {
+    throw new Error('macOS release verification requires an exact 40-character evaOS-GUI commit.');
+  }
+  const cacheKey = runGit === execFileSync ? `${path.resolve(rootDir)}\0${commit.toLowerCase()}` : undefined;
+  const cached = cacheKey ? committedBridgeSourceIdentityCache.get(cacheKey) : undefined;
+  if (cached) {
+    return { sourceSha256: cached.sourceSha256, sourcePaths: [...cached.sourcePaths] };
+  }
+
+  let resolvedCommit;
+  let treeOutput;
+  try {
+    resolvedCommit = String(
+      runGit('git', ['rev-parse', '--verify', `${commit}^{commit}`], {
+        cwd: rootDir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    ).trim();
+    treeOutput = runGit('git', ['ls-tree', '-r', '-z', '--full-tree', commit, '--', WORKBENCH_BRIDGE_SOURCE_DIR], {
+      cwd: rootDir,
+      encoding: null,
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    throw new Error(`Unable to read the committed Workbench bridge source tree: ${error.message}`);
+  }
+  if (resolvedCommit.toLowerCase() !== commit.toLowerCase()) {
+    throw new Error(`Workbench bridge source commit resolved to ${resolvedCommit}, expected ${commit}.`);
+  }
+
+  const records = Buffer.isBuffer(treeOutput) ? treeOutput.toString('utf8') : String(treeOutput || '');
+  const sourceFiles = [];
+  for (const record of records.split('\0').filter(Boolean)) {
+    const separator = record.indexOf('\t');
+    const header = separator >= 0 ? record.slice(0, separator) : '';
+    const filePath = separator >= 0 ? record.slice(separator + 1) : '';
+    const [mode, type, objectId] = header.split(' ');
+    const prefix = `${WORKBENCH_BRIDGE_SOURCE_DIR}/`;
+    if (
+      !['100644', '100755'].includes(mode) ||
+      type !== 'blob' ||
+      !/^[0-9a-f]{40,64}$/i.test(objectId || '') ||
+      !filePath.startsWith(prefix)
+    ) {
+      throw new Error(`Committed Workbench bridge source tree contains an unsupported entry: ${record}`);
+    }
+    const relativePath = filePath.slice(prefix.length);
+    if (!relativePath || relativePath.split('/').some((part) => !part || part === '.' || part === '..')) {
+      throw new Error(`Committed Workbench bridge source path is invalid: ${filePath}`);
+    }
+    let contents;
+    try {
+      contents = runGit('git', ['cat-file', 'blob', objectId], {
+        cwd: rootDir,
+        encoding: null,
+        maxBuffer: 16 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      throw new Error(`Unable to read committed Workbench bridge source blob ${objectId}: ${error.message}`);
+    }
+    sourceFiles.push({ relativePath, contents: Buffer.isBuffer(contents) ? contents : Buffer.from(contents) });
+  }
+  if (sourceFiles.length === 0) {
+    throw new Error(`Commit ${commit} does not contain the Workbench bridge source tree.`);
+  }
+  sourceFiles.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  const digest = createHash('sha256');
+  for (const sourceFile of sourceFiles) {
+    digest.update(sourceFile.relativePath);
+    digest.update('\0');
+    digest.update(sourceFile.contents);
+    digest.update('\0');
+  }
+  const identity = {
+    sourceSha256: digest.digest('hex'),
+    sourcePaths: sourceFiles.map((sourceFile) => sourceFile.relativePath),
+  };
+  if (cacheKey) {
+    committedBridgeSourceIdentityCache.set(cacheKey, {
+      sourceSha256: identity.sourceSha256,
+      sourcePaths: Object.freeze([...identity.sourcePaths]),
+    });
+  }
+  return identity;
+}
+
+function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity) {
   const script = [
     'import hashlib',
     'import json',
@@ -2248,6 +2422,8 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit) {
     `expected_python_packages = ${JSON.stringify(PYTHON_RUNTIME_PACKAGES)}`,
     `expected_bridge_wrapper_sha256 = "${createHash('sha256').update(bridgeWrapperScript()).digest('hex')}"`,
     `expected_source_commit = ${JSON.stringify(String(expectedSourceCommit || ''))}`,
+    `expected_bridge_source_sha256 = ${JSON.stringify(committedSourceIdentity.sourceSha256)}`,
+    `expected_bridge_source_paths = ${JSON.stringify(committedSourceIdentity.sourcePaths)}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
     'expected_cpu_types = {"arm64": 0x0100000c, "x64": 0x01000007}',
     'def thin_macho_cpu(data):',
@@ -2316,7 +2492,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit) {
     '        return False',
     '    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(relative_path), target))',
     '    return resolved != ".." and not resolved.startswith("../")',
-    'result = {"zipLayoutValid": False, "singleAppRoot": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
+    'result = {"zipLayoutValid": False, "singleAppRoot": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceTreeExact": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
     'with zipfile.ZipFile(path) as archive:',
     '    infos = archive.infolist()',
     '    names = [info.filename for info in infos]',
@@ -2363,7 +2539,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit) {
     '        result["bridgeWrapperValid"] = bridge_wrapper.get("schema") == "evaos-workbench-bridge-wrapper/v1" and bridge_wrapper.get("path") == "evaos-desktop-bridge" and bridge_wrapper.get("sourceSha256") == wrapper_sha256 == expected_bridge_wrapper_sha256',
     '    bridge_source_prefix = "src/evaos_desktop_bridge/"',
     '    bridge_source_entries = []',
-    '    bridge_source_layout_valid = True',
+    '    bridge_source_layout_valid = not any(suffix.startswith("src/") and not suffix.startswith(bridge_source_prefix) for suffix in entries)',
     '    for suffix, info in entries.items():',
     '        if not suffix.startswith(bridge_source_prefix):',
     '            continue',
@@ -2372,14 +2548,17 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit) {
     '            bridge_source_layout_valid = False',
     '            continue',
     '        bridge_source_entries.append((relative_path, info))',
-    '    if bridge_source_layout_valid and bridge_source_entries:',
+    '    actual_bridge_source_paths = sorted(relative_path for relative_path, _info in bridge_source_entries)',
+    '    result["bridgeSourceTreeExact"] = bridge_source_layout_valid and actual_bridge_source_paths == expected_bridge_source_paths',
+    '    if result["bridgeSourceTreeExact"]:',
     '        bridge_source_hash = hashlib.sha256()',
     '        for relative_path, info in sorted(bridge_source_entries, key=lambda item: item[0]):',
     '            bridge_source_hash.update(relative_path.encode("utf-8"))',
     '            bridge_source_hash.update(b"\\0")',
     '            bridge_source_hash.update(archive.read(info))',
     '            bridge_source_hash.update(b"\\0")',
-    '        result["bridgeSourceDigestValid"] = source_provenance.get("sourceSha256") == bridge_source_hash.hexdigest()',
+    '        packaged_bridge_source_sha256 = bridge_source_hash.hexdigest()',
+    '        result["bridgeSourceDigestValid"] = source_provenance.get("sourceSha256") == packaged_bridge_source_sha256 == expected_bridge_source_sha256',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
     '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("sourceUrl") == expected_python_source_url[expected_python_arch] and python_runtime.get("license") == "Python-2.0" and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("licenseSha256") == expected_python_license_sha256 and python_runtime.get("packages") == expected_python_packages',
@@ -2515,13 +2694,20 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, expected
     throw new Error('Release manifest verification requires a macOS ZIP payload for Electron auto-update.');
   }
 
+  const committedSourceIdentity =
+    releaseTargetPlatforms === 'windows' ? undefined : committedBridgeSourceIdentity(expectedSourceCommit);
   for (const zipName of zipNames) {
-    const probe = inspectMacosZipBridgePayload(path.join(outputDir, zipName), expectedSourceCommit);
+    const probe = inspectMacosZipBridgePayload(
+      path.join(outputDir, zipName),
+      expectedSourceCommit,
+      committedSourceIdentity
+    );
     assertZipBridgeProbe(probe, 'zipLayoutValid', zipName, 'safe ZIP layout');
     assertZipBridgeProbe(probe, 'singleAppRoot', zipName, 'exactly one .app root');
     assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
     assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
     assertZipBridgeProbe(probe, 'bridgeWrapperValid', zipName, 'canonical launcher digest');
+    assertZipBridgeProbe(probe, 'bridgeSourceTreeExact', zipName, 'exact committed GUI source tree');
     assertZipBridgeProbe(probe, 'bridgeSourceDigestValid', zipName, 'GUI-owned Python source digest');
     assertZipBridgeProbe(probe, 'bridgeCommitBindingValid', zipName, 'exact GUI commit binding');
     assertZipBridgeProbe(probe, 'hasPeekaboo', zipName, 'Peekaboo binary');
@@ -2956,6 +3142,7 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
     'httpStatus',
     'sourceHeadSha',
     'sourceRunId',
+    'candidate',
     'assertions',
     'secretScan',
   ]);
@@ -2966,7 +3153,7 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   }
   assertLiveCanaryNoSecretMaterial(proof, 'macControl');
 
-  if (proof.schema !== 'evaos-mac-control-live-canary/v1') {
+  if (proof.schema !== 'evaos-mac-control-live-canary/v2') {
     throw new Error(`Unexpected Mac-control live canary proof schema: ${proof.schema}`);
   }
   if (
@@ -2995,6 +3182,46 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   }
   if (String(proof.sourceRunId || '') !== expectedRunId) {
     throw new Error('Mac-control live canary proof source run does not match the selected proof run.');
+  }
+
+  assertLiveCanaryPlainObject(proof.candidate, 'Mac-control live canary candidate');
+  const candidateFields = new Set([
+    'schema',
+    'ok',
+    'sourceCommit',
+    'sourceSha256',
+    'sourcePath',
+    'owner',
+    'status',
+    'appPath',
+    'appVersion',
+    'appBuild',
+    'appBundleId',
+    'appName',
+  ]);
+  if (
+    Object.keys(proof.candidate).length !== candidateFields.size ||
+    Object.keys(proof.candidate).some((field) => !candidateFields.has(field))
+  ) {
+    throw new Error('Mac-control live canary candidate does not match the required public proof shape.');
+  }
+  const expectedSourceIdentity = committedBridgeSourceIdentity(expectedHeadSha);
+  const expectedVersion = packageVersionAtCommit(expectedHeadSha);
+  if (
+    proof.candidate.schema !== 'evaos.workbench.bridge_candidate.v1' ||
+    proof.candidate.ok !== true ||
+    proof.candidate.sourceCommit !== expectedHeadSha ||
+    proof.candidate.sourceSha256 !== expectedSourceIdentity.sourceSha256 ||
+    proof.candidate.sourcePath !== 'resources/evaos-beta/bridge' ||
+    proof.candidate.owner !== '100yenadmin/evaOS-GUI' ||
+    proof.candidate.status !== 'vendored' ||
+    proof.candidate.appPath !== '/Applications/evaOS Workbench.app' ||
+    proof.candidate.appVersion !== expectedVersion ||
+    proof.candidate.appBuild !== expectedVersion ||
+    proof.candidate.appBundleId !== 'com.evaos.workbench' ||
+    proof.candidate.appName !== 'evaOS Workbench'
+  ) {
+    throw new Error('Mac-control live canary candidate does not match the exact installed release candidate.');
   }
 
   assertLiveCanaryPlainObject(proof.assertions, 'Mac-control live canary assertions');
@@ -3138,6 +3365,165 @@ function assertRcReleaseAssetsReference(referencePath, tag, releaseManifest) {
   }
 }
 
+function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAssetsDir) {
+  const proof = readManifestFile(proofPath);
+  if (proof.schema !== 'evaos-updater-zip-trust/v1') {
+    throw new Error(`Unexpected updater ZIP trust proof schema: ${proof.schema}`);
+  }
+  if (proof.tag !== tag || proof.releaseCommit !== releaseManifest.releaseCommit) {
+    throw new Error('Updater ZIP trust proof is not bound to the RC tag and release commit.');
+  }
+  if (
+    typeof proof.assetName !== 'string' ||
+    !proof.assetName.endsWith('.zip') ||
+    !/arm64/i.test(proof.assetName) ||
+    !/^[0-9a-f]{64}$/i.test(String(proof.sha256 || ''))
+  ) {
+    throw new Error('Updater ZIP trust proof must identify the exact arm64 ZIP and SHA256.');
+  }
+  const manifestAsset = (releaseManifest.assets || []).find((asset) => asset.name === proof.assetName);
+  if (!manifestAsset || manifestAsset.sha256 !== proof.sha256) {
+    throw new Error('Updater ZIP trust proof checksum does not match the trusted release manifest.');
+  }
+  const updaterZipRefs = [
+    ...new Set(
+      metadataAssetRefs(releaseAssetsDir, 'latest-arm64-mac.yml').filter(
+        (assetName) => assetName.endsWith('.zip') && /arm64/i.test(assetName)
+      )
+    ),
+  ];
+  if (updaterZipRefs.length !== 1 || updaterZipRefs[0] !== proof.assetName) {
+    throw new Error('Updater ZIP trust proof does not match latest-arm64-mac.yml.');
+  }
+  if (
+    proof.appName !== 'evaOS Workbench.app' ||
+    proof.codesignVerified !== true ||
+    proof.staplerVerified !== true ||
+    proof.gatekeeperVerified !== true
+  ) {
+    throw new Error('Updater ZIP trust proof must pass app identity, codesign, stapler, and Gatekeeper checks.');
+  }
+}
+
+function versionFromPublicBetaTag(tag) {
+  const match = String(tag || '').match(/^evaos-beta-v?(\d+\.\d+\.\d+)-evaos-beta(?:\.\d+)?$/);
+  if (!match) {
+    throw new Error(`Unable to derive candidate version from public beta tag: ${tag}`);
+  }
+  return match[1];
+}
+
+function packageVersionAtCommit(commit) {
+  if (!/^[0-9a-f]{40}$/i.test(String(commit || ''))) {
+    throw new Error('Package version lookup requires an exact release commit.');
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(
+      execFileSync('git', ['show', `${commit}:package.json`], {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+      })
+    );
+  } catch {
+    throw new Error(`Unable to read package.json from release commit ${commit}.`);
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(String(manifest.version || ''))) {
+    throw new Error(`Release commit ${commit} does not contain a valid package version.`);
+  }
+  return manifest.version;
+}
+
+function assertRcInstalledCandidatePreCanaryProof(proofPath, tag, releaseManifest) {
+  const proof = readManifestFile(proofPath);
+  const expectedVersion = versionFromPublicBetaTag(tag);
+  const expectedSourceIdentity = committedBridgeSourceIdentity(releaseManifest.releaseCommit);
+  const summary = proof.summary && typeof proof.summary === 'object' ? proof.summary : {};
+  const binding =
+    summary.bridge_source_binding && typeof summary.bridge_source_binding === 'object'
+      ? summary.bridge_source_binding
+      : {};
+  const appBundles = Array.isArray(proof.inventory?.app_bundles) ? proof.inventory.app_bundles : [];
+  const canonical = appBundles.find((bundle) => bundle?.path === '/Applications/evaOS Workbench.app');
+  const checkCodes = new Set(Array.isArray(proof.checks) ? proof.checks.map((check) => check?.code) : []);
+  if (
+    proof.ok !== true ||
+    summary.canonical_path !== '/Applications/evaOS Workbench.app' ||
+    summary.bundle_id !== 'com.evaos.workbench' ||
+    summary.expected_version !== expectedVersion ||
+    typeof summary.expected_build !== 'string' ||
+    !/^\d+(?:\.\d+){0,2}$/.test(summary.expected_build) ||
+    summary.expected_source_commit !== releaseManifest.releaseCommit ||
+    binding.ok !== true ||
+    binding.source_commit !== releaseManifest.releaseCommit ||
+    binding.requested_source_ref !== releaseManifest.releaseCommit ||
+    binding.source_path !== 'resources/evaos-beta/bridge' ||
+    binding.owner !== '100yenadmin/evaOS-GUI' ||
+    binding.status !== 'vendored' ||
+    binding.app_path !== '/Applications/evaOS Workbench.app' ||
+    binding.app_version !== expectedVersion ||
+    binding.app_build !== summary.expected_build ||
+    binding.app_bundle_id !== 'com.evaos.workbench' ||
+    binding.app_name !== 'evaOS Workbench' ||
+    binding.source_integrity_valid !== true ||
+    !/^[0-9a-f]{64}$/i.test(String(binding.actual_source_sha256 || '')) ||
+    binding.actual_source_sha256 !== binding.source_sha256 ||
+    binding.actual_source_sha256 !== expectedSourceIdentity.sourceSha256 ||
+    !canonical ||
+    canonical.bundle_id !== 'com.evaos.workbench' ||
+    canonical.version !== expectedVersion ||
+    canonical.build !== summary.expected_build ||
+    !checkCodes.has('packaged_bridge_source_integrity_verified')
+  ) {
+    throw new Error(
+      'Installed candidate pre-canary proof is not bound to the trusted release commit and app identity.'
+    );
+  }
+}
+
+function assertRcInstalledCandidateConnectorProof(proofPath, tag, releaseManifest) {
+  const proof = readManifestFile(proofPath);
+  const expectedVersion = versionFromPublicBetaTag(tag);
+  const expectedSourceIdentity = committedBridgeSourceIdentity(releaseManifest.releaseCommit);
+  const binding = proof.candidate_binding && typeof proof.candidate_binding === 'object' ? proof.candidate_binding : {};
+  const local = binding.local && typeof binding.local === 'object' ? binding.local : {};
+  const connector = binding.connector && typeof binding.connector === 'object' ? binding.connector : {};
+  const selected =
+    binding.selected_binding && typeof binding.selected_binding === 'object' ? binding.selected_binding : {};
+  const results = Array.isArray(proof.results) ? proof.results : [];
+  const candidateStatus = results.find((result) => result?.id === 'candidate.bridge_status');
+  if (
+    proof.source_commit_under_test !== releaseManifest.releaseCommit ||
+    proof.version_under_test !== expectedVersion ||
+    typeof proof.build_under_test !== 'string' ||
+    !/^\d+(?:\.\d+){0,2}$/.test(proof.build_under_test) ||
+    binding.ok !== true ||
+    local.ok !== true ||
+    connector.ok !== true ||
+    local.source_commit !== releaseManifest.releaseCommit ||
+    connector.source_commit !== releaseManifest.releaseCommit ||
+    local.actual_source_sha256 !== connector.source_sha256 ||
+    connector.source_sha256 !== expectedSourceIdentity.sourceSha256 ||
+    !/^[0-9a-f]{64}$/i.test(String(connector.source_sha256 || '')) ||
+    local.app_path !== '/Applications/evaOS Workbench.app' ||
+    connector.app_path !== '/Applications/evaOS Workbench.app' ||
+    local.app_version !== expectedVersion ||
+    connector.app_version !== expectedVersion ||
+    local.app_build !== proof.build_under_test ||
+    connector.app_build !== proof.build_under_test ||
+    connector.app_bundle_id !== 'com.evaos.workbench' ||
+    connector.app_name !== 'evaOS Workbench' ||
+    selected.ok !== null ||
+    selected.reason !== 'selected_binding_proof_not_required_for_suite' ||
+    !candidateStatus ||
+    candidateStatus.ok !== true ||
+    candidateStatus.status !== 'passed'
+  ) {
+    throw new Error('Installed candidate connector proof is not bound to the trusted release commit and app identity.');
+  }
+}
+
 function writeRcProofTemplate(proofDir, tag) {
   assertPublicDistributionTag(tag);
   fs.mkdirSync(proofDir, { recursive: true });
@@ -3252,6 +3638,13 @@ function verifyRcProof(proofDir, tag, env = process.env) {
     }
     const filePath = requireExistingRelativeFile(proofDir, required.evidence, `RC proof ${required.id}`);
     assertTextMarkers(filePath, required.requiredText, required.id);
+    if (required.id === 'macos-arm64-updater-zip-trust') {
+      assertRcUpdaterZipTrustProof(filePath, tag, trustedManifest, resolvedReleaseAssetsDir);
+    } else if (required.id === 'installed-candidate-pre-canary') {
+      assertRcInstalledCandidatePreCanaryProof(filePath, tag, trustedManifest);
+    } else if (required.id === 'installed-candidate-connector') {
+      assertRcInstalledCandidateConnectorProof(filePath, tag, trustedManifest);
+    }
   }
 
   if (manifest.macosX64?.status === 'blocked') {
@@ -3373,6 +3766,7 @@ module.exports = {
   collectBuildReleaseWorkflowIssues,
   collectPublicationWorkflowIssues,
   collectReleaseDistributeWorkflowIssues,
+  committedBridgeSourceIdentity,
   collectLiveCanaryVerifierBehaviorIssues,
   resolveLiveCanaryVerifierAuditBash,
   collectReleaseConfigIssues,

@@ -2491,9 +2491,12 @@ def _classify_bridge_owner(*, program_path: Path | None, app_path: Path | None, 
     if program_path is None:
         return "unknown" if ready else "not_running"
     app_name = app_path.name.lower() if app_path is not None else ""
-    if app_name == "evaos workbench.app" or bundle_id in {"com.evaos.workbench", "com.electricsheephq.EvaDesktop"}:
+    if app_name == "evaos workbench.app" or bundle_id == "com.evaos.workbench":
         return "workbench_bundle"
-    if app_name == "evaos.app":
+    if app_name in {"evaos.app", "evaos workbench beta.app", "evadesktop.app"} or bundle_id in {
+        "com.electricsheephq.EvaDesktop",
+        "com.evaos.workbench.beta",
+    }:
         return "legacy_bundle"
     program_text = str(program_path)
     if program_text == "evaos-desktop-bridge" or program_text.startswith(("/opt/homebrew/bin/", "/usr/local/bin/")):
@@ -3090,10 +3093,11 @@ def _private_network_evidence(status_snapshot: object = _TAILSCALE_STATUS_UNSET)
     backend_state = status.get("BackendState")
     if backend_state == "Running":
         evidence["client_running"] = True
-    elif backend_state in {"Stopped", "NeedsLogin", "NoState"}:
+    elif backend_state == "NeedsLogin":
+        evidence["client_running"] = True
+        evidence["enrolled"] = False
+    elif backend_state in {"Stopped", "NoState"}:
         evidence["client_running"] = False
-        if backend_state == "NeedsLogin":
-            evidence["enrolled"] = False
 
     self_node = status.get("Self")
     if isinstance(self_node, dict):

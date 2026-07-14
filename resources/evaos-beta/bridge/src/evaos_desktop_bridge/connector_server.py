@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from .candidate_identity import public_packaged_bridge_candidate
+
 from .audit import default_state_dir
 from .schema import build_envelope, make_error
 from .state import approval_audit_freshness_error, read_audit_record, read_control_session
@@ -708,6 +710,7 @@ def build_diagnostics_payload(*, token: str | None, state_dir: Path | None = Non
         "bridge": {
             "version": _bridge_version(),
             "mode": _sanitize_public_text(os.environ.get("EVAOS_DESKTOP_BRIDGE_MODE") or "unknown"),
+            "candidate": public_packaged_bridge_candidate(module_file=__file__),
         },
         "connector": connector,
         "control_session": _public_control_session(state_dir),
@@ -1002,6 +1005,7 @@ def _make_handler(
                     response = json.loads(output)
                 except json.JSONDecodeError:
                     response = _error_envelope(command, "desktop", "bridge_output_invalid", output[:500])
+                response = _candidate_bound_command_response(command, response)
                 status = 200 if exit_code == 0 else 422
                 self._write_json(status, response)
             except Exception as exc:
@@ -1088,6 +1092,17 @@ def _make_handler(
             self.wfile.write(body)
 
     return ConnectorHandler
+
+
+def _candidate_bound_command_response(command: str, response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        response = _error_envelope(command, "desktop", "bridge_output_invalid", "Bridge response must be a JSON object.")
+    if command == "status":
+        return {
+            **response,
+            "candidate": public_packaged_bridge_candidate(module_file=__file__),
+        }
+    return response
 
 
 def _owner_provider_error_summary() -> dict[str, Any]:

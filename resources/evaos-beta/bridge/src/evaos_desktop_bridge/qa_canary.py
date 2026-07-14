@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from .pre_canary import packaged_bridge_source_binding
+
 DEFAULT_RUN_ROOT = Path("/Volumes/LEXAR/Codex/evaos-workbench-qa-runs")
 LIVE_CONTROL_SUITES = {
     "all",
@@ -74,6 +76,53 @@ UNAVAILABLE_CODES = (
     "artifact_not_found",
     "not_found",
 )
+SELECTED_BINDING_PROOF_ASSERTIONS = (
+    "attached",
+    "toolsReady",
+    "activeGrant",
+    "requiredCapabilityGroups",
+    "bindingIdPresent",
+    "bindingIdMatched",
+    "bindingVersionPresent",
+    "bindingVersionMatched",
+    "bindingExpiryPresent",
+    "bindingExpiryMatched",
+    "bindingExpiryValid",
+    "expectedLaunchTarget",
+    "callbackAccepted",
+    "proxySessionAccepted",
+    "candidateIdentityMatched",
+    "controlSessionReady",
+    "directMacActionPassed",
+    "controlSessionRestored",
+)
+SELECTED_BINDING_PROOF_FIELDS = {
+    "schema",
+    "ok",
+    "runtime",
+    "launchMode",
+    "reason",
+    "httpStatus",
+    "sourceHeadSha",
+    "sourceRunId",
+    "candidate",
+    "assertions",
+    "secretScan",
+}
+SELECTED_BINDING_CANDIDATE_FIELDS = {
+    "schema",
+    "ok",
+    "sourceCommit",
+    "sourceSha256",
+    "sourcePath",
+    "owner",
+    "status",
+    "appPath",
+    "appVersion",
+    "appBuild",
+    "appBundleId",
+    "appName",
+}
 
 
 @dataclass(frozen=True)
@@ -226,6 +275,176 @@ class ConnectorSurface:
         output_path = output_dir / f"{_safe_filename(snapshot_id)}.png"
         output_path.write_bytes(content)
         return str(output_path)
+
+
+def evaluate_connector_candidate_identity(
+    payload: dict[str, Any],
+    *,
+    expected_source_commit: str,
+    expected_source_sha256: str,
+    expected_version: str,
+    expected_build: str,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": False,
+        "expected_source_commit": expected_source_commit,
+        "expected_source_sha256": expected_source_sha256,
+        "expected_version": expected_version,
+        "expected_build": expected_build,
+    }
+    bridge = payload.get("bridge") if isinstance(payload.get("bridge"), dict) else {}
+    candidate = bridge.get("candidate") if isinstance(bridge.get("candidate"), dict) else {}
+    result.update(
+        {
+            "schema": candidate.get("schema"),
+            "source_commit": candidate.get("source_commit"),
+            "source_sha256": candidate.get("source_sha256"),
+            "source_path": candidate.get("source_path"),
+            "owner": candidate.get("owner"),
+            "status": candidate.get("status"),
+            "app_path": candidate.get("app_path"),
+            "app_version": candidate.get("app_version"),
+            "app_build": candidate.get("app_build"),
+            "app_bundle_id": candidate.get("app_bundle_id"),
+            "app_name": candidate.get("app_name"),
+        }
+    )
+    result["ok"] = (
+        payload.get("ok") is True
+        and payload.get("schema") == "evaos.desktop_bridge.diagnostics.v1"
+        and payload.get("service") == "evaos-desktop-bridge-connector"
+        and candidate.get("schema") == "evaos.workbench.bridge_candidate.v1"
+        and candidate.get("ok") is True
+        and candidate.get("source_commit") == expected_source_commit
+        and candidate.get("source_sha256") == expected_source_sha256
+        and candidate.get("source_path") == "resources/evaos-beta/bridge"
+        and candidate.get("owner") == "100yenadmin/evaOS-GUI"
+        and candidate.get("status") == "vendored"
+        and candidate.get("app_path") == "/Applications/evaOS Workbench.app"
+        and candidate.get("app_version") == expected_version
+        and candidate.get("app_build") == expected_build
+        and candidate.get("app_bundle_id") == "com.evaos.workbench"
+        and candidate.get("app_name") == "evaOS Workbench"
+    )
+    if result["ok"] is not True:
+        result["reason"] = "connector_candidate_identity_mismatch"
+    return result
+
+
+def connector_candidate_binding(
+    *,
+    connector_url: str,
+    token: str,
+    expected_source_commit: str,
+    expected_source_sha256: str,
+    expected_version: str,
+    expected_build: str,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": False,
+        "expected_source_commit": expected_source_commit,
+        "expected_source_sha256": expected_source_sha256,
+        "expected_version": expected_version,
+        "expected_build": expected_build,
+    }
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", expected_source_commit):
+        result["reason"] = "expected_source_commit_invalid"
+        return result
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_source_sha256):
+        result["reason"] = "expected_source_sha256_invalid"
+        return result
+    if not re.fullmatch(r"\d+\.\d+\.\d+", expected_version) or not re.fullmatch(r"\d+(?:\.\d+){0,2}", expected_build):
+        result["reason"] = "expected_candidate_version_invalid"
+        return result
+    request = urllib.request.Request(
+        connector_url.rstrip("/") + "/v1/diagnostics",
+        method="GET",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310 - operator-supplied private connector URL.
+            payload = _loads_json_response(response.read())
+    except (OSError, TimeoutError, urllib.error.URLError, ValueError):
+        result["reason"] = "connector_candidate_diagnostics_unavailable"
+        return result
+    return evaluate_connector_candidate_identity(
+        payload,
+        expected_source_commit=expected_source_commit,
+        expected_source_sha256=expected_source_sha256,
+        expected_version=expected_version,
+        expected_build=expected_build,
+    )
+
+
+def selected_binding_proof_binding(
+    proof_path: Path | None,
+    *,
+    expected_source_commit: str,
+    expected_source_run_id: str,
+    expected_source_sha256: str,
+    expected_version: str,
+    expected_build: str,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": False,
+        "expected_source_commit": expected_source_commit,
+        "expected_source_run_id": expected_source_run_id,
+        "expected_source_sha256": expected_source_sha256,
+        "expected_version": expected_version,
+        "expected_build": expected_build,
+    }
+    if proof_path is None:
+        result["reason"] = "selected_binding_proof_required"
+        return result
+    try:
+        proof = json.loads(proof_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        result["reason"] = "selected_binding_proof_unavailable"
+        return result
+    if not isinstance(proof, dict) or set(proof) != SELECTED_BINDING_PROOF_FIELDS:
+        result["reason"] = "selected_binding_proof_shape_invalid"
+        return result
+    assertions = proof.get("assertions") if isinstance(proof.get("assertions"), dict) else {}
+    candidate = proof.get("candidate") if isinstance(proof.get("candidate"), dict) else {}
+    result.update(
+        {
+            "schema": proof.get("schema"),
+            "source_head_sha": proof.get("sourceHeadSha"),
+            "source_run_id": str(proof.get("sourceRunId") or ""),
+            "candidate": candidate,
+            "assertions_verified": sorted(assertions) if isinstance(assertions, dict) else [],
+        }
+    )
+    result["ok"] = (
+        proof.get("schema") == "evaos-mac-control-live-canary/v2"
+        and proof.get("ok") is True
+        and proof.get("runtime") == "openclaw"
+        and proof.get("launchMode") == "mac_control_tools"
+        and proof.get("reason") == "ready"
+        and proof.get("httpStatus") == 302
+        and proof.get("sourceHeadSha") == expected_source_commit
+        and re.fullmatch(r"\d+", expected_source_run_id) is not None
+        and str(proof.get("sourceRunId") or "") == expected_source_run_id
+        and set(candidate) == SELECTED_BINDING_CANDIDATE_FIELDS
+        and candidate.get("schema") == "evaos.workbench.bridge_candidate.v1"
+        and candidate.get("ok") is True
+        and candidate.get("sourceCommit") == expected_source_commit
+        and candidate.get("sourceSha256") == expected_source_sha256
+        and candidate.get("sourcePath") == "resources/evaos-beta/bridge"
+        and candidate.get("owner") == "100yenadmin/evaOS-GUI"
+        and candidate.get("status") == "vendored"
+        and candidate.get("appPath") == "/Applications/evaOS Workbench.app"
+        and candidate.get("appVersion") == expected_version
+        and candidate.get("appBuild") == expected_build
+        and candidate.get("appBundleId") == "com.evaos.workbench"
+        and candidate.get("appName") == "evaOS Workbench"
+        and proof.get("secretScan") == "passed"
+        and set(assertions) == set(SELECTED_BINDING_PROOF_ASSERTIONS)
+        and all(assertions.get(assertion) is True for assertion in SELECTED_BINDING_PROOF_ASSERTIONS)
+    )
+    if result["ok"] is not True:
+        result["reason"] = "selected_binding_proof_mismatch"
+    return result
 
 
 class OpenClawSurface:
@@ -448,6 +667,7 @@ def build_scenarios(suite: str, *, allow_real_world_actions: bool) -> list[Canar
     if normalized == "iphone":
         normalized = "iphone_scenario"
     suites: dict[str, list[CanaryStep]] = {
+        "candidate": [CanaryStep(id="candidate.bridge_status", suite="candidate", command="desktop_bridge_status")],
         "readiness": _readiness_steps(),
         "codex": _codex_steps(),
         "full_access": _full_access_steps(),
@@ -474,6 +694,9 @@ def write_reports(
     run_id: str,
     started_at: str,
     version_under_test: str,
+    build_under_test: str,
+    source_commit_under_test: str,
+    candidate_binding: dict[str, Any],
     surface: str,
     connector_url: str,
     results: list[CanaryResult],
@@ -484,6 +707,9 @@ def write_reports(
         "run_id": run_id,
         "started_at": started_at,
         "version_under_test": version_under_test,
+        "build_under_test": build_under_test,
+        "source_commit_under_test": source_commit_under_test,
+        "candidate_binding": candidate_binding,
         "surface": surface,
         "connector_url_redacted": redact_connector_url(connector_url),
         "summary": summary,
@@ -566,7 +792,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--surface", choices=("connector", "openclaw", "hermes"), default="connector")
     parser.add_argument(
         "--suite",
-        choices=("readiness", "codex", "desktop", "iphone", "primitive", "desktop_scenario", "iphone_scenario", "full", "full_access", "ask_permission", "kill_switch", "real_world_optional", "all"),
+        choices=("candidate", "readiness", "codex", "desktop", "iphone", "primitive", "desktop_scenario", "iphone_scenario", "full", "full_access", "ask_permission", "kill_switch", "real_world_optional", "all"),
         default="readiness",
     )
     parser.add_argument("--artifact-dir", type=Path)
@@ -575,6 +801,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-skips", action="store_true", help="Exit 0 when required suites contain skipped rows; release certification should not use this.")
     parser.add_argument("--repo-root", type=Path, help="Repository root containing openclaw-plugin/ and hermes-adapter/ for adapter surfaces.")
     parser.add_argument("--version-under-test", default="local-dev")
+    parser.add_argument("--build-under-test", default="")
+    parser.add_argument("--source-commit-under-test", default="")
+    parser.add_argument(
+        "--selected-binding-proof",
+        type=Path,
+        help="Sanitized mac-control-runtime.json proof from the exact selected-binding callback canary.",
+    )
+    parser.add_argument(
+        "--selected-binding-proof-run-id",
+        default="",
+        help="Exact GitHub Actions run id that produced the selected-binding proof artifact.",
+    )
     args = parser.parse_args(argv)
 
     token = os.environ.get(args.token_env)
@@ -595,6 +833,74 @@ def main(argv: list[str] | None = None) -> int:
     run_id = f"qa-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     artifact_dir = args.artifact_dir or DEFAULT_RUN_ROOT / run_id
     started_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    if args.source_commit_under_test:
+        local_candidate_binding = packaged_bridge_source_binding(args.source_commit_under_test, module_file=__file__)
+        connector_binding = (
+            connector_candidate_binding(
+                connector_url=args.connector_url,
+                token=token,
+                expected_source_commit=args.source_commit_under_test,
+                expected_source_sha256=str(local_candidate_binding.get("actual_source_sha256") or ""),
+                expected_version=args.version_under_test,
+                expected_build=args.build_under_test,
+            )
+            if local_candidate_binding.get("ok") is True
+            else {"ok": False, "reason": "local_candidate_binding_failed"}
+        )
+        selected_binding_required = _suite_requires_operator_ack(
+            args.suite,
+            allow_real_world_actions=args.allow_real_world_actions,
+        )
+        selected_binding = (
+            selected_binding_proof_binding(
+                args.selected_binding_proof,
+                expected_source_commit=args.source_commit_under_test,
+                expected_source_run_id=args.selected_binding_proof_run_id,
+                expected_source_sha256=str(local_candidate_binding.get("actual_source_sha256") or ""),
+                expected_version=args.version_under_test,
+                expected_build=args.build_under_test,
+            )
+            if selected_binding_required
+            else {"ok": None, "reason": "selected_binding_proof_not_required_for_suite"}
+        )
+        candidate_binding = {
+            "ok": (
+                local_candidate_binding.get("ok") is True
+                and connector_binding.get("ok") is True
+                and (not selected_binding_required or selected_binding.get("ok") is True)
+            ),
+            "local": local_candidate_binding,
+            "connector": connector_binding,
+            "selected_binding": selected_binding,
+        }
+    else:
+        candidate_binding = {"ok": None, "reason": "source_commit_not_requested"}
+    if args.source_commit_under_test and candidate_binding.get("ok") is not True:
+        report_paths = write_reports(
+            artifact_dir=artifact_dir,
+            run_id=run_id,
+            started_at=started_at,
+            version_under_test=args.version_under_test,
+            build_under_test=args.build_under_test,
+            source_commit_under_test=args.source_commit_under_test,
+            candidate_binding=candidate_binding,
+            surface=args.surface,
+            connector_url=args.connector_url,
+            results=[],
+        )
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "run_id": run_id,
+                    "artifact_dir": str(artifact_dir),
+                    "reports": {key: str(path) for key, path in report_paths.items()},
+                    "candidate_binding": candidate_binding,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2
     if args.repo_root:
         os.environ["EVAOS_DESKTOP_BRIDGE_QA_REPO_ROOT"] = str(args.repo_root)
     surface = _surface_for_name(args.surface, connector_url=args.connector_url, token=token, artifact_dir=artifact_dir)
@@ -605,12 +911,15 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id,
         started_at=started_at,
         version_under_test=args.version_under_test,
+        build_under_test=args.build_under_test,
+        source_commit_under_test=args.source_commit_under_test,
+        candidate_binding=candidate_binding,
         surface=args.surface,
         connector_url=args.connector_url,
         results=results,
     )
     ok = _run_successful(results, allow_skips=args.allow_skips)
-    print(json.dumps({"ok": ok, "run_id": run_id, "artifact_dir": str(artifact_dir), "reports": {key: str(path) for key, path in report_paths.items()}, "summary": _summary(results)}, sort_keys=True))
+    print(json.dumps({"ok": ok, "run_id": run_id, "artifact_dir": str(artifact_dir), "reports": {key: str(path) for key, path in report_paths.items()}, "summary": _summary(results), "candidate_binding": candidate_binding}, sort_keys=True))
     return 0 if ok else 1
 
 

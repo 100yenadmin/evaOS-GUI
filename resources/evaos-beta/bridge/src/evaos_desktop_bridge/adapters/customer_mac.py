@@ -44,12 +44,18 @@ WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS Workbench.app")
 WORKBENCH_PROCESS_NAME = "evaOS Workbench"
 WORKBENCH_APP_ALIASES = {
     "com.evaos.workbench",
+    "com.evaos.workbench.beta",
     "com.electricsheephq.evadesktop",
     "evadesktop",
     "evaos",
     "evaos workbench",
+    "evaos workbench beta",
 }
-WORKBENCH_LEGACY_APP_PATHS = {"/applications/evaos.app"}
+WORKBENCH_LEGACY_APP_BASENAMES = {
+    "evadesktop.app",
+    "evaos.app",
+    "evaos workbench beta.app",
+}
 PEEKABOO_BIN_CANDIDATES = (
     "peekaboo",
     "evaos-connector-helper",
@@ -1117,6 +1123,9 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         return result
 
     def desktop_focus_app(self, *, app_name: str, dry_run: bool = False) -> CommandResult:
+        legacy_block = self._legacy_workbench_focus_block(app_name)
+        if legacy_block is not None:
+            return legacy_block
         if not self._safe_app_name(app_name):
             return CommandResult(ok=False, data={"focused": False}, errors=[make_error(code="app_name_not_allowed", message="App name is outside the supported character set.", guidance="Use a visible macOS app name.")])
         if self._is_sensitive_app(app_name):
@@ -1364,26 +1373,11 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         return CommandResult(ok=True, data={"frontmost_app": redact_value(frontmost), "pid": pid, "nodes": nodes, "truncated": truncated, "max_nodes": max_nodes}, warnings=warnings)
 
     def app_focus(self, *, app_name: str, dry_run: bool = False) -> CommandResult:
+        legacy_block = self._legacy_workbench_focus_block(app_name)
+        if legacy_block is not None:
+            return legacy_block
         if not self._safe_app_name(app_name):
             return CommandResult(ok=False, data={"focused": False, "would_focus": dry_run}, errors=[make_error(code="app_name_not_allowed", message="App name is outside the safe named-action character set.", guidance="Use a visible macOS app name with letters, numbers, spaces, dots, underscores, plus, at-sign, slash, colon, hash, or hyphen.")])
-        if self._is_legacy_workbench_app_path(app_name):
-            return CommandResult(
-                ok=False,
-                data={
-                    "focused": False,
-                    "would_focus": False,
-                    "app_name": app_name,
-                    "app_path": str(WORKBENCH_CANONICAL_APP_PATH),
-                    "process_name": WORKBENCH_PROCESS_NAME,
-                },
-                errors=[
-                    make_error(
-                        code="legacy_workbench_app_blocked",
-                        message="The legacy evaOS app bundle is not a valid Mac-control target.",
-                        guidance=f"Use the current Workbench at {WORKBENCH_CANONICAL_APP_PATH}.",
-                    )
-                ],
-            )
         if self._is_sensitive_app(app_name):
             return CommandResult(ok=False, data={"focused": False, "would_focus": dry_run, "app_name": app_name}, errors=[make_error(code="sensitive_app_blocked", message="This app is on the sensitive-app denylist.", guidance="Only request named actions against non-sensitive apps.")])
         workbench_focus = self._workbench_focus_result(app_name=app_name, dry_run=dry_run, verify_frontmost=True)
@@ -2730,6 +2724,27 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
             )
         return CommandResult(ok=True, data=data if not verify_frontmost else {**data, "frontmost": True}, warnings=warnings, provenance={"source": "macos_open_path"})
 
+    def _legacy_workbench_focus_block(self, app_name: str) -> CommandResult | None:
+        if not self._is_legacy_workbench_app_path(app_name):
+            return None
+        return CommandResult(
+            ok=False,
+            data={
+                "focused": False,
+                "would_focus": False,
+                "app_name": app_name,
+                "app_path": str(WORKBENCH_CANONICAL_APP_PATH),
+                "process_name": WORKBENCH_PROCESS_NAME,
+            },
+            errors=[
+                make_error(
+                    code="legacy_workbench_app_blocked",
+                    message="The legacy evaOS app bundle is not a valid Mac-control target.",
+                    guidance=f"Use the current Workbench at {WORKBENCH_CANONICAL_APP_PATH}.",
+                )
+            ],
+        )
+
     def _is_workbench_app_alias(self, app_name: str) -> bool:
         app_path = self._normalized_app_bundle_path(app_name)
         if app_path == os.path.normpath(str(WORKBENCH_CANONICAL_APP_PATH)).casefold():
@@ -2740,7 +2755,8 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         return normalized in WORKBENCH_APP_ALIASES
 
     def _is_legacy_workbench_app_path(self, app_name: str) -> bool:
-        return self._normalized_app_bundle_path(app_name) in WORKBENCH_LEGACY_APP_PATHS
+        normalized_path = self._normalized_app_bundle_path(app_name)
+        return normalized_path is not None and Path(normalized_path).name in WORKBENCH_LEGACY_APP_BASENAMES
 
     def _normalized_app_bundle_path(self, app_name: str) -> str | None:
         raw_value = app_name.strip()

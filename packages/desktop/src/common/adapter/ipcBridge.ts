@@ -113,6 +113,7 @@ import {
 } from './mappers/teamMapper';
 
 const EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS = 15000;
+const EVAOS_NATIVE_COMPANION_ACTION_TIMEOUT_MS = 10 * 60 * 1000;
 const EVAOS_RUNTIME_SURFACE_PROTOCOL = 'evaos-runtime-surface:';
 
 type EvaosElectronBridgeAPI = {
@@ -126,12 +127,12 @@ type EvaosRendererWindow = Window & {
   __evaosProviderCallbacks?: Map<string, (data: unknown) => void>;
 };
 
-function buildEvaosProvider<Response, Request>(name: string) {
+function buildEvaosProvider<Response, Request>(name: string, options: { timeoutMs?: number } = {}) {
   const platformProvider = bridge.buildProvider<Response, Request>(name);
   return {
     provider: platformProvider.provider,
     invoke(request: Request): Promise<Response> {
-      const electronRequest = invokeEvaosElectronProvider<Response, Request>(name, request);
+      const electronRequest = invokeEvaosElectronProvider<Response, Request>(name, request, options.timeoutMs);
       if (electronRequest) {
         return electronRequest;
       }
@@ -140,7 +141,11 @@ function buildEvaosProvider<Response, Request>(name: string) {
   };
 }
 
-function invokeEvaosElectronProvider<Response, Request>(name: string, request: Request): Promise<Response> | undefined {
+function invokeEvaosElectronProvider<Response, Request>(
+  name: string,
+  request: Request,
+  timeoutMs = EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS
+): Promise<Response> | undefined {
   const rendererWindow = getEvaosRendererWindow();
   const electronAPI = rendererWindow?.electronAPI;
   if (!rendererWindow || !electronAPI) {
@@ -156,7 +161,7 @@ function invokeEvaosElectronProvider<Response, Request>(name: string, request: R
     const timeout = rendererWindow.setTimeout(() => {
       callbacks.delete(callbackName);
       reject(new Error(`Timed out waiting for evaOS provider response: ${name}`));
-    }, EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS);
+    }, timeoutMs);
 
     callbacks.set(callbackName, (data) => {
       rendererWindow.clearTimeout(timeout);
@@ -1592,7 +1597,8 @@ export const evaosNativeCompanion = {
     IEvaosNativeCompanionRepairActionRequest
   >('evaos.native-companion.open-repair-action'),
   runAction: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionActionResult>, IEvaosNativeCompanionActionRequest>(
-    'evaos.native-companion.run-action'
+    'evaos.native-companion.run-action',
+    { timeoutMs: EVAOS_NATIVE_COMPANION_ACTION_TIMEOUT_MS }
   ),
 };
 

@@ -181,7 +181,22 @@ export function useEvaosNativeCompanionStatus(enabled = true, customerId?: strin
 
   const runAction = useCallback(
     async (request: IEvaosNativeCompanionActionRequest): Promise<IEvaosNativeCompanionActionResult> => {
-      const response = await ipcBridge.evaosNativeCompanion.runAction.invoke(request);
+      let response: Awaited<ReturnType<(typeof ipcBridge.evaosNativeCompanion.runAction)['invoke']>>;
+      try {
+        response = await ipcBridge.evaosNativeCompanion.runAction.invoke(request);
+      } catch {
+        return {
+          action: request.action,
+          status: 'failed',
+          message: 'Workbench connector action could not be reached.',
+          sourcePointer:
+            request.action === 'secure_network_enroll'
+              ? 'native-companion:secure-network-enrollment-action-unreachable'
+              : 'native-companion:action-unreachable',
+          auditIds: [],
+          refreshRecommended: true,
+        };
+      }
       if (!response.success || !response.data) {
         return {
           action: request.action,

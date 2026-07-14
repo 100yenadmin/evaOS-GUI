@@ -1203,6 +1203,43 @@ describe('NativeCompanionPage', () => {
     expect(bridgeMocks.openRepairAction).not.toHaveBeenCalled();
   });
 
+  it('shows durable in-progress enrollment feedback while the native action is pending', async () => {
+    mockUnenrolledMacStatus();
+    let resolveAction: ((value: unknown) => void) | undefined;
+    bridgeMocks.runAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAction = resolve;
+        })
+    );
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    expect(
+      await screen.findByText('Connecting this Mac securely. This can take a few minutes; do not click again.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
+
+    await act(async () => {
+      resolveAction?.({
+        success: true,
+        data: {
+          action: 'secure_network_enroll',
+          status: 'repair_required',
+          message: 'Enrollment failed safely.',
+          sourcePointer: 'native-companion:secure-network-enrollment-client-failed',
+          auditIds: [],
+          refreshRecommended: false,
+          blockerReason: 'secure_network_link_required',
+        },
+      });
+    });
+
+    expect((await screen.findAllByText('Localized enrollment failed safely.')).length).toBe(2);
+  });
+
   it.each([
     [
       'native-companion:secure-network-enrollment-broker-session-required',
@@ -1230,6 +1267,37 @@ describe('NativeCompanionPage', () => {
 
     expect((await screen.findAllByText(localizedMessage)).length).toBe(2);
     expect(screen.queryByText('Raw process message must not be rendered.')).not.toBeInTheDocument();
+  });
+
+  it('renders only the structured sanitized enrollment diagnostic', async () => {
+    mockUnenrolledMacStatus();
+    bridgeMocks.runAction.mockResolvedValue({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Raw process message with secret-key-material must not be rendered.',
+        sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
+        auditIds: [],
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+        enrollmentDiagnostic: {
+          code: 'tailscale_cli_failed',
+          exitCode: '1',
+          message: 'control server rejected enrollment at [redacted-url]',
+          cancellationState: 'unconfirmed_not_found',
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    const safeMessage =
+      'Localized enrollment failed safely. Tailscale exited with code 1. control server rejected enrollment at [redacted-url] The broker reported the key consumed or not found; cancellation remains unconfirmed.';
+    expect((await screen.findAllByText(safeMessage)).length).toBe(2);
+    expect(screen.queryByText(/secret-key-material/)).not.toBeInTheDocument();
   });
 
   it('clears secure-network session recovery after the broker session refreshes', async () => {

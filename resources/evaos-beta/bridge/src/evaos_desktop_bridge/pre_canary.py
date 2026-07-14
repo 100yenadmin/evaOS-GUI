@@ -10,12 +10,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from .candidate_identity import packaged_bridge_source_binding
+
 DEFAULT_CANONICAL_PATH = "/Applications/evaOS Workbench.app"
 DEFAULT_BUNDLE_ID = "com.evaos.workbench"
-LEGACY_BUNDLE_IDS = {"com.electricsheephq.EvaDesktop"}
-WORKBENCH_APP_NAMES = {"evaOS Workbench.app", "evaOS.app", "EvaDesktop.app"}
+LEGACY_BUNDLE_IDS = {"com.electricsheephq.EvaDesktop", "com.evaos.workbench.beta"}
+WORKBENCH_APP_NAMES = {
+    "evaOS Workbench.app",
+    "evaOS Workbench Beta.app",
+    "evaOS.app",
+    "EvaDesktop.app",
+}
+WORKBENCH_APP_NAME_STEMS = tuple(sorted(name[: -len(".app")].casefold() for name in WORKBENCH_APP_NAMES))
 WORKBENCH_EXECUTABLE_PATTERN = re.compile(
-    r'^\s*"?(?P<path>/.*?\.app)/Contents/MacOS/(?:evaOS Workbench|EvaDesktop)"?(?:\s|$)'
+    r'^\s*"?(?P<path>/.*?\.app(?:\.[^/"\s]+)?)/Contents/MacOS/(?:evaOS Workbench(?: Beta)?|EvaDesktop|evaOS)"?(?:\s|$)'
 )
 DEFAULT_TEAM_ID = "TC6MS3T6NN"
 COMPUTER_USE_CLIENT_SUFFIX = "SkyComputerUseClient mcp"
@@ -134,7 +142,7 @@ def evaluate_inventory(
         if bundle.path != canonical_path
         and (
             bundle.bundle_id in {bundle_id, *LEGACY_BUNDLE_IDS}
-            or Path(bundle.path).name in WORKBENCH_APP_NAMES
+            or _is_workbench_app_artifact_name(Path(bundle.path).name)
         )
     )
     running_workbench = tuple(process for process in inventory.processes if process.kind == "workbench")
@@ -271,6 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--bundle-id", default=DEFAULT_BUNDLE_ID)
     parser.add_argument("--expected-version")
     parser.add_argument("--expected-build")
+    parser.add_argument("--expected-source-commit")
     parser.add_argument("--expected-team-id", default=DEFAULT_TEAM_ID)
     parser.add_argument("--max-computer-use-helpers", type=int, default=2)
     parser.add_argument("--artifact-dir", type=Path, help="Write qa-report.json into this evidence directory.")
@@ -302,6 +311,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_computer_use_helpers=args.max_computer_use_helpers,
         control_surface=args.control_surface,
     )
+    report = PreCanaryReport(
+        ok=report.ok,
+        checks=report.checks,
+        summary={
+            **report.summary,
+            "expected_version": args.expected_version,
+            "expected_build": args.expected_build,
+        },
+        inventory=report.inventory,
+    )
+    if args.expected_source_commit:
+        binding = packaged_bridge_source_binding(args.expected_source_commit)
+        binding_check = (
+            _pass(
+                "packaged_bridge_source_integrity_verified",
+                "Packaged Workbench bridge bytes and manifest match the exact evaOS-GUI source commit.",
+                f"{args.expected_source_commit} sha256={binding.get('actual_source_sha256')}",
+            )
+            if binding["ok"] is True
+            else _fail(
+                "packaged_bridge_source_commit_mismatch",
+                "Packaged Workbench bridge does not match the expected evaOS-GUI source commit.",
+                str(binding.get("reason") or "source binding mismatch"),
+            )
+        )
+        checks = (*report.checks, binding_check)
+        report = PreCanaryReport(
+            ok=report.ok and binding_check.status != "fail",
+            checks=checks,
+            summary={
+                **report.summary,
+                "expected_source_commit": args.expected_source_commit,
+                "bridge_source_binding": binding,
+            },
+            inventory=report.inventory,
+        )
     payload = report.to_dict()
     if args.artifact_dir is not None:
         _write_report(payload, args.artifact_dir)
@@ -386,11 +431,6 @@ def _artifact_workbench_bundle_paths(*, artifact_roots: Sequence[str] | None = N
     for root in roots:
         if not Path(root).exists():
             continue
-        name_predicates: list[str] = []
-        for name in sorted(WORKBENCH_APP_NAMES):
-            if name_predicates:
-                name_predicates.append("-o")
-            name_predicates.extend(("-name", name))
         output = _run(
             [
                 "find",
@@ -399,15 +439,30 @@ def _artifact_workbench_bundle_paths(*, artifact_roots: Sequence[str] | None = N
                 ARTIFACT_SEARCH_MAX_DEPTH,
                 "-type",
                 "d",
-                "(",
-                *name_predicates,
-                ")",
+                "-name",
+                "*.app*",
                 "-prune",
                 "-print",
             ]
         )
-        paths.extend(line.strip() for line in output.splitlines() if line.strip())
+        paths.extend(
+            line.strip()
+            for line in output.splitlines()
+            if line.strip() and _is_workbench_app_artifact_name(Path(line.strip()).name)
+        )
     return tuple(paths)
+
+
+def _is_workbench_app_artifact_name(name: str) -> bool:
+    candidate = name.casefold()
+    for stem in WORKBENCH_APP_NAME_STEMS:
+        if candidate == f"{stem}.app":
+            return True
+        if candidate.startswith(f"{stem}.app."):
+            return True
+        if candidate.startswith(f"{stem}.") and ".app" in candidate[len(stem) :]:
+            return True
+    return False
 
 
 def _artifact_roots_from_environment() -> tuple[str, ...]:

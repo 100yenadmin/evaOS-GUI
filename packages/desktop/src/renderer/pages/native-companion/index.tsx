@@ -263,6 +263,9 @@ const NativeCompanionPage: React.FC = () => {
       setActionInFlight(request.action);
       setCopyMessage(null);
       setTakeoverCueWarning(null);
+      if (request.action === 'secure_network_enroll') {
+        setHandoffMessage('Connecting this Mac securely. This can take a few minutes; do not click again.');
+      }
       const targetsMacControlCustomer = MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS.has(request.action);
       const requestCustomerId =
         request.customerId ?? (targetsMacControlCustomer ? selectedPairingCustomerId : selectedCustomerId);
@@ -556,6 +559,7 @@ const NativeCompanionPage: React.FC = () => {
                   targets={pairableMacControlTargets}
                   selectedCustomerId={selectedPairingCustomerId}
                   selectedTarget={selectedPairingTarget}
+                  disabled={actionInFlight !== null}
                   onChange={handlePairingTargetChange}
                 />
               </div>
@@ -590,7 +594,7 @@ const NativeCompanionPage: React.FC = () => {
                 <Button
                   data-testid='native-companion-next-action'
                   type='primary'
-                  disabled={viewModel.nextAction.disabled}
+                  disabled={viewModel.nextAction.disabled || actionInFlight !== null}
                   loading={
                     viewModel.nextAction.kind === 'reconnect'
                       ? authInFlight
@@ -1255,20 +1259,52 @@ function localizedNativeCompanionActionResultMessage(
     return translate('evaos.nativeCompanion.onboarding.enrollmentSessionDetail');
   }
   if (actionResult.sourcePointer.startsWith('native-companion:secure-network-enrollment-')) {
-    return translate('evaos.nativeCompanion.onboarding.enrollmentFailedDetail');
+    const summary = translate('evaos.nativeCompanion.onboarding.enrollmentFailedDetail');
+    const diagnostic = privateNetworkEnrollmentDiagnosticMessage(actionResult);
+    return diagnostic ? `${summary} ${diagnostic}` : summary;
   }
   return actionResult.message;
+}
+
+function privateNetworkEnrollmentDiagnosticMessage(
+  actionResult: IEvaosNativeCompanionActionResult
+): string | undefined {
+  const diagnostic = actionResult.enrollmentDiagnostic;
+  if (!diagnostic) return undefined;
+  const parts: string[] = [];
+  if (diagnostic.code === 'tailscale_cli_failed') {
+    parts.push(
+      diagnostic.exitCode ? `Tailscale exited with code ${diagnostic.exitCode}.` : 'Tailscale enrollment failed.'
+    );
+  } else if (diagnostic.code === 'enrollment_setup_failed') {
+    parts.push('Workbench could not prepare temporary enrollment material.');
+  } else if (diagnostic.code === 'enrollment_secret_cleanup_failed') {
+    parts.push('Workbench could not confirm temporary enrollment-material cleanup.');
+  } else if (diagnostic.code === 'enrollment_state_changed') {
+    parts.push('The local Tailscale state changed before enrollment.');
+  }
+  if (diagnostic.message) parts.push(diagnostic.message);
+  if (diagnostic.cancellationState === 'cancelled') {
+    parts.push('Unused key cancellation was confirmed.');
+  } else if (diagnostic.cancellationState === 'unconfirmed_not_found') {
+    parts.push('The broker reported the key consumed or not found; cancellation remains unconfirmed.');
+  } else if (diagnostic.cancellationState === 'unconfirmed') {
+    parts.push('Unused key cancellation remains unconfirmed.');
+  }
+  return parts.join(' ') || undefined;
 }
 
 function MacPairingTargetControl({
   targets,
   selectedCustomerId,
   selectedTarget,
+  disabled,
   onChange,
 }: {
   targets: IEvaosCustomerTargetView[];
   selectedCustomerId?: string;
   selectedTarget?: IEvaosCustomerTargetView;
+  disabled?: boolean;
   onChange: (customerId: string) => void;
 }) {
   const targetText = selectedTarget ? macPairingTargetLabel(selectedTarget) : 'Choose Mac target';
@@ -1280,6 +1316,7 @@ function MacPairingTargetControl({
           data-testid='native-companion-mac-target-select'
           aria-label='Mac control target'
           value={selectedCustomerId ?? ''}
+          disabled={disabled}
           onChange={(event) => onChange(event.currentTarget.value)}
           className='h-30px w-full min-w-0 rd-6px border border-solid border-[var(--color-border-2)] bg-fill-1 px-8px text-12px text-t-primary outline-none'
         >

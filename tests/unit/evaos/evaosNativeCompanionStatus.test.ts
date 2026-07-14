@@ -5087,8 +5087,16 @@ describe('evaosNativeCompanionStatus', () => {
           const authKeyArg = args.find((arg) => arg.startsWith('--auth-key=file:'));
           secretFilePath = authKeyArg?.slice('--auth-key=file:'.length);
           secretFileContents = secretFilePath ? fs.readFileSync(secretFilePath, 'utf8') : undefined;
-          expect(args).toContain('--login-server=https://headscale.example');
+          expect(args).toEqual([
+            'up',
+            '--reset',
+            '--login-server=https://headscale.example',
+            `--auth-key=file:${secretFilePath}`,
+            '--accept-dns=false',
+            '--timeout=90s',
+          ]);
           expect(args.join(' ')).not.toContain(authKey);
+          expect(options.timeout).toBe(120000);
           expect(options.env?.TAILSCALE_BE_CLI).toBe('1');
           expect(options.env?.HOME).toBe('/custom/home');
           expect(options.env).not.toHaveProperty('AIONUI_EVAOS_DESKTOP_SESSION');
@@ -5217,7 +5225,7 @@ describe('evaosNativeCompanionStatus', () => {
     );
   });
 
-  it('cancels one-use enrollment when the local Tailscale login fails', async () => {
+  it('cancels one-use enrollment and surfaces only sanitized diagnostics when local Tailscale up fails', async () => {
     const authKey = 'one-use-private-network-key-for-test';
     const createPrivateNetworkEnrollment = vi.fn(async () => ({
       customerId: 'jackie-david',
@@ -5257,7 +5265,19 @@ describe('evaosNativeCompanionStatus', () => {
         return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
       }
       if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') {
-        throw new Error('Tailscale login failed');
+        const authKeyPath = args.find((arg) => arg.startsWith('--auth-key=file:'))?.slice('--auth-key=file:'.length);
+        throw Object.assign(
+          new Error(
+            `Tailscale up failed via https://headscale.example from 100.64.0.9 using file:${authKeyPath} ${authKey}`
+          ),
+          {
+            code: 1,
+            stderr:
+              `control server rejected enrollment at https://headscale.example for 100.64.0.9 ` +
+              `fd7a:115c:a1e0::1 --auth-key=file:${authKeyPath} ${authKey}`,
+            stdout: `ignored unsafe output ${authKey}`,
+          }
+        );
       }
       throw new Error(`unexpected command ${file} ${key}`);
     });
@@ -5288,6 +5308,11 @@ describe('evaosNativeCompanionStatus', () => {
       status: 'repair_required',
       sourcePointer: 'native-companion:secure-network-enrollment-client-failed',
       refreshRecommended: false,
+      enrollmentDiagnostic: {
+        code: 'tailscale_cli_failed',
+        exitCode: '1',
+        cancellationState: 'cancelled',
+      },
     });
     expect(cancelPrivateNetworkEnrollment).toHaveBeenCalledWith({
       customerId: 'jackie-david',
@@ -5295,10 +5320,122 @@ describe('evaosNativeCompanionStatus', () => {
       authKey,
     });
     expect(JSON.stringify(result)).not.toContain(authKey);
-    expect(diagnosticEvents).toEqual(['secure_network_enrollment_login_failed']);
+    expect(JSON.stringify(result)).not.toContain('https://headscale.example');
+    expect(JSON.stringify(result)).not.toContain('100.64.0.9');
+    expect(JSON.stringify(result)).not.toContain('fd7a:115c:a1e0::1');
+    expect(JSON.stringify(result)).not.toContain('evaos-private-network-');
+    expect(result.enrollmentDiagnostic?.message).toContain('control server rejected enrollment');
+    expect(diagnosticEvents).toEqual([
+      'secure_network_enrollment_action_started',
+      'secure_network_enrollment_broker_request_started',
+      'secure_network_enrollment_cli_started',
+      'secure_network_enrollment_login_failed',
+      'secure_network_enrollment_failed',
+    ]);
     expect(JSON.stringify(diagnosticEvents)).not.toMatch(
       /auth-key|Tailscale login failed|one-use-private-network-key/i
     );
+  });
+
+  it.each([
+    ['keeps the enrollment fail closed', false],
+    ['accepts late local enrollment proof', true],
+  ] as const)('%s when Headscale key cancellation is unconfirmed', async (_label, enrollAfterCancellation) => {
+    const authKey = 'one-use-private-network-key-for-test';
+    const createPrivateNetworkEnrollment = vi.fn(async () => ({
+      customerId: 'jackie-david',
+      deviceId: 'device-david',
+      deviceIdentifier: 'david-mac-hardware-id',
+      clientVariant: 'tailscale_standalone' as const,
+      enrollmentId: 'network-enrollment-1',
+      loginServer: 'https://headscale.example',
+      authKey,
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    }));
+    let cancellationAttempted = false;
+    const cancelPrivateNetworkEnrollment = vi.fn(async () => {
+      cancellationAttempted = true;
+      throw new EvaosBrokerSessionError(
+        'broker_http_error',
+        'The evaOS broker is temporarily unavailable.',
+        503,
+        'headscale_preauth_expiry_unconfirmed'
+      );
+    });
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        return {
+          stdout: json({
+            ok: true,
+            data: {
+              private_network: {
+                client_installed: true,
+                client_running: true,
+                enrolled: cancellationAttempted && enrollAfterCancellation,
+              },
+            },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'david-mac-hardware-id' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') {
+        throw Object.assign(new Error('safe local failure'), { code: 1, stderr: 'safe local failure' });
+      }
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+        cancelPrivateNetworkEnrollment,
+      }
+    );
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'jackie-david' },
+      deps
+    );
+
+    if (enrollAfterCancellation) {
+      expect(result).toMatchObject({
+        status: 'succeeded',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+        refreshRecommended: true,
+      });
+    } else {
+      expect(result).toMatchObject({
+        status: 'repair_required',
+        sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
+        refreshRecommended: false,
+        enrollmentDiagnostic: {
+          code: 'tailscale_cli_failed',
+          exitCode: '1',
+          cancellationState: 'unconfirmed_not_found',
+          message: 'safe local failure',
+        },
+      });
+    }
+    expect(cancelPrivateNetworkEnrollment).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain(authKey);
   });
 
   it.each([
@@ -5391,7 +5528,13 @@ describe('evaosNativeCompanionStatus', () => {
       status: 'repair_required',
       sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
     });
-    expect(diagnosticEvents).toEqual([expectedEvent]);
+    expect(diagnosticEvents).toEqual([
+      'secure_network_enrollment_action_started',
+      'secure_network_enrollment_broker_request_started',
+      'secure_network_enrollment_cli_started',
+      expectedEvent,
+      'secure_network_enrollment_failed',
+    ]);
     expect(JSON.stringify(diagnosticEvents)).not.toMatch(/auth-key|one-use-private-network-key|evaos-private-network/i);
     expect(cancelPrivateNetworkEnrollment).toHaveBeenCalled();
   });
@@ -5473,7 +5616,7 @@ describe('evaosNativeCompanionStatus', () => {
     });
     expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
     expect(recordDiagnosticEvent).toHaveBeenCalledWith('secure_network_enrollment_login_failed');
-    expect(deps.sleep).toHaveBeenCalledWith(250);
+    expect(deps.sleep).toHaveBeenCalledWith(1000);
     expect(JSON.stringify(result)).not.toContain(authKey);
   });
 

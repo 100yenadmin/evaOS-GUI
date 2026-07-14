@@ -26,6 +26,8 @@ import type {
   IEvaosNativeCompanionControlMode,
   IEvaosMacControlBlockerReason,
   IEvaosNativeCompanionOpenResult,
+  IEvaosPrivateNetworkEnrollmentCancellationState,
+  IEvaosPrivateNetworkEnrollmentDiagnostic,
   IEvaosNativeCompanionPermissionView,
   IEvaosPrivateNetworkAuthorityDiagnostic,
   IEvaosNativeCompanionReadiness,
@@ -65,7 +67,7 @@ const SECURE_NETWORK_APP_IDENTIFIERS: Record<string, EvaosPrivateNetworkClientVa
 };
 const COMMAND_TIMEOUT_MS = 8000;
 const PAIRING_COMMAND_TIMEOUT_MS = 30000;
-const SECURE_NETWORK_ENROLL_TIMEOUT_MS = 30000;
+const SECURE_NETWORK_ENROLL_TIMEOUT_MS = 120000;
 const PRIVATE_NETWORK_AUTHORITY_TIMEOUT_MS = 8000;
 const CONNECTOR_START_STATUS_ATTEMPTS = 12;
 const CONNECTOR_START_STATUS_RETRY_DELAY_MS = 750;
@@ -86,10 +88,18 @@ const NATIVE_COMPANION_FIXTURE_STATES = [
   'permission_needed',
   'offline',
 ] as const;
-const SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS = 4;
-const SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS = 250;
+const SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS = 30;
+const SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS = 1000;
+const SECURE_NETWORK_ENROLL_SETTLE_COMMAND_TIMEOUT_MS = 2000;
 
 export type EvaosNativeCompanionDiagnosticEventCode =
+  | 'secure_network_enrollment_action_started'
+  | 'secure_network_enrollment_preflight_failed'
+  | 'secure_network_enrollment_broker_request_started'
+  | 'secure_network_enrollment_broker_request_failed'
+  | 'secure_network_enrollment_cli_started'
+  | 'secure_network_enrollment_submitted'
+  | 'secure_network_enrollment_failed'
   | 'secure_network_enrollment_setup_failed'
   | 'secure_network_enrollment_login_failed'
   | 'secure_network_enrollment_secret_unlink_failed'
@@ -103,6 +113,11 @@ type ExecFileResult = {
 type ExecFileOptions = {
   timeout: number;
   env?: NodeJS.ProcessEnv;
+};
+
+type PrivateNetworkCancellationOutcome = {
+  cancelled: boolean;
+  state: IEvaosPrivateNetworkEnrollmentCancellationState;
 };
 
 type NativeCompanionFixtureState = (typeof NATIVE_COMPANION_FIXTURE_STATES)[number];
@@ -2276,8 +2291,10 @@ async function runSecureNetworkEnrollmentAction(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
+  recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_action_started');
   const customerId = request.customerId?.trim();
   if (!customerId || isAccountLikeCustomerId(customerId)) {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_preflight_failed');
     return nativeActionResult(
       'secure_network_enroll',
       'repair_required',
@@ -2302,6 +2319,7 @@ async function runSecureNetworkEnrollmentAction(
     localNetwork.enrolled !== false ||
     !deviceIdentifier
   ) {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_preflight_failed');
     return nativeActionResult(
       'secure_network_enroll',
       'repair_required',
@@ -2316,6 +2334,7 @@ async function runSecureNetworkEnrollmentAction(
 
   const client = await verifiedSecureNetworkClient(deps);
   if (!client) {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_preflight_failed');
     return nativeActionResult(
       'secure_network_enroll',
       'repair_required',
@@ -2335,6 +2354,7 @@ async function runSecureNetworkEnrollmentAction(
     deps.cancelPrivateNetworkEnrollment ??
     ((input) => getDefaultEvaosBrokerSessionClient().cancelPrivateNetworkEnrollment(input));
   let enrollment: EvaosPrivateNetworkEnrollment;
+  recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_broker_request_started');
   try {
     enrollment = await createEnrollment({
       customerId,
@@ -2343,6 +2363,7 @@ async function runSecureNetworkEnrollmentAction(
       clientVariant: client.clientVariant,
     });
   } catch (error) {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_broker_request_failed');
     if (isBrokerSessionReconnectRequired(error)) {
       return nativeActionResult(
         'secure_network_enroll',
@@ -2374,29 +2395,24 @@ async function runSecureNetworkEnrollmentAction(
     latestNetwork.clientRunning !== true ||
     latestNetwork.enrolled !== false
   ) {
-    let cancelled = false;
-    try {
-      const cancellation = await cancelEnrollment({
-        customerId,
-        enrollmentId: enrollment.enrollmentId,
-        authKey: enrollment.authKey,
-      });
-      cancelled = cancellation.cancelled;
-    } catch {
-      cancelled = false;
-    }
+    const cancellation = await attemptPrivateNetworkEnrollmentCancellation(cancelEnrollment, customerId, enrollment);
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_failed');
     return nativeActionResult(
       'secure_network_enroll',
       'repair_required',
-      cancelled
+      cancellation.cancelled
         ? 'Private-network state changed before enrollment. Workbench cancelled the unused key safely; refresh before retrying.'
         : 'Private-network state changed before enrollment, and cancellation could not be confirmed. Wait for the short enrollment expiry before retrying.',
       {
-        sourcePointer: cancelled
+        sourcePointer: cancellation.cancelled
           ? 'native-companion:secure-network-enrollment-state-changed'
           : 'native-companion:secure-network-enrollment-cancel-unconfirmed',
         refreshRecommended: true,
         blockerReason: 'secure_network_link_required',
+        enrollmentDiagnostic: {
+          code: 'enrollment_state_changed',
+          cancellationState: cancellation.state,
+        },
       }
     );
   }
@@ -2407,6 +2423,7 @@ async function runSecureNetworkEnrollmentAction(
   let secretReady = false;
   let cleanupFailed = false;
   let localEnrollmentSucceeded = false;
+  let enrollmentDiagnostic: IEvaosPrivateNetworkEnrollmentDiagnostic | undefined;
   try {
     secretDirectory = fs.mkdtempSync(join(tmpdir(), 'evaos-private-network-'));
     secretPath = join(secretDirectory, 'auth-key');
@@ -2417,25 +2434,42 @@ async function runSecureNetworkEnrollmentAction(
       mode: 0o600,
     });
     secretReady = true;
-  } catch {
+  } catch (error) {
     recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_setup_failed');
     localEnrollmentSucceeded = false;
+    enrollmentDiagnostic = {
+      code: 'enrollment_setup_failed',
+      message: secureNetworkEnrollmentErrorText(error, enrollment),
+    };
   }
 
   if (secretReady && secretPath) {
     try {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_cli_started');
       await execFile(
         client.commandPath,
-        ['login', `--login-server=${enrollment.loginServer}`, `--auth-key=file:${secretPath}`, '--timeout=20s'],
+        [
+          'up',
+          '--reset',
+          `--login-server=${enrollment.loginServer}`,
+          `--auth-key=file:${secretPath}`,
+          '--accept-dns=false',
+          '--timeout=90s',
+        ],
         {
           timeout: SECURE_NETWORK_ENROLL_TIMEOUT_MS,
           env: secureNetworkCliEnvironment(deps.env ?? process.env),
         }
       );
       localEnrollmentSucceeded = true;
-    } catch {
+    } catch (error) {
       recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_login_failed');
       localEnrollmentSucceeded = false;
+      enrollmentDiagnostic = {
+        code: 'tailscale_cli_failed',
+        exitCode: secureNetworkEnrollmentExitCode(error),
+        message: secureNetworkEnrollmentErrorText(error, enrollment, secretPath),
+      };
     }
   }
 
@@ -2447,6 +2481,7 @@ async function runSecureNetworkEnrollmentAction(
       recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_unlink_failed');
       localEnrollmentSucceeded = false;
       cleanupFailed = true;
+      enrollmentDiagnostic = { code: 'enrollment_secret_cleanup_failed' };
     }
   }
   if (secretDirectory) {
@@ -2456,6 +2491,7 @@ async function runSecureNetworkEnrollmentAction(
       recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_secret_directory_cleanup_failed');
       localEnrollmentSucceeded = false;
       cleanupFailed = true;
+      enrollmentDiagnostic = { code: 'enrollment_secret_cleanup_failed' };
     }
   }
 
@@ -2464,34 +2500,35 @@ async function runSecureNetworkEnrollmentAction(
   }
 
   if (!localEnrollmentSucceeded) {
-    let cancelled = false;
-    try {
-      const cancellation = await cancelEnrollment({
-        customerId,
-        enrollmentId: enrollment.enrollmentId,
-        authKey: enrollment.authKey,
-      });
-      cancelled = cancellation.cancelled;
-    } catch {
-      cancelled = false;
+    const cancellation = await attemptPrivateNetworkEnrollmentCancellation(cancelEnrollment, customerId, enrollment);
+    if (!cancellation.cancelled && !cleanupFailed) {
+      localEnrollmentSucceeded = await waitForSecureNetworkEnrollmentAfterAmbiguousFailure(bridgePath, deps);
     }
-    return nativeActionResult(
-      'secure_network_enroll',
-      'repair_required',
-      cancelled
-        ? 'Tailscale could not use the one-use enrollment. Workbench cancelled it safely; reopen Tailscale and retry.'
-        : 'Tailscale could not use the one-use enrollment, and cancellation could not be confirmed. Wait for the short enrollment expiry before retrying.',
-      {
-        sourcePointer: cancelled
-          ? 'native-companion:secure-network-enrollment-client-failed'
-          : 'native-companion:secure-network-enrollment-cancel-unconfirmed',
-        refreshRecommended: false,
-        blockerReason: 'secure_network_link_required',
-      }
-    );
+    if (!localEnrollmentSucceeded) {
+      recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_failed');
+      return nativeActionResult(
+        'secure_network_enroll',
+        'repair_required',
+        cancellation.cancelled
+          ? 'Tailscale could not use the one-use enrollment. Workbench cancelled it safely; reopen Tailscale and retry.'
+          : 'Tailscale could not use the one-use enrollment, and cancellation could not be confirmed. Wait for the short enrollment expiry before retrying.',
+        {
+          sourcePointer: cancellation.cancelled
+            ? 'native-companion:secure-network-enrollment-client-failed'
+            : 'native-companion:secure-network-enrollment-cancel-unconfirmed',
+          refreshRecommended: false,
+          blockerReason: 'secure_network_link_required',
+          enrollmentDiagnostic: {
+            ...(enrollmentDiagnostic ?? { code: 'tailscale_cli_failed' }),
+            cancellationState: cancellation.state,
+          },
+        }
+      );
+    }
   }
 
   privateNetworkBootstrapGrants.set(privateNetworkBootstrapGrantKey(customerId, deviceIdentifier), enrollment.grantId);
+  recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_submitted');
 
   return nativeActionResult(
     'secure_network_enroll',
@@ -2517,6 +2554,61 @@ function recordNativeCompanionDiagnosticEvent(
   console.warn(`[evaOS Native Companion] ${eventCode}`);
 }
 
+async function attemptPrivateNetworkEnrollmentCancellation(
+  cancelEnrollment: (request: {
+    customerId: string;
+    enrollmentId: string;
+    authKey: string;
+  }) => Promise<{ cancelled: true; enrollmentId: string }>,
+  customerId: string,
+  enrollment: EvaosPrivateNetworkEnrollment
+): Promise<PrivateNetworkCancellationOutcome> {
+  try {
+    const cancellation = await cancelEnrollment({
+      customerId,
+      enrollmentId: enrollment.enrollmentId,
+      authKey: enrollment.authKey,
+    });
+    if (cancellation.cancelled === true) return { cancelled: true, state: 'cancelled' };
+  } catch (error) {
+    if (isEvaosBrokerSessionError(error) && error.brokerErrorCode === 'headscale_preauth_expiry_unconfirmed') {
+      return { cancelled: false, state: 'unconfirmed_not_found' };
+    }
+  }
+  return { cancelled: false, state: 'unconfirmed' };
+}
+
+function secureNetworkEnrollmentExitCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const record = error as { code?: unknown; exitCode?: unknown };
+  const value = record.exitCode ?? record.code;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  if (typeof value === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(value)) return value;
+  return undefined;
+}
+
+function secureNetworkEnrollmentErrorText(
+  error: unknown,
+  enrollment: EvaosPrivateNetworkEnrollment,
+  secretPath?: string
+): string | undefined {
+  const stderr = readErrorStderr(error);
+  const message = error instanceof Error ? error.message : undefined;
+  let value = compactStrings([stderr, message]).join(' ');
+  if (!value) return undefined;
+  for (const sensitiveValue of [enrollment.authKey, enrollment.loginServer, secretPath]
+    .filter((candidate): candidate is string => Boolean(candidate))
+    .toSorted((left, right) => right.length - left.length)) {
+    value = value.split(sensitiveValue).join('[redacted]');
+  }
+  value = value
+    .replace(/--auth-key(?:=|\s+)\S+/gi, '[redacted]')
+    .replace(/\bfile:[^\s"')]+/gi, '[redacted-path]')
+    .replace(/(?:^|\s)(?:file:)?\/(?:Users|private|var|tmp)\/[^\s"'(),;]+/gi, ' [redacted-path]')
+    .replace(/\b(?:[A-Fa-f0-9]{0,4}:){2,}[A-Fa-f0-9]{0,4}\b/g, '[redacted-ip]');
+  return safeBridgeErrorText(value);
+}
+
 async function waitForSecureNetworkEnrollmentAfterAmbiguousFailure(
   bridgePath: string,
   deps: EvaosNativeCompanionStatusDeps
@@ -2524,7 +2616,12 @@ async function waitForSecureNetworkEnrollmentAfterAmbiguousFailure(
   const sleep = deps.sleep ?? defaultSleep;
   for (let attempt = 0; attempt < SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS; attempt += 1) {
     if (attempt > 0) await sleep(SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS);
-    const connectorService = await runBridgeCommand(bridgePath, ['connector-service', 'status', '--json'], deps);
+    const connectorService = await runBridgeCommand(
+      bridgePath,
+      ['connector-service', 'status', '--json'],
+      deps,
+      SECURE_NETWORK_ENROLL_SETTLE_COMMAND_TIMEOUT_MS
+    );
     if (privateNetworkEvidence(connectorService.data)?.enrolled === true) return true;
   }
   return false;
@@ -3357,9 +3454,9 @@ function bridgeFailureDetail(result: BridgeCommandResult, fallback: string): str
 function safeBridgeErrorText(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const secretFieldPattern =
-    /["']?\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|token|secret)\b["']?\s*[:=]\s*["']?[^"'\s,)}]+["']?/gi;
+    /["']?\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|auth[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|token|secret)\b["']?\s*[:=]\s*["']?[^"'\s,)}]+["']?/gi;
   const secretWordPattern =
-    /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|bearer|secret)\b[^\s,.;)]*/gi;
+    /\b(?:access[_-]?token|refresh[_-]?token|connector[_-]?(?:token|url)|desktop[_-]?session|provider[_-]?grant|api[_-]?key|auth[_-]?key|password|credential|client[_-]?secret|service[_-]?role|grant[_-]?handle|private[_-]?key|session[_-]?key|auth[_-]?proof|bearer|secret)\b[^\s,.;)]*/gi;
   const redacted = value
     .replace(secretFieldPattern, '[redacted]')
     .replace(secretWordPattern, '[redacted]')
@@ -3369,6 +3466,17 @@ function safeBridgeErrorText(value: string | undefined): string | undefined {
     .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, '[redacted]')
     .trim();
   return redacted ? redacted.slice(0, 260) : undefined;
+}
+
+function safePrivateNetworkEnrollmentDiagnosticText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return safeBridgeErrorText(
+    value
+      .replace(/--auth-key(?:=|\s+)\S+/gi, '[redacted]')
+      .replace(/\bfile:[^\s"')]+/gi, '[redacted-path]')
+      .replace(/(?:^|\s)(?:file:)?\/(?:Users|private|var|tmp)\/[^\s"'(),;]+/gi, ' [redacted-path]')
+      .replace(/\b(?:[A-Fa-f0-9]{0,4}:){2,}[A-Fa-f0-9]{0,4}\b/g, '[redacted-ip]')
+  );
 }
 
 function isAccountLikeCustomerId(customerId: string): boolean {
@@ -3509,6 +3617,35 @@ function nativeActionResult(
     events: options.events,
     blockerReason: rendererSafeMacControlBlockerReason(options.blockerReason),
     bootstrapGrantId: safeDiagnosticText(options.bootstrapGrantId),
+    enrollmentDiagnostic: rendererSafePrivateNetworkEnrollmentDiagnostic(options.enrollmentDiagnostic),
+  };
+}
+
+function rendererSafePrivateNetworkEnrollmentDiagnostic(
+  value: IEvaosPrivateNetworkEnrollmentDiagnostic | undefined
+): IEvaosPrivateNetworkEnrollmentDiagnostic | undefined {
+  if (!value) return undefined;
+  const safeCodes = new Set<IEvaosPrivateNetworkEnrollmentDiagnostic['code']>([
+    'enrollment_setup_failed',
+    'enrollment_secret_cleanup_failed',
+    'enrollment_state_changed',
+    'tailscale_cli_failed',
+  ]);
+  const safeCancellationStates = new Set<IEvaosPrivateNetworkEnrollmentCancellationState>([
+    'cancelled',
+    'unconfirmed',
+    'unconfirmed_not_found',
+  ]);
+  if (!safeCodes.has(value.code)) return undefined;
+  return {
+    code: value.code,
+    exitCode:
+      typeof value.exitCode === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(value.exitCode) ? value.exitCode : undefined,
+    message: safePrivateNetworkEnrollmentDiagnosticText(value.message),
+    cancellationState:
+      value.cancellationState && safeCancellationStates.has(value.cancellationState)
+        ? value.cancellationState
+        : undefined,
   };
 }
 
