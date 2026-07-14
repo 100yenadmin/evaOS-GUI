@@ -8,6 +8,8 @@ const base64Url = z
   .max(16_384)
   .regex(/^[A-Za-z0-9_-]+$/);
 const instant = z.string().datetime({ offset: true });
+const safePositiveCounter = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+const safeNonnegativeCounter = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
 export const MAC_ACCESS_IDENTITIES = {
   appBundleId: 'com.evaos.mac-access',
@@ -56,7 +58,7 @@ export const buildIdentitySchema = z
     build_version: identifier,
     source_commit: z.string().regex(/^[a-f0-9]{40}$/),
     signed_lineage_id: identifier,
-    security_epoch: z.number().int().nonnegative(),
+    security_epoch: safeNonnegativeCounter,
     schema_reader_version: z.literal(1),
     schema_writer_version: z.literal(1),
     rollback_authorization_id: identifier.nullable(),
@@ -67,7 +69,7 @@ export const keychainCustodySchema = z
   .object({
     custodian_signing_identifier: z.literal(MAC_ACCESS_IDENTITIES.helperServiceId),
     access_group_suffix: z.string().regex(/^com\.evaos\.mac-access\.credentials\.epoch-[1-9][0-9]*$/),
-    credential_security_epoch: z.number().int().positive(),
+    credential_security_epoch: safePositiveCounter,
     service: z.literal(MAC_ACCESS_IDENTITIES.connectorCredentialService),
     accessibility: z.literal('kSecAttrAccessibleWhenUnlockedThisDeviceOnly'),
     synchronizable: z.literal(false),
@@ -89,8 +91,8 @@ const rollbackBuildSchema = z
     build_version: identifier,
     source_commit: z.string().regex(/^[a-f0-9]{40}$/),
     signed_lineage_id: identifier,
-    security_epoch: z.number().int().nonnegative(),
-    credential_security_epoch: z.number().int().positive(),
+    security_epoch: safeNonnegativeCounter,
+    credential_security_epoch: safePositiveCounter,
   })
   .strict();
 
@@ -101,8 +103,8 @@ export const rollbackAuthorizationPayloadSchema = z
     authorization_id: identifier,
     source: rollbackBuildSchema,
     target: rollbackBuildSchema,
-    resulting_minimum_reader_security_epoch: z.number().int().nonnegative(),
-    resulting_minimum_writer_security_epoch: z.number().int().nonnegative(),
+    resulting_minimum_reader_security_epoch: safeNonnegativeCounter,
+    resulting_minimum_writer_security_epoch: safeNonnegativeCounter,
     issued_at: instant,
     expires_at: instant,
   })
@@ -154,8 +156,8 @@ export const executionContextClaimsSchema = z
     customer_vm_id: identifier,
     binding_id: identifier,
     binding_version: identifier,
-    issued_at: z.number().int().nonnegative(),
-    expires_at: z.number().int().positive(),
+    issued_at: safeNonnegativeCounter,
+    expires_at: safePositiveCounter,
     context_id: base64Url,
   })
   .strict()
@@ -196,10 +198,10 @@ export const accessStateSchema = z
   .object({
     schema_version: z.literal('evaos.mac_access.access_state.v1'),
     runtime_instance_id: identifier,
-    state_security_epoch: z.number().int().nonnegative(),
-    minimum_reader_security_epoch: z.number().int().nonnegative(),
-    minimum_writer_security_epoch: z.number().int().nonnegative(),
-    policy_epoch: z.number().int().nonnegative(),
+    state_security_epoch: safeNonnegativeCounter,
+    minimum_reader_security_epoch: safeNonnegativeCounter,
+    minimum_writer_security_epoch: safeNonnegativeCounter,
+    policy_epoch: safeNonnegativeCounter,
     pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
     configured_mode: z.enum(['off', 'ask_every_time', 'full_access']),
     effective_mode: z.enum(['off', 'ask_every_time', 'full_access']),
@@ -207,7 +209,7 @@ export const accessStateSchema = z
     kill_switch: z.boolean(),
     local_confirmation_required: z.boolean(),
     confirmed_runtime_instance_id: identifier.nullable(),
-    confirmed_policy_epoch: z.number().int().nonnegative().nullable(),
+    confirmed_policy_epoch: safeNonnegativeCounter.nullable(),
     confirmed_binding_fingerprint_sha256: sha256.nullable(),
     binding: selectedBindingSchema.nullable(),
     changed_at: instant,
@@ -338,8 +340,8 @@ export const localStatusSchema = z
       .object({
         accepted_build_version: identifier,
         accepted_source_commit: z.string().regex(/^[a-f0-9]{40}$/),
-        accepted_security_epoch: z.number().int().positive(),
-        credential_security_epoch: z.number().int().positive(),
+        accepted_security_epoch: safePositiveCounter,
+        credential_security_epoch: safePositiveCounter,
         rollback_authorization: signedRollbackAuthorizationSchema.nullable(),
       })
       .strict(),
@@ -656,7 +658,7 @@ export const localActionRequestSchema = z
     request_id: identifier,
     action: localActionName,
     client_nonce: base64Url,
-    expected_policy_epoch: z.number().int().nonnegative().nullable(),
+    expected_policy_epoch: safeNonnegativeCounter.nullable(),
     target_mode: z.enum(['off', 'ask_every_time', 'full_access']).nullable(),
   })
   .strict()
@@ -703,7 +705,7 @@ export const commandAuthorityPayloadSchema = z
     command_id: identifier,
     issued_at: instant,
     expires_at: instant,
-    sequence: z.number().int().positive(),
+    sequence: safePositiveCounter,
     nonce: base64Url,
     binding: selectedBindingSchema,
     execution_context_sha256: sha256,
@@ -733,7 +735,7 @@ export const brokerControlEnvelopeSchema = z
     command_id: identifier,
     issued_at: instant,
     expires_at: instant,
-    sequence: z.number().int().positive(),
+    sequence: safePositiveCounter,
     nonce: base64Url,
     binding: selectedBindingSchema,
     execution_context: z
@@ -827,6 +829,104 @@ export const brokerControlEnvelopeSchema = z
     }
   });
 
+export const CORE_HOST_OPERATIONS = [
+  'status',
+  'pair',
+  'unpair',
+  'connect',
+  'disconnect',
+  'set_access_mode',
+  'dispatch_action',
+  'audit_summary',
+  'pause',
+  'resume',
+  'stop',
+  'revoke',
+  'activate_kill_switch',
+  'shutdown',
+] as const;
+
+export const coreHostOperationSchema = z.enum(CORE_HOST_OPERATIONS);
+
+const coreHostRequestIdentity = {
+  schema_version: z.literal('evaos.mac_connector_core.host_request.v1'),
+  request_id: identifier,
+  host_session_id: identifier,
+  sequence: safePositiveCounter,
+};
+
+const coreHostLifecycleRequest = (
+  operation: 'unpair' | 'disconnect' | 'pause' | 'resume' | 'stop' | 'revoke' | 'activate_kill_switch' | 'shutdown'
+) =>
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal(operation),
+      expected_policy_epoch: safeNonnegativeCounter,
+      reason_code: identifier,
+    })
+    .strict();
+
+export const coreHostRequestSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal('status'),
+      expected_policy_epoch: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal('pair'),
+      expected_policy_epoch: safeNonnegativeCounter,
+      pairing_code: z.string().regex(/^[A-Z0-9]{6,12}$/),
+      local_installation_nonce: base64Url,
+    })
+    .strict(),
+  coreHostLifecycleRequest('unpair'),
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal('connect'),
+      expected_policy_epoch: safeNonnegativeCounter,
+      binding: selectedBindingSchema,
+    })
+    .strict(),
+  coreHostLifecycleRequest('disconnect'),
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal('set_access_mode'),
+      expected_policy_epoch: safeNonnegativeCounter,
+      target_mode: z.enum(['off', 'ask_every_time', 'full_access']),
+    })
+    .strict(),
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal('dispatch_action'),
+      expected_policy_epoch: safeNonnegativeCounter,
+      envelope: brokerControlEnvelopeSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...coreHostRequestIdentity,
+      operation: z.literal('audit_summary'),
+      expected_policy_epoch: safeNonnegativeCounter,
+      after_sequence: safeNonnegativeCounter.nullable(),
+      limit: z.number().int().min(1).max(100),
+    })
+    .strict(),
+  coreHostLifecycleRequest('pause'),
+  coreHostLifecycleRequest('resume'),
+  coreHostLifecycleRequest('stop'),
+  coreHostLifecycleRequest('revoke'),
+  coreHostLifecycleRequest('activate_kill_switch'),
+  coreHostLifecycleRequest('shutdown'),
+]);
+
 const safeEvidenceIdentifier = identifier.refine(
   (value) => !/(?:authorization|bearer|cookie|password|secret|token|eyJ[A-Za-z0-9_-]{8})/i.test(value),
   'audit evidence identifier resembles secret-bearing content'
@@ -853,7 +953,7 @@ export const auditRecordPayloadSchema = z
   .object({
     schema_version: z.literal('evaos.mac_access.audit_event.v1'),
     audit_id: identifier,
-    sequence: z.number().int().positive(),
+    sequence: safePositiveCounter,
     previous_record_sha256: sha256.nullable(),
     occurred_at: instant,
     event_type: z.enum([
@@ -919,6 +1019,90 @@ export const auditChainGoldenSchema = z
   })
   .strict();
 
+const coreHostResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('status'), status: localStatusSchema }).strict(),
+  z
+    .object({
+      kind: z.literal('pairing'),
+      pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
+      device_id: identifier.nullable(),
+      binding_fingerprint_sha256: sha256.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('action'),
+      command_id: identifier,
+      outcome: z.enum(['denied', 'executed', 'failed', 'stopped']),
+      audit_id: identifier,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('audit_summary'),
+      events: z.array(auditEventSchema).max(100),
+      next_sequence: safePositiveCounter.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('lifecycle'),
+      effective_mode: z.enum(['off', 'ask_every_time', 'full_access']),
+      pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
+      transport_state: z.enum(['disconnected', 'connecting', 'connected', 'revoked', 'blocked']),
+    })
+    .strict(),
+]);
+
+export const coreHostResponseSchema = z
+  .object({
+    schema_version: z.literal('evaos.mac_connector_core.host_response.v1'),
+    request_id: identifier,
+    host_session_id: identifier,
+    sequence: safePositiveCounter,
+    operation: coreHostOperationSchema,
+    ok: z.boolean(),
+    policy_epoch: safeNonnegativeCounter,
+    result: coreHostResultSchema.nullable(),
+    error: z
+      .object({
+        code: identifier,
+        audit_id: identifier.nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+  .superRefine((response, context) => {
+    const successful = response.ok && response.result !== null && response.error === null;
+    const failed = !response.ok && response.result === null && response.error !== null;
+    if (!successful && !failed) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'host response must contain exactly one successful result or terminal error',
+        path: ['result'],
+      });
+    }
+    if (!response.ok || response.result === null) return;
+    const expectedKind =
+      response.operation === 'status'
+        ? 'status'
+        : ['pair', 'unpair'].includes(response.operation)
+          ? 'pairing'
+          : response.operation === 'dispatch_action'
+            ? 'action'
+            : response.operation === 'audit_summary'
+              ? 'audit_summary'
+              : 'lifecycle';
+    if (response.result.kind !== expectedKind) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'host response result kind must match the requested operation',
+        path: ['result', 'kind'],
+      });
+    }
+  });
+
 export const negativeFixtureCaseSchema = z
   .object({
     id: identifier,
@@ -930,6 +1114,8 @@ export const negativeFixtureCaseSchema = z
       'authenticated_local_action',
       'broker_control',
       'audit_event',
+      'core_host_request',
+      'core_host_response',
     ]),
     base_fixture: z.string().min(1),
     mutations: z.array(
@@ -971,4 +1157,6 @@ export type LocalActionRequest = z.infer<typeof localActionRequestSchema>;
 export type AuthenticatedLocalAction = z.infer<typeof authenticatedLocalActionSchema>;
 export type BrokerControlEnvelope = z.infer<typeof brokerControlEnvelopeSchema>;
 export type AuditEvent = z.infer<typeof auditEventSchema>;
+export type CoreHostRequest = z.infer<typeof coreHostRequestSchema>;
+export type CoreHostResponse = z.infer<typeof coreHostResponseSchema>;
 export type NegativeFixtureCase = z.infer<typeof negativeFixtureCaseSchema>;

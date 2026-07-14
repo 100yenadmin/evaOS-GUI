@@ -1,5 +1,131 @@
 [
   {
+    "id": "unknown-core-host-operation",
+    "threat": "host_interface_escape",
+    "contract": "core_host_request",
+    "base_fixture": "../host/host-request.json",
+    "mutations": [{ "operation": "set", "pointer": "/operation", "value": "run_arbitrary_command" }],
+    "expected_stage": "schema",
+    "expected_error": "host_operation_not_allowlisted",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsafe-core-host-sequence",
+    "threat": "host_replay",
+    "contract": "core_host_request",
+    "base_fixture": "../host/host-request.json",
+    "mutations": [{ "operation": "set", "pointer": "/sequence", "value": 9007199254740992 }],
+    "expected_stage": "schema",
+    "expected_error": "host_counter_not_safe_integer",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsafe-core-host-policy-epoch",
+    "threat": "host_replay",
+    "contract": "core_host_response",
+    "base_fixture": "../host/host-response.json",
+    "mutations": [{ "operation": "set", "pointer": "/policy_epoch", "value": 9007199254740992 }],
+    "expected_stage": "schema",
+    "expected_error": "host_policy_epoch_not_safe_integer",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsafe-broker-envelope-sequence",
+    "threat": "host_replay",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/sequence", "value": 9007199254740992 }],
+    "expected_stage": "schema",
+    "expected_error": "broker_sequence_not_safe_integer",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsafe-command-authority-sequence",
+    "threat": "host_replay",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/authorization/payload/sequence",
+        "value": 9007199254740992
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "authority_sequence_not_safe_integer",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsafe-status-policy-epoch",
+    "threat": "host_replay",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [{ "operation": "set", "pointer": "/access/policy_epoch", "value": 9007199254740992 }],
+    "expected_stage": "schema",
+    "expected_error": "status_policy_epoch_not_safe_integer",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsafe-audit-sequence",
+    "threat": "host_replay",
+    "contract": "audit_event",
+    "base_fixture": "../valid/audit-event.json",
+    "mutations": [{ "operation": "set", "pointer": "/sequence", "value": 9007199254740992 }],
+    "expected_stage": "schema",
+    "expected_error": "audit_sequence_not_safe_integer",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "failed-core-host-response-without-error",
+    "threat": "host_interface_escape",
+    "contract": "core_host_response",
+    "base_fixture": "../host/host-response.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/ok", "value": false },
+      { "operation": "set", "pointer": "/result", "value": null }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "host_response_outcome_ambiguous",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "failed-core-host-response-with-result",
+    "threat": "host_interface_escape",
+    "contract": "core_host_response",
+    "base_fixture": "../host/host-response.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/ok", "value": false },
+      {
+        "operation": "set",
+        "pointer": "/error",
+        "value": { "code": "host_terminal_error", "audit_id": null }
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "host_response_outcome_ambiguous",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "stale-core-host-session",
+    "threat": "host_session_confusion",
+    "contract": "core_host_request",
+    "base_fixture": "../host/host-request.json",
+    "mutations": [{ "operation": "set", "pointer": "/host_session_id", "value": "host-session-stale" }],
+    "expected_stage": "runtime",
+    "expected_error": "host_session_mismatch",
+    "required_runtime_rejection": "Reject before state or native-port access when the request host session does not equal the helper-created current runtime session."
+  },
+  {
+    "id": "replayed-core-host-sequence",
+    "threat": "host_replay",
+    "contract": "core_host_request",
+    "base_fixture": "../host/host-request.json",
+    "mutations": [],
+    "expected_stage": "runtime",
+    "expected_error": "host_sequence_replayed",
+    "required_runtime_rejection": "Persist the last accepted sequence for the host-session lifetime and reject duplicate or lower sequence values before dispatch."
+  },
+  {
     "id": "untrusted-local-client",
     "threat": "local_untrusted_client",
     "contract": "authenticated_local_action",

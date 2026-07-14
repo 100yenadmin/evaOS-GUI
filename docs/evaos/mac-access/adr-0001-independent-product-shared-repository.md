@@ -3,7 +3,7 @@
 - Status: proposed for #699; blocks implementation issues
 - Date: 2026-07-15
 - Decision owners: evaOS Mac Access epic #698 and architecture issue #699
-- Inspected source: evaOS-GUI PR #697 head `ae9f35062f8a4b212fab4576d44602b57dc0303a`
+- Inspected source: evaOS-GUI PR #697 head `f197d2e51828f9f6a50e8448a09d5b064d14b498`
 
 ## Context
 

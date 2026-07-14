@@ -10,7 +10,7 @@
     "helper_designated_requirement_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "build": {
       "build_version": "0.1.0-architecture",
-      "source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+      "source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
       "signed_lineage_id": "mac-access-production",
       "security_epoch": 1,
       "schema_reader_version": 1,
@@ -29,7 +29,7 @@
   },
   "relay_authorization": {
     "accepted_build_version": "0.1.0-architecture",
-    "accepted_source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+    "accepted_source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
     "accepted_security_epoch": 1,
     "credential_security_epoch": 1,
     "rollback_authorization": {
@@ -48,7 +48,7 @@
         },
         "target": {
           "build_version": "0.1.0-architecture",
-          "source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+          "source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
           "signed_lineage_id": "mac-access-production",
           "security_epoch": 1,
           "credential_security_epoch": 1
@@ -58,9 +58,9 @@
         "issued_at": "2026-07-15T07:55:00Z",
         "expires_at": "2026-07-15T08:05:00Z"
       },
-      "payload_sha256": "af25d8ea75ce353e322e31bb855501af2c375e7388e603933b84d2d875c412a1",
+      "payload_sha256": "41799f46249c2e7979cecb751665ac9f107886704dff8ea9da85708620ed64bc",
       "broker_key_id": "rollback-key-2026-01",
-      "signature_base64url": "GDifM36m6ciwLkEqKU5o4DlDFkkUwoYPsdU4-JXSIwemKrbP64MTZGVOQ-GSfbAz62SmfeLvQUo8BpJpI6coAQ"
+      "signature_base64url": "_zjknB7xwtvOhE2VtprsVZXf3ty2R0eefst8u8TFkq9vhXcIw4oCLHvMsPgD5ySuQ_VKW-odAvX8OdFCtnvSBg"
     }
   },
   "access": {

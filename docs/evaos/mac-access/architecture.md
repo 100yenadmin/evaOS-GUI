@@ -3,7 +3,7 @@
 Issue: [#699](https://github.com/100yenadmin/evaOS-GUI/issues/699)
 Parent: [#698](https://github.com/100yenadmin/evaOS-GUI/issues/698)
 Contract version: `2026-07-15.v1`
-Inspected Workbench source: PR [#697](https://github.com/100yenadmin/evaOS-GUI/pull/697) head `ae9f35062f8a4b212fab4576d44602b57dc0303a`
+Inspected Workbench source: PR [#697](https://github.com/100yenadmin/evaOS-GUI/pull/697) head `f197d2e51828f9f6a50e8448a09d5b064d14b498`
 
 ## Decision
 
@@ -12,6 +12,8 @@ evaOS Mac Access is an independently signed and updated native menu-bar app. Its
 The Mac opens an outbound authenticated WebSocket to the evaOS broker relay. It accepts work only when every selected customer, VM, Mac device, grant, runtime, binding, connector-key, nonce, sequence, expiry, and request-digest field verifies. There is no direct IP, inbound public port, customer-managed Tailscale, reusable connector URL/token, terminal step, system Python, or Homebrew requirement.
 
 Backend support for that outbound Mac relay does not exist at the inspected ws-proxy head. It is tracked in [electricsheephq/evaos-ws-proxy#73](https://github.com/electricsheephq/evaos-ws-proxy/issues/73). Implementation must remain fail closed until that contract exists; the current browser-to-VM proxy path is not a substitute.
+
+The inspected #697 head adds Workbench candidate-source/app attestation, Tailscale enrollment diagnostics, connector URL/token readiness, generation-linearized stop/kill/start behavior, content-hashed audit evidence, packaged CLI canaries, and stricter beta/live release gates. Those are migration and parity inputs only. They reinforce the target ban on Workbench-owned networking, lifecycle, credentials, TCC/CUA, and release authority; they do not become Mac Access runtime dependencies or relax any v1 contract.
 
 This document is executable design evidence. It is not a working-app, signed-artifact, notarization, pristine-Mac, VM-to-Mac, customer-readiness, publication, or rollout claim.
 
@@ -86,7 +88,14 @@ packages/mac-access/                         # at most 8 direct children
 
 packages/mac-connector-core/                 # at most 6 direct children
 ├── contracts/                              # versioned language-neutral contracts and fixtures
-├── python/                                 # migrated PR #697 bridge implementation
+├── python/
+│   └── evaos_desktop_bridge/               # at most 6 direct children
+│       ├── __init__.py
+│       ├── adapters/                       # protocol, planner, and temporary CUA adapters
+│       ├── contracts/                      # capability, schema, types, and redaction
+│       ├── host/                           # host API, CLI, compatibility dispatcher, tooling
+│       ├── persistence/                    # audit, queue, and state compatibility
+│       └── policy/                         # policy compatibility before native retirement
 ├── swift/                                  # native ports: Keychain, IPC, TCC/CUA, transport
 ├── tests/                                  # cross-language behavior and negative fixtures
 ├── scripts/                                # generation and parity checks
@@ -94,6 +103,8 @@ packages/mac-connector-core/                 # at most 6 direct children
 ```
 
 Subdirectories also obey the repository limit of ten direct children. Pure parsing, canonicalization, binding comparison, policy transitions, redaction, and receipt construction remain separate from Keychain, WebSocket, filesystem, audit, TCC, process, and CUA I/O.
+
+The A1 core host boundary is `evaos.mac_connector_core.host_request.v1` / `host_response.v1`, implemented by `python/evaos_desktop_bridge/host/api.py` without importing Electron or renderer code. It is a fixed-operation private interface for status, pair/unpair, connect/disconnect, access mode, action dispatch, audit summary, pause/resume, emergency stop, revoke/kill, and shutdown. Requests bind a helper-created host session, monotonic safe-integer sequence, request ID, and safe-integer expected policy epoch; unknown operations and fields fail closed. Stop is distinct from process shutdown: it must synchronously rotate policy authority, force effective Off, invalidate pending approvals/commands, and safely cancel active work before returning. The helper launches the embedded core over a private inherited channel with a one-runtime lifetime—never HTTP, a public socket, PATH discovery, or a renderer-callable endpoint.
 
 PR #699 introduces only the versioned contract source/fixtures under `packages/mac-connector-core/contracts/v1`, cross-language syntax smoke programs under `packages/mac-connector-core/tests`, and focused contract-test discovery. Creating native targets, moving Python, or changing Workbench runtime behavior is downstream work.
 
@@ -301,7 +312,7 @@ Uninstall/revoke order is: activate local deny barrier, invalidate approvals/que
 
 ## Contract fixtures and downstream proof
 
-Versioned contracts and fixtures live at `packages/mac-connector-core/contracts/v1`. TypeScript/Zod validates structure and cross-field invariants and verifies the command-authority signature vector and audit-chain digest vector. Python and Swift smoke programs prove only that every JSON fixture is syntactically consumable without a customer-managed runtime; typed semantic parity is an explicit #700 gate.
+Versioned contracts and fixtures live at `packages/mac-connector-core/contracts/v1`. TypeScript/Zod validates structure and cross-field invariants, freezes the complete non-Electron core host operation matrix, and verifies the command-authority signature vector and audit-chain digest vector. Python and Swift smoke programs prove only that every JSON fixture is syntactically consumable without a customer-managed runtime; typed semantic parity and packaged host integration are explicit #700 gates.
 
 The negative manifests distinguish:
 
@@ -310,15 +321,15 @@ The negative manifests distinguish:
 
 Downstream issues may claim completion only with the following evidence:
 
-| Issue lane       | Minimum evidence                                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| #700 core        | TS/Python/Swift semantic parity; negative fixtures; no system Python; native ports own secrets/TCC/audit.                     |
-| #701 app         | native menu flow; truthful states; signed identity inspection; no Workbench dependency.                                       |
-| #702 transport   | ws-proxy #73 source contract; exact selected-binding positive and all negative cases; outbound-only packet/listener evidence. |
-| #703 policy      | transition tests, exact-scope prompt, restart downgrade, stop/revoke/kill race tests, redacted audit chain.                   |
-| #704 coexistence | single leader/listener/grant/TCC identity with both apps; make-before-break and rollback.                                     |
-| #705 release     | signed, notarized, stapled independent artifact/appcast; upgrade/downgrade/uninstall/orphan proof.                            |
-| #706 live proof  | pristine supported Mac onboarding and broker-selected VM-to-Mac CUA with exact audit IDs.                                     |
+| Issue lane       | Minimum evidence                                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #700 core        | Bounded subpackages; TS/Python/Swift parity; complete host-operation integration without Electron/system Python; negative fixtures; native-port boundaries. |
+| #701 app         | native menu flow; truthful states; signed identity inspection; no Workbench dependency.                                                                     |
+| #702 transport   | ws-proxy #73 source contract; exact selected-binding positive and all negative cases; outbound-only packet/listener evidence.                               |
+| #703 policy      | transition tests, exact-scope prompt, restart downgrade, stop/revoke/kill race tests, redacted audit chain.                                                 |
+| #704 coexistence | single leader/listener/grant/TCC identity with both apps; make-before-break and rollback.                                                                   |
+| #705 release     | signed, notarized, stapled independent artifact/appcast; upgrade/downgrade/uninstall/orphan proof.                                                          |
+| #706 live proof  | pristine supported Mac onboarding and broker-selected VM-to-Mac CUA with exact audit IDs.                                                                   |
 
 Public publication, rollout, and customer readiness remain separately authorized gates after all of the above.
 

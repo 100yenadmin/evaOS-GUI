@@ -1,0 +1,9 @@
+{
+  "schema_version": "evaos.mac_connector_core.host_request.v1",
+  "request_id": "host-request-01",
+  "host_session_id": "host-session-01",
+  "sequence": 1,
+  "operation": "set_access_mode",
+  "expected_policy_epoch": 7,
+  "target_mode": "ask_every_time"
+}

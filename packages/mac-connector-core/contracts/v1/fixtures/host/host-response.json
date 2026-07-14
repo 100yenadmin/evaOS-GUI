@@ -1,0 +1,16 @@
+{
+  "schema_version": "evaos.mac_connector_core.host_response.v1",
+  "request_id": "host-request-01",
+  "host_session_id": "host-session-01",
+  "sequence": 1,
+  "operation": "set_access_mode",
+  "ok": true,
+  "policy_epoch": 8,
+  "result": {
+    "kind": "lifecycle",
+    "effective_mode": "ask_every_time",
+    "pairing_state": "paired",
+    "transport_state": "connected"
+  },
+  "error": null
+}
