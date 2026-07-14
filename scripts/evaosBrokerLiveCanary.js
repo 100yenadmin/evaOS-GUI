@@ -10,6 +10,7 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
 ]);
 const MAC_CONTROL_CANARY_ACK = 'evaos-mac-control-canary';
 const MAC_CONTROL_RUNTIME = 'openclaw';
+const MAC_CONTROL_LAUNCH_PRIVATE = Symbol('mac-control-launch-private');
 const MAC_CONTROL_REQUIRED_CAPABILITY_GROUPS = Object.freeze([
   Object.freeze(['customer_mac_status']),
   Object.freeze(['customer_mac_snapshot', 'desktop_see']),
@@ -179,24 +180,23 @@ function resolveMacControlCanaryConfig(env) {
     env,
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST'
   ).toLowerCase();
-  let expectedCallbackUrl;
-  try {
-    expectedCallbackUrl = new URL(`https://${expectedCallbackHostInput}`);
-  } catch {
-    throw new Error('Dedicated Mac-control canary callback host is invalid.');
-  }
+  const callbackHostMatch = /^([^:]+)(?::([0-9]{1,5}))?$/.exec(expectedCallbackHostInput);
+  const callbackHostname = callbackHostMatch?.[1] ?? '';
+  const callbackPort = callbackHostMatch?.[2];
+  const callbackLabels = callbackHostname.split('.');
+  const callbackPortNumber = callbackPort ? Number(callbackPort) : undefined;
   if (
-    !/^[a-z0-9.-]+$/.test(expectedCallbackUrl.hostname) ||
-    expectedCallbackUrl.hostname.includes('..') ||
-    expectedCallbackUrl.username ||
-    expectedCallbackUrl.password ||
-    expectedCallbackUrl.pathname !== '/' ||
-    expectedCallbackUrl.search ||
-    expectedCallbackUrl.hash
+    callbackHostname.length > 253 ||
+    callbackLabels.length < 2 ||
+    callbackLabels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) ||
+    (callbackPort !== undefined &&
+      (!Number.isInteger(callbackPortNumber) || callbackPortNumber < 1 || callbackPortNumber > 65535))
   ) {
     throw new Error('Dedicated Mac-control canary callback host is invalid.');
   }
-  const expectedCallbackHost = expectedCallbackUrl.host.toLowerCase();
+  const expectedCallbackHost = new URL(
+    `https://${callbackHostname}${callbackPort ? `:${callbackPort}` : ''}`
+  ).host.toLowerCase();
 
   return {
     desktopSession: envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION'),
@@ -346,10 +346,16 @@ function asPlainRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
 }
 
+function normalizeMacControlCapabilities(capabilities) {
+  if (!Array.isArray(capabilities)) return undefined;
+  const normalized = capabilities.map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''));
+  if (normalized.some((value) => !value)) return undefined;
+  return [...new Set(normalized)].sort();
+}
+
 function macControlCapabilitiesReady(capabilities) {
-  const available = new Set(
-    Array.isArray(capabilities) ? capabilities.filter((value) => typeof value === 'string') : []
-  );
+  const normalized = normalizeMacControlCapabilities(capabilities);
+  const available = new Set(normalized ?? []);
   return MAC_CONTROL_REQUIRED_CAPABILITY_GROUPS.every((group) => group.some((capability) => available.has(capability)));
 }
 
@@ -405,11 +411,22 @@ function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.
       'Mac-control selected grant is not active.'
     );
   }
-  if (!macControlCapabilitiesReady(selected.allowed_capabilities)) {
+  const selectedCapabilities = normalizeMacControlCapabilities(selected.allowed_capabilities);
+  const statusCapabilities = normalizeMacControlCapabilities(selectedFromStatus.allowed_capabilities);
+  if (!macControlCapabilitiesReady(selectedCapabilities)) {
     throw macControlFailure(
       'missing_required_capability',
       'Mac-control selected binding is missing a required capability group.'
     );
+  }
+  if (!macControlCapabilitiesReady(statusCapabilities)) {
+    throw macControlFailure(
+      'missing_required_capability',
+      'Mac-control runtime-status binding is missing a required capability group.'
+    );
+  }
+  if (selectedCapabilities.join('\0') !== statusCapabilities.join('\0')) {
+    throw macControlFailure('binding_replay_conflict', 'Mac-control selected binding capability set mismatch.');
   }
 
   const bindingId = safeText(selected.binding_id);
@@ -479,8 +496,7 @@ function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.
     throw macControlFailure('invalid_response', 'Mac-control launch omitted source or audit evidence.');
   }
 
-  return {
-    launchUrl: launchUrl.toString(),
+  const sanitized = {
     assertions: {
       attached: true,
       toolsReady: true,
@@ -496,6 +512,11 @@ function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.
       expectedLaunchTarget: true,
     },
   };
+  Object.defineProperty(sanitized, MAC_CONTROL_LAUNCH_PRIVATE, {
+    value: Object.freeze({ launchUrl: launchUrl.toString(), bindingExpiry }),
+    enumerable: false,
+  });
+  return sanitized;
 }
 
 function responseShapeSummary(raw) {
@@ -798,21 +819,37 @@ function hasLiveProxySessionCookie(headers, now) {
       .split(';')
       .map((part) => part.trim());
     const separator = parts[0].indexOf('=');
-    if (separator < 1 || parts[0].slice(0, separator).trim().toLowerCase() !== 'evaos_session') continue;
+    if (separator < 1 || parts[0].slice(0, separator).trim() !== 'evaos_session') continue;
     let value = parts[0].slice(separator + 1).trim();
     if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
     if (!value || value.toLowerCase() === 'deleted') continue;
 
     const attributes = new Map();
+    let duplicateAttribute = false;
     for (const part of parts.slice(1)) {
       const index = part.indexOf('=');
       const name = (index === -1 ? part : part.slice(0, index)).trim().toLowerCase();
       const attributeValue = index === -1 ? '' : part.slice(index + 1).trim();
-      if (name) attributes.set(name, attributeValue);
+      if (!name) continue;
+      if (attributes.has(name)) duplicateAttribute = true;
+      attributes.set(name, attributeValue);
+    }
+    if (
+      duplicateAttribute ||
+      attributes.get('path') !== '/' ||
+      attributes.has('domain') ||
+      !attributes.has('secure') ||
+      attributes.get('secure') !== '' ||
+      !attributes.has('httponly') ||
+      attributes.get('httponly') !== '' ||
+      (!attributes.has('max-age') && !attributes.has('expires'))
+    ) {
+      continue;
     }
     if (attributes.has('max-age')) {
-      const maxAge = Number(attributes.get('max-age'));
-      if (!Number.isFinite(maxAge) || maxAge <= 0) continue;
+      const maxAgeText = attributes.get('max-age');
+      const maxAge = Number(maxAgeText);
+      if (!/^\d+$/.test(maxAgeText) || !Number.isSafeInteger(maxAge) || maxAge <= 0) continue;
     }
     if (attributes.has('expires')) {
       const expiresAt = Date.parse(attributes.get('expires'));
@@ -887,11 +924,18 @@ async function runMacControlLiveCanary(options = {}) {
       },
       now()
     );
-    const callback = await fetchImpl(launch.launchUrl, { method: 'GET', redirect: 'manual' });
+    const launchPrivate = launch[MAC_CONTROL_LAUNCH_PRIVATE];
+    const callback = await fetchImpl(launchPrivate.launchUrl, { method: 'GET', redirect: 'manual' });
+    const postCallbackNow = now();
     const callbackAccepted = callback.status === 302 && callback.headers.get('location') === '/ui/';
-    const proxySessionAccepted = hasLiveProxySessionCookie(callback.headers, now());
+    const proxySessionAccepted = hasLiveProxySessionCookie(callback.headers, postCallbackNow);
     if (!callbackAccepted || !proxySessionAccepted) {
       throw macControlFailure('callback_rejected', 'Mac-control proxy callback did not accept the staged session.', {
+        httpStatus: callback.status,
+      });
+    }
+    if (launchPrivate.bindingExpiry <= postCallbackNow) {
+      throw macControlFailure('binding_expired', 'Mac-control selected binding expired during callback exchange.', {
         httpStatus: callback.status,
       });
     }
