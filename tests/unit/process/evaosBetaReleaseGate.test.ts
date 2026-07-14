@@ -20,7 +20,11 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
     reusableBuild: string;
   }) => string[];
   collectReleaseDistributeWorkflowIssues: (workflow: string) => string[];
-  committedBridgeSourceIdentity: (commit: string) => { sourceSha256: string; sourcePaths: string[] };
+  committedBridgeSourceIdentity: (
+    commit: string,
+    runGit?: (command: string, args: string[], options: Record<string, unknown>) => string | Buffer,
+    rootDir?: string
+  ) => { sourceSha256: string; sourcePaths: string[] };
   collectLiveCanaryVerifierBehaviorIssues: (rootDir: string) => string[];
   resolveLiveCanaryVerifierAuditBash: (candidates?: string[]) => string;
   collectReleaseConfigIssues: (rootDir: string) => string[];
@@ -40,6 +44,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
 };
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   bridgeWrapperScript: () => string;
+  directorySha256: (sourceDir: string) => string;
 };
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
@@ -927,7 +932,60 @@ describe('evaOS beta release gate', () => {
     expect(identity.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(identity.sourcePaths).toContain('cli.py');
     expect(identity.sourcePaths).toContain('adapters/customer_mac.py');
-    expect(identity.sourcePaths).toEqual([...identity.sourcePaths].sort());
+    expect(identity.sourcePaths).toEqual(identity.sourcePaths.toSorted());
+  });
+
+  it('uses the same deterministic UTF-8 byte ordering for committed and directory bridge identities', () => {
+    const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-bridge-sort-'));
+    const commit = 'a'.repeat(40);
+    const files = [
+      { name: 'é.py', objectId: '1'.repeat(40), contents: 'accent\n' },
+      { name: 'z.py', objectId: '2'.repeat(40), contents: 'zee\n' },
+      { name: 'A.py', objectId: '3'.repeat(40), contents: 'alpha\n' },
+    ];
+    try {
+      for (const file of files) fs.writeFileSync(path.join(sourceDir, file.name), file.contents);
+      const blobs = new Map(files.map((file) => [file.objectId, Buffer.from(file.contents)]));
+      const tree = Buffer.from(
+        `${files
+          .map(
+            (file) => `100644 blob ${file.objectId}\tresources/evaos-beta/bridge/src/evaos_desktop_bridge/${file.name}`
+          )
+          .join('\0')}\0`
+      );
+      const runGit = (_command: string, args: string[]) => {
+        if (args[0] === 'rev-parse') return `${commit}\n`;
+        if (args[0] === 'ls-tree') return tree;
+        if (args[0] === 'cat-file') return blobs.get(args[2]) ?? Buffer.alloc(0);
+        throw new Error(`Unexpected git operation: ${args[0]}`);
+      };
+      const identity = releaseGate.committedBridgeSourceIdentity(commit, runGit, repoRoot);
+      const byteSortedNames = files
+        .map((file) => file.name)
+        .toSorted((left, right) => Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8')));
+
+      expect(identity.sourcePaths).toEqual(byteSortedNames);
+      expect(identity.sourceSha256).toBe(bridgeResource.directorySha256(sourceDir));
+    } finally {
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    }
+  });
+
+  it('captures installed bridge stderr and scans the complete proof tree before reporting canary failure', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const distributionWorkflow = fs.readFileSync(
+      path.join(repoRoot, '.github/workflows/release-distribute.yml'),
+      'utf8'
+    );
+
+    expect(workflow).toContain('2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"');
+    expect(workflow).toContain('2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"');
+    expect(workflow).toContain('LC_ALL=C grep -R -F -- "$CONNECTOR_TOKEN" "$PROOF_DIR"');
+    expect(workflow).toMatch(/QA_CANARY_EXIT=\$\?[\s\S]*unset CONNECTOR_TOKEN[\s\S]*QA_CANARY_EXIT/);
+    expect(workflow).toContain('EVAOS_BETA_RC_RELEASE_ASSETS_DIR: release-assets');
+    expect(distributionWorkflow).toMatch(
+      /- name: Validate release candidate proof[\s\S]*EVAOS_BETA_RC_RELEASE_ASSETS_DIR: dist[\s\S]*verify-rc-proof rc-proof/
+    );
   });
 
   it('recognizes little-endian fat Mach-O helpers during signing closure validation', () => {
@@ -3103,9 +3161,12 @@ describe('evaOS beta release gate', () => {
     const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-'));
     let cleanupReleaseAssets = () => {};
+    let releaseAssetBytesDir = '';
 
     try {
-      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
+      const releaseAssets = writeProofReleaseAssetsReference(proofDir, tag);
+      cleanupReleaseAssets = releaseAssets.cleanup;
+      releaseAssetBytesDir = releaseAssets.sourceReleaseAssetsDir;
 
       releaseGate.writeRcProofTemplate(proofDir, tag);
       const manifestPath = path.join(proofDir, 'evaos-beta-rc-proof.json');
@@ -3161,6 +3222,7 @@ describe('evaOS beta release gate', () => {
           EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toBe(true);
 
@@ -3173,6 +3235,7 @@ describe('evaOS beta release gate', () => {
           EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toThrow(/latest-arm64-mac\.yml/);
       fs.writeFileSync(updaterMetadataPath, updaterMetadata);
@@ -3187,6 +3250,7 @@ describe('evaOS beta release gate', () => {
           EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toThrow(/installed candidate connector proof/i);
       connectorProof.candidate_binding.connector.source_sha256 =
@@ -3204,6 +3268,7 @@ describe('evaOS beta release gate', () => {
           EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toThrow(/updater ZIP trust proof checksum/i);
 
@@ -3226,11 +3291,24 @@ describe('evaOS beta release gate', () => {
               EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
               EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
               EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+              EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
             }),
           label
         ).toThrow(/updater ZIP trust proof|updater-zip-macos-arm64\.json/i);
       }
       fs.writeFileSync(updaterZipProofPath, `${JSON.stringify(canonicalUpdaterZipProof, null, 2)}\n`);
+
+      const updaterZipPath = path.join(releaseAssetBytesDir, String(canonicalUpdaterZipProof.assetName));
+      fs.appendFileSync(updaterZipPath, 'tampered');
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+        })
+      ).toThrow(/Updater ZIP bytes/);
     } finally {
       cleanupReleaseAssets();
       fs.rmSync(proofDir, { recursive: true, force: true });
@@ -3317,9 +3395,12 @@ describe('evaOS beta release gate', () => {
     const tag = 'evaos-beta-v2.1.10-evaos-beta.0';
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-beta-rc-proof-missing-'));
     let cleanupReleaseAssets = () => {};
+    let releaseAssetBytesDir = '';
 
     try {
-      cleanupReleaseAssets = writeProofReleaseAssetsReference(proofDir, tag).cleanup;
+      const releaseAssets = writeProofReleaseAssetsReference(proofDir, tag);
+      cleanupReleaseAssets = releaseAssets.cleanup;
+      releaseAssetBytesDir = releaseAssets.sourceReleaseAssetsDir;
 
       releaseGate.writeRcProofTemplate(proofDir, tag);
       const manifestPath = path.join(proofDir, 'evaos-beta-rc-proof.json');
@@ -3371,6 +3452,7 @@ describe('evaOS beta release gate', () => {
           GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
           EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
           EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toThrow(/rollback-smoke/);
     } finally {

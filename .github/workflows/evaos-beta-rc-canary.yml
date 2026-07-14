@@ -662,7 +662,8 @@ jobs:
             --expected-build "$BUNDLE_VERSION" \
             --expected-source-commit "$TAG_COMMIT" \
             --artifact-dir "$PRE_CANARY_DIR" \
-            > "$PROOF_DIR/installed-candidate-pre-canary.stdout.json"
+            > "$PROOF_DIR/installed-candidate-pre-canary.stdout.json" \
+            2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"
           cp "$PRE_CANARY_DIR/qa-report.json" "$PROOF_DIR/installed-candidate-pre-canary.json"
 
           TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"
@@ -685,6 +686,7 @@ jobs:
             echo "::error::Installed Workbench connector token is empty."
             exit 1
           fi
+          set +e
           EVAOS_DESKTOP_BRIDGE_TOKEN="$CONNECTOR_TOKEN" "$BRIDGE_COMMAND" qa-canary \
             --connector-url http://127.0.0.1:8765 \
             --artifact-dir "$CONNECTOR_CANARY_DIR" \
@@ -693,17 +695,30 @@ jobs:
             --source-commit-under-test "$TAG_COMMIT" \
             --surface connector \
             --suite candidate \
-            > "$PROOF_DIR/installed-candidate-connector.stdout.json"
-          cp "$CONNECTOR_CANARY_DIR/qa-report.json" "$PROOF_DIR/installed-candidate-connector.json"
-          if grep -R -F "$CONNECTOR_TOKEN" \
-            "$PROOF_DIR/installed-candidate-pre-canary.json" \
-            "$PROOF_DIR/installed-candidate-connector.json" \
-            "$PROOF_DIR/installed-candidate-pre-canary.stdout.json" \
-            "$PROOF_DIR/installed-candidate-connector.stdout.json" >/dev/null; then
+            > "$PROOF_DIR/installed-candidate-connector.stdout.json" \
+            2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"
+          QA_CANARY_EXIT=$?
+          set -e
+          if [ -f "$CONNECTOR_CANARY_DIR/qa-report.json" ]; then
+            cp "$CONNECTOR_CANARY_DIR/qa-report.json" "$PROOF_DIR/installed-candidate-connector.json"
+          fi
+          TOKEN_SCAN_EXIT=0
+          LC_ALL=C grep -R -F -- "$CONNECTOR_TOKEN" "$PROOF_DIR" >/dev/null 2>&1 || TOKEN_SCAN_EXIT=$?
+          if [ "$TOKEN_SCAN_EXIT" -eq 0 ]; then
             echo "::error::Installed candidate proof leaked the connector token."
+            unset CONNECTOR_TOKEN
+            exit 1
+          fi
+          if [ "$TOKEN_SCAN_EXIT" -ne 1 ]; then
+            echo "::error::Installed candidate proof token scan could not complete safely."
+            unset CONNECTOR_TOKEN
             exit 1
           fi
           unset CONNECTOR_TOKEN
+          if [ "$QA_CANARY_EXIT" -ne 0 ]; then
+            echo "::error::Installed candidate connector canary failed; inspect the sanitized proof artifact."
+            exit 1
+          fi
           pkill -f "EvaOSWorkbench|evaOS Workbench" || true
 
           {
@@ -837,6 +852,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: release-assets
         run: |
           set -euo pipefail
           {

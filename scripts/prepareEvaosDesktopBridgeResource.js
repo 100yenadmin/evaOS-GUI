@@ -95,7 +95,7 @@ function assertVendoredBridgeSourceMatchesHead(runGit = execFileSync) {
   try {
     status = runGit(
       'git',
-      ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching', '--', sourcePath],
+      ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--', sourcePath],
       {
         cwd: projectRoot,
         encoding: 'utf8',
@@ -105,7 +105,15 @@ function assertVendoredBridgeSourceMatchesHead(runGit = execFileSync) {
   } catch (error) {
     throw new Error(`Unable to verify the vendored Workbench bridge against the evaOS-GUI HEAD: ${error.message}`);
   }
-  if (String(status || '').trim()) {
+  const releaseRelevantStatus = String(status || '')
+    .split('\0')
+    .filter(Boolean)
+    .filter((record) => {
+      if (!record.startsWith('!! ')) return true;
+      const ignoredPath = record.slice(3).replace(/\\/g, '/');
+      return !ignoredPath.split('/').includes('__pycache__');
+    });
+  if (releaseRelevantStatus.length > 0) {
     throw new Error('Release builds require the vendored Workbench bridge source and provenance to match HEAD.');
   }
   return true;
@@ -140,7 +148,9 @@ function directorySha256(sourceDir) {
     }
   }
   const hash = crypto.createHash('sha256');
-  for (const entryPath of entries.sort()) {
+  for (const entryPath of entries.sort((left, right) =>
+    Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'))
+  )) {
     const relativePath = path.relative(source, entryPath).split(path.sep).join('/');
     hash.update(relativePath);
     hash.update('\0');
@@ -825,6 +835,7 @@ if (require.main === module) {
 
 module.exports = {
   assertVendoredBridgeSourceMatchesHead,
+  directorySha256,
   bridgeManifest,
   bridgeWrapperMetadata,
   bridgeWrapperScript,

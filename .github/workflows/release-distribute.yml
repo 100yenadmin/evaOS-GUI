@@ -269,6 +269,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: dist
         run: |
           set -euo pipefail
           if [ -z "$RC_PROOF_RUN_ID" ]; then

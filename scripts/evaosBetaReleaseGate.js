@@ -1349,6 +1349,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/release-distribute.yml',
     issues
   );
+  requireText(
+    distribute,
+    'EVAOS_BETA_RC_RELEASE_ASSETS_DIR: dist',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'verifier-side downloaded updater ZIP binding'
+  );
   requireText(distribute, 'live_canary_proof_run_id', '.github/workflows/release-distribute.yml', issues);
   requireText(
     distribute,
@@ -2399,7 +2406,9 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
   if (sourceFiles.length === 0) {
     throw new Error(`Commit ${commit} does not contain the Workbench bridge source tree.`);
   }
-  sourceFiles.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  sourceFiles.sort((left, right) =>
+    Buffer.compare(Buffer.from(left.relativePath, 'utf8'), Buffer.from(right.relativePath, 'utf8'))
+  );
   const digest = createHash('sha256');
   for (const sourceFile of sourceFiles) {
     digest.update(sourceFile.relativePath);
@@ -3407,7 +3416,7 @@ function assertRcReleaseAssetsReference(referencePath, tag, releaseManifest) {
   }
 }
 
-function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAssetsDir) {
+function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAssetsDir, releaseAssetBytesDir) {
   const proof = readManifestFile(proofPath);
   if (proof.schema !== 'evaos-updater-zip-trust/v2') {
     throw new Error(`Unexpected updater ZIP trust proof schema: ${proof.schema}`);
@@ -3418,6 +3427,7 @@ function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAs
   if (
     typeof proof.assetName !== 'string' ||
     !proof.assetName.endsWith('.zip') ||
+    path.basename(proof.assetName) !== proof.assetName ||
     !/arm64/i.test(proof.assetName) ||
     !/^[0-9a-f]{64}$/i.test(String(proof.sha256 || ''))
   ) {
@@ -3426,6 +3436,22 @@ function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAs
   const manifestAsset = (releaseManifest.assets || []).find((asset) => asset.name === proof.assetName);
   if (!manifestAsset || manifestAsset.sha256 !== proof.sha256) {
     throw new Error('Updater ZIP trust proof checksum does not match the trusted release manifest.');
+  }
+  if (!fs.existsSync(releaseAssetBytesDir) || !fs.statSync(releaseAssetBytesDir).isDirectory()) {
+    throw new Error('RC proof verification requires the downloaded release asset directory.');
+  }
+  const updaterZipPath = path.join(releaseAssetBytesDir, proof.assetName);
+  let updaterZipStat;
+  try {
+    updaterZipStat = fs.lstatSync(updaterZipPath);
+  } catch {
+    throw new Error(`Updater ZIP trust proof asset is missing from the verified release asset set: ${proof.assetName}`);
+  }
+  if (!updaterZipStat.isFile() || updaterZipStat.isSymbolicLink()) {
+    throw new Error(`Updater ZIP trust proof asset must be a regular file: ${proof.assetName}`);
+  }
+  if (sha256File(updaterZipPath) !== proof.sha256) {
+    throw new Error('Updater ZIP bytes do not match the updater ZIP trust proof checksum.');
   }
   const updaterZipRefs = [
     ...new Set(
@@ -3644,6 +3670,7 @@ function verifyRcProof(proofDir, tag, env = process.env) {
   }
   requireExistingRelativeFile(resolvedReleaseAssetsDir, RELEASE_MANIFEST_NAME, 'RC proof release manifest');
   const releaseManifest = readManifestFile(path.join(resolvedReleaseAssetsDir, RELEASE_MANIFEST_NAME));
+  const releaseAssetBytesDir = path.resolve(env.EVAOS_BETA_RC_RELEASE_ASSETS_DIR || 'release-assets');
 
   const trustedManifestRelativePath = manifest.trustedManifestPath || '';
   const trustedManifestPath = requireExistingRelativeFile(
@@ -3688,7 +3715,7 @@ function verifyRcProof(proofDir, tag, env = process.env) {
     const filePath = requireExistingRelativeFile(proofDir, required.evidence, `RC proof ${required.id}`);
     assertTextMarkers(filePath, required.requiredText, required.id);
     if (required.id === 'macos-arm64-updater-zip-trust') {
-      assertRcUpdaterZipTrustProof(filePath, tag, trustedManifest, resolvedReleaseAssetsDir);
+      assertRcUpdaterZipTrustProof(filePath, tag, trustedManifest, resolvedReleaseAssetsDir, releaseAssetBytesDir);
     } else if (required.id === 'installed-candidate-pre-canary') {
       assertRcInstalledCandidatePreCanaryProof(filePath, tag, trustedManifest);
     } else if (required.id === 'installed-candidate-connector') {

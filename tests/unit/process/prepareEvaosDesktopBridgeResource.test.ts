@@ -38,6 +38,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   assertVendoredBridgeSourceMatchesHead: (
     runGit?: (command: string, args: string[], options: Record<string, unknown>) => string
   ) => boolean;
+  directorySha256: (sourceDir: string) => string;
   bridgeManifest: (input: {
     requestedSourceRef?: string;
     sourcePath: string;
@@ -197,19 +198,24 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('rejects dirty or untracked vendored bridge bytes in strict provenance checks', () => {
     expect(() =>
       bridgeResource.assertVendoredBridgeSourceMatchesHead(
-        () => ' M resources/evaos-beta/bridge/src/evaos_desktop_bridge/cli.py\n'
+        () => ' M resources/evaos-beta/bridge/src/evaos_desktop_bridge/cli.py\0'
       )
     ).toThrow(/match HEAD/);
     expect(() =>
       bridgeResource.assertVendoredBridgeSourceMatchesHead(
-        () => '?? resources/evaos-beta/bridge/src/evaos_desktop_bridge/injected.py\n'
+        () => '?? resources/evaos-beta/bridge/src/evaos_desktop_bridge/injected.py\0'
       )
     ).toThrow(/match HEAD/);
     expect(() =>
       bridgeResource.assertVendoredBridgeSourceMatchesHead(
-        () => '!! resources/evaos-beta/bridge/src/evaos_desktop_bridge/.env\n'
+        () => '!! resources/evaos-beta/bridge/src/evaos_desktop_bridge/.env\0'
       )
     ).toThrow(/match HEAD/);
+    expect(
+      bridgeResource.assertVendoredBridgeSourceMatchesHead(
+        () => '!! resources/evaos-beta/bridge/src/evaos_desktop_bridge/__pycache__/\0'
+      )
+    ).toBe(true);
     expect(bridgeResource.assertVendoredBridgeSourceMatchesHead(() => '')).toBe(true);
   });
 
