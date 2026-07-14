@@ -80,29 +80,50 @@ BRIDGE_RUNTIME_SEMVER_PATTERN = re.compile(
 MINIMUM_WORKBENCH_RUNTIME_VERSION = (0, 1, 0)
 _TAILSCALE_STATUS_UNSET = object()
 
-GUARDED_APPROVAL_FIELDS: dict[str, tuple[str, ...]] = {
+AUDIT_HASHED_FIELDS: dict[str, tuple[str, ...]] = {
     "codex.select_thread": ("thread_id",),
-    "codex.send_visible_message": ("thread_id", "message_hash"),
+    "codex.send_visible_message": ("thread_id", "message"),
     "codex.continue_thread": ("title", "prompt"),
-    "customer_mac.app_focus": ("app_name",),
     "customer_mac.local_site_open": ("url",),
+    "customer_mac.iphone_mirroring_type_spotlight": ("text",),
+    "customer_mac.iphone_mirroring_tap_named_target": ("target_label",),
+    "customer_mac.iphone_mirroring_type_approved_text": ("text",),
+    "customer_mac.iphone_mirroring_send_approved_message": ("text", "recipient_context", "target_label"),
+    "customer_mac.desktop_click": ("target_label",),
+    "customer_mac.desktop_type": ("text",),
+    "customer_mac.desktop_set_value": ("value",),
+    "customer_mac.desktop_browser_action": ("url",),
+    "customer_mac.iphone_tap": ("target_label",),
+    "customer_mac.iphone_type": ("text",),
+}
+
+GUARDED_APPROVAL_FIELDS: dict[str, tuple[str, ...]] = {
+    "codex.select_thread": ("thread_id_hash",),
+    "codex.send_visible_message": ("thread_id_hash", "message_hash"),
+    "codex.continue_thread": ("title_hash", "prompt_hash"),
+    "customer_mac.app_focus": ("app_name",),
+    "customer_mac.local_site_open": ("url_hash",),
     "customer_mac.local_site_action": ("action",),
     "customer_mac.iphone_mirroring_focus": (),
     "customer_mac.iphone_mirroring_home": (),
     "customer_mac.iphone_mirroring_app_switcher": (),
     "customer_mac.iphone_mirroring_spotlight": (),
-    "customer_mac.iphone_mirroring_type_spotlight": ("text",),
+    "customer_mac.iphone_mirroring_type_spotlight": ("text_hash",),
     "customer_mac.iphone_mirroring_open_app": ("app_name",),
-    "customer_mac.iphone_mirroring_tap_named_target": ("target_label",),
+    "customer_mac.iphone_mirroring_tap_named_target": ("target_label_hash",),
     "customer_mac.iphone_mirroring_scroll": ("direction",),
     "customer_mac.iphone_mirroring_swipe_left": (),
     "customer_mac.iphone_mirroring_swipe_right": (),
     "customer_mac.iphone_mirroring_swipe_up": (),
     "customer_mac.iphone_mirroring_swipe_down": (),
-    "customer_mac.iphone_mirroring_type_approved_text": ("text",),
-    "customer_mac.iphone_mirroring_send_approved_message": ("text", "recipient_context", "target_label"),
-    "customer_mac.desktop_click": ("snapshot_id", "element_id", "target_label", "x", "y"),
-    "customer_mac.desktop_type": ("text",),
+    "customer_mac.iphone_mirroring_type_approved_text": ("text_hash",),
+    "customer_mac.iphone_mirroring_send_approved_message": (
+        "text_hash",
+        "recipient_context_hash",
+        "target_label_hash",
+    ),
+    "customer_mac.desktop_click": ("snapshot_id", "element_id", "target_label_hash", "x", "y"),
+    "customer_mac.desktop_type": ("text_hash",),
     "customer_mac.desktop_set_value": ("snapshot_id", "element_id", "attribute", "value_hash"),
     "customer_mac.desktop_scroll": ("direction", "amount"),
     "customer_mac.desktop_drag": ("from_x", "from_y", "to_x", "to_y"),
@@ -110,10 +131,10 @@ GUARDED_APPROVAL_FIELDS: dict[str, tuple[str, ...]] = {
     "customer_mac.desktop_focus_app": ("app_name",),
     "customer_mac.desktop_window": ("action",),
     "customer_mac.desktop_menu": ("menu_path",),
-    "customer_mac.desktop_browser_action": ("action", "url"),
-    "customer_mac.iphone_tap": ("snapshot_id", "element_id", "target_label", "x", "y"),
+    "customer_mac.desktop_browser_action": ("action", "url_hash"),
+    "customer_mac.iphone_tap": ("snapshot_id", "element_id", "target_label_hash", "x", "y"),
     "customer_mac.iphone_swipe": ("direction",),
-    "customer_mac.iphone_type": ("text",),
+    "customer_mac.iphone_type": ("text_hash",),
 }
 
 CODEX_SOURCE_AUDIT_FIELDS: dict[str, tuple[str, ...]] = {}
@@ -442,6 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     app_server_remote_parser.set_defaults(command_id="codex.app_server.remote_control_status", target="codex")
 
     customer_mac_parser = subparsers.add_parser("customer-mac", help="Customer Mac connector commands.")
+    customer_mac_parser.add_argument("--remote-control-generation", type=_nonnegative_int, default=None, help=argparse.SUPPRESS)
     customer_mac_subparsers = customer_mac_parser.add_subparsers(dest="customer_mac_command")
 
     mac_status_parser = customer_mac_subparsers.add_parser("status", help="Report customer Mac connector readiness.")
@@ -463,6 +485,8 @@ def build_parser() -> argparse.ArgumentParser:
     control_start_parser.add_argument("--json", action="store_true", help="Emit JSON.")
     control_start_parser.add_argument("--mode", choices=["full-access", "ask-permission"], default="full-access", help="Control mode for this session.")
     control_start_parser.add_argument("--agent-label", default=None, help="Human-readable current agent label.")
+    control_start_parser.add_argument("--local-workbench-restart", action="store_true", help=argparse.SUPPRESS)
+    control_start_parser.add_argument("--expected-control-generation", type=_nonnegative_int, default=None, help=argparse.SUPPRESS)
     control_start_parser.set_defaults(command_id="customer_mac.control_start", target="customer_mac")
 
     control_stop_parser = control_subparsers.add_parser("stop", help="Stop the active agent control session.")
@@ -810,10 +834,9 @@ def main(
     try:
         if command_id == "codex.send_visible_message":
             args.message = _resolve_visible_message_arg(args)
-            args.message_hash = _short_hash(str(getattr(args, "message", "") or "").strip())
         if command_id == "customer_mac.desktop_set_value":
             args.value = _resolve_desktop_set_value_arg(args)
-            args.value_hash = _short_hash(str(getattr(args, "value", "") or ""))
+        _prepare_audit_hashes(command_id, args)
         ensure_allowed(command_id)
         observer = observer_factory() if observer_factory is not None else MacOSCodexObserver(state_dir=state_dir)
         customer_mac = customer_mac_factory() if customer_mac_factory is not None else CustomerMacObserver(state_dir=state_dir)
@@ -885,6 +908,18 @@ def _short_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
+def _audit_field_hash(field: str, value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip() if field == "message" else str(value)
+    return _short_hash(normalized)
+
+
+def _prepare_audit_hashes(command_id: str, args: argparse.Namespace) -> None:
+    for field in AUDIT_HASHED_FIELDS.get(command_id, ()):
+        setattr(args, f"{field}_hash", _audit_field_hash(field, getattr(args, field, None)))
+
+
 def _omit_inline_screenshot_bytes(value: Any) -> Any:
     if isinstance(value, dict):
         sanitized: dict[str, Any] = {}
@@ -911,13 +946,6 @@ def _omit_inline_screenshot_bytes(value: Any) -> Any:
     return value
 
 
-def _message_preview(value: str, *, limit: int = 240) -> str:
-    text = str(value or "").strip()
-    if len(text) > limit:
-        return text[:limit]
-    return text
-
-
 def _resolve_visible_message_arg(args: argparse.Namespace) -> str:
     message_file = getattr(args, "message_file", None)
     if isinstance(message_file, str) and message_file.strip():
@@ -933,19 +961,23 @@ def _resolve_desktop_set_value_arg(args: argparse.Namespace) -> str:
 
 
 def _audit_args(command_id: str, args: argparse.Namespace) -> dict[str, object]:
-    excluded = {"command_id", "target", "state_dir"}
-    if command_id == "codex.send_visible_message":
-        excluded.add("message")
-        excluded.add("message_file")
-    if command_id == "customer_mac.desktop_set_value":
-        excluded.add("value")
-        excluded.add("value_file")
+    hashed_fields = AUDIT_HASHED_FIELDS.get(command_id, ())
+    hashed_keys = {f"{field}_hash" for field in hashed_fields}
+    excluded = {
+        "command_id",
+        "target",
+        "state_dir",
+        "message_file",
+        "value_file",
+        "remote_control_generation",
+        *hashed_fields,
+        *hashed_keys,
+    }
     values = {key: value for key, value in vars(args).items() if key not in excluded}
-    if command_id == "codex.send_visible_message":
-        values["message_hash"] = getattr(args, "message_hash", _short_hash(str(getattr(args, "message", "") or "").strip()))
-        values["message_preview"] = _message_preview(str(getattr(args, "message", "") or ""))
-    if command_id == "customer_mac.desktop_set_value":
-        values["value_hash"] = getattr(args, "value_hash", _short_hash(str(getattr(args, "value", "") or "")))
+    for field in hashed_fields:
+        value = getattr(args, field, None)
+        values[f"{field}_hash"] = getattr(args, f"{field}_hash", _audit_field_hash(field, value))
+        values[f"{field}_length"] = len(str(value)) if value is not None else 0
     return values
 
 
@@ -1055,7 +1087,12 @@ def _run_command(
     if command_id == "customer_mac.control_status":
         return customer_mac.control_status()
     if command_id == "customer_mac.control_start":
-        return customer_mac.control_start(mode=args.mode, agent_label=args.agent_label)
+        return customer_mac.control_start(
+            mode=args.mode,
+            agent_label=args.agent_label,
+            reset_kill_switch=args.local_workbench_restart,
+            expected_generation=args.expected_control_generation,
+        )
     if command_id == "customer_mac.control_stop":
         return customer_mac.control_stop()
     if command_id == "customer_mac.control_kill_switch":
@@ -1274,6 +1311,23 @@ def _helper_ping(args: argparse.Namespace, *, state_dir: Path | None) -> Command
 def _validate_guarded_approval(command_id: str, args: argparse.Namespace, state_dir: Path | None) -> CommandResult:
     if command_id in TAKEOVER_WARNING_GATED_COMMANDS and getattr(args, "dry_run", None) is False:
         session = read_control_session(state_dir)
+        expected_generation = getattr(args, "remote_control_generation", None)
+        if (
+            command_id in CONTROLLED_LIVE_COMMANDS
+            and expected_generation is not None
+            and session.get("generation") != expected_generation
+        ):
+            return CommandResult(
+                ok=False,
+                data={"session": session},
+                errors=[
+                    make_error(
+                        code="control_session_changed",
+                        message="The customer Mac control session changed before the remote action could start.",
+                        guidance="Refresh control status; do not retry if the customer stopped access or used the kill switch.",
+                    )
+                ],
+            )
         if session.get("kill_switch") is True:
             return CommandResult(
                 ok=False,

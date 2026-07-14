@@ -3698,20 +3698,28 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('reconciles control start when current control status is ready after a failed start response', async () => {
     const deps = depsWithResponses({
-      'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench': {
-        ok: false,
-        errors: [{ code: 'already_active', message: 'transient launchd start failure' }],
-      },
-      'customer-mac control status --json': {
-        ok: true,
-        audit_id: 'audit-control-current',
-        data: {
-          active: true,
-          ready: true,
-          mode: 'ask-permission',
-          kill_switch: false,
+      'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench --local-workbench-restart --expected-control-generation 7':
+        {
+          ok: false,
+          errors: [{ code: 'already_active', message: 'transient launchd start failure' }],
         },
-      },
+      'customer-mac control status --json': [
+        {
+          ok: true,
+          audit_id: 'audit-control-before-start',
+          data: { active: false, ready: false, kill_switch: false, session: { generation: 7 } },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-current',
+          data: {
+            active: true,
+            ready: true,
+            mode: 'ask-permission',
+            kill_switch: false,
+          },
+        },
+      ],
     });
 
     const result = await runNativeCompanionAction({ action: 'control_start', mode: 'ask-permission' }, deps);
@@ -3732,20 +3740,28 @@ describe('evaosNativeCompanionStatus', () => {
 
   it('does not reconcile control start as ready when the kill switch is enabled', async () => {
     const deps = depsWithResponses({
-      'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench': {
-        ok: false,
-        errors: [{ code: 'already_active', message: 'transient launchd start failure' }],
-      },
-      'customer-mac control status --json': {
-        ok: true,
-        audit_id: 'audit-control-current',
-        data: {
-          active: true,
-          ready: true,
-          mode: 'ask-permission',
-          kill_switch: true,
+      'customer-mac control start --json --mode ask-permission --agent-label evaOS Workbench --local-workbench-restart --expected-control-generation 8':
+        {
+          ok: false,
+          errors: [{ code: 'already_active', message: 'transient launchd start failure' }],
         },
-      },
+      'customer-mac control status --json': [
+        {
+          ok: true,
+          audit_id: 'audit-control-before-start',
+          data: { active: false, ready: false, kill_switch: false, session: { generation: 8 } },
+        },
+        {
+          ok: true,
+          audit_id: 'audit-control-current',
+          data: {
+            active: true,
+            ready: true,
+            mode: 'ask-permission',
+            kill_switch: true,
+          },
+        },
+      ],
     });
 
     const result = await runNativeCompanionAction({ action: 'control_start', mode: 'ask-permission' }, deps);
@@ -3762,6 +3778,26 @@ describe('evaosNativeCompanionStatus', () => {
       },
     });
     expect(result.message).toContain('Agent control could not start');
+  });
+
+  it('fails control start closed when the bridge cannot bind the current safety generation', async () => {
+    const deps = depsWithResponses({
+      'customer-mac control status --json': {
+        ok: true,
+        audit_id: 'audit-control-without-generation',
+        data: { active: false, ready: false, kill_switch: false, session: {} },
+      },
+    });
+
+    const result = await runNativeCompanionAction({ action: 'control_start', mode: 'ask-permission' }, deps);
+
+    expect(result).toMatchObject({
+      action: 'control_start',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:customer-mac-control-generation-required',
+      auditId: 'audit-control-without-generation',
+    });
+    expect(deps.execFile).toHaveBeenCalledTimes(1);
   });
 
   it('fails setup check closed when an otherwise-ready connector is reachable only on loopback', async () => {
@@ -5148,6 +5184,95 @@ describe('evaosNativeCompanionStatus', () => {
     expect(secretFilePath && fs.existsSync(secretFilePath)).toBe(false);
     expect(cancelPrivateNetworkEnrollment).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain(authKey);
+  });
+
+  it('rejects a duplicate enrollment while the first one still owns the one-use-key lifecycle', async () => {
+    type EnrollmentGrant = {
+      customerId: string;
+      deviceId: string;
+      deviceIdentifier: string;
+      clientVariant: 'tailscale_standalone';
+      enrollmentId: string;
+      loginServer: string;
+      authKey: string;
+      expiresAt: string;
+    };
+    let resolveEnrollment: ((value: EnrollmentGrant) => void) | undefined;
+    const createPrivateNetworkEnrollment = vi.fn(
+      () =>
+        new Promise<EnrollmentGrant>((resolve) => {
+          resolveEnrollment = resolve;
+        })
+    );
+    const execFile = vi.fn(async (file: string, args: string[]) => {
+      const key = args.join(' ');
+      if (file === bundledBridgePath && key === 'connector-service status --json') {
+        return {
+          stdout: json({
+            ok: true,
+            data: { private_network: { client_installed: true, client_running: true, enrolled: false } },
+          }),
+          stderr: '',
+        };
+      }
+      if (file === bundledBridgePath && key === 'customer-mac status --json') {
+        return {
+          stdout: json({ ok: true, data: { device: { hardware_uuid: 'duplicate-enrollment-device' } } }),
+          stderr: '',
+        };
+      }
+      if (file === '/usr/bin/codesign' && args[0] === '--verify') return { stdout: '', stderr: '' };
+      if (file === '/usr/bin/codesign' && args[0] === '-dv') {
+        return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
+      }
+      if (file === '/Applications/Tailscale.app/Contents/MacOS/Tailscale') return { stdout: '', stderr: '' };
+      throw new Error(`unexpected command ${file} ${key}`);
+    });
+    const deps = depsWithResponses(
+      {},
+      {
+        existsSync: vi.fn(
+          (path: string) =>
+            path === bundledBridgePath ||
+            path === '/Applications/evaOS Workbench.app' ||
+            path === '/Applications/Tailscale.app' ||
+            path === '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+        ),
+        execFile,
+        createPrivateNetworkEnrollment,
+      }
+    );
+
+    const first = runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'duplicate-enrollment-customer' },
+      deps
+    );
+    await vi.waitFor(() => expect(createPrivateNetworkEnrollment).toHaveBeenCalledTimes(1));
+
+    const duplicate = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'duplicate-enrollment-customer' },
+      deps
+    );
+
+    expect(duplicate).toMatchObject({
+      action: 'secure_network_enroll',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:secure-network-enrollment-already-in-progress',
+      refreshRecommended: false,
+    });
+    expect(createPrivateNetworkEnrollment).toHaveBeenCalledTimes(1);
+
+    resolveEnrollment?.({
+      customerId: 'duplicate-enrollment-customer',
+      deviceId: 'device-duplicate',
+      deviceIdentifier: 'duplicate-enrollment-device',
+      clientVariant: 'tailscale_standalone',
+      enrollmentId: 'enrollment-duplicate',
+      loginServer: 'https://headscale.example',
+      authKey: 'one-use-private-network-key-for-test',
+      expiresAt: '2026-06-07T04:00:00.000Z',
+    });
+    await expect(first).resolves.toMatchObject({ status: 'succeeded' });
   });
 
   it('skips a spoofable system app and uses the first Apple-anchored Tailscale candidate', async () => {

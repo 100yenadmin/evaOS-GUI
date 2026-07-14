@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import re
 import struct
 import subprocess
@@ -294,6 +295,15 @@ def evaluate_connector_candidate_identity(
     }
     bridge = payload.get("bridge") if isinstance(payload.get("bridge"), dict) else {}
     candidate = bridge.get("candidate") if isinstance(bridge.get("candidate"), dict) else {}
+    process = payload.get("process") if isinstance(payload.get("process"), dict) else {}
+    connector = payload.get("connector") if isinstance(payload.get("connector"), dict) else {}
+    connector_owner = connector.get("owner") if isinstance(connector.get("owner"), dict) else {}
+    expected_app_path = "/Applications/evaOS Workbench.app"
+    expected_bridge_root = expected_app_path + "/Contents/Resources/Bridge"
+    expected_argv0 = expected_bridge_root + "/src/evaos_desktop_bridge/cli.py"
+    expected_manifest_path = expected_bridge_root + "/manifest.json"
+    process_executable = process.get("executable")
+    process_argv0 = process.get("argv0")
     result.update(
         {
             "schema": candidate.get("schema"),
@@ -307,6 +317,9 @@ def evaluate_connector_candidate_identity(
             "app_build": candidate.get("app_build"),
             "app_bundle_id": candidate.get("app_bundle_id"),
             "app_name": candidate.get("app_name"),
+            "process_executable": process_executable,
+            "process_argv0": process_argv0,
+            "connector_owner": connector_owner,
         }
     )
     result["ok"] = (
@@ -325,10 +338,42 @@ def evaluate_connector_candidate_identity(
         and candidate.get("app_build") == expected_build
         and candidate.get("app_bundle_id") == "com.evaos.workbench"
         and candidate.get("app_name") == "evaOS Workbench"
+        and _bundled_python_executable(process_executable, bridge_root=expected_bridge_root)
+        and _exact_absolute_path(process_argv0, expected_argv0)
+        and connector_owner.get("label") == "com.electricsheep.evaos-desktop-bridge"
+        and connector_owner.get("classification") == "workbench_bundle"
+        and connector_owner.get("bundle_id") == "com.evaos.workbench"
+        and connector_owner.get("source_commit") == expected_source_commit
+        and _typed_exact_path(connector_owner.get("program_path"), expected_argv0)
+        and _typed_exact_path(connector_owner.get("app_path"), expected_app_path)
+        and _typed_exact_path(connector_owner.get("manifest_path"), expected_manifest_path)
     )
     if result["ok"] is not True:
         result["reason"] = "connector_candidate_identity_mismatch"
     return result
+
+
+def _exact_absolute_path(value: object, expected: str) -> bool:
+    if not isinstance(value, str) or not value.startswith("/") or ".." in Path(value).parts:
+        return False
+    return posixpath.normpath(value) == value == expected
+
+
+def _typed_exact_path(value: object, expected: str) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("kind") == "path"
+        and _exact_absolute_path(value.get("value"), expected)
+    )
+
+
+def _bundled_python_executable(value: object, *, bridge_root: str) -> bool:
+    if not isinstance(value, str) or not value.startswith("/") or ".." in Path(value).parts:
+        return False
+    if posixpath.normpath(value) != value:
+        return False
+    parent, name = posixpath.split(value)
+    return parent == bridge_root + "/python/bin" and re.fullmatch(r"python3(?:\.\d+)?", name) is not None
 
 
 def connector_candidate_binding(

@@ -91,6 +91,7 @@ const NATIVE_COMPANION_FIXTURE_STATES = [
 const SECURE_NETWORK_ENROLL_SETTLE_ATTEMPTS = 30;
 const SECURE_NETWORK_ENROLL_SETTLE_DELAY_MS = 1000;
 const SECURE_NETWORK_ENROLL_SETTLE_COMMAND_TIMEOUT_MS = 2000;
+let secureNetworkEnrollmentInFlight = false;
 
 export type EvaosNativeCompanionDiagnosticEventCode =
   | 'secure_network_enrollment_action_started'
@@ -1405,9 +1406,36 @@ async function runControlStartAction(
   request: IEvaosNativeCompanionActionRequest,
   deps: EvaosNativeCompanionStatusDeps
 ): Promise<IEvaosNativeCompanionActionResult> {
+  const beforeStart = await runBridgeCommand(bridgePath, ['customer-mac', 'control', 'status', '--json'], deps);
+  const generation = readNumber(beforeStart.data?.session, 'generation');
+  if (!beforeStart.ok || generation === undefined || !Number.isSafeInteger(generation) || generation < 0) {
+    const detail = bridgeFailureDetail(
+      beforeStart,
+      'Workbench could not bind control start to the current local safety state.'
+    );
+    return nativeActionResult(request.action, 'repair_required', `Agent control could not start. ${detail}`, {
+      sourcePointer: 'native-companion:customer-mac-control-generation-required',
+      auditId: beforeStart.auditId,
+      auditIds: compactStrings([beforeStart.auditId]),
+      control: controlSummaryFromPayload(beforeStart.data),
+      blockerReason: classifyBridgeBlocker(beforeStart, 'connector_service_not_ready'),
+    });
+  }
   const started = await runBridgeCommand(
     bridgePath,
-    ['customer-mac', 'control', 'start', '--json', '--mode', mode, '--agent-label', safeAgentLabel(request.agentLabel)],
+    [
+      'customer-mac',
+      'control',
+      'start',
+      '--json',
+      '--mode',
+      mode,
+      '--agent-label',
+      safeAgentLabel(request.agentLabel),
+      '--local-workbench-restart',
+      '--expected-control-generation',
+      String(generation),
+    ],
     deps
   );
   if (started.ok) {
@@ -2160,7 +2188,24 @@ export async function runNativeCompanionAction(
     case 'create_pairing_prompt':
       return createPairingPromptAction(request, bridgePath, deps);
     case 'secure_network_enroll':
-      return runSecureNetworkEnrollmentAction(request, bridgePath, deps);
+      if (secureNetworkEnrollmentInFlight) {
+        return nativeActionResult(
+          request.action,
+          'repair_required',
+          'Private-network enrollment is already in progress.',
+          {
+            sourcePointer: 'native-companion:secure-network-enrollment-already-in-progress',
+            refreshRecommended: false,
+            blockerReason: 'secure_network_link_required',
+          }
+        );
+      }
+      secureNetworkEnrollmentInFlight = true;
+      try {
+        return await runSecureNetworkEnrollmentAction(request, bridgePath, deps);
+      } finally {
+        secureNetworkEnrollmentInFlight = false;
+      }
     default:
       return nativeActionResult(request.action, 'unsupported', 'Workbench connector action is not supported.', {
         sourcePointer: 'native-companion:unsupported-action',

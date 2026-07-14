@@ -176,16 +176,23 @@ function writeArm64TrustEvidence(proofDir: string) {
     (asset: { name?: string }) => asset.name?.endsWith('.zip') && /arm64/i.test(asset.name)
   );
   if (!updaterZip) throw new Error('Test release manifest is missing the arm64 updater ZIP.');
+  const versionMatch = String(trustedManifest.tag || '').match(/^evaos-beta-v?(\d+\.\d+\.\d+)-evaos-beta(?:\.\d+)?$/);
+  if (!versionMatch) throw new Error('Test release manifest has an invalid beta tag.');
+  const version = versionMatch[1];
   fs.writeFileSync(
     path.join(proofDir, 'updater-zip-macos-arm64.json'),
     `${JSON.stringify(
       {
-        schema: 'evaos-updater-zip-trust/v1',
+        schema: 'evaos-updater-zip-trust/v2',
         tag: trustedManifest.tag,
         releaseCommit: trustedManifest.releaseCommit,
         assetName: updaterZip.name,
         sha256: updaterZip.sha256,
         appName: 'evaOS Workbench.app',
+        bundleId: 'com.evaos.workbench',
+        productName: 'evaOS Workbench',
+        shortVersion: version,
+        bundleVersion: version,
         codesignVerified: true,
         staplerVerified: true,
         gatekeeperVerified: true,
@@ -194,9 +201,6 @@ function writeArm64TrustEvidence(proofDir: string) {
       2
     )}\n`
   );
-  const versionMatch = String(trustedManifest.tag || '').match(/^evaos-beta-v?(\d+\.\d+\.\d+)-evaos-beta(?:\.\d+)?$/);
-  if (!versionMatch) throw new Error('Test release manifest has an invalid beta tag.');
-  const version = versionMatch[1];
   const sourceSha256 = releaseGate.committedBridgeSourceIdentity(trustedManifest.releaseCommit).sourceSha256;
   const localBinding = {
     ok: true,
@@ -326,6 +330,13 @@ function writeMacosBridgeZip(
     selfAttestTamperedBridgeSource?: boolean;
     extraBridgeSourceEntry?: boolean;
     bridgeSourceCommit?: string;
+    wrongAppRoot?: boolean;
+    omitInfoPlist?: boolean;
+    malformedInfoPlist?: boolean;
+    wrongBundleIdentifier?: boolean;
+    wrongProductName?: boolean;
+    wrongShortVersion?: boolean;
+    wrongBundleVersion?: boolean;
   } = {}
 ) {
   const bridgeWrapperBase64 = Buffer.from(bridgeResource.bridgeWrapperScript()).toString('base64');
@@ -334,6 +345,7 @@ function writeMacosBridgeZip(
     'import hashlib',
     'import json',
     'import pathlib',
+    'import plistlib',
     'import stat',
     'import struct',
     'import sys',
@@ -374,8 +386,17 @@ function writeMacosBridgeZip(
     'bridge_source_root = pathlib.Path(sys.argv[34])',
     'self_attest_tampered_bridge_source = sys.argv[35] == "1"',
     'extra_bridge_source_entry = sys.argv[36] == "1"',
+    'wrong_app_root = sys.argv[37] == "1"',
+    'omit_info_plist = sys.argv[38] == "1"',
+    'malformed_info_plist = sys.argv[39] == "1"',
+    'wrong_bundle_identifier = sys.argv[40] == "1"',
+    'wrong_product_name = sys.argv[41] == "1"',
+    'wrong_short_version = sys.argv[42] == "1"',
+    'wrong_bundle_version = sys.argv[43] == "1"',
     `bridge_wrapper_bytes = base64.b64decode("${bridgeWrapperBase64}")`,
-    'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
+    'app_root = "Wrong Workbench.app" if wrong_app_root else "evaOS Workbench.app"',
+    'info_plist = {"CFBundleIdentifier": "com.example.wrong" if wrong_bundle_identifier else "com.evaos.workbench", "CFBundleName": "Wrong Workbench" if wrong_product_name else "evaOS Workbench", "CFBundleShortVersionString": "9.9.9" if wrong_short_version else "2.1.10", "CFBundleVersion": "999" if wrong_bundle_version else "2.1.10"}',
+    'info_plist_bytes = b"not-a-plist" if malformed_info_plist else plistlib.dumps(info_plist)',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
     'def fat_macho():',
@@ -475,6 +496,8 @@ function writeMacosBridgeZip(
     '    info.compress_type = zipfile.ZIP_STORED',
     '    archive.writestr(info, b"")',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
+    '    if not omit_info_plist:',
+    '        write_regular(archive, f"{app_root}/Contents/Info.plist", info_plist_bytes)',
     '    bridge_prefix = f"{app_root}/Contents/Resources/Bridge"',
     '    packaged_wrapper_bytes = b"#!/bin/sh\\nexit 0\\n" if tamper_bridge_wrapper else bridge_wrapper_bytes',
     '    write_regular(archive, f"{bridge_prefix}/evaos-desktop-bridge", packaged_wrapper_bytes, 0o644 if non_executable_payload == "bridge" else 0o755)',
@@ -557,6 +580,13 @@ function writeMacosBridgeZip(
     fixtureBridgeSourceRoot,
     options.selfAttestTamperedBridgeSource ? '1' : '0',
     options.extraBridgeSourceEntry ? '1' : '0',
+    options.wrongAppRoot ? '1' : '0',
+    options.omitInfoPlist ? '1' : '0',
+    options.malformedInfoPlist ? '1' : '0',
+    options.wrongBundleIdentifier ? '1' : '0',
+    options.wrongProductName ? '1' : '0',
+    options.wrongShortVersion ? '1' : '0',
+    options.wrongBundleVersion ? '1' : '0',
   ]);
 }
 
@@ -1737,7 +1767,7 @@ describe('evaOS beta release gate', () => {
 
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
-  });
+  }, 15_000);
 
   it('requires the rotated publication variable and exact release-branch guards on executable publication jobs', () => {
     const workflows = {
@@ -2710,6 +2740,41 @@ describe('evaOS beta release gate', () => {
         options: { secondAppRoot: true },
         expected: /exactly one \.app root/,
       },
+      {
+        name: 'wrong app root',
+        options: { wrongAppRoot: true },
+        expected: /exactly one \.app root/,
+      },
+      {
+        name: 'missing app Info.plist',
+        options: { omitInfoPlist: true },
+        expected: /canonical Info\.plist/,
+      },
+      {
+        name: 'malformed app Info.plist',
+        options: { malformedInfoPlist: true },
+        expected: /canonical Info\.plist/,
+      },
+      {
+        name: 'wrong bundle identifier',
+        options: { wrongBundleIdentifier: true },
+        expected: /bundle identifier/,
+      },
+      {
+        name: 'wrong product name',
+        options: { wrongProductName: true },
+        expected: /product name/,
+      },
+      {
+        name: 'wrong short version',
+        options: { wrongShortVersion: true },
+        expected: /tag-bound short version/,
+      },
+      {
+        name: 'wrong bundle version',
+        options: { wrongBundleVersion: true },
+        expected: /tag-bound bundle version/,
+      },
       ...(['bridge', 'peekaboo', 'helper', 'python'] as const).map((payload) => ({
         name: `non-executable ${payload}`,
         options: { nonExecutablePayload: payload },
@@ -3130,6 +3195,7 @@ describe('evaOS beta release gate', () => {
 
       const updaterZipProofPath = path.join(proofDir, 'updater-zip-macos-arm64.json');
       const updaterZipProof = JSON.parse(fs.readFileSync(updaterZipProofPath, 'utf8'));
+      const canonicalUpdaterZipProof = structuredClone(updaterZipProof);
       updaterZipProof.sha256 = '0'.repeat(64);
       fs.writeFileSync(updaterZipProofPath, `${JSON.stringify(updaterZipProof, null, 2)}\n`);
       expect(() =>
@@ -3140,6 +3206,31 @@ describe('evaOS beta release gate', () => {
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
         })
       ).toThrow(/updater ZIP trust proof checksum/i);
+
+      const identityMutations: Array<[string, (proof: Record<string, unknown>) => void]> = [
+        ['schema', (proof) => (proof.schema = 'evaos-updater-zip-trust/v1')],
+        ['app name', (proof) => (proof.appName = 'Other.app')],
+        ['bundle id', (proof) => (proof.bundleId = 'com.example.other')],
+        ['product name', (proof) => (proof.productName = 'Other')],
+        ['short version', (proof) => (proof.shortVersion = '9.9.9')],
+        ['bundle version', (proof) => (proof.bundleVersion = '999')],
+      ];
+      for (const [label, mutate] of identityMutations) {
+        const changed = structuredClone(canonicalUpdaterZipProof) as Record<string, unknown>;
+        mutate(changed);
+        fs.writeFileSync(updaterZipProofPath, `${JSON.stringify(changed, null, 2)}\n`);
+        expect(
+          () =>
+            releaseGate.verifyRcProof(proofDir, tag, {
+              GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+              EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+              EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+              EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+            }),
+          label
+        ).toThrow(/updater ZIP trust proof|updater-zip-macos-arm64\.json/i);
+      }
+      fs.writeFileSync(updaterZipProofPath, `${JSON.stringify(canonicalUpdaterZipProof, null, 2)}\n`);
     } finally {
       cleanupReleaseAssets();
       fs.rmSync(proofDir, { recursive: true, force: true });

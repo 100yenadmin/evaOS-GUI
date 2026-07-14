@@ -23,7 +23,15 @@ from ..bundled_tools import bundled_bridge_bin_candidates
 from ..helper_ipc import helper_client_from_environment
 from ..redaction import cap_text, redact_value
 from ..schema import make_error, timestamp_utc
-from ..state import kill_control_session, read_control_session, start_control_session, stop_control_session, write_control_session
+from ..state import (
+    ControlKillSwitchActiveError,
+    ControlSessionChangedError,
+    kill_control_session,
+    merge_takeover_signal_status,
+    read_control_session,
+    start_control_session,
+    stop_control_session,
+)
 from ..types import CommandResult
 from .codex_macos import (
     ACCESSIBILITY_GUIDANCE,
@@ -661,7 +669,14 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
             },
         )
 
-    def control_start(self, *, mode: str, agent_label: str | None = None) -> CommandResult:
+    def control_start(
+        self,
+        *,
+        mode: str,
+        agent_label: str | None = None,
+        reset_kill_switch: bool = False,
+        expected_generation: int | None = None,
+    ) -> CommandResult:
         normalized = mode.replace("-", "_")
         if normalized not in CONTROL_MODES:
             return CommandResult(
@@ -672,10 +687,62 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         existing = read_control_session(self.state_dir)
         existing_warning = existing.get("takeover_warning") if isinstance(existing.get("takeover_warning"), dict) else {}
         warning_reused = existing.get("active") is True and existing_warning.get("active") is True
-        session = start_control_session(mode=normalized, agent_label=agent_label, state_dir=self.state_dir)
+        try:
+            session = start_control_session(
+                mode=normalized,
+                agent_label=agent_label,
+                reset_kill_switch=reset_kill_switch,
+                expected_generation=expected_generation,
+                state_dir=self.state_dir,
+            )
+        except ControlKillSwitchActiveError:
+            return CommandResult(
+                ok=False,
+                data={"started": False, "session": read_control_session(self.state_dir)},
+                errors=[
+                    make_error(
+                        code="control_kill_switch_active",
+                        message="The customer Mac kill switch is active.",
+                        guidance="Start a new session from the local Workbench app after reviewing the stopped state.",
+                    )
+                ],
+            )
+        except ControlSessionChangedError:
+            return CommandResult(
+                ok=False,
+                data={"started": False, "session": read_control_session(self.state_dir)},
+                errors=[
+                    make_error(
+                        code="control_session_changed",
+                        message="The customer Mac control session changed before start.",
+                        guidance="Refresh Workbench status before starting control again.",
+                    )
+                ],
+            )
         if not warning_reused:
-            self._emit_takeover_warning(session)
-            session = write_control_session(session, self.state_dir)
+            signal_status = self._emit_takeover_warning(session)
+            session, merged = merge_takeover_signal_status(
+                expected_generation=int(session.get("generation", -1)),
+                signal_status=signal_status,
+                state_dir=self.state_dir,
+            )
+            if not merged:
+                killed = session.get("kill_switch") is True
+                return CommandResult(
+                    ok=False,
+                    data={"started": False, "session": session},
+                    errors=[
+                        make_error(
+                            code="control_kill_switch_active" if killed else "control_session_changed",
+                            message=(
+                                "The customer Mac kill switch stopped the pending control start."
+                                if killed
+                                else "The customer Mac control session changed during start."
+                            ),
+                            guidance="Refresh Workbench status before starting control again.",
+                        )
+                    ],
+                )
         return CommandResult(
             ok=True,
             data={
@@ -2882,12 +2949,12 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         safe_target = re.sub(r"[^a-z0-9_-]+", "-", target.lower()).strip("-") or "desktop"
         return f"snap-{safe_target}-{uuid.uuid4().hex}"
 
-    def _emit_takeover_warning(self, session: dict[str, Any]) -> None:
+    def _emit_takeover_warning(self, session: dict[str, Any]) -> dict[str, Any]:
         if self.platform_name != "Darwin" or os.environ.get("EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI") == "1":
-            return
+            return {"available": False, "reason": "warning_ui_disabled"}
         warning = session.get("takeover_warning") if isinstance(session.get("takeover_warning"), dict) else {}
         if warning.get("active") is not True:
-            return
+            return {"available": False, "reason": "warning_not_active"}
         seconds = warning.get("seconds") if isinstance(warning.get("seconds"), int) else 10
         message = f"Taking over screen in {seconds} seconds. Yield the screen now."
         escaped = self._escape_applescript(message)
@@ -2934,7 +3001,7 @@ end repeat
                 signal_status["basso_sound"]["errors"] = errors[:3]
         else:
             signal_status["basso_sound"] = {"available": False, "reason": "sound_missing"}
-        session["takeover_alert_signal_status"] = signal_status
+        return signal_status
 
     def _safe_signal_error(self, exc: BaseException) -> str:
         return str(redact_value(str(exc)))[:240]

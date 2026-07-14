@@ -159,7 +159,11 @@ const REQUIRED_RC_PROOF_CHECKS = [
     id: 'macos-arm64-updater-zip-trust',
     evidence: 'updater-zip-macos-arm64.json',
     requiredText: [
-      'evaos-updater-zip-trust/v1',
+      'evaos-updater-zip-trust/v2',
+      '"bundleId": "com.evaos.workbench"',
+      '"productName": "evaOS Workbench"',
+      '"shortVersion":',
+      '"bundleVersion":',
       '"codesignVerified": true',
       '"staplerVerified": true',
       '"gatekeeperVerified": true',
@@ -1500,6 +1504,22 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     rcCanary,
+    'evaos-updater-zip-trust/v2',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'updater ZIP trust proof schema'
+  );
+  for (const identityField of ['CFBundleIdentifier', 'CFBundleName', 'CFBundleShortVersionString', 'CFBundleVersion']) {
+    requireText(
+      rcCanary,
+      identityField,
+      '.github/workflows/evaos-beta-rc-canary.yml',
+      issues,
+      `updater ZIP ${identityField} binding`
+    );
+  }
+  requireText(
+    rcCanary,
     'codesign --verify --deep --strict',
     '.github/workflows/evaos-beta-rc-canary.yml',
     issues,
@@ -2400,11 +2420,12 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
   return identity;
 }
 
-function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity) {
+function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity, expectedAppVersion) {
   const script = [
     'import hashlib',
     'import json',
     'import pathlib',
+    'import plistlib',
     'import posixpath',
     'import stat',
     'import sys',
@@ -2424,6 +2445,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     `expected_source_commit = ${JSON.stringify(String(expectedSourceCommit || ''))}`,
     `expected_bridge_source_sha256 = ${JSON.stringify(committedSourceIdentity.sourceSha256)}`,
     `expected_bridge_source_paths = ${JSON.stringify(committedSourceIdentity.sourcePaths)}`,
+    `expected_app_version = ${JSON.stringify(String(expectedAppVersion || ''))}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
     'expected_cpu_types = {"arm64": 0x0100000c, "x64": 0x01000007}',
     'def thin_macho_cpu(data):',
@@ -2492,17 +2514,31 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '        return False',
     '    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(relative_path), target))',
     '    return resolved != ".." and not resolved.startswith("../")',
-    'result = {"zipLayoutValid": False, "singleAppRoot": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceTreeExact": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
+    'result = {"zipLayoutValid": False, "singleAppRoot": False, "infoPlistValid": False, "bundleIdentifierValid": False, "productNameValid": False, "shortVersionValid": False, "bundleVersionValid": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceTreeExact": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
     'with zipfile.ZipFile(path) as archive:',
     '    infos = archive.infolist()',
     '    names = [info.filename for info in infos]',
     '    safe_layout = len(infos) <= 200000 and sum(info.file_size for info in infos) <= 4 * 1024 * 1024 * 1024 and len(names) == len(set(names)) and all(safe_zip_name(name.rstrip("/")) for name in names)',
     '    app_roots = {root for name in names if (root := app_root_for_name(name))}',
     '    result["zipLayoutValid"] = safe_layout',
-    '    result["singleAppRoot"] = safe_layout and len(app_roots) == 1',
+    '    result["singleAppRoot"] = safe_layout and app_roots == {"evaOS Workbench.app"}',
     '    entries = {}',
     '    if result["singleAppRoot"]:',
-    '        app_root = next(iter(app_roots))',
+    '        app_root = "evaOS Workbench.app"',
+    '        info_path = f"{app_root}/Contents/Info.plist"',
+    '        info_matches = [info for info in infos if info.filename == info_path]',
+    '        info_plist = {}',
+    '        if len(info_matches) == 1 and stat.S_ISREG(zip_mode(info_matches[0])):',
+    '            try:',
+    '                parsed_info = plistlib.loads(archive.read(info_matches[0]))',
+    '                info_plist = parsed_info if isinstance(parsed_info, dict) else {}',
+    '            except (plistlib.InvalidFileException, ValueError, TypeError):',
+    '                info_plist = {}',
+    '        result["infoPlistValid"] = bool(info_plist)',
+    '        result["bundleIdentifierValid"] = info_plist.get("CFBundleIdentifier") == "com.evaos.workbench"',
+    '        result["productNameValid"] = info_plist.get("CFBundleName") == "evaOS Workbench"',
+    '        result["shortVersionValid"] = info_plist.get("CFBundleShortVersionString") == expected_app_version',
+    '        result["bundleVersionValid"] = info_plist.get("CFBundleVersion") == expected_app_version',
     '        bridge_prefix = f"{app_root}/Contents/Resources/Bridge/"',
     '        for info in infos:',
     '            if info.filename.startswith(bridge_prefix) and not info.is_dir():',
@@ -2688,7 +2724,7 @@ function macosZipAssetNames(outputDir, releaseTargetPlatforms) {
   return names.filter((name) => /-mac-|darwin-|arm64|x64/.test(name));
 }
 
-function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, expectedSourceCommit) {
+function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, expectedSourceCommit, expectedAppVersion) {
   const zipNames = macosZipAssetNames(outputDir, releaseTargetPlatforms);
   if (releaseTargetPlatforms !== 'windows' && zipNames.length === 0) {
     throw new Error('Release manifest verification requires a macOS ZIP payload for Electron auto-update.');
@@ -2700,10 +2736,16 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, expected
     const probe = inspectMacosZipBridgePayload(
       path.join(outputDir, zipName),
       expectedSourceCommit,
-      committedSourceIdentity
+      committedSourceIdentity,
+      expectedAppVersion
     );
     assertZipBridgeProbe(probe, 'zipLayoutValid', zipName, 'safe ZIP layout');
     assertZipBridgeProbe(probe, 'singleAppRoot', zipName, 'exactly one .app root');
+    assertZipBridgeProbe(probe, 'infoPlistValid', zipName, 'canonical Info.plist');
+    assertZipBridgeProbe(probe, 'bundleIdentifierValid', zipName, 'bundle identifier');
+    assertZipBridgeProbe(probe, 'productNameValid', zipName, 'product name');
+    assertZipBridgeProbe(probe, 'shortVersionValid', zipName, 'tag-bound short version');
+    assertZipBridgeProbe(probe, 'bundleVersionValid', zipName, 'tag-bound bundle version');
     assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
     assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
     assertZipBridgeProbe(probe, 'bridgeWrapperValid', zipName, 'canonical launcher digest');
@@ -2779,7 +2821,7 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
   }
 
   assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms);
-  assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, manifest.releaseCommit);
+  assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, manifest.releaseCommit, versionFromPublicBetaTag(tag));
   verifyReleaseProvenance(manifest, env);
   return true;
 }
@@ -3367,7 +3409,7 @@ function assertRcReleaseAssetsReference(referencePath, tag, releaseManifest) {
 
 function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAssetsDir) {
   const proof = readManifestFile(proofPath);
-  if (proof.schema !== 'evaos-updater-zip-trust/v1') {
+  if (proof.schema !== 'evaos-updater-zip-trust/v2') {
     throw new Error(`Unexpected updater ZIP trust proof schema: ${proof.schema}`);
   }
   if (proof.tag !== tag || proof.releaseCommit !== releaseManifest.releaseCommit) {
@@ -3395,13 +3437,20 @@ function assertRcUpdaterZipTrustProof(proofPath, tag, releaseManifest, releaseAs
   if (updaterZipRefs.length !== 1 || updaterZipRefs[0] !== proof.assetName) {
     throw new Error('Updater ZIP trust proof does not match latest-arm64-mac.yml.');
   }
+  const expectedVersion = versionFromPublicBetaTag(tag);
   if (
     proof.appName !== 'evaOS Workbench.app' ||
+    proof.bundleId !== 'com.evaos.workbench' ||
+    proof.productName !== 'evaOS Workbench' ||
+    proof.shortVersion !== expectedVersion ||
+    proof.bundleVersion !== expectedVersion ||
     proof.codesignVerified !== true ||
     proof.staplerVerified !== true ||
     proof.gatekeeperVerified !== true
   ) {
-    throw new Error('Updater ZIP trust proof must pass app identity, codesign, stapler, and Gatekeeper checks.');
+    throw new Error(
+      'Updater ZIP trust proof must bind the exact app, bundle, product, tag version, codesign, stapler, and Gatekeeper checks.'
+    );
   }
 }
 

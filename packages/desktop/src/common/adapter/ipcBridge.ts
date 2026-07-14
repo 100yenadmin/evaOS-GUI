@@ -127,12 +127,16 @@ type EvaosRendererWindow = Window & {
   __evaosProviderCallbacks?: Map<string, (data: unknown) => void>;
 };
 
-function buildEvaosProvider<Response, Request>(name: string, options: { timeoutMs?: number } = {}) {
+function buildEvaosProvider<Response, Request>(
+  name: string,
+  options: { timeoutMs?: number | ((request: Request) => number) } = {}
+) {
   const platformProvider = bridge.buildProvider<Response, Request>(name);
   return {
     provider: platformProvider.provider,
     invoke(request: Request): Promise<Response> {
-      const electronRequest = invokeEvaosElectronProvider<Response, Request>(name, request, options.timeoutMs);
+      const timeoutMs = typeof options.timeoutMs === 'function' ? options.timeoutMs(request) : options.timeoutMs;
+      const electronRequest = invokeEvaosElectronProvider<Response, Request>(name, request, timeoutMs);
       if (electronRequest) {
         return electronRequest;
       }
@@ -1598,7 +1602,12 @@ export const evaosNativeCompanion = {
   >('evaos.native-companion.open-repair-action'),
   runAction: buildEvaosProvider<IBridgeResponse<IEvaosNativeCompanionActionResult>, IEvaosNativeCompanionActionRequest>(
     'evaos.native-companion.run-action',
-    { timeoutMs: EVAOS_NATIVE_COMPANION_ACTION_TIMEOUT_MS }
+    {
+      timeoutMs: (request) =>
+        request.action === 'secure_network_enroll'
+          ? EVAOS_NATIVE_COMPANION_ACTION_TIMEOUT_MS
+          : EVAOS_ELECTRON_PROVIDER_TIMEOUT_MS,
+    }
   ),
 };
 

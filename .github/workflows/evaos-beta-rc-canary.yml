@@ -350,28 +350,52 @@ jobs:
           rm -rf "$EXTRACT_DIR"
           mkdir -p "$EXTRACT_DIR"
           ditto -x -k "$UPDATER_ZIP" "$EXTRACT_DIR"
-          ZIP_APP=$(find "$EXTRACT_DIR" -maxdepth 2 -type d -name "$BETA_APP_NAME" | head -n 1)
-          if [ -z "$ZIP_APP" ]; then
+          ZIP_APP="$EXTRACT_DIR/$BETA_APP_NAME"
+          APP_ROOT_COUNT=$(find "$EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')
+          if [ ! -d "$ZIP_APP" ] || [ "$APP_ROOT_COUNT" != "1" ]; then
             echo "::error::Updater ZIP did not contain $BETA_APP_NAME."
+            exit 1
+          fi
+          INFO_PLIST="$ZIP_APP/Contents/Info.plist"
+          if [ ! -f "$INFO_PLIST" ]; then
+            echo "::error::Updater ZIP is missing the canonical app Info.plist."
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c Print "$INFO_PLIST" >/dev/null
+          if [[ ! "$TAG" =~ ^evaos-beta-v?([0-9]+\.[0-9]+\.[0-9]+)-evaos-beta(\.[0-9]+)?$ ]]; then
+            echo "::error::Unable to derive the updater app version from tag $TAG."
+            exit 1
+          fi
+          EXPECTED_VERSION="${BASH_REMATCH[1]}"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")
+          PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")
+          SHORT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")
+          BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")
+          if [ "$BUNDLE_ID" != "com.evaos.workbench" ] || [ "$PRODUCT_NAME" != "evaOS Workbench" ] || [ "$SHORT_VERSION" != "$EXPECTED_VERSION" ] || [ "$BUNDLE_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Updater ZIP app identity does not match the RC tag and canonical Workbench identity."
             exit 1
           fi
 
           codesign --verify --deep --strict --verbose=2 "$ZIP_APP" > "$PROOF_DIR/codesign-updater-zip-macos-arm64.txt" 2>&1
           xcrun stapler validate "$ZIP_APP" > "$PROOF_DIR/stapler-updater-zip-macos-arm64.txt" 2>&1
           spctl --assess --type execute --verbose "$ZIP_APP" > "$PROOF_DIR/spctl-updater-zip-macos-arm64.txt" 2>&1
-          node - "$PROOF_DIR/updater-zip-macos-arm64.json" "$TAG" "$TAG_COMMIT" "$ZIP_NAME" "$ACTUAL_SHA" "$BETA_APP_NAME" <<'NODE'
+          node - "$PROOF_DIR/updater-zip-macos-arm64.json" "$TAG" "$TAG_COMMIT" "$ZIP_NAME" "$ACTUAL_SHA" "$BETA_APP_NAME" "$BUNDLE_ID" "$PRODUCT_NAME" "$SHORT_VERSION" "$BUNDLE_VERSION" <<'NODE'
           const fs = require('fs');
-          const [outputPath, tag, releaseCommit, assetName, sha256, appName] = process.argv.slice(2);
+          const [outputPath, tag, releaseCommit, assetName, sha256, appName, bundleId, productName, shortVersion, bundleVersion] = process.argv.slice(2);
           fs.writeFileSync(
             outputPath,
             `${JSON.stringify(
               {
-                schema: 'evaos-updater-zip-trust/v1',
+                schema: 'evaos-updater-zip-trust/v2',
                 tag,
                 releaseCommit,
                 assetName,
                 sha256,
                 appName,
+                bundleId,
+                productName,
+                shortVersion,
+                bundleVersion,
                 codesignVerified: true,
                 staplerVerified: true,
                 gatekeeperVerified: true,

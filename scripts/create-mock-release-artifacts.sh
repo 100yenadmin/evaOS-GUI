@@ -2,11 +2,19 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 ARTIFACTS_DIR="${1:-build-artifacts}"
 VERSION="${MOCK_VERSION:-1.0.0}"
 PRODUCT_NAME="${MOCK_PRODUCT_NAME:-evaOS Workbench}"
 RELEASE_TARGET_PLATFORMS="${EVAOS_RELEASE_TARGET_PLATFORMS:-all}"
 MOCK_MACOS_DMG_ONLY="${EVAOS_MOCK_MACOS_DMG_ONLY:-0}"
+MOCK_SOURCE_COMMIT="${EVAOS_BETA_RELEASE_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
+
+if [[ ! "$MOCK_SOURCE_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] || ! git -C "$REPO_ROOT" cat-file -e "$MOCK_SOURCE_COMMIT^{commit}"; then
+  echo "Mock macOS release artifacts require an exact committed evaOS-GUI source SHA." >&2
+  exit 1
+fi
 
 case "$RELEASE_TARGET_PLATFORMS" in
   all|macos|macos-arm64|windows)
@@ -40,18 +48,51 @@ create_mock_macos_zip() {
   tmp_dir="$(mktemp -d)"
   mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/bin"
   mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/licenses"
-  printf '#!/usr/bin/env bash\nprintf "{}\\n"\n' > "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
+  mkdir -p "$tmp_dir/committed-source"
+  git -C "$REPO_ROOT" archive "$MOCK_SOURCE_COMMIT" resources/evaos-beta/bridge | tar -x -C "$tmp_dir/committed-source"
+  EVAOS_MOCK_WRAPPER_PATH="$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge" \
+    EVAOS_MOCK_PREPARE_SCRIPT="$REPO_ROOT/scripts/prepareEvaosDesktopBridgeResource.js" \
+    node <<'NODE'
+const fs = require('fs');
+const { bridgeWrapperScript } = require(process.env.EVAOS_MOCK_PREPARE_SCRIPT);
+fs.writeFileSync(process.env.EVAOS_MOCK_WRAPPER_PATH, bridgeWrapperScript());
+NODE
   chmod +x "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
-  python3 - "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge" "$output_path" "tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt" <<'PY'
+  python3 - \
+    "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge" \
+    "$output_path" \
+    "$REPO_ROOT/tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt" \
+    "$tmp_dir/committed-source/resources/evaos-beta/bridge/src/evaos_desktop_bridge" \
+    "$tmp_dir/committed-source/resources/evaos-beta/bridge/SOURCE.json" \
+    "$MOCK_SOURCE_COMMIT" \
+    "$VERSION" \
+    "$PRODUCT_NAME" <<'PY'
 import hashlib
 import json
 import pathlib
+import plistlib
+import shutil
 import stat
 import sys
 
 bridge = pathlib.Path(sys.argv[1])
 output_path = pathlib.Path(sys.argv[2])
 python_license_path = pathlib.Path(sys.argv[3])
+bridge_source_path = pathlib.Path(sys.argv[4])
+source_provenance_path = pathlib.Path(sys.argv[5])
+source_commit = sys.argv[6]
+app_version = sys.argv[7]
+product_name = sys.argv[8]
+with (bridge.parents[1] / "Info.plist").open("wb") as info_stream:
+    plistlib.dump(
+        {
+            "CFBundleIdentifier": "com.evaos.workbench",
+            "CFBundleName": product_name,
+            "CFBundleShortVersionString": app_version,
+            "CFBundleVersion": app_version,
+        },
+        info_stream,
+    )
 architecture = "arm64" if "arm64" in output_path.name else "x64"
 runtime_sha256 = (
     "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17"
@@ -63,6 +104,18 @@ python_header = bytes.fromhex("cffaedfe0c000001" if architecture == "arm64" else
 macho = bytes.fromhex("cafebabe00000000")
 license_bytes = b"MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\n"
 python_license_bytes = python_license_path.read_bytes()
+bridge_package_target = bridge / "src" / "evaos_desktop_bridge"
+shutil.copytree(bridge_source_path, bridge_package_target)
+bridge_source_hash = hashlib.sha256()
+for source_path in sorted(path for path in bridge_source_path.rglob("*") if path.is_file()):
+    relative_path = source_path.relative_to(bridge_source_path).as_posix()
+    bridge_source_hash.update(relative_path.encode("utf-8"))
+    bridge_source_hash.update(b"\0")
+    bridge_source_hash.update(source_path.read_bytes())
+    bridge_source_hash.update(b"\0")
+bridge_source_sha256 = bridge_source_hash.hexdigest()
+source_provenance = json.loads(source_provenance_path.read_text(encoding="utf-8"))
+source_provenance["sourceSha256"] = bridge_source_sha256
 (bridge / "bin" / "peekaboo").write_bytes(macho)
 (bridge / "bin" / "evaos-connector-helper").write_bytes(macho)
 (bridge / "bin" / "peekaboo").chmod(0o755)
@@ -134,8 +187,14 @@ python_packages = [
     {"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"},
 ]
 manifest = {
+    "schema": "evaos-desktop-bridge-resource/v1",
     "placeholder": False,
     "source": "mock-release-asset",
+    "requestedSourceRef": source_commit,
+    "sourcePath": "resources/evaos-beta/bridge",
+    "sourceCommit": source_commit,
+    "sourceBranch": "mock-release-fixture",
+    "sourceProvenance": source_provenance,
     "bundledTools": {
         "peekaboo": {
             "version": "3.8.0",
@@ -156,6 +215,11 @@ manifest = {
             "inventoryPath": "python-runtime-inventory.json",
             "inventorySha256": hashlib.sha256(inventory_bytes).hexdigest(),
             "inventoryEntryCount": len(inventory_entries),
+        },
+        "bridgeWrapper": {
+            "schema": "evaos-workbench-bridge-wrapper/v1",
+            "path": "evaos-desktop-bridge",
+            "sourceSha256": hashlib.sha256((bridge / "evaos-desktop-bridge").read_bytes()).hexdigest(),
         },
     },
 }

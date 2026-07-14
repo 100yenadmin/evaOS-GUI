@@ -22,7 +22,7 @@ from .candidate_identity import public_packaged_bridge_candidate
 
 from .audit import default_state_dir
 from .schema import build_envelope, make_error
-from .state import approval_audit_freshness_error, read_audit_record, read_control_session
+from .state import approval_audit_freshness_error, control_session_transaction, read_audit_record, read_control_session
 
 CommandRunner = Callable[[list[str]], tuple[int, str]]
 OwnerProvider = Callable[[], dict[str, Any] | None]
@@ -244,28 +244,40 @@ def normalize_connector_command(command: str) -> str:
 
 
 CONNECTOR_COMMAND_APPROVAL: dict[str, tuple[str, tuple[str, ...]]] = {
-    "codexSelectThread": ("codex.select_thread", ("thread_id",)),
-    "codexSendVisibleMessage": ("codex.send_visible_message", ("thread_id", "message_hash")),
-    "codexContinueThread": ("codex.continue_thread", ("title", "prompt")),
+    "codexSelectThread": ("codex.select_thread", ("thread_id_hash",)),
+    "codexSendVisibleMessage": ("codex.send_visible_message", ("thread_id_hash", "message_hash")),
+    "codexContinueThread": ("codex.continue_thread", ("title_hash", "prompt_hash")),
     "customerMacAppFocus": ("customer_mac.app_focus", ("app_name",)),
-    "customerMacLocalSiteOpen": ("customer_mac.local_site_open", ("url",)),
+    "customerMacLocalSiteOpen": ("customer_mac.local_site_open", ("url_hash",)),
     "customerMacLocalSiteAction": ("customer_mac.local_site_action", ("action",)),
     "customerMacIphoneMirroringFocus": ("customer_mac.iphone_mirroring_focus", ()),
     "customerMacIphoneMirroringHome": ("customer_mac.iphone_mirroring_home", ()),
     "customerMacIphoneMirroringAppSwitcher": ("customer_mac.iphone_mirroring_app_switcher", ()),
     "customerMacIphoneMirroringSpotlight": ("customer_mac.iphone_mirroring_spotlight", ()),
-    "customerMacIphoneMirroringTypeSpotlight": ("customer_mac.iphone_mirroring_type_spotlight", ("text",)),
+    "customerMacIphoneMirroringTypeSpotlight": ("customer_mac.iphone_mirroring_type_spotlight", ("text_hash",)),
     "customerMacIphoneMirroringOpenApp": ("customer_mac.iphone_mirroring_open_app", ("app_name",)),
-    "customerMacIphoneMirroringTapNamedTarget": ("customer_mac.iphone_mirroring_tap_named_target", ("target_label",)),
+    "customerMacIphoneMirroringTapNamedTarget": (
+        "customer_mac.iphone_mirroring_tap_named_target",
+        ("target_label_hash",),
+    ),
     "customerMacIphoneMirroringScroll": ("customer_mac.iphone_mirroring_scroll", ("direction",)),
     "customerMacIphoneMirroringSwipeLeft": ("customer_mac.iphone_mirroring_swipe_left", ()),
     "customerMacIphoneMirroringSwipeRight": ("customer_mac.iphone_mirroring_swipe_right", ()),
     "customerMacIphoneMirroringSwipeUp": ("customer_mac.iphone_mirroring_swipe_up", ()),
     "customerMacIphoneMirroringSwipeDown": ("customer_mac.iphone_mirroring_swipe_down", ()),
-    "customerMacIphoneMirroringTypeApprovedText": ("customer_mac.iphone_mirroring_type_approved_text", ("text",)),
-    "customerMacIphoneMirroringSendApprovedMessage": ("customer_mac.iphone_mirroring_send_approved_message", ("text", "recipient_context", "target_label")),
-    "desktopClick": ("customer_mac.desktop_click", ("snapshot_id", "element_id", "target_label", "x", "y")),
-    "desktopType": ("customer_mac.desktop_type", ("text",)),
+    "customerMacIphoneMirroringTypeApprovedText": (
+        "customer_mac.iphone_mirroring_type_approved_text",
+        ("text_hash",),
+    ),
+    "customerMacIphoneMirroringSendApprovedMessage": (
+        "customer_mac.iphone_mirroring_send_approved_message",
+        ("text_hash", "recipient_context_hash", "target_label_hash"),
+    ),
+    "desktopClick": (
+        "customer_mac.desktop_click",
+        ("snapshot_id", "element_id", "target_label_hash", "x", "y"),
+    ),
+    "desktopType": ("customer_mac.desktop_type", ("text_hash",)),
     "desktopSetValue": ("customer_mac.desktop_set_value", ("snapshot_id", "element_id", "attribute", "value_hash")),
     "desktopScroll": ("customer_mac.desktop_scroll", ("direction", "amount")),
     "desktopDrag": ("customer_mac.desktop_drag", ("from_x", "from_y", "to_x", "to_y")),
@@ -273,10 +285,13 @@ CONNECTOR_COMMAND_APPROVAL: dict[str, tuple[str, tuple[str, ...]]] = {
     "desktopFocusApp": ("customer_mac.desktop_focus_app", ("app_name",)),
     "desktopWindow": ("customer_mac.desktop_window", ("action",)),
     "desktopMenu": ("customer_mac.desktop_menu", ("menu_path",)),
-    "desktopBrowserAction": ("customer_mac.desktop_browser_action", ("action", "url")),
-    "iphoneTap": ("customer_mac.iphone_tap", ("snapshot_id", "element_id", "target_label", "x", "y")),
+    "desktopBrowserAction": ("customer_mac.desktop_browser_action", ("action", "url_hash")),
+    "iphoneTap": (
+        "customer_mac.iphone_tap",
+        ("snapshot_id", "element_id", "target_label_hash", "x", "y"),
+    ),
     "iphoneSwipe": ("customer_mac.iphone_swipe", ("direction",)),
-    "iphoneType": ("customer_mac.iphone_type", ("text",)),
+    "iphoneType": ("customer_mac.iphone_type", ("text_hash",)),
 }
 
 
@@ -961,39 +976,44 @@ def _make_handler(
                 payload = self._read_json()
                 command = normalize_connector_command(str(payload.get("command") or ""))
                 params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
-                kill_switch_error = _remote_kill_switch_error(command, state_dir=state_dir)
-                if kill_switch_error is not None:
-                    self._write_json(
-                        403,
-                        _error_envelope(
-                            command or "connector.command",
-                            "customer_mac",
-                            "control_kill_switch_active",
-                            kill_switch_error,
-                        ),
-                    )
-                    return
-                approval_error = _live_guarded_approval_error(command, params, state_dir=state_dir)
-                if approval_error is not None:
-                    if "kill switch" in approval_error.lower():
-                        error_code = "control_kill_switch_active"
-                    elif "takeover warning" in approval_error.lower():
-                        error_code = "control_takeover_warning_active"
-                    else:
-                        error_code = "approval_audit_required"
-                    self._write_json(
-                        403,
-                        _error_envelope(
-                            command or "connector.command",
-                            _target_for_connector_command(command),
-                            error_code,
-                            approval_error,
-                        ),
-                    )
-                    return
-                prepared_params, temp_paths = _prepare_connector_params(command, params, state_dir=state_dir)
+                temp_paths: list[Path] = []
                 try:
-                    argv = build_bridge_argv(command, prepared_params)
+                    with control_session_transaction(state_dir):
+                        kill_switch_error = _remote_kill_switch_error(command, state_dir=state_dir)
+                        if kill_switch_error is not None:
+                            self._write_json(
+                                403,
+                                _error_envelope(
+                                    command or "connector.command",
+                                    "customer_mac",
+                                    "control_kill_switch_active",
+                                    kill_switch_error,
+                                ),
+                            )
+                            return
+                        approval_error = _live_guarded_approval_error(command, params, state_dir=state_dir)
+                        if approval_error is not None:
+                            if "kill switch" in approval_error.lower():
+                                error_code = "control_kill_switch_active"
+                            elif "takeover warning" in approval_error.lower():
+                                error_code = "control_takeover_warning_active"
+                            else:
+                                error_code = "approval_audit_required"
+                            self._write_json(
+                                403,
+                                _error_envelope(
+                                    command or "connector.command",
+                                    _target_for_connector_command(command),
+                                    error_code,
+                                    approval_error,
+                                ),
+                            )
+                            return
+                        prepared_params, temp_paths = _prepare_connector_params(command, params, state_dir=state_dir)
+                        argv = build_bridge_argv(command, prepared_params)
+                        if command in CONTROLLED_REMOTE_COMMANDS and params.get("dry_run") is False:
+                            session = read_control_session(state_dir)
+                            argv = _with_remote_control_generation(argv, session.get("generation"))
                     exit_code, output = command_runner(argv)
                 finally:
                     for temp_path in temp_paths:
@@ -1293,16 +1313,19 @@ def _contains_risk_word(value: str) -> bool:
 
 
 def _approval_field_value(command: str, params: dict[str, Any], field: str) -> Any:
-    if field == "prompt" and command == "codexContinueThread":
-        return params.get("prompt") or "continue"
-    if field == "message_hash" and command == "codexSendVisibleMessage":
-        return hashlib.sha256(str(params.get("message") or "").strip().encode("utf-8")).hexdigest()[:16]
-    if field == "value_hash" and command == "desktopSetValue":
-        return hashlib.sha256(str(params.get("value") or "").encode("utf-8")).hexdigest()[:16]
+    if field.endswith("_hash"):
+        source_field = field[: -len("_hash")]
+        value = params.get(source_field)
+        if source_field == "prompt" and command == "codexContinueThread":
+            value = value or "continue"
+        if source_field == "target_label" and command == "customerMacIphoneMirroringSendApprovedMessage":
+            value = value or "Send"
+        if value is None:
+            return None
+        normalized = str(value).strip() if source_field == "message" else str(value)
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
     if field == "direction" and command == "customerMacIphoneMirroringScroll":
         return params.get("direction") or "down"
-    if field == "target_label" and command == "customerMacIphoneMirroringSendApprovedMessage":
-        return params.get("target_label") or "Send"
     return params.get(field)
 
 
@@ -1366,6 +1389,12 @@ def _required_string(params: dict[str, Any], name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} is required")
     return value
+
+
+def _with_remote_control_generation(argv: list[str], generation: Any) -> list[str]:
+    if not argv or argv[0] != "customer-mac" or not isinstance(generation, int) or generation < 0:
+        raise ValueError("remote control generation is unavailable")
+    return [argv[0], "--remote-control-generation", str(generation), *argv[1:]]
 
 
 def _error_envelope(command: str, target: str, code: str, message: str) -> dict[str, Any]:

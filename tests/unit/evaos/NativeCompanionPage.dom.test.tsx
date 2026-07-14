@@ -896,6 +896,15 @@ describe('NativeCompanionPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Full Access' }));
+    await waitFor(() =>
+      expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+        action: 'control_start',
+        mode: 'full-access',
+        customerId: 'golden',
+        agentLabel: 'evaOS Workbench',
+      })
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show Audit Tail' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Show Audit Tail' }));
     await user.click(screen.getByRole('button', { name: 'Stop Agent Control' }));
     await user.click(screen.getByRole('button', { name: 'Kill Switch' }));
@@ -1237,6 +1246,83 @@ describe('NativeCompanionPage', () => {
     });
 
     expect((await screen.findAllByText('Localized enrollment failed safely.')).length).toBe(2);
+  });
+
+  it('replaces enrollment progress with a safe failure when the native IPC action rejects', async () => {
+    mockUnenrolledMacStatus();
+    bridgeMocks.runAction.mockRejectedValueOnce(
+      new Error('sensitive transport failure https://private.example 100.64.0.9')
+    );
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    expect((await screen.findAllByText('Localized enrollment failed safely.')).length).toBe(2);
+    expect(screen.queryByText('Localized enrollment is connecting.')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('private.example');
+    expect(document.body.textContent).not.toContain('100.64.0.9');
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeEnabled();
+  });
+
+  it('keeps emergency stop available and ignores a stale enrollment result', async () => {
+    mockUnenrolledMacStatus();
+    let resolveEnrollment: ((value: unknown) => void) | undefined;
+    bridgeMocks.runAction.mockImplementation((request) => {
+      if (request.action === 'secure_network_enroll') {
+        return new Promise((resolve) => {
+          resolveEnrollment = resolve;
+        });
+      }
+      if (request.action === 'connector_stop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            action: 'connector_stop',
+            status: 'succeeded',
+            message: 'Emergency Mac Access stop completed.',
+            sourcePointer: 'native-companion:connector-stop',
+            auditIds: [],
+            refreshRecommended: false,
+          },
+        });
+      }
+      throw new Error(`unexpected action ${request.action}`);
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Connect this Mac' }));
+
+    expect(await screen.findByText('Localized enrollment is connecting.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stop Mac Access' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Stop Mac Access' }));
+    expect((await screen.findAllByText('Emergency Mac Access stop completed.')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeDisabled();
+    const statusCallsAfterStop = bridgeMocks.getStatus.mock.calls.length;
+
+    await act(async () => {
+      resolveEnrollment?.({
+        success: true,
+        data: {
+          action: 'secure_network_enroll',
+          status: 'succeeded',
+          message: 'Stale enrollment result must not be presented.',
+          sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+          auditIds: [],
+          refreshRecommended: true,
+        },
+      });
+    });
+
+    expect(screen.queryByText('Localized enrollment is waiting for broker verification.')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Emergency Mac Access stop completed.').length).toBeGreaterThan(0);
+    expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(statusCallsAfterStop);
+    expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeEnabled();
   });
 
   it.each([

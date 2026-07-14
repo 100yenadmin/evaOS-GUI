@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .redaction import redact_value
+from .redaction import redact_audit_value
 from .schema import SCHEMA_VERSION, timestamp_utc
 
 STATE_DIR_ENV = "EVAOS_DESKTOP_BRIDGE_STATE_DIR"
@@ -45,12 +45,16 @@ def append_audit(
         "timestamp": timestamp_utc(),
         "command": command,
         "target": target,
-        "args": redact_value(args),
+        "args": redact_audit_value(args),
         "ok": ok,
-        "warnings": redact_value(warnings),
-        "errors": redact_value(errors),
-        "provenance": redact_value(provenance or {}),
+        "warnings": [redact_audit_value(warning, key="warning") for warning in warnings],
+        "errors": redact_audit_value(errors),
+        "provenance": redact_audit_value(provenance or {}),
     }
-    with (root / "audit.jsonl").open("a", encoding="utf-8") as handle:
+    audit_path = root / "audit.jsonl"
+    flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(audit_path, flags, 0o600)
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
     return record_audit_id
