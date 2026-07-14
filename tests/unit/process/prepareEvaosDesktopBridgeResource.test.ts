@@ -8,8 +8,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -59,6 +59,12 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   }) => Record<string, unknown>;
   bridgeWrapperMetadata: (filePath: string) => { schema: string; path: string; sourceSha256: string };
   bridgeWrapperScript: () => string;
+  buildEd25519Verifier: (options?: {
+    sourcePath?: string;
+    targetDir?: string;
+    architecture?: string;
+  }) => { path: string; architecture: string; minimumMacOS: string; sourceSha256: string } | undefined;
+  ed25519VerifierBuildArgs: (sourcePath: string, outputPath: string, architecture: string) => string[];
   installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
   writePythonRuntimeInventory: (resourceDir: string) => {
     inventoryPath: string;
@@ -90,6 +96,65 @@ const { copyDir } = require('builder-util/out/fs') as {
 };
 
 describe('prepareEvaosDesktopBridgeResource', () => {
+  it('pins the native verifier to the selected architecture and macOS 15', () => {
+    expect(bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'arm64')).toEqual([
+      'swiftc',
+      '-O',
+      '-whole-module-optimization',
+      '-target',
+      'arm64-apple-macos15.0',
+      '-o',
+      '/output',
+      '/source.swift',
+    ]);
+    expect(bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'x64')).toContain(
+      'x86_64-apple-macos15.0'
+    );
+    expect(() => bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'universal')).toThrow(
+      /Unsupported evaOS Ed25519 verifier architecture/
+    );
+  });
+
+  it.skipIf(process.platform !== 'darwin')(
+    'builds a native verifier that accepts valid Ed25519 vectors only',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'evaos-ed25519-verifier-'));
+      try {
+        const metadata = bridgeResource.buildEd25519Verifier({
+          targetDir: dir,
+          architecture: process.arch,
+        });
+        expect(metadata).toMatchObject({
+          path: 'bin/evaos-ed25519-verify',
+          architecture: process.arch,
+          minimumMacOS: '15.0',
+        });
+        const executable = join(dir, 'evaos-ed25519-verify');
+        const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+        const message = Buffer.from('evaos-native-ed25519-vector');
+        const signature = sign(null, message, privateKey);
+        const publicKeyRaw = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+        const request = (signatureBytes: Buffer) =>
+          Buffer.from(
+            JSON.stringify({
+              publicKey: publicKeyRaw.toString('base64'),
+              message: message.toString('base64'),
+              signature: signatureBytes.toString('base64'),
+            })
+          );
+
+        expect(spawnSync(executable, { input: request(signature) }).status).toBe(0);
+        const forged = Buffer.from(signature);
+        forged[0] ^= 1;
+        expect(spawnSync(executable, { input: request(forged) }).status).toBe(3);
+        expect(spawnSync(executable, { input: Buffer.from('{}') }).status).toBe(2);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    30_000
+  );
+
   it('isolates the packaged desktop bridge wrapper from ambient Python paths', () => {
     const wrapper = bridgeResource.bridgeWrapperScript();
 

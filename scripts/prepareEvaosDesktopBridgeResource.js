@@ -17,6 +17,9 @@ const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
 const PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH = 'python-runtime-inventory.json';
 const PYTHON_RUNTIME_INVENTORY_SCHEMA = 'evaos-python-runtime-inventory/v1';
 const BRIDGE_WRAPPER_METADATA_SCHEMA = 'evaos-workbench-bridge-wrapper/v1';
+const ED25519_VERIFIER_METADATA_SCHEMA = 'evaos-workbench-ed25519-verifier/v1';
+const ED25519_VERIFIER_NAME = 'evaos-ed25519-verify';
+const ED25519_VERIFIER_SOURCE = path.join(vendoredBridgeSourceDir, 'native', 'EvaOSEd25519Verify.swift');
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set([
@@ -377,6 +380,60 @@ function requireMachOReleaseBinary(filePath, description) {
   throw new Error(
     `Release builds require ${description} to be a native Mach-O executable, not a shell/Python fallback: ${filePath}`
   );
+}
+
+function ed25519VerifierBuildArgs(sourcePath, outputPath, architecture) {
+  const targetArchitecture = architecture === 'x64' ? 'x86_64' : architecture;
+  if (!['arm64', 'x86_64'].includes(targetArchitecture)) {
+    throw new Error(`Unsupported evaOS Ed25519 verifier architecture: ${architecture}`);
+  }
+  return [
+    'swiftc',
+    '-O',
+    '-whole-module-optimization',
+    '-target',
+    `${targetArchitecture}-apple-macos15.0`,
+    '-o',
+    outputPath,
+    sourcePath,
+  ];
+}
+
+function buildEd25519Verifier({
+  sourcePath = ED25519_VERIFIER_SOURCE,
+  targetDir = path.join(bridgeResourceDir, 'bin'),
+  architecture = process.env.EVAOS_REQUIRED_PYTHON_RUNTIME_ARCH || process.arch,
+  runCommand = execFileSync,
+} = {}) {
+  if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+    throw new Error('The evaOS Ed25519 verifier Swift source is missing.');
+  }
+  if (process.platform !== 'darwin') {
+    if (shouldRequireRealBridge()) {
+      throw new Error('Release builds require macOS to compile the bundled Ed25519 verifier.');
+    }
+    return undefined;
+  }
+  fs.mkdirSync(targetDir, { recursive: true });
+  const outputPath = path.join(targetDir, ED25519_VERIFIER_NAME);
+  const args = ed25519VerifierBuildArgs(sourcePath, outputPath, architecture);
+  runCommand('xcrun', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  fs.chmodSync(outputPath, 0o755);
+  requireMachOReleaseBinary(outputPath, 'bundled Ed25519 verifier');
+  const expectedArch = architecture === 'x64' ? 'x86_64' : architecture;
+  const actualArch = String(
+    runCommand('lipo', ['-archs', outputPath], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  ).trim();
+  if (actualArch !== expectedArch) {
+    throw new Error(`Bundled Ed25519 verifier architecture ${actualArch} does not match ${expectedArch}.`);
+  }
+  return {
+    schema: ED25519_VERIFIER_METADATA_SCHEMA,
+    path: `bin/${ED25519_VERIFIER_NAME}`,
+    architecture,
+    minimumMacOS: '15.0',
+    sourceSha256: sha256File(sourcePath),
+  };
 }
 
 function writeConnectorHelperWrapper(targetDir) {
@@ -786,6 +843,7 @@ function main() {
   removePycache(bridgeResourceDir);
   const pythonRuntime = installPythonRuntime();
   const bridgeExecutable = writeBridgeExecutable();
+  const ed25519Verifier = buildEd25519Verifier({ targetDir: bridgeBinDir });
   const peekabooBinary = copyOptionalBinary('peekaboo', bridgeBinDir);
   const helperPath = path.join(bridgeBinDir, 'evaos-connector-helper');
   if (peekabooBinary && shouldRequireRealBridge()) {
@@ -810,6 +868,7 @@ function main() {
     bridgeWrapper: bridgeWrapperMetadata(bridgeExecutable),
   };
   if (pythonRuntime) bundledTools.python = pythonRuntime;
+  if (ed25519Verifier) bundledTools.ed25519Verifier = ed25519Verifier;
 
   const manifest = bridgeManifest({
     requestedSourceRef,
@@ -839,6 +898,8 @@ module.exports = {
   bridgeManifest,
   bridgeWrapperMetadata,
   bridgeWrapperScript,
+  buildEd25519Verifier,
+  ed25519VerifierBuildArgs,
   installPythonRuntime,
   installPeekabooLicense,
   isMachOExecutable,

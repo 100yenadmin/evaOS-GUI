@@ -61,6 +61,13 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     codesign: { ok: boolean; stderr?: string; error?: string };
     spctl: { ok: boolean; stderr?: string; error?: string };
     pythonCacheFiles: string[];
+    receiptVerifier: {
+      path: string;
+      present: boolean;
+      native: boolean;
+      codesign: { ok: boolean };
+      architecture: { ok: boolean; output?: string };
+    };
   }) => void;
   assertExpectedBundle: (bundleInfo: {
     bundleId: string;
@@ -179,6 +186,13 @@ const installedAppProof = require('../../../scripts/evaosInstalledAppProductProo
     codesign: { ok: boolean; command: string; output?: string; stderr?: string; error?: string };
     spctl: { ok: boolean; command: string; output?: string; stderr?: string; error?: string };
     pythonCacheFiles: string[];
+    receiptVerifier: {
+      path: string;
+      present: boolean;
+      native: boolean;
+      codesign: { ok: boolean };
+      architecture: { ok: boolean; output?: string };
+    };
   };
   parseAppBundlePaths: (output: string) => string[];
   parseBridgeListenerPids: (output: string) => string[];
@@ -1122,6 +1136,16 @@ describe('evaOS installed app product proof', () => {
 
     expect(trust.codesign.ok).toBe(false);
     expect(() => installedAppProof.assertInstalledAppTrustStateClean(trust)).toThrow(/codesign verification failed/);
+  });
+
+  it('fails installed-app trust when the signed native receipt verifier is absent', () => {
+    const tempApp = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-app-receipt-verifier-'));
+    fs.mkdirSync(path.join(tempApp, 'Contents/Resources/Bridge'), { recursive: true });
+
+    const trust = installedAppProof.inspectInstalledAppTrustState(tempApp, () => '');
+
+    expect(trust.receiptVerifier.present).toBe(false);
+    expect(() => installedAppProof.assertInstalledAppTrustStateClean(trust)).toThrow(/receipt verifier is missing/);
   });
 
   it('parses LaunchServices protocol handler ownership for the beta scheme', () => {

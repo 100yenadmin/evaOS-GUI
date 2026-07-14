@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -361,7 +362,7 @@ function writeMacosBridgeZip(
     inventoryDirectoryArchiveMode?: number;
     inventoryFileArchiveMode?: number;
     wrongPythonSourceUrl?: boolean;
-    nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'python';
+    nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'verifier' | 'python';
     omitFoundationNative?: boolean;
     omitInventoriedRuntimeFile?: boolean;
     omitStdlibSentinel?: boolean;
@@ -382,6 +383,13 @@ function writeMacosBridgeZip(
   } = {}
 ) {
   const bridgeWrapperBase64 = Buffer.from(bridgeResource.bridgeWrapperScript()).toString('base64');
+  const ed25519VerifierSourceSha256 = createHash('sha256')
+    .update(
+      fs.readFileSync(
+        path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'native', 'EvaOSEd25519Verify.swift')
+      )
+    )
+    .digest('hex');
   const script = [
     'import base64',
     'import hashlib',
@@ -436,6 +444,7 @@ function writeMacosBridgeZip(
     'wrong_short_version = sys.argv[42] == "1"',
     'wrong_bundle_version = sys.argv[43] == "1"',
     `bridge_wrapper_bytes = base64.b64decode("${bridgeWrapperBase64}")`,
+    `ed25519_verifier_source_sha256 = "${ed25519VerifierSourceSha256}"`,
     'app_root = "Wrong Workbench.app" if wrong_app_root else "evaOS Workbench.app"',
     'info_plist = {"CFBundleIdentifier": "com.example.wrong" if wrong_bundle_identifier else "com.evaos.workbench", "CFBundleName": "Wrong Workbench" if wrong_product_name else "evaOS Workbench", "CFBundleShortVersionString": "9.9.9" if wrong_short_version else "2.1.10", "CFBundleVersion": "999" if wrong_bundle_version else "2.1.10"}',
     'info_plist_bytes = b"not-a-plist" if malformed_info_plist else plistlib.dumps(info_plist)',
@@ -518,7 +527,7 @@ function writeMacosBridgeZip(
     '    bridge_source_hash.update(b"\\0")',
     'bridge_wrapper_metadata = {"schema": "evaos-workbench-bridge-wrapper/v1", "path": "evaos-desktop-bridge", "sourceSha256": hashlib.sha256(bridge_wrapper_bytes).hexdigest()}',
     'source_provenance = {"schema": "evaos-workbench-vendored-bridge-source/v1", "owner": "100yenadmin/evaOS-GUI", "status": "vendored", "importedCommit": "908e3cad8c5f11dca739bbfc2c697c3e6d52f79e", "sourceSha256": bridge_source_hash.hexdigest()}',
-    'manifest = {"placeholder": False, "requestedSourceRef": bridge_source_commit, "sourcePath": "resources/evaos-beta/bridge", "sourceCommit": bridge_source_commit, "sourceProvenance": source_provenance, "bundledTools": {"bridgeWrapper": bridge_wrapper_metadata, "peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
+    'manifest = {"placeholder": False, "requestedSourceRef": bridge_source_commit, "sourcePath": "resources/evaos-beta/bridge", "sourceCommit": bridge_source_commit, "sourceProvenance": source_provenance, "bundledTools": {"bridgeWrapper": bridge_wrapper_metadata, "ed25519Verifier": {"schema": "evaos-workbench-ed25519-verifier/v1", "path": "bin/evaos-ed25519-verify", "architecture": python_arch, "minimumMacOS": "15.0", "sourceSha256": ed25519_verifier_source_sha256}, "peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
     'def write_regular(archive, name, data, mode=0o644):',
     '    info = zipfile.ZipInfo(name)',
     '    info.create_system = 3',
@@ -551,6 +560,7 @@ function writeMacosBridgeZip(
     '    if not omit_peekaboo:',
     '        write_regular(archive, f"{bridge_prefix}/bin/peekaboo", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "peekaboo" else 0o755)',
     '    write_regular(archive, f"{bridge_prefix}/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "helper" else 0o755)',
+    '    write_regular(archive, f"{bridge_prefix}/bin/evaos-ed25519-verify", python_header, 0o644 if non_executable_payload == "verifier" else 0o755)',
     '    write_directory(archive, f"{bridge_prefix}/python", 0o600 if non_traversable_python_root else 0o755)',
     '    if normalized_python_entry_collision:',
     '        write_regular(archive, f"{bridge_prefix}/python/bin", b"shadowed runtime entry")',
@@ -1338,6 +1348,7 @@ printf '%s\\n' ok
     const helperDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin');
     const peekabooPath = path.join(helperDir, 'peekaboo');
     const connectorHelperPath = path.join(helperDir, 'evaos-connector-helper');
+    const verifierPath = path.join(helperDir, 'evaos-ed25519-verify');
     const pythonPath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'python', 'bin', 'python3.12');
     const pythonDylibPath = path.join(
       appPath,
@@ -1364,6 +1375,7 @@ printf '%s\\n' ok
     try {
       writeMachOFixture(peekabooPath);
       writeMachOFixture(connectorHelperPath);
+      writeMachOFixture(verifierPath);
       writeMachOFixture(pythonPath);
       fs.mkdirSync(path.dirname(pythonDylibPath), { recursive: true });
       fs.writeFileSync(pythonDylibPath, Buffer.from('cffaedfe0c000001', 'hex'));
@@ -2947,7 +2959,7 @@ printf '%s\\n' ok
         options: { wrongBundleVersion: true },
         expected: /tag-bound bundle version/,
       },
-      ...(['bridge', 'peekaboo', 'helper', 'python'] as const).map((payload) => ({
+      ...(['bridge', 'peekaboo', 'helper', 'verifier', 'python'] as const).map((payload) => ({
         name: `non-executable ${payload}`,
         options: { nonExecutablePayload: payload },
         expected: /executable ZIP mode/,

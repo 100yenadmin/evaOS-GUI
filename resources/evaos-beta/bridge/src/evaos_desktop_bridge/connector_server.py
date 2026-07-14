@@ -13,26 +13,50 @@ import tempfile
 import time
 import urllib.request
 from collections import deque
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from .candidate_identity import public_packaged_bridge_candidate
+from .receipt_canary import (
+    CanaryError,
+    build_receipt,
+    burn_replay_token,
+    candidate_snapshot,
+    default_process_identity,
+    load_canary_config,
+    receipt_envelope,
+    require_canary_control_state,
+    sign_receipt,
+    validate_action_audit,
+    validate_canary_request,
+    validate_receipt_signer_key,
+)
 
 from .audit import default_state_dir
 from .schema import build_envelope, make_error
-from .state import approval_audit_freshness_error, control_session_transaction, read_audit_record, read_control_session
+from .state import (
+    approval_audit_freshness_error,
+    control_session_transaction,
+    read_audit_record,
+    read_control_session,
+)
 
 CommandRunner = Callable[[list[str]], tuple[int, str]]
 OwnerProvider = Callable[[], dict[str, Any] | None]
+CandidateProvider = Callable[[], dict[str, Any]]
+ProcessProvider = Callable[[], dict[str, Any]]
 
 DIAGNOSTICS_SCHEMA = "evaos.desktop_bridge.diagnostics.v1"
 READY_SCHEMA = "evaos.desktop_bridge.ready.v1"
 SERVICE_EVENTS_FILE = "connector-service-events.jsonl"
 MAX_SERVICE_EVENTS = 40
 URL_PATTERN = re.compile(r"https?://[^\s)>\"]+", re.IGNORECASE)
-AUTH_HEADER_PATTERN = re.compile(r"(?i)(authorization\s*:\s*)(?:bearer\s+|basic\s+)?[A-Za-z0-9._~+/=-]+")
+AUTH_HEADER_PATTERN = re.compile(
+    r"(?i)(authorization\s*:\s*)(?:bearer\s+|basic\s+)?[A-Za-z0-9._~+/=-]+"
+)
 BEARER_TOKEN_PATTERN = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{8,}")
 SECRET_WORD_PATTERN = re.compile(
     r"(?i)\b(?:api[_-]?key|auth|authorization|password|secret|token)[A-Za-z0-9_.-]*(?:\s*[:=]\s*|\s+)[A-Za-z0-9._~+/=-]{8,}"
@@ -245,26 +269,53 @@ def normalize_connector_command(command: str) -> str:
 
 CONNECTOR_COMMAND_APPROVAL: dict[str, tuple[str, tuple[str, ...]]] = {
     "codexSelectThread": ("codex.select_thread", ("thread_id_hash",)),
-    "codexSendVisibleMessage": ("codex.send_visible_message", ("thread_id_hash", "message_hash")),
+    "codexSendVisibleMessage": (
+        "codex.send_visible_message",
+        ("thread_id_hash", "message_hash"),
+    ),
     "codexContinueThread": ("codex.continue_thread", ("title_hash", "prompt_hash")),
     "customerMacAppFocus": ("customer_mac.app_focus", ("app_name",)),
     "customerMacLocalSiteOpen": ("customer_mac.local_site_open", ("url_hash",)),
     "customerMacLocalSiteAction": ("customer_mac.local_site_action", ("action",)),
     "customerMacIphoneMirroringFocus": ("customer_mac.iphone_mirroring_focus", ()),
     "customerMacIphoneMirroringHome": ("customer_mac.iphone_mirroring_home", ()),
-    "customerMacIphoneMirroringAppSwitcher": ("customer_mac.iphone_mirroring_app_switcher", ()),
-    "customerMacIphoneMirroringSpotlight": ("customer_mac.iphone_mirroring_spotlight", ()),
-    "customerMacIphoneMirroringTypeSpotlight": ("customer_mac.iphone_mirroring_type_spotlight", ("text_hash",)),
-    "customerMacIphoneMirroringOpenApp": ("customer_mac.iphone_mirroring_open_app", ("app_name",)),
+    "customerMacIphoneMirroringAppSwitcher": (
+        "customer_mac.iphone_mirroring_app_switcher",
+        (),
+    ),
+    "customerMacIphoneMirroringSpotlight": (
+        "customer_mac.iphone_mirroring_spotlight",
+        (),
+    ),
+    "customerMacIphoneMirroringTypeSpotlight": (
+        "customer_mac.iphone_mirroring_type_spotlight",
+        ("text_hash",),
+    ),
+    "customerMacIphoneMirroringOpenApp": (
+        "customer_mac.iphone_mirroring_open_app",
+        ("app_name",),
+    ),
     "customerMacIphoneMirroringTapNamedTarget": (
         "customer_mac.iphone_mirroring_tap_named_target",
         ("target_label_hash",),
     ),
-    "customerMacIphoneMirroringScroll": ("customer_mac.iphone_mirroring_scroll", ("direction",)),
-    "customerMacIphoneMirroringSwipeLeft": ("customer_mac.iphone_mirroring_swipe_left", ()),
-    "customerMacIphoneMirroringSwipeRight": ("customer_mac.iphone_mirroring_swipe_right", ()),
+    "customerMacIphoneMirroringScroll": (
+        "customer_mac.iphone_mirroring_scroll",
+        ("direction",),
+    ),
+    "customerMacIphoneMirroringSwipeLeft": (
+        "customer_mac.iphone_mirroring_swipe_left",
+        (),
+    ),
+    "customerMacIphoneMirroringSwipeRight": (
+        "customer_mac.iphone_mirroring_swipe_right",
+        (),
+    ),
     "customerMacIphoneMirroringSwipeUp": ("customer_mac.iphone_mirroring_swipe_up", ()),
-    "customerMacIphoneMirroringSwipeDown": ("customer_mac.iphone_mirroring_swipe_down", ()),
+    "customerMacIphoneMirroringSwipeDown": (
+        "customer_mac.iphone_mirroring_swipe_down",
+        (),
+    ),
     "customerMacIphoneMirroringTypeApprovedText": (
         "customer_mac.iphone_mirroring_type_approved_text",
         ("text_hash",),
@@ -278,14 +329,20 @@ CONNECTOR_COMMAND_APPROVAL: dict[str, tuple[str, tuple[str, ...]]] = {
         ("snapshot_id", "element_id", "target_label_hash", "x", "y"),
     ),
     "desktopType": ("customer_mac.desktop_type", ("text_hash",)),
-    "desktopSetValue": ("customer_mac.desktop_set_value", ("snapshot_id", "element_id", "attribute", "value_hash")),
+    "desktopSetValue": (
+        "customer_mac.desktop_set_value",
+        ("snapshot_id", "element_id", "attribute", "value_hash"),
+    ),
     "desktopScroll": ("customer_mac.desktop_scroll", ("direction", "amount")),
     "desktopDrag": ("customer_mac.desktop_drag", ("from_x", "from_y", "to_x", "to_y")),
     "desktopHotkey": ("customer_mac.desktop_hotkey", ("keys",)),
     "desktopFocusApp": ("customer_mac.desktop_focus_app", ("app_name",)),
     "desktopWindow": ("customer_mac.desktop_window", ("action",)),
     "desktopMenu": ("customer_mac.desktop_menu", ("menu_path",)),
-    "desktopBrowserAction": ("customer_mac.desktop_browser_action", ("action", "url_hash")),
+    "desktopBrowserAction": (
+        "customer_mac.desktop_browser_action",
+        ("action", "url_hash"),
+    ),
     "iphoneTap": (
         "customer_mac.iphone_tap",
         ("snapshot_id", "element_id", "target_label_hash", "x", "y"),
@@ -306,21 +363,52 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
         "codexWindows": ["codex", "windows", "--json"],
         "codexConnectionsStatus": ["codex", "connections", "status", "--json"],
         "codexAppServerStatus": ["codex", "app-server", "status", "--json"],
-        "codexAppServerRemoteControlStatus": ["codex", "app-server", "remote-control-status", "--json"],
+        "codexAppServerRemoteControlStatus": [
+            "codex",
+            "app-server",
+            "remote-control-status",
+            "--json",
+        ],
         "customerMacStatus": ["customer-mac", "status", "--json"],
         "customerMacCapabilities": ["customer-mac", "capabilities", "--json"],
         "customerMacControlStatus": ["customer-mac", "control", "status", "--json"],
         "customerMacControlStop": ["customer-mac", "control", "stop", "--json"],
-        "customerMacControlKillSwitch": ["customer-mac", "control", "kill-switch", "--json"],
-        "customerMacIphoneMirroringStatus": ["customer-mac", "iphone-mirroring", "status", "--json"],
-        "customerMacScreenSharingStatus": ["customer-mac", "screen-sharing", "status", "--json"],
+        "customerMacControlKillSwitch": [
+            "customer-mac",
+            "control",
+            "kill-switch",
+            "--json",
+        ],
+        "customerMacIphoneMirroringStatus": [
+            "customer-mac",
+            "iphone-mirroring",
+            "status",
+            "--json",
+        ],
+        "customerMacScreenSharingStatus": [
+            "customer-mac",
+            "screen-sharing",
+            "status",
+            "--json",
+        ],
     }
     if command in fixed:
         return fixed[command]
     if command == "auditTail":
-        return ["audit-tail", "--json", "--limit", str(_clamp_int(params.get("limit"), 20, 1, 100))]
+        return [
+            "audit-tail",
+            "--json",
+            "--limit",
+            str(_clamp_int(params.get("limit"), 20, 1, 100)),
+        ]
     if command == "queueList":
-        return ["queue", "list", "--json", "--limit", str(_clamp_int(params.get("limit"), 20, 1, 100))]
+        return [
+            "queue",
+            "list",
+            "--json",
+            "--limit",
+            str(_clamp_int(params.get("limit"), 20, 1, 100)),
+        ]
     if command == "queueAppend":
         argv = [
             "queue",
@@ -335,9 +423,21 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             argv.extend(["--message", str(params["message"])])
         return argv
     if command == "codexThreads":
-        return ["codex", "threads", "--json", "--max-items", str(_clamp_int(params.get("max_items"), 50, 1, 200))]
+        return [
+            "codex",
+            "threads",
+            "--json",
+            "--max-items",
+            str(_clamp_int(params.get("max_items"), 50, 1, 200)),
+        ]
     if command == "codexThreadMap":
-        return ["codex", "thread-map", "--json", "--max-items", str(_clamp_int(params.get("max_items"), 50, 1, 200))]
+        return [
+            "codex",
+            "thread-map",
+            "--json",
+            "--max-items",
+            str(_clamp_int(params.get("max_items"), 50, 1, 200)),
+        ]
     if command == "codexSelectThread":
         return [
             "codex",
@@ -371,7 +471,9 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
         message_file = params.get("message_file")
         if isinstance(message_file, str) and message_file.strip():
             if params.get("_prepared_message_file") is not True:
-                raise ValueError("message_file is reserved for connector internals; provide message.")
+                raise ValueError(
+                    "message_file is reserved for connector internals; provide message."
+                )
             argv.extend(["--message-file", message_file.strip()])
         else:
             argv.extend(["--message", _required_string(params, "message")])
@@ -383,20 +485,59 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             argv.append("--dry-run")
         argv.extend(_approval_arg(params))
         if params.get("wait_ms") is not None:
-            argv.extend(["--wait-ms", str(_clamp_int(params.get("wait_ms"), 0, 0, 120_000))])
+            argv.extend(
+                ["--wait-ms", str(_clamp_int(params.get("wait_ms"), 0, 0, 120_000))]
+            )
         if params.get("poll_interval_ms") is not None:
-            argv.extend(["--poll-interval-ms", str(_clamp_int(params.get("poll_interval_ms"), 2000, 250, 10_000))])
+            argv.extend(
+                [
+                    "--poll-interval-ms",
+                    str(_clamp_int(params.get("poll_interval_ms"), 2000, 250, 10_000)),
+                ]
+            )
         return argv
     if command == "codexSnapshot":
-        return ["codex", "snapshot", "--json", "--max-chars", str(_clamp_int(params.get("max_chars"), 4000, 1, 20000))]
+        return [
+            "codex",
+            "snapshot",
+            "--json",
+            "--max-chars",
+            str(_clamp_int(params.get("max_chars"), 4000, 1, 20000)),
+        ]
     if command == "codexInspect":
-        return ["codex", "inspect", "--json", "--max-nodes", str(_clamp_int(params.get("max_nodes"), 120, 1, 1000))]
+        return [
+            "codex",
+            "inspect",
+            "--json",
+            "--max-nodes",
+            str(_clamp_int(params.get("max_nodes"), 120, 1, 1000)),
+        ]
     if command == "codexAxTree":
-        return ["codex", "ax-tree", "--json", "--max-nodes", str(_clamp_int(params.get("max_nodes"), 200, 1, 1000))]
+        return [
+            "codex",
+            "ax-tree",
+            "--json",
+            "--max-nodes",
+            str(_clamp_int(params.get("max_nodes"), 200, 1, 1000)),
+        ]
     if command == "codexAppServerThreads":
-        return ["codex", "app-server", "threads", "--json", "--max-items", str(_clamp_int(params.get("max_items"), 50, 1, 200))]
+        return [
+            "codex",
+            "app-server",
+            "threads",
+            "--json",
+            "--max-items",
+            str(_clamp_int(params.get("max_items"), 50, 1, 200)),
+        ]
     if command == "codexAppServerLoadedThreads":
-        return ["codex", "app-server", "loaded-threads", "--json", "--max-items", str(_clamp_int(params.get("max_items"), 50, 1, 200))]
+        return [
+            "codex",
+            "app-server",
+            "loaded-threads",
+            "--json",
+            "--max-items",
+            str(_clamp_int(params.get("max_items"), 50, 1, 200)),
+        ]
     if command == "codexLiveStatus":
         return [
             "codex",
@@ -409,11 +550,31 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             str(_clamp_int(params.get("duration_ms"), 1000, 1, 30000)),
         ]
     if command == "customerMacSnapshot":
-        return ["customer-mac", "snapshot", "--json", "--max-chars", str(_clamp_int(params.get("max_chars"), 4000, 1, 20000))]
+        return [
+            "customer-mac",
+            "snapshot",
+            "--json",
+            "--max-chars",
+            str(_clamp_int(params.get("max_chars"), 4000, 1, 20000)),
+        ]
     if command == "customerMacAxTree":
-        return ["customer-mac", "ax-tree", "--json", "--max-nodes", str(_clamp_int(params.get("max_nodes"), 200, 1, 1000))]
+        return [
+            "customer-mac",
+            "ax-tree",
+            "--json",
+            "--max-nodes",
+            str(_clamp_int(params.get("max_nodes"), 200, 1, 1000)),
+        ]
     if command == "customerMacControlStart":
-        return ["customer-mac", "control", "start", "--json", "--mode", str(params.get("mode") or "full-access"), *(_optional_string_arg(params, "agent_label", "--agent-label"))]
+        return [
+            "customer-mac",
+            "control",
+            "start",
+            "--json",
+            "--mode",
+            str(params.get("mode") or "full-access"),
+            *(_optional_string_arg(params, "agent_label", "--agent-label")),
+        ]
     if command == "desktopSee":
         return [
             "customer-mac",
@@ -426,7 +587,14 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             str(_clamp_int(params.get("max_nodes"), 200, 1, 1000)),
         ]
     if command == "desktopClick":
-        argv = ["customer-mac", "desktop", "click", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        argv = [
+            "customer-mac",
+            "desktop",
+            "click",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
         argv.extend(_optional_string_arg(params, "snapshot_id", "--snapshot-id"))
         argv.extend(_optional_string_arg(params, "element_id", "--element-id"))
         argv.extend(_optional_string_arg(params, "target_label", "--target-label"))
@@ -434,7 +602,16 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
         argv.extend(_optional_int_arg(params, "y", "--y"))
         return argv
     if command == "desktopType":
-        return ["customer-mac", "desktop", "type", "--json", "--text", _required_string(params, "text"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "desktop",
+            "type",
+            "--json",
+            "--text",
+            _required_string(params, "text"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "desktopSetValue":
         argv = [
             "customer-mac",
@@ -449,16 +626,31 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
         value_file = params.get("value_file")
         if isinstance(value_file, str) and value_file.strip():
             if params.get("_prepared_value_file") is not True:
-                raise ValueError("value_file is reserved for connector internals; provide value.")
+                raise ValueError(
+                    "value_file is reserved for connector internals; provide value."
+                )
             argv.extend(["--value-file", value_file.strip()])
         else:
-            raise ValueError("desktopSetValue value must be materialized before building CLI argv.")
+            raise ValueError(
+                "desktopSetValue value must be materialized before building CLI argv."
+            )
         argv.extend(["--attribute", str(params.get("attribute") or "value")])
         argv.extend(_dry_run_arg(params))
         argv.extend(_approval_arg(params))
         return argv
     if command == "desktopScroll":
-        return ["customer-mac", "desktop", "scroll", "--json", "--direction", str(params.get("direction") or "down"), "--amount", str(_clamp_int(params.get("amount"), 600, 1, 5000)), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "desktop",
+            "scroll",
+            "--json",
+            "--direction",
+            str(params.get("direction") or "down"),
+            "--amount",
+            str(_clamp_int(params.get("amount"), 600, 1, 5000)),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "desktopDrag":
         return [
             "customer-mac",
@@ -477,25 +669,103 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             *_approval_arg(params),
         ]
     if command == "desktopHotkey":
-        return ["customer-mac", "desktop", "hotkey", "--json", "--keys", _required_string(params, "keys"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "desktop",
+            "hotkey",
+            "--json",
+            "--keys",
+            _required_string(params, "keys"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "desktopFocusApp":
-        return ["customer-mac", "desktop", "focus-app", "--json", "--app-name", _required_string(params, "app_name"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "desktop",
+            "focus-app",
+            "--json",
+            "--app-name",
+            _required_string(params, "app_name"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "desktopWindow":
-        return ["customer-mac", "desktop", "window", "--json", "--action", _required_string(params, "action"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "desktop",
+            "window",
+            "--json",
+            "--action",
+            _required_string(params, "action"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "desktopMenu":
-        return ["customer-mac", "desktop", "menu", "--json", "--menu-path", _required_string(params, "menu_path"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "desktop",
+            "menu",
+            "--json",
+            "--menu-path",
+            _required_string(params, "menu_path"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "desktopBrowserAction":
-        argv = ["customer-mac", "desktop", "browser-action", "--json", "--action", _required_string(params, "action"), *_dry_run_arg(params), *_approval_arg(params)]
+        argv = [
+            "customer-mac",
+            "desktop",
+            "browser-action",
+            "--json",
+            "--action",
+            _required_string(params, "action"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
         argv.extend(_optional_string_arg(params, "url", "--url"))
         return argv
     if command == "customerMacAppFocus":
-        return ["customer-mac", "app-focus", "--json", "--app-name", _required_string(params, "app_name"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "app-focus",
+            "--json",
+            "--app-name",
+            _required_string(params, "app_name"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacLocalSiteOpen":
-        return ["customer-mac", "local-site", "open", "--json", "--url", _required_string(params, "url"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "local-site",
+            "open",
+            "--json",
+            "--url",
+            _required_string(params, "url"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacLocalSiteAction":
-        return ["customer-mac", "local-site", "action", "--json", "--action", _required_string(params, "action"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "local-site",
+            "action",
+            "--json",
+            "--action",
+            _required_string(params, "action"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringFocus":
-        return ["customer-mac", "iphone-mirroring", "focus", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "focus",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "iphoneSee":
         return [
             "customer-mac",
@@ -508,7 +778,14 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             str(_clamp_int(params.get("max_nodes"), 200, 1, 1000)),
         ]
     if command == "iphoneTap":
-        argv = ["customer-mac", "iphone-mirroring", "tap", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        argv = [
+            "customer-mac",
+            "iphone-mirroring",
+            "tap",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
         argv.extend(_optional_string_arg(params, "snapshot_id", "--snapshot-id"))
         argv.extend(_optional_string_arg(params, "element_id", "--element-id"))
         argv.extend(_optional_string_arg(params, "target_label", "--target-label"))
@@ -516,19 +793,76 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
         argv.extend(_optional_int_arg(params, "y", "--y"))
         return argv
     if command == "iphoneSwipe":
-        return ["customer-mac", "iphone-mirroring", "swipe", "--json", "--direction", _required_string(params, "direction"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "swipe",
+            "--json",
+            "--direction",
+            _required_string(params, "direction"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "iphoneType":
-        return ["customer-mac", "iphone-mirroring", "type", "--json", "--text", _required_string(params, "text"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "type",
+            "--json",
+            "--text",
+            _required_string(params, "text"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringHome":
-        return ["customer-mac", "iphone-mirroring", "home", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "home",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringAppSwitcher":
-        return ["customer-mac", "iphone-mirroring", "app-switcher", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "app-switcher",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringSpotlight":
-        return ["customer-mac", "iphone-mirroring", "spotlight", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "spotlight",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringTypeSpotlight":
-        return ["customer-mac", "iphone-mirroring", "type-spotlight", "--json", "--text", _required_string(params, "text"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "type-spotlight",
+            "--json",
+            "--text",
+            _required_string(params, "text"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringOpenApp":
-        return ["customer-mac", "iphone-mirroring", "open-app", "--json", "--app-name", _required_string(params, "app_name"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "open-app",
+            "--json",
+            "--app-name",
+            _required_string(params, "app_name"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringTapNamedTarget":
         return [
             "customer-mac",
@@ -541,17 +875,63 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
             *_approval_arg(params),
         ]
     if command == "customerMacIphoneMirroringScroll":
-        return ["customer-mac", "iphone-mirroring", "scroll", "--json", "--direction", str(params.get("direction") or "down"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "scroll",
+            "--json",
+            "--direction",
+            str(params.get("direction") or "down"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringSwipeLeft":
-        return ["customer-mac", "iphone-mirroring", "swipe-left", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "swipe-left",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringSwipeRight":
-        return ["customer-mac", "iphone-mirroring", "swipe-right", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "swipe-right",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringSwipeUp":
-        return ["customer-mac", "iphone-mirroring", "swipe-up", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "swipe-up",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringSwipeDown":
-        return ["customer-mac", "iphone-mirroring", "swipe-down", "--json", *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "swipe-down",
+            "--json",
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringTypeApprovedText":
-        return ["customer-mac", "iphone-mirroring", "type-approved-text", "--json", "--text", _required_string(params, "text"), *_dry_run_arg(params), *_approval_arg(params)]
+        return [
+            "customer-mac",
+            "iphone-mirroring",
+            "type-approved-text",
+            "--json",
+            "--text",
+            _required_string(params, "text"),
+            *_dry_run_arg(params),
+            *_approval_arg(params),
+        ]
     if command == "customerMacIphoneMirroringSendApprovedMessage":
         return [
             "customer-mac",
@@ -570,13 +950,20 @@ def build_bridge_argv(command: str, params: dict[str, Any] | None = None) -> lis
     raise ValueError(f"Unsupported connector command: {command}")
 
 
-def _prepare_connector_params(command: str, params: dict[str, Any], *, state_dir: Path | None) -> tuple[dict[str, Any], list[Path]]:
+def _prepare_connector_params(
+    command: str, params: dict[str, Any], *, state_dir: Path | None
+) -> tuple[dict[str, Any], list[Path]]:
     command = normalize_connector_command(command)
     if command not in {"codexSendVisibleMessage", "desktopSetValue"}:
         return params, []
     if command == "codexSendVisibleMessage":
-        if isinstance(params.get("message_file"), str) and params.get("message_file", "").strip():
-            raise ValueError("message_file is reserved for connector internals; provide message.")
+        if (
+            isinstance(params.get("message_file"), str)
+            and params.get("message_file", "").strip()
+        ):
+            raise ValueError(
+                "message_file is reserved for connector internals; provide message."
+            )
         if not isinstance(params.get("message"), str):
             raise ValueError("message is required")
         payload_key = "message"
@@ -584,8 +971,13 @@ def _prepare_connector_params(command: str, params: dict[str, Any], *, state_dir
         prepared_flag = "_prepared_message_file"
         prefix = "codex-visible-message-"
     else:
-        if isinstance(params.get("value_file"), str) and params.get("value_file", "").strip():
-            raise ValueError("value_file is reserved for connector internals; provide value.")
+        if (
+            isinstance(params.get("value_file"), str)
+            and params.get("value_file", "").strip()
+        ):
+            raise ValueError(
+                "value_file is reserved for connector internals; provide value."
+            )
         if not isinstance(params.get("value"), str):
             raise ValueError("value is required")
         payload_key = "value"
@@ -594,7 +986,9 @@ def _prepare_connector_params(command: str, params: dict[str, Any], *, state_dir
         prefix = "desktop-set-value-"
     root = (state_dir or default_state_dir()) / "tmp"
     root.mkdir(parents=True, exist_ok=True)
-    fd, path_text = tempfile.mkstemp(prefix=prefix, suffix=".txt", dir=str(root), text=True)
+    fd, path_text = tempfile.mkstemp(
+        prefix=prefix, suffix=".txt", dir=str(root), text=True
+    )
     path = Path(path_text)
     try:
         try:
@@ -636,7 +1030,12 @@ def run_connector_server(
             state_dir=state_dir,
             details={"host": host, "port": port},
         )
-    handler = _make_handler(token=token, command_runner=command_runner, state_dir=state_dir, owner_provider=owner_provider)
+    handler = _make_handler(
+        token=token,
+        command_runner=command_runner,
+        state_dir=state_dir,
+        owner_provider=owner_provider,
+    )
     try:
         server = ThreadingHTTPServer((host, port), handler)
     except OSError as exc:
@@ -659,7 +1058,9 @@ def run_connector_server(
     server.serve_forever()
 
 
-def read_token(path: str | None, *, state_dir: Path | None = None, auto_create: bool = False) -> str | None:
+def read_token(
+    path: str | None, *, state_dir: Path | None = None, auto_create: bool = False
+) -> str | None:
     if not path:
         token_path = (state_dir or default_state_dir()) / "connector.token"
     else:
@@ -682,7 +1083,9 @@ def read_token(path: str | None, *, state_dir: Path | None = None, auto_create: 
     return token
 
 
-def build_ready_payload(*, token: str | None, state_dir: Path | None = None) -> dict[str, Any]:
+def build_ready_payload(
+    *, token: str | None, state_dir: Path | None = None
+) -> dict[str, Any]:
     blockers = []
     if not token:
         blockers.append(
@@ -704,7 +1107,12 @@ def build_ready_payload(*, token: str | None, state_dir: Path | None = None) -> 
     }
 
 
-def build_diagnostics_payload(*, token: str | None, state_dir: Path | None = None, owner: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_diagnostics_payload(
+    *,
+    token: str | None,
+    state_dir: Path | None = None,
+    owner: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     root = state_dir or default_state_dir()
     connector: dict[str, Any] = {
         "token_state": _token_state(token),
@@ -724,12 +1132,16 @@ def build_diagnostics_payload(*, token: str | None, state_dir: Path | None = Non
         },
         "bridge": {
             "version": _bridge_version(),
-            "mode": _sanitize_public_text(os.environ.get("EVAOS_DESKTOP_BRIDGE_MODE") or "unknown"),
+            "mode": _sanitize_public_text(
+                os.environ.get("EVAOS_DESKTOP_BRIDGE_MODE") or "unknown"
+            ),
             "candidate": public_packaged_bridge_candidate(module_file=__file__),
         },
         "connector": connector,
         "control_session": _public_control_session(state_dir),
-        "service_events": read_service_events(state_dir=state_dir, limit=MAX_SERVICE_EVENTS),
+        "service_events": read_service_events(
+            state_dir=state_dir, limit=MAX_SERVICE_EVENTS
+        ),
         "redaction": {
             "tokens": "redacted",
             "urls": "redacted",
@@ -758,13 +1170,17 @@ def record_service_event(
     try:
         root.mkdir(parents=True, exist_ok=True)
         with (root / SERVICE_EVENTS_FILE).open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n")
+            handle.write(
+                json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+            )
     except Exception:
         pass
     return event
 
 
-def read_service_events(*, state_dir: Path | None = None, limit: int = MAX_SERVICE_EVENTS) -> list[dict[str, Any]]:
+def read_service_events(
+    *, state_dir: Path | None = None, limit: int = MAX_SERVICE_EVENTS
+) -> list[dict[str, Any]]:
     path = (state_dir or default_state_dir()) / SERVICE_EVENTS_FILE
     if not path.exists():
         return []
@@ -918,7 +1334,7 @@ def _public_path(path: str | Path | None) -> str | None:
         if text == home:
             return "~"
         if text.startswith(home + os.sep):
-            return "~" + text[len(home):]
+            return "~" + text[len(home) :]
     except Exception:
         pass
     return text
@@ -934,6 +1350,8 @@ def _make_handler(
     command_runner: CommandRunner,
     state_dir: Path | None = None,
     owner_provider: OwnerProvider | None = None,
+    candidate_provider: CandidateProvider | None = None,
+    process_provider: ProcessProvider | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class ConnectorHandler(BaseHTTPRequestHandler):
         server_version = "evaos-desktop-bridge-connector/0.1"
@@ -941,7 +1359,9 @@ def _make_handler(
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path == "/health":
-                self._write_json(200, {"ok": True, "service": "evaos-desktop-bridge-connector"})
+                self._write_json(
+                    200, {"ok": True, "service": "evaos-desktop-bridge-connector"}
+                )
                 return
             if parsed.path == "/ready":
                 payload = build_ready_payload(token=token, state_dir=state_dir)
@@ -949,12 +1369,31 @@ def _make_handler(
                 return
             if parsed.path == "/v1/diagnostics":
                 if not token:
-                    self._write_json(503, {"ok": False, "error": "token_missing", "schema": DIAGNOSTICS_SCHEMA})
+                    self._write_json(
+                        503,
+                        {
+                            "ok": False,
+                            "error": "token_missing",
+                            "schema": DIAGNOSTICS_SCHEMA,
+                        },
+                    )
                     return
                 if not self._authorized():
-                    self._write_json(401, {"ok": False, "error": "connector_unauthorized", "schema": DIAGNOSTICS_SCHEMA})
+                    self._write_json(
+                        401,
+                        {
+                            "ok": False,
+                            "error": "connector_unauthorized",
+                            "schema": DIAGNOSTICS_SCHEMA,
+                        },
+                    )
                     return
-                self._write_json(200, build_diagnostics_payload(token=token, state_dir=state_dir, owner=self._owner_summary()))
+                self._write_json(
+                    200,
+                    build_diagnostics_payload(
+                        token=token, state_dir=state_dir, owner=self._owner_summary()
+                    ),
+                )
                 return
             if parsed.path.startswith("/v1/artifacts/"):
                 self._serve_artifact(parsed.path.removeprefix("/v1/artifacts/"))
@@ -966,16 +1405,31 @@ def _make_handler(
             if parsed.path == "/v1/enrollment/complete":
                 self._complete_enrollment()
                 return
+            if parsed.path == "/v1/canary/mac-control":
+                self._mac_control_canary()
+                return
             if parsed.path != "/v1/commands":
                 self._write_json(404, {"ok": False, "error": "not_found"})
                 return
             if not self._authorized():
-                self._write_json(401, _error_envelope("connector.unauthorized", "connector", "connector_unauthorized", "Missing or invalid connector token."))
+                self._write_json(
+                    401,
+                    _error_envelope(
+                        "connector.unauthorized",
+                        "connector",
+                        "connector_unauthorized",
+                        "Missing or invalid connector token.",
+                    ),
+                )
                 return
             try:
                 payload = self._read_json()
                 command = normalize_connector_command(str(payload.get("command") or ""))
-                params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+                params = (
+                    payload.get("params")
+                    if isinstance(payload.get("params"), dict)
+                    else {}
+                )
                 if command == "customerMacControlStart":
                     self._write_json(
                         403,
@@ -990,7 +1444,9 @@ def _make_handler(
                 temp_paths: list[Path] = []
                 try:
                     with control_session_transaction(state_dir):
-                        kill_switch_error = _remote_kill_switch_error(command, state_dir=state_dir)
+                        kill_switch_error = _remote_kill_switch_error(
+                            command, state_dir=state_dir
+                        )
                         if kill_switch_error is not None:
                             self._write_json(
                                 403,
@@ -1002,7 +1458,9 @@ def _make_handler(
                                 ),
                             )
                             return
-                        approval_error = _live_guarded_approval_error(command, params, state_dir=state_dir)
+                        approval_error = _live_guarded_approval_error(
+                            command, params, state_dir=state_dir
+                        )
                         if approval_error is not None:
                             if "kill switch" in approval_error.lower():
                                 error_code = "control_kill_switch_active"
@@ -1020,11 +1478,15 @@ def _make_handler(
                                 ),
                             )
                             return
-                        prepared_params, temp_paths = _prepare_connector_params(command, params, state_dir=state_dir)
+                        prepared_params, temp_paths = _prepare_connector_params(
+                            command, params, state_dir=state_dir
+                        )
                         argv = build_bridge_argv(command, prepared_params)
                         if command in TAKEOVER_WARNING_REMOTE_COMMANDS and params.get("dry_run") is False:
                             session = read_control_session(state_dir)
-                            argv = _with_remote_control_generation(argv, session.get("generation"))
+                            argv = _with_remote_control_generation(
+                                argv, session.get("generation")
+                            )
                     exit_code, output = command_runner(argv)
                 finally:
                     for temp_path in temp_paths:
@@ -1035,41 +1497,170 @@ def _make_handler(
                 try:
                     response = json.loads(output)
                 except json.JSONDecodeError:
-                    response = _error_envelope(command, "desktop", "bridge_output_invalid", output[:500])
+                    response = _error_envelope(
+                        command, "desktop", "bridge_output_invalid", output[:500]
+                    )
                 response = _candidate_bound_command_response(command, response)
                 status = 200 if exit_code == 0 else 422
                 self._write_json(status, response)
             except Exception as exc:
-                self._write_json(400, _error_envelope("connector.command", "desktop", "connector_bad_request", str(exc)))
+                self._write_json(
+                    400,
+                    _error_envelope(
+                        "connector.command",
+                        "desktop",
+                        "connector_bad_request",
+                        str(exc),
+                    ),
+                )
+
+        def _mac_control_canary(self) -> None:
+            if not token:
+                self._write_json(
+                    503, {"ok": False, "error": "connector_token_unavailable"}
+                )
+                return
+            if not self._authorized():
+                self._write_json(401, {"ok": False, "error": "connector_unauthorized"})
+                return
+            try:
+                payload = self._read_json()
+                config = load_canary_config()
+                validate_receipt_signer_key(config)
+                candidate = (
+                    candidate_provider()
+                    if candidate_provider is not None
+                    else public_packaged_bridge_candidate(module_file=__file__)
+                )
+                owner = self._owner_summary()
+                process = (
+                    process_provider()
+                    if process_provider is not None
+                    else default_process_identity()
+                )
+                candidate_snapshot(candidate, owner=owner, process=process)
+                context, raw_context, context_signature = validate_canary_request(
+                    payload, config
+                )
+                challenge = str(payload["challenge"])
+                run_ref = str(payload["runRef"])
+                with control_session_transaction(state_dir):
+                    before = require_canary_control_state(
+                        read_control_session(state_dir)
+                    )
+                    burn_replay_token(
+                        raw_context,
+                        context_signature,
+                        str(context["context_id"]),
+                        state_dir=state_dir,
+                    )
+                    generation = before["generation"]
+                    argv = _with_remote_control_generation(
+                        build_bridge_argv(
+                            "desktopHotkey", {"keys": "escape", "dry_run": False}
+                        ),
+                        generation,
+                    )
+                action_started_at = datetime.now(timezone.utc)
+                exit_code, output = command_runner(argv)
+                try:
+                    response = json.loads(output)
+                except json.JSONDecodeError as exc:
+                    raise CanaryError("canary_action_failed", status=422) from exc
+                if exit_code != 0 or not isinstance(response, dict):
+                    raise CanaryError("canary_action_failed", status=422)
+                with control_session_transaction(state_dir):
+                    after = require_canary_control_state(
+                        read_control_session(state_dir)
+                    )
+                    if before != after:
+                        raise CanaryError("canary_control_state_changed", status=409)
+                    audit_record, audit_digest = validate_action_audit(
+                        response,
+                        state_dir=state_dir,
+                        action_started_at=action_started_at,
+                    )
+                receipt = build_receipt(
+                    config=config,
+                    context=context,
+                    raw_context=raw_context,
+                    challenge=challenge,
+                    run_ref=run_ref,
+                    candidate=candidate,
+                    owner=owner,
+                    process=process,
+                    before=before,
+                    after=after,
+                    audit_record=audit_record,
+                    audit_digest=audit_digest,
+                    executed_at=datetime.now(timezone.utc)
+                    .replace(microsecond=0)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    binding_expires_at=str(payload["binding"]["bindingExpiresAt"]),
+                )
+                signature = sign_receipt(receipt, config)
+                self._write_json(200, receipt_envelope(receipt, signature, config))
+            except CanaryError as exc:
+                self._write_json(exc.status, {"ok": False, "error": exc.code})
+            except Exception:
+                self._write_json(500, {"ok": False, "error": "canary_internal_error"})
 
         def _complete_enrollment(self) -> None:
             try:
                 payload = self._read_json()
                 enrollment_code = str(payload.get("enrollment_code") or "").strip()
                 if not enrollment_code:
-                    self._write_json(400, {"ok": False, "error": "missing_enrollment_code"})
+                    self._write_json(
+                        400, {"ok": False, "error": "missing_enrollment_code"}
+                    )
                     return
                 if not token:
-                    self._write_json(503, {"ok": False, "error": "connector_token_unavailable"})
+                    self._write_json(
+                        503, {"ok": False, "error": "connector_token_unavailable"}
+                    )
                     return
                 connector_url = _connector_url_from_request(self)
                 response = complete_enrollment_via_control(
                     enrollment_code=enrollment_code,
                     connector_url=connector_url,
                     connector_token=token,
-                    device_name=str(payload.get("device_name") or socket.gethostname() or "Customer Mac"),
+                    device_name=str(
+                        payload.get("device_name")
+                        or socket.gethostname()
+                        or "Customer Mac"
+                    ),
                     device_identifier=str(payload.get("device_identifier") or ""),
                 )
                 self._write_json(200, {"ok": True, "data": response})
             except Exception as exc:
-                self._write_json(400, {"ok": False, "error": "enrollment_complete_failed", "message": str(exc)})
+                self._write_json(
+                    400,
+                    {
+                        "ok": False,
+                        "error": "enrollment_complete_failed",
+                        "message": str(exc),
+                    },
+                )
 
         def _serve_artifact(self, artifact_name: str) -> None:
             if not self._authorized():
-                self._write_json(401, _error_envelope("connector.artifact", "customer_mac", "connector_unauthorized", "Missing or invalid connector token."))
+                self._write_json(
+                    401,
+                    _error_envelope(
+                        "connector.artifact",
+                        "customer_mac",
+                        "connector_unauthorized",
+                        "Missing or invalid connector token.",
+                    ),
+                )
                 return
             artifact_id = artifact_name.removesuffix(".png")
-            if not artifact_id.startswith("snap-") or "/" in artifact_id or ".." in artifact_id:
+            if (
+                not artifact_id.startswith("snap-")
+                or "/" in artifact_id
+                or ".." in artifact_id
+            ):
                 self._write_json(404, {"ok": False, "error": "artifact_not_found"})
                 return
             root = state_dir or default_state_dir()
@@ -1127,7 +1718,12 @@ def _make_handler(
 
 def _candidate_bound_command_response(command: str, response: Any) -> dict[str, Any]:
     if not isinstance(response, dict):
-        response = _error_envelope(command, "desktop", "bridge_output_invalid", "Bridge response must be a JSON object.")
+        response = _error_envelope(
+            command,
+            "desktop",
+            "bridge_output_invalid",
+            "Bridge response must be a JSON object.",
+        )
     if command == "status":
         return {
             **response,
@@ -1212,25 +1808,47 @@ def _live_guarded_without_approval(command: str, params: dict[str, Any]) -> bool
         return False
     if command in CODEX_REMOTE_CONTROL_COMMANDS:
         source = params.get("source_audit_id")
-        return params.get("confirm") is not True or not isinstance(source, str) or not source.strip().startswith("audit-")
+        return (
+            params.get("confirm") is not True
+            or not isinstance(source, str)
+            or not source.strip().startswith("audit-")
+        )
     approval = params.get("approval_audit_id")
     return not isinstance(approval, str) or not approval.strip()
 
 
-def _live_guarded_approval_error(command: str, params: dict[str, Any], *, state_dir: Path | None, require_lookup: bool = True) -> str | None:
+def _live_guarded_approval_error(
+    command: str,
+    params: dict[str, Any],
+    *,
+    state_dir: Path | None,
+    require_lookup: bool = True,
+) -> str | None:
     command = normalize_connector_command(command)
     if command in TAKEOVER_WARNING_REMOTE_COMMANDS and params.get("dry_run") is False:
         session = read_control_session(state_dir)
         if session.get("kill_switch") is True:
             return "The customer Mac kill switch is active; live agent control commands are blocked."
-        warning = session.get("takeover_warning") if isinstance(session.get("takeover_warning"), dict) else {}
+        warning = (
+            session.get("takeover_warning")
+            if isinstance(session.get("takeover_warning"), dict)
+            else {}
+        )
         if session.get("active") is True and warning.get("active") is True:
-            seconds = warning.get("seconds") if isinstance(warning.get("seconds"), int) else 10
+            seconds = (
+                warning.get("seconds")
+                if isinstance(warning.get("seconds"), int)
+                else 10
+            )
             return f"Agent control is starting; live actions are blocked until the {seconds}-second takeover warning finishes."
         if command in CONTROLLED_REMOTE_COMMANDS and session.get("active") is True:
             if session.get("mode") == "full_access":
                 return None
-            if session.get("mode") == "ask_permission" and not _ask_permission_requires_approval(command, params):
+            if session.get(
+                "mode"
+            ) == "ask_permission" and not _ask_permission_requires_approval(
+                command, params
+            ):
                 return None
 
     if command not in GUARDED_REMOTE_COMMANDS:
@@ -1263,7 +1881,9 @@ def _live_guarded_approval_error(command: str, params: dict[str, Any], *, state_
         return None
     approval = params.get("approval_audit_id")
     if not isinstance(approval, str) or not approval.strip():
-        return "Live remote control actions require a prior dry-run and approval_audit_id."
+        return (
+            "Live remote control actions require a prior dry-run and approval_audit_id."
+        )
     if not require_lookup:
         return None
     command_id, fields = CONNECTOR_COMMAND_APPROVAL[command]
@@ -1306,7 +1926,13 @@ def _ask_permission_requires_approval(command: str, params: dict[str, Any]) -> b
             return True
         return _contains_risk_word(label)
     if command == "desktopHotkey":
-        keys = str(params.get("keys") or "").strip().lower().replace("command", "cmd").replace(" ", "")
+        keys = (
+            str(params.get("keys") or "")
+            .strip()
+            .lower()
+            .replace("command", "cmd")
+            .replace(" ", "")
+        )
         return keys not in ASK_PERMISSION_SAFE_HOTKEYS
     if command == "desktopWindow":
         return str(params.get("action") or "").strip().lower() == "close"
@@ -1329,7 +1955,10 @@ def _approval_field_value(command: str, params: dict[str, Any], field: str) -> A
         value = params.get(source_field)
         if source_field == "prompt" and command == "codexContinueThread":
             value = value or "continue"
-        if source_field == "target_label" and command == "customerMacIphoneMirroringSendApprovedMessage":
+        if (
+            source_field == "target_label"
+            and command == "customerMacIphoneMirroringSendApprovedMessage"
+        ):
             value = value or "Send"
         if value is None:
             return None
@@ -1403,19 +2032,32 @@ def _required_string(params: dict[str, Any], name: str) -> str:
 
 
 def _with_remote_control_generation(argv: list[str], generation: Any) -> list[str]:
-    if not argv or argv[0] != "customer-mac" or not isinstance(generation, int) or generation < 0:
+    if (
+        not argv
+        or argv[0] != "customer-mac"
+        or not isinstance(generation, int)
+        or generation < 0
+    ):
         raise ValueError("remote control generation is unavailable")
     return [argv[0], "--remote-control-generation", str(generation), *argv[1:]]
 
 
-def _error_envelope(command: str, target: str, code: str, message: str) -> dict[str, Any]:
+def _error_envelope(
+    command: str, target: str, code: str, message: str
+) -> dict[str, Any]:
     return build_envelope(
         command=command,
         target=target,
         ok=False,
         data={},
         warnings=[],
-        errors=[make_error(code=code, message=message, guidance="Check connector pairing, command shape, and approval state.")],
+        errors=[
+            make_error(
+                code=code,
+                message=message,
+                guidance="Check connector pairing, command shape, and approval state.",
+            )
+        ],
         audit_id="connector-rejected",
     )
 
