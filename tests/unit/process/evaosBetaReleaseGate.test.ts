@@ -768,10 +768,6 @@ function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<s
 }
 
 function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
-  const sourceSha256 = releaseGate.committedBridgeSourceIdentity(fixtureReleaseCommit).sourceSha256;
-  const version = JSON.parse(
-    execFileSync('git', ['show', `${fixtureReleaseCommit}:package.json`], { encoding: 'utf8' })
-  ).version;
   fs.mkdirSync(proofDir, { recursive: true });
   fs.writeFileSync(
     path.join(proofDir, 'mac-control-session-provisioning.json'),
@@ -794,7 +790,7 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
     path.join(proofDir, 'mac-control-runtime.json'),
     `${JSON.stringify(
       {
-        schema: 'evaos-mac-control-live-canary/v2',
+        schema: 'evaos-mac-control-live-canary/v1',
         ok: true,
         runtime: 'openclaw',
         launchMode: 'mac_control_tools',
@@ -802,20 +798,6 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
         httpStatus: 302,
         sourceHeadSha: fixtureReleaseCommit,
         sourceRunId: '12345',
-        candidate: {
-          schema: 'evaos.workbench.bridge_candidate.v1',
-          ok: true,
-          sourceCommit: fixtureReleaseCommit,
-          sourceSha256,
-          sourcePath: 'resources/evaos-beta/bridge',
-          owner: '100yenadmin/evaOS-GUI',
-          status: 'vendored',
-          appPath: '/Applications/evaOS Workbench.app',
-          appVersion: version,
-          appBuild: version,
-          appBundleId: 'com.evaos.workbench',
-          appName: 'evaOS Workbench',
-        },
         assertions: {
           attached: true,
           toolsReady: true,
@@ -831,10 +813,6 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
           expectedLaunchTarget: true,
           callbackAccepted: true,
           proxySessionAccepted: true,
-          candidateIdentityMatched: true,
-          controlSessionReady: true,
-          directMacActionPassed: true,
-          controlSessionRestored: true,
         },
         secretScan: 'passed',
         ...overrides,

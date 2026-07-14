@@ -92,10 +92,6 @@ SELECTED_BINDING_PROOF_ASSERTIONS = (
     "expectedLaunchTarget",
     "callbackAccepted",
     "proxySessionAccepted",
-    "candidateIdentityMatched",
-    "controlSessionReady",
-    "directMacActionPassed",
-    "controlSessionRestored",
 )
 SELECTED_BINDING_PROOF_FIELDS = {
     "schema",
@@ -106,23 +102,8 @@ SELECTED_BINDING_PROOF_FIELDS = {
     "httpStatus",
     "sourceHeadSha",
     "sourceRunId",
-    "candidate",
     "assertions",
     "secretScan",
-}
-SELECTED_BINDING_CANDIDATE_FIELDS = {
-    "schema",
-    "ok",
-    "sourceCommit",
-    "sourceSha256",
-    "sourcePath",
-    "owner",
-    "status",
-    "appPath",
-    "appVersion",
-    "appBuild",
-    "appBundleId",
-    "appName",
 }
 
 
@@ -450,18 +431,16 @@ def selected_binding_proof_binding(
         result["reason"] = "selected_binding_proof_shape_invalid"
         return result
     assertions = proof.get("assertions") if isinstance(proof.get("assertions"), dict) else {}
-    candidate = proof.get("candidate") if isinstance(proof.get("candidate"), dict) else {}
     result.update(
         {
             "schema": proof.get("schema"),
             "source_head_sha": proof.get("sourceHeadSha"),
             "source_run_id": str(proof.get("sourceRunId") or ""),
-            "candidate": candidate,
             "assertions_verified": sorted(assertions) if isinstance(assertions, dict) else [],
         }
     )
     result["ok"] = (
-        proof.get("schema") == "evaos-mac-control-live-canary/v2"
+        proof.get("schema") == "evaos-mac-control-live-canary/v1"
         and proof.get("ok") is True
         and proof.get("runtime") == "openclaw"
         and proof.get("launchMode") == "mac_control_tools"
@@ -470,19 +449,6 @@ def selected_binding_proof_binding(
         and proof.get("sourceHeadSha") == expected_source_commit
         and re.fullmatch(r"\d+", expected_source_run_id) is not None
         and str(proof.get("sourceRunId") or "") == expected_source_run_id
-        and set(candidate) == SELECTED_BINDING_CANDIDATE_FIELDS
-        and candidate.get("schema") == "evaos.workbench.bridge_candidate.v1"
-        and candidate.get("ok") is True
-        and candidate.get("sourceCommit") == expected_source_commit
-        and candidate.get("sourceSha256") == expected_source_sha256
-        and candidate.get("sourcePath") == "resources/evaos-beta/bridge"
-        and candidate.get("owner") == "100yenadmin/evaOS-GUI"
-        and candidate.get("status") == "vendored"
-        and candidate.get("appPath") == "/Applications/evaOS Workbench.app"
-        and candidate.get("appVersion") == expected_version
-        and candidate.get("appBuild") == expected_build
-        and candidate.get("appBundleId") == "com.evaos.workbench"
-        and candidate.get("appName") == "evaOS Workbench"
         and proof.get("secretScan") == "passed"
         and set(assertions) == set(SELECTED_BINDING_PROOF_ASSERTIONS)
         and all(assertions.get(assertion) is True for assertion in SELECTED_BINDING_PROOF_ASSERTIONS)

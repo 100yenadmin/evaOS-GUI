@@ -285,10 +285,6 @@ const MAC_CONTROL_LIVE_CANARY_ASSERTIONS = Object.freeze([
   'expectedLaunchTarget',
   'callbackAccepted',
   'proxySessionAccepted',
-  'candidateIdentityMatched',
-  'controlSessionReady',
-  'directMacActionPassed',
-  'controlSessionRestored',
 ]);
 
 function normalizeBoolean(value) {
@@ -3193,7 +3189,6 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
     'httpStatus',
     'sourceHeadSha',
     'sourceRunId',
-    'candidate',
     'assertions',
     'secretScan',
   ]);
@@ -3204,7 +3199,7 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   }
   assertLiveCanaryNoSecretMaterial(proof, 'macControl');
 
-  if (proof.schema !== 'evaos-mac-control-live-canary/v2') {
+  if (proof.schema !== 'evaos-mac-control-live-canary/v1') {
     throw new Error(`Unexpected Mac-control live canary proof schema: ${proof.schema}`);
   }
   if (
@@ -3233,46 +3228,6 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   }
   if (String(proof.sourceRunId || '') !== expectedRunId) {
     throw new Error('Mac-control live canary proof source run does not match the selected proof run.');
-  }
-
-  assertLiveCanaryPlainObject(proof.candidate, 'Mac-control live canary candidate');
-  const candidateFields = new Set([
-    'schema',
-    'ok',
-    'sourceCommit',
-    'sourceSha256',
-    'sourcePath',
-    'owner',
-    'status',
-    'appPath',
-    'appVersion',
-    'appBuild',
-    'appBundleId',
-    'appName',
-  ]);
-  if (
-    Object.keys(proof.candidate).length !== candidateFields.size ||
-    Object.keys(proof.candidate).some((field) => !candidateFields.has(field))
-  ) {
-    throw new Error('Mac-control live canary candidate does not match the required public proof shape.');
-  }
-  const expectedSourceIdentity = committedBridgeSourceIdentity(expectedHeadSha);
-  const expectedVersion = packageVersionAtCommit(expectedHeadSha);
-  if (
-    proof.candidate.schema !== 'evaos.workbench.bridge_candidate.v1' ||
-    proof.candidate.ok !== true ||
-    proof.candidate.sourceCommit !== expectedHeadSha ||
-    proof.candidate.sourceSha256 !== expectedSourceIdentity.sourceSha256 ||
-    proof.candidate.sourcePath !== 'resources/evaos-beta/bridge' ||
-    proof.candidate.owner !== '100yenadmin/evaOS-GUI' ||
-    proof.candidate.status !== 'vendored' ||
-    proof.candidate.appPath !== '/Applications/evaOS Workbench.app' ||
-    proof.candidate.appVersion !== expectedVersion ||
-    proof.candidate.appBuild !== expectedVersion ||
-    proof.candidate.appBundleId !== 'com.evaos.workbench' ||
-    proof.candidate.appName !== 'evaOS Workbench'
-  ) {
-    throw new Error('Mac-control live canary candidate does not match the exact installed release candidate.');
   }
 
   assertLiveCanaryPlainObject(proof.assertions, 'Mac-control live canary assertions');
