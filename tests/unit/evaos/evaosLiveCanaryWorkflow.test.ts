@@ -175,16 +175,35 @@ describe('evaOS live canary proof workflow', () => {
 
       for (const unsafe of [
         { Cookie: 'opaque-cookie-value-123456' },
+        { AuthorizationHeader: 'opaque-auth-value-123456' },
         { Authorization: 'opaque-auth-value-123456' },
+        { cookie_value: 'opaque-cookie-value-123456' },
         { context_signature: 'opaque-signature-value-123456' },
+        { receipt_signature_value: 'opaque-signature-value-123456' },
         { receipt_base64: 'opaque-receipt-value-123456' },
         { connector_token: 'opaque-token-value-123456' },
+        { connector_token_value: 'opaque-token-value-123456' },
+        { providerCredentialsBundle: 'opaque-credential-value-123456' },
+        { password_hint: 'opaque-password-value-123456' },
         { receiptPrivateKeyPath: '/safe-looking/path' },
+        { privateSigningKey: 'opaque-key-value-123456' },
+        { connectorKeyMaterial: 'opaque-key-material-value-123456' },
         { note: '-----BEGIN OPENSSH PRIVATE KEY-----' },
       ]) {
         fs.writeFileSync(path.join(proofDir, 'mac-control-runtime.json'), `${JSON.stringify(unsafe)}\n`);
         expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/forbidden/i);
       }
+
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-runtime.json'),
+        `${JSON.stringify({
+          bindingRef: 'a'.repeat(64),
+          sessionRef: 'b'.repeat(64),
+          auditRef: 'c'.repeat(64),
+          receiptKeyId: 'public-receipt-key-id',
+        })}\n`
+      );
+      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 2 });
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
     }

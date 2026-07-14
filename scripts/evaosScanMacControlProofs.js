@@ -40,6 +40,22 @@ const FORBIDDEN_NORMALIZED_FIELDS = new Set([
 ]);
 const FORBIDDEN_VALUE =
   /\beds_[A-Za-z0-9_-]{8,}\b|\bBearer\s+|\beyJ[A-Za-z0-9_-]{8,}\.|https?:\/\/|[?&]session=|\S+@\S+|-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|SSH SIGNATURE)-----/i;
+const FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS = Object.freeze([
+  'authorization',
+  'cookie',
+  'signature',
+  'token',
+  'credential',
+  'password',
+  'secret',
+  'keymaterial',
+  'receiptbase64',
+  'contextpayload',
+  'executioncontext',
+  'connectorurl',
+  'desktopsession',
+  'launchurl',
+]);
 
 function normalizedProofFieldName(value) {
   return String(value || '')
@@ -60,8 +76,8 @@ function assertMacControlProofSanitized(value, location = '$') {
     const normalizedKey = normalizedProofFieldName(key);
     if (
       FORBIDDEN_NORMALIZED_FIELDS.has(normalizedKey) ||
-      normalizedKey.includes('privatekey') ||
-      normalizedKey.includes('keymaterial')
+      FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment)) ||
+      /private.*key/.test(normalizedKey)
     ) {
       throw new Error(`Mac-control proof contains forbidden field ${key} at ${location}.`);
     }
