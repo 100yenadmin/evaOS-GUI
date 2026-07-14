@@ -843,7 +843,7 @@ function shellSingleQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode) {
+function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode, bashPath) {
   const auditRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-canary-verifier-audit-'));
   const binDir = path.join(auditRoot, 'bin');
   const stateDir = path.join(auditRoot, 'state');
@@ -919,12 +919,9 @@ function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode) {
       'exit 1',
     ]);
 
-    const bashPath = ['/opt/homebrew/bin/bash', '/usr/local/bin/bash', '/bin/bash'].find((candidate) =>
-      fs.existsSync(candidate)
-    );
     let succeeded = false;
     try {
-      execFileSync(bashPath || '/bin/bash', [verifierPath], {
+      execFileSync(bashPath, [verifierPath], {
         cwd: auditRoot,
         env: {
           PATH: `${binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
@@ -978,6 +975,24 @@ function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode) {
 
 const liveCanaryVerifierBehaviorCache = new Map();
 
+function resolveLiveCanaryVerifierAuditBash(
+  candidates = ['/opt/homebrew/bin/bash', '/usr/local/bin/bash', '/bin/bash']
+) {
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      execFileSync(candidate, ['-c', '(( BASH_VERSINFO[0] >= 4 ))'], {
+        stdio: ['ignore', 'ignore', 'ignore'],
+        timeout: 2_000,
+      });
+      return candidate;
+    } catch {
+      // Keep looking: the verifier uses mapfile, which Apple Bash 3.2 does not provide.
+    }
+  }
+  return '';
+}
+
 function collectLiveCanaryVerifierBehaviorIssues(rootDir = process.cwd()) {
   const issue =
     'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier';
@@ -987,6 +1002,8 @@ function collectLiveCanaryVerifierBehaviorIssues(rootDir = process.cwd()) {
   const verifierSha256 = createHash('sha256').update(verifierSource).digest('hex');
   if (verifierSha256 !== LIVE_CANARY_VERIFIER_SHA256) return [issue];
   if (process.platform === 'win32') return [];
+  const bashPath = resolveLiveCanaryVerifierAuditBash();
+  if (!bashPath) return [];
 
   const cacheKey = `${process.platform}:${verifierSha256}`;
   if (liveCanaryVerifierBehaviorCache.has(cacheKey)) {
@@ -999,7 +1016,7 @@ function collectLiveCanaryVerifierBehaviorIssues(rootDir = process.cwd()) {
     'invalid-workflow',
     'invalid-head',
     'final-verifier-failure',
-  ].every((mode) => runLiveCanaryVerifierBehaviorProbe(verifierPath, mode));
+  ].every((mode) => runLiveCanaryVerifierBehaviorProbe(verifierPath, mode, bashPath));
   liveCanaryVerifierBehaviorCache.set(cacheKey, passed);
   return passed ? [] : [issue];
 }
@@ -3325,6 +3342,7 @@ module.exports = {
   collectPublicationWorkflowIssues,
   collectReleaseDistributeWorkflowIssues,
   collectLiveCanaryVerifierBehaviorIssues,
+  resolveLiveCanaryVerifierAuditBash,
   collectReleaseConfigIssues,
   createReleaseManifest,
   getEnvValue,

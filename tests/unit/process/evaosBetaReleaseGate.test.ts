@@ -21,6 +21,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   }) => string[];
   collectReleaseDistributeWorkflowIssues: (workflow: string) => string[];
   collectLiveCanaryVerifierBehaviorIssues: (rootDir: string) => string[];
+  resolveLiveCanaryVerifierAuditBash: (candidates?: string[]) => string;
   collectReleaseConfigIssues: (rootDir: string) => string[];
   createReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => unknown;
   isLocalSignedDmgFallbackManifest: (manifest: unknown) => boolean;
@@ -1754,6 +1755,21 @@ describe('evaOS beta release gate', () => {
       expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(fixtureRoot)).toContain(
         'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier'
       );
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the live-canary behavior probe only with Bash 4 or newer', () => {
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-canary-bash-version-'));
+    try {
+      const bash3 = path.join(fixtureRoot, 'bash3');
+      const bash5 = path.join(fixtureRoot, 'bash5');
+      fs.writeFileSync(bash3, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+      fs.writeFileSync(bash5, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+
+      expect(releaseGate.resolveLiveCanaryVerifierAuditBash([bash3, bash5])).toBe(bash5);
+      expect(releaseGate.resolveLiveCanaryVerifierAuditBash([bash3])).toBe('');
     } finally {
       fs.rmSync(fixtureRoot, { recursive: true, force: true });
     }
