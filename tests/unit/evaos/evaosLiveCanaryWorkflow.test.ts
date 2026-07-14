@@ -39,6 +39,46 @@ function validMacControlRuntimeProof(): Record<string, unknown> {
   };
 }
 
+function writeCompleteMacControlProofSet(proofDir: string): void {
+  const provision = {
+    schema: 'evaos-mac-control-canary-session-provision/v1',
+    accountConfigured: true,
+    customerConfigured: true,
+    activeMembershipVerified: true,
+    stagingMarkerVerified: true,
+    sessionMinted: true,
+    sessionExpiryPresent: true,
+    sensitiveOutput: 'passed',
+  };
+  const cleanup = {
+    schema: 'evaos-mac-control-canary-session-cleanup/v1',
+    sessionRevoked: true,
+    sensitiveOutput: 'passed',
+  };
+  const negative = {
+    schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
+    sourceHeadSha: 'd'.repeat(40),
+    sourceRunId: '12345',
+    assertions: {
+      forgedContextRejected: true,
+      expiredContextRejected: true,
+      replayRejected: true,
+      authorityRedacted: true,
+    },
+  };
+  const proofs = {
+    'mac-control-runtime.json': validMacControlRuntimeProof(),
+    'mac-control-runtime-negative.json': negative,
+    'mac-control-session-provisioning.json': provision,
+    'mac-control-session-provisioning.stdout.json': provision,
+    'mac-control-session-cleanup.json': cleanup,
+    'mac-control-session-cleanup.stdout.json': cleanup,
+  };
+  for (const [name, proof] of Object.entries(proofs)) {
+    fs.writeFileSync(path.join(proofDir, name), `${JSON.stringify(proof)}\n`);
+  }
+}
+
 describe('evaOS live canary proof workflow', () => {
   it('is a manual staging proof workflow with explicit acknowledgement', () => {
     const workflow = readWorkflow();
@@ -196,7 +236,10 @@ describe('evaOS live canary proof workflow', () => {
           sensitiveOutput: 'passed',
         })}\n`
       );
-      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 1 });
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/missing required artifact/i);
+
+      writeCompleteMacControlProofSet(proofDir);
+      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 6 });
 
       for (const unsafe of [
         { Cookie: 'opaque-cookie-value-123456' },
@@ -233,7 +276,7 @@ describe('evaOS live canary proof workflow', () => {
         path.join(proofDir, 'mac-control-runtime.json'),
         `${JSON.stringify(validMacControlRuntimeProof())}\n`
       );
-      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 2 });
+      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 6 });
       expect(() =>
         proofScanner.assertMacControlProofSanitized({
           keyId: 'public-key-id',

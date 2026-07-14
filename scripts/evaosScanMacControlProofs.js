@@ -186,7 +186,9 @@ function scanMacControlProofDirectory(proofDir) {
   let scanned = 0;
   for (const proofName of MAC_CONTROL_PROOF_NAMES) {
     const proofPath = path.join(resolvedProofDir, proofName);
-    if (!fs.existsSync(proofPath)) continue;
+    if (!fs.existsSync(proofPath)) {
+      throw new Error(`Mac-control proof is missing required artifact ${proofName}.`);
+    }
     const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
     assertMacControlProofSanitized(proof, proofName);
     const contract = MAC_CONTROL_PROOF_CONTRACTS[proofName];
@@ -196,13 +198,7 @@ function scanMacControlProofDirectory(proofDir) {
     assertExactProofContract(proof, contract, proofName);
     scanned += 1;
   }
-  if (scanned === 0) {
-    throw new Error('Mac-control secret/redaction scan found no proof artifacts.');
-  }
   const cleanupPath = path.join(resolvedProofDir, 'mac-control-session-cleanup.json');
-  if (!fs.existsSync(cleanupPath)) {
-    throw new Error('Mac-control proof is missing sanitized cleanup evidence.');
-  }
   const cleanupProof = JSON.parse(fs.readFileSync(cleanupPath, 'utf8'));
   if (
     cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1' ||
