@@ -1,0 +1,1541 @@
+import { execFile } from 'node:child_process';
+import { createHmac, randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
+const fsCompat = fs;
+const FIXED_COMMANDS = {
+  status: ['status', '--json'],
+  capabilities: ['capabilities', '--json'],
+  latest: ['latest', '--json'],
+  codexFrontmost: ['codex', 'frontmost', '--json'],
+  codexWindows: ['codex', 'windows', '--json'],
+  codexConnectionsStatus: ['codex', 'connections', 'status', '--json'],
+  codexAppServerStatus: ['codex', 'app-server', 'status', '--json'],
+  codexAppServerRemoteControlStatus: ['codex', 'app-server', 'remote-control-status', '--json'],
+  customerMacStatus: ['customer-mac', 'status', '--json'],
+  customerMacCapabilities: ['customer-mac', 'capabilities', '--json'],
+  customerMacControlStatus: ['customer-mac', 'control', 'status', '--json'],
+  customerMacControlStop: ['customer-mac', 'control', 'stop', '--json'],
+  customerMacControlKillSwitch: ['customer-mac', 'control', 'kill-switch', '--json'],
+  customerMacIphoneMirroringStatus: ['customer-mac', 'iphone-mirroring', 'status', '--json'],
+  customerMacScreenSharingStatus: ['customer-mac', 'screen-sharing', 'status', '--json'],
+};
+const CUSTOMER_MAC_REMOTE_COMMANDS = new Set([
+  'customerMacStatus',
+  'customerMacCapabilities',
+  'customerMacControlStatus',
+  'customerMacControlStart',
+  'customerMacControlStop',
+  'customerMacControlKillSwitch',
+  'desktopSee',
+  'desktopClick',
+  'desktopType',
+  'desktopSetValue',
+  'desktopScroll',
+  'desktopDrag',
+  'desktopHotkey',
+  'desktopFocusApp',
+  'desktopWindow',
+  'desktopMenu',
+  'desktopBrowserAction',
+  'customerMacSnapshot',
+  'customerMacAxTree',
+  'customerMacAppFocus',
+  'customerMacLocalSiteOpen',
+  'customerMacLocalSiteAction',
+  'customerMacIphoneMirroringStatus',
+  'iphoneSee',
+  'iphoneTap',
+  'iphoneSwipe',
+  'iphoneType',
+  'customerMacIphoneMirroringFocus',
+  'customerMacIphoneMirroringHome',
+  'customerMacIphoneMirroringAppSwitcher',
+  'customerMacIphoneMirroringSpotlight',
+  'customerMacIphoneMirroringTypeSpotlight',
+  'customerMacIphoneMirroringOpenApp',
+  'customerMacIphoneMirroringTapNamedTarget',
+  'customerMacIphoneMirroringScroll',
+  'customerMacIphoneMirroringSwipeLeft',
+  'customerMacIphoneMirroringSwipeRight',
+  'customerMacIphoneMirroringSwipeUp',
+  'customerMacIphoneMirroringSwipeDown',
+  'customerMacIphoneMirroringTypeApprovedText',
+  'customerMacIphoneMirroringSendApprovedMessage',
+  'customerMacScreenSharingStatus',
+]);
+export function buildBridgeArgv(command, params = {}) {
+  if (command in FIXED_COMMANDS) {
+    return FIXED_COMMANDS[command];
+  }
+  if (command === 'auditTail') {
+    return ['audit-tail', '--json', '--limit', String(clampInt(params.limit, 20, 1, 100))];
+  }
+  if (command === 'queueList') {
+    return ['queue', 'list', '--json', '--limit', String(clampInt(params.limit, 20, 1, 100))];
+  }
+  if (command === 'queueAppend') {
+    return [
+      'queue',
+      'append',
+      '--json',
+      '--kind',
+      requiredString(params.kind, 'kind'),
+      '--source-audit-id',
+      requiredString(params.source_audit_id, 'source_audit_id'),
+      ...(params.message ? ['--message', String(params.message)] : []),
+    ];
+  }
+  if (command === 'codexThreads') {
+    return ['codex', 'threads', '--json', '--max-items', String(clampInt(params.max_items, 50, 1, 200))];
+  }
+  if (command === 'codexThreadMap') {
+    return ['codex', 'thread-map', '--json', '--max-items', String(clampInt(params.max_items, 50, 1, 200))];
+  }
+  if (command === 'codexSelectThread') {
+    return [
+      'codex',
+      'select-thread',
+      '--json',
+      '--thread-id',
+      requiredString(params.thread_id, 'thread_id'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'codexContinueThread') {
+    return [
+      'codex',
+      'continue-thread',
+      '--json',
+      '--title',
+      requiredString(params.title, 'title'),
+      '--prompt',
+      String(params.prompt || 'continue'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'codexSendVisibleMessage') {
+    const messageFile =
+      typeof params.message_file === 'string' && params.message_file.trim() !== ''
+        ? params.message_file.trim()
+        : undefined;
+    return [
+      'codex',
+      'send-visible-message',
+      '--json',
+      '--thread-id',
+      requiredString(params.thread_id, 'thread_id'),
+      ...(messageFile ? ['--message-file', messageFile] : ['--message', requiredString(params.message, 'message')]),
+      ...(params.dry_run !== false ? ['--dry-run'] : ['--live']),
+      ...(params.confirm === true ? ['--confirm'] : []),
+      ...guardedApprovalArg(params),
+      ...(params.wait_ms !== undefined ? ['--wait-ms', String(clampInt(params.wait_ms, 0, 0, 120000))] : []),
+      ...(params.poll_interval_ms !== undefined
+        ? ['--poll-interval-ms', String(clampInt(params.poll_interval_ms, 2000, 250, 10000))]
+        : []),
+    ];
+  }
+  if (command === 'codexSnapshot') {
+    return ['codex', 'snapshot', '--json', '--max-chars', String(clampInt(params.max_chars, 4000, 1, 20000))];
+  }
+  if (command === 'codexInspect') {
+    return ['codex', 'inspect', '--json', '--max-nodes', String(clampInt(params.max_nodes, 120, 1, 1000))];
+  }
+  if (command === 'codexAxTree') {
+    return ['codex', 'ax-tree', '--json', '--max-nodes', String(clampInt(params.max_nodes, 200, 1, 1000))];
+  }
+  if (command === 'codexAppServerThreads') {
+    return ['codex', 'app-server', 'threads', '--json', '--max-items', String(clampInt(params.max_items, 50, 1, 200))];
+  }
+  if (command === 'codexAppServerLoadedThreads') {
+    return [
+      'codex',
+      'app-server',
+      'loaded-threads',
+      '--json',
+      '--max-items',
+      String(clampInt(params.max_items, 50, 1, 200)),
+    ];
+  }
+  if (command === 'codexLiveStatus') {
+    return [
+      'codex',
+      'app-server',
+      'subscribe',
+      '--json',
+      '--thread-id',
+      requiredString(params.thread_id, 'thread_id'),
+      '--duration-ms',
+      String(clampInt(params.duration_ms, 1000, 1, 30000)),
+    ];
+  }
+  if (command === 'customerMacSnapshot') {
+    return ['customer-mac', 'snapshot', '--json', '--max-chars', String(clampInt(params.max_chars, 4000, 1, 20000))];
+  }
+  if (command === 'customerMacAxTree') {
+    return ['customer-mac', 'ax-tree', '--json', '--max-nodes', String(clampInt(params.max_nodes, 200, 1, 1000))];
+  }
+  if (command === 'customerMacControlStart') {
+    return [
+      'customer-mac',
+      'control',
+      'start',
+      '--json',
+      '--mode',
+      String(params.mode || 'full-access'),
+      ...(params.agent_label ? ['--agent-label', String(params.agent_label)] : []),
+    ];
+  }
+  if (command === 'desktopSee') {
+    return [
+      'customer-mac',
+      'desktop',
+      'see',
+      '--json',
+      '--max-chars',
+      String(clampInt(params.max_chars, 4000, 1, 20000)),
+      '--max-nodes',
+      String(clampInt(params.max_nodes, 200, 1, 1000)),
+    ];
+  }
+  if (command === 'desktopClick') {
+    return [
+      'customer-mac',
+      'desktop',
+      'click',
+      '--json',
+      ...optionalStringArg(params.snapshot_id, '--snapshot-id'),
+      ...optionalStringArg(params.element_id, '--element-id'),
+      ...optionalStringArg(params.target_label, '--target-label'),
+      ...optionalNumberArg(params.x, '--x'),
+      ...optionalNumberArg(params.y, '--y'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopType') {
+    return [
+      'customer-mac',
+      'desktop',
+      'type',
+      '--json',
+      '--text',
+      requiredString(params.text, 'text'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopSetValue') {
+    const valueFile =
+      typeof params.value_file === 'string' && params.value_file.trim() !== '' ? params.value_file.trim() : undefined;
+    if (!valueFile) {
+      throw new Error('desktopSetValue value must be materialized before building CLI argv.');
+    }
+    return [
+      'customer-mac',
+      'desktop',
+      'set-value',
+      '--json',
+      '--snapshot-id',
+      requiredString(params.snapshot_id, 'snapshot_id'),
+      '--element-id',
+      requiredString(params.element_id, 'element_id'),
+      '--value-file',
+      valueFile,
+      '--attribute',
+      String(params.attribute || 'value'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopScroll') {
+    return [
+      'customer-mac',
+      'desktop',
+      'scroll',
+      '--json',
+      '--direction',
+      String(params.direction || 'down'),
+      '--amount',
+      String(clampInt(params.amount, 600, 1, 5000)),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopDrag') {
+    return [
+      'customer-mac',
+      'desktop',
+      'drag',
+      '--json',
+      '--from-x',
+      requiredNumberString(params.from_x, 'from_x'),
+      '--from-y',
+      requiredNumberString(params.from_y, 'from_y'),
+      '--to-x',
+      requiredNumberString(params.to_x, 'to_x'),
+      '--to-y',
+      requiredNumberString(params.to_y, 'to_y'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopHotkey') {
+    return [
+      'customer-mac',
+      'desktop',
+      'hotkey',
+      '--json',
+      '--keys',
+      requiredString(params.keys, 'keys'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopFocusApp') {
+    return [
+      'customer-mac',
+      'desktop',
+      'focus-app',
+      '--json',
+      '--app-name',
+      requiredString(params.app_name, 'app_name'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopWindow') {
+    return [
+      'customer-mac',
+      'desktop',
+      'window',
+      '--json',
+      '--action',
+      requiredString(params.action, 'action'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopMenu') {
+    return [
+      'customer-mac',
+      'desktop',
+      'menu',
+      '--json',
+      '--menu-path',
+      requiredString(params.menu_path, 'menu_path'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'desktopBrowserAction') {
+    return [
+      'customer-mac',
+      'desktop',
+      'browser-action',
+      '--json',
+      '--action',
+      requiredString(params.action, 'action'),
+      ...optionalStringArg(params.url, '--url'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacAppFocus') {
+    return [
+      'customer-mac',
+      'app-focus',
+      '--json',
+      '--app-name',
+      requiredString(params.app_name, 'app_name'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacLocalSiteOpen') {
+    return [
+      'customer-mac',
+      'local-site',
+      'open',
+      '--json',
+      '--url',
+      requiredString(params.url, 'url'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacLocalSiteAction') {
+    return [
+      'customer-mac',
+      'local-site',
+      'action',
+      '--json',
+      '--action',
+      requiredString(params.action, 'action'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'iphoneSee') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'see',
+      '--json',
+      '--max-chars',
+      String(clampInt(params.max_chars, 4000, 1, 20000)),
+      '--max-nodes',
+      String(clampInt(params.max_nodes, 200, 1, 1000)),
+    ];
+  }
+  if (command === 'iphoneTap') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'tap',
+      '--json',
+      ...optionalStringArg(params.snapshot_id, '--snapshot-id'),
+      ...optionalStringArg(params.element_id, '--element-id'),
+      ...optionalStringArg(params.target_label, '--target-label'),
+      ...optionalNumberArg(params.x, '--x'),
+      ...optionalNumberArg(params.y, '--y'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'iphoneSwipe') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'swipe',
+      '--json',
+      '--direction',
+      requiredString(params.direction, 'direction'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'iphoneType') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'type',
+      '--json',
+      '--text',
+      requiredString(params.text, 'text'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringFocus') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'focus',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringHome') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'home',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringAppSwitcher') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'app-switcher',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringSpotlight') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'spotlight',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringTypeSpotlight') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'type-spotlight',
+      '--json',
+      '--text',
+      requiredString(params.text, 'text'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringOpenApp') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'open-app',
+      '--json',
+      '--app-name',
+      requiredString(params.app_name, 'app_name'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringTapNamedTarget') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'tap-named-target',
+      '--json',
+      '--target-label',
+      requiredString(params.target_label, 'target_label'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringScroll') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'scroll',
+      '--json',
+      '--direction',
+      String(params.direction || 'down'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringSwipeLeft') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'swipe-left',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringSwipeRight') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'swipe-right',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringSwipeUp') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'swipe-up',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringSwipeDown') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'swipe-down',
+      '--json',
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringTypeApprovedText') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'type-approved-text',
+      '--json',
+      '--text',
+      requiredString(params.text, 'text'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  if (command === 'customerMacIphoneMirroringSendApprovedMessage') {
+    return [
+      'customer-mac',
+      'iphone-mirroring',
+      'send-approved-message',
+      '--json',
+      '--text',
+      requiredString(params.text, 'text'),
+      '--recipient-context',
+      requiredString(params.recipient_context, 'recipient_context'),
+      '--target-label',
+      String(params.target_label || 'Send'),
+      ...(params.dry_run !== false ? ['--dry-run'] : []),
+      ...guardedApprovalArg(params),
+    ];
+  }
+  throw new Error(`Unsupported bridge command key: ${String(command)}`);
+}
+function approvalArg(params) {
+  if (typeof params.approval_audit_id !== 'string' || params.approval_audit_id.trim() === '') {
+    return [];
+  }
+  return ['--approval-audit-id', params.approval_audit_id.trim()];
+}
+function guardedApprovalArg(params) {
+  if (params.dry_run !== false) {
+    return [];
+  }
+  return approvalArg(params);
+}
+function requiredString(value, name) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+}
+function requiredNumberString(value, name) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${name} is required`);
+  }
+  return String(Math.trunc(value));
+}
+function optionalNumberArg(value, flag) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return [];
+  }
+  return [flag, String(Math.trunc(value))];
+}
+function optionalStringArg(value, flag) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return [];
+  }
+  return [flag, value.trim()];
+}
+export async function runBridge(command, params = {}) {
+  if (String(command) === 'customerMacCompletePairing') {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'legacy_pairing_removed',
+          message: 'Legacy pairing-code enrollment is unavailable.',
+          guidance: 'Launch the selected customer runtime from evaOS Workbench.',
+        },
+      ],
+    };
+  }
+  if (command === 'evaosProviderProfiles') {
+    return await providerProfilesPayload();
+  }
+  if (command === 'evaosProviderActiveProfile') {
+    return await providerActiveProfilePayload();
+  }
+  if (command === 'evaosProviderCompleteAuth') {
+    return await providerCompleteAuthPayload(params);
+  }
+  if (command === 'evaosSharedBrowserGuidance') {
+    return sharedBrowserGuidancePayload();
+  }
+  loadDesktopBridgeEnvFile();
+  const remoteURL = process.env.EVAOS_DESKTOP_BRIDGE_URL?.trim();
+  const remoteToken = process.env.EVAOS_DESKTOP_BRIDGE_TOKEN?.trim();
+  if (isCustomerMacRemoteCommand(command)) {
+    const missing = missingRemoteConnectorMaterial(remoteURL, remoteToken);
+    if (missing.length > 0) {
+      return customerMacConnectorMaterialMissing(command, missing);
+    }
+  }
+  if (remoteURL) {
+    return runRemoteBridge(remoteURL, command, params);
+  }
+  return withLocalMessagePayload(command, params, async (safeParams) => {
+    const bin = process.env.EVAOS_DESKTOP_BRIDGE_BIN || 'evaos-desktop-bridge';
+    const argv = buildBridgeArgv(command, safeParams);
+    try {
+      const { stdout } = await execFileAsync(bin, argv, {
+        shell: false,
+        timeout: timeoutForCommand(command),
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      return materializeVisualEvidence(command, JSON.parse(stdout));
+    } catch (error) {
+      const err = error;
+      if (err.stdout) {
+        try {
+          return JSON.parse(err.stdout);
+        } catch {
+          // Fall through to structured wrapper below.
+        }
+      }
+      return {
+        ok: false,
+        errors: [
+          {
+            code: 'bridge_cli_failed',
+            message: safeBridgeErrorMessage(command, err.message),
+            guidance: 'Install evaos-desktop-bridge locally and set EVAOS_DESKTOP_BRIDGE_BIN if it is not on PATH.',
+          },
+        ],
+      };
+    }
+  });
+}
+function isCustomerMacRemoteCommand(command) {
+  return CUSTOMER_MAC_REMOTE_COMMANDS.has(command);
+}
+function missingRemoteConnectorMaterial(remoteURL, remoteToken) {
+  const missing = [];
+  if (!remoteURL) {
+    missing.push('EVAOS_DESKTOP_BRIDGE_URL');
+  }
+  if (!remoteToken) {
+    missing.push('EVAOS_DESKTOP_BRIDGE_TOKEN');
+  }
+  return missing;
+}
+function customerMacConnectorMaterialMissing(command, missing) {
+  return {
+    ok: false,
+    errors: [
+      {
+        code: 'mac_connector_material_missing',
+        message: 'Customer Mac tools require broker/session-provided remote connector material.',
+        guidance:
+          'Launch the runtime from Workbench for the selected customer so the brokered connector contract is present before using customer Mac tools.',
+        details: {
+          command,
+          missing,
+          required: ['EVAOS_DESKTOP_BRIDGE_URL', 'EVAOS_DESKTOP_BRIDGE_TOKEN'],
+          route: '/v1/commands',
+          env_file: displayDesktopBridgeEnvPath(desktopBridgeEnvPath()),
+          local_fallback: false,
+        },
+      },
+    ],
+  };
+}
+async function withLocalMessagePayload(command, params, callback) {
+  const isCodexMessage = command === 'codexSendVisibleMessage' && typeof params.message === 'string';
+  const isDesktopSetValue = command === 'desktopSetValue' && typeof params.value === 'string';
+  if (!isCodexMessage && !isDesktopSetValue) {
+    return callback(params);
+  }
+  const dir = fsCompat.mkdtempSync(
+    path.join(
+      process.env.TMPDIR || '/tmp',
+      isCodexMessage ? 'evaos-codex-visible-message-' : 'evaos-desktop-set-value-'
+    )
+  );
+  const payloadFile = path.join(dir, isCodexMessage ? 'message.txt' : 'value.txt');
+  try {
+    await writeFile(payloadFile, isCodexMessage ? String(params.message) : String(params.value), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    try {
+      fsCompat.chmodSync(payloadFile, 0o600);
+    } catch {
+      // Best-effort on platforms that do not support chmod.
+    }
+    const safeParams = isCodexMessage
+      ? { ...params, message: undefined, message_file: payloadFile }
+      : { ...params, value: undefined, value_file: payloadFile };
+    return await callback(safeParams);
+  } finally {
+    try {
+      fsCompat.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup; the file is 0600 and contains only the approved message.
+    }
+  }
+}
+function safeBridgeErrorMessage(command, message) {
+  if (command === 'codexSendVisibleMessage') {
+    return 'evaos-desktop-bridge guarded Codex visible message command failed';
+  }
+  return message || 'evaos-desktop-bridge command failed';
+}
+async function providerProfilesPayload() {
+  const brokerProfile = await providerAgentDiscoveryPayload('openclaw');
+  if (brokerProfile) {
+    return brokerProfile.profilesPayload;
+  }
+  const profilesPayload = readJSONEnv('EVAOS_PROVIDER_PROFILES_JSON');
+  const providerProfiles = Array.isArray(profilesPayload)
+    ? profilesPayload
+    : isRecord(profilesPayload) && Array.isArray(profilesPayload.provider_profiles)
+      ? profilesPayload.provider_profiles
+      : [];
+  const grantsPayload = readJSONEnv('EVAOS_PROVIDER_GRANTS_JSON');
+  return redactConnectorSecrets({
+    ok: true,
+    data: {
+      customer_id: process.env.EVAOS_CUSTOMER_ID || null,
+      provider_profiles: providerProfiles,
+      provider_grants: grantsPayload || null,
+      active_provider_key:
+        process.env.EVAOS_ACTIVE_PROVIDER_KEY ||
+        (isRecord(profilesPayload) && typeof profilesPayload.active_provider_key === 'string'
+          ? profilesPayload.active_provider_key
+          : null),
+      raw_secrets_available: false,
+      raw_secrets_stored_in_workbench: false,
+    },
+    warnings: providerProfiles.length === 0 ? ['Provider profiles are not configured on this VM yet.'] : [],
+  });
+}
+async function providerCompleteAuthPayload(params) {
+  const endpoint = providerDiscoveryEndpoint();
+  const customerID = process.env.EVAOS_CUSTOMER_ID?.trim();
+  const proofSecret =
+    process.env.EVAOS_PROVIDER_AUTH_PROOF_SECRET?.trim() || process.env.EVAOS_PROVIDER_PROOF_SECRET?.trim();
+  const identity = requiredProviderIdentity(params.identity);
+  const scopes = normalizeProviderScopes(params.scopes);
+  const expiresAt = normalizeProviderProofExpiry(params.expires_at);
+  const serverSecretRef = normalizeServerSecretRef(params.server_secret_ref, customerID);
+  if (!endpoint || !customerID || !proofSecret || !identity || !serverSecretRef) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'provider_auth_proof_not_configured',
+          message:
+            'Provider auth proof completion requires broker endpoint, customer id, proof secret, identity, and server secret reference.',
+          guidance:
+            'Set EVAOS_PROVIDER_DISCOVERY_URL, EVAOS_CUSTOMER_ID, EVAOS_PROVIDER_AUTH_PROOF_SECRET, EVAOS_PROVIDER_AUTH_IDENTITY, and EVAOS_PROVIDER_SERVER_SECRET_REF on the VM.',
+        },
+      ],
+    };
+  }
+  const providerKey = 'openai_codex';
+  const proofID = providerProofID();
+  const proofPayload = {
+    customer_id: customerID,
+    provider_key: providerKey,
+    purpose: 'provider_auth_complete',
+    agent_runtime: 'openclaw',
+    proof_id: proofID,
+    identity,
+    scopes,
+    expires_at: expiresAt,
+    server_secret_ref: serverSecretRef,
+  };
+  const signature = createHmac('sha256', proofSecret).update(JSON.stringify(proofPayload)).digest('hex');
+  const requestBody = {
+    action: 'provider_auth_complete',
+    customer_id: customerID,
+    provider_key: providerKey,
+    agent_runtime: 'openclaw',
+    provider_auth_proof: {
+      purpose: 'provider_auth_complete',
+      agent_runtime: 'openclaw',
+      proof_id: proofID,
+      identity,
+      scopes,
+      expires_at: expiresAt,
+      server_secret_ref: serverSecretRef,
+      signature,
+    },
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Evaos-Provider-Proof': 'signed-v1',
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      return {
+        ok: false,
+        errors: [
+          {
+            code: 'provider_auth_complete_failed',
+            message:
+              isRecord(payload) && typeof payload.error === 'string'
+                ? payload.error
+                : `Provider auth completion failed with HTTP ${response.status}.`,
+          },
+        ],
+      };
+    }
+    const cachedGrant = await cacheProviderGrantFromBroker('openclaw', providerKey, payload);
+    return redactConnectorSecrets({
+      ok: true,
+      data: {
+        connected: isRecord(payload) ? payload.connected === true || payload.status === 'connected' : true,
+        provider_key: providerKey,
+        grant_cached: cachedGrant,
+        response: payload,
+        raw_provider_token_returned: false,
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'provider_auth_complete_unreachable',
+          message: error instanceof Error ? error.message : 'Provider auth completion broker was unreachable.',
+        },
+      ],
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function providerActiveProfilePayload() {
+  const brokerProfile = await providerAgentDiscoveryPayload('openclaw');
+  if (brokerProfile) {
+    return brokerProfile.activePayload;
+  }
+  const profiles = await providerProfilesPayload();
+  const data = isRecord(profiles.data) ? profiles.data : {};
+  const providerProfiles = Array.isArray(data.provider_profiles) ? data.provider_profiles : [];
+  const activeProviderKey = typeof data.active_provider_key === 'string' ? data.active_provider_key : null;
+  const activeProfile =
+    providerProfiles.find((profile) => isRecord(profile) && profile.provider_key === activeProviderKey) ?? null;
+  const providerGrants = isRecord(data.provider_grants) ? data.provider_grants : {};
+  const openClawGrant = isRecord(providerGrants.openclaw) ? providerGrants.openclaw : null;
+  const hasConnectionProof =
+    isRecord(activeProfile) &&
+    activeProfile.status === 'connected' &&
+    typeof activeProfile.last_validated_at === 'string' &&
+    Boolean(openClawGrant && typeof openClawGrant.grant_handle === 'string');
+  return redactConnectorSecrets({
+    ok: true,
+    data: {
+      customer_id: process.env.EVAOS_CUSTOMER_ID || null,
+      active_provider_key: activeProviderKey,
+      active_profile: activeProfile,
+      needs_reauth: !hasConnectionProof,
+      raw_secrets_available: false,
+    },
+    warnings: hasConnectionProof
+      ? []
+      : [
+          'No verified active provider grant is available. Ask the customer to connect or re-auth the provider in evaOS Workbench.',
+        ],
+  });
+}
+function requiredProviderIdentity(value) {
+  const fromParam = typeof value === 'string' ? value.trim() : '';
+  if (fromParam) return fromParam;
+  const fromEnv = process.env.EVAOS_PROVIDER_AUTH_IDENTITY?.trim() || process.env.EVAOS_PROVIDER_IDENTITY?.trim() || '';
+  return fromEnv || null;
+}
+function normalizeProviderScopes(value) {
+  const scopes = Array.isArray(value) ? value.map((scope) => String(scope).trim()).filter(Boolean) : [];
+  if (scopes.length > 0) return [...new Set(scopes)];
+  const fromEnv =
+    process.env.EVAOS_PROVIDER_AUTH_SCOPES?.split(',')
+      .map((scope) => scope.trim())
+      .filter(Boolean) ?? [];
+  return fromEnv.length > 0 ? [...new Set(fromEnv)] : ['codex', 'offline_access'];
+}
+function normalizeProviderProofExpiry(value) {
+  const candidate = typeof value === 'string' ? value.trim() : process.env.EVAOS_PROVIDER_AUTH_EXPIRES_AT?.trim() || '';
+  if (candidate && Number.isFinite(Date.parse(candidate)) && Date.parse(candidate) > Date.now()) {
+    return new Date(candidate).toISOString();
+  }
+  return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+}
+function normalizeServerSecretRef(value, customerID) {
+  const candidate =
+    typeof value === 'string' ? value.trim() : process.env.EVAOS_PROVIDER_SERVER_SECRET_REF?.trim() || '';
+  if (candidate.startsWith('provider://')) return candidate;
+  if (!customerID) return null;
+  return `provider://openai_codex/${encodeURIComponent(customerID)}/openclaw`;
+}
+function providerProofID() {
+  return `eap_${randomUUID().replace(/-/g, '')}`;
+}
+async function providerAgentDiscoveryPayload(agentRuntime) {
+  const endpoint = providerDiscoveryEndpoint();
+  const customerID = process.env.EVAOS_CUSTOMER_ID?.trim();
+  const grantHandle = providerGrantHandleFor(agentRuntime);
+  if (!endpoint || !customerID || !grantHandle) {
+    return null;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Evaos-Provider-Grant': grantHandle,
+      },
+      body: JSON.stringify({
+        action: 'provider_agent_discovery',
+        customer_id: customerID,
+        agent_runtime: agentRuntime,
+      }),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !isRecord(payload)) {
+      return null;
+    }
+    const activeProfile = isRecord(payload.provider_profile) ? payload.provider_profile : null;
+    const activeProviderKey = typeof payload.active_provider_key === 'string' ? payload.active_provider_key : null;
+    const providerProfiles = activeProfile ? [activeProfile] : [];
+    const grantStatus = typeof payload.grant_status === 'string' ? payload.grant_status : 'unknown';
+    const grantExpiresAt = typeof payload.grant_expires_at === 'string' ? payload.grant_expires_at : null;
+    return {
+      profilesPayload: redactConnectorSecrets({
+        ok: true,
+        data: {
+          customer_id: customerID,
+          provider_profiles: providerProfiles,
+          provider_grants: {
+            [agentRuntime]: {
+              grant_handle: grantHandle,
+              status: grantStatus,
+              expires_at: grantExpiresAt,
+            },
+          },
+          active_provider_key: activeProviderKey,
+          raw_secrets_available: false,
+          raw_secrets_stored_in_workbench: false,
+          raw_provider_token_returned: false,
+          source: 'broker',
+        },
+        warnings: providerProfiles.length === 0 ? ['No active provider profile is available from the broker.'] : [],
+      }),
+      activePayload: redactConnectorSecrets({
+        ok: true,
+        data: {
+          customer_id: customerID,
+          active_provider_key: activeProviderKey,
+          active_profile: activeProfile,
+          provider_identity: typeof payload.provider_identity === 'string' ? payload.provider_identity : null,
+          provider_scopes: Array.isArray(payload.provider_scopes) ? payload.provider_scopes.map(String) : [],
+          grant_status: grantStatus,
+          grant_expires_at: grantExpiresAt,
+          needs_reauth: payload.reauth_needed === true || !activeProfile,
+          raw_secrets_available: false,
+          raw_provider_token_returned: false,
+          source: 'broker',
+        },
+        warnings: activeProfile
+          ? []
+          : [
+              'No verified active provider grant is available. Ask the customer to connect or re-auth the provider in evaOS Workbench.',
+            ],
+      }),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function providerDiscoveryEndpoint() {
+  const explicit = process.env.EVAOS_PROVIDER_DISCOVERY_URL?.trim();
+  if (explicit) return explicit;
+  const broker = process.env.EVAOS_DESKTOP_RUNTIME_SESSION_URL?.trim();
+  if (broker) return broker;
+  return null;
+}
+function desktopBridgeEnvPath() {
+  const explicit = process.env.EVAOS_DESKTOP_BRIDGE_ENV_FILE?.trim();
+  if (explicit) return explicit;
+  const home = process.env.HOME?.trim();
+  if (!home) return null;
+  return path.join(home, '.openclaw', 'evaos-desktop-bridge.env');
+}
+function displayDesktopBridgeEnvPath(envPath) {
+  if (!envPath) return null;
+  const home = process.env.HOME?.trim();
+  return home && envPath.startsWith(home) ? envPath.replace(home, '~') : envPath;
+}
+function parseShellEnvValue(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replace(/'"'"'/g, "'");
+  }
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  return trimmed;
+}
+function loadDesktopBridgeEnvFile() {
+  if (process.env.EVAOS_DESKTOP_BRIDGE_URL && process.env.EVAOS_DESKTOP_BRIDGE_TOKEN) return;
+  const envPath = desktopBridgeEnvPath();
+  if (!envPath) return;
+  let text;
+  try {
+    text = fs.readFileSync(envPath, 'utf8');
+  } catch {
+    return;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)=(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (!key.startsWith('EVAOS_')) continue;
+    if (process.env[key]) continue;
+    process.env[key] = parseShellEnvValue(rawValue);
+  }
+}
+function providerGrantHandleFor(agentRuntime) {
+  const direct = process.env.EVAOS_PROVIDER_GRANT_HANDLE?.trim();
+  if (direct) return direct;
+  const grantsPayload = readJSONEnv('EVAOS_PROVIDER_GRANTS_JSON');
+  const runtimeGrant = isRecord(grantsPayload) ? grantsPayload[agentRuntime] : null;
+  if (
+    isRecord(runtimeGrant) &&
+    typeof runtimeGrant.grant_handle === 'string' &&
+    runtimeGrant.grant_handle.trim() !== ''
+  ) {
+    return runtimeGrant.grant_handle.trim();
+  }
+  const cachePayload = readProviderGrantCache();
+  const cachedRuntimeGrant = isRecord(cachePayload) ? cachePayload[agentRuntime] : null;
+  if (
+    isRecord(cachedRuntimeGrant) &&
+    typeof cachedRuntimeGrant.grant_handle === 'string' &&
+    cachedRuntimeGrant.grant_handle.trim() !== ''
+  ) {
+    return cachedRuntimeGrant.grant_handle.trim();
+  }
+  return null;
+}
+async function cacheProviderGrantFromBroker(agentRuntime, providerKey, payload) {
+  if (!isRecord(payload) || !isRecord(payload.agent_grant)) return false;
+  const grant = payload.agent_grant;
+  if (
+    grant.provider_key !== providerKey ||
+    grant.agent_runtime !== agentRuntime ||
+    typeof grant.grant_handle !== 'string' ||
+    !grant.grant_handle.trim()
+  ) {
+    return false;
+  }
+  const cachePath = providerGrantCachePath();
+  if (!cachePath) return false;
+  const existing = isRecord(readProviderGrantCache()) ? readProviderGrantCache() : {};
+  const next = {
+    ...existing,
+    [agentRuntime]: {
+      provider_key: providerKey,
+      agent_runtime: agentRuntime,
+      grant_handle: grant.grant_handle.trim(),
+      expires_at: typeof grant.expires_at === 'string' ? grant.expires_at : null,
+      cached_at: new Date().toISOString(),
+    },
+  };
+  try {
+    await mkdir(path.dirname(cachePath), { recursive: true });
+    await writeFile(cachePath, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function readProviderGrantCache() {
+  const cachePath = providerGrantCachePath();
+  if (!cachePath) return null;
+  try {
+    return JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function providerGrantCachePath() {
+  const explicit = process.env.EVAOS_PROVIDER_GRANT_CACHE_FILE?.trim();
+  if (explicit) return explicit;
+  const home = process.env.HOME?.trim();
+  if (!home) return null;
+  return path.join(home, '.openclaw', 'evaos-provider-grants.json');
+}
+function sharedBrowserGuidancePayload() {
+  const status = readJSONEnv('EVAOS_SHARED_BROWSER_STATUS_JSON');
+  return redactConnectorSecrets({
+    ok: true,
+    data: {
+      schema_version: 'evaos.browser_status.v1',
+      customer_id: process.env.EVAOS_CUSTOMER_ID || null,
+      business_browser_preferred_for_cloud_web_tasks: true,
+      shared_browser_preferred_for_cloud_web_tasks: true,
+      instructions:
+        "Use Business Browser for cloud web tasks that need a persistent VM browser, user auth/CAPTCHA handoff, or human-visible browsing state. Use local Mac browser tools only when the task explicitly needs the customer's Mac browser.",
+      status: status || null,
+    },
+    warnings: status ? [] : ['Business Browser live status is not configured in this VM environment yet.'],
+  });
+}
+function readJSONEnv(name) {
+  const raw = process.env[name];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+async function runRemoteBridge(remoteURL, command, params) {
+  const endpoint = new URL('/v1/commands', remoteURL);
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  const token = process.env.EVAOS_DESKTOP_BRIDGE_TOKEN?.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  try {
+    return await postRemoteBridgeCommand(endpoint, headers, remoteURL, command, params, timeoutForCommand(command));
+  } catch (error) {
+    if (command === 'customerMacControlStart' && isAbortLikeError(error)) {
+      const reconciled = await reconcileControlStartAfterAbort(endpoint, headers, remoteURL, params);
+      if (reconciled) {
+        return reconciled;
+      }
+    }
+    const err = error;
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'bridge_connector_failed',
+          message: err.message || 'evaos-desktop-bridge connector request failed',
+          guidance: 'Verify Headscale reachability, EVAOS_DESKTOP_BRIDGE_URL, and EVAOS_DESKTOP_BRIDGE_TOKEN.',
+        },
+      ],
+    };
+  }
+}
+async function postRemoteBridgeCommand(endpoint, headers, remoteURL, command, params, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ command, params }),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    try {
+      return await materializeVisualEvidence(command, JSON.parse(text), remoteURL, headers.Authorization);
+    } catch {
+      return {
+        ok: false,
+        errors: [
+          {
+            code: 'bridge_connector_invalid_response',
+            message: text || `Connector returned HTTP ${response.status}`,
+            guidance: 'Check the paired Mac connector endpoint and token.',
+          },
+        ],
+      };
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+async function reconcileControlStartAfterAbort(endpoint, headers, remoteURL, params) {
+  try {
+    const status = await postRemoteBridgeCommand(endpoint, headers, remoteURL, 'customerMacControlStatus', {}, 15_000);
+    if (!isControlSessionActive(status, params)) {
+      return null;
+    }
+    const payload = isRecord(status) ? { ...status } : { ok: true };
+    const data = isRecord(payload.data) ? { ...payload.data } : {};
+    payload.ok = true;
+    payload.data = {
+      ...data,
+      control_start_reconciled: true,
+    };
+    payload.warnings = [
+      ...(Array.isArray(payload.warnings) ? payload.warnings : []),
+      {
+        code: 'control_start_response_reconciled_after_abort',
+        message:
+          'Mac control start timed out after the connector activated the control session; status was reconciled from the paired Mac.',
+        guidance: 'Continue with desktop_control_status and desktop_see before running live Mac-control actions.',
+      },
+    ];
+    return payload;
+  } catch {
+    return null;
+  }
+}
+function isAbortLikeError(error) {
+  const err = error;
+  return err.name === 'AbortError' || /abort/i.test(err.message || '');
+}
+function isControlSessionActive(status, params) {
+  if (!isRecord(status) || status.ok !== true || !isRecord(status.data)) {
+    return false;
+  }
+  const data = status.data;
+  const session = isRecord(data.session) ? data.session : {};
+  const active = data.active === true || session.active === true;
+  const killSwitch =
+    data.kill_switch === true ||
+    data.killSwitch === true ||
+    session.kill_switch === true ||
+    session.killSwitch === true;
+  const mode = controlModeFromStatus(data.mode) ?? controlModeFromStatus(session.mode);
+  return active && !killSwitch && mode === requestedControlMode(params.mode);
+}
+function requestedControlMode(mode) {
+  return controlModeFromStatus(mode) ?? 'full_access';
+}
+function controlModeFromStatus(mode) {
+  if (typeof mode !== 'string') {
+    return undefined;
+  }
+  const normalized = mode.trim().toLowerCase().replace(/-/g, '_');
+  if (normalized === 'ask_permission') {
+    return 'ask_permission';
+  }
+  if (normalized === 'full_access') {
+    return 'full_access';
+  }
+  return undefined;
+}
+function timeoutForCommand(command) {
+  if (command === 'codexLiveStatus') {
+    return 35_000;
+  }
+  if (command === 'customerMacControlStart') {
+    return 30_000;
+  }
+  if (
+    command === 'desktopSee' ||
+    command === 'iphoneSee' ||
+    command === 'customerMacSnapshot' ||
+    command === 'customerMacAxTree'
+  ) {
+    return 60_000;
+  }
+  if (
+    command === 'desktopDrag' ||
+    command === 'desktopScroll' ||
+    command === 'iphoneSwipe' ||
+    command === 'customerMacIphoneMirroringScroll' ||
+    command === 'customerMacIphoneMirroringSwipeLeft' ||
+    command === 'customerMacIphoneMirroringSwipeRight' ||
+    command === 'customerMacIphoneMirroringSwipeUp' ||
+    command === 'customerMacIphoneMirroringSwipeDown'
+  ) {
+    return 20_000;
+  }
+  if (
+    command === 'desktopMenu' ||
+    command === 'desktopWindow' ||
+    command === 'desktopBrowserAction' ||
+    command === 'desktopFocusApp' ||
+    command === 'customerMacIphoneMirroringOpenApp'
+  ) {
+    return 20_000;
+  }
+  if (command === 'desktopClick' || command === 'iphoneTap') {
+    return 30_000;
+  }
+  if (
+    command === 'desktopSetValue' ||
+    command === 'desktopType' ||
+    command === 'desktopHotkey' ||
+    command === 'iphoneType' ||
+    command === 'customerMacIphoneMirroringTypeApprovedText' ||
+    command === 'customerMacIphoneMirroringSendApprovedMessage'
+  ) {
+    return 15_000;
+  }
+  return 10_000;
+}
+async function materializeVisualEvidence(command, payload, remoteURL, authHeader) {
+  if (!isRecord(payload)) {
+    return payload;
+  }
+  const data = payload.data;
+  if (!isRecord(data)) {
+    return payload;
+  }
+  const image = findVisualImage(data);
+  if (!image) {
+    return payload;
+  }
+  let imageBytes;
+  let materializedFrom = 'inline';
+  if (typeof image.bytes_base64 === 'string') {
+    imageBytes = Buffer.from(image.bytes_base64, 'base64');
+  } else if (typeof image.artifact_url === 'string' && remoteURL) {
+    const fetched = await fetchVisualArtifact(remoteURL, image.artifact_url, authHeader);
+    if (!fetched.ok) {
+      const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+      warnings.push(fetched.warning);
+      payload.warnings = warnings;
+      return payload;
+    }
+    imageBytes = fetched.bytes;
+    materializedFrom = 'connector_artifact';
+  } else {
+    return payload;
+  }
+  const snapshotId =
+    (typeof data.snapshot_id === 'string' && data.snapshot_id) ||
+    (isRecord(data.screenshot) && typeof data.screenshot.snapshot_id === 'string' && data.screenshot.snapshot_id) ||
+    (typeof image.artifact_id === 'string' && image.artifact_id) ||
+    (typeof payload.audit_id === 'string' && payload.audit_id) ||
+    command;
+  const artifactDir = process.env.EVAOS_DESKTOP_BRIDGE_ARTIFACT_DIR || '/root/agent-files/downloads/desktop-bridge';
+  const safeName = snapshotId.replace(/[^A-Za-z0-9_.-]+/g, '-').slice(0, 160);
+  const artifactPath = path.join(artifactDir, `${safeName}.png`);
+  try {
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(artifactPath, imageBytes);
+    image.vm_artifact_path = artifactPath;
+    image.bytes_base64_present = true;
+    image.vm_artifact_source = materializedFrom;
+    delete image.bytes_base64;
+    data.vm_visual_artifact_path = artifactPath;
+  } catch (error) {
+    const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+    warnings.push(`Unable to write VM visual artifact: ${error.message || 'unknown error'}`);
+    payload.warnings = warnings;
+  }
+  return payload;
+}
+function findVisualImage(data) {
+  const direct = data.image;
+  if (isRecord(direct) && hasImageMaterial(direct)) {
+    return direct;
+  }
+  const screenshot = data.screenshot;
+  if (isRecord(screenshot)) {
+    const screenshotRecord = screenshot;
+    if (hasImageMaterial(screenshotRecord)) {
+      return screenshotRecord;
+    }
+    const screenshotImage = screenshotRecord.screenshot;
+    if (isRecord(screenshotImage) && hasImageMaterial(screenshotImage)) {
+      return screenshotImage;
+    }
+    const image = screenshotRecord.image;
+    if (isRecord(image) && hasImageMaterial(image)) {
+      return image;
+    }
+  }
+  return undefined;
+}
+function hasImageMaterial(value) {
+  return typeof value.bytes_base64 === 'string' || typeof value.artifact_url === 'string';
+}
+async function fetchVisualArtifact(remoteURL, artifactURL, authHeader) {
+  let endpoint;
+  try {
+    endpoint = new URL(artifactURL, remoteURL);
+  } catch {
+    return { ok: false, warning: 'Unable to fetch VM visual artifact: connector returned an invalid artifact URL' };
+  }
+  const base = new URL(remoteURL);
+  if (endpoint.origin !== base.origin || !endpoint.pathname.startsWith('/v1/artifacts/')) {
+    return {
+      ok: false,
+      warning: 'Unable to fetch VM visual artifact: connector artifact URL was outside the paired connector',
+    };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const headers = {};
+    if (authHeader) {
+      headers.Authorization = authHeader;
+    }
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return { ok: false, warning: `Unable to fetch VM visual artifact: connector returned HTTP ${response.status}` };
+    }
+    return { ok: true, bytes: Buffer.from(await response.arrayBuffer()) };
+  } catch (error) {
+    return {
+      ok: false,
+      warning: `Unable to fetch VM visual artifact: ${error.message || 'unknown error'}`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function redactConnectorSecrets(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactConnectorSecrets(item));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const redacted = {};
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (isSecretMetadataKey(key)) {
+      redacted[key] = '[redacted]';
+    } else {
+      redacted[key] = redactConnectorSecrets(nestedValue);
+    }
+  }
+  return redacted;
+}
+function isSecretMetadataKey(key) {
+  const compactKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return (
+    compactKey === 'token' ||
+    compactKey.endsWith('token') ||
+    compactKey === 'authorization' ||
+    compactKey.endsWith('authorization') ||
+    compactKey === 'header' ||
+    compactKey === 'headers' ||
+    compactKey.endsWith('header') ||
+    compactKey.endsWith('headers') ||
+    compactKey === 'password' ||
+    compactKey.endsWith('password') ||
+    compactKey === 'credential' ||
+    compactKey === 'credentials' ||
+    compactKey.endsWith('credential') ||
+    compactKey.endsWith('credentials') ||
+    compactKey === 'secret' ||
+    compactKey.endsWith('secret') ||
+    compactKey.includes('apikey') ||
+    compactKey.includes('clientsecret') ||
+    compactKey.includes('privatekey') ||
+    compactKey.includes('secretkey') ||
+    compactKey.includes('accesskey')
+  );
+}
+function clampInt(value, fallback, min, max) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}

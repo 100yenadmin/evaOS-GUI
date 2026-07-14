@@ -1,0 +1,833 @@
+import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
+
+import { type BridgeCommandKey, type BridgeParams, runBridge } from './src/bridge.js';
+import { desktopBridgeFirewall } from './src/firewall.js';
+import { registerMacControlRuntimeReceiptRoute } from './src/runtimeReceipt.js';
+
+type ToolDefinition = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute: (toolCallId: string, params: BridgeParams) => Promise<ToolResult>;
+};
+
+type ToolTextContent = {
+  type: 'text';
+  text: string;
+};
+
+type ToolResult = {
+  content: ToolTextContent[];
+  details: unknown;
+};
+
+const approvalAuditIdProperty = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 160,
+  description: 'Required when dry_run is false; use the audit id from the approved dry-run/evidence step.',
+};
+
+export default definePluginEntry({
+  id: 'evaos-desktop-bridge',
+  name: 'EvaOS Desktop Bridge',
+  description: 'Guarded bridge from OpenClaw to Codex Desktop and paired customer Mac state.',
+  kind: 'tool',
+  register(api: any) {
+    registerMacControlRuntimeReceiptRoute(api);
+
+    for (const bridgeTool of readOnlyTools()) {
+      api.registerTool(bridgeTool);
+    }
+
+    api.registerHook?.('before_tool_call', desktopBridgeFirewall, {
+      name: 'evaos-desktop-bridge-firewall',
+    });
+  },
+});
+
+function readOnlyTools(): ToolDefinition[] {
+  return [
+    tool('desktop_bridge_status', 'Read Codex Desktop installation, running, permission, and safety status.', 'status'),
+    tool(
+      'desktop_bridge_capabilities',
+      'Read the bridge command capability surface and hard safety boundaries.',
+      'capabilities'
+    ),
+    tool('desktop_bridge_latest', 'Read the last redacted bridge observation envelope from local state.', 'latest'),
+    tool('desktop_bridge_audit_tail', 'Read a redacted tail of the append-only local bridge audit log.', 'auditTail', {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+      },
+    }),
+    tool(
+      'desktop_bridge_codex_frontmost',
+      'Read whether Codex Desktop is the current frontmost app.',
+      'codexFrontmost'
+    ),
+    tool(
+      'desktop_bridge_codex_windows',
+      'Read visible Codex Desktop window metadata through Accessibility.',
+      'codexWindows'
+    ),
+    tool('desktop_bridge_queue_list', 'Read capped Eva/OpenClaw announcement queue events.', 'queueList', {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+      },
+    }),
+    tool(
+      'desktop_bridge_queue_append',
+      'Append a local Eva/OpenClaw announcement queue event with source audit provenance.',
+      'queueAppend',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['kind', 'source_audit_id'],
+        properties: {
+          kind: { type: 'string', enum: ['idle', 'approval_needed', 'done', 'error', 'attention'] },
+          source_audit_id: { type: 'string' },
+          message: { type: 'string' },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_threads',
+      'Read visible Codex Desktop thread candidates from GUI state.',
+      'codexThreads',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_items: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_thread_map',
+      'Read a joined map of visible Codex Desktop thread candidates and saved app-server thread summaries.',
+      'codexThreadMap',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_items: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_select_thread',
+      'Guarded visible action: select an already-visible Codex thread by visible_id. Dry-run defaults on.',
+      'codexSelectThread',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['thread_id'],
+        properties: {
+          thread_id: { type: 'string' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_send_visible_message',
+      'Live visible Codex GUI action: send an approved message through the frontmost Codex Desktop composer. Dry-run defaults on and live mode requires approval.',
+      'codexSendVisibleMessage',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['thread_id', 'message'],
+        properties: {
+          thread_id: { type: 'string' },
+          message: { type: 'string', minLength: 1, maxLength: 4000 },
+          dry_run: { type: 'boolean', default: true },
+          confirm: { type: 'boolean', default: false },
+          approval_audit_id: approvalAuditIdProperty,
+          wait_ms: { type: 'integer', minimum: 0, maximum: 120000, default: 0 },
+          poll_interval_ms: { type: 'integer', minimum: 250, maximum: 10000, default: 2000 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_continue_thread',
+      "Support-only fallback: select a visible Codex thread by title and submit the exact prompt 'continue'. Dry-run defaults on.",
+      'codexContinueThread',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title'],
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 160 },
+          prompt: { type: 'string', enum: ['continue'], default: 'continue' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_snapshot',
+      'Read a capped visible Codex Desktop snapshot; screenshots are skipped unless Codex is frontmost.',
+      'codexSnapshot',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_chars: { type: 'integer', minimum: 1, maximum: 20000, default: 4000 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_inspect',
+      'Read a compact Codex Desktop page map with visible windows, controls, and text summaries.',
+      'codexInspect',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_nodes: { type: 'integer', minimum: 1, maximum: 1000, default: 120 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_ax_tree',
+      'Read a capped Codex Desktop Accessibility tree summary with roles and names only.',
+      'codexAxTree',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_nodes: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_app_server_status',
+      'Read Codex app-server availability and read-only method allowlist.',
+      'codexAppServerStatus'
+    ),
+    tool(
+      'desktop_bridge_codex_connections_status',
+      'Read Codex Desktop app-server, daemon, websocket, remote-control, and notification readiness.',
+      'codexConnectionsStatus'
+    ),
+    tool(
+      'desktop_bridge_codex_app_server_remote_control_status',
+      'Read Codex native remote-control readiness without enabling or mutating it.',
+      'codexAppServerRemoteControlStatus'
+    ),
+    tool(
+      'desktop_bridge_codex_app_server_threads',
+      'Read capped Codex thread summaries through the app-server read allowlist.',
+      'codexAppServerThreads',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_items: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_app_server_loaded_threads',
+      'Read loaded Codex app-server thread ids for readiness diagnostics.',
+      'codexAppServerLoadedThreads',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_items: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      }
+    ),
+    tool(
+      'desktop_bridge_codex_live_status',
+      'Read buffered Codex app-server live notifications for one loaded thread.',
+      'codexLiveStatus',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['thread_id'],
+        properties: {
+          thread_id: { type: 'string', minLength: 1, maxLength: 240 },
+          duration_ms: { type: 'integer', minimum: 1, maximum: 30000, default: 1000 },
+        },
+      }
+    ),
+    tool(
+      'evaos_provider_profiles',
+      'Read active evaOS provider profile metadata and brokered grant readiness without raw provider secrets.',
+      'evaosProviderProfiles'
+    ),
+    tool(
+      'evaos_provider_active_profile',
+      'Read the active provider profile and whether OpenClaw/Hermes should re-auth.',
+      'evaosProviderActiveProfile'
+    ),
+    tool(
+      'evaos_provider_complete_auth',
+      'Complete OpenAI / Codex provider auth by sending signed metadata proof to the evaOS broker. Does not expose raw provider credentials.',
+      'evaosProviderCompleteAuth',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          identity: { type: 'string', minLength: 3, maxLength: 240 },
+          scopes: {
+            type: 'array',
+            maxItems: 12,
+            items: { type: 'string', minLength: 1, maxLength: 80 },
+          },
+          expires_at: { type: 'string', minLength: 10, maxLength: 80 },
+          server_secret_ref: { type: 'string', minLength: 16, maxLength: 240 },
+        },
+      }
+    ),
+    tool(
+      'evaos_shared_browser_guidance',
+      'Read Business Browser status/guidance so cloud agents default to the brokered VM browser for web tasks.',
+      'evaosSharedBrowserGuidance'
+    ),
+    tool(
+      'customer_mac_status',
+      'Read paired customer Mac connector, iPhone Mirroring, and Screen Sharing readiness.',
+      'customerMacStatus'
+    ),
+    tool(
+      'desktop_control_status',
+      'Read the customer-granted Full Access / Ask Permission control session state.',
+      'customerMacControlStatus'
+    ),
+    tool(
+      'desktop_control_start',
+      'Start a customer-granted agent control session. Live actions wait for the 10-second operator takeover warning; Full Access then allows continuous desktop and iPhone actions without per-action prompts.',
+      'customerMacControlStart',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          mode: { type: 'string', enum: ['full-access', 'ask-permission'], default: 'full-access' },
+          agent_label: { type: 'string', minLength: 1, maxLength: 160 },
+        },
+      }
+    ),
+    tool('desktop_control_stop', 'Stop the active customer-granted agent control session.', 'customerMacControlStop'),
+    tool(
+      'desktop_kill_switch',
+      'Immediately stop and block future customer Mac control commands until the customer starts a new session.',
+      'customerMacControlKillSwitch'
+    ),
+    tool(
+      'customer_mac_capabilities',
+      'Read supported named customer Mac actions and hard safety boundaries.',
+      'customerMacCapabilities'
+    ),
+    tool(
+      'desktop_see',
+      "See the customer's Mac through Peekaboo or the built-in screen/Accessibility fallback.",
+      'desktopSee',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_chars: { type: 'integer', minimum: 1, maximum: 20000, default: 4000 },
+          max_nodes: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
+        },
+      }
+    ),
+    tool(
+      'desktop_click',
+      "Click a visible target label or, when labels are unavailable, an x/y point on the customer's Mac.",
+      'desktopClick',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          target_label: { type: 'string', minLength: 1, maxLength: 200 },
+          snapshot_id: { type: 'string', minLength: 1, maxLength: 120 },
+          element_id: { type: 'string', minLength: 1, maxLength: 80 },
+          x: { type: 'integer' },
+          y: { type: 'integer' },
+          dry_run: { type: 'boolean', default: false },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool('desktop_type', 'Type exact text into the focused Mac field.', 'desktopType', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['text'],
+      properties: {
+        text: { type: 'string', minLength: 1, maxLength: 4000 },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool(
+      'desktop_set_value',
+      'Set an AX-backed native text field from a fresh desktop snapshot element. Dry-run defaults on and live mode may require approval.',
+      'desktopSetValue',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['snapshot_id', 'element_id', 'value'],
+        properties: {
+          snapshot_id: { type: 'string', minLength: 1, maxLength: 120 },
+          element_id: { type: 'string', minLength: 1, maxLength: 80 },
+          value: { type: 'string', minLength: 1, maxLength: 4000 },
+          attribute: { type: 'string', enum: ['value', 'selected_text'], default: 'value' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool('desktop_scroll', 'Scroll the focused Mac surface.', 'desktopScroll', {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        direction: { type: 'string', enum: ['up', 'down', 'left', 'right'], default: 'down' },
+        amount: { type: 'integer', minimum: 1, maximum: 5000, default: 600 },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool('desktop_drag', "Drag from one point to another on the customer's Mac.", 'desktopDrag', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['from_x', 'from_y', 'to_x', 'to_y'],
+      properties: {
+        from_x: { type: 'integer' },
+        from_y: { type: 'integer' },
+        to_x: { type: 'integer' },
+        to_y: { type: 'integer' },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool('desktop_hotkey', 'Press a Mac hotkey such as cmd+l, cmd+r, or cmd+shift+4.', 'desktopHotkey', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['keys'],
+      properties: {
+        keys: { type: 'string', minLength: 1, maxLength: 80 },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool('desktop_focus_app', 'Focus or open a Mac app by name.', 'desktopFocusApp', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['app_name'],
+      properties: {
+        app_name: { type: 'string', minLength: 1, maxLength: 120 },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool('desktop_window', 'Perform a focused-window action: focus, minimize, maximize, or close.', 'desktopWindow', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action'],
+      properties: {
+        action: { type: 'string', enum: ['focus', 'minimize', 'maximize', 'zoom', 'close'] },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool('desktop_menu', 'Choose a visible menu path through Peekaboo, for example File > New Tab.', 'desktopMenu', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['menu_path'],
+      properties: {
+        menu_path: { type: 'string', minLength: 1, maxLength: 240 },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool(
+      'desktop_browser_action',
+      'Use the local Mac browser: reload, back, forward, new_tab, or open_url.',
+      'desktopBrowserAction',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['reload', 'back', 'forward', 'new_tab', 'open_url'] },
+          url: { type: 'string', maxLength: 2048 },
+          dry_run: { type: 'boolean', default: false },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_snapshot',
+      'Read a safe screenshot path for the frontmost non-sensitive app; sensitive apps are blocked.',
+      'customerMacSnapshot',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_chars: { type: 'integer', minimum: 1, maximum: 20000, default: 4000 },
+        },
+      }
+    ),
+    tool(
+      'customer_mac_ax_tree',
+      'Read a capped Accessibility tree for the frontmost non-sensitive app.',
+      'customerMacAxTree',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          max_nodes: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
+        },
+      }
+    ),
+    tool(
+      'customer_mac_app_focus',
+      'Approval-gated named action: focus a non-sensitive customer Mac app by name.',
+      'customerMacAppFocus',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['app_name'],
+        properties: {
+          app_name: { type: 'string' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_local_site_open',
+      'Approval-gated named action: open a localhost, loopback, or .local website on the customer Mac.',
+      'customerMacLocalSiteOpen',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['url'],
+        properties: {
+          url: { type: 'string' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_local_site_action',
+      'Approval-gated named action: run reload, back, or forward in the frontmost supported browser.',
+      'customerMacLocalSiteAction',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['reload', 'back', 'forward'] },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool('iphone_see', 'See the visible iPhone Mirroring surface through the paired Mac.', 'iphoneSee', {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        max_chars: { type: 'integer', minimum: 1, maximum: 20000, default: 4000 },
+        max_nodes: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
+      },
+    }),
+    tool(
+      'iphone_tap',
+      'Tap a visible iPhone target label or fallback x/y point inside iPhone Mirroring.',
+      'iphoneTap',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          target_label: { type: 'string', minLength: 1, maxLength: 200 },
+          snapshot_id: { type: 'string', minLength: 1, maxLength: 120 },
+          element_id: { type: 'string', minLength: 1, maxLength: 80 },
+          x: { type: 'integer' },
+          y: { type: 'integer' },
+          dry_run: { type: 'boolean', default: false },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool('iphone_swipe', 'Swipe the focused iPhone Mirroring surface.', 'iphoneSwipe', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['direction'],
+      properties: {
+        direction: { type: 'string', enum: ['left', 'right', 'up', 'down'] },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool('iphone_type', 'Type exact text into the focused iPhone Mirroring field.', 'iphoneType', {
+      type: 'object',
+      additionalProperties: false,
+      required: ['text'],
+      properties: {
+        text: { type: 'string', minLength: 1, maxLength: 4000 },
+        dry_run: { type: 'boolean', default: false },
+        approval_audit_id: approvalAuditIdProperty,
+      },
+    }),
+    tool(
+      'customer_mac_iphone_mirroring_status',
+      'Read iPhone Mirroring readiness and supported named actions.',
+      'customerMacIphoneMirroringStatus'
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_focus',
+      'Approval-gated named action: focus iPhone Mirroring.',
+      'customerMacIphoneMirroringFocus',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_home',
+      'Approval-gated named action: send Home to iPhone Mirroring.',
+      'customerMacIphoneMirroringHome',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_app_switcher',
+      'Approval-gated named action: open the iPhone Mirroring App Switcher.',
+      'customerMacIphoneMirroringAppSwitcher',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_spotlight',
+      'Approval-gated named action: open iPhone Spotlight through iPhone Mirroring.',
+      'customerMacIphoneMirroringSpotlight',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_type_spotlight',
+      'Approval-gated named action: type short disposable/search text into iPhone Spotlight.',
+      'customerMacIphoneMirroringTypeSpotlight',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text'],
+        properties: {
+          text: { type: 'string', minLength: 1, maxLength: 80 },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_open_app',
+      'Approval-gated named action: launch a non-sensitive iPhone app through Spotlight.',
+      'customerMacIphoneMirroringOpenApp',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['app_name'],
+        properties: {
+          app_name: { type: 'string', minLength: 1, maxLength: 80 },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_tap_named_target',
+      'Approval-gated named action: press an exact visible iPhone Mirroring AX label; generic coordinates are blocked.',
+      'customerMacIphoneMirroringTapNamedTarget',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['target_label'],
+        properties: {
+          target_label: { type: 'string', minLength: 1, maxLength: 80 },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_scroll',
+      'Approval-gated named action: scroll the focused iPhone Mirroring window by named direction.',
+      'customerMacIphoneMirroringScroll',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          direction: { type: 'string', enum: ['up', 'down'], default: 'down' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_swipe_left',
+      'Approval-gated named action: swipe left in iPhone Mirroring. Requires dry-run approval before live use.',
+      'customerMacIphoneMirroringSwipeLeft',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_swipe_right',
+      'Approval-gated named action: swipe right in iPhone Mirroring. Requires dry-run approval before live use.',
+      'customerMacIphoneMirroringSwipeRight',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_swipe_up',
+      'Approval-gated named action: swipe up in iPhone Mirroring. Requires dry-run approval before live use.',
+      'customerMacIphoneMirroringSwipeUp',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_swipe_down',
+      'Approval-gated named action: swipe down in iPhone Mirroring. Requires dry-run approval before live use.',
+      'customerMacIphoneMirroringSwipeDown',
+      {
+        type: 'object',
+        additionalProperties: false,
+        properties: { dry_run: { type: 'boolean', default: true }, approval_audit_id: approvalAuditIdProperty },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_type_approved_text',
+      'Approval-gated named action: type exact same-turn-approved text in iPhone Mirroring.',
+      'customerMacIphoneMirroringTypeApprovedText',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text'],
+        properties: {
+          text: { type: 'string', minLength: 1, maxLength: 240 },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_iphone_mirroring_send_approved_message',
+      'Full Access iPhone action: type and send one exact message through visible iPhone Mirroring; Ask Permission gates it.',
+      'customerMacIphoneMirroringSendApprovedMessage',
+      {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text', 'recipient_context'],
+        properties: {
+          text: { type: 'string', minLength: 1, maxLength: 240 },
+          recipient_context: { type: 'string', minLength: 1, maxLength: 160 },
+          target_label: { type: 'string', minLength: 1, maxLength: 80, default: 'Send' },
+          dry_run: { type: 'boolean', default: true },
+          approval_audit_id: approvalAuditIdProperty,
+        },
+      }
+    ),
+    tool(
+      'customer_mac_screen_sharing_status',
+      'Read Screen Sharing/Remote Management status; this tool cannot enable it.',
+      'customerMacScreenSharingStatus'
+    ),
+  ];
+}
+
+function tool(
+  name: string,
+  description: string,
+  command: BridgeCommandKey,
+  parameters: Record<string, unknown> = { type: 'object', additionalProperties: false, properties: {}, required: [] }
+): ToolDefinition {
+  return {
+    name,
+    description,
+    parameters: normalizeToolParameters(parameters),
+    execute: async (_toolCallId: string, params: BridgeParams = {}) => toToolResult(await runBridge(command, params)),
+  };
+}
+
+function toToolResult(payload: unknown): ToolResult {
+  if (isToolResultLike(payload)) {
+    return payload;
+  }
+
+  return {
+    content: [{ type: 'text', text: stringifyToolPayload(payload) }],
+    details: payload,
+  };
+}
+
+function isToolResultLike(value: unknown): value is ToolResult {
+  return isRecord(value) && Array.isArray(value.content);
+}
+
+function stringifyToolPayload(payload: unknown): string {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  try {
+    const text = JSON.stringify(payload, null, 2);
+    if (typeof text === 'string') {
+      return text;
+    }
+  } catch {
+    // Fall through to String(payload).
+  }
+
+  return String(payload);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeToolParameters(parameters: Record<string, unknown>): Record<string, unknown> {
+  const properties =
+    parameters.properties && typeof parameters.properties === 'object' && !Array.isArray(parameters.properties)
+      ? (parameters.properties as Record<string, unknown>)
+      : {};
+  const required = Array.isArray(parameters.required)
+    ? parameters.required
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .filter((value) => Object.prototype.hasOwnProperty.call(properties, value))
+    : [];
+
+  return {
+    ...parameters,
+    type: 'object',
+    additionalProperties: parameters.additionalProperties === undefined ? false : parameters.additionalProperties,
+    properties,
+    required,
+  };
+}

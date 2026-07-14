@@ -1,0 +1,26 @@
+{
+  "schema": "evaos-workbench-agent-tools-source/v1",
+  "owner": "100yenadmin/evaOS-GUI",
+  "version": "0.2.0",
+  "status": "vendored",
+  "releaseTagNamespace": "evaos-desktop-bridge-openclaw-vX.Y.Z",
+  "importedFrom": "electricsheephq/evaos-desktop-bridge",
+  "importedCommit": "b3e8da7ae90c86b7a999b6a0ef5d7e4bcb83b2c8",
+  "importedAt": "2026-07-15",
+  "sourceDigests": {
+    "hermes-adapter/README.md": "sha256:0077be1d91ac82fad35c6c916cba3f780088f8a4b3d80bd69dea93819bb9003a",
+    "hermes-adapter/bin/evaos-desktop-bridge-command": "sha256:d3d1870e9625ecf69787d6a536054340bd0c7aec862ff34a0be4ec86bc56ada3",
+    "openclaw-plugin/README.md": "sha256:18ba84670be254004a093f613edc783ac9fd2523174968b1f853a3abb59a2156",
+    "openclaw-plugin/dist/index.js": "sha256:ffdacb32f8e5e378df1352ac8b07ea9a152a3e4b25200428512b8e667de91adc",
+    "openclaw-plugin/dist/src/bridge.js": "sha256:d3bb9ff47b6cbd01b548baac7fd211051a595ef522abe913c22ec44e167dad7e",
+    "openclaw-plugin/dist/src/firewall.js": "sha256:60c2c0f5e5319cb77ef6d4c4b4d4b30b46f4dddafb7390230ddd3fbfe03dd993",
+    "openclaw-plugin/index.ts": "sha256:5ea45783093fe60b30c2bb8cf93343a069751004789a9dcdd202be21ea88e26d",
+    "openclaw-plugin/openclaw.plugin.json": "sha256:4e5c50b2bb31a31fc9756171679a7d2139e88503b304734eeae9093bd25095e1",
+    "openclaw-plugin/package.json": "sha256:c27ab5217832722473709611ddc8d6308a22a62de7a24e66b5952a4f8fde5c41",
+    "openclaw-plugin/scripts/qa-run-bridge.mjs": "sha256:db40c073164440a60f068153f5a21d5d39b04e479ad7bc2bbcfdea2468dd54da",
+    "openclaw-plugin/src/bridge.ts": "sha256:2695a25bc6710c5ac5f95682e5ee2c1849a708b3ce00d9a44c924efd75a088e2",
+    "openclaw-plugin/src/firewall.ts": "sha256:2b21f94e43184c9d9507d5bef91f057949e30c266b81fe4d3005a14f9f966a5c",
+    "openclaw-plugin/src/types.d.ts": "sha256:6645c7b2f7808c88ee84fb95163eefcdec1c69cf678737f217bca6e1c973cb9e",
+    "openclaw-plugin/tsconfig.json": "sha256:2d137f90e1b16119cb1837e7cc61122c1c298b7e77f8f20a497e98d03bcba23a"
+  }
+}

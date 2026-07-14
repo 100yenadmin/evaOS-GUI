@@ -1,0 +1,115 @@
+{
+  "name": "@100yenadmin/evaos-desktop-bridge-openclaw",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Guarded OpenClaw plugin wrapper for evaos-desktop-bridge.",
+  "author": "100yenadmin/evaOS-GUI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/100yenadmin/evaOS-GUI.git",
+    "directory": "resources/evaos-beta/bridge/agent-tools/openclaw-plugin"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "openclaw.plugin.json",
+    "package.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && oxfmt dist",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "oxfmt": "0.41.0",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "openclaw": ">=0.0.0"
+  },
+  "evaos": {
+    "owner": "100yenadmin/evaOS-GUI",
+    "releaseTagNamespace": "evaos-desktop-bridge-openclaw-vX.Y.Z"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "contracts": {
+      "tools": [
+        "desktop_bridge_status",
+        "desktop_bridge_capabilities",
+        "desktop_bridge_latest",
+        "desktop_bridge_audit_tail",
+        "desktop_bridge_queue_list",
+        "desktop_bridge_queue_append",
+        "desktop_bridge_codex_frontmost",
+        "desktop_bridge_codex_windows",
+        "desktop_bridge_codex_threads",
+        "desktop_bridge_codex_thread_map",
+        "desktop_bridge_codex_send_visible_message",
+        "desktop_bridge_codex_continue_thread",
+        "desktop_bridge_codex_select_thread",
+        "desktop_bridge_codex_snapshot",
+        "desktop_bridge_codex_inspect",
+        "desktop_bridge_codex_ax_tree",
+        "desktop_bridge_codex_app_server_status",
+        "desktop_bridge_codex_app_server_remote_control_status",
+        "desktop_bridge_codex_app_server_threads",
+        "desktop_bridge_codex_connections_status",
+        "desktop_bridge_codex_app_server_loaded_threads",
+        "desktop_bridge_codex_live_status",
+        "evaos_provider_profiles",
+        "evaos_provider_active_profile",
+        "evaos_provider_complete_auth",
+        "evaos_shared_browser_guidance",
+        "customer_mac_status",
+        "desktop_control_status",
+        "desktop_control_start",
+        "desktop_control_stop",
+        "desktop_kill_switch",
+        "customer_mac_capabilities",
+        "desktop_see",
+        "desktop_click",
+        "desktop_type",
+        "desktop_set_value",
+        "desktop_scroll",
+        "desktop_drag",
+        "desktop_hotkey",
+        "desktop_focus_app",
+        "desktop_window",
+        "desktop_menu",
+        "desktop_browser_action",
+        "customer_mac_snapshot",
+        "customer_mac_ax_tree",
+        "customer_mac_app_focus",
+        "customer_mac_local_site_open",
+        "customer_mac_local_site_action",
+        "iphone_see",
+        "iphone_tap",
+        "iphone_swipe",
+        "iphone_type",
+        "customer_mac_iphone_mirroring_status",
+        "customer_mac_iphone_mirroring_focus",
+        "customer_mac_iphone_mirroring_home",
+        "customer_mac_iphone_mirroring_app_switcher",
+        "customer_mac_iphone_mirroring_spotlight",
+        "customer_mac_iphone_mirroring_type_spotlight",
+        "customer_mac_iphone_mirroring_open_app",
+        "customer_mac_iphone_mirroring_tap_named_target",
+        "customer_mac_iphone_mirroring_scroll",
+        "customer_mac_iphone_mirroring_swipe_left",
+        "customer_mac_iphone_mirroring_swipe_right",
+        "customer_mac_iphone_mirroring_swipe_up",
+        "customer_mac_iphone_mirroring_swipe_down",
+        "customer_mac_iphone_mirroring_type_approved_text",
+        "customer_mac_iphone_mirroring_send_approved_message",
+        "customer_mac_screen_sharing_status"
+      ]
+    }
+  }
+}

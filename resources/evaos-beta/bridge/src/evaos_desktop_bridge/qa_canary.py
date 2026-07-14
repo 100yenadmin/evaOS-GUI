@@ -798,7 +798,7 @@ class OpenClawSurface:
         self.repo_root = repo_root or _resolve_repo_root()
 
     def run(self, command: str, params: dict[str, Any]) -> SurfaceResponse:
-        helper = self.repo_root / "openclaw-plugin" / "scripts" / "qa-run-bridge.mjs"
+        helper = _agent_tools_root(self.repo_root) / "openclaw-plugin" / "scripts" / "qa-run-bridge.mjs"
         env = os.environ.copy()
         env.update(
             {
@@ -839,7 +839,7 @@ class HermesSurface:
                 "EVAOS_DESKTOP_BRIDGE_ARTIFACT_DIR": str(self.artifact_dir),
             }
         )
-        adapter = self.repo_root / "hermes-adapter" / "bin" / "evaos-desktop-bridge-command"
+        adapter = _agent_tools_root(self.repo_root) / "hermes-adapter" / "bin" / "evaos-desktop-bridge-command"
         params_json = json.dumps(params, separators=(",", ":"))
         completed = subprocess.run(
             [str(adapter), command, "-"],
@@ -1143,7 +1143,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-real-world-actions", action="store_true")
     parser.add_argument("--operator-ack-live-control", action="store_true", help="Required for suites that may move the mouse, keyboard, or iPhone Mirroring.")
     parser.add_argument("--allow-skips", action="store_true", help="Exit 0 when required suites contain skipped rows; release certification should not use this.")
-    parser.add_argument("--repo-root", type=Path, help="Repository root containing openclaw-plugin/ and hermes-adapter/ for adapter surfaces.")
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        help="evaOS-GUI root containing resources/evaos-beta/bridge/agent-tools for adapter surfaces.",
+    )
     parser.add_argument("--version-under-test", default="local-dev")
     parser.add_argument("--build-under-test", default="")
     parser.add_argument("--source-commit-under-test", default="")
@@ -1905,9 +1909,16 @@ def _resolve_repo_root() -> Path:
     module_path = Path(__file__).resolve()
     candidates.extend(module_path.parents)
     for candidate in candidates:
-        if (candidate / "openclaw-plugin" / "dist" / "index.js").exists() and (candidate / "hermes-adapter" / "bin" / "evaos-desktop-bridge-command").exists():
+        agent_tools = _agent_tools_root(candidate)
+        if (agent_tools / "openclaw-plugin" / "dist" / "index.js").exists() and (
+            agent_tools / "hermes-adapter" / "bin" / "evaos-desktop-bridge-command"
+        ).exists():
             return candidate
     return Path.cwd()
+
+
+def _agent_tools_root(repo_root: Path) -> Path:
+    return repo_root / "resources" / "evaos-beta" / "bridge" / "agent-tools"
 
 
 def _secret_values() -> list[str]:
