@@ -22,6 +22,27 @@ function runPython(script: string): string {
 }
 
 describe('qa canary local Workbench control consent', () => {
+  it('treats missing optional Peekaboo candidates as unavailable', () => {
+    const output = runPython(`
+from evaos_desktop_bridge.adapters import customer_mac as customer_mac_module
+from evaos_desktop_bridge.adapters.customer_mac import CustomerMacObserver
+
+customer_mac_module.PEEKABOO_BIN_CANDIDATES = ("/definitely/missing/evaos-test-peekaboo",)
+runner_calls = []
+
+def unexpected_runner(argv, timeout_seconds):
+    runner_calls.append((argv, timeout_seconds))
+    raise AssertionError("missing candidates must not be executed")
+
+status = CustomerMacObserver(runner=unexpected_runner)._peekaboo_status()
+assert status["available"] is False
+assert runner_calls == []
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
+
   it('never sends control-start through a remote canary surface', () => {
     const output = runPython(`
 import json

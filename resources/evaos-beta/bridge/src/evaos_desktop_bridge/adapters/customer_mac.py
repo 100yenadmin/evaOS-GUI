@@ -1922,9 +1922,15 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         result: RunnerResult | None = None
         for candidate in (*bundled_bridge_bin_candidates(("peekaboo", "evaos-connector-helper")), *PEEKABOO_BIN_CANDIDATES):
             if "/" in candidate:
-                result = self.runner([candidate, "--version"], 3.0)
+                candidate_path = Path(candidate).expanduser()
+                if not candidate_path.is_file() or not os.access(candidate_path, os.X_OK):
+                    continue
+                try:
+                    result = self.runner([str(candidate_path), "--version"], 3.0)
+                except OSError:
+                    continue
                 if result.returncode == 0:
-                    path = candidate
+                    path = str(candidate_path)
                     break
             else:
                 found = shutil.which(candidate)
@@ -1939,7 +1945,14 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
                 "guidance": "Peekaboo gives agents the best Mac computer-control parity. Built-in Accessibility and PostToPid helper fallbacks remain available for core actions.",
             }
         if result is None:
-            result = self.runner([path, "--version"], 3.0)
+            try:
+                result = self.runner([path, "--version"], 3.0)
+            except OSError:
+                return {
+                    "available": False,
+                    "install": "brew install steipete/tap/peekaboo",
+                    "guidance": "Peekaboo gives agents the best Mac computer-control parity. Built-in Accessibility and PostToPid helper fallbacks remain available for core actions.",
+                }
         version = result.stdout.strip() or result.stderr.strip() or None
         return {"available": result.returncode == 0, "path": path, "version": redact_value(version)}
 
