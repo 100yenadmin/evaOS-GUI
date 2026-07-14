@@ -51,6 +51,7 @@ const i18nMocks = vi.hoisted(() => ({
       'evaos.nativeCompanion.onboarding.clientStoppedDetail': 'Open the installed secure-network app.',
       'evaos.nativeCompanion.onboarding.unenrolledTitle': 'Connect this Mac',
       'evaos.nativeCompanion.onboarding.unenrolledDetail': 'Approved enrollment is required.',
+      'evaos.nativeCompanion.onboarding.enrollmentConnectingDetail': 'Localized enrollment is connecting.',
       'evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail':
         'Localized enrollment is waiting for broker verification.',
       'evaos.nativeCompanion.onboarding.enrollmentFailedDetail': 'Localized enrollment failed safely.',
@@ -1217,9 +1218,7 @@ describe('NativeCompanionPage', () => {
     renderNativeCompanion();
     await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
 
-    expect(
-      await screen.findByText('Connecting this Mac securely. This can take a few minutes; do not click again.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Localized enrollment is connecting.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
 
     await act(async () => {

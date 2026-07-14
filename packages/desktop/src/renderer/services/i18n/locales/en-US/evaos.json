@@ -131,6 +131,7 @@
       "clientStoppedDetail": "Open the installed secure-network app, allow the normal macOS VPN prompt if shown, then check again.",
       "unenrolledTitle": "Connect this Mac",
       "unenrolledDetail": "Workbench needs approved enrollment from the selected customer before it can connect this Mac safely.",
+      "enrollmentConnectingDetail": "Connecting this Mac securely. This can take a few minutes; do not click again.",
       "enrollmentSubmittedDetail": "Enrollment was submitted. Workbench is waiting for broker node and access-policy verification before showing ready.",
       "enrollmentFailedDetail": "Workbench could not complete or safely cancel enrollment. Reopen Tailscale, wait for the short enrollment to expire if needed, then retry or use Report.",
       "enrollmentSessionDetail": "Refresh your evaOS Workbench session, then retry approved enrollment for this Mac.",

@@ -857,6 +857,7 @@ export type I18nKey =
   | 'evaos.nativeCompanion.onboarding.clientMissingTitle'
   | 'evaos.nativeCompanion.onboarding.clientStoppedDetail'
   | 'evaos.nativeCompanion.onboarding.clientStoppedTitle'
+  | 'evaos.nativeCompanion.onboarding.enrollmentConnectingDetail'
   | 'evaos.nativeCompanion.onboarding.enrollmentFailedDetail'
   | 'evaos.nativeCompanion.onboarding.enrollmentSessionDetail'
   | 'evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail'

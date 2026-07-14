@@ -131,6 +131,7 @@
       "clientStoppedDetail": "Yüklü güvenli ağ uygulamasını açın, görünürse macOS VPN istemine izin verin ve tekrar kontrol edin.",
       "unenrolledTitle": "Bu Mac’i bağla",
       "unenrolledDetail": "Workbench’in bu Mac’i güvenle bağlayabilmesi için seçilen müşteriden onaylı kayıt gerekir.",
+      "enrollmentConnectingDetail": "Bu Mac güvenli bir şekilde bağlanıyor. Bu işlem birkaç dakika sürebilir; tekrar tıklamayın.",
       "enrollmentSubmittedDetail": "Kayıt gönderildi. Workbench, hazır göstermeden önce aracı düğüm ve erişim ilkesi doğrulamasını bekliyor.",
       "enrollmentFailedDetail": "Workbench kaydı tamamlayamadı veya güvenle iptal edemedi. Tailscale’i yeniden açın; gerekirse kısa süreli kaydın dolmasını bekleyip tekrar deneyin ya da Rapor’u kullanın.",
       "enrollmentSessionDetail": "evaOS Workbench oturumunuzu yenileyin, ardından bu Mac için onaylı kaydı yeniden deneyin.",

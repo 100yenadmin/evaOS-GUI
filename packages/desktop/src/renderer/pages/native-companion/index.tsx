@@ -264,7 +264,7 @@ const NativeCompanionPage: React.FC = () => {
       setCopyMessage(null);
       setTakeoverCueWarning(null);
       if (request.action === 'secure_network_enroll') {
-        setHandoffMessage('Connecting this Mac securely. This can take a few minutes; do not click again.');
+        setHandoffMessage(t('evaos.nativeCompanion.onboarding.enrollmentConnectingDetail'));
       }
       const targetsMacControlCustomer = MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS.has(request.action);
       const requestCustomerId =

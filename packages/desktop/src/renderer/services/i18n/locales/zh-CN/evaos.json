@@ -131,6 +131,7 @@
       "clientStoppedDetail": "打开已安装的安全网络应用；如果出现 macOS VPN 提示，请批准，然后再次检查。",
       "unenrolledTitle": "连接此 Mac",
       "unenrolledDetail": "Workbench 需要所选客户批准的注册，才能安全地连接此 Mac。",
+      "enrollmentConnectingDetail": "正在安全连接此 Mac。这可能需要几分钟；请勿再次点击。",
       "enrollmentSubmittedDetail": "注册已提交。在显示就绪之前，Workbench 正在等待代理节点和访问策略验证。",
       "enrollmentFailedDetail": "Workbench 无法完成或安全取消注册。请重新打开 Tailscale；如有需要，等待短期注册过期后重试，或使用“报告”。",
       "enrollmentSessionDetail": "请刷新 evaOS Workbench 会话，然后为此 Mac 重试已批准的注册。",
