@@ -17,9 +17,10 @@ import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .pre_canary import packaged_bridge_source_binding
+from .state import read_control_session
 
 DEFAULT_RUN_ROOT = Path("/Volumes/LEXAR/Codex/evaos-workbench-qa-runs")
 LIVE_CONTROL_SUITES = {
@@ -105,6 +106,10 @@ SELECTED_BINDING_PROOF_FIELDS = {
     "assertions",
     "secretScan",
 }
+LOCAL_WORKBENCH_CONTROL_START = "local_workbench_control_start"
+INSTALLED_WORKBENCH_BRIDGE_CLI = Path(
+    "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge"
+)
 
 
 @dataclass(frozen=True)
@@ -257,6 +262,184 @@ class ConnectorSurface:
         output_path = output_dir / f"{_safe_filename(snapshot_id)}.png"
         output_path.write_bytes(content)
         return str(output_path)
+
+
+class OperatorAcknowledgedLocalControlSurface:
+    """Start control in the local Workbench process; delegate every remote action."""
+
+    def __init__(
+        self,
+        delegate: CanarySurface,
+        *,
+        operator_ack_live_control: bool,
+        local_runner: Callable[[Path, list[str], int], tuple[int, str]] | None = None,
+        session_reader: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
+        self.delegate = delegate
+        self.operator_ack_live_control = operator_ack_live_control
+        self.local_runner = local_runner or _run_local_workbench_cli
+        self.session_reader = session_reader or read_control_session
+
+    def run(self, command: str, params: dict[str, Any]) -> SurfaceResponse:
+        if command != LOCAL_WORKBENCH_CONTROL_START:
+            return self.delegate.run(command, params)
+        payload = self._start_local_control(params)
+        return SurfaceResponse.from_payload(payload)
+
+    def _start_local_control(self, params: dict[str, Any]) -> dict[str, Any]:
+        if not self.operator_ack_live_control:
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_operator_ack_required",
+                message="Local Workbench control requires explicit operator acknowledgement.",
+            )
+        if set(params) - {"mode", "agent_label"}:
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_params_invalid",
+                message="Local Workbench control received unsupported parameters.",
+            )
+        mode = params.get("mode")
+        if mode not in {"full-access", "ask-permission"}:
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_mode_invalid",
+                message="Local Workbench control mode is invalid.",
+            )
+        agent_label = params.get("agent_label")
+        if agent_label is not None and (
+            not isinstance(agent_label, str)
+            or not agent_label.strip()
+            or len(agent_label.strip()) > 160
+        ):
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_agent_label_invalid",
+                message="Local Workbench control agent label is invalid.",
+            )
+        generation = self.session_reader().get("generation")
+        if type(generation) is not int or generation < 0:
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_state_invalid",
+                message="Local Workbench control state has no valid generation.",
+            )
+        argv = [
+            "customer-mac",
+            "control",
+            "start",
+            "--json",
+            "--mode",
+            mode,
+            "--local-workbench-restart",
+            "--expected-control-generation",
+            str(generation),
+        ]
+        if isinstance(agent_label, str):
+            argv.extend(["--agent-label", agent_label.strip()])
+        try:
+            exit_code, output = self.local_runner(
+                INSTALLED_WORKBENCH_BRIDGE_CLI,
+                argv,
+                timeout_for_command(LOCAL_WORKBENCH_CONTROL_START),
+            )
+        except subprocess.TimeoutExpired:
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_cli_timeout",
+                message="The installed Workbench control command timed out.",
+            )
+        except Exception:  # noqa: BLE001 - fail closed without exposing launcher or host details.
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_cli_unavailable",
+                message="The installed Workbench control command is unavailable.",
+            )
+        try:
+            payload = _loads_json_response(output.encode("utf-8"))
+        except (UnicodeError, ValueError):
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_cli_response_invalid",
+                message="Local Workbench control returned an invalid response.",
+            )
+        expected_fields = {
+            "schema_version",
+            "command",
+            "target",
+            "timestamp",
+            "ok",
+            "data",
+            "warnings",
+            "errors",
+            "audit_id",
+        }
+        valid_exit = (exit_code == 0 and payload.get("ok") is True) or (
+            exit_code == 2 and payload.get("ok") is False
+        )
+        if not (
+            set(payload) == expected_fields
+            and payload.get("schema_version") == "2026-05-02.mvp1"
+            and payload.get("command") == "customer_mac.control_start"
+            and payload.get("target") == "customer_mac"
+            and type(payload.get("ok")) is bool
+            and isinstance(payload.get("data"), dict)
+            and isinstance(payload.get("warnings"), list)
+            and isinstance(payload.get("errors"), list)
+            and isinstance(payload.get("timestamp"), str)
+            and payload.get("timestamp", "").endswith("Z")
+            and isinstance(payload.get("audit_id"), str)
+            and payload.get("audit_id", "").startswith("audit-")
+            and valid_exit
+        ):
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_cli_contract_invalid",
+                message="Local Workbench control returned an inconsistent response.",
+            )
+        return payload
+
+
+def _run_local_workbench_cli(
+    executable: Path,
+    argv: list[str],
+    timeout_seconds: int,
+) -> tuple[int, str]:
+    if (
+        executable != INSTALLED_WORKBENCH_BRIDGE_CLI
+        or executable.is_symlink()
+        or not executable.is_file()
+        or not os.access(executable, os.X_OK)
+        or executable.resolve(strict=True) != executable
+    ):
+        raise FileNotFoundError("installed Workbench bridge launcher is unavailable")
+    child_env = {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        **{
+            key: value
+            for key in (
+                "HOME",
+                "TMPDIR",
+                "USER",
+                "LOGNAME",
+                "LANG",
+                "LC_ALL",
+                "__CF_USER_TEXT_ENCODING",
+            )
+            if (value := os.environ.get(key))
+        },
+    }
+    completed = subprocess.run(
+        [str(executable), *argv],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        timeout=timeout_seconds,
+        check=False,
+        env=child_env,
+    )
+    return completed.returncode, completed.stdout
 
 
 def evaluate_connector_candidate_identity(
@@ -650,7 +833,7 @@ def _has_visual_assertion_failure(errors: list[dict[str, Any]]) -> bool:
 
 def timeout_for_command(command: str) -> int:
     """Per-primitive timeout in seconds. Scenario suites may run many primitives."""
-    if command == "desktop_control_start":
+    if command == LOCAL_WORKBENCH_CONTROL_START:
         return 30
     if command in {"desktop_see", "iphone_see", "customer_mac_snapshot", "customer_mac_ax_tree"}:
         return 60
@@ -914,7 +1097,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.repo_root:
         os.environ["EVAOS_DESKTOP_BRIDGE_QA_REPO_ROOT"] = str(args.repo_root)
-    surface = _surface_for_name(args.surface, connector_url=args.connector_url, token=token, artifact_dir=artifact_dir)
+    remote_surface = _surface_for_name(args.surface, connector_url=args.connector_url, token=token, artifact_dir=artifact_dir)
+    surface = OperatorAcknowledgedLocalControlSurface(
+        remote_surface,
+        operator_ack_live_control=args.operator_ack_live_control,
+    )
     steps = build_scenarios(args.suite, allow_real_world_actions=args.allow_real_world_actions)
     results = run_steps(steps, surface)
     report_paths = write_reports(
@@ -978,7 +1165,7 @@ def _codex_steps() -> list[CanaryStep]:
 
 def _full_access_steps() -> list[CanaryStep]:
     return [
-        CanaryStep(id="full.start", suite="full_access", command="desktop_control_start", params={"mode": "full-access", "agent_label": "evaOS QA Canary"}),
+        CanaryStep(id="full.start", suite="full_access", command=LOCAL_WORKBENCH_CONTROL_START, params={"mode": "full-access", "agent_label": "evaOS QA Canary"}),
         CanaryStep(id="full.status", suite="full_access", command="desktop_control_status"),
         CanaryStep(id="full.scroll_no_approval", suite="full_access", command="desktop_scroll", params={"direction": "down", "amount": 200, "dry_run": False}, delay_before_seconds=10.5),
         CanaryStep(id="full.hotkey_no_approval", suite="full_access", command="desktop_hotkey", params={"keys": "escape", "dry_run": False}),
@@ -1036,7 +1223,7 @@ def _iphone_scenario_steps() -> list[CanaryStep]:
 
 def _ask_permission_steps() -> list[CanaryStep]:
     return [
-        CanaryStep(id="ask.start", suite="ask_permission", command="desktop_control_start", params={"mode": "ask-permission", "agent_label": "evaOS QA Canary"}),
+        CanaryStep(id="ask.start", suite="ask_permission", command=LOCAL_WORKBENCH_CONTROL_START, params={"mode": "ask-permission", "agent_label": "evaOS QA Canary"}),
         CanaryStep(id="ask.high_impact_denied", suite="ask_permission", command="desktop_type", params={"text": "evaOS QA ask permission", "dry_run": False}, expect_error_code="approval_audit_required", delay_before_seconds=10.5),
         CanaryStep(id="ask.high_impact_dry_run", suite="ask_permission", command="desktop_type", params={"text": "evaOS QA ask permission", "dry_run": True}),
         CanaryStep(id="ask.high_impact_approved", suite="ask_permission", command="desktop_type", params={"text": "evaOS QA ask permission", "dry_run": False, "approval_audit_id": "${ask.high_impact_dry_run.audit_id}"}, skip_if_unresolved=True),
