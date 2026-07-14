@@ -1563,7 +1563,7 @@ async function cleanupMacControlCanarySessionWithAdmin(admin, state) {
     const revokedRows = await admin.patch(
       'desktop_app_sessions',
       { id: `eq.${sessionId}`, revoked_at: 'is.null' },
-      { revoked_at: now, last_used_at: now },
+      { revoked_at: now },
       { select: 'id,revoked_at' }
     );
     if (
@@ -1590,12 +1590,7 @@ async function cleanupMacControlCanarySession(options = loadMacControlCanaryOpti
     throw new Error('Missing AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY.');
   }
   if (!fs.existsSync(options.statePath)) {
-    return {
-      schema: 'evaos-mac-control-canary-session-cleanup/v1',
-      sessionRevoked: false,
-      stateFilePresent: false,
-      sensitiveOutput: 'passed',
-    };
+    throw new Error('Mac-control cleanup cannot proceed because the required canary session state is missing.');
   }
   const state = JSON.parse(fs.readFileSync(options.statePath, 'utf8'));
   if (state?.schema !== 'evaos-mac-control-canary-session-state/v1') {

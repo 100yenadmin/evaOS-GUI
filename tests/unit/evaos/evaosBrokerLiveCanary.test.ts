@@ -829,6 +829,44 @@ describe('evaOS broker live canary', () => {
     ).toThrow(/customer scope mismatch/i);
   });
 
+  it('fails with binding-missing evidence before reading tools_ready when runtime status is absent', () => {
+    const now = Date.parse('2026-07-14T05:00:00.000Z');
+    const binding = {
+      schema_version: 'evaos.mac_control_runtime_readiness.v1',
+      required: true,
+      customer_id: 'staging-mac-owner',
+      runtime: 'openclaw',
+      grant_state: 'active',
+      tools_ready: true,
+      binding_id: '11111111-1111-4111-8111-111111111111',
+      binding_version: '7',
+      binding_expires_at: new Date(now + 20_000).toISOString(),
+      allowed_capabilities: ['customer_mac_status', 'desktop_see', 'desktop_control'],
+    };
+
+    expect(() =>
+      liveCanary.sanitizeMacControlRuntimeLaunchCanaryResponse(
+        {
+          status: 'attached',
+          customer_id: 'staging-mac-owner',
+          runtime: 'openclaw',
+          launch_mode: 'mac_control_tools',
+          launch_url:
+            'https://openclaw-staging.example.test/auth/callback?customer_id=staging-mac-owner&session=callback_secret_for_test',
+          source_pointer: 'broker:runtime_launch:openclaw',
+          audit_id: 'broker:runtime_launch:staging-mac-owner:openclaw',
+          mac_control: binding,
+        },
+        {
+          customerId: 'staging-mac-owner',
+          runtime: 'openclaw',
+          expectedCallbackHost: 'openclaw-staging.example.test',
+        },
+        now
+      )
+    ).toThrow(/omitted selected-binding readiness/i);
+  });
+
   it('fails closed when the selected binding is expired or the callback exchange is rejected', async () => {
     const now = Date.parse('2026-07-14T05:00:00.000Z');
     const binding = {

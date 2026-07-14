@@ -1,4 +1,7 @@
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
@@ -29,6 +32,7 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
     admin: FakeMacControlCanaryAdmin,
     state: Record<string, unknown>
   ) => Promise<Record<string, unknown>>;
+  cleanupMacControlCanarySession: (options: Record<string, unknown>) => Promise<Record<string, unknown>>;
   providerCleanupReportFromState: (state: Record<string, unknown>) => Record<string, unknown>;
   providerFixtureSubjectsFromRows: (rows: ProviderRow[]) => string[];
   renderGithubEnvFile: (env: Record<string, string>) => string;
@@ -659,7 +663,7 @@ describe('evaOS live canary fixture provisioner', () => {
       {
         table: 'desktop_app_sessions',
         query: { id: 'eq.temporary-session-id', revoked_at: 'is.null' },
-        body: { revoked_at: expect.any(String), last_used_at: expect.any(String) },
+        body: { revoked_at: expect.any(String) },
       },
     ]);
     expect(report).toMatchObject({
@@ -668,6 +672,22 @@ describe('evaOS live canary fixture provisioner', () => {
       sensitiveOutput: 'passed',
     });
     expect(JSON.stringify(report)).not.toContain('temporary-session-id');
+  });
+
+  it('fails explicitly and without sensitive output when required Mac-control cleanup state is missing', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-cleanup-missing-'));
+    try {
+      await expect(
+        provisioner.cleanupMacControlCanarySession({
+          serviceKey: 'fixture-service-key',
+          statePath: path.join(tempDir, 'missing-state.json'),
+          proofDir: tempDir,
+        })
+      ).rejects.toThrow('Mac-control cleanup cannot proceed because the required canary session state is missing.');
+      expect(fs.existsSync(path.join(tempDir, 'mac-control-session-cleanup.json'))).toBe(false);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('refuses to claim cleanup when the exact temporary session row was not returned', async () => {

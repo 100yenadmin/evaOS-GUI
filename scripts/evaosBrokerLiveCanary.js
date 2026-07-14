@@ -373,7 +373,7 @@ function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.
   const selected = asPlainRecord(record.mac_control ?? record.macControl);
   const runtimeStatus = asPlainRecord(record.runtime_status ?? record.runtimeStatus);
   const selectedFromStatus = asPlainRecord(runtimeStatus?.mac_control ?? runtimeStatus?.macControl);
-  if (!selected || !selectedFromStatus) {
+  if (!selected || !runtimeStatus || !selectedFromStatus) {
     throw macControlFailure('binding_missing', 'Mac-control launch omitted selected-binding readiness.');
   }
   if (
@@ -396,7 +396,7 @@ function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.
   ) {
     throw macControlFailure('invalid_response', 'Mac-control runtime-status binding readiness schema mismatch.');
   }
-  if (selected.tools_ready !== true || runtimeStatus?.tools_ready !== true || selectedFromStatus.tools_ready !== true) {
+  if (selected.tools_ready !== true || runtimeStatus.tools_ready !== true || selectedFromStatus.tools_ready !== true) {
     throw macControlFailure('selected_scope_not_ready', 'Mac-control selected binding is not tools-ready.');
   }
   if (selected.grant_state !== 'active' || selectedFromStatus.grant_state !== 'active') {
