@@ -20,11 +20,12 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from .pre_canary import packaged_bridge_source_binding
-from .state import read_control_session
+from .state import kill_control_session, read_control_session
 
 DEFAULT_RUN_ROOT = Path("/Volumes/LEXAR/Codex/evaos-workbench-qa-runs")
 LIVE_CONTROL_SUITES = {
     "all",
+    "control_start",
     "full",
     "full_access",
     "primitive",
@@ -274,17 +275,41 @@ class OperatorAcknowledgedLocalControlSurface:
         operator_ack_live_control: bool,
         local_runner: Callable[[Path, list[str], int], tuple[int, str]] | None = None,
         session_reader: Callable[[], dict[str, Any]] | None = None,
+        local_kill_switch: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.delegate = delegate
         self.operator_ack_live_control = operator_ack_live_control
         self.local_runner = local_runner or _run_local_workbench_cli
         self.session_reader = session_reader or read_control_session
+        self.local_kill_switch = local_kill_switch or kill_control_session
+        self.control_start_failed = False
 
     def run(self, command: str, params: dict[str, Any]) -> SurfaceResponse:
-        if command != LOCAL_WORKBENCH_CONTROL_START:
-            return self.delegate.run(command, params)
-        payload = self._start_local_control(params)
-        return SurfaceResponse.from_payload(payload)
+        if command == LOCAL_WORKBENCH_CONTROL_START:
+            if self.control_start_failed:
+                return SurfaceResponse.from_payload(
+                    _error_payload(
+                        command=command,
+                        code="local_control_start_chain_blocked",
+                        message="A prior local Workbench control start failed; further starts are blocked for this canary run.",
+                    )
+                )
+            payload = self._start_local_control(params)
+            self.control_start_failed = payload.get("ok") is not True
+            return SurfaceResponse.from_payload(payload)
+        if self.control_start_failed and command not in {
+            "desktop_control_status",
+            "desktop_control_stop",
+            "desktop_kill_switch",
+        }:
+            return SurfaceResponse.from_payload(
+                _error_payload(
+                    command=command,
+                    code="local_control_start_chain_blocked",
+                    message="Remote actions are blocked because local Workbench control start did not complete safely.",
+                )
+            )
+        return self.delegate.run(command, params)
 
     def _start_local_control(self, params: dict[str, Any]) -> dict[str, Any]:
         if not self.operator_ack_live_control:
@@ -317,6 +342,9 @@ class OperatorAcknowledgedLocalControlSurface:
                 code="local_control_agent_label_invalid",
                 message="Local Workbench control agent label is invalid.",
             )
+        label_prefix = agent_label.strip() if isinstance(agent_label, str) else "evaOS QA Canary"
+        binding_nonce = uuid.uuid4().hex
+        bound_agent_label = f"{label_prefix[:120]} [{binding_nonce}]"
         generation = self.session_reader().get("generation")
         if type(generation) is not int or generation < 0:
             return _error_payload(
@@ -335,8 +363,7 @@ class OperatorAcknowledgedLocalControlSurface:
             "--expected-control-generation",
             str(generation),
         ]
-        if isinstance(agent_label, str):
-            argv.extend(["--agent-label", agent_label.strip()])
+        argv.extend(["--agent-label", bound_agent_label])
         try:
             exit_code, output = self.local_runner(
                 INSTALLED_WORKBENCH_BRIDGE_CLI,
@@ -344,24 +371,51 @@ class OperatorAcknowledgedLocalControlSurface:
                 timeout_for_command(LOCAL_WORKBENCH_CONTROL_START),
             )
         except subprocess.TimeoutExpired:
+            cleanup_confirmed = self._activate_local_kill_switch()
             return _error_payload(
                 command=LOCAL_WORKBENCH_CONTROL_START,
-                code="local_control_cli_timeout",
-                message="The installed Workbench control command timed out.",
+                code=(
+                    "local_control_cli_timeout"
+                    if cleanup_confirmed
+                    else "local_control_cli_timeout_cleanup_unconfirmed"
+                ),
+                message=(
+                    "The installed Workbench control command timed out; local cleanup was confirmed."
+                    if cleanup_confirmed
+                    else "The installed Workbench control command timed out and local cleanup could not be confirmed."
+                ),
             )
         except Exception:  # noqa: BLE001 - fail closed without exposing launcher or host details.
+            cleanup_confirmed = self._activate_local_kill_switch()
             return _error_payload(
                 command=LOCAL_WORKBENCH_CONTROL_START,
-                code="local_control_cli_unavailable",
-                message="The installed Workbench control command is unavailable.",
+                code=(
+                    "local_control_cli_unavailable"
+                    if cleanup_confirmed
+                    else "local_control_cli_unavailable_cleanup_unconfirmed"
+                ),
+                message=(
+                    "The installed Workbench control command is unavailable; local cleanup was confirmed."
+                    if cleanup_confirmed
+                    else "The installed Workbench control command is unavailable and local cleanup could not be confirmed."
+                ),
             )
         try:
             payload = _loads_json_response(output.encode("utf-8"))
         except (UnicodeError, ValueError):
+            cleanup_confirmed = self._activate_local_kill_switch()
             return _error_payload(
                 command=LOCAL_WORKBENCH_CONTROL_START,
-                code="local_control_cli_response_invalid",
-                message="Local Workbench control returned an invalid response.",
+                code=(
+                    "local_control_cli_response_invalid"
+                    if cleanup_confirmed
+                    else "local_control_cli_response_invalid_cleanup_unconfirmed"
+                ),
+                message=(
+                    "Local Workbench control returned an invalid response; local cleanup was confirmed."
+                    if cleanup_confirmed
+                    else "Local Workbench control returned an invalid response and local cleanup could not be confirmed."
+                ),
             )
         expected_fields = {
             "schema_version",
@@ -392,12 +446,107 @@ class OperatorAcknowledgedLocalControlSurface:
             and payload.get("audit_id", "").startswith("audit-")
             and valid_exit
         ):
+            cleanup_confirmed = self._activate_local_kill_switch()
             return _error_payload(
                 command=LOCAL_WORKBENCH_CONTROL_START,
-                code="local_control_cli_contract_invalid",
-                message="Local Workbench control returned an inconsistent response.",
+                code=(
+                    "local_control_cli_contract_invalid"
+                    if cleanup_confirmed
+                    else "local_control_cli_contract_invalid_cleanup_unconfirmed"
+                ),
+                message=(
+                    "Local Workbench control returned an inconsistent response; local cleanup was confirmed."
+                    if cleanup_confirmed
+                    else "Local Workbench control returned an inconsistent response and local cleanup could not be confirmed."
+                ),
             )
+        if payload.get("ok") is not True:
+            cleanup_confirmed = self._activate_local_kill_switch()
+            if cleanup_confirmed:
+                payload.setdefault("warnings", []).append(
+                    "Local kill-switch cleanup was confirmed after the control-start failure."
+                )
+                return payload
+            return _error_payload(
+                command=LOCAL_WORKBENCH_CONTROL_START,
+                code="local_control_start_failed_cleanup_unconfirmed",
+                message="Local Workbench control failed and local cleanup could not be confirmed.",
+            )
+        if payload.get("ok") is True:
+            data = payload.get("data")
+            session = data.get("session") if isinstance(data, dict) else None
+            expected_mode = mode.replace("-", "_")
+            if not (
+                data.get("started") is True
+                and isinstance(session, dict)
+                and session.get("active") is True
+                and session.get("kill_switch") is False
+                and session.get("mode") == expected_mode
+                and session.get("agent_label") == bound_agent_label
+                and type(session.get("generation")) is int
+                and session.get("generation") > generation
+            ):
+                cleanup_confirmed = self._activate_local_kill_switch()
+                return _error_payload(
+                    command=LOCAL_WORKBENCH_CONTROL_START,
+                    code=(
+                        "local_control_state_transition_invalid"
+                        if cleanup_confirmed
+                        else "local_control_state_transition_invalid_cleanup_unconfirmed"
+                    ),
+                    message=(
+                        "Local Workbench control did not enter the requested state; local cleanup was confirmed."
+                        if cleanup_confirmed
+                        else "Local Workbench control did not enter the requested state and local cleanup could not be confirmed."
+                    ),
+                )
+            try:
+                remote_status = self.delegate.run("desktop_control_status", {})
+            except Exception:  # noqa: BLE001 - convert target binding failures into sanitized proof data.
+                remote_status = None
+            remote_session = (
+                remote_status.payload.get("data", {}).get("session")
+                if remote_status is not None
+                and remote_status.ok is True
+                and isinstance(remote_status.payload.get("data"), dict)
+                and isinstance(remote_status.payload.get("data", {}).get("session"), dict)
+                else None
+            )
+            if not (
+                isinstance(remote_session, dict)
+                and remote_session.get("active") is True
+                and remote_session.get("kill_switch") is False
+                and remote_session.get("mode") == session.get("mode")
+                and remote_session.get("agent_label") == session.get("agent_label")
+                and remote_session.get("generation") == session.get("generation")
+                and remote_session.get("started_at") == session.get("started_at")
+            ):
+                cleanup_confirmed = self._activate_local_kill_switch()
+                return _error_payload(
+                    command=LOCAL_WORKBENCH_CONTROL_START,
+                    code=(
+                        "local_control_target_binding_failed"
+                        if cleanup_confirmed
+                        else "local_control_target_binding_failed_cleanup_unconfirmed"
+                    ),
+                    message=(
+                        "Local Workbench control did not bind to the configured connector; local cleanup was confirmed."
+                        if cleanup_confirmed
+                        else "Local Workbench control did not bind to the configured connector and local cleanup could not be confirmed."
+                    ),
+                )
         return payload
+
+    def _activate_local_kill_switch(self) -> bool:
+        try:
+            session = self.local_kill_switch()
+        except Exception:  # noqa: BLE001 - cleanup is reported only as a boolean.
+            return False
+        return (
+            isinstance(session, dict)
+            and session.get("active") is False
+            and session.get("kill_switch") is True
+        )
 
 
 def _run_local_workbench_cli(
@@ -862,6 +1011,7 @@ def build_scenarios(suite: str, *, allow_real_world_actions: bool) -> list[Canar
         normalized = "iphone_scenario"
     suites: dict[str, list[CanaryStep]] = {
         "candidate": [CanaryStep(id="candidate.bridge_status", suite="candidate", command="desktop_bridge_status")],
+        "control_start": _control_start_steps(),
         "readiness": _readiness_steps(),
         "codex": _codex_steps(),
         "full_access": _full_access_steps(),
@@ -986,7 +1136,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--surface", choices=("connector", "openclaw", "hermes"), default="connector")
     parser.add_argument(
         "--suite",
-        choices=("candidate", "readiness", "codex", "desktop", "iphone", "primitive", "desktop_scenario", "iphone_scenario", "full", "full_access", "ask_permission", "kill_switch", "real_world_optional", "all"),
+        choices=("candidate", "control_start", "readiness", "codex", "desktop", "iphone", "primitive", "desktop_scenario", "iphone_scenario", "full", "full_access", "ask_permission", "kill_switch", "real_world_optional", "all"),
         default="readiness",
     )
     parser.add_argument("--artifact-dir", type=Path)
@@ -1041,7 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
             if local_candidate_binding.get("ok") is True
             else {"ok": False, "reason": "local_candidate_binding_failed"}
         )
-        selected_binding_required = _suite_requires_operator_ack(
+        selected_binding_required = _suite_requires_selected_binding_proof(
             args.suite,
             allow_real_world_actions=args.allow_real_world_actions,
         )
@@ -1140,6 +1290,18 @@ def _suite_requires_operator_ack(suite: str, *, allow_real_world_actions: bool) 
     return normalized in LIVE_CONTROL_SUITES
 
 
+def _suite_requires_selected_binding_proof(
+    suite: str,
+    *,
+    allow_real_world_actions: bool,
+) -> bool:
+    normalized = "full_access" if suite == "full" else suite
+    return normalized != "control_start" and _suite_requires_operator_ack(
+        normalized,
+        allow_real_world_actions=allow_real_world_actions,
+    )
+
+
 def _readiness_steps() -> list[CanaryStep]:
     return [
         CanaryStep(id="readiness.bridge_status", suite="readiness", command="desktop_bridge_status"),
@@ -1148,6 +1310,26 @@ def _readiness_steps() -> list[CanaryStep]:
         CanaryStep(id="readiness.control_status", suite="readiness", command="desktop_control_status"),
         CanaryStep(id="readiness.audit_tail", suite="readiness", command="desktop_bridge_audit_tail", params={"limit": 20}),
         CanaryStep(id="readiness.iphone_status", suite="readiness", command="customer_mac_iphone_mirroring_status", skip_on_unavailable=True),
+    ]
+
+
+def _control_start_steps() -> list[CanaryStep]:
+    return [
+        CanaryStep(id="control_start.bridge_status", suite="control_start", command="desktop_bridge_status"),
+        CanaryStep(
+            id="control_start.full_access",
+            suite="control_start",
+            command=LOCAL_WORKBENCH_CONTROL_START,
+            params={"mode": "full-access", "agent_label": "evaOS RC Canary"},
+        ),
+        CanaryStep(
+            id="control_start.ask_permission",
+            suite="control_start",
+            command=LOCAL_WORKBENCH_CONTROL_START,
+            params={"mode": "ask-permission", "agent_label": "evaOS RC Canary"},
+        ),
+        CanaryStep(id="control_start.stop", suite="control_start", command="desktop_control_stop"),
+        CanaryStep(id="control_start.kill_switch", suite="control_start", command="desktop_kill_switch"),
     ]
 
 

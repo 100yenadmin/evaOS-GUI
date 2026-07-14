@@ -849,7 +849,7 @@ def main(
         observer = observer_factory() if observer_factory is not None else MacOSCodexObserver(state_dir=state_dir)
         customer_mac = customer_mac_factory() if customer_mac_factory is not None else CustomerMacObserver(state_dir=state_dir)
         app_server = app_server_factory() if app_server_factory is not None else CodexAppServerObserver()
-        if _is_generation_bound_live_action(command_id, args):
+        if _is_transaction_bound_live_action(command_id, args):
             with control_session_transaction(state_dir):
                 result = _validate_guarded_approval(command_id, args, state_dir)
                 if result.ok:
@@ -918,13 +918,10 @@ def _run_bridge_argv(argv: list[str], *, state_dir: Path | None = None) -> tuple
     return exit_code, output
 
 
-def _is_generation_bound_live_action(command_id: str, args: argparse.Namespace) -> bool:
-    generation = getattr(args, "remote_control_generation", None)
+def _is_transaction_bound_live_action(command_id: str, args: argparse.Namespace) -> bool:
     return (
-        command_id in CONTROLLED_LIVE_COMMANDS
+        command_id in TAKEOVER_WARNING_GATED_COMMANDS
         and getattr(args, "dry_run", None) is False
-        and type(generation) is int
-        and generation >= 0
     )
 
 
@@ -1336,11 +1333,7 @@ def _validate_guarded_approval(command_id: str, args: argparse.Namespace, state_
     if command_id in TAKEOVER_WARNING_GATED_COMMANDS and getattr(args, "dry_run", None) is False:
         session = read_control_session(state_dir)
         expected_generation = getattr(args, "remote_control_generation", None)
-        if (
-            command_id in CONTROLLED_LIVE_COMMANDS
-            and expected_generation is not None
-            and session.get("generation") != expected_generation
-        ):
+        if expected_generation is not None and session.get("generation") != expected_generation:
             return CommandResult(
                 ok=False,
                 data={"session": session},

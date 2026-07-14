@@ -110,7 +110,7 @@ print("ok")
     expect(output).toBe('ok');
   });
 
-  it('holds kill behind a generation-bound live adapter mutation', () => {
+  it('holds kill behind a direct live adapter mutation without a remote generation', () => {
     const output = runPython(`
 import io
 import json
@@ -158,8 +158,6 @@ with TemporaryDirectory() as temporary_root:
             action_result["exit_code"] = main(
                 [
                     "customer-mac",
-                    "--remote-control-generation",
-                    str(session["generation"]),
                     "desktop",
                     "hotkey",
                     "--keys",
@@ -206,6 +204,218 @@ with TemporaryDirectory() as temporary_root:
     assert order == ["mutation-start", "mutation-end", "kill"], order
     final = read_control_session(root)
     assert final["active"] is False and final["kill_switch"] is True
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
+
+  it('serializes legacy named Mac mutations with the kill switch', () => {
+    const output = runPython(`
+import io
+import json
+import threading
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from evaos_desktop_bridge.audit import append_audit
+from evaos_desktop_bridge.cli import main
+from evaos_desktop_bridge.state import (
+    kill_control_session,
+    read_control_session,
+    start_control_session,
+    write_control_session,
+)
+from evaos_desktop_bridge.types import CommandResult
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+    mutation_entered = threading.Event()
+    release_mutation = threading.Event()
+    kill_completed = threading.Event()
+    failures = []
+    order = []
+    action_result = {}
+
+    session = start_control_session(mode="full_access", state_dir=root)
+    session["takeover_warning_started_at"] = None
+    session["takeover_warning_until"] = None
+    session = write_control_session(session, state_dir=root)
+    approval_id = append_audit(
+        command="customer_mac.app_focus",
+        target="customer_mac",
+        args={"app_name": "Finder", "dry_run": True},
+        ok=True,
+        warnings=[],
+        errors=[],
+        state_dir=root,
+    )
+
+    class BlockingCustomerMac:
+        def app_focus(self, *, app_name, dry_run=False):
+            assert app_name == "Finder" and dry_run is False
+            order.append("mutation-start")
+            mutation_entered.set()
+            assert release_mutation.wait(5)
+            order.append("mutation-end")
+            return CommandResult(ok=True, data={"focused": True})
+
+    def action():
+        try:
+            stdout = io.StringIO()
+            action_result["exit_code"] = main(
+                [
+                    "customer-mac",
+                    "--remote-control-generation",
+                    str(session["generation"]),
+                    "app-focus",
+                    "--json",
+                    "--app-name",
+                    "Finder",
+                    "--approval-audit-id",
+                    approval_id,
+                ],
+                observer_factory=lambda: object(),
+                customer_mac_factory=BlockingCustomerMac,
+                app_server_factory=lambda: object(),
+                stdout=stdout,
+                state_dir=root,
+            )
+            action_result["payload"] = json.loads(stdout.getvalue())
+        except Exception as exc:
+            failures.append(repr(exc))
+
+    def kill():
+        try:
+            killed = kill_control_session(root)
+            order.append("kill")
+            assert killed["kill_switch"] is True
+            kill_completed.set()
+        except Exception as exc:
+            failures.append(repr(exc))
+
+    action_thread = threading.Thread(target=action)
+    action_thread.start()
+    assert mutation_entered.wait(5)
+    kill_thread = threading.Thread(target=kill)
+    kill_thread.start()
+    assert kill_completed.wait(0.2) is False
+    assert kill_thread.is_alive() is True
+
+    release_mutation.set()
+    action_thread.join(5)
+    kill_thread.join(5)
+    assert not action_thread.is_alive() and not kill_thread.is_alive()
+    assert failures == [], failures
+    assert action_result["exit_code"] == 0
+    assert action_result["payload"]["ok"] is True
+    assert order == ["mutation-start", "mutation-end", "kill"], order
+    final = read_control_session(root)
+    assert final["active"] is False and final["kill_switch"] is True
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
+
+  it('generation-binds every remote legacy named Mac mutation', () => {
+    const output = runPython(`
+import hashlib
+import json
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from evaos_desktop_bridge.audit import append_audit
+from evaos_desktop_bridge.connector_server import _make_handler
+from evaos_desktop_bridge.state import start_control_session, write_control_session
+
+def short_hash(value):
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+    session = start_control_session(mode="full_access", state_dir=root)
+    session["takeover_warning_started_at"] = None
+    session["takeover_warning_until"] = None
+    session = write_control_session(session, state_dir=root)
+    commands = [
+        (
+            "customerMacAppFocus",
+            "customer_mac.app_focus",
+            {"app_name": "Finder"},
+            {"app_name": "Finder", "dry_run": True},
+        ),
+        (
+            "customerMacLocalSiteOpen",
+            "customer_mac.local_site_open",
+            {"url": "http://127.0.0.1:3000"},
+            {"url_hash": short_hash("http://127.0.0.1:3000"), "dry_run": True},
+        ),
+        (
+            "customerMacLocalSiteAction",
+            "customer_mac.local_site_action",
+            {"action": "reload"},
+            {"action": "reload", "dry_run": True},
+        ),
+    ]
+    captured = []
+
+    def runner(argv):
+        captured.append(list(argv))
+        return 0, json.dumps({
+            "schema_version": "2026-05-02.mvp1",
+            "command": "customer_mac.test",
+            "target": "customer_mac",
+            "timestamp": "2026-07-15T00:00:00Z",
+            "ok": True,
+            "data": {},
+            "warnings": [],
+            "errors": [],
+            "audit_id": "audit-runner",
+        })
+
+    handler = _make_handler(token="connector-test-token", command_runner=runner, state_dir=root)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    endpoint = f"http://127.0.0.1:{server.server_address[1]}/v1/commands"
+
+    for remote_command, audit_command, params, audit_args in commands:
+        approval_id = append_audit(
+            command=audit_command,
+            target="customer_mac",
+            args=audit_args,
+            ok=True,
+            warnings=[],
+            errors=[],
+            state_dir=root,
+        )
+        request_params = {**params, "dry_run": False, "approval_audit_id": approval_id}
+        request = urllib.request.Request(
+            endpoint,
+            method="POST",
+            data=json.dumps({"command": remote_command, "params": request_params}).encode("utf-8"),
+            headers={"Authorization": "Bearer connector-test-token", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            assert response.status == 200, (remote_command, response.status, response.read())
+
+    assert len(captured) == 3, captured
+    for argv in captured:
+        assert argv[:3] == [
+            "customer-mac",
+            "--remote-control-generation",
+            str(session["generation"]),
+        ], argv
+
+    server.shutdown()
+    server.server_close()
 
 print("ok")
 `);

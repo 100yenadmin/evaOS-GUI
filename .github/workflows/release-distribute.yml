@@ -277,7 +277,7 @@ jobs:
             exit 1
           fi
 
-          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha)
+          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha,createdAt)
           node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<'NODE'
           const run = JSON.parse(process.argv[2]);
           const expectedHead = process.argv[3];
@@ -292,6 +292,11 @@ jobs:
           }
           if (run.headSha !== expectedHead) {
             throw new Error(`RC proof head ${run.headSha} does not match release commit ${expectedHead}.`);
+          }
+          const createdAt = Date.parse(run.createdAt || '');
+          const ageMs = Date.now() - createdAt;
+          if (!Number.isFinite(createdAt) || ageMs < -5 * 60 * 1000 || ageMs > 24 * 60 * 60 * 1000) {
+            throw new Error(`RC proof run is outside the 24-hour publication window: ${run.createdAt || 'missing'}.`);
           }
           NODE
 

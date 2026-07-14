@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       beta_rc_ack:
-        description: 'Type evaos-beta-rc to acknowledge this canary installs and launches release-candidate macOS apps.'
+        description: 'Type evaos-beta-rc to acknowledge this canary installs and launches the candidate, then locally starts Full Access and Ask Permission without performing desktop actions.'
         required: true
         type: string
       tag:
@@ -693,7 +693,8 @@ jobs:
             --build-under-test "$BUNDLE_VERSION" \
             --source-commit-under-test "$TAG_COMMIT" \
             --surface connector \
-            --suite candidate \
+            --suite control_start \
+            --operator-ack-live-control \
             > "$PROOF_DIR/installed-candidate-connector.stdout.json" \
             2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"
           QA_CANARY_EXIT=$?

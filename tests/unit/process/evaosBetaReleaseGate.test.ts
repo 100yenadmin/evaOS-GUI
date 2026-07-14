@@ -279,8 +279,44 @@ function writeArm64TrustEvidence(proofDir: string) {
           },
           selected_binding: { ok: null, reason: 'selected_binding_proof_not_required_for_suite' },
         },
-        summary: { total: 1, passed: 1, failed: 0, skipped: 0 },
-        results: [{ id: 'candidate.bridge_status', ok: true, status: 'passed' }],
+        summary: { total: 5, passed: 5, failed: 0, skipped: 0 },
+        results: [
+          {
+            id: 'control_start.bridge_status',
+            command: 'desktop_bridge_status',
+            ok: true,
+            status: 'passed',
+            params_redacted: {},
+          },
+          {
+            id: 'control_start.full_access',
+            command: 'local_workbench_control_start',
+            ok: true,
+            status: 'passed',
+            params_redacted: { mode: 'full-access' },
+          },
+          {
+            id: 'control_start.ask_permission',
+            command: 'local_workbench_control_start',
+            ok: true,
+            status: 'passed',
+            params_redacted: { mode: 'ask-permission' },
+          },
+          {
+            id: 'control_start.stop',
+            command: 'desktop_control_stop',
+            ok: true,
+            status: 'passed',
+            params_redacted: {},
+          },
+          {
+            id: 'control_start.kill_switch',
+            command: 'desktop_kill_switch',
+            ok: true,
+            status: 'passed',
+            params_redacted: {},
+          },
+        ],
       },
       null,
       2
@@ -990,7 +1026,7 @@ describe('evaOS beta release gate', () => {
     expect(verifierMatch).not.toBeNull();
     const verifier = String(verifierMatch?.[1] || '').replace(/^ {10}/gm, '');
     const expectedHead = 'a'.repeat(40);
-    const runVerifier = (headSha: string) =>
+    const runVerifier = (headSha: string, createdAt = new Date().toISOString()) =>
       spawnSync(
         process.execPath,
         [
@@ -1000,6 +1036,7 @@ describe('evaOS beta release gate', () => {
             event: 'workflow_dispatch',
             workflowName: 'evaOS Beta RC Canary',
             headSha,
+            createdAt,
           }),
           expectedHead,
         ],
@@ -1010,13 +1047,18 @@ describe('evaOS beta release gate', () => {
     const staleResult = runVerifier('b'.repeat(40));
     expect(staleResult.status).not.toBe(0);
     expect(staleResult.stderr).toMatch(/does not match release commit/);
+    const expiredResult = runVerifier(expectedHead, new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString());
+    expect(expiredResult.status).not.toBe(0);
+    expect(expiredResult.stderr).toMatch(/outside the 24-hour publication window/);
   });
 
-  it('keeps every RC DMG installer nounset-safe and rejects ZIP-only cleanup drift', () => {
+  it('keeps RC DMG installation and installed local-control proof fail closed', () => {
     if (process.platform === 'win32') return;
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
     const expectedIssue =
       '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset';
+    const controlStartIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite';
 
     expect(releaseGate.collectRcCanaryWorkflowIssues(workflow)).toEqual([]);
     const drifted = workflow.replace(
@@ -1024,6 +1066,12 @@ describe('evaOS beta release gate', () => {
       '            rm -rf "$extract_dir"\n            hdiutil detach "$mount_dir" -quiet'
     );
     expect(releaseGate.collectRcCanaryWorkflowIssues(drifted)).toContain(expectedIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('--suite control_start \\', '--suite candidate \\'))
+    ).toContain(controlStartIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            --operator-ack-live-control \\\n', ''))
+    ).toContain(controlStartIssue);
 
     const installers = Array.from(
       workflow.matchAll(/^ {10}install_app_from_dmg\(\) \{\n[\s\S]*?^ {10}\}$/gm),
@@ -3308,6 +3356,7 @@ printf '%s\\n' ok
 
       const connectorProofPath = path.join(proofDir, 'installed-candidate-connector.json');
       const connectorProof = JSON.parse(fs.readFileSync(connectorProofPath, 'utf8'));
+      const canonicalConnectorProof = structuredClone(connectorProof);
       connectorProof.candidate_binding.connector.source_sha256 = '0'.repeat(64);
       fs.writeFileSync(connectorProofPath, `${JSON.stringify(connectorProof, null, 2)}\n`);
       expect(() =>
@@ -3318,10 +3367,26 @@ printf '%s\\n' ok
           EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
           EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
-      ).toThrow(/installed candidate connector proof/i);
+      ).toThrow(/installed-candidate-connector|installed candidate connector proof/i);
       connectorProof.candidate_binding.connector.source_sha256 =
         connectorProof.candidate_binding.local.actual_source_sha256;
       fs.writeFileSync(connectorProofPath, `${JSON.stringify(connectorProof, null, 2)}\n`);
+
+      connectorProof.results = connectorProof.results.filter(
+        (result: { id?: string }) => result.id !== 'control_start.ask_permission'
+      );
+      connectorProof.summary = { total: 4, passed: 4, failed: 0, skipped: 0 };
+      fs.writeFileSync(connectorProofPath, `${JSON.stringify(connectorProof, null, 2)}\n`);
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+        })
+      ).toThrow(/installed-candidate-connector|installed candidate connector proof/i);
+      fs.writeFileSync(connectorProofPath, `${JSON.stringify(canonicalConnectorProof, null, 2)}\n`);
 
       const updaterZipProofPath = path.join(proofDir, 'updater-zip-macos-arm64.json');
       const updaterZipProof = JSON.parse(fs.readFileSync(updaterZipProofPath, 'utf8'));

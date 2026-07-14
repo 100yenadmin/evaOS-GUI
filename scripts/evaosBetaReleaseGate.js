@@ -202,7 +202,16 @@ const REQUIRED_RC_PROOF_CHECKS = [
   {
     id: 'installed-candidate-connector',
     evidence: 'installed-candidate-connector.json',
-    requiredText: ['"ok": true', 'candidate.bridge_status', '"source_commit_under_test"', '"candidate_binding"'],
+    requiredText: [
+      '"ok": true',
+      'control_start.bridge_status',
+      'control_start.full_access',
+      'control_start.ask_permission',
+      'control_start.stop',
+      'control_start.kill_switch',
+      '"source_commit_under_test"',
+      '"candidate_binding"',
+    ],
   },
   {
     id: 'launch-smoke',
@@ -839,11 +848,15 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
   } else {
     const rcProofRunLines = getExecutableBlockLines(getWorkflowStepPropertyBlock(rcProofSteps[0], 'run', true));
     const expectedRcProofLines = [
-      'RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha)',
+      'RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha,createdAt)',
       'node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<\'NODE\'',
       'const expectedHead = process.argv[3];',
       'if (run.headSha !== expectedHead) {',
       'throw new Error(`RC proof head ${run.headSha} does not match release commit ${expectedHead}.`);',
+      "const createdAt = Date.parse(run.createdAt || '');",
+      'const ageMs = Date.now() - createdAt;',
+      'if (!Number.isFinite(createdAt) || ageMs < -5 * 60 * 1000 || ageMs > 24 * 60 * 60 * 1000) {',
+      "throw new Error(`RC proof run is outside the 24-hour publication window: ${run.createdAt || 'missing'}.`);",
     ];
     const expectedReleaseCommitValues = getWorkflowStepEnvValues(rcProofSteps[0], 'EXPECTED_RELEASE_COMMIT');
     if (
@@ -919,6 +932,25 @@ function collectRcCanaryWorkflowIssues(workflow) {
     issues.push(
       '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset'
     );
+  }
+  const installedCandidateStep = getWorkflowNamedStepBlocks(workflow, 'Launch beta and audit feed isolation');
+  if (installedCandidateStep.length !== 1) {
+    issues.push(
+      '.github/workflows/evaos-beta-rc-canary.yml: must contain exactly one Launch beta and audit feed isolation step'
+    );
+  } else {
+    const runLines = getExecutableBlockLines(
+      getWorkflowStepPropertyBlock(installedCandidateStep[0], 'run', true)
+    );
+    if (
+      !runLines.includes('--suite control_start \\') ||
+      !runLines.includes('--operator-ack-live-control \\') ||
+      runLines.some((line) => line.includes('--suite candidate'))
+    ) {
+      issues.push(
+        '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite'
+      );
+    }
   }
   return issues;
 }
@@ -1577,10 +1609,17 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     rcCanary,
-    '--suite candidate',
+    '--suite control_start',
     '.github/workflows/evaos-beta-rc-canary.yml',
     issues,
-    'installed connector candidate identity invocation'
+    'installed connector local control-start invocation'
+  );
+  requireText(
+    rcCanary,
+    '--operator-ack-live-control',
+    '.github/workflows/evaos-beta-rc-canary.yml',
+    issues,
+    'installed connector local control-start operator acknowledgement'
   );
   requireText(
     rcCanary,
@@ -3562,7 +3601,18 @@ function assertRcInstalledCandidateConnectorProof(proofPath, tag, releaseManifes
   const selected =
     binding.selected_binding && typeof binding.selected_binding === 'object' ? binding.selected_binding : {};
   const results = Array.isArray(proof.results) ? proof.results : [];
-  const candidateStatus = results.find((result) => result?.id === 'candidate.bridge_status');
+  const expectedResults = [
+    { id: 'control_start.bridge_status', command: 'desktop_bridge_status' },
+    { id: 'control_start.full_access', command: 'local_workbench_control_start', mode: 'full-access' },
+    { id: 'control_start.ask_permission', command: 'local_workbench_control_start', mode: 'ask-permission' },
+    { id: 'control_start.stop', command: 'desktop_control_stop' },
+    { id: 'control_start.kill_switch', command: 'desktop_kill_switch' },
+  ];
+  const requiredStatuses = expectedResults.map((expected) => ({
+    expected,
+    matches: results.filter((result) => result?.id === expected.id),
+  }));
+  const summary = proof.summary && typeof proof.summary === 'object' ? proof.summary : {};
   if (
     proof.source_commit_under_test !== releaseManifest.releaseCommit ||
     proof.version_under_test !== expectedVersion ||
@@ -3586,9 +3636,21 @@ function assertRcInstalledCandidateConnectorProof(proofPath, tag, releaseManifes
     connector.app_name !== 'evaOS Workbench' ||
     selected.ok !== null ||
     selected.reason !== 'selected_binding_proof_not_required_for_suite' ||
-    !candidateStatus ||
-    candidateStatus.ok !== true ||
-    candidateStatus.status !== 'passed'
+    results.length !== expectedResults.length ||
+    summary.total !== expectedResults.length ||
+    summary.passed !== expectedResults.length ||
+    summary.failed !== 0 ||
+    summary.skipped !== 0 ||
+    requiredStatuses.some(({ expected, matches }) => {
+      const result = matches[0];
+      return (
+        matches.length !== 1 ||
+        result.ok !== true ||
+        result.status !== 'passed' ||
+        result.command !== expected.command ||
+        (expected.mode && result.params_redacted?.mode !== expected.mode)
+      );
+    })
   ) {
     throw new Error('Installed candidate connector proof is not bound to the trusted release commit and app identity.');
   }

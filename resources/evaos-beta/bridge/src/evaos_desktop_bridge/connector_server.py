@@ -1022,7 +1022,7 @@ def _make_handler(
                             return
                         prepared_params, temp_paths = _prepare_connector_params(command, params, state_dir=state_dir)
                         argv = build_bridge_argv(command, prepared_params)
-                        if command in CONTROLLED_REMOTE_COMMANDS and params.get("dry_run") is False:
+                        if command in TAKEOVER_WARNING_REMOTE_COMMANDS and params.get("dry_run") is False:
                             session = read_control_session(state_dir)
                             argv = _with_remote_control_generation(argv, session.get("generation"))
                     exit_code, output = command_runner(argv)
