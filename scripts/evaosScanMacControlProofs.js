@@ -11,6 +11,75 @@ const MAC_CONTROL_PROOF_NAMES = Object.freeze([
   'mac-control-session-cleanup.json',
   'mac-control-session-cleanup.stdout.json',
 ]);
+const MAC_CONTROL_PROOF_CONTRACTS = Object.freeze({
+  'mac-control-runtime.json': {
+    schema: 'evaos.mac_control.runtime_proof.v2',
+    fields: [
+      'ok',
+      'schema',
+      'proofKind',
+      'tool',
+      'outcome',
+      'runRef',
+      'executedAt',
+      'bindingRef',
+      'bindingVersion',
+      'sessionRef',
+      'expiresAt',
+      'auditRef',
+      'sourcePointer',
+      'candidate',
+    ],
+    nested: {
+      candidate: {
+        fields: ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'],
+      },
+    },
+  },
+  'mac-control-runtime-negative.json': {
+    schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
+    fields: ['schema', 'sourceHeadSha', 'sourceRunId', 'assertions'],
+    nested: {
+      assertions: {
+        fields: ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'],
+      },
+    },
+  },
+  'mac-control-session-provisioning.json': {
+    schema: 'evaos-mac-control-canary-session-provision/v1',
+    fields: [
+      'schema',
+      'accountConfigured',
+      'customerConfigured',
+      'activeMembershipVerified',
+      'stagingMarkerVerified',
+      'sessionMinted',
+      'sessionExpiryPresent',
+      'sensitiveOutput',
+    ],
+  },
+  'mac-control-session-provisioning.stdout.json': {
+    schema: 'evaos-mac-control-canary-session-provision/v1',
+    fields: [
+      'schema',
+      'accountConfigured',
+      'customerConfigured',
+      'activeMembershipVerified',
+      'stagingMarkerVerified',
+      'sessionMinted',
+      'sessionExpiryPresent',
+      'sensitiveOutput',
+    ],
+  },
+  'mac-control-session-cleanup.json': {
+    schema: 'evaos-mac-control-canary-session-cleanup/v1',
+    fields: ['schema', 'sessionRevoked', 'sensitiveOutput'],
+  },
+  'mac-control-session-cleanup.stdout.json': {
+    schema: 'evaos-mac-control-canary-session-cleanup/v1',
+    fields: ['schema', 'sessionRevoked', 'sensitiveOutput'],
+  },
+});
 const FORBIDDEN_NORMALIZED_FIELDS = new Set([
   'accountemail',
   'accesstoken',
@@ -56,6 +125,7 @@ const FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS = Object.freeze([
   'desktopsession',
   'launchurl',
 ]);
+const ALLOWED_PUBLIC_KEY_IDENTIFIER_FIELDS = new Set(['contextkeyid', 'keyid', 'publickeyid', 'receiptkeyid']);
 
 function normalizedProofFieldName(value) {
   return String(value || '')
@@ -77,11 +147,37 @@ function assertMacControlProofSanitized(value, location = '$') {
     if (
       FORBIDDEN_NORMALIZED_FIELDS.has(normalizedKey) ||
       FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment)) ||
+      (normalizedKey.includes('key') && !ALLOWED_PUBLIC_KEY_IDENTIFIER_FIELDS.has(normalizedKey)) ||
       /private.*key/.test(normalizedKey)
     ) {
       throw new Error(`Mac-control proof contains forbidden field ${key} at ${location}.`);
     }
     assertMacControlProofSanitized(entry, `${location}.${key}`);
+  }
+}
+
+function assertExactProofContract(value, contract, location) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Mac-control proof contract requires an object at ${location}.`);
+  }
+  const allowedFields = new Set(contract.fields);
+  for (const key of Object.keys(value)) {
+    if (!allowedFields.has(key)) {
+      throw new Error(`Mac-control proof contains forbidden unexpected field ${key} at ${location}.`);
+    }
+  }
+  for (const key of contract.fields) {
+    if (!Object.hasOwn(value, key)) {
+      throw new Error(`Mac-control proof contract is missing field ${key} at ${location}.`);
+    }
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    const nestedContract = contract.nested?.[key];
+    if (nestedContract) {
+      assertExactProofContract(entry, nestedContract, `${location}.${key}`);
+    } else if (entry && typeof entry === 'object') {
+      throw new Error(`Mac-control proof contains forbidden structured field ${key} at ${location}.`);
+    }
   }
 }
 
@@ -93,6 +189,11 @@ function scanMacControlProofDirectory(proofDir) {
     if (!fs.existsSync(proofPath)) continue;
     const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
     assertMacControlProofSanitized(proof, proofName);
+    const contract = MAC_CONTROL_PROOF_CONTRACTS[proofName];
+    if (!contract || proof.schema !== contract.schema) {
+      throw new Error(`Mac-control proof has an unexpected schema in ${proofName}.`);
+    }
+    assertExactProofContract(proof, contract, proofName);
     scanned += 1;
   }
   if (scanned === 0) {

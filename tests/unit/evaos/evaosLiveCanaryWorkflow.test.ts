@@ -7,11 +7,36 @@ import { describe, expect, it } from 'vitest';
 const WORKFLOW_PATH = '.github/workflows/evaos-live-canary-proof.yml';
 const require = createRequire(import.meta.url);
 const proofScanner = require('../../../scripts/evaosScanMacControlProofs.js') as {
+  assertMacControlProofSanitized: (proof: unknown) => void;
   scanMacControlProofDirectory: (proofDir: string) => { ok: boolean; scanned: number };
 };
 
 function readWorkflow(): string {
   return fs.readFileSync(WORKFLOW_PATH, 'utf8');
+}
+
+function validMacControlRuntimeProof(): Record<string, unknown> {
+  return {
+    ok: true,
+    schema: 'evaos.mac_control.runtime_proof.v2',
+    proofKind: 'selected_binding_direct_mac_control',
+    tool: 'customer_mac.desktop_hotkey',
+    outcome: 'succeeded',
+    runRef: 'gha:12345:111111111111111111111111',
+    executedAt: '2026-07-15T00:00:00.000Z',
+    bindingRef: 'a'.repeat(64),
+    bindingVersion: '7',
+    sessionRef: 'b'.repeat(64),
+    expiresAt: 1784073660,
+    auditRef: 'c'.repeat(64),
+    sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+    candidate: {
+      sourceCommit: 'd'.repeat(40),
+      sourceSha256: 'e'.repeat(64),
+      appVersion: '2.1.36',
+      appBuild: '2.1.36',
+    },
+  };
 }
 
 describe('evaOS live canary proof workflow', () => {
@@ -185,25 +210,37 @@ describe('evaOS live canary proof workflow', () => {
         { connector_token_value: 'opaque-token-value-123456' },
         { providerCredentialsBundle: 'opaque-credential-value-123456' },
         { password_hint: 'opaque-password-value-123456' },
+        { apiKeyValue: 'opaque-api-key-value-123456' },
+        { auth_key_value: 'opaque-auth-key-value-123456' },
+        { serviceRoleKeyValue: 'opaque-service-role-key-value-123456' },
+        { signingKeyHandle: 'opaque-signing-key-value-123456' },
+        { sessionValue: 'opaque-session-value-123456' },
+        { bindingIdValue: 'opaque-binding-value-123456' },
+        { challengeCopy: 'opaque-challenge-value-123456' },
         { receiptPrivateKeyPath: '/safe-looking/path' },
         { privateSigningKey: 'opaque-key-value-123456' },
         { connectorKeyMaterial: 'opaque-key-material-value-123456' },
         { note: '-----BEGIN OPENSSH PRIVATE KEY-----' },
       ]) {
-        fs.writeFileSync(path.join(proofDir, 'mac-control-runtime.json'), `${JSON.stringify(unsafe)}\n`);
+        fs.writeFileSync(
+          path.join(proofDir, 'mac-control-runtime.json'),
+          `${JSON.stringify({ ...validMacControlRuntimeProof(), ...unsafe })}\n`
+        );
         expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/forbidden/i);
       }
 
       fs.writeFileSync(
         path.join(proofDir, 'mac-control-runtime.json'),
-        `${JSON.stringify({
-          bindingRef: 'a'.repeat(64),
-          sessionRef: 'b'.repeat(64),
-          auditRef: 'c'.repeat(64),
-          receiptKeyId: 'public-receipt-key-id',
-        })}\n`
+        `${JSON.stringify(validMacControlRuntimeProof())}\n`
       );
       expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 2 });
+      expect(() =>
+        proofScanner.assertMacControlProofSanitized({
+          keyId: 'public-key-id',
+          contextKeyId: 'public-context-key-id',
+          receiptKeyId: 'public-receipt-key-id',
+        })
+      ).not.toThrow();
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
