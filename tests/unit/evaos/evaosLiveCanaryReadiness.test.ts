@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const readiness = require('../../../scripts/evaosLiveCanaryReadiness.js') as {
   inspectLiveCanaryReadiness: (env: Record<string, string | undefined>) => {
     ready: boolean;
+    macControlCanaryIncluded: boolean;
     blockers: string[];
     canaries: Array<{
       name: string;
@@ -106,6 +107,57 @@ describe('evaOS live canary readiness', () => {
     expect(report.blockers).toContain(
       'broker-runtime-status: broker-specific credential pair is required when AIONUI_EVAOS_REQUIRE_BROKER_CANARY_TARGET is true'
     );
+  });
+
+  it('adds a separate fail-closed readiness lane only when the Mac-control canary is requested', () => {
+    const ordinary = readiness.inspectLiveCanaryReadiness({
+      AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL: 'admin@electricsheephq.com',
+      AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID: 'support-vm-customer',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND: 'customer_vm',
+      AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL: 'Support VM',
+      AIONUI_EVAOS_BROKER_CANARY_DESKTOP_SESSION: 'eds_broker_session_for_test',
+      AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID: 'cus_broker',
+      AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: 'false',
+    });
+    expect(ordinary.macControlCanaryIncluded).toBe(false);
+    expect(ordinary.canaries.map((canary) => canary.name)).not.toContain('selected-binding-mac-control');
+
+    const requested = readiness.inspectLiveCanaryReadiness({
+      ...requiredEnv,
+      AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: 'false',
+      AIONUI_EVAOS_RUN_MAC_CONTROL_CANARY: 'true',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+      AIONUI_EVAOS_DESKTOP_SESSION: 'eds_generic_session_for_test',
+      AIONUI_EVAOS_CUSTOMER_ID: 'generic-customer',
+    });
+    expect(requested.macControlCanaryIncluded).toBe(true);
+    expect(requested.ready).toBe(false);
+    expect(requested.blockers).toContain(
+      'selected-binding-mac-control: missing AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION'
+    );
+    expect(requested.blockers).toContain(
+      'selected-binding-mac-control: missing AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID'
+    );
+  });
+
+  it('marks the selected-binding Mac-control lane ready only with exact acknowledgement and dedicated staging values', () => {
+    const report = readiness.inspectLiveCanaryReadiness({
+      ...requiredEnv,
+      AIONUI_EVAOS_RUN_FOLLOWUP_CANARIES: 'false',
+      AIONUI_EVAOS_RUN_MAC_CONTROL_CANARY: 'true',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_session_for_test',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.macControlCanaryIncluded).toBe(true);
+    expect(report.canaries.find((canary) => canary.name === 'selected-binding-mac-control')?.ready).toBe(true);
+    expect(JSON.stringify(report)).not.toContain('eds_mac_session_for_test');
+    expect(JSON.stringify(report)).not.toContain('staging-mac-owner');
+    expect(JSON.stringify(report)).not.toContain('example.test');
   });
 
   it('rejects mixed broker-specific and default credential pairs for broker readiness', () => {

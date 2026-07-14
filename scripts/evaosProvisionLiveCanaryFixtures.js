@@ -15,6 +15,8 @@ const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
 const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
 const FIXTURE_VM_DISPLAY_NAME = 'AionUi Live Canary Support VM';
 const INTERNAL_BROKER_CANARY_CUSTOMER_IDS = new Set(['evaos-support', 'golden', 'internal', 'support', 'support-vm']);
+const MAC_CONTROL_CANARY_TARGET_SCHEMA = 'evaos.mac_control_canary_target.v2';
+const EXPLICIT_CANARY_TARGET_ID = /(^|[-_])(staging|canary|synthetic)([-_]|$)/i;
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -35,6 +37,28 @@ function token(prefix = 'eds') {
 
 function sha256Hex(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function macControlCleanupKeyConfig(env) {
+  const explicit = optionalEnv(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_CLEANUP_KEY', undefined);
+  if (explicit) {
+    if (!/^[A-Za-z0-9._:-]{8,160}$/.test(explicit)) {
+      throw new Error('AIONUI_EVAOS_MAC_CONTROL_CANARY_CLEANUP_KEY is invalid.');
+    }
+    return { cleanupKey: `explicit-${sha256Hex(explicit).slice(0, 40)}`, cleanupKeySource: 'explicit' };
+  }
+
+  const repository = optionalEnv(env, 'GITHUB_REPOSITORY', undefined);
+  const runId = optionalEnv(env, 'GITHUB_RUN_ID', undefined);
+  const runAttempt = optionalEnv(env, 'GITHUB_RUN_ATTEMPT', '1');
+  if (repository && /^\d+$/.test(runId || '') && /^\d+$/.test(runAttempt)) {
+    return {
+      cleanupKey: `github-${sha256Hex(`${repository}:${runId}:${runAttempt}`).slice(0, 40)}`,
+      cleanupKeySource: 'github',
+    };
+  }
+
+  return { cleanupKey: `local-${crypto.randomUUID()}`, cleanupKeySource: 'generated' };
 }
 
 function externalUserIdForCustomerProfile(customerAccountId, profileId) {
@@ -195,12 +219,14 @@ class SupabaseRestAdmin {
     return rows[0];
   }
 
-  async patch(table, query, body) {
-    await this.request('PATCH', `/rest/v1/${table}`, {
-      query,
+  async patch(table, query, body, options = {}) {
+    const select = safeText(options.select, 300);
+    const result = await this.request('PATCH', `/rest/v1/${table}`, {
+      query: select ? { ...query, select } : query,
       body,
-      prefer: 'return=minimal',
+      prefer: select ? 'return=representation' : 'return=minimal',
     });
+    return select && Array.isArray(result.body) ? result.body : [];
   }
 
   async deleteRows(table, query) {
@@ -250,7 +276,7 @@ async function requiredBrokerAction(endpoint, desktopSession, body, label) {
   return result.body;
 }
 
-async function createDesktopSession(admin, { userId, email, source, ttlMinutes }) {
+async function createDesktopSession(admin, { userId, email, source, ttlMinutes, metadata = {} }) {
   const raw = token('eds');
   const inserted = await admin.insert(
     'desktop_app_sessions',
@@ -261,6 +287,7 @@ async function createDesktopSession(admin, { userId, email, source, ttlMinutes }
       expires_at: isoAfter(ttlMinutes),
       metadata: {
         roles: ['customer'],
+        ...metadata,
         source,
         created_by: 'aionui-live-canary-fixture-provisioner',
       },
@@ -280,10 +307,48 @@ async function loadCustomerAccount(admin, customerId) {
     {
       customer_id: `eq.${customerId}`,
       merged_into_customer_account_id: 'is.null',
-      select: 'id,customer_id,display_name',
+      select: 'id,customer_id,display_name,metadata',
     },
     `customer account ${customerId}`
   );
+}
+
+function normalizeMacControlCallbackHost(value) {
+  const input = String(value || '')
+    .trim()
+    .toLowerCase();
+  const match = /^([^:]+)(?::([0-9]{1,5}))?$/.exec(input);
+  const hostname = match?.[1] ?? '';
+  const port = match?.[2];
+  const labels = hostname.split('.');
+  const portNumber = port ? Number(port) : undefined;
+  if (
+    hostname.length > 253 ||
+    labels.length < 2 ||
+    labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) ||
+    (port !== undefined && (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535))
+  ) {
+    throw new Error('Mac-control canary expected callback host is invalid.');
+  }
+  return new URL(`https://${hostname}${port ? `:${port}` : ''}`).host.toLowerCase();
+}
+
+function assertDatabaseBackedMacControlCanaryTarget(customerAccount, options) {
+  const metadata = asRecord(customerAccount?.metadata);
+  const marker = asRecord(metadata?.evaos_mac_control_canary);
+  const supabaseOrigin = new URL(options.supabaseUrl).origin;
+  const endpointOrigin = new URL(options.endpoint).origin;
+  const expectedCallbackHost = normalizeMacControlCallbackHost(options.expectedCallbackHost);
+  if (
+    marker?.schema !== MAC_CONTROL_CANARY_TARGET_SCHEMA ||
+    marker?.environment !== 'staging' ||
+    marker?.enabled !== true ||
+    marker?.supabase_origin !== supabaseOrigin ||
+    marker?.endpoint_origin !== endpointOrigin ||
+    marker?.expected_callback_host !== expectedCallbackHost
+  ) {
+    throw new Error('Mac-control canary target is missing the required database-backed staging canary marker.');
+  }
 }
 
 async function loadAdminMembership(admin, adminProfileId, customerAccountId) {
@@ -850,10 +915,35 @@ function coreBrokerFixtureEnvFromProvision(state) {
   };
 }
 
+function macControlCanaryEnvFromProvision(state, desktopSession) {
+  return {
+    AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: desktopSession,
+    AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: state.customerId,
+    AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: state.endpoint,
+    AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: state.expectedCallbackHost,
+  };
+}
+
 function renderGithubEnvFile(env) {
   return `${Object.entries(env)
     .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, '')}`)
     .join('\n')}\n`;
+}
+
+function atomicWriteFileSync(fileSystem, targetPath, contents, options = {}) {
+  const directory = path.dirname(targetPath);
+  const temporaryPath = path.join(directory, `.${path.basename(targetPath)}.${process.pid}.${crypto.randomUUID()}.tmp`);
+  fileSystem.mkdirSync(directory, { recursive: true });
+  try {
+    fileSystem.writeFileSync(temporaryPath, contents, options);
+    fileSystem.renameSync(temporaryPath, targetPath);
+  } finally {
+    try {
+      fileSystem.rmSync(temporaryPath, { force: true });
+    } catch {
+      // The primary persistence error is reported through the sanitized caller error.
+    }
+  }
 }
 
 function maskSecretsForGithub(env) {
@@ -865,6 +955,7 @@ function maskSecretsForGithub(env) {
     'AIONUI_EVAOS_APPROVER_SESSION',
     'AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION',
     'AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION',
   ]) {
     const value = env[key];
     if (value) process.stdout.write(`::add-mask::${value}\n`);
@@ -988,6 +1079,175 @@ function loadCoreBrokerOptions(env = process.env) {
     ...options,
     customerId: optionalEnv(env, 'AIONUI_EVAOS_BROKER_CANARY_CUSTOMER_ID', options.customerId),
   };
+}
+
+function loadMacControlCanaryOptions(env = process.env) {
+  const required = [
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+  ];
+  const values = Object.fromEntries(required.map((name) => [name, requireEnv(env, name)]));
+  const ttlMinutes = Number(optionalEnv(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_TTL_MINUTES', '10'));
+  if (!Number.isFinite(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 15) {
+    throw new Error('AIONUI_EVAOS_MAC_CONTROL_CANARY_TTL_MINUTES must be between 1 and 15.');
+  }
+  if (isInternalBrokerCanaryCustomerId(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID)) {
+    throw new Error('Mac-control canary customer must be a dedicated non-internal staging target.');
+  }
+  if (!EXPLICIT_CANARY_TARGET_ID.test(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID)) {
+    throw new Error('Mac-control canary customer ID must name an explicit staging, canary, or synthetic target.');
+  }
+
+  let supabaseUrl;
+  let endpointUrl;
+  try {
+    supabaseUrl = new URL(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL);
+    endpointUrl = new URL(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT);
+  } catch {
+    throw new Error('Mac-control canary Supabase URL and endpoint must be absolute HTTPS URLs.');
+  }
+  if (
+    supabaseUrl.protocol !== 'https:' ||
+    endpointUrl.protocol !== 'https:' ||
+    supabaseUrl.username ||
+    supabaseUrl.password ||
+    supabaseUrl.pathname !== '/' ||
+    supabaseUrl.search ||
+    supabaseUrl.hash
+  ) {
+    throw new Error('Mac-control canary Supabase URL and endpoint must be absolute HTTPS URLs.');
+  }
+  if (supabaseUrl.origin === new URL(DEFAULT_SUPABASE_URL).origin) {
+    throw new Error('Mac-control canary refuses the production/default Supabase project.');
+  }
+  if (endpointUrl.origin !== supabaseUrl.origin) {
+    throw new Error('Mac-control canary endpoint must use the same staging origin as its Supabase project.');
+  }
+  const cleanupKeyConfig = macControlCleanupKeyConfig(env);
+
+  return {
+    supabaseUrl: supabaseUrl.origin,
+    serviceKey: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY,
+    accountEmail: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL,
+    customerId: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID,
+    endpoint: endpointUrl.toString(),
+    expectedCallbackHost: normalizeMacControlCallbackHost(
+      values.AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST
+    ),
+    ttlMinutes,
+    ...cleanupKeyConfig,
+    statePath: optionalEnv(
+      env,
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_STATE_PATH',
+      path.join(process.cwd(), '.evaos-mac-control-canary-session.json')
+    ),
+    githubEnvPath: optionalEnv(env, 'GITHUB_ENV', undefined),
+    proofDir: optionalEnv(env, 'PROOF_DIR', undefined),
+  };
+}
+
+function sanitizedMacControlCanaryProvisionReport() {
+  const report = {
+    schema: 'evaos-mac-control-canary-session-provision/v1',
+    accountConfigured: true,
+    customerConfigured: true,
+    activeMembershipVerified: true,
+    stagingMarkerVerified: true,
+    sessionMinted: true,
+    sessionExpiryPresent: true,
+    sensitiveOutput: 'passed',
+  };
+  assertNoUnsafeProofOutput(report);
+  return report;
+}
+
+async function provisionMacControlCanarySessionWithAdmin(admin, options) {
+  const cleanupKey = safeText(options.cleanupKey, 160) ?? `local-${crypto.randomUUID()}`;
+  const cleanupKeySource = ['explicit', 'github', 'generated'].includes(options.cleanupKeySource)
+    ? options.cleanupKeySource
+    : 'generated';
+  const ownerProfile = await loadAdminProfile(admin, options.accountEmail);
+  const customerAccount = await loadCustomerAccount(admin, options.customerId);
+  assertDatabaseBackedMacControlCanaryTarget(customerAccount, options);
+  const membership = await loadAdminMembership(admin, ownerProfile.id, customerAccount.id);
+  const desktopSession = await createDesktopSession(admin, {
+    userId: ownerProfile.id,
+    email: ownerProfile.email,
+    source: 'evaos-mac-control-live-canary',
+    ttlMinutes: options.ttlMinutes,
+    metadata: { cleanup_key: cleanupKey },
+  });
+  const state = {
+    schema: 'evaos-mac-control-canary-session-state/v1',
+    cleanupKey,
+    cleanupKeySource,
+    customerId: options.customerId,
+    endpoint: options.endpoint,
+    expectedCallbackHost: options.expectedCallbackHost,
+    account: {
+      profileId: ownerProfile.id,
+      email: ownerProfile.email,
+      customerAccountId: customerAccount.id,
+      membershipId: membership.id,
+    },
+    sessions: {
+      macControl: {
+        id: desktopSession.id,
+        expiresAt: desktopSession.expiresAt,
+      },
+    },
+  };
+  return {
+    state,
+    env: macControlCanaryEnvFromProvision(state, desktopSession.raw),
+    report: sanitizedMacControlCanaryProvisionReport(),
+  };
+}
+
+async function provisionMacControlCanarySession(options = loadMacControlCanaryOptions()) {
+  if (!options.serviceKey) {
+    throw new Error('Missing AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY.');
+  }
+  const admin =
+    options.admin ?? new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
+  const fileSystem = options.fileSystem ?? fs;
+  const result = await provisionMacControlCanarySessionWithAdmin(admin, options);
+  try {
+    atomicWriteFileSync(fileSystem, options.statePath, `${JSON.stringify(result.state, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    maskSecretsForGithub(result.env);
+    if (options.githubEnvPath) fileSystem.appendFileSync(options.githubEnvPath, renderGithubEnvFile(result.env));
+    if (options.proofDir) {
+      atomicWriteFileSync(
+        fileSystem,
+        path.join(options.proofDir, 'mac-control-session-provisioning.json'),
+        `${JSON.stringify(result.report, null, 2)}\n`,
+        { mode: 0o600 }
+      );
+    }
+  } catch {
+    let compensation = 'failed';
+    try {
+      await cleanupMacControlCanarySessionWithAdmin(admin, result.state);
+      compensation = 'revoked';
+    } catch {
+      // Preserve a sanitized compensation status without exposing paths or session material.
+    }
+    const error = new Error(
+      compensation === 'revoked'
+        ? 'Mac-control provisioning failed after session creation; the temporary session was revoked.'
+        : 'Mac-control provisioning failed after session creation; compensation could not be proven.'
+    );
+    error.code = 'MAC_CONTROL_PROVISION_PERSISTENCE_FAILED';
+    error.compensation = compensation;
+    throw error;
+  }
+  return result;
 }
 
 async function provisionCoreBrokerFixtures(options = loadCoreBrokerOptions()) {
@@ -1393,6 +1653,105 @@ async function cleanupFixtures(options = loadOptions()) {
   return report;
 }
 
+async function cleanupMacControlCanarySessionWithAdmin(admin, state) {
+  const sessionId = safeText(state?.sessions?.macControl?.id, 160);
+  if (!sessionId) {
+    throw new Error('Mac-control cleanup did not prove that the temporary desktop session was revoked.');
+  }
+  const exactRevokedRow = (rows) =>
+    Array.isArray(rows) &&
+    rows.length === 1 &&
+    rows[0]?.id === sessionId &&
+    Number.isFinite(Date.parse(safeText(rows[0]?.revoked_at, 160) || ''));
+  const now = new Date().toISOString();
+  let revokedRows;
+  let patchThrew = false;
+  try {
+    revokedRows = await admin.patch(
+      'desktop_app_sessions',
+      { id: `eq.${sessionId}`, revoked_at: 'is.null' },
+      { revoked_at: now },
+      { select: 'id,revoked_at' }
+    );
+  } catch {
+    patchThrew = true;
+  }
+  if (!exactRevokedRow(revokedRows) && (patchThrew || (Array.isArray(revokedRows) && revokedRows.length === 0))) {
+    revokedRows = await admin.select('desktop_app_sessions', {
+      id: `eq.${sessionId}`,
+      select: 'id,revoked_at',
+      limit: 2,
+    });
+  }
+  if (!exactRevokedRow(revokedRows)) {
+    throw new Error('Mac-control cleanup did not prove that the temporary desktop session was revoked.');
+  }
+  const report = {
+    schema: 'evaos-mac-control-canary-session-cleanup/v1',
+    sessionRevoked: true,
+    sensitiveOutput: 'passed',
+  };
+  assertNoUnsafeProofOutput(report);
+  return report;
+}
+
+async function cleanupMacControlCanarySession(options = loadMacControlCanaryOptions()) {
+  if (!options.serviceKey) {
+    throw new Error('Missing AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY.');
+  }
+  const fileSystem = options.fileSystem ?? fs;
+  const stateExists = fileSystem.existsSync(options.statePath);
+  const cleanupKeyFallbackEligible =
+    safeText(options.cleanupKey, 160) &&
+    (options.cleanupKeySource === 'explicit' || options.cleanupKeySource === 'github');
+  if (!stateExists && !cleanupKeyFallbackEligible) {
+    throw new Error('Mac-control cleanup cannot proceed because the required canary session state is missing.');
+  }
+  const admin =
+    options.admin ?? new SupabaseRestAdmin({ supabaseUrl: options.supabaseUrl, serviceKey: options.serviceKey });
+  let state;
+  if (stateExists) {
+    state = JSON.parse(fileSystem.readFileSync(options.statePath, 'utf8'));
+    if (state?.schema !== 'evaos-mac-control-canary-session-state/v1') {
+      throw new Error('Unexpected Mac-control canary session state schema.');
+    }
+  } else if (cleanupKeyFallbackEligible) {
+    const rows = await admin.select('desktop_app_sessions', {
+      'metadata->>cleanup_key': `eq.${options.cleanupKey}`,
+      'metadata->>source': 'eq.evaos-mac-control-live-canary',
+      select: 'id,revoked_at',
+      limit: 2,
+    });
+    const sessionId = Array.isArray(rows) && rows.length === 1 ? safeText(rows[0]?.id, 160) : undefined;
+    if (!sessionId) {
+      throw new Error('Mac-control cleanup key did not identify exactly one temporary session.');
+    }
+    state = {
+      schema: 'evaos-mac-control-canary-session-state/v1',
+      cleanupKey: options.cleanupKey,
+      cleanupKeySource: options.cleanupKeySource,
+      sessions: { macControl: { id: sessionId } },
+    };
+  }
+  const report = await cleanupMacControlCanarySessionWithAdmin(admin, state);
+  if (options.proofDir) {
+    try {
+      atomicWriteFileSync(
+        fileSystem,
+        path.join(options.proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify(report, null, 2)}\n`,
+        { mode: 0o600 }
+      );
+    } catch {
+      const error = new Error('Mac-control cleanup proof could not be persisted; retryable state was retained.');
+      error.code = 'MAC_CONTROL_CLEANUP_PROOF_WRITE_FAILED';
+      throw error;
+    }
+  }
+  if (stateExists) fileSystem.rmSync(options.statePath, { force: true });
+  return report;
+}
+
 async function main() {
   const mode = process.argv[2] || 'provision';
   if (mode === 'provision') {
@@ -1405,12 +1764,24 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
+  if (mode === 'provision-mac-control') {
+    const { report } = await provisionMacControlCanarySession();
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
   if (mode === 'cleanup') {
     const report = await cleanupFixtures();
     console.log(JSON.stringify(report, null, 2));
     return;
   }
-  throw new Error(`Unknown mode ${mode}. Use provision, provision-core-broker, or cleanup.`);
+  if (mode === 'cleanup-mac-control') {
+    const report = await cleanupMacControlCanarySession();
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  throw new Error(
+    `Unknown mode ${mode}. Use provision, provision-core-broker, provision-mac-control, cleanup, or cleanup-mac-control.`
+  );
 }
 
 if (require.main === module) {
@@ -1424,13 +1795,19 @@ module.exports = {
   DEFAULT_BROKER_ENDPOINT,
   SupabaseRestAdmin,
   assertNoUnsafeProofOutput,
+  cleanupMacControlCanarySession,
+  cleanupMacControlCanarySessionWithAdmin,
   cleanupFixtures,
   coreBrokerFixtureEnvFromProvision,
   ensureCustomerVmFixture,
   fixtureEnvFromProvision,
   loadCoreBrokerOptions,
+  loadMacControlCanaryOptions,
   loadOrCreateTemporaryAdminMembership,
   loadOptions,
+  macControlCanaryEnvFromProvision,
+  provisionMacControlCanarySession,
+  provisionMacControlCanarySessionWithAdmin,
   provisionCoreBrokerFixtures,
   provisionFixtures,
   providerCleanupReportFromState,

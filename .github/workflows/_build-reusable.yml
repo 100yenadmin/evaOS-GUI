@@ -286,8 +286,8 @@ jobs:
       - name: Audit evaOS public beta signing inputs (macOS only)
         if: startsWith(matrix.platform, 'macos')
         env:
-          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
-          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           identity: ${{ secrets.IDENTITY }}
@@ -301,8 +301,8 @@ jobs:
       - name: Preflight macOS notarization credentials (macOS only)
         if: startsWith(matrix.platform, 'macos')
         env:
-          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
-          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
           appleApiKeyId: ${{ secrets.APPLE_API_KEY_ID }}
           appleApiIssuer: ${{ secrets.APPLE_API_ISSUER }}
         shell: bash
@@ -406,8 +406,8 @@ jobs:
       - name: Setup macOS code signing (macOS only)
         if: startsWith(matrix.platform, 'macos')
         env:
-          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
-          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'temp-keychain-password' }}
@@ -754,8 +754,8 @@ jobs:
           AIONUI_MANAGED_RESOURCES_BUNDLE: ${{ inputs.managed_resources_bundle }}
           npm_config_arch: ${{ matrix.arch }}
           APP_ID: ${{ secrets.APP_ID }}
-          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
-          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED }}
+          EVAOS_BETA_PUBLIC_RELEASE: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
+          EVAOS_BETA_REQUIRE_SIGNING: ${{ vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED }}
           EVAOS_DMG_CODESIGN: ${{ inputs.macos_dmg_finalization == 'ci' && 'true' || 'false' }}
           appleId: ${{ secrets.APPLE_ID }}
           appleIdPassword: ${{ secrets.APPLE_ID_PASSWORD }}

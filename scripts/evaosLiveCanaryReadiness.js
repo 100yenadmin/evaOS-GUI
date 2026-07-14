@@ -44,6 +44,22 @@ const CANARIES = [
     optional: ['AIONUI_EVAOS_BROKER_ENDPOINT', 'AIONUI_EVAOS_BROKER_RUNTIME'],
   },
   {
+    name: 'selected-binding-mac-control',
+    command: 'node scripts/evaosBrokerLiveCanary.js --mac-control',
+    macControl: true,
+    required: [
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK',
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION',
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+    ],
+    exact: {
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+    },
+    optional: [],
+  },
+  {
     name: 'trust-surface',
     command: 'node scripts/evaosTrustSurfaceLiveCanary.js',
     followUp: true,
@@ -225,15 +241,17 @@ function blockerLines(canary) {
 
 function inspectLiveCanaryReadiness(env = process.env) {
   const includeFollowups = includeFollowupCanaries(env);
-  const canaries = CANARIES.filter((canary) => includeFollowups || canary.followUp !== true).map((canary) =>
-    inspectCanary(canary, env)
-  );
+  const includeMacControl = truthyEnv(env.AIONUI_EVAOS_RUN_MAC_CONTROL_CANARY);
+  const canaries = CANARIES.filter(
+    (canary) => (includeFollowups || canary.followUp !== true) && (includeMacControl || canary.macControl !== true)
+  ).map((canary) => inspectCanary(canary, env));
   const blockers = canaries.flatMap(blockerLines);
 
   return {
     schema: 'evaos-live-canary-readiness/v1',
     checkedAt: new Date().toISOString(),
     followupCanariesIncluded: includeFollowups,
+    macControlCanaryIncluded: includeMacControl,
     ready: blockers.length === 0,
     blockers,
     canaries,
@@ -248,6 +266,7 @@ function renderMarkdown(report) {
     '',
     `Overall: ${report.ready ? 'ready' : 'blocked'}`,
     `Follow-up canaries included: ${report.followupCanariesIncluded ? 'yes' : 'no'}`,
+    `Mac-control canary included: ${report.macControlCanaryIncluded ? 'yes' : 'no'}`,
     '',
   ];
 

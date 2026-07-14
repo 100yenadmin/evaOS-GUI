@@ -101,6 +101,32 @@ const REQUIRED_PROVISIONED_SECRET_GROUPS = [
     reason: 'service-role key used only by the workflow-time fixture provisioner',
   },
 ];
+const REQUIRED_MAC_CONTROL_SECRETS = [
+  {
+    name: 'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL',
+    reason: 'dedicated staging Supabase project used only for the selected-binding Mac-control canary',
+  },
+  {
+    name: 'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY',
+    reason: 'dedicated staging service-role key used only to mint and revoke the Mac-control canary session',
+  },
+  {
+    name: 'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL',
+    reason: 'dedicated staging Mac owner account used only to mint the short-lived canary session',
+  },
+  {
+    name: 'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
+    reason: 'dedicated staging customer with one preconfigured selected Mac binding',
+  },
+  {
+    name: 'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+    reason: 'dedicated deployed dashboard endpoint for the selected-binding canary',
+  },
+  {
+    name: 'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+    reason: 'exact staging ws-proxy callback host expected from the launch response',
+  },
+];
 
 function normalizeNames(values) {
   return new Set((values ?? []).map((value) => String(value ?? '').trim()).filter(Boolean));
@@ -120,6 +146,7 @@ function auditEnvironmentInventory(input, options = {}) {
   const missingOneOf = [];
   const satisfiedOneOf = [];
   const provisioned = options.provisioned === true;
+  const macControl = options.macControl === true;
 
   if (provisioned) {
     for (const group of REQUIRED_PROVISIONED_SECRET_GROUPS) {
@@ -159,6 +186,16 @@ function auditEnvironmentInventory(input, options = {}) {
     }
   }
 
+  if (macControl) {
+    for (const fixture of REQUIRED_MAC_CONTROL_SECRETS) {
+      if (inventory.secrets.has(fixture.name)) {
+        satisfied.push(fixture.name);
+      } else {
+        missing.push(fixture.name);
+      }
+    }
+  }
+
   const recommendedPresent = RECOMMENDED_VARIABLES.filter((name) => inventory.variables.has(name));
   const recommendedMissing = RECOMMENDED_VARIABLES.filter((name) => !inventory.variables.has(name));
 
@@ -166,6 +203,7 @@ function auditEnvironmentInventory(input, options = {}) {
     schema: 'evaos-live-canary-github-env-inventory/v1',
     checkedAt: new Date().toISOString(),
     fixtureMode: provisioned ? 'workflow-provisioned' : 'static',
+    macControlMode: macControl ? 'selected-binding' : 'not-requested',
     ready: missing.length === 0 && missingOneOf.length === 0,
     missing,
     missingOneOf,
@@ -298,11 +336,18 @@ function renderProvisioningTemplate(options = {}) {
     lines.push(variableCommand(name, repo, environment, RECOMMENDED_VARIABLE_DEFAULTS[name] || valuePlaceholder(name)));
   }
 
+  lines.push('', '## Optional Selected-Binding Mac-Control Canary Secrets', '');
+  for (const fixture of REQUIRED_MAC_CONTROL_SECRETS) {
+    lines.push(`# ${fixture.reason}`);
+    lines.push(secretCommand(fixture.name, repo, environment));
+    lines.push('');
+  }
+
   lines.push(
     '',
     '## Verify Inventory',
     '',
-    `node scripts/evaosLiveCanaryEnvInventory.js --repo ${shellArg(repo)} --env ${shellArg(environment)} --strict --markdown --provisioned`,
+    `node scripts/evaosLiveCanaryEnvInventory.js --repo ${shellArg(repo)} --env ${shellArg(environment)} --strict --markdown --provisioned --mac-control`,
     '',
     '## Dispatch Live Canary Proof',
     '',
@@ -311,6 +356,8 @@ function renderProvisioningTemplate(options = {}) {
       `--ref ${shellArg(branch)}`,
       '-f live_canary_ack=evaos-live-canary',
       '-f run_live_canaries=true',
+      '-f run_mac_control_canary=true',
+      '-f mac_control_canary_ack=evaos-mac-control-canary',
       '-f provision_fixtures=true',
       `-f proof_ref=${shellArg(proofRef)}`,
     ].join(' ')
@@ -341,6 +388,7 @@ function parseArgs(argv) {
     strict: false,
     provisioningTemplate: false,
     provisioned: false,
+    macControl: false,
     branch: 'evaos/dev',
     proofRef: 'https://github.com/100yenadmin/AionUi/issues/41',
   };
@@ -353,6 +401,7 @@ function parseArgs(argv) {
     if (arg === '--strict') options.strict = true;
     if (arg === '--provisioning-template') options.provisioningTemplate = true;
     if (arg === '--provisioned' || arg === '--workflow-provisioned') options.provisioned = true;
+    if (arg === '--mac-control') options.macControl = true;
     if (arg === '--branch') options.branch = argv[(index += 1)];
     if (arg === '--proof-ref') options.proofRef = argv[(index += 1)];
   }
@@ -375,7 +424,10 @@ function main() {
   }
 
   const inventory = listGithubEnvironmentInventory(options.repo, options.environment);
-  const report = auditEnvironmentInventory(inventory, { provisioned: options.provisioned });
+  const report = auditEnvironmentInventory(inventory, {
+    provisioned: options.provisioned,
+    macControl: options.macControl,
+  });
 
   if (options.markdown) {
     process.stdout.write(renderMarkdown(report));
@@ -394,6 +446,7 @@ if (require.main === module) {
 
 module.exports = {
   REQUIRED_ONE_OF_FIXTURES,
+  REQUIRED_MAC_CONTROL_SECRETS,
   REQUIRED_PROVISIONED_SECRET_GROUPS,
   REQUIRED_SINGLE_FIXTURES,
   auditEnvironmentInventory,

@@ -5,7 +5,7 @@ const require = createRequire(import.meta.url);
 const inventory = require('../../../scripts/evaosLiveCanaryEnvInventory.js') as {
   auditEnvironmentInventory: (
     input: { secrets: string[]; variables: string[] },
-    options?: { provisioned?: boolean }
+    options?: { provisioned?: boolean; macControl?: boolean }
   ) => {
     ready: boolean;
     fixtureMode: string;
@@ -135,6 +135,56 @@ describe('evaOS live canary GitHub environment inventory', () => {
     ]);
   });
 
+  it('requires dedicated secret-backed Mac-control staging configuration only for that opt-in lane', () => {
+    const missing = inventory.auditEnvironmentInventory(
+      {
+        secrets: ['AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY'],
+        variables: [
+          'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+          'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+        ],
+      },
+      { provisioned: true, macControl: true }
+    );
+
+    expect(missing.ready).toBe(false);
+    expect(missing.missing).toEqual(
+      expect.arrayContaining([
+        'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL',
+        'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY',
+        'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL',
+        'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
+        'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+        'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+      ])
+    );
+
+    const ready = inventory.auditEnvironmentInventory(
+      {
+        secrets: [
+          'AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY',
+          'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL',
+          'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY',
+          'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL',
+          'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
+          'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+          'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+        ],
+        variables: [
+          'AIONUI_EVAOS_RELEASE_CANARY_ACCOUNT_EMAIL',
+          'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
+          'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+        ],
+      },
+      { provisioned: true, macControl: true }
+    );
+    expect(ready.ready).toBe(true);
+    expect(ready.satisfied).toContain('AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID');
+  });
+
   it('requires release canary support metadata even when live fixtures are workflow-provisioned', () => {
     const report = inventory.auditEnvironmentInventory(
       {
@@ -184,6 +234,14 @@ describe('evaOS live canary GitHub environment inventory', () => {
     expect(template).toContain("--ref 'evaos/dev'");
     expect(template).toContain('-f live_canary_ack=evaos-live-canary');
     expect(template).toContain('-f provision_fixtures=true');
+    expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL');
+    expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL');
+    expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY');
+    expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID');
+    expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT');
+    expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST');
+    expect(template).toContain('-f run_mac_control_canary=true');
+    expect(template).toContain('-f mac_control_canary_ack=evaos-mac-control-canary');
     expect(template).toContain("-f proof_ref='https://github.com/100yenadmin/AionUi/issues/41'");
     expect(template).toContain(
       "node scripts/evaosLiveCanaryEnvInventory.js --repo '100yenadmin/AionUi' --env 'evaos-staging' --strict --markdown --provisioned"

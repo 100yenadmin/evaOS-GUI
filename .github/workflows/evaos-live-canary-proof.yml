@@ -17,6 +17,16 @@ on:
         required: false
         default: false
         type: boolean
+      run_mac_control_canary:
+        description: 'Also run the staging-only selected-binding Mac-control canary.'
+        required: false
+        default: false
+        type: boolean
+      mac_control_canary_ack:
+        description: 'Type evaos-mac-control-canary to acknowledge this creates and revokes one short-lived staging desktop session.'
+        required: false
+        default: ''
+        type: string
       provision_fixtures:
         description: 'Provision fresh short-lived staging fixtures before strict readiness and live canaries.'
         required: false
@@ -49,6 +59,7 @@ jobs:
     env:
       PROOF_DIR: live-canary-proof
       AIONUI_EVAOS_FIXTURE_STATE_PATH: .evaos-live-canary-fixtures.json
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_STATE_PATH: .evaos-mac-control-canary-session.json
       AIONUI_EVAOS_FIXTURE_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_URL || secrets.SUPABASE_URL }}
       AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_FIXTURE_SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SECRET_KEY }}
       AIONUI_EVAOS_FIXTURE_ADMIN_EMAIL: ${{ vars.AIONUI_EVAOS_FIXTURE_ADMIN_EMAIL || 'admin@100yen.org' }}
@@ -88,10 +99,23 @@ jobs:
       AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS: ${{ vars.AIONUI_EVAOS_BUSINESS_BROWSER_ALLOWED_HOSTS }}
       AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID: ${{ vars.AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID || secrets.AIONUI_EVAOS_BUSINESS_BROWSER_WRONG_CUSTOMER_ID }}
       AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION: ${{ secrets.AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION }}
+      AIONUI_EVAOS_RUN_MAC_CONTROL_CANARY: ${{ github.event.inputs.run_mac_control_canary }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: ${{ github.event.inputs.mac_control_canary_ack }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY }}
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_TTL_MINUTES: '10'
     steps:
       - name: Validate proof inputs
         env:
           ACK: ${{ github.event.inputs.live_canary_ack }}
+          MAC_CONTROL_REQUESTED: ${{ github.event.inputs.run_mac_control_canary }}
+          MAC_CONTROL_ACK: ${{ github.event.inputs.mac_control_canary_ack }}
+          PROVISION_FIXTURES: ${{ github.event.inputs.provision_fixtures }}
+          RUN_LIVE_CANARIES: ${{ github.event.inputs.run_live_canaries }}
           PROOF_REF: ${{ github.event.inputs.proof_ref }}
         run: |
           set -euo pipefail
@@ -102,6 +126,16 @@ jobs:
           if [ -z "$PROOF_REF" ] || [[ "$PROOF_REF" == *"Bearer "* || "$PROOF_REF" == *"eds_"* || "$PROOF_REF" == *"eyJ"* ]]; then
             echo "::error::proof_ref must be a non-secret issue, PR, or packet reference."
             exit 1
+          fi
+          if [ "$MAC_CONTROL_REQUESTED" = "true" ]; then
+            if [ "$RUN_LIVE_CANARIES" != "true" ] || [ "$PROVISION_FIXTURES" != "true" ]; then
+              echo "::error::The Mac-control canary requires run_live_canaries=true and provision_fixtures=true."
+              exit 1
+            fi
+            if [ "$MAC_CONTROL_ACK" != "evaos-mac-control-canary" ]; then
+              echo "::error::Wrong Mac-control canary acknowledgement. Type evaos-mac-control-canary."
+              exit 1
+            fi
           fi
 
       - name: Checkout code
@@ -128,6 +162,7 @@ jobs:
             echo "Environment: evaos-staging"
             echo "Run live canaries: ${{ github.event.inputs.run_live_canaries }}"
             echo "Run follow-up canaries: ${{ github.event.inputs.run_followup_canaries }}"
+            echo "Run Mac-control canary: ${{ github.event.inputs.run_mac_control_canary }}"
             echo "Core broker surfaces: evaOS/openclaw, Hermes/hermes, Mission Control/paperclip, Shared Browser/browser, Terminal/terminal"
             echo "Business Browser action canary: follow-up only unless run_followup_canaries=true"
           } > "$PROOF_DIR/proof-run.md"
@@ -160,6 +195,20 @@ jobs:
             exit 1
           fi
 
+      - name: Provision Mac-control canary session
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true' && github.event.inputs.provision_fixtures == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosProvisionLiveCanaryFixtures.js provision-mac-control | awk -v out="$PROOF_DIR/mac-control-session-provisioning.stdout.json" '
+            /^::add-mask::/ { print; next }
+            { print > out }
+          '
+          test -s "$PROOF_DIR/mac-control-session-provisioning.stdout.json"
+          if grep -q '^::add-mask::' "$PROOF_DIR/mac-control-session-provisioning.stdout.json"; then
+            echo "::error::Mac-control session proof artifact contains GitHub mask commands."
+            exit 1
+          fi
+
       - name: Run strict readiness checklist
         run: |
           set -euo pipefail
@@ -171,6 +220,12 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/evaosBrokerLiveCanary.js > "$PROOF_DIR/broker-runtime-status.json"
+
+      - name: Run selected-binding Mac-control canary
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosBrokerLiveCanary.js --mac-control > "$PROOF_DIR/mac-control-runtime.json"
 
       - name: Run follow-up live canaries
         if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true'
@@ -194,6 +249,82 @@ jobs:
           set -euo pipefail
           node scripts/evaosProvisionLiveCanaryFixtures.js cleanup > "$PROOF_DIR/core-broker-fixture-cleanup.stdout.json"
 
+      - name: Cleanup Mac-control canary session
+        if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true' && github.event.inputs.provision_fixtures == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control > "$PROOF_DIR/mac-control-session-cleanup.stdout.json"
+
+      - name: Run Mac-control proof secret/redaction scan
+        id: mac-control-proof-scan
+        if: always() && github.event.inputs.run_mac_control_canary == 'true'
+        run: |
+          set -euo pipefail
+          node - "$PROOF_DIR" <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const proofDir = process.argv[2];
+          const proofNames = [
+            'mac-control-runtime.json',
+            'mac-control-session-provisioning.json',
+            'mac-control-session-provisioning.stdout.json',
+            'mac-control-session-cleanup.json',
+            'mac-control-session-cleanup.stdout.json',
+          ];
+          const forbiddenFields = new Set([
+            'accountEmail',
+            'bindingId',
+            'customerId',
+            'customer_id',
+            'desktopSession',
+            'endpoint',
+            'launchUrl',
+            'session',
+          ]);
+          const forbiddenValue = /\beds_[A-Za-z0-9_-]{8,}\b|\bBearer\s+|\beyJ[A-Za-z0-9_-]{8,}\.|https?:\/\/|[?&]session=|\S+@\S+/i;
+
+          function scan(value, location) {
+            if (typeof value === 'string' && forbiddenValue.test(value)) {
+              throw new Error(`Mac-control proof contains forbidden sensitive material at ${location}.`);
+            }
+            if (Array.isArray(value)) {
+              value.forEach((entry, index) => scan(entry, `${location}[${index}]`));
+              return;
+            }
+            if (!value || typeof value !== 'object') return;
+            for (const [key, entry] of Object.entries(value)) {
+              if (forbiddenFields.has(key)) {
+                throw new Error(`Mac-control proof contains forbidden field ${key}.`);
+              }
+              scan(entry, `${location}.${key}`);
+            }
+          }
+
+          let scanned = 0;
+          for (const proofName of proofNames) {
+            const proofPath = path.join(proofDir, proofName);
+            if (!fs.existsSync(proofPath)) continue;
+            scan(JSON.parse(fs.readFileSync(proofPath, 'utf8')), proofName);
+            scanned += 1;
+          }
+          if (scanned === 0) {
+            throw new Error('Mac-control secret/redaction scan found no proof artifacts.');
+          }
+          const cleanupPath = path.join(proofDir, 'mac-control-session-cleanup.json');
+          if (!fs.existsSync(cleanupPath)) {
+            throw new Error('Mac-control proof is missing sanitized cleanup evidence.');
+          }
+          const cleanupProof = JSON.parse(fs.readFileSync(cleanupPath, 'utf8'));
+          if (
+            cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1' ||
+            cleanupProof.sessionRevoked !== true ||
+            cleanupProof.sensitiveOutput !== 'passed'
+          ) {
+            throw new Error('Mac-control proof did not prove temporary session revocation.');
+          }
+          NODE
+
       - name: Write summary
         if: always()
         run: |
@@ -204,6 +335,7 @@ jobs:
             echo "- Proof artifact: \`evaos-live-canary-proof-${{ github.run_id }}\`"
             echo "- Individual canaries requested: \`${{ github.event.inputs.run_live_canaries }}\`"
             echo "- Follow-up canaries requested: \`${{ github.event.inputs.run_followup_canaries }}\`"
+            echo "- Mac-control canary requested: \`${{ github.event.inputs.run_mac_control_canary }}\`"
             echo "- Fixture provisioning requested: \`${{ github.event.inputs.provision_fixtures }}\`"
             echo ""
             if [ -f "$PROOF_DIR/readiness.md" ]; then
@@ -214,7 +346,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload live canary proof packet
-        if: always()
+        if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-proof-scan.outcome == 'success')
         uses: actions/upload-artifact@v4
         with:
           name: evaos-live-canary-proof-${{ github.run_id }}

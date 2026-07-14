@@ -13,6 +13,36 @@
 - Removes repeated start actions after an unproven handoff or once Mac Access
   is already ready, and routes recovery through the existing status refresh.
 
+### Selected-Binding Mac-control Canary
+
+- Adds a separately acknowledged, staging-only live canary for the deployed
+  selected-binding `mac_control_tools` launch and ws-proxy callback path while
+  leaving the ordinary `dashboard_surface` canary behavior unchanged.
+- Uses dedicated staging configuration and one short-lived desktop session;
+  provisioning also requires an exact database-backed staging-canary marker
+  and rejects the production/default project, cross-origin endpoints, and
+  customer-like target names. Cleanup revokes only that temporary session, and
+  proof artifacts omit private customer, binding, endpoint, callback, cookie,
+  and credential material.
+- Starting with 2.1.36, requires the release proof packet to contain exactly
+  one successful same-head Mac-control canary result with all binding,
+  capability, launch, and proxy-session assertions true; historical tag retries
+  remain governed by their original proof contract.
+- Binds provisioning to the exact staging Supabase, broker, and callback
+  origins in the database marker; atomically preserves retryable state and
+  compensates failed persistence by revoking the exact temporary session.
+- Requires matching normalized capability sets, a secure host-only browser
+  session cookie, and a still-live selected binding after callback completion.
+
+### Release Authorization And Bundle Integrity
+
+- Moves 2.1.36 GitHub publication and public-signing authorization to the
+  release-specific variable and requires publication jobs to run only on the
+  exact configured release branch.
+- Makes the release audit inspect the executable live-canary validation step,
+  ignoring comment and unused-step decoys, and runs the packaged PyObjC import
+  probe with bytecode writes disabled.
+
 ### Release Boundary
 
 - This entry identifies candidate source only. Signed, notarized, stapled,
