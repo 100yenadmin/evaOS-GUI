@@ -46,7 +46,6 @@ export type BridgeCommandKey =
   | 'customerMacStatus'
   | 'customerMacCapabilities'
   | 'customerMacControlStatus'
-  | 'customerMacControlStart'
   | 'customerMacControlStop'
   | 'customerMacControlKillSwitch'
   | 'desktopSee'
@@ -117,8 +116,6 @@ export type BridgeParams = {
   snapshot_id?: string;
   element_id?: string;
   approval_audit_id?: string;
-  mode?: string;
-  agent_label?: string;
   x?: number;
   y?: number;
   from_x?: number;
@@ -156,7 +153,6 @@ const FIXED_COMMANDS: Record<
     | 'evaosProviderCompleteAuth'
     | 'evaosSharedBrowserGuidance'
     | 'customerMacSnapshot'
-    | 'customerMacControlStart'
     | 'desktopSee'
     | 'desktopClick'
     | 'desktopType'
@@ -214,7 +210,6 @@ const CUSTOMER_MAC_REMOTE_COMMANDS = new Set<BridgeCommandKey>([
   'customerMacStatus',
   'customerMacCapabilities',
   'customerMacControlStatus',
-  'customerMacControlStart',
   'customerMacControlStop',
   'customerMacControlKillSwitch',
   'desktopSee',
@@ -367,17 +362,6 @@ export function buildBridgeArgv(command: BridgeCommandKey, params: BridgeParams 
   }
   if (command === 'customerMacAxTree') {
     return ['customer-mac', 'ax-tree', '--json', '--max-nodes', String(clampInt(params.max_nodes, 200, 1, 1000))];
-  }
-  if (command === 'customerMacControlStart') {
-    return [
-      'customer-mac',
-      'control',
-      'start',
-      '--json',
-      '--mode',
-      String(params.mode || 'full-access'),
-      ...(params.agent_label ? ['--agent-label', String(params.agent_label)] : []),
-    ];
   }
   if (command === 'desktopSee') {
     return [
@@ -822,6 +806,18 @@ function optionalStringArg(value: unknown, flag: string): string[] {
 }
 
 export async function runBridge(command: BridgeCommandKey, params: BridgeParams = {}): Promise<unknown> {
+  if (String(command) === 'customerMacControlStart' || String(command) === 'desktop_control_start') {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'control_start_local_only',
+          message: 'Remote agent tools cannot start or restart Mac control.',
+          guidance: 'Use the local evaOS Workbench app on the customer Mac.',
+        },
+      ],
+    };
+  }
   if (String(command) === 'customerMacCompletePairing') {
     return {
       ok: false,
@@ -1454,12 +1450,6 @@ async function runRemoteBridge(remoteURL: string, command: BridgeCommandKey, par
   try {
     return await postRemoteBridgeCommand(endpoint, headers, remoteURL, command, params, timeoutForCommand(command));
   } catch (error: unknown) {
-    if (command === 'customerMacControlStart' && isAbortLikeError(error)) {
-      const reconciled = await reconcileControlStartAfterAbort(endpoint, headers, remoteURL, params);
-      if (reconciled) {
-        return reconciled;
-      }
-    }
     const err = error as { message?: string };
     return {
       ok: false,
@@ -1511,84 +1501,9 @@ async function postRemoteBridgeCommand(
   }
 }
 
-async function reconcileControlStartAfterAbort(
-  endpoint: URL,
-  headers: Record<string, string>,
-  remoteURL: string,
-  params: BridgeParams
-): Promise<unknown | null> {
-  try {
-    const status = await postRemoteBridgeCommand(endpoint, headers, remoteURL, 'customerMacControlStatus', {}, 15_000);
-    if (!isControlSessionActive(status, params)) {
-      return null;
-    }
-    const payload: Record<string, unknown> = isRecord(status) ? { ...status } : { ok: true };
-    const data = isRecord(payload.data) ? { ...payload.data } : {};
-    payload.ok = true;
-    payload.data = {
-      ...data,
-      control_start_reconciled: true,
-    };
-    payload.warnings = [
-      ...(Array.isArray(payload.warnings) ? payload.warnings : []),
-      {
-        code: 'control_start_response_reconciled_after_abort',
-        message:
-          'Mac control start timed out after the connector activated the control session; status was reconciled from the paired Mac.',
-        guidance: 'Continue with desktop_control_status and desktop_see before running live Mac-control actions.',
-      },
-    ];
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-function isAbortLikeError(error: unknown): boolean {
-  const err = error as { name?: string; message?: string };
-  return err.name === 'AbortError' || /abort/i.test(err.message || '');
-}
-
-function isControlSessionActive(status: unknown, params: BridgeParams): boolean {
-  if (!isRecord(status) || status.ok !== true || !isRecord(status.data)) {
-    return false;
-  }
-  const data = status.data;
-  const session = isRecord(data.session) ? data.session : {};
-  const active = data.active === true || session.active === true;
-  const killSwitch =
-    data.kill_switch === true ||
-    data.killSwitch === true ||
-    session.kill_switch === true ||
-    session.killSwitch === true;
-  const mode = controlModeFromStatus(data.mode) ?? controlModeFromStatus(session.mode);
-  return active && !killSwitch && mode === requestedControlMode(params.mode);
-}
-
-function requestedControlMode(mode: unknown): 'full_access' | 'ask_permission' {
-  return controlModeFromStatus(mode) ?? 'full_access';
-}
-
-function controlModeFromStatus(mode: unknown): 'full_access' | 'ask_permission' | undefined {
-  if (typeof mode !== 'string') {
-    return undefined;
-  }
-  const normalized = mode.trim().toLowerCase().replace(/-/g, '_');
-  if (normalized === 'ask_permission') {
-    return 'ask_permission';
-  }
-  if (normalized === 'full_access') {
-    return 'full_access';
-  }
-  return undefined;
-}
-
 function timeoutForCommand(command: BridgeCommandKey): number {
   if (command === 'codexLiveStatus') {
     return 35_000;
-  }
-  if (command === 'customerMacControlStart') {
-    return 30_000;
   }
   if (
     command === 'desktopSee' ||

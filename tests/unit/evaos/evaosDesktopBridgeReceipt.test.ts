@@ -14,6 +14,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,7 @@ control = {
     "takeover_warning_started_at": None,
     "takeover_warning_until": None,
     "takeover_warning_seconds": 10,
+    "takeover_alert_signal_status": {},
 }
 (root / "control-session.json").write_text(json.dumps(control), encoding="utf-8")
 os.chmod(root / "control-session.json", 0o600)
@@ -129,7 +131,7 @@ thread.start()
 endpoint = f"http://127.0.0.1:{server.server_address[1]}/v1/canary/mac-control"
 
 counter = 0
-def payload(*, expired=False, cross_binding=False):
+def payload(*, expired=False, cross_binding=False, expires_in=59):
     global counter
     counter += 1
     now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -141,9 +143,9 @@ def payload(*, expired=False, cross_binding=False):
         "customer_vm_id": "vm-sensitive-id",
         "binding_id": "binding-sensitive-id",
         "binding_version": "42",
-        "issued_at": (now - timedelta(seconds=180 if expired else 1)).isoformat().replace("+00:00", "Z"),
-        "expires_at": (now - timedelta(seconds=1) if expired else now + timedelta(seconds=60)).isoformat().replace("+00:00", "Z"),
-        "context_id": f"context-sensitive-{counter}",
+        "issued_at": int((now - timedelta(seconds=180 if expired else 1)).timestamp()),
+        "expires_at": int((now - timedelta(seconds=1) if expired else now + timedelta(seconds=expires_in)).timestamp()),
+        "context_id": b64url(counter.to_bytes(16, "big")),
     }
     raw = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
     return {
@@ -221,6 +223,20 @@ try:
     assert len(action_calls) == count
     assert post(payload(expired=True))[0] == 403
     assert len(action_calls) == count
+
+    blocked_result = []
+    with connector_server.control_session_transaction(root):
+        blocked_request = payload(expires_in=1)
+        blocked_thread = threading.Thread(
+            target=lambda: blocked_result.append(post(blocked_request)), daemon=True
+        )
+        blocked_thread.start()
+        time.sleep(1.5)
+    blocked_thread.join(timeout=5)
+    assert not blocked_thread.is_alive()
+    assert blocked_result == [(403, {"ok": False, "error": "execution_context_expired"})]
+    assert len(action_calls) == count
+
     assert post(payload(cross_binding=True))[0] == 403
     assert len(action_calls) == count
     signature_mode["forged"] = True

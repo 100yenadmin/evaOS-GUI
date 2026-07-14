@@ -44,7 +44,6 @@ continue to use the `evaos-desktop-bridge-openclaw-vX.Y.Z` namespace.
 - `evaos_shared_browser_guidance`
 - `customer_mac_status`
 - `desktop_control_status`
-- `desktop_control_start`
 - `desktop_control_stop`
 - `desktop_kill_switch`
 - `customer_mac_capabilities`
@@ -160,9 +159,14 @@ The plugin registers one exact gateway-authenticated release-canary route at
 only a bounded random `challenge` and a nonsecret `runRef`. Connector address,
 token, customer, VM, and selected-binding authority are accepted only from the
 ws-proxy-owned headers. The signed execution context is verified with the
-pinned `EVAOS_MAC_CONTROL_EXECUTION_CONTEXT_KEY_ID` and raw 32-byte
-`EVAOS_MAC_CONTROL_EXECUTION_CONTEXT_PUBLIC_KEY_B64` before the connector can
-be called. The route exposes no generic tool, proxy, action, or signing API.
+pinned `EVAOS_MAC_CONTROL_CONTEXT_KEY_ID` and unpadded base64url raw 32-byte
+`EVAOS_MAC_CONTROL_CONTEXT_PUBLIC_KEY`. Before the connector can be called, the
+route also requires a pinned `EVAOS_MAC_CONTROL_RECEIPT_KEY_ID`, raw 32-byte
+`EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY`, and exact expected source commit,
+source digest, app version, and build. It verifies the connector SSHSIG and
+every selected-scope, action, state, audit, expiry, and candidate claim, then
+returns only the allowlisted `evaos.mac_control.runtime_proof.v2` view. The
+route exposes no generic tool, proxy, action, raw receipt, or signing API.
 
 Local plugin tools call fixed bridge argv mappings with `shell: false`. Remote
 plugin tools post fixed command keys to `/v1/commands` on the paired Mac
@@ -173,3 +177,7 @@ approval for guarded Codex visible GUI message sends and legacy guarded customer
 allows live action without `approval_audit_id`, Ask Permission gates risky
 clicks, taps, hotkeys, typing, sends, and other high-impact actions, and the
 kill switch blocks all live control immediately.
+
+Starting or restarting Mac control is local-only in evaOS Workbench. OpenClaw
+and Hermes do not advertise a remote control-start tool; status, stop, and the
+kill switch remain available remotely.

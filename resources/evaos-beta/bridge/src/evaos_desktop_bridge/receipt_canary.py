@@ -25,8 +25,8 @@ RECEIPT_NAMESPACE = "evaos-mac-control-receipt-v1"
 NATIVE_VERIFIER_NAME = "evaos-ed25519-verify"
 REPLAY_FILE = "mac-control-canary-replay.jsonl"
 MAX_CONTEXT_BYTES = 64 * 1024
-MAX_CONTEXT_AGE_SECONDS = 120
-MAX_FUTURE_SKEW_SECONDS = 15
+MAX_CONTEXT_AGE_SECONDS = 60
+MAX_FUTURE_SKEW_SECONDS = 5
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _CHALLENGE_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
@@ -217,24 +217,51 @@ def validate_canary_request(
         "bindingVersion"
     ) != context.get("binding_version"):
         raise CanaryError("execution_context_binding_mismatch", status=403)
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    issued_at = _parse_timestamp(context.get("issued_at"), "execution_context_invalid")
-    expires_at = _parse_timestamp(
-        context.get("expires_at"), "execution_context_invalid"
-    )
-    age = (current - issued_at).total_seconds()
+    current = int((now or datetime.now(timezone.utc)).timestamp())
+    issued_at = context.get("issued_at")
+    expires_at = context.get("expires_at")
+    if (
+        isinstance(issued_at, bool)
+        or not isinstance(issued_at, int)
+        or isinstance(expires_at, bool)
+        or not isinstance(expires_at, int)
+    ):
+        raise CanaryError("execution_context_invalid")
+    age = current - issued_at
     if age < -MAX_FUTURE_SKEW_SECONDS or age > MAX_CONTEXT_AGE_SECONDS:
         raise CanaryError("execution_context_expired", status=403)
     if (
         expires_at <= current
         or expires_at <= issued_at
-        or binding_expires_at <= current
-        or expires_at > binding_expires_at
+        or binding_expires_at.timestamp() <= current
+        or expires_at > int(binding_expires_at.timestamp())
     ):
         raise CanaryError("execution_context_expired", status=403)
-    if (expires_at - issued_at).total_seconds() > MAX_CONTEXT_AGE_SECONDS:
+    if expires_at - issued_at > MAX_CONTEXT_AGE_SECONDS:
         raise CanaryError("execution_context_expired", status=403)
     return context, raw_context, signature
+
+
+def require_canary_authority_fresh(
+    context: dict[str, Any],
+    binding_expires_at: Any,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Recheck short-lived authority immediately before a live Mac mutation."""
+    current = int((now or datetime.now(timezone.utc)).timestamp())
+    expires_at = context.get("expires_at")
+    binding_expiry = _parse_timestamp(
+        binding_expires_at, "canary_binding_invalid", status=403
+    )
+    if (
+        isinstance(expires_at, bool)
+        or not isinstance(expires_at, int)
+        or expires_at <= current
+        or binding_expiry.timestamp() <= current
+        or expires_at > int(binding_expiry.timestamp())
+    ):
+        raise CanaryError("execution_context_expired", status=403)
 
 
 def replay_digest(raw_context: bytes, signature: bytes) -> str:
@@ -515,7 +542,6 @@ def receipt_envelope(
     receipt: dict[str, Any], sshsig: str, config: CanaryConfig
 ) -> dict[str, Any]:
     return {
-        "ok": True,
         "schema": RECEIPT_ENVELOPE_SCHEMA,
         "receiptBase64": _base64url_encode(_canonical_json(receipt)),
         "signature": sshsig,

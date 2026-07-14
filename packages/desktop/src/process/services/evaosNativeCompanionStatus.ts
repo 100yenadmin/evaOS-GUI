@@ -94,6 +94,7 @@ const SECURE_NETWORK_ENROLL_SETTLE_COMMAND_TIMEOUT_MS = 2000;
 let secureNetworkEnrollmentInFlight = false;
 
 export type EvaosNativeCompanionDiagnosticEventCode =
+  | 'secure_network_enrollment_provider_received'
   | 'secure_network_enrollment_action_started'
   | 'secure_network_enrollment_preflight_failed'
   | 'secure_network_enrollment_broker_request_started'
@@ -2140,6 +2141,9 @@ export async function runNativeCompanionAction(
   request: IEvaosNativeCompanionActionRequest,
   deps: EvaosNativeCompanionStatusDeps = {}
 ): Promise<IEvaosNativeCompanionActionResult> {
+  if (request.action === 'secure_network_enroll') {
+    recordNativeCompanionDiagnosticEvent(deps, 'secure_network_enrollment_provider_received');
+  }
   const existsSync = deps.existsSync ?? fs.existsSync;
   const bridgePath = resolveBridgeExecutable(
     deps.bridgePaths ?? defaultBridgePaths(deps.env, nativeCompanionIsPackaged(deps)),

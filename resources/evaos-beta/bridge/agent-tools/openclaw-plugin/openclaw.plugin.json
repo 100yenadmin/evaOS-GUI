@@ -44,7 +44,6 @@
       "evaos_shared_browser_guidance",
       "customer_mac_status",
       "desktop_control_status",
-      "desktop_control_start",
       "desktop_control_stop",
       "desktop_kill_switch",
       "customer_mac_capabilities",

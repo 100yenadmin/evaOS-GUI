@@ -28,6 +28,7 @@ from .receipt_canary import (
     default_process_identity,
     load_canary_config,
     receipt_envelope,
+    require_canary_authority_fresh,
     require_canary_control_state,
     sign_receipt,
     validate_action_audit,
@@ -1482,7 +1483,10 @@ def _make_handler(
                             command, params, state_dir=state_dir
                         )
                         argv = build_bridge_argv(command, prepared_params)
-                        if command in TAKEOVER_WARNING_REMOTE_COMMANDS and params.get("dry_run") is False:
+                        if (
+                            command in TAKEOVER_WARNING_REMOTE_COMMANDS
+                            and params.get("dry_run") is False
+                        ):
                             session = read_control_session(state_dir)
                             argv = _with_remote_control_generation(
                                 argv, session.get("generation")
@@ -1545,6 +1549,9 @@ def _make_handler(
                 challenge = str(payload["challenge"])
                 run_ref = str(payload["runRef"])
                 with control_session_transaction(state_dir):
+                    require_canary_authority_fresh(
+                        context, payload["binding"]["bindingExpiresAt"]
+                    )
                     before = require_canary_control_state(
                         read_control_session(state_dir)
                     )
@@ -1561,6 +1568,9 @@ def _make_handler(
                         ),
                         generation,
                     )
+                require_canary_authority_fresh(
+                    context, payload["binding"]["bindingExpiresAt"]
+                )
                 action_started_at = datetime.now(timezone.utc)
                 exit_code, output = command_runner(argv)
                 try:

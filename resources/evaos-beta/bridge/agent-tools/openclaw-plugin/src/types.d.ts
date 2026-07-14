@@ -7,9 +7,16 @@ declare module 'node:child_process' {
 }
 
 declare module 'node:crypto' {
+  export function createHash(algorithm: string): {
+    update(value: unknown): {
+      digest(): EvaosBuffer;
+      digest(encoding: string): string;
+    };
+  };
   export function createPublicKey(options: unknown): unknown;
   export function createHmac(...args: unknown[]): { update(value: unknown): { digest(encoding: string): string } };
   export function randomUUID(): string;
+  export function timingSafeEqual(left: Uint8Array, right: Uint8Array): boolean;
   export function verify(algorithm: null, data: unknown, key: unknown, signature: unknown): boolean;
 }
 
@@ -38,19 +45,15 @@ declare const process: {
   env: Record<string, string | undefined>;
 };
 
+type EvaosBuffer = Uint8Array & {
+  readUInt32BE(offset: number): number;
+  writeUInt32BE(value: number, offset: number): number;
+  toString(encoding?: string): string;
+};
+
 declare const Buffer: {
-  from(
-    value: string | ArrayBuffer | Uint8Array,
-    encoding?: string
-  ): {
-    byteLength: number;
-    subarray(start?: number, end?: number): Uint8Array;
-    toString(encoding?: string): string;
-  };
-  concat(values: unknown[]): {
-    byteLength: number;
-    subarray(start?: number, end?: number): Uint8Array;
-    toString(encoding?: string): string;
-  };
+  from(value: string | ArrayBuffer | Uint8Array | readonly number[], encoding?: string): EvaosBuffer;
+  alloc(size: number): EvaosBuffer;
+  concat(values: readonly Uint8Array[]): EvaosBuffer;
   isBuffer(value: unknown): boolean;
 };

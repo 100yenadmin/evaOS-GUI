@@ -278,19 +278,6 @@ function readOnlyTools() {
       'Read the customer-granted Full Access / Ask Permission control session state.',
       'customerMacControlStatus'
     ),
-    tool(
-      'desktop_control_start',
-      'Start a customer-granted agent control session. Live actions wait for the 10-second operator takeover warning; Full Access then allows continuous desktop and iPhone actions without per-action prompts.',
-      'customerMacControlStart',
-      {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          mode: { type: 'string', enum: ['full-access', 'ask-permission'], default: 'full-access' },
-          agent_label: { type: 'string', minLength: 1, maxLength: 160 },
-        },
-      }
-    ),
     tool('desktop_control_stop', 'Stop the active customer-granted agent control session.', 'customerMacControlStop'),
     tool(
       'desktop_kill_switch',

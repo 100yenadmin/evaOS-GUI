@@ -25,7 +25,6 @@ fixed connector command names supported by `/v1/commands`, for example:
 
 ```bash
 hermes-adapter/bin/evaos-desktop-bridge-command customerMacStatus '{}'
-hermes-adapter/bin/evaos-desktop-bridge-command customerMacControlStart '{"mode":"full-access","agent_label":"Hermes"}'
 hermes-adapter/bin/evaos-desktop-bridge-command desktopSee '{}'
 hermes-adapter/bin/evaos-desktop-bridge-command desktopClick '{"target_label":"Continue","dry_run":false}'
 hermes-adapter/bin/evaos-desktop-bridge-command customerMacIphoneMirroringStatus '{}'

@@ -39,7 +39,11 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   normalizeBoolean: (value: unknown) => boolean;
   requiresMacControlLiveCanaryProof: (tagOrVersion: string) => boolean;
   verifyBrokerLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
-  verifyMacControlLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
+  verifyMacControlLiveCanaryProof: (
+    proofDir: string,
+    env?: Record<string, string | undefined>,
+    options?: { now?: Date; maxAgeHours?: number }
+  ) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
@@ -816,6 +820,8 @@ function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<s
 
 function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
   fs.mkdirSync(proofDir, { recursive: true });
+  const sourceSha256 = releaseGate.committedBridgeSourceIdentity(fixtureReleaseCommit).sourceSha256;
+  const executedAt = Date.now();
   fs.writeFileSync(
     path.join(proofDir, 'mac-control-session-provisioning.json'),
     `${JSON.stringify(
@@ -837,32 +843,44 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
     path.join(proofDir, 'mac-control-runtime.json'),
     `${JSON.stringify(
       {
-        schema: 'evaos-mac-control-live-canary/v1',
         ok: true,
-        runtime: 'openclaw',
-        launchMode: 'mac_control_tools',
-        reason: 'ready',
-        httpStatus: 302,
+        schema: 'evaos.mac_control.runtime_proof.v2',
+        proofKind: 'selected_binding_direct_mac_control',
+        tool: 'customer_mac.desktop_hotkey',
+        outcome: 'succeeded',
+        runRef: 'gha:12345:111111111111111111111111',
+        executedAt: new Date(executedAt).toISOString(),
+        bindingRef: 'a'.repeat(64),
+        bindingVersion: '7',
+        sessionRef: 'b'.repeat(64),
+        expiresAt: Math.floor(executedAt / 1000) + 60,
+        auditRef: 'c'.repeat(64),
+        sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+        candidate: {
+          sourceCommit: fixtureReleaseCommit,
+          sourceSha256,
+          appVersion: '2.1.36',
+          appBuild: '2.1.36',
+        },
+        ...overrides,
+      },
+      null,
+      2
+    )}\n`
+  );
+  fs.writeFileSync(
+    path.join(proofDir, 'mac-control-runtime-negative.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
         sourceHeadSha: fixtureReleaseCommit,
         sourceRunId: '12345',
         assertions: {
-          attached: true,
-          toolsReady: true,
-          activeGrant: true,
-          requiredCapabilityGroups: true,
-          bindingIdPresent: true,
-          bindingIdMatched: true,
-          bindingVersionPresent: true,
-          bindingVersionMatched: true,
-          bindingExpiryPresent: true,
-          bindingExpiryMatched: true,
-          bindingExpiryValid: true,
-          expectedLaunchTarget: true,
-          callbackAccepted: true,
-          proxySessionAccepted: true,
+          forgedContextRejected: true,
+          expiredContextRejected: true,
+          replayRejected: true,
+          authorityRedacted: true,
         },
-        secretScan: 'passed',
-        ...overrides,
       },
       null,
       2
@@ -2427,17 +2445,16 @@ printf '%s\\n' ok
         name: 'failed',
         mutate: (proof) => {
           proof.ok = false;
-          proof.reason = 'binding_missing';
+          proof.outcome = 'failed';
         },
-        error: /successful ready proof/,
+        error: /successful direct-control runtime receipt/,
       },
       {
         name: 'incomplete',
         mutate: (proof) => {
-          const assertions = proof.assertions as Record<string, unknown>;
-          assertions.bindingExpiryValid = false;
+          proof.bindingRef = 'not-a-reference';
         },
-        error: /bindingExpiryValid/,
+        error: /runtime receipt fields/i,
       },
       {
         name: 'unsafe',
@@ -2449,9 +2466,10 @@ printf '%s\\n' ok
       {
         name: 'wrong-head',
         mutate: (proof) => {
-          proof.sourceHeadSha = 'b'.repeat(40);
+          const candidate = proof.candidate as Record<string, unknown>;
+          candidate.sourceCommit = 'b'.repeat(40);
         },
-        error: /source head/i,
+        error: /candidate.*release commit/i,
       },
     ];
 
@@ -2464,6 +2482,138 @@ printf '%s\\n' ok
         testCase.mutate(proof);
         fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
         expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(testCase.error);
+      } finally {
+        fs.rmSync(proofDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('requires a fresh, canonical, bounded historical runtime receipt', () => {
+    const verificationNow = Date.parse('2026-07-15T12:00:00.000Z');
+    const releaseEnv = {
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+      EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+    };
+    const validExecutedAt = verificationNow - 60 * 60 * 1000;
+    const validDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-historical-'));
+    try {
+      writeMacControlLiveCanaryProof(validDir, {
+        executedAt: new Date(validExecutedAt).toISOString(),
+        expiresAt: Math.floor(validExecutedAt / 1000) + 60,
+      });
+      expect(
+        releaseGate.verifyMacControlLiveCanaryProof(validDir, releaseEnv, {
+          now: new Date(verificationNow),
+          maxAgeHours: 24,
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(validDir, { recursive: true, force: true });
+    }
+
+    const cases = [
+      {
+        name: 'future',
+        executedAt: verificationNow + 5_001,
+        expiresAt: Math.floor((verificationNow + 5_001) / 1000) + 60,
+      },
+      {
+        name: 'stale',
+        executedAt: verificationNow - 25 * 60 * 60 * 1000,
+        expiresAt: Math.floor((verificationNow - 25 * 60 * 60 * 1000) / 1000) + 60,
+      },
+      {
+        name: 'overlong',
+        executedAt: verificationNow - 1_000,
+        expiresAt: Math.floor((verificationNow - 1_000) / 1000) + 67,
+      },
+    ];
+    for (const testCase of cases) {
+      const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-${testCase.name}-`));
+      try {
+        writeMacControlLiveCanaryProof(proofDir, {
+          executedAt: new Date(testCase.executedAt).toISOString(),
+          expiresAt: testCase.expiresAt,
+        });
+        expect(() =>
+          releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv, {
+            now: new Date(verificationNow),
+            maxAgeHours: 24,
+          })
+        ).toThrow(/runtime receipt fields/i);
+      } finally {
+        fs.rmSync(proofDir, { recursive: true, force: true });
+      }
+    }
+
+    const noncanonicalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-noncanonical-'));
+    try {
+      writeMacControlLiveCanaryProof(noncanonicalDir, {
+        executedAt: '2026-07-15 11:59:59Z',
+        expiresAt: Math.floor(verificationNow / 1000) + 59,
+      });
+      expect(() =>
+        releaseGate.verifyMacControlLiveCanaryProof(noncanonicalDir, releaseEnv, {
+          now: new Date(verificationNow),
+          maxAgeHours: 24,
+        })
+      ).toThrow(/runtime receipt fields/i);
+    } finally {
+      fs.rmSync(noncanonicalDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects missing, false, mismatched, or extended runtime-receipt negative proof', () => {
+    const releaseEnv = {
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    const cases: Array<{
+      name: string;
+      mutate: (proofDir: string, proof: Record<string, unknown>) => void;
+    }> = [
+      {
+        name: 'missing',
+        mutate: (proofDir) => fs.rmSync(path.join(proofDir, 'mac-control-runtime-negative.json')),
+      },
+      {
+        name: 'false-assertion',
+        mutate: (_proofDir, proof) => {
+          (proof.assertions as Record<string, unknown>).replayRejected = false;
+        },
+      },
+      {
+        name: 'wrong-head',
+        mutate: (_proofDir, proof) => {
+          proof.sourceHeadSha = 'e'.repeat(40);
+        },
+      },
+      {
+        name: 'wrong-run',
+        mutate: (_proofDir, proof) => {
+          proof.sourceRunId = '99999';
+        },
+      },
+      {
+        name: 'extra-field',
+        mutate: (_proofDir, proof) => {
+          proof.note = 'must not be accepted';
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-negative-${testCase.name}-`));
+      try {
+        writeMacControlLiveCanaryProof(proofDir);
+        const proofPath = path.join(proofDir, 'mac-control-runtime-negative.json');
+        const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+        testCase.mutate(proofDir, proof);
+        if (fs.existsSync(proofPath)) fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+        expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(
+          /negative proof|negative assertions/i
+        );
       } finally {
         fs.rmSync(proofDir, { recursive: true, force: true });
       }

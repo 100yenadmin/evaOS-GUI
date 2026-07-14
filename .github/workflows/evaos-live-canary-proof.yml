@@ -227,6 +227,14 @@ jobs:
           set -euo pipefail
           node scripts/evaosBrokerLiveCanary.js --mac-control > "$PROOF_DIR/mac-control-runtime.json"
 
+      - name: Prove Mac-control runtime-receipt negative boundaries
+        if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true'
+        run: |
+          set -euo pipefail
+          npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin install --ignore-scripts --omit=peer --no-audit --no-fund
+          npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin run proof:runtime-receipt-negative -- \
+            "$PROOF_DIR/mac-control-runtime-negative.json" "$GITHUB_SHA" "$GITHUB_RUN_ID"
+
       - name: Run follow-up live canaries
         if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_followup_canaries == 'true'
         run: |
@@ -260,70 +268,7 @@ jobs:
         if: always() && github.event.inputs.run_mac_control_canary == 'true'
         run: |
           set -euo pipefail
-          node - "$PROOF_DIR" <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-
-          const proofDir = process.argv[2];
-          const proofNames = [
-            'mac-control-runtime.json',
-            'mac-control-session-provisioning.json',
-            'mac-control-session-provisioning.stdout.json',
-            'mac-control-session-cleanup.json',
-            'mac-control-session-cleanup.stdout.json',
-          ];
-          const forbiddenFields = new Set([
-            'accountEmail',
-            'bindingId',
-            'customerId',
-            'customer_id',
-            'desktopSession',
-            'endpoint',
-            'launchUrl',
-            'session',
-          ]);
-          const forbiddenValue = /\beds_[A-Za-z0-9_-]{8,}\b|\bBearer\s+|\beyJ[A-Za-z0-9_-]{8,}\.|https?:\/\/|[?&]session=|\S+@\S+/i;
-
-          function scan(value, location) {
-            if (typeof value === 'string' && forbiddenValue.test(value)) {
-              throw new Error(`Mac-control proof contains forbidden sensitive material at ${location}.`);
-            }
-            if (Array.isArray(value)) {
-              value.forEach((entry, index) => scan(entry, `${location}[${index}]`));
-              return;
-            }
-            if (!value || typeof value !== 'object') return;
-            for (const [key, entry] of Object.entries(value)) {
-              if (forbiddenFields.has(key)) {
-                throw new Error(`Mac-control proof contains forbidden field ${key}.`);
-              }
-              scan(entry, `${location}.${key}`);
-            }
-          }
-
-          let scanned = 0;
-          for (const proofName of proofNames) {
-            const proofPath = path.join(proofDir, proofName);
-            if (!fs.existsSync(proofPath)) continue;
-            scan(JSON.parse(fs.readFileSync(proofPath, 'utf8')), proofName);
-            scanned += 1;
-          }
-          if (scanned === 0) {
-            throw new Error('Mac-control secret/redaction scan found no proof artifacts.');
-          }
-          const cleanupPath = path.join(proofDir, 'mac-control-session-cleanup.json');
-          if (!fs.existsSync(cleanupPath)) {
-            throw new Error('Mac-control proof is missing sanitized cleanup evidence.');
-          }
-          const cleanupProof = JSON.parse(fs.readFileSync(cleanupPath, 'utf8'));
-          if (
-            cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1' ||
-            cleanupProof.sessionRevoked !== true ||
-            cleanupProof.sensitiveOutput !== 'passed'
-          ) {
-            throw new Error('Mac-control proof did not prove temporary session revocation.');
-          }
-          NODE
+          node scripts/evaosScanMacControlProofs.js "$PROOF_DIR"
 
       - name: Write summary
         if: always()

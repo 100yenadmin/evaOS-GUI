@@ -5067,6 +5067,26 @@ describe('evaosNativeCompanionStatus', () => {
     expect(openExternal).not.toHaveBeenCalled();
   });
 
+  it('records receipt of an enrollment action before bridge executable lookup', async () => {
+    const diagnosticEvents: string[] = [];
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'customer-selected-test' },
+      {
+        bridgePaths: ['/missing/evaos-desktop-bridge'],
+        existsSync: () => false,
+        recordDiagnosticEvent: (eventCode) => diagnosticEvents.push(eventCode),
+      }
+    );
+
+    expect(result).toMatchObject({
+      action: 'secure_network_enroll',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:bridge-cli-missing',
+    });
+    expect(diagnosticEvents).toEqual(['secure_network_enrollment_provider_received']);
+  });
+
   it('enrolls an unenrolled signed Tailscale client with file-backed one-use material', async () => {
     const authKey = 'one-use-private-network-key-for-test';
     const createPrivateNetworkEnrollment = vi.fn(async () => ({
@@ -5451,6 +5471,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(result)).not.toContain('evaos-private-network-');
     expect(result.enrollmentDiagnostic?.message).toContain('control server rejected enrollment');
     expect(diagnosticEvents).toEqual([
+      'secure_network_enrollment_provider_received',
       'secure_network_enrollment_action_started',
       'secure_network_enrollment_broker_request_started',
       'secure_network_enrollment_cli_started',
@@ -5654,6 +5675,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
     });
     expect(diagnosticEvents).toEqual([
+      'secure_network_enrollment_provider_received',
       'secure_network_enrollment_action_started',
       'secure_network_enrollment_broker_request_started',
       'secure_network_enrollment_cli_started',

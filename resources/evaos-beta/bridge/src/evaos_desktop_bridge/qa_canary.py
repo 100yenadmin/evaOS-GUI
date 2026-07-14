@@ -79,33 +79,27 @@ UNAVAILABLE_CODES = (
     "artifact_not_found",
     "not_found",
 )
-SELECTED_BINDING_PROOF_ASSERTIONS = (
-    "attached",
-    "toolsReady",
-    "activeGrant",
-    "requiredCapabilityGroups",
-    "bindingIdPresent",
-    "bindingIdMatched",
-    "bindingVersionPresent",
-    "bindingVersionMatched",
-    "bindingExpiryPresent",
-    "bindingExpiryMatched",
-    "bindingExpiryValid",
-    "expectedLaunchTarget",
-    "callbackAccepted",
-    "proxySessionAccepted",
-)
 SELECTED_BINDING_PROOF_FIELDS = {
-    "schema",
     "ok",
-    "runtime",
-    "launchMode",
-    "reason",
-    "httpStatus",
-    "sourceHeadSha",
-    "sourceRunId",
-    "assertions",
-    "secretScan",
+    "schema",
+    "proofKind",
+    "tool",
+    "outcome",
+    "runRef",
+    "executedAt",
+    "bindingRef",
+    "bindingVersion",
+    "sessionRef",
+    "expiresAt",
+    "auditRef",
+    "sourcePointer",
+    "candidate",
+}
+SELECTED_BINDING_CANDIDATE_FIELDS = {
+    "sourceCommit",
+    "sourceSha256",
+    "appVersion",
+    "appBuild",
 }
 LOCAL_WORKBENCH_CONTROL_START = "local_workbench_control_start"
 INSTALLED_WORKBENCH_BRIDGE_CLI = Path(
@@ -762,28 +756,61 @@ def selected_binding_proof_binding(
     if not isinstance(proof, dict) or set(proof) != SELECTED_BINDING_PROOF_FIELDS:
         result["reason"] = "selected_binding_proof_shape_invalid"
         return result
-    assertions = proof.get("assertions") if isinstance(proof.get("assertions"), dict) else {}
+    candidate = (
+        proof.get("candidate") if isinstance(proof.get("candidate"), dict) else {}
+    )
+    executed_at_text = proof.get("executedAt")
+    try:
+        executed_at = datetime.fromisoformat(
+            str(executed_at_text or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        executed_at = None
+    expires_at = proof.get("expiresAt")
     result.update(
         {
             "schema": proof.get("schema"),
-            "source_head_sha": proof.get("sourceHeadSha"),
-            "source_run_id": str(proof.get("sourceRunId") or ""),
-            "assertions_verified": sorted(assertions) if isinstance(assertions, dict) else [],
+            "runtime_receipt_verified": proof.get("schema")
+            == "evaos.mac_control.runtime_proof.v2",
+            "direct_mac_control_succeeded": proof.get("outcome") == "succeeded",
+            "candidate": {
+                "source_commit": candidate.get("sourceCommit"),
+                "source_sha256": candidate.get("sourceSha256"),
+                "app_version": candidate.get("appVersion"),
+                "app_build": candidate.get("appBuild"),
+            },
         }
     )
     result["ok"] = (
-        proof.get("schema") == "evaos-mac-control-live-canary/v1"
-        and proof.get("ok") is True
-        and proof.get("runtime") == "openclaw"
-        and proof.get("launchMode") == "mac_control_tools"
-        and proof.get("reason") == "ready"
-        and proof.get("httpStatus") == 302
-        and proof.get("sourceHeadSha") == expected_source_commit
+        proof.get("ok") is True
+        and proof.get("schema") == "evaos.mac_control.runtime_proof.v2"
+        and proof.get("proofKind") == "selected_binding_direct_mac_control"
+        and proof.get("tool") == "customer_mac.desktop_hotkey"
+        and proof.get("outcome") == "succeeded"
         and re.fullmatch(r"\d+", expected_source_run_id) is not None
-        and str(proof.get("sourceRunId") or "") == expected_source_run_id
-        and proof.get("secretScan") == "passed"
-        and set(assertions) == set(SELECTED_BINDING_PROOF_ASSERTIONS)
-        and all(assertions.get(assertion) is True for assertion in SELECTED_BINDING_PROOF_ASSERTIONS)
+        and re.fullmatch(
+            rf"gha:{re.escape(expected_source_run_id)}:[0-9a-f]{{24}}",
+            str(proof.get("runRef") or ""),
+        )
+        is not None
+        and executed_at is not None
+        and executed_at.tzinfo is not None
+        and type(expires_at) is int
+        and int(executed_at.timestamp()) <= expires_at
+        and re.fullmatch(r"[0-9a-f]{64}", str(proof.get("bindingRef") or ""))
+        is not None
+        and re.fullmatch(r"[1-9][0-9]{0,18}", str(proof.get("bindingVersion") or ""))
+        is not None
+        and re.fullmatch(r"[0-9a-f]{64}", str(proof.get("sessionRef") or ""))
+        is not None
+        and re.fullmatch(r"[0-9a-f]{64}", str(proof.get("auditRef") or ""))
+        is not None
+        and proof.get("sourcePointer") == "evaos-desktop-bridge:runtime-receipt"
+        and set(candidate) == SELECTED_BINDING_CANDIDATE_FIELDS
+        and candidate.get("sourceCommit") == expected_source_commit
+        and candidate.get("sourceSha256") == expected_source_sha256
+        and candidate.get("appVersion") == expected_version
+        and candidate.get("appBuild") == expected_build
     )
     if result["ok"] is not True:
         result["reason"] = "selected_binding_proof_mismatch"
@@ -1154,7 +1181,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--selected-binding-proof",
         type=Path,
-        help="Sanitized mac-control-runtime.json proof from the exact selected-binding callback canary.",
+        help="Sanitized mac-control-runtime.json proof from the verified selected-binding runtime receipt.",
     )
     parser.add_argument(
         "--selected-binding-proof-run-id",

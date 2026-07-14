@@ -92,6 +92,7 @@ const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME = 'business-browser.json';
 const MAC_CONTROL_LIVE_CANARY_PROOF_NAME = 'mac-control-runtime.json';
+const MAC_CONTROL_NEGATIVE_PROOF_NAME = 'mac-control-runtime-negative.json';
 const MAC_CONTROL_PROVISION_PROOF_NAME = 'mac-control-session-provisioning.json';
 const MAC_CONTROL_CLEANUP_PROOF_NAME = 'mac-control-session-cleanup.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
@@ -279,21 +280,21 @@ const LIVE_CANARY_SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._-]{8,}\b/i,
   /[?&#](?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|api[_-]?key|service[_-]?role|token|secret|password|credential)=/i,
 ];
-const MAC_CONTROL_LIVE_CANARY_ASSERTIONS = Object.freeze([
-  'attached',
-  'toolsReady',
-  'activeGrant',
-  'requiredCapabilityGroups',
-  'bindingIdPresent',
-  'bindingIdMatched',
-  'bindingVersionPresent',
-  'bindingVersionMatched',
-  'bindingExpiryPresent',
-  'bindingExpiryMatched',
-  'bindingExpiryValid',
-  'expectedLaunchTarget',
-  'callbackAccepted',
-  'proxySessionAccepted',
+const MAC_CONTROL_RUNTIME_PROOF_FIELDS = Object.freeze([
+  'ok',
+  'schema',
+  'proofKind',
+  'tool',
+  'outcome',
+  'runRef',
+  'executedAt',
+  'bindingRef',
+  'bindingVersion',
+  'sessionRef',
+  'expiresAt',
+  'auditRef',
+  'sourcePointer',
+  'candidate',
 ]);
 
 function normalizeBoolean(value) {
@@ -3261,13 +3262,13 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
   }
 
   if (normalizeBoolean(env.EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF)) {
-    verifyMacControlLiveCanaryProof(proofDir, env);
+    verifyMacControlLiveCanaryProof(proofDir, env, options);
   }
 
   return true;
 }
 
-function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
+function verifyMacControlLiveCanaryProof(proofDir, env = process.env, verificationOptions = {}) {
   const proofPath = requireExistingRelativeFile(
     proofDir,
     MAC_CONTROL_LIVE_CANARY_PROOF_NAME,
@@ -3276,18 +3277,7 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   const proof = readManifestFile(proofPath);
   assertLiveCanaryPlainObject(proof, 'Mac-control live canary proof');
 
-  const allowedTopLevelFields = new Set([
-    'schema',
-    'ok',
-    'runtime',
-    'launchMode',
-    'reason',
-    'httpStatus',
-    'sourceHeadSha',
-    'sourceRunId',
-    'assertions',
-    'secretScan',
-  ]);
+  const allowedTopLevelFields = new Set(MAC_CONTROL_RUNTIME_PROOF_FIELDS);
   for (const field of Object.keys(proof)) {
     if (!allowedTopLevelFields.has(field)) {
       throw new Error(`Mac-control live canary proof contains forbidden field: ${field}.`);
@@ -3295,20 +3285,20 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   }
   assertLiveCanaryNoSecretMaterial(proof, 'macControl');
 
-  if (proof.schema !== 'evaos-mac-control-live-canary/v1') {
+  if (Object.keys(proof).length !== allowedTopLevelFields.size) {
+    throw new Error('Mac-control live canary proof is missing required runtime-receipt fields.');
+  }
+  if (proof.schema !== 'evaos.mac_control.runtime_proof.v2') {
     throw new Error(`Unexpected Mac-control live canary proof schema: ${proof.schema}`);
   }
   if (
     proof.ok !== true ||
-    proof.runtime !== 'openclaw' ||
-    proof.launchMode !== 'mac_control_tools' ||
-    proof.reason !== 'ready' ||
-    proof.httpStatus !== 302
+    proof.proofKind !== 'selected_binding_direct_mac_control' ||
+    proof.tool !== 'customer_mac.desktop_hotkey' ||
+    proof.outcome !== 'succeeded' ||
+    proof.sourcePointer !== 'evaos-desktop-bridge:runtime-receipt'
   ) {
-    throw new Error('Mac-control live canary release gate requires a successful ready proof.');
-  }
-  if (proof.secretScan !== 'passed') {
-    throw new Error('Mac-control live canary proof must pass secret scanning.');
+    throw new Error('Mac-control live canary release gate requires a successful direct-control runtime receipt.');
   }
 
   const expectedHeadSha = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA || '').trim();
@@ -3319,25 +3309,86 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   if (!/^\d+$/.test(expectedRunId)) {
     throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID.');
   }
-  if (proof.sourceHeadSha !== expectedHeadSha) {
-    throw new Error('Mac-control live canary proof source head does not match the release commit.');
-  }
-  if (String(proof.sourceRunId || '') !== expectedRunId) {
-    throw new Error('Mac-control live canary proof source run does not match the selected proof run.');
+  if (!new RegExp(`^gha:${expectedRunId}:[0-9a-f]{24}$`).test(String(proof.runRef || ''))) {
+    throw new Error('Mac-control live canary proof run does not match the selected proof run.');
   }
 
-  assertLiveCanaryPlainObject(proof.assertions, 'Mac-control live canary assertions');
-  const assertionKeys = Object.keys(proof.assertions);
+  const executedAtText = String(proof.executedAt || '');
+  const executedAt = Date.parse(executedAtText);
+  const expiresAtMs = Number.isSafeInteger(proof.expiresAt) ? proof.expiresAt * 1000 : Number.NaN;
+  const maxAgeRaw = String(env.EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS || '24').trim();
+  const configuredMaxAgeHours = Number.parseFloat(maxAgeRaw);
+  const maxAgeHours =
+    Number.isFinite(verificationOptions.maxAgeHours) && verificationOptions.maxAgeHours > 0
+      ? verificationOptions.maxAgeHours
+      : Number.isFinite(configuredMaxAgeHours) && configuredMaxAgeHours > 0
+        ? configuredMaxAgeHours
+        : 24;
+  const configuredVerificationNow =
+    verificationOptions.now instanceof Date ? verificationOptions.now.getTime() : Number.NaN;
+  const verificationNow = Number.isFinite(configuredVerificationNow) ? configuredVerificationNow : Date.now();
+  const receiptAgeMs = verificationNow - executedAt;
   if (
-    assertionKeys.length !== MAC_CONTROL_LIVE_CANARY_ASSERTIONS.length ||
-    assertionKeys.some((assertion) => !MAC_CONTROL_LIVE_CANARY_ASSERTIONS.includes(assertion))
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(executedAtText) ||
+    !Number.isFinite(executedAt) ||
+    !Number.isFinite(expiresAtMs) ||
+    receiptAgeMs < -5_000 ||
+    receiptAgeMs > maxAgeHours * 60 * 60 * 1000 ||
+    executedAt > expiresAtMs ||
+    expiresAtMs - executedAt > 66_000 ||
+    !/^[0-9a-f]{64}$/.test(String(proof.bindingRef || '')) ||
+    !/^[1-9][0-9]{0,18}$/.test(String(proof.bindingVersion || '')) ||
+    !/^[0-9a-f]{64}$/.test(String(proof.sessionRef || '')) ||
+    !/^[0-9a-f]{64}$/.test(String(proof.auditRef || ''))
   ) {
-    throw new Error('Mac-control live canary proof assertions do not match the required release contract.');
+    throw new Error('Mac-control live canary runtime receipt fields are invalid.');
   }
-  for (const assertion of MAC_CONTROL_LIVE_CANARY_ASSERTIONS) {
-    if (proof.assertions[assertion] !== true) {
-      throw new Error(`Mac-control live canary proof assertion ${assertion} must be true.`);
-    }
+
+  assertLiveCanaryPlainObject(proof.candidate, 'Mac-control live canary candidate');
+  const candidateFields = ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'];
+  if (
+    Object.keys(proof.candidate).length !== candidateFields.length ||
+    Object.keys(proof.candidate).some((field) => !candidateFields.includes(field))
+  ) {
+    throw new Error('Mac-control live canary candidate fields do not match the required release contract.');
+  }
+  const expectedSourceSha256 = committedBridgeSourceIdentity(expectedHeadSha).sourceSha256;
+  const expectedVersion = packageVersionAtCommit(expectedHeadSha);
+  if (
+    proof.candidate.sourceCommit !== expectedHeadSha ||
+    proof.candidate.sourceSha256 !== expectedSourceSha256 ||
+    proof.candidate.appVersion !== expectedVersion ||
+    proof.candidate.appBuild !== expectedVersion
+  ) {
+    throw new Error('Mac-control live canary candidate does not match the exact release commit.');
+  }
+
+  const negativePath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_NEGATIVE_PROOF_NAME,
+    'Mac-control runtime-receipt negative proof'
+  );
+  const negativeProof = readManifestFile(negativePath);
+  assertLiveCanaryPlainObject(negativeProof, 'Mac-control runtime-receipt negative proof');
+  assertLiveCanaryNoSecretMaterial(negativeProof, 'macControlNegative');
+  const negativeFields = ['schema', 'sourceHeadSha', 'sourceRunId', 'assertions'];
+  if (
+    Object.keys(negativeProof).length !== negativeFields.length ||
+    Object.keys(negativeProof).some((field) => !negativeFields.includes(field)) ||
+    negativeProof.schema !== 'evaos.mac_control.runtime_receipt_negative_proof.v1' ||
+    negativeProof.sourceHeadSha !== expectedHeadSha ||
+    String(negativeProof.sourceRunId || '') !== expectedRunId
+  ) {
+    throw new Error('Mac-control runtime-receipt negative proof does not match the exact release run.');
+  }
+  assertLiveCanaryPlainObject(negativeProof.assertions, 'Mac-control runtime-receipt negative assertions');
+  const negativeAssertions = ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'];
+  if (
+    Object.keys(negativeProof.assertions).length !== negativeAssertions.length ||
+    Object.keys(negativeProof.assertions).some((field) => !negativeAssertions.includes(field)) ||
+    negativeAssertions.some((field) => negativeProof.assertions[field] !== true)
+  ) {
+    throw new Error('Mac-control runtime-receipt negative assertions are incomplete.');
   }
 
   const provisionPath = requireExistingRelativeFile(

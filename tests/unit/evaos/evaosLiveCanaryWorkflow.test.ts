@@ -1,7 +1,14 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const WORKFLOW_PATH = '.github/workflows/evaos-live-canary-proof.yml';
+const require = createRequire(import.meta.url);
+const proofScanner = require('../../../scripts/evaosScanMacControlProofs.js') as {
+  scanMacControlProofDirectory: (proofDir: string) => { ok: boolean; scanned: number };
+};
 
 function readWorkflow(): string {
   return fs.readFileSync(WORKFLOW_PATH, 'utf8');
@@ -127,6 +134,19 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision-mac-control');
     expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js --mac-control');
     expect(workflow).toContain('> "$PROOF_DIR/mac-control-runtime.json"');
+    expect(workflow).toContain('Prove Mac-control runtime-receipt negative boundaries');
+    const negativeStep = workflow.slice(
+      workflow.indexOf('- name: Prove Mac-control runtime-receipt negative boundaries'),
+      workflow.indexOf('- name: Run follow-up live canaries')
+    );
+    expect(negativeStep).toContain(
+      "if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true'"
+    );
+    expect(negativeStep).toContain('run proof:runtime-receipt-negative --');
+    expect(negativeStep).toContain('"$PROOF_DIR/mac-control-runtime-negative.json" "$GITHUB_SHA" "$GITHUB_RUN_ID"');
+    expect(negativeStep).not.toContain('continue-on-error');
+    expect(negativeStep).not.toContain('forgedContextRejected: true');
+    expect(workflow).toContain('mac-control-runtime-negative.json');
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control');
     expect(workflow).toMatch(
       /- name: Cleanup Mac-control canary session[\s\S]*if: always\(\)[\s\S]*cleanup-mac-control/
@@ -134,10 +154,39 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('mac-control-runtime.json');
     expect(workflow).toContain('secret/redaction scan');
     expect(workflow).toMatch(/- name: Run Mac-control proof secret\/redaction scan\n\s+id: mac-control-proof-scan/);
-    expect(workflow).toContain("cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1'");
-    expect(workflow).toContain('cleanupProof.sessionRevoked !== true');
+    expect(workflow).toContain('node scripts/evaosScanMacControlProofs.js "$PROOF_DIR"');
     expect(workflow).toContain(
       "if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-proof-scan.outcome == 'success')"
     );
+  });
+
+  it('executes a case-normalized Mac-control artifact scanner', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-scan-'));
+    try {
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: true,
+          sensitiveOutput: 'passed',
+        })}\n`
+      );
+      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 1 });
+
+      for (const unsafe of [
+        { Cookie: 'opaque-cookie-value-123456' },
+        { Authorization: 'opaque-auth-value-123456' },
+        { context_signature: 'opaque-signature-value-123456' },
+        { receipt_base64: 'opaque-receipt-value-123456' },
+        { connector_token: 'opaque-token-value-123456' },
+        { receiptPrivateKeyPath: '/safe-looking/path' },
+        { note: '-----BEGIN OPENSSH PRIVATE KEY-----' },
+      ]) {
+        fs.writeFileSync(path.join(proofDir, 'mac-control-runtime.json'), `${JSON.stringify(unsafe)}\n`);
+        expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/forbidden/i);
+      }
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
   });
 });

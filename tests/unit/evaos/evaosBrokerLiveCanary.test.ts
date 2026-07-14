@@ -7,6 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -15,7 +16,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
-  verifyMacControlLiveCanaryProof: (proofDir: string, env: Record<string, string>) => boolean;
+  verifyMacControlLiveCanaryProof: (
+    proofDir: string,
+    env: Record<string, string>,
+    options?: { now?: Date; maxAgeHours?: number }
+  ) => boolean;
 };
 const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
   REQUIRED_BROKER_SURFACES: Array<{ surface: string; runtime: string }>;
@@ -46,7 +51,27 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
     env: Record<string, string | undefined>;
     fetchImpl: typeof fetch;
     now?: () => number;
+    randomBytes?: (size: number) => Uint8Array;
   }) => Promise<Record<string, unknown>>;
+  expectedMacControlCandidate: (env: Record<string, string | undefined>) => {
+    sourceCommit: string;
+    sourceSha256: string;
+    appVersion: string;
+    appBuild: string;
+  };
+  sanitizeMacControlRuntimeProof: (
+    raw: unknown,
+    options: {
+      challenge: string;
+      runRef: string;
+      expectedCandidate: Record<string, string>;
+      selectedBindingId: string;
+      selectedBindingVersion: string;
+      bindingExpiry: number;
+      requestStartedAt: number;
+      now: number;
+    }
+  ) => Record<string, unknown>;
   sanitizeMacControlRuntimeLaunchCanaryResponse: (
     raw: unknown,
     request: { customerId: string; runtime: string; expectedCallbackHost: string },
@@ -60,6 +85,14 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
+}
+
+function saltedReference(challenge: string, value: string): string {
+  return createHash('sha256')
+    .update(Buffer.from(challenge, 'ascii'))
+    .update(Buffer.from([0]))
+    .update(Buffer.from(value, 'utf8'))
+    .digest('hex');
 }
 
 describe('evaOS broker live canary', () => {
@@ -583,6 +616,15 @@ describe('evaOS broker live canary', () => {
 
   it('proves selected-binding Mac-control launch and callback acceptance without persisting private identifiers', async () => {
     const now = Date.parse('2026-07-14T05:00:00.000Z');
+    const sourceHeadSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    }).trim();
+    const challengeBytes = Buffer.alloc(32, 13);
+    const runNonceBytes = Buffer.alloc(12, 14);
+    const challenge = challengeBytes.toString('base64url');
+    const runRef = `gha:123456789:${runNonceBytes.toString('hex')}`;
+    const expectedCandidate = liveCanary.expectedMacControlCandidate({ GITHUB_SHA: sourceHeadSha });
     const bindingExpiresAt = new Date(now + 20_000).toISOString();
     const binding = {
       schema_version: 'evaos.mac_control_runtime_readiness.v1',
@@ -626,6 +668,24 @@ describe('evaOS broker live canary', () => {
             'Set-Cookie': 'evaos_session=proxy_session_secret_for_test; Path=/; Max-Age=300; Secure; HttpOnly',
           },
         })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          schema: 'evaos.mac_control.runtime_proof.v2',
+          proofKind: 'selected_binding_direct_mac_control',
+          tool: 'customer_mac.desktop_hotkey',
+          outcome: 'succeeded',
+          runRef,
+          executedAt: new Date(now).toISOString(),
+          bindingRef: saltedReference(challenge, binding.binding_id),
+          bindingVersion: '7',
+          sessionRef: 'b'.repeat(64),
+          expiresAt: Math.floor(now / 1000) + 15,
+          auditRef: 'c'.repeat(64),
+          sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+          candidate: expectedCandidate,
+        })
       );
 
     const proof = await liveCanary.runMacControlLiveCanary({
@@ -635,14 +695,15 @@ describe('evaOS broker live canary', () => {
         AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
-        GITHUB_SHA: '4192aadf6b45bf1c6535f209fcc96f2be806863e',
+        GITHUB_SHA: sourceHeadSha,
         GITHUB_RUN_ID: '123456789',
       },
       fetchImpl,
       now: () => now,
+      randomBytes: (size: number) => (size === 32 ? challengeBytes : runNonceBytes),
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
       action: 'runtime_launch',
       customer_id: 'staging-mac-owner',
@@ -650,32 +711,34 @@ describe('evaOS broker live canary', () => {
       launch_mode: 'mac_control_tools',
     });
     expect(fetchImpl.mock.calls[1][1]).toMatchObject({ method: 'GET', redirect: 'manual' });
-    expect(proof).toMatchObject({
-      schema: 'evaos-mac-control-live-canary/v1',
-      ok: true,
-      runtime: 'openclaw',
-      launchMode: 'mac_control_tools',
-      reason: 'ready',
-      httpStatus: 302,
-      sourceHeadSha: '4192aadf6b45bf1c6535f209fcc96f2be806863e',
-      sourceRunId: '123456789',
-      assertions: {
-        attached: true,
-        toolsReady: true,
-        activeGrant: true,
-        requiredCapabilityGroups: true,
-        bindingIdPresent: true,
-        bindingIdMatched: true,
-        bindingVersionPresent: true,
-        bindingVersionMatched: true,
-        bindingExpiryPresent: true,
-        bindingExpiryMatched: true,
-        bindingExpiryValid: true,
-        expectedLaunchTarget: true,
-        callbackAccepted: true,
-        proxySessionAccepted: true,
+    expect(fetchImpl.mock.calls[2][0]).toBe(
+      'https://openclaw-staging.example.test/api/v1/evaos/mac-control/runtime-receipt'
+    );
+    expect(fetchImpl.mock.calls[2][1]).toMatchObject({
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        Cookie: 'evaos_session=proxy_session_secret_for_test',
+        'Cache-Control': 'no-store',
+        'Content-Type': 'application/json',
       },
-      secretScan: 'passed',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[2][1]?.body))).toEqual({ challenge, runRef });
+    expect(proof).toEqual({
+      ok: true,
+      schema: 'evaos.mac_control.runtime_proof.v2',
+      proofKind: 'selected_binding_direct_mac_control',
+      tool: 'customer_mac.desktop_hotkey',
+      outcome: 'succeeded',
+      runRef,
+      executedAt: new Date(now).toISOString(),
+      bindingRef: saltedReference(challenge, binding.binding_id),
+      bindingVersion: '7',
+      sessionRef: 'b'.repeat(64),
+      expiresAt: Math.floor(now / 1000) + 15,
+      auditRef: 'c'.repeat(64),
+      sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+      candidate: expectedCandidate,
     });
     expect(JSON.stringify(proof)).not.toMatch(
       /staging-mac-owner|11111111-1111-4111-8111-111111111111|binding_version|binding_expires_at|callback_secret|proxy_session_secret|example\.test|eds_/
@@ -706,12 +769,30 @@ describe('evaOS broker live canary', () => {
           sensitiveOutput: 'passed',
         })}\n`
       );
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-runtime-negative.json'),
+        `${JSON.stringify({
+          schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
+          sourceHeadSha,
+          sourceRunId: '123456789',
+          assertions: {
+            forgedContextRejected: true,
+            expiredContextRejected: true,
+            replayRejected: true,
+            authorityRedacted: true,
+          },
+        })}\n`
+      );
 
       expect(
-        releaseGate.verifyMacControlLiveCanaryProof(proofDir, {
-          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: '4192aadf6b45bf1c6535f209fcc96f2be806863e',
-          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '123456789',
-        })
+        releaseGate.verifyMacControlLiveCanaryProof(
+          proofDir,
+          {
+            EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: sourceHeadSha,
+            EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '123456789',
+          },
+          { now: new Date(now), maxAgeHours: 24 }
+        )
       ).toBe(true);
 
       const pythonSource = [
@@ -720,9 +801,9 @@ describe('evaOS broker live canary', () => {
         'from evaos_desktop_bridge import qa_canary',
         'result = qa_canary.selected_binding_proof_binding(',
         '    Path(sys.argv[1]),',
-        '    expected_source_commit="4192aadf6b45bf1c6535f209fcc96f2be806863e",',
+        `    expected_source_commit=${JSON.stringify(sourceHeadSha)},`,
         '    expected_source_run_id="123456789",',
-        '    expected_source_sha256="0" * 64,',
+        `    expected_source_sha256=${JSON.stringify(expectedCandidate.sourceSha256)},`,
         '    expected_version="2.1.36",',
         '    expected_build="2.1.36",',
         ')',
@@ -741,6 +822,63 @@ describe('evaOS broker live canary', () => {
       ).toBe('ok');
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects runtime receipts that are stale, overlong, future-dated, or cross-bound', () => {
+    const now = Date.parse('2026-07-15T00:00:20.000Z');
+    const challenge = Buffer.alloc(32, 15).toString('base64url');
+    const selectedBindingId = 'binding-selected-test';
+    const selectedBindingVersion = '7';
+    const runRef = 'gha:123456789:111111111111111111111111';
+    const expectedCandidate = {
+      sourceCommit: 'a'.repeat(40),
+      sourceSha256: 'b'.repeat(64),
+      appVersion: '2.1.36',
+      appBuild: '2.1.36',
+    };
+    const baseProof = {
+      ok: true,
+      schema: 'evaos.mac_control.runtime_proof.v2',
+      proofKind: 'selected_binding_direct_mac_control',
+      tool: 'customer_mac.desktop_hotkey',
+      outcome: 'succeeded',
+      runRef,
+      executedAt: '2026-07-15T00:00:20.000Z',
+      bindingRef: saltedReference(challenge, selectedBindingId),
+      bindingVersion: selectedBindingVersion,
+      sessionRef: 'b'.repeat(64),
+      expiresAt: Math.floor(now / 1000) + 60,
+      auditRef: 'c'.repeat(64),
+      sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+      candidate: expectedCandidate,
+    };
+    const options = {
+      challenge,
+      runRef,
+      expectedCandidate,
+      selectedBindingId,
+      selectedBindingVersion,
+      bindingExpiry: now + 120_000,
+      requestStartedAt: now,
+      now,
+    };
+
+    for (const mutation of [
+      { schema: 'evaos.mac_control.runtime_proof.v1' },
+      { unexpected: true },
+      { runRef: 'gha:123456789:222222222222222222222222' },
+      { bindingRef: 'd'.repeat(64) },
+      { bindingVersion: '999' },
+      { candidate: { ...expectedCandidate, sourceCommit: 'd'.repeat(40) } },
+      { executedAt: '2026-07-15T00:00:14.999Z' },
+      { executedAt: '2026-07-15T00:00:25.001Z' },
+      { executedAt: '2026-07-15 00:00:20Z' },
+      { expiresAt: Math.floor(now / 1000) + 67 },
+    ]) {
+      expect(() => liveCanary.sanitizeMacControlRuntimeProof({ ...baseProof, ...mutation }, options)).toThrow(
+        /runtime receipt did not match/i
+      );
     }
   });
 

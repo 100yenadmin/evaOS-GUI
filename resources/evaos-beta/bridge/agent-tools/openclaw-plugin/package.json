@@ -22,7 +22,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && oxfmt dist",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "proof:runtime-receipt-negative": "npm run build && node scripts/runtime-receipt-negative-proof.mjs"
   },
   "devDependencies": {
     "oxfmt": "0.41.0",
@@ -69,7 +70,6 @@
         "evaos_shared_browser_guidance",
         "customer_mac_status",
         "desktop_control_status",
-        "desktop_control_start",
         "desktop_control_stop",
         "desktop_kill_switch",
         "customer_mac_capabilities",

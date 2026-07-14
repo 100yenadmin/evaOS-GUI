@@ -138,6 +138,67 @@ describe('evaOS IPC bridge provider wrapper', () => {
     expect(outcome).toBe('Timed out waiting for evaOS provider response: evaos.native-companion.run-action');
   });
 
+  it('emits one exact selected-customer enrollment request and resolves only its matching native callback', async () => {
+    const emit = vi.fn();
+    (window as typeof window & { electronAPI?: unknown }).electronAPI = {
+      on: vi.fn((callback: (event: { value: string }) => void) => {
+        callbacks.push(callback);
+      }),
+      emit,
+    };
+    const { evaosNativeCompanion } = await import('@/common/adapter/ipcBridge');
+    const request = {
+      action: 'secure_network_enroll' as const,
+      customerId: 'customer-selected-test',
+      agentLabel: 'evaOS Workbench',
+    };
+
+    const pending = evaosNativeCompanion.runAction.invoke(request);
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith('subscribe-evaos.native-companion.run-action', {
+      id: expect.stringMatching(/^evaos-/),
+      data: request,
+    });
+    const emitted = emit.mock.calls[0][1] as { id: string };
+    let settled = false;
+    void pending.finally(() => {
+      settled = true;
+    });
+    callbacks[0]({
+      value: JSON.stringify({
+        name: 'subscribe.callback-evaos.native-companion.run-actionwrong-request',
+        data: { success: false, msg: 'must be ignored' },
+      }),
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    callbacks[0]({
+      value: JSON.stringify({
+        name: `subscribe.callback-evaos.native-companion.run-action${emitted.id}`,
+        data: {
+          success: true,
+          data: {
+            action: 'secure_network_enroll',
+            status: 'succeeded',
+            message: 'Enrollment submitted.',
+            sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+            auditIds: [],
+            refreshRecommended: true,
+          },
+        },
+      }),
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+      },
+    });
+  });
+
   it('keeps the default deadline for non-enrollment native-companion actions', async () => {
     vi.useFakeTimers();
     (window as typeof window & { electronAPI?: unknown }).electronAPI = {

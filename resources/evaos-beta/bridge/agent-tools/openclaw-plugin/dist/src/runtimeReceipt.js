@@ -1,12 +1,18 @@
-import { createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey, timingSafeEqual, verify } from 'node:crypto';
 export const MAC_CONTROL_RUNTIME_RECEIPT_PATH = '/api/v1/evaos/mac-control/runtime-receipt';
 const CONTEXT_SCHEMA = 'evaos.mac_control_execution_context.v1';
 const CONTRACT_SCHEMA = 'evaos.mac_control_runtime_contract.v2';
 const CONNECTOR_REQUEST_SCHEMA = 'evaos.mac_control.canary_request.v1';
 const CONNECTOR_RESPONSE_SCHEMA = 'evaos.mac_control.runtime_receipt_envelope.v1';
+const RECEIPT_SCHEMA = 'evaos.mac_control.runtime_receipt.v1';
 const RECEIPT_NAMESPACE = 'evaos-mac-control-receipt-v1';
+const PUBLIC_PROOF_SCHEMA = 'evaos.mac_control.runtime_proof.v2';
+const PUBLIC_PROOF_KIND = 'selected_binding_direct_mac_control';
+const PUBLIC_PROOF_SOURCE = 'evaos-desktop-bridge:runtime-receipt';
 const CONTEXT_TTL_SECONDS = 60;
 const CLOCK_SKEW_SECONDS = 5;
+const DEFAULT_CONNECTOR_TIMEOUT_MS = 10_000;
+const AUTHORITY_DEADLINE_SAFETY_MS = 250;
 const MAX_REQUEST_BYTES = 4096;
 const MAX_CONNECTOR_RESPONSE_BYTES = 65536;
 const CONTEXT_FIELDS = [
@@ -22,6 +28,65 @@ const CONTEXT_FIELDS = [
   'context_id',
 ];
 const RESPONSE_FIELDS = ['schema', 'receiptBase64', 'signature', 'keyId', 'namespace'];
+const RECEIPT_FIELDS = [
+  'schema',
+  'keyId',
+  'namespace',
+  'executedAt',
+  'runtime',
+  'challenge',
+  'runRef',
+  'contextKeyId',
+  'executionContextDigest',
+  'contextRef',
+  'contextIssuedAt',
+  'contextExpiresAt',
+  'customerRef',
+  'vmRef',
+  'bindingRef',
+  'bindingVersion',
+  'bindingExpiresAt',
+  'sessionRef',
+  'controlStateBefore',
+  'controlStateAfter',
+  'controlStateBeforeDigest',
+  'controlStateAfterDigest',
+  'candidate',
+  'action',
+  'actionArgsDigest',
+  'auditId',
+  'auditTimestamp',
+  'auditRecordDigest',
+];
+const CONTROL_STATE_FIELDS = ['active', 'generation', 'killSwitch', 'mode', 'ready', 'takeoverActive'];
+const CANDIDATE_FIELDS = [
+  'sourceCommit',
+  'sourceSha256',
+  'sourcePath',
+  'sourceOwner',
+  'status',
+  'appPath',
+  'appVersion',
+  'appBuild',
+  'appBundleId',
+  'appName',
+  'executable',
+  'argv0',
+  'owner',
+];
+const OWNER_FIELDS = [
+  'label',
+  'classification',
+  'bundleId',
+  'sourceCommit',
+  'programPath',
+  'appPath',
+  'manifestPath',
+  'plistPath',
+];
+const PATH_FIELDS = ['kind', 'value'];
+const ACTION_FIELDS = ['command', 'args'];
+const ACTION_ARGS_FIELDS = ['keys', 'dryRun'];
 const HEADER = {
   context: 'x-evaos-mac-control-execution-context',
   contextSignature: 'x-evaos-mac-control-execution-context-signature',
@@ -51,6 +116,7 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const now = options.now ?? Date.now;
   const replayCache = options.replayCache ?? new Map();
+  const configuredConnectorTimeoutMs = options.connectorTimeoutMs ?? DEFAULT_CONNECTOR_TIMEOUT_MS;
   return async (request, response) => {
     if ((request.method ?? 'GET').toUpperCase() !== 'POST') {
       response.setHeader('Allow', 'POST');
@@ -67,6 +133,20 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
       sendError(response, authority.status, authority.code);
       return true;
     }
+    const receiptVerifier = loadReceiptVerifierConfig(env);
+    if (!receiptVerifier.ok) {
+      sendError(response, 503, 'receipt_verifier_unavailable');
+      return true;
+    }
+    const remainingAuthorityMs =
+      Math.min(authority.value.context.expires_at * 1000, Date.parse(authority.value.bindingExpiresAt)) -
+      now() -
+      AUTHORITY_DEADLINE_SAFETY_MS;
+    if (remainingAuthorityMs <= 0) {
+      sendError(response, 401, 'execution_context_expired');
+      return true;
+    }
+    const connectorTimeoutMs = Math.max(1, Math.min(configuredConnectorTimeoutMs, remainingAuthorityMs));
     pruneReplayCache(replayCache, now());
     if (replayCache.has(authority.value.context.context_id)) {
       sendError(response, 409, 'execution_context_replayed');
@@ -89,6 +169,8 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
       },
     };
     let connectorResponse;
+    const controller = new AbortController();
+    const connectorTimeout = setTimeout(() => controller.abort(), connectorTimeoutMs);
     try {
       connectorResponse = await fetchImpl(`${authority.value.connectorUrl}/v1/canary/mac-control`, {
         method: 'POST',
@@ -98,10 +180,13 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
           'Content-Type': 'application/json; charset=utf-8',
         },
         body: JSON.stringify(connectorBody),
+        signal: controller.signal,
       });
     } catch {
       sendError(response, 502, 'connector_unavailable');
       return true;
+    } finally {
+      clearTimeout(connectorTimeout);
     }
     if (!connectorResponse.ok) {
       sendError(
@@ -118,7 +203,12 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
       sendError(response, 502, 'connector_response_invalid');
       return true;
     }
-    const sanitized = validateConnectorEnvelope(rawConnectorResponse, authority.value);
+    const sanitized = validateConnectorEnvelope(
+      rawConnectorResponse,
+      authority.value,
+      publicRequest.value,
+      receiptVerifier.value
+    );
     if (!sanitized.ok) {
       sendError(response, 502, 'connector_response_invalid');
       return true;
@@ -167,12 +257,12 @@ async function readPublicRequest(request) {
   return { ok: true, value: { challenge: body.challenge, runRef: body.runRef } };
 }
 function verifyAuthority(headers, env, nowMs) {
-  const expectedKeyId = env.EVAOS_MAC_CONTROL_EXECUTION_CONTEXT_KEY_ID;
-  const publicKeyBase64 = env.EVAOS_MAC_CONTROL_EXECUTION_CONTEXT_PUBLIC_KEY_B64;
+  const expectedKeyId = env.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID;
+  const publicKeyBase64 = env.EVAOS_MAC_CONTROL_CONTEXT_PUBLIC_KEY;
   if (!expectedKeyId || !publicKeyBase64 || !validKeyId(expectedKeyId)) {
     return { ok: false, status: 503, code: 'execution_context_verifier_unavailable' };
   }
-  const rawPublicKey = decodeCanonicalBase64(publicKeyBase64);
+  const rawPublicKey = decodeBase64Url(publicKeyBase64);
   if (!rawPublicKey || rawPublicKey.byteLength !== 32) {
     return { ok: false, status: 503, code: 'execution_context_verifier_unavailable' };
   }
@@ -283,7 +373,45 @@ function verifyAuthority(headers, env, nowMs) {
     },
   };
 }
-function validateConnectorEnvelope(raw, authority) {
+function loadReceiptVerifierConfig(env) {
+  const keyId = env.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID;
+  const encodedPublicKey = env.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY;
+  const expectedSourceCommit = env.EVAOS_MAC_CONTROL_EXPECTED_SOURCE_COMMIT;
+  const expectedSourceSha256 = env.EVAOS_MAC_CONTROL_EXPECTED_SOURCE_SHA256;
+  const expectedAppVersion = env.EVAOS_MAC_CONTROL_EXPECTED_APP_VERSION;
+  const expectedAppBuild = env.EVAOS_MAC_CONTROL_EXPECTED_APP_BUILD;
+  if (
+    !keyId ||
+    !validKeyId(keyId) ||
+    !encodedPublicKey ||
+    !expectedSourceCommit ||
+    !/^[0-9a-f]{40}$/.test(expectedSourceCommit) ||
+    !expectedSourceSha256 ||
+    !validSha256(expectedSourceSha256) ||
+    !expectedAppVersion ||
+    !validReleaseValue(expectedAppVersion) ||
+    !expectedAppBuild ||
+    !validReleaseValue(expectedAppBuild)
+  ) {
+    return { ok: false };
+  }
+  const publicKey = decodeBase64Url(encodedPublicKey);
+  if (!publicKey || publicKey.byteLength !== 32) {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    value: {
+      keyId,
+      publicKey,
+      expectedSourceCommit,
+      expectedSourceSha256,
+      expectedAppVersion,
+      expectedAppBuild,
+    },
+  };
+}
+function validateConnectorEnvelope(raw, authority, request, verifier) {
   if (Buffer.from(raw).byteLength > MAX_CONNECTOR_RESPONSE_BYTES) {
     return { ok: false };
   }
@@ -305,7 +433,7 @@ function validateConnectorEnvelope(raw, authority) {
     typeof parsed.signature !== 'string' ||
     parsed.signature.length > 8192 ||
     typeof parsed.keyId !== 'string' ||
-    !validKeyId(parsed.keyId)
+    parsed.keyId !== verifier.keyId
   ) {
     return { ok: false };
   }
@@ -332,7 +460,339 @@ function validateConnectorEnvelope(raw, authority) {
   ) {
     return { ok: false };
   }
-  return { ok: true, value: parsed };
+  if (!verifySshSignature(receiptBytes, parsed.signature, verifier.publicKey)) {
+    return { ok: false };
+  }
+  return validateReceipt(receiptBytes, authority, request, verifier);
+}
+function validateReceipt(receiptBytes, authority, request, verifier) {
+  let parsed;
+  try {
+    parsed = JSON.parse(receiptBytes.toString('utf8'));
+  } catch {
+    return { ok: false };
+  }
+  if (!isRecord(parsed) || !hasExactKeys(parsed, RECEIPT_FIELDS)) {
+    return { ok: false };
+  }
+  const canonical = canonicalJson(parsed);
+  if (!canonical || !timingSafeBufferEqual(Buffer.from(receiptBytes), Buffer.from(canonical, 'utf8'))) {
+    return { ok: false };
+  }
+  const contextPayload = decodeBase64Url(authority.contextPayload);
+  const before = parsed.controlStateBefore;
+  const after = parsed.controlStateAfter;
+  const candidate = parsed.candidate;
+  const action = parsed.action;
+  if (
+    !contextPayload ||
+    parsed.schema !== RECEIPT_SCHEMA ||
+    parsed.keyId !== verifier.keyId ||
+    parsed.namespace !== RECEIPT_NAMESPACE ||
+    parsed.runtime !== 'openclaw' ||
+    parsed.challenge !== request.challenge ||
+    parsed.runRef !== request.runRef ||
+    parsed.contextKeyId !== authority.contextKeyId ||
+    parsed.contextIssuedAt !== authority.context.issued_at ||
+    parsed.contextExpiresAt !== authority.context.expires_at ||
+    parsed.bindingVersion !== authority.context.binding_version ||
+    parsed.bindingExpiresAt !== authority.bindingExpiresAt ||
+    parsed.executionContextDigest !== saltedHash(request.challenge, contextPayload) ||
+    parsed.contextRef !== saltedHash(request.challenge, authority.context.context_id) ||
+    parsed.customerRef !== saltedHash(request.challenge, authority.context.customer_id) ||
+    parsed.vmRef !== saltedHash(request.challenge, authority.context.customer_vm_id) ||
+    parsed.bindingRef !== saltedHash(request.challenge, authority.context.binding_id) ||
+    !isRecord(before) ||
+    !isRecord(after) ||
+    !validControlState(before) ||
+    !validControlState(after) ||
+    canonicalJson(before) !== canonicalJson(after) ||
+    parsed.sessionRef !==
+      saltedHash(request.challenge, `${authority.context.binding_id}\0${String(before.generation)}`) ||
+    parsed.controlStateBeforeDigest !== sha256Hex(canonicalJsonBytes(before)) ||
+    parsed.controlStateAfterDigest !== sha256Hex(canonicalJsonBytes(after)) ||
+    !validCandidate(candidate, verifier) ||
+    !validReceiptAction(action) ||
+    parsed.actionArgsDigest !== sha256Hex(canonicalJsonBytes(action.args)) ||
+    typeof parsed.auditId !== 'string' ||
+    !/^audit-[0-9A-Za-z_-]{8,128}$/.test(parsed.auditId) ||
+    typeof parsed.auditRecordDigest !== 'string' ||
+    !validSha256(parsed.auditRecordDigest)
+  ) {
+    return { ok: false };
+  }
+  const executedAt = parseUtcTimestamp(parsed.executedAt);
+  const auditTimestamp = parseUtcTimestamp(parsed.auditTimestamp);
+  const bindingExpiresAt = parseUtcTimestamp(parsed.bindingExpiresAt);
+  if (
+    executedAt === undefined ||
+    auditTimestamp === undefined ||
+    bindingExpiresAt === undefined ||
+    executedAt < (authority.context.issued_at - CLOCK_SKEW_SECONDS) * 1000 ||
+    executedAt > authority.context.expires_at * 1000 ||
+    auditTimestamp < (authority.context.issued_at - CLOCK_SKEW_SECONDS) * 1000 ||
+    auditTimestamp > executedAt + CLOCK_SKEW_SECONDS * 1000 ||
+    authority.context.expires_at * 1000 > bindingExpiresAt
+  ) {
+    return { ok: false };
+  }
+  const typedCandidate = candidate;
+  return {
+    ok: true,
+    value: {
+      ok: true,
+      schema: PUBLIC_PROOF_SCHEMA,
+      proofKind: PUBLIC_PROOF_KIND,
+      tool: 'customer_mac.desktop_hotkey',
+      outcome: 'succeeded',
+      runRef: request.runRef,
+      executedAt: parsed.executedAt,
+      bindingRef: parsed.bindingRef,
+      bindingVersion: authority.context.binding_version,
+      sessionRef: parsed.sessionRef,
+      expiresAt: authority.context.expires_at,
+      auditRef: saltedHash(request.challenge, parsed.auditId),
+      sourcePointer: PUBLIC_PROOF_SOURCE,
+      candidate: {
+        sourceCommit: typedCandidate.sourceCommit,
+        sourceSha256: typedCandidate.sourceSha256,
+        appVersion: typedCandidate.appVersion,
+        appBuild: typedCandidate.appBuild,
+      },
+    },
+  };
+}
+function validControlState(value) {
+  return (
+    hasExactKeys(value, CONTROL_STATE_FIELDS) &&
+    value.active === true &&
+    Number.isInteger(value.generation) &&
+    value.generation >= 0 &&
+    value.killSwitch === false &&
+    value.mode === 'full_access' &&
+    value.ready === true &&
+    value.takeoverActive === false
+  );
+}
+function validCandidate(value, verifier) {
+  if (!isRecord(value) || !hasExactKeys(value, CANDIDATE_FIELDS)) {
+    return false;
+  }
+  const owner = value.owner;
+  if (!isRecord(owner) || !hasExactKeys(owner, OWNER_FIELDS)) {
+    return false;
+  }
+  return (
+    value.sourceCommit === verifier.expectedSourceCommit &&
+    value.sourceSha256 === verifier.expectedSourceSha256 &&
+    value.sourcePath === 'resources/evaos-beta/bridge' &&
+    value.sourceOwner === '100yenadmin/evaOS-GUI' &&
+    value.status === 'vendored' &&
+    value.appPath === '/Applications/evaOS Workbench.app' &&
+    value.appVersion === verifier.expectedAppVersion &&
+    value.appBuild === verifier.expectedAppBuild &&
+    value.appBundleId === 'com.evaos.workbench' &&
+    value.appName === 'evaOS Workbench' &&
+    typeof value.executable === 'string' &&
+    /^\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/python\/bin\/python3(?:\.12)?$/.test(
+      value.executable
+    ) &&
+    value.argv0 === '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py' &&
+    owner.label === 'com.electricsheep.evaos-desktop-bridge' &&
+    owner.classification === 'workbench_bundle' &&
+    owner.bundleId === 'com.evaos.workbench' &&
+    owner.sourceCommit === verifier.expectedSourceCommit &&
+    validPathClaim(
+      owner.programPath,
+      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge'
+    ) &&
+    validPathClaim(owner.appPath, '/Applications/evaOS Workbench.app') &&
+    validPathClaim(owner.manifestPath, '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json') &&
+    isRecord(owner.plistPath) &&
+    hasExactKeys(owner.plistPath, PATH_FIELDS) &&
+    owner.plistPath.kind === 'path' &&
+    typeof owner.plistPath.value === 'string' &&
+    owner.plistPath.value.endsWith('/Library/LaunchAgents/com.electricsheep.evaos-desktop-bridge.plist')
+  );
+}
+function validPathClaim(value, expected) {
+  return isRecord(value) && hasExactKeys(value, PATH_FIELDS) && value.kind === 'path' && value.value === expected;
+}
+function validReceiptAction(value) {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ACTION_FIELDS) &&
+    value.command === 'customer_mac.desktop_hotkey' &&
+    isRecord(value.args) &&
+    hasExactKeys(value.args, ACTION_ARGS_FIELDS) &&
+    value.args.keys === 'escape' &&
+    value.args.dryRun === false
+  );
+}
+function verifySshSignature(message, armor, pinnedPublicKey) {
+  const decoded = decodeSshSignatureArmor(armor);
+  if (!decoded) {
+    return false;
+  }
+  try {
+    const reader = sshReader(decoded);
+    if (reader.readRaw(6).toString('ascii') !== 'SSHSIG' || reader.readUInt32() !== 1) {
+      return false;
+    }
+    const publicKeyBlob = reader.readString();
+    const namespace = reader.readString().toString('utf8');
+    const reserved = reader.readString();
+    const hashAlgorithm = reader.readString().toString('ascii');
+    const signatureBlob = reader.readString();
+    if (!reader.done() || namespace !== RECEIPT_NAMESPACE || reserved.byteLength !== 0) {
+      return false;
+    }
+    const publicKeyReader = sshReader(publicKeyBlob);
+    const publicKeyAlgorithm = publicKeyReader.readString().toString('ascii');
+    const embeddedPublicKey = publicKeyReader.readString();
+    const signatureReader = sshReader(signatureBlob);
+    const signatureAlgorithm = signatureReader.readString().toString('ascii');
+    const signature = signatureReader.readString();
+    if (
+      !publicKeyReader.done() ||
+      !signatureReader.done() ||
+      publicKeyAlgorithm !== 'ssh-ed25519' ||
+      signatureAlgorithm !== 'ssh-ed25519' ||
+      embeddedPublicKey.byteLength !== 32 ||
+      signature.byteLength !== 64 ||
+      !timingSafeBufferEqual(embeddedPublicKey, Buffer.from(pinnedPublicKey)) ||
+      (hashAlgorithm !== 'sha256' && hashAlgorithm !== 'sha512')
+    ) {
+      return false;
+    }
+    const digest = createHash(hashAlgorithm).update(Buffer.from(message)).digest();
+    const signedData = Buffer.concat([
+      Buffer.from('SSHSIG', 'ascii'),
+      encodeSshString(Buffer.from(namespace, 'utf8')),
+      encodeSshString(Buffer.alloc(0)),
+      encodeSshString(Buffer.from(hashAlgorithm, 'ascii')),
+      encodeSshString(digest),
+    ]);
+    const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+    const publicKey = createPublicKey({
+      key: Buffer.concat([spkiPrefix, embeddedPublicKey]),
+      format: 'der',
+      type: 'spki',
+    });
+    return verify(null, signedData, publicKey, signature);
+  } catch {
+    return false;
+  }
+}
+function decodeSshSignatureArmor(value) {
+  const match = /^-----BEGIN SSH SIGNATURE-----\n([A-Za-z0-9+/=\n]+)-----END SSH SIGNATURE-----\n?$/.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  const lines = match[1].split('\n').filter((line) => line.length > 0);
+  if (lines.length === 0 || lines.some((line) => line.length > 76 || !/^[A-Za-z0-9+/=]+$/.test(line))) {
+    return undefined;
+  }
+  const decoded = decodeCanonicalBase64(lines.join(''));
+  return decoded ? Buffer.from(decoded) : undefined;
+}
+function sshReader(value) {
+  const buffer = Buffer.from(value);
+  let offset = 0;
+  return {
+    readRaw(length) {
+      if (!Number.isInteger(length) || length < 0 || offset + length > buffer.byteLength) {
+        throw new Error('invalid SSH signature field');
+      }
+      const result = buffer.subarray(offset, offset + length);
+      offset += length;
+      return result;
+    },
+    readUInt32() {
+      if (offset + 4 > buffer.byteLength) {
+        throw new Error('invalid SSH signature integer');
+      }
+      const result = buffer.readUInt32BE(offset);
+      offset += 4;
+      return result;
+    },
+    readString() {
+      const length = this.readUInt32();
+      if (length > MAX_CONNECTOR_RESPONSE_BYTES) {
+        throw new Error('oversized SSH signature field');
+      }
+      return this.readRaw(length);
+    },
+    done() {
+      return offset === buffer.byteLength;
+    },
+  };
+}
+function encodeUInt32(value) {
+  const output = Buffer.alloc(4);
+  output.writeUInt32BE(value, 0);
+  return output;
+}
+function encodeSshString(value) {
+  const buffer = Buffer.from(value);
+  return Buffer.concat([encodeUInt32(buffer.byteLength), buffer]);
+}
+function timingSafeBufferEqual(left, right) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.byteLength === rightBuffer.byteLength && timingSafeEqual(leftBuffer, rightBuffer);
+}
+function canonicalJson(value) {
+  try {
+    return JSON.stringify(sortJson(value));
+  } catch {
+    return undefined;
+  }
+}
+function canonicalJsonBytes(value) {
+  const encoded = canonicalJson(value);
+  if (encoded === undefined) {
+    throw new Error('value is not canonical JSON');
+  }
+  return Buffer.from(encoded, 'utf8');
+}
+function sortJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortJson);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, sortJson(value[key])])
+  );
+}
+function sha256Hex(value) {
+  return createHash('sha256').update(Buffer.from(value)).digest('hex');
+}
+function saltedHash(challenge, value) {
+  return sha256Hex(
+    Buffer.concat([
+      Buffer.from(challenge, 'ascii'),
+      Buffer.from([0]),
+      typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.from(value),
+    ])
+  );
+}
+function parseUtcTimestamp(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) {
+    return undefined;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+function validSha256(value) {
+  return /^[0-9a-f]{64}$/.test(value);
+}
+function validReleaseValue(value) {
+  return /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/.test(value);
 }
 function validConnectorUrl(value) {
   let parsed;
@@ -418,8 +878,9 @@ function validSshSignature(value) {
   return /^-----BEGIN SSH SIGNATURE-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END SSH SIGNATURE-----\n?$/.test(value);
 }
 function hasExactKeys(value, keys) {
+  const expected = new Set(keys);
   const actual = Object.keys(value);
-  return actual.length === keys.length && actual.every((key, index) => key === keys[index]);
+  return actual.length === expected.size && actual.every((key) => expected.has(key));
 }
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
