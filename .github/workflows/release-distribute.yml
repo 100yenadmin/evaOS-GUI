@@ -60,7 +60,10 @@ jobs:
   distribute:
     name: Distribute release assets
     runs-on: ubuntu-latest
-    if: github.event.inputs.beta_distribution_ack == 'evaos-beta' && vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'
+    if: |
+      github.event.inputs.beta_distribution_ack == 'evaos-beta' &&
+      vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true' &&
+      github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)
     steps:
       - name: Extract version from tag
         id: version

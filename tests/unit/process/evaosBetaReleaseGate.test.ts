@@ -14,6 +14,12 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   assertReleaseConfig: (rootDir: string) => boolean;
   collectFunctionalSmokeConfigIssues: (workflow: string) => string[];
   collectBuildReleaseWorkflowIssues: (workflow: string) => string[];
+  collectPublicationWorkflowIssues: (workflows: {
+    buildRelease: string;
+    distribute: string;
+    reusableBuild: string;
+  }) => string[];
+  collectReleaseDistributeWorkflowIssues: (workflow: string) => string[];
   collectReleaseConfigIssues: (rootDir: string) => string[];
   createReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => unknown;
   isLocalSignedDmgFallbackManifest: (manifest: unknown) => boolean;
@@ -731,7 +737,7 @@ describe('evaOS beta release gate', () => {
     expect(workflow).toContain('BUNDLED_PEEKABOO_SOURCE_SHA256');
     expect(workflow).toContain('BUNDLED_PEEKABOO_LICENSE_SHA256');
     expect(workflow).toContain('3.8.0');
-    expect(workflow).toContain('import ApplicationServices, Cocoa, CoreText, Quartz');
+    expect(workflow).toContain(`"$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`);
   });
 
   it('requires the functional-smoke app job itself to run on Sequoia', () => {
@@ -753,6 +759,19 @@ describe('evaOS beta release gate', () => {
     );
     expect(releaseGate.collectFunctionalSmokeConfigIssues(mutableBridgeRefWorkflow)).toContain(
       '.github/workflows/workbench-functional-smoke.yml: bridge ref must be a full immutable commit SHA'
+    );
+
+    const missingNoBytecodeProbe = workflow
+      .replace(
+        `"$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`,
+        `"$BRIDGE_PYTHON" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`
+      )
+      .concat(
+        `\n# "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
+          `  unused-probe:\n    runs-on: macos-15\n    steps:\n      - run: "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n`
+      );
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(missingNoBytecodeProbe)).toContain(
+      '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
     );
   });
 
@@ -1377,6 +1396,75 @@ describe('evaOS beta release gate', () => {
 
     expect(releaseGate.collectReleaseConfigIssues(repoRoot)).toEqual([]);
     expect(releaseGate.assertReleaseConfig(repoRoot)).toBe(true);
+  });
+
+  it('requires the rotated publication variable and exact release-branch guards on executable publication jobs', () => {
+    const workflows = {
+      buildRelease: fs.readFileSync(path.join(repoRoot, '.github/workflows/build-and-release.yml'), 'utf8'),
+      distribute: fs.readFileSync(path.join(repoRoot, '.github/workflows/release-distribute.yml'), 'utf8'),
+      reusableBuild: fs.readFileSync(path.join(repoRoot, '.github/workflows/_build-reusable.yml'), 'utf8'),
+    };
+
+    expect(releaseGate.collectPublicationWorkflowIssues(workflows)).toEqual([]);
+
+    const legacyPublicationPath = {
+      ...workflows,
+      distribute: workflows.distribute.replace(
+        'vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED',
+        'vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED'
+      ),
+    };
+    expect(releaseGate.collectPublicationWorkflowIssues(legacyPublicationPath)).toContain(
+      '.github/workflows/release-distribute.yml: executable publication paths must not use vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED'
+    );
+
+    const missingRefGuard = {
+      ...workflows,
+      distribute: workflows.distribute
+        .replace("github.ref_type == 'branch' &&", 'true &&')
+        .concat(
+          "\n# github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)\n"
+        ),
+    };
+    expect(releaseGate.collectPublicationWorkflowIssues(missingRefGuard)).toContain(
+      '.github/workflows/release-distribute.yml: jobs.distribute must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH'
+    );
+  });
+
+  it('binds the live-canary audit to the exact distribute job named step and executable data flow', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/release-distribute.yml'), 'utf8');
+
+    expect(releaseGate.collectReleaseDistributeWorkflowIssues(workflow)).toEqual([]);
+
+    const driftedWithDecoys = workflow
+      .replace(
+        '          MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")',
+        '          MAC_CONTROL_PROOF_REQUIRED=false'
+      )
+      .replace(
+        '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
+        '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: decoy'
+      ).concat(`
+# MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")
+# EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}
+  unused-decoy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate live broker surface proof
+        env:
+          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}
+        run: |
+          MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")
+          EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED" node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof
+`);
+
+    const issues = releaseGate.collectReleaseDistributeWorkflowIssues(driftedWithDecoys);
+    expect(issues).toContain(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
+    );
+    expect(issues).toContain(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
+    );
   });
 
   it('forces the no-ACP managed resource profile in the beta release workflow', () => {

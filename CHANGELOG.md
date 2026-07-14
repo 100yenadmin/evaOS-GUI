@@ -28,6 +28,20 @@
   one successful same-head Mac-control canary result with all binding,
   capability, launch, and proxy-session assertions true; historical tag retries
   remain governed by their original proof contract.
+- Binds provisioning to the exact staging Supabase, broker, and callback
+  origins in the database marker; atomically preserves retryable state and
+  compensates failed persistence by revoking the exact temporary session.
+- Requires matching normalized capability sets, a secure host-only browser
+  session cookie, and a still-live selected binding after callback completion.
+
+### Release Authorization And Bundle Integrity
+
+- Moves 2.1.36 GitHub publication and public-signing authorization to the
+  release-specific variable and requires publication jobs to run only on the
+  exact configured release branch.
+- Makes the release audit inspect the executable live-canary validation step,
+  ignoring comment and unused-step decoys, and runs the packaged PyObjC import
+  probe with bytecode writes disabled.
 
 ### Release Boundary
 

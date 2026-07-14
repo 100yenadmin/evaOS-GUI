@@ -492,6 +492,63 @@ function getWorkflowJobRunner(workflow, jobName) {
   return '';
 }
 
+function getWorkflowJobBlock(workflow, jobName) {
+  const lines = String(workflow || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `  ${jobName}:`);
+  if (start === -1) return '';
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^  [A-Za-z0-9_-]+:\s*(?:#.*)?$/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join('\n');
+}
+
+function getWorkflowNamedStepBlocks(jobBlock, stepName) {
+  const lines = String(jobBlock || '').split(/\r?\n/);
+  const starts = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^ {6}- name:\s*(.+?)\s*$/);
+    if (!match) continue;
+    const name = match[1].replace(/^(['"])(.*)\1$/, '$2');
+    if (name === stepName) starts.push(index);
+  }
+  return starts.map((start) => {
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^ {6}-\s+/.test(lines[index])) {
+        end = index;
+        break;
+      }
+    }
+    return lines.slice(start, end).join('\n');
+  });
+}
+
+function getWorkflowStepPropertyBlock(stepBlock, property, blockScalar = false) {
+  const lines = String(stepBlock || '').split(/\r?\n/);
+  const header = blockScalar ? new RegExp(`^ {8}${property}:\\s*\\|\\s*$`) : new RegExp(`^ {8}${property}:\\s*$`);
+  const start = lines.findIndex((line) => header.test(line));
+  if (start === -1) return '';
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^ {8}\S/.test(lines[index]) && !/^ {8}#/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join('\n');
+}
+
+function executableWorkflowText(workflow) {
+  return String(workflow || '')
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
+}
+
 function collectFunctionalSmokeConfigIssues(workflow) {
   const jobs = getTopLevelYamlSection(workflow, 'jobs');
   const issues = [];
@@ -500,6 +557,107 @@ function collectFunctionalSmokeConfigIssues(workflow) {
   }
   if (!String(workflow || '').includes('[[ ! "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]')) {
     issues.push('.github/workflows/workbench-functional-smoke.yml: bridge ref must be a full immutable commit SHA');
+  }
+  const appJob = getWorkflowJobBlock(jobs, 'macos-arm64-app');
+  const verifySteps = getWorkflowNamedStepBlocks(appJob, 'Verify functional-smoke artifact shape');
+  const verifyRun = verifySteps.length === 1 ? getWorkflowStepPropertyBlock(verifySteps[0], 'run', true) : '';
+  if (!verifyRun.includes(`"$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`)) {
+    issues.push(
+      '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+    );
+  }
+  return issues;
+}
+
+function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', reusableBuild = '' } = {}) {
+  const issues = [];
+  const workflowEntries = [
+    ['.github/workflows/build-and-release.yml', buildRelease],
+    ['.github/workflows/release-distribute.yml', distribute],
+    ['.github/workflows/_build-reusable.yml', reusableBuild],
+  ];
+  for (const [file, workflow] of workflowEntries) {
+    const executable = executableWorkflowText(workflow);
+    if (executable.includes('vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED')) {
+      issues.push(`${file}: executable publication paths must not use vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED`);
+    }
+    if (!executable.includes('vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED')) {
+      issues.push(`${file}: executable publication paths must use vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED`);
+    }
+  }
+
+  const requiredBranchGuard =
+    "github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)";
+  for (const jobName of ['create-tag', 'release', 'register-local-signed-dmg-manifest']) {
+    const normalizedJob = executableWorkflowText(getWorkflowJobBlock(buildRelease, jobName)).replace(/\s+/g, ' ');
+    if (!normalizedJob.includes(requiredBranchGuard)) {
+      issues.push(
+        `.github/workflows/build-and-release.yml: jobs.${jobName} must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH`
+      );
+    }
+  }
+  const normalizedDistributeJob = executableWorkflowText(getWorkflowJobBlock(distribute, 'distribute')).replace(
+    /\s+/g,
+    ' '
+  );
+  if (!normalizedDistributeJob.includes(requiredBranchGuard)) {
+    issues.push(
+      '.github/workflows/release-distribute.yml: jobs.distribute must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH'
+    );
+  }
+  return issues;
+}
+
+function collectReleaseDistributeWorkflowIssues(workflow) {
+  const issues = [];
+  const distributeJob = getWorkflowJobBlock(workflow, 'distribute');
+  const steps = getWorkflowNamedStepBlocks(distributeJob, 'Validate live broker surface proof');
+  if (steps.length !== 1) {
+    return [
+      '.github/workflows/release-distribute.yml: jobs.distribute must contain exactly one Validate live broker surface proof step',
+    ];
+  }
+  const envBlock = getWorkflowStepPropertyBlock(steps[0], 'env');
+  const runBlock = getWorkflowStepPropertyBlock(steps[0], 'run', true);
+  if (
+    !runBlock.includes(
+      'MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")'
+    )
+  ) {
+    issues.push(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
+    );
+  }
+  for (const command of [
+    'gh run view "$LIVE_CANARY_PROOF_RUN_ID"',
+    'gh run download "$LIVE_CANARY_PROOF_RUN_ID"',
+    'node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof',
+  ]) {
+    if (!runBlock.includes(command)) {
+      issues.push(
+        `.github/workflows/release-distribute.yml: Validate live broker surface proof executable run block is missing ${command}`
+      );
+    }
+  }
+  for (const binding of [
+    'LIVE_CANARY_PROOF_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
+    'TAG: ${{ steps.version.outputs.tag }}',
+    'EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}',
+    'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: ${{ steps.provenance.outputs.tag_commit }}',
+    'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
+  ]) {
+    if (!envBlock.includes(binding)) {
+      issues.push(
+        binding.startsWith('EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID:')
+          ? '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
+          : `.github/workflows/release-distribute.yml: Validate live broker surface proof env block is missing ${binding}`
+      );
+    }
+  }
+  if (!runBlock.includes('EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"')) {
+    issues.push(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must pass the derived Mac-control requirement to proof verification'
+    );
   }
   return issues;
 }
@@ -548,6 +706,9 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'packages/desktop/src/renderer/services/i18n/locales/en-US/conversation.json'
   );
   const settingsEn = readText(rootDir, 'packages/desktop/src/renderer/services/i18n/locales/en-US/settings.json');
+
+  issues.push(...collectPublicationWorkflowIssues({ buildRelease, distribute, reusableBuild }));
+  issues.push(...collectReleaseDistributeWorkflowIssues(distribute));
 
   if (String(packageJson.version || '').includes('evaos-beta')) {
     issues.push('package.json: stable Mac release version must not contain evaos-beta');
@@ -619,7 +780,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(buildRelease, "beta_release_ack == 'evaos-beta'", '.github/workflows/build-and-release.yml', issues);
   requireText(
     buildRelease,
-    "vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'",
+    "vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'",
     '.github/workflows/build-and-release.yml',
     issues
   );
@@ -725,7 +886,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   requireText(distribute, "beta_distribution_ack == 'evaos-beta'", '.github/workflows/release-distribute.yml', issues);
   requireText(
     distribute,
-    "vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED == 'true'",
+    "vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'",
     '.github/workflows/release-distribute.yml',
     issues
   );
@@ -2817,6 +2978,8 @@ module.exports = {
   assertPublicDistributionTag,
   collectFunctionalSmokeConfigIssues,
   collectBuildReleaseWorkflowIssues,
+  collectPublicationWorkflowIssues,
+  collectReleaseDistributeWorkflowIssues,
   collectReleaseConfigIssues,
   createReleaseManifest,
   getEnvValue,
