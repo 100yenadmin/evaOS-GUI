@@ -601,12 +601,14 @@ function collectFunctionalSmokeConfigIssues(workflow) {
   const appJob = getWorkflowJobBlock(jobs, 'macos-arm64-app');
   const verifySteps = getWorkflowNamedStepBlocks(appJob, 'Verify functional-smoke artifact shape');
   const verifyRun = verifySteps.length === 1 ? getWorkflowStepPropertyBlock(verifySteps[0], 'run', true) : '';
-  const verifyRunLines = getExecutableBlockLines(verifyRun);
-  if (
-    !verifyRunLines.includes(
-      `env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`
-    )
-  ) {
+  const expectedProbe =
+    `env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c ` +
+    `'import ApplicationServices, Cocoa, CoreText, Quartz'`;
+  const targetProbeSuffix = `-c 'import ApplicationServices, Cocoa, CoreText, Quartz'`;
+  const targetProbeLines = String(verifyRun || '')
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*#/.test(line) && line.includes('"$BRIDGE_PYTHON"') && line.includes(targetProbeSuffix));
+  if (targetProbeLines.length !== 1 || targetProbeLines[0] !== `          ${expectedProbe}`) {
     issues.push(
       '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
     );
@@ -634,6 +636,22 @@ function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', 
   const requiredBranchGuard =
     "github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)";
   const requiredPublishGuard = "vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'";
+  const expectedBuildJobConditions = {
+    'create-tag':
+      `${requiredPublishGuard} && ${requiredBranchGuard} && ` + "(inputs.macos_dmg_finalization || 'local') == 'ci'",
+    release:
+      `always() && ${requiredPublishGuard} && ${requiredBranchGuard} && ` +
+      "needs.build-pipeline.result == 'success' && needs.create-tag.result == 'success' && " +
+      "(inputs.macos_dmg_finalization || 'local') == 'ci' && ( " +
+      "needs.pack-web-cli.result == 'success' || " +
+      "(inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all') == 'macos' || " +
+      "(inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all') == 'macos-arm64' || " +
+      "(inputs.release_target_platforms || vars.EVAOS_RELEASE_TARGET_PLATFORMS || 'all') == 'windows' )",
+    'register-local-signed-dmg-manifest':
+      "github.event.inputs.beta_release_ack == 'evaos-beta' && " +
+      `${requiredPublishGuard} && ${requiredBranchGuard} && ` +
+      "inputs.release_operation == 'register-local-signed-dmg-manifest'",
+  };
   for (const jobName of ['create-tag', 'release', 'register-local-signed-dmg-manifest']) {
     const jobIfExpression = getWorkflowJobIfExpression(buildRelease, jobName);
     if (!jobIfExpression.includes(requiredPublishGuard)) {
@@ -646,8 +664,16 @@ function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', 
         `.github/workflows/build-and-release.yml: jobs.${jobName} must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH`
       );
     }
+    if (jobIfExpression !== expectedBuildJobConditions[jobName]) {
+      issues.push(
+        `.github/workflows/build-and-release.yml: jobs.${jobName} publication condition must match the audited allowlist`
+      );
+    }
   }
   const distributeIfExpression = getWorkflowJobIfExpression(distribute, 'distribute');
+  const expectedDistributeCondition =
+    "github.event.inputs.beta_distribution_ack == 'evaos-beta' && " +
+    `${requiredPublishGuard} && ${requiredBranchGuard}`;
   if (!distributeIfExpression.includes(requiredPublishGuard)) {
     issues.push(
       '.github/workflows/release-distribute.yml: jobs.distribute must require vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED'
@@ -656,6 +682,11 @@ function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', 
   if (!distributeIfExpression.includes(requiredBranchGuard)) {
     issues.push(
       '.github/workflows/release-distribute.yml: jobs.distribute must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH'
+    );
+  }
+  if (distributeIfExpression !== expectedDistributeCondition) {
+    issues.push(
+      '.github/workflows/release-distribute.yml: jobs.distribute publication condition must match the audited allowlist'
     );
   }
   return issues;
@@ -672,23 +703,14 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
   }
   const runBlock = getWorkflowStepPropertyBlock(steps[0], 'run', true);
   const runLines = getExecutableBlockLines(runBlock);
-  const macControlRequirementLine =
-    'MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")';
-  if (!runLines.includes(macControlRequirementLine)) {
+  if (
+    runLines.length !== 2 ||
+    runLines[0] !== 'run: |' ||
+    runLines[1] !== 'bash scripts/evaosValidateLiveCanaryProofRun.sh'
+  ) {
     issues.push(
-      '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
     );
-  }
-  for (const command of [
-    'RUN_JSON=$(gh run view "$LIVE_CANARY_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha)',
-    'gh run download "$LIVE_CANARY_PROOF_RUN_ID" \\',
-    'node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof',
-  ]) {
-    if (!runLines.includes(command)) {
-      issues.push(
-        `.github/workflows/release-distribute.yml: Validate live broker surface proof executable run block is missing ${command}`
-      );
-    }
   }
   for (const [key, expectedValue] of [
     ['LIVE_CANARY_PROOF_RUN_ID', '${{ github.event.inputs.live_canary_proof_run_id }}'],
@@ -705,14 +727,6 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
           : `.github/workflows/release-distribute.yml: Validate live broker surface proof env block is missing ${key}: ${expectedValue}`
       );
     }
-  }
-  if (
-    !runLines.includes('EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED" \\') ||
-    !runLines.includes('node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof')
-  ) {
-    issues.push(
-      '.github/workflows/release-distribute.yml: Validate live broker surface proof must pass the derived Mac-control requirement to proof verification'
-    );
   }
   return issues;
 }
@@ -732,6 +746,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   const localSignedDmgManifest = readText(rootDir, '.github/workflows/evaos-beta-local-signed-dmg-manifest.yml');
   const reusableBuild = readText(rootDir, '.github/workflows/_build-reusable.yml');
   const functionalSmoke = readText(rootDir, '.github/workflows/workbench-functional-smoke.yml');
+  const liveCanaryVerifier = readText(rootDir, 'scripts/evaosValidateLiveCanaryProofRun.sh');
   const pythonRuntimePrep = readText(rootDir, 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh');
   const afterSign = readText(rootDir, 'scripts/afterSign.js');
   const dmgFinalizer = readText(rootDir, 'scripts/evaosFinalizeMacDmg.js');
@@ -998,45 +1013,45 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     issues,
     'broker live canary customer override input'
   );
-  requireText(distribute, 'evaOS Live Canary Proof', '.github/workflows/release-distribute.yml', issues);
+  requireText(liveCanaryVerifier, 'evaOS Live Canary Proof', 'scripts/evaosValidateLiveCanaryProofRun.sh', issues);
   requireText(
-    distribute,
+    liveCanaryVerifier,
     '.github/workflows/evaos-live-canary-proof.yml',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'headSha',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'live canary head SHA binding'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'broker-runtime-status.json',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'live broker-surface proof artifact'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'mac-control-runtime.json',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'selected-binding Mac-control proof artifact'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'requires-mac-control-proof',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'version-bounded Mac-control release proof gate'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'version-bounded Mac-control proof verifier input'
   );
@@ -1083,30 +1098,30 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'live canary proof freshness binding'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'Run live canaries: true',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'live canary run input binding'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'Run follow-up canaries:',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'live canary follow-up disposition marker'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'Run Mac-control canary: true',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues,
     'required Mac-control canary disposition marker'
   );
   requireText(
-    distribute,
+    liveCanaryVerifier,
     'scripts/evaosBetaReleaseGate.js verify-live-canary-proof',
-    '.github/workflows/release-distribute.yml',
+    'scripts/evaosValidateLiveCanaryProofRun.sh',
     issues
   );
 

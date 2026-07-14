@@ -775,6 +775,17 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.collectFunctionalSmokeConfigIssues(missingNoBytecodeProbe)).toContain(
       '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
     );
+
+    const unusedSafeProbe = workflow.replace(
+      `          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`,
+      `          never_called_probe() {\n` +
+        `            env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
+        `          }\n` +
+        `          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`
+    );
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(unusedSafeProbe)).toContain(
+      '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+    );
   });
 
   it('detects strict public beta release mode', () => {
@@ -1487,6 +1498,17 @@ describe('evaOS beta release gate', () => {
           })
         ).toContain(issue(file, jobName));
       }
+
+      const alwaysTrueJob = jobBlock.replace(
+        "vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'",
+        "true || (vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true')"
+      );
+      expect(
+        releaseGate.collectPublicationWorkflowIssues({
+          ...workflows,
+          [workflowKey]: workflow.slice(0, start) + alwaysTrueJob + workflow.slice(end),
+        })
+      ).toContain(`${file}: jobs.${jobName} publication condition must match the audited allowlist`);
     }
   });
 
@@ -1497,14 +1519,14 @@ describe('evaOS beta release gate', () => {
 
     const driftedWithDecoys = workflow
       .replace(
-        '          MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")',
-        '          MAC_CONTROL_PROOF_REQUIRED=false'
+        '          bash scripts/evaosValidateLiveCanaryProofRun.sh',
+        '          if false; then\n            bash scripts/evaosValidateLiveCanaryProofRun.sh\n          fi'
       )
       .replace(
         '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
         '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: decoy'
       ).concat(`
-# MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")
+# bash scripts/evaosValidateLiveCanaryProofRun.sh
 # EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}
   unused-decoy:
     runs-on: ubuntu-latest
@@ -1513,13 +1535,12 @@ describe('evaOS beta release gate', () => {
         env:
           EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}
         run: |
-          MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")
-          EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED" node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof
+          bash scripts/evaosValidateLiveCanaryProofRun.sh
 `);
 
     const issues = releaseGate.collectReleaseDistributeWorkflowIssues(driftedWithDecoys);
     expect(issues).toContain(
-      '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
     );
     expect(issues).toContain(
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
@@ -1527,10 +1548,9 @@ describe('evaOS beta release gate', () => {
 
     const driftedWithInlineComments = workflow
       .replace(
-        '          MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")',
-        `          MAC_CONTROL_PROOF_REQUIRED=false\n` +
-          `          # MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")\n` +
-          `          echo 'MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")'`
+        '          bash scripts/evaosValidateLiveCanaryProofRun.sh',
+        `          # bash scripts/evaosValidateLiveCanaryProofRun.sh\n` +
+          `          echo 'bash scripts/evaosValidateLiveCanaryProofRun.sh'`
       )
       .replace(
         '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
@@ -1539,10 +1559,18 @@ describe('evaOS beta release gate', () => {
       );
     const inlineCommentIssues = releaseGate.collectReleaseDistributeWorkflowIssues(driftedWithInlineComments);
     expect(inlineCommentIssues).toContain(
-      '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
     );
     expect(inlineCommentIssues).toContain(
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
+    );
+
+    const skippedProof = workflow.replace(
+      '          bash scripts/evaosValidateLiveCanaryProofRun.sh',
+      '          if false; then\n            bash scripts/evaosValidateLiveCanaryProofRun.sh\n          fi'
+    );
+    expect(releaseGate.collectReleaseDistributeWorkflowIssues(skippedProof)).toContain(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
     );
   });
 
@@ -1586,11 +1614,13 @@ describe('evaOS beta release gate', () => {
 
   it('requires the distribution workflow to bind the Mac-control proof to the selected same-head run', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/release-distribute.yml'), 'utf8');
+    const verifier = fs.readFileSync(path.join(repoRoot, 'scripts/evaosValidateLiveCanaryProofRun.sh'), 'utf8');
 
-    expect(workflow).toContain('mac-control-runtime.json');
-    expect(workflow).toContain('Run Mac-control canary: true');
-    expect(workflow).toContain('requires-mac-control-proof');
-    expect(workflow).toContain('EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"');
+    expect(workflow).toContain('bash scripts/evaosValidateLiveCanaryProofRun.sh');
+    expect(verifier).toContain('mac-control-runtime.json');
+    expect(verifier).toContain('Run Mac-control canary: true');
+    expect(verifier).toContain('requires-mac-control-proof');
+    expect(verifier).toContain('EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"');
     expect(workflow).toContain(
       'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: ${{ steps.provenance.outputs.tag_commit }}'
     );
