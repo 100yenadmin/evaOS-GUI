@@ -277,9 +277,10 @@ jobs:
             exit 1
           fi
 
-          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName)
-          node - "$RUN_JSON" <<'NODE'
+          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha)
+          node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<'NODE'
           const run = JSON.parse(process.argv[2]);
+          const expectedHead = process.argv[3];
           if (run.conclusion !== 'success') {
             throw new Error(`RC proof run did not succeed: ${run.conclusion}`);
           }
@@ -288,6 +289,9 @@ jobs:
           }
           if (run.event !== 'workflow_dispatch') {
             throw new Error(`RC proof run was not manually dispatched: ${run.event}`);
+          }
+          if (run.headSha !== expectedHead) {
+            throw new Error(`RC proof head ${run.headSha} does not match release commit ${expectedHead}.`);
           }
           NODE
 

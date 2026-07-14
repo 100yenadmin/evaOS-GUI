@@ -831,6 +831,31 @@ function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', 
 function collectReleaseDistributeWorkflowIssues(workflow) {
   const issues = [];
   const distributeJob = getWorkflowJobBlock(workflow, 'distribute');
+  const rcProofSteps = getWorkflowNamedStepBlocks(distributeJob, 'Validate release candidate proof');
+  if (rcProofSteps.length !== 1) {
+    issues.push(
+      '.github/workflows/release-distribute.yml: jobs.distribute must contain exactly one Validate release candidate proof step'
+    );
+  } else {
+    const rcProofRunLines = getExecutableBlockLines(getWorkflowStepPropertyBlock(rcProofSteps[0], 'run', true));
+    const expectedRcProofLines = [
+      'RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha)',
+      'node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<\'NODE\'',
+      'const expectedHead = process.argv[3];',
+      'if (run.headSha !== expectedHead) {',
+      'throw new Error(`RC proof head ${run.headSha} does not match release commit ${expectedHead}.`);',
+    ];
+    const expectedReleaseCommitValues = getWorkflowStepEnvValues(rcProofSteps[0], 'EXPECTED_RELEASE_COMMIT');
+    if (
+      expectedReleaseCommitValues.length !== 1 ||
+      expectedReleaseCommitValues[0] !== '${{ steps.provenance.outputs.tag_commit }}' ||
+      expectedRcProofLines.some((line) => !rcProofRunLines.includes(line))
+    ) {
+      issues.push(
+        '.github/workflows/release-distribute.yml: Validate release candidate proof must bind the selected successful RC run headSha to the exact release commit'
+      );
+    }
+  }
   const steps = getWorkflowNamedStepBlocks(distributeJob, 'Validate live broker surface proof');
   if (steps.length !== 1) {
     return [
@@ -880,6 +905,20 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
           : `.github/workflows/release-distribute.yml: Validate live broker surface proof env block is missing ${key}: ${expectedValue}`
       );
     }
+  }
+  return issues;
+}
+
+function collectRcCanaryWorkflowIssues(workflow) {
+  const issues = [];
+  const installerBlocks = Array.from(
+    String(workflow || '').matchAll(/^ {10}install_app_from_dmg\(\) \{\n([\s\S]*?)^ {10}\}$/gm),
+    (match) => match[1]
+  );
+  if (installerBlocks.length === 0 || installerBlocks.some((block) => /\$\{?extract_dir\}?/.test(block))) {
+    issues.push(
+      '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset'
+    );
   }
   return issues;
 }
@@ -1118,6 +1157,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
 
   issues.push(...collectPublicationWorkflowIssues({ buildRelease, distribute, reusableBuild }));
   issues.push(...collectReleaseDistributeWorkflowIssues(distribute));
+  issues.push(...collectRcCanaryWorkflowIssues(rcCanary));
 
   if (String(packageJson.version || '').includes('evaos-beta')) {
     issues.push('package.json: stable Mac release version must not contain evaos-beta');
@@ -3796,6 +3836,7 @@ module.exports = {
   collectFunctionalSmokeConfigIssues,
   collectBuildReleaseWorkflowIssues,
   collectPublicationWorkflowIssues,
+  collectRcCanaryWorkflowIssues,
   collectReleaseDistributeWorkflowIssues,
   committedBridgeSourceIdentity,
   collectLiveCanaryVerifierBehaviorIssues,

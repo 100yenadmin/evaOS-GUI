@@ -429,7 +429,6 @@ jobs:
             fi
             rm -rf "/Applications/$app_name"
             ditto "$app_path" "/Applications/$app_name"
-            rm -rf "$extract_dir"
             hdiutil detach "$mount_dir" -quiet
           }
 

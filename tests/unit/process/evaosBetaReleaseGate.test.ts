@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,6 +19,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
     distribute: string;
     reusableBuild: string;
   }) => string[];
+  collectRcCanaryWorkflowIssues: (workflow: string) => string[];
   collectReleaseDistributeWorkflowIssues: (workflow: string) => string[];
   committedBridgeSourceIdentity: (
     commit: string,
@@ -964,6 +965,93 @@ describe('evaOS beta release gate', () => {
     expect(distributionWorkflow).toMatch(
       /- name: Validate release candidate proof[\s\S]*EVAOS_BETA_RC_RELEASE_ASSETS_DIR: dist[\s\S]*verify-rc-proof rc-proof/
     );
+  });
+
+  it('binds a successful RC proof run to the exact release commit head', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/release-distribute.yml'), 'utf8');
+    const expectedIssue =
+      '.github/workflows/release-distribute.yml: Validate release candidate proof must bind the selected successful RC run headSha to the exact release commit';
+
+    expect(releaseGate.collectReleaseDistributeWorkflowIssues(workflow)).toEqual([]);
+    expect(
+      releaseGate.collectReleaseDistributeWorkflowIssues(
+        workflow.replace('--json conclusion,event,workflowName,headSha', '--json conclusion,event,workflowName')
+      )
+    ).toContain(expectedIssue);
+    expect(
+      releaseGate.collectReleaseDistributeWorkflowIssues(
+        workflow.replace('if (run.headSha !== expectedHead) {', 'if (false) {')
+      )
+    ).toContain(expectedIssue);
+
+    const verifierMatch = workflow.match(
+      /node - "\$RUN_JSON" "\$EXPECTED_RELEASE_COMMIT" <<'NODE'\n([\s\S]*?)\n {10}NODE/
+    );
+    expect(verifierMatch).not.toBeNull();
+    const verifier = String(verifierMatch?.[1] || '').replace(/^ {10}/gm, '');
+    const expectedHead = 'a'.repeat(40);
+    const runVerifier = (headSha: string) =>
+      spawnSync(
+        process.execPath,
+        [
+          '-',
+          JSON.stringify({
+            conclusion: 'success',
+            event: 'workflow_dispatch',
+            workflowName: 'evaOS Beta RC Canary',
+            headSha,
+          }),
+          expectedHead,
+        ],
+        { encoding: 'utf8', input: `${verifier}\n` }
+      );
+
+    expect(runVerifier(expectedHead).status).toBe(0);
+    const staleResult = runVerifier('b'.repeat(40));
+    expect(staleResult.status).not.toBe(0);
+    expect(staleResult.stderr).toMatch(/does not match release commit/);
+  });
+
+  it('keeps every RC DMG installer nounset-safe and rejects ZIP-only cleanup drift', () => {
+    if (process.platform === 'win32') return;
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const expectedIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset';
+
+    expect(releaseGate.collectRcCanaryWorkflowIssues(workflow)).toEqual([]);
+    const drifted = workflow.replace(
+      '            hdiutil detach "$mount_dir" -quiet',
+      '            rm -rf "$extract_dir"\n            hdiutil detach "$mount_dir" -quiet'
+    );
+    expect(releaseGate.collectRcCanaryWorkflowIssues(drifted)).toContain(expectedIssue);
+
+    const installers = Array.from(
+      workflow.matchAll(/^ {10}install_app_from_dmg\(\) \{\n[\s\S]*?^ {10}\}$/gm),
+      (match) => match[0].replace(/^ {10}/gm, '')
+    );
+    expect(installers.length).toBeGreaterThan(0);
+    for (const installer of installers) {
+      const output = execFileSync(
+        '/bin/bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-c',
+          `set -euo pipefail
+rm() { :; }
+mkdir() { :; }
+hdiutil() { :; }
+find() { printf '%s\\n' '/mounted/evaOS Workbench.app'; }
+ditto() { :; }
+${installer}
+install_app_from_dmg fixture.dmg 'evaOS Workbench.app' /tmp/evaos-dmg-mount
+printf '%s\\n' ok
+`,
+        ],
+        { encoding: 'utf8' }
+      );
+      expect(output.trim()).toBe('ok');
+    }
   });
 
   it('recognizes little-endian fat Mach-O helpers during signing closure validation', () => {

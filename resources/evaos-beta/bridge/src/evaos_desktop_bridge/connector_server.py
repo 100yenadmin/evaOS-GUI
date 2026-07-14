@@ -976,6 +976,17 @@ def _make_handler(
                 payload = self._read_json()
                 command = normalize_connector_command(str(payload.get("command") or ""))
                 params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+                if command == "customerMacControlStart":
+                    self._write_json(
+                        403,
+                        _error_envelope(
+                            command,
+                            "customer_mac",
+                            "control_start_local_only",
+                            "Remote connector clients cannot start or restart Mac control; use the local Workbench app.",
+                        ),
+                    )
+                    return
                 temp_paths: list[Path] = []
                 try:
                     with control_session_transaction(state_dir):

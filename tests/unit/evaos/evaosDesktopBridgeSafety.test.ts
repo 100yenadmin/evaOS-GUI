@@ -280,4 +280,79 @@ print("ok")
 
     expect(output).toBe('ok');
   });
+
+  it('keeps control-session start local-only while allowing authenticated remote stop and kill', () => {
+    const output = runPython(`
+import json
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from evaos_desktop_bridge.cli import _run_bridge_argv
+from evaos_desktop_bridge.connector_server import _make_handler
+from evaos_desktop_bridge.state import read_control_session, start_control_session, stop_control_session
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+    stop_control_session(root)
+    initial = read_control_session(root)
+    initial_bytes = (root / "control-session.json").read_bytes()
+    calls = []
+
+    def runner(argv):
+        calls.append(argv)
+        return _run_bridge_argv(argv, state_dir=root)
+
+    handler = _make_handler(token="connector-test-token", command_runner=runner, state_dir=root)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    endpoint = f"http://127.0.0.1:{server.server_address[1]}/v1/commands"
+
+    def post(command, params=None):
+        request = urllib.request.Request(
+            endpoint,
+            method="POST",
+            data=json.dumps({"command": command, "params": params or {}}).encode("utf-8"),
+            headers={"Authorization": "Bearer connector-test-token", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read())
+
+    for command, mode in (
+        ("desktop_control_start", "full-access"),
+        ("customerMacControlStart", "ask-permission"),
+    ):
+        status, payload = post(command, {"mode": mode, "agent_label": "remote-agent"})
+        assert status == 403, (command, status, payload)
+        assert payload["ok"] is False, (command, payload)
+        assert payload["errors"][0]["code"] == "control_start_local_only", (command, payload)
+        assert read_control_session(root) == initial, (command, read_control_session(root), initial)
+        assert (root / "control-session.json").read_bytes() == initial_bytes, command
+        assert calls == [], calls
+
+    stop_status, stop_payload = post("desktop_control_stop")
+    assert stop_status == 200 and stop_payload["ok"] is True, stop_payload
+    assert calls[-1] == ["customer-mac", "control", "stop", "--json"], calls
+
+    start_control_session(mode="full_access", state_dir=root)
+    kill_status, kill_payload = post("customerMacControlKillSwitch")
+    assert kill_status == 200 and kill_payload["ok"] is True, kill_payload
+    assert calls[-1] == ["customer-mac", "control", "kill-switch", "--json"], calls
+    final = read_control_session(root)
+    assert final["active"] is False and final["kill_switch"] is True, final
+
+    server.shutdown()
+    server.server_close()
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
 });
