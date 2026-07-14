@@ -37,6 +37,9 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
 };
+const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
+  bridgeWrapperScript: () => string;
+};
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
   default: (context: unknown) => Promise<void>;
@@ -162,9 +165,14 @@ function writeMacosBridgeZip(
     omitStdlibSentinel?: boolean;
     signedPythonMutation?: boolean;
     secondAppRoot?: boolean;
+    tamperBridgeWrapper?: boolean;
+    tamperBridgeSource?: boolean;
+    bridgeSourceCommit?: string;
   } = {}
 ) {
+  const bridgeWrapperBase64 = Buffer.from(bridgeResource.bridgeWrapperScript()).toString('base64');
   const script = [
+    'import base64',
     'import hashlib',
     'import json',
     'import pathlib',
@@ -202,6 +210,10 @@ function writeMacosBridgeZip(
     'regular_inventory_symlink = sys.argv[28] == "1"',
     'inventory_directory_archive_mode = int(sys.argv[29]) if sys.argv[29] else None',
     'inventory_file_archive_mode = int(sys.argv[30]) if sys.argv[30] else None',
+    'tamper_bridge_wrapper = sys.argv[31] == "1"',
+    'tamper_bridge_source = sys.argv[32] == "1"',
+    'bridge_source_commit = sys.argv[33]',
+    `bridge_wrapper_bytes = base64.b64decode("${bridgeWrapperBase64}")`,
     'app_root = zip_path.stem.replace("-mac-arm64", "").replace("-mac-x64", "") + ".app"',
     'python_arch = "arm64" if "arm64" in zip_path.name else "x64"',
     'python_source_sha256 = "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17" if python_arch == "arm64" else "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"',
@@ -268,7 +280,16 @@ function writeMacosBridgeZip(
     'inventory = {"schema": "evaos-python-runtime-inventory/v1", "entries": inventory_entries}',
     'inventory_bytes = (json.dumps(inventory, indent=2) + "\\n").encode()',
     'python_metadata = {"version": "3.12.13", "architecture": python_arch, "sourceSha256": python_source_sha256, "sourceUrl": python_source_url, "packages": python_packages, "license": "Python-2.0", "licensePath": "licenses/CPython-LICENSE.txt", "licenseSha256": python_license_sha256, "inventoryPath": "python-runtime-inventory.json", "inventorySha256": hashlib.sha256(inventory_bytes).hexdigest(), "inventoryEntryCount": len(inventory_entries)}',
-    'manifest = {"placeholder": False, "bundledTools": {"peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
+    'bridge_source_files = {"__init__.py": b"__version__ = \\\"0.6.27\\\"\\n", "cli.py": b"# bridge fixture\\n"}',
+    'bridge_source_hash = hashlib.sha256()',
+    'for relative_path, contents in sorted(bridge_source_files.items()):',
+    '    bridge_source_hash.update(relative_path.encode())',
+    '    bridge_source_hash.update(b"\\0")',
+    '    bridge_source_hash.update(contents)',
+    '    bridge_source_hash.update(b"\\0")',
+    'bridge_wrapper_metadata = {"schema": "evaos-workbench-bridge-wrapper/v1", "path": "evaos-desktop-bridge", "sourceSha256": hashlib.sha256(bridge_wrapper_bytes).hexdigest()}',
+    'source_provenance = {"schema": "evaos-workbench-vendored-bridge-source/v1", "owner": "100yenadmin/evaOS-GUI", "status": "vendored", "importedCommit": "908e3cad8c5f11dca739bbfc2c697c3e6d52f79e", "sourceSha256": bridge_source_hash.hexdigest()}',
+    'manifest = {"placeholder": False, "requestedSourceRef": bridge_source_commit, "sourcePath": "resources/evaos-beta/bridge", "sourceCommit": bridge_source_commit, "sourceProvenance": source_provenance, "bundledTools": {"bridgeWrapper": bridge_wrapper_metadata, "peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
     'def write_regular(archive, name, data, mode=0o644):',
     '    info = zipfile.ZipInfo(name)',
     '    info.create_system = 3',
@@ -289,7 +310,11 @@ function writeMacosBridgeZip(
     '    archive.writestr(info, b"")',
     'with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:',
     '    bridge_prefix = f"{app_root}/Contents/Resources/Bridge"',
-    '    write_regular(archive, f"{bridge_prefix}/evaos-desktop-bridge", b"#!/usr/bin/env bash\\n", 0o644 if non_executable_payload == "bridge" else 0o755)',
+    '    packaged_wrapper_bytes = b"#!/bin/sh\\nexit 0\\n" if tamper_bridge_wrapper else bridge_wrapper_bytes',
+    '    write_regular(archive, f"{bridge_prefix}/evaos-desktop-bridge", packaged_wrapper_bytes, 0o644 if non_executable_payload == "bridge" else 0o755)',
+    '    for relative_path, contents in bridge_source_files.items():',
+    '        packaged_contents = contents + b"# tampered\\n" if tamper_bridge_source and relative_path == "cli.py" else contents',
+    '        write_regular(archive, f"{bridge_prefix}/src/evaos_desktop_bridge/{relative_path}", packaged_contents)',
     '    if not omit_peekaboo:',
     '        write_regular(archive, f"{bridge_prefix}/bin/peekaboo", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "peekaboo" else 0o755)',
     '    write_regular(archive, f"{bridge_prefix}/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "helper" else 0o755)',
@@ -358,6 +383,9 @@ function writeMacosBridgeZip(
     options.regularInventorySymlink ? '1' : '0',
     String(options.inventoryDirectoryArchiveMode ?? ''),
     String(options.inventoryFileArchiveMode ?? ''),
+    options.tamperBridgeWrapper ? '1' : '0',
+    options.tamperBridgeSource ? '1' : '0',
+    options.bridgeSourceCommit || 'abc123',
   ]);
 }
 
@@ -2379,6 +2407,16 @@ describe('evaOS beta release gate', () => {
         expected: /source digest/,
       },
       {
+        name: 'tampered bridge launcher',
+        options: { tamperBridgeWrapper: true },
+        expected: /canonical launcher digest/,
+      },
+      {
+        name: 'tampered GUI-owned bridge source',
+        options: { tamperBridgeSource: true },
+        expected: /GUI-owned Python source digest/,
+      },
+      {
         name: 'self-consistent altered CPython license',
         options: { tamperPythonLicense: true },
         expected: /Python runtime provenance|CPython license digest/,
@@ -2665,8 +2703,12 @@ describe('evaOS beta release gate', () => {
     try {
       fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.dmg'), 'mac-arm64');
       fs.writeFileSync(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.dmg'), 'mac-x64');
-      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'));
-      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip'));
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip'), {
+        bridgeSourceCommit: sourceSha,
+      });
+      writeMacosBridgeZip(path.join(dir, 'evaOS Workbench-2.1.10-evaos-beta.0-mac-x64.zip'), {
+        bridgeSourceCommit: sourceSha,
+      });
       fs.writeFileSync(
         path.join(dir, 'latest-arm64-mac.yml'),
         "minimumSystemVersion: '24.0.0'\npath: evaOS Workbench-2.1.10-evaos-beta.0-mac-arm64.zip\n"

@@ -13,6 +13,10 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  EVAOS_NATIVE_COMPANION_CANARIES,
+  EVAOS_PACKAGED_BRIDGE_COMMAND,
+} from '../../../packages/desktop/src/common/evaos/nativeCompanionBoundary';
 
 type PeekabooVersionRunner = (filePath: string, args: string[], options: Record<string, unknown>) => string;
 
@@ -31,6 +35,9 @@ type PythonRuntimeMetadata = {
 };
 
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
+  assertVendoredBridgeSourceMatchesHead: (
+    runGit?: (command: string, args: string[], options: Record<string, unknown>) => string
+  ) => boolean;
   bridgeManifest: (input: {
     requestedSourceRef?: string;
     sourcePath: string;
@@ -49,6 +56,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
       };
     };
   }) => Record<string, unknown>;
+  bridgeWrapperMetadata: (filePath: string) => { schema: string; path: string; sourceSha256: string };
   bridgeWrapperScript: () => string;
   installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
   writePythonRuntimeInventory: (resourceDir: string) => {
@@ -92,13 +100,53 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(wrapper).toContain('export PYTHONPATH="$BRIDGE_DIR/src"');
     expect(wrapper).toContain('CACHE_ROOT="$HOME/Library/Caches/evaos-desktop-bridge"');
     expect(wrapper).toContain('export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"');
-    expect(wrapper).toContain('exec "$PYTHON_BIN" -P -m evaos_desktop_bridge.cli "$@"');
+    expect(wrapper).toContain('PYTHON_MODULE="evaos_desktop_bridge.pre_canary"');
+    expect(wrapper).toContain('PYTHON_MODULE="evaos_desktop_bridge.qa_canary"');
+    expect(wrapper).toContain('exec "$PYTHON_BIN" -P -B -m "$PYTHON_MODULE" "$@"');
     expect(wrapper).not.toContain('${PYTHONPATH:+:$PYTHONPATH}');
     expect(wrapper).not.toContain('site-packages');
     expect(wrapper).not.toContain('/opt/homebrew/bin/python3');
     expect(wrapper).not.toContain('/usr/local/bin/python3');
     expect(wrapper).not.toContain('/usr/bin/python3');
     expect(wrapper).not.toContain('Install Python 3');
+  });
+
+  it('exports RC canaries through the installed Workbench bridge and bundled Python', () => {
+    expect(EVAOS_PACKAGED_BRIDGE_COMMAND).toBe(
+      '"/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge"'
+    );
+    expect(EVAOS_NATIVE_COMPANION_CANARIES.map((canary) => canary.id)).toEqual([
+      'pre-canary-bridge-peekaboo',
+      'connector-all',
+      'connector-kill-switch',
+    ]);
+    for (const canary of EVAOS_NATIVE_COMPANION_CANARIES) {
+      expect(canary.command).toMatch(
+        /^"\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge" (pre-canary|qa-canary) /
+      );
+      expect(canary.command).toContain('--artifact-dir "${EVAOS_CANARY_ARTIFACT_DIR:');
+      expect(canary.command).not.toContain('PYTHONPATH=');
+      expect(canary.command).not.toMatch(/\bpython3\b/);
+      if (canary.id !== 'pre-canary-bridge-peekaboo') {
+        expect(canary.command).toContain('--connector-url "${EVAOS_DESKTOP_BRIDGE_URL:');
+      }
+      expect(canary.requiredArtifact).toBe('qa-report.json');
+      expect(canary.forbidsSkips).toBe(true);
+    }
+  });
+
+  it('rejects dirty or untracked vendored bridge bytes in strict provenance checks', () => {
+    expect(() =>
+      bridgeResource.assertVendoredBridgeSourceMatchesHead(
+        () => ' M resources/evaos-beta/bridge/src/evaos_desktop_bridge/cli.py\n'
+      )
+    ).toThrow(/match HEAD/);
+    expect(() =>
+      bridgeResource.assertVendoredBridgeSourceMatchesHead(
+        () => '?? resources/evaos-beta/bridge/src/evaos_desktop_bridge/injected.py\n'
+      )
+    ).toThrow(/match HEAD/);
+    expect(bridgeResource.assertVendoredBridgeSourceMatchesHead(() => '')).toBe(true);
   });
 
   it('requires a bundled Python runtime for strict release packaging', () => {
@@ -320,7 +368,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       schema: 'evaos-workbench-vendored-bridge-source/v1',
       owner: '100yenadmin/evaOS-GUI',
       status: 'vendored',
-      importedCommit: '9e3b7332a88fbdea22291923bfd10dd37494d92d',
+      importedCommit: '908e3cad8c5f11dca739bbfc2c697c3e6d52f79e',
     });
     expect(metadata.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(adapter).toContain('WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS Workbench.app")');
@@ -335,11 +383,94 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       'from evaos_desktop_bridge.adapters.customer_mac import CustomerMacObserver',
       'with TemporaryDirectory() as state:',
       '    observer = CustomerMacObserver(state_dir=Path(state), platform_name="Darwin")',
-      '    for alias in ("EvaDesktop", "evaOS", "evaOS Workbench", "com.evaos.workbench"):',
+      '    for alias in ("EvaDesktop", "evaOS", "evaOS Workbench", "com.evaos.workbench", "/Applications/evaOS Workbench.app"):',
       '        result = observer.app_focus(app_name=alias, dry_run=True)',
       '        assert result.ok, (alias, result.errors)',
       '        assert result.data["app_path"] == "/Applications/evaOS Workbench.app", (alias, result.data)',
       '        assert result.data["process_name"] == "evaOS Workbench", (alias, result.data)',
+      '    def unexpected_runner(*_args, **_kwargs):',
+      '        raise AssertionError("legacy app path reached a command runner")',
+      '    guarded = CustomerMacObserver(state_dir=Path(state), platform_name="Darwin", runner=unexpected_runner)',
+      '    for legacy_path in ("/Applications/evaOS.app", "file:///Applications/evaOS.app"):',
+      '        blocked = guarded.app_focus(app_name=legacy_path, dry_run=False)',
+      '        assert not blocked.ok, (legacy_path, blocked.data)',
+      '        assert blocked.errors[0]["code"] == "legacy_workbench_app_blocked", (legacy_path, blocked.errors)',
+      'print("ok")',
+    ].join('\n');
+
+    expect(
+      execFileSync('python3', ['-B', '-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: sourceDir },
+      }).trim()
+    ).toBe('ok');
+  });
+
+  it('retains the authenticated readiness and bounded diagnostics P0 fixes', () => {
+    const sourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+    const script = [
+      'from evaos_desktop_bridge import cli as bridge_cli',
+      'calls = []',
+      'bridge_cli._connector_plist_path = lambda: None',
+      'bridge_cli._connector_plist_host = lambda _path: None',
+      'bridge_cli._tailscale_ip = lambda *args, **kwargs: None',
+      'def fake_get(host, path, *, authorization=None, timeout_seconds=1.0):',
+      '    calls.append((path, timeout_seconds, authorization is not None))',
+      '    if path == "/health":',
+      '        return {"outcome": "complete", "status_code": 200, "status_line": "HTTP/1.1 200 OK", "json": {"service": "evaos-desktop-bridge-connector"}}',
+      '    return {"outcome": "complete", "status_code": 200, "status_line": "HTTP/1.1 200 OK", "json": {"schema": "evaos.desktop_bridge.diagnostics.v1", "connector": {"ready": {"schema": "evaos.desktop_bridge.ready.v1", "ok": True, "ready": True}}}}',
+      'bridge_cli._connector_http_get = fake_get',
+      'health = bridge_cli._connector_loopback_health(connector_token="fixture-token")',
+      'assert health["ready"] is True, health',
+      'assert health["authenticated"] is True, health',
+      'assert calls == [("/health", 1.0, False), ("/v1/diagnostics", 5.0, True)], calls',
+      'service_status = {"ok": False, "ready": False, "token_present": True, "loaded": True, "running": False, "managed_by": "offline", "health": {"reachable": True, "ready": False, "authenticated": False, "host": "127.0.0.1", "error": "connector_diagnostics_timeout"}}',
+      'service_calls = 0',
+      'def fake_status(**_kwargs):',
+      '    global service_calls',
+      '    service_calls += 1',
+      '    return service_status',
+      'bridge_cli._connector_service_status = fake_status',
+      'bridge_cli.build_diagnostics_payload = lambda **_kwargs: {"connector": {}}',
+      'bridge_cli.build_ready_payload = lambda **_kwargs: {"ok": True, "ready": True, "blockers": []}',
+      'diagnostics = bridge_cli._build_cli_diagnostics_payload(token="fixture-token")',
+      'readiness = diagnostics["connector"]["ready"]',
+      'assert service_calls == 1, service_calls',
+      'assert readiness["ready"] is False, readiness',
+      'assert [item["code"] for item in readiness["blockers"]] == ["connector_diagnostics_timeout"], readiness',
+      'print("ok")',
+    ].join('\n');
+
+    expect(
+      execFileSync('python3', ['-B', '-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: sourceDir },
+      }).trim()
+    ).toBe('ok');
+  });
+
+  it('uses the current Workbench identity for packaged pre-canary inventory', () => {
+    const sourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+    const script = [
+      'from evaos_desktop_bridge import pre_canary',
+      'from pathlib import Path',
+      'from tempfile import TemporaryDirectory',
+      'assert pre_canary.DEFAULT_CANONICAL_PATH == "/Applications/evaOS Workbench.app"',
+      'assert pre_canary.DEFAULT_BUNDLE_ID == "com.evaos.workbench"',
+      'current = pre_canary.AppBundle(path=pre_canary.DEFAULT_CANONICAL_PATH, bundle_id=pre_canary.DEFAULT_BUNDLE_ID, version="2.1.36", build="2.1.36", team_id=pre_canary.DEFAULT_TEAM_ID)',
+      'current_process = pre_canary.ProcessInfo(pid=1, command="/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench", path=pre_canary.DEFAULT_CANONICAL_PATH, kind="workbench")',
+      'inventory = pre_canary.WorkbenchInventory(registered_paths=(pre_canary.DEFAULT_CANONICAL_PATH,), app_bundles=(current,), processes=(current_process,))',
+      'report = pre_canary.evaluate_inventory(inventory, expected_version="2.1.36", expected_build="2.1.36")',
+      'assert report.ok, report.to_dict()',
+      'assert pre_canary._workbench_app_path_from_command(current_process.command) == pre_canary.DEFAULT_CANONICAL_PATH',
+      'with TemporaryDirectory() as artifact_dir:',
+      '    report_path = pre_canary._write_report(report.to_dict(), Path(artifact_dir))',
+      '    assert report_path.name == "qa-report.json" and report_path.is_file()',
+      'legacy = pre_canary.AppBundle(path="/Applications/evaOS.app", bundle_id="com.electricsheephq.EvaDesktop")',
+      'legacy_inventory = pre_canary.WorkbenchInventory(registered_paths=(pre_canary.DEFAULT_CANONICAL_PATH, legacy.path), app_bundles=(current, legacy), processes=(current_process,))',
+      'legacy_report = pre_canary.evaluate_inventory(legacy_inventory)',
+      'assert not legacy_report.ok, legacy_report.to_dict()',
+      'assert "stale_workbench_app_bundle_present" in {check.code for check in legacy_report.checks}',
       'print("ok")',
     ].join('\n');
 
@@ -360,12 +491,14 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('records the requested bridge source ref in packaged resource manifests', () => {
     const previousSourceRef = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF;
     const bridgeSha = '60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b';
+    const unrelatedEnvSha = '8cdc02cee0f1e5d53ae430a942848c721762b00a';
 
     try {
-      process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF = bridgeSha;
+      process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF = unrelatedEnvSha;
 
       expect(
         bridgeResource.bridgeManifest({
+          requestedSourceRef: bridgeSha,
           sourcePath: '/tmp/evaos-desktop-bridge',
           sourceCommit: bridgeSha,
           sourceBranch: 'HEAD',
@@ -384,7 +517,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
           placeholderReason: 'source unavailable',
         })
       ).toMatchObject({
-        requestedSourceRef: bridgeSha,
+        requestedSourceRef: '',
         sourceCommit: undefined,
         placeholder: true,
         placeholderReason: 'source unavailable',

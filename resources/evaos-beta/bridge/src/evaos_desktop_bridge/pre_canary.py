@@ -10,8 +10,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-DEFAULT_CANONICAL_PATH = "/Applications/evaOS.app"
-DEFAULT_BUNDLE_ID = "com.electricsheephq.EvaDesktop"
+DEFAULT_CANONICAL_PATH = "/Applications/evaOS Workbench.app"
+DEFAULT_BUNDLE_ID = "com.evaos.workbench"
+LEGACY_BUNDLE_IDS = {"com.electricsheephq.EvaDesktop"}
+WORKBENCH_APP_NAMES = {"evaOS Workbench.app", "evaOS.app", "EvaDesktop.app"}
+WORKBENCH_EXECUTABLE_PATTERN = re.compile(
+    r'^\s*"?(?P<path>/.*?\.app)/Contents/MacOS/(?:evaOS Workbench|EvaDesktop)"?(?:\s|$)'
+)
 DEFAULT_TEAM_ID = "TC6MS3T6NN"
 COMPUTER_USE_CLIENT_SUFFIX = "SkyComputerUseClient mcp"
 # Optional developer/canary artifact locations. Missing roots are ignored, and
@@ -128,8 +133,8 @@ def evaluate_inventory(
         for bundle in inventory.app_bundles
         if bundle.path != canonical_path
         and (
-            bundle.bundle_id == bundle_id
-            or Path(bundle.path).name == "EvaDesktop.app"
+            bundle.bundle_id in {bundle_id, *LEGACY_BUNDLE_IDS}
+            or Path(bundle.path).name in WORKBENCH_APP_NAMES
         )
     )
     running_workbench = tuple(process for process in inventory.processes if process.kind == "workbench")
@@ -247,7 +252,11 @@ def gather_inventory(
     bundle_id: str = DEFAULT_BUNDLE_ID,
     artifact_roots: Sequence[str] | None = None,
 ) -> WorkbenchInventory:
-    registered_paths = tuple(_mdfind_bundle_paths(bundle_id))
+    registered_paths = _unique_paths(
+        path
+        for candidate_bundle_id in (bundle_id, *sorted(LEGACY_BUNDLE_IDS))
+        for path in _mdfind_bundle_paths(candidate_bundle_id)
+    )
     artifact_paths = tuple(_artifact_workbench_bundle_paths(artifact_roots=artifact_roots))
     bundle_paths = _unique_paths((*registered_paths, *artifact_paths, canonical_path))
     app_bundles = tuple(_read_app_bundle(path) for path in bundle_paths if Path(path).exists())
@@ -264,6 +273,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--expected-build")
     parser.add_argument("--expected-team-id", default=DEFAULT_TEAM_ID)
     parser.add_argument("--max-computer-use-helpers", type=int, default=2)
+    parser.add_argument("--artifact-dir", type=Path, help="Write qa-report.json into this evidence directory.")
     parser.add_argument(
         "--control-surface",
         choices=CONTROL_SURFACES,
@@ -292,8 +302,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_computer_use_helpers=args.max_computer_use_helpers,
         control_surface=args.control_surface,
     )
+    payload = report.to_dict()
+    if args.artifact_dir is not None:
+        _write_report(payload, args.artifact_dir)
     if args.json:
-        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         _print_human_report(report)
     return 0 if report.ok else 2
@@ -316,6 +329,13 @@ def _pass(code: str, message: str, evidence: str = "") -> PreCanaryCheck:
 
 def _warn(code: str, message: str, evidence: str = "") -> PreCanaryCheck:
     return PreCanaryCheck(code=code, status="warn", message=message, evidence=evidence)
+
+
+def _write_report(payload: dict[str, Any], artifact_dir: Path) -> Path:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    report_path = artifact_dir / "qa-report.json"
+    report_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return report_path
 
 
 def _bundle_evidence(bundle: AppBundle) -> str:
@@ -366,7 +386,26 @@ def _artifact_workbench_bundle_paths(*, artifact_roots: Sequence[str] | None = N
     for root in roots:
         if not Path(root).exists():
             continue
-        output = _run(["find", root, "-maxdepth", ARTIFACT_SEARCH_MAX_DEPTH, "-type", "d", "-name", "EvaDesktop.app", "-prune", "-print"])
+        name_predicates: list[str] = []
+        for name in sorted(WORKBENCH_APP_NAMES):
+            if name_predicates:
+                name_predicates.append("-o")
+            name_predicates.extend(("-name", name))
+        output = _run(
+            [
+                "find",
+                root,
+                "-maxdepth",
+                ARTIFACT_SEARCH_MAX_DEPTH,
+                "-type",
+                "d",
+                "(",
+                *name_predicates,
+                ")",
+                "-prune",
+                "-print",
+            ]
+        )
         paths.extend(line.strip() for line in output.splitlines() if line.strip())
     return tuple(paths)
 
@@ -416,8 +455,9 @@ def _process_inventory() -> tuple[ProcessInfo, ...]:
             pid = int(pid_text)
         except ValueError:
             continue
-        if "EvaDesktop.app/Contents/MacOS/EvaDesktop" in command or "/evaOS.app/Contents/MacOS/EvaDesktop" in command:
-            processes.append(ProcessInfo(pid=pid, command=command, path=_workbench_app_path_from_command(command), kind="workbench"))
+        workbench_path = _workbench_app_path_from_command(command)
+        if workbench_path is not None:
+            processes.append(ProcessInfo(pid=pid, command=command, path=workbench_path, kind="workbench"))
         elif _is_computer_use_mcp_helper(command):
             processes.append(ProcessInfo(pid=pid, command=command, kind="computer_use_helper"))
         elif "evaos_desktop_bridge.cli serve" in command or "evaos-desktop-bridge serve" in command:
@@ -432,13 +472,8 @@ def _is_computer_use_mcp_helper(command: str) -> bool:
 
 
 def _workbench_app_path_from_command(command: str) -> str | None:
-    marker = ".app/Contents/MacOS/EvaDesktop"
-    index = command.find(marker)
-    if index == -1:
-        return None
-    executable_prefix = command[: index + len(".app")]
-    start = executable_prefix.rfind(" ")
-    return executable_prefix[start + 1 :]
+    match = WORKBENCH_EXECUTABLE_PATTERN.match(command)
+    return match.group("path") if match else None
 
 
 def _print_human_report(report: PreCanaryReport) -> None:

@@ -16,6 +16,7 @@ const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
 const PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH = 'python-runtime-inventory.json';
 const PYTHON_RUNTIME_INVENTORY_SCHEMA = 'evaos-python-runtime-inventory/v1';
+const BRIDGE_WRAPPER_METADATA_SCHEMA = 'evaos-workbench-bridge-wrapper/v1';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set([
@@ -86,6 +87,24 @@ function gitValue(cwd, args) {
   } catch {
     return undefined;
   }
+}
+
+function assertVendoredBridgeSourceMatchesHead(runGit = execFileSync) {
+  const sourcePath = path.relative(projectRoot, vendoredBridgeSourceDir).split(path.sep).join('/');
+  let status;
+  try {
+    status = runGit('git', ['status', '--porcelain=v1', '--untracked-files=all', '--', sourcePath], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    throw new Error(`Unable to verify the vendored Workbench bridge against the evaOS-GUI HEAD: ${error.message}`);
+  }
+  if (String(status || '').trim()) {
+    throw new Error('Release builds require the vendored Workbench bridge source and provenance to match HEAD.');
+  }
+  return true;
 }
 
 function copyDirectory(source, target) {
@@ -417,7 +436,19 @@ fi
 mkdir -p "$CACHE_ROOT/pycache" 2>/dev/null || true
 export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 
-exec "$PYTHON_BIN" -P -m evaos_desktop_bridge.cli "$@"
+PYTHON_MODULE="evaos_desktop_bridge.cli"
+case "\${1:-}" in
+  pre-canary)
+    PYTHON_MODULE="evaos_desktop_bridge.pre_canary"
+    shift
+    ;;
+  qa-canary)
+    PYTHON_MODULE="evaos_desktop_bridge.qa_canary"
+    shift
+    ;;
+esac
+
+exec "$PYTHON_BIN" -P -B -m "$PYTHON_MODULE" "$@"
 `;
 }
 
@@ -520,6 +551,14 @@ function writeBridgeExecutable() {
   return wrapperPath;
 }
 
+function bridgeWrapperMetadata(filePath) {
+  return {
+    schema: BRIDGE_WRAPPER_METADATA_SCHEMA,
+    path: 'evaos-desktop-bridge',
+    sourceSha256: sha256File(filePath),
+  };
+}
+
 function writePlaceholderWrapper(reason) {
   const wrapperPath = path.join(bridgeResourceDir, 'evaos-desktop-bridge');
   fs.writeFileSync(
@@ -564,7 +603,7 @@ function bridgeManifest({
 }) {
   const manifest = {
     schema: 'evaos-desktop-bridge-resource/v1',
-    requestedSourceRef: selectedBridgeSourceRef(requestedSourceRef || sourceCommit),
+    requestedSourceRef: String(requestedSourceRef || sourceCommit || '').trim(),
     sourcePath,
     sourceCommit,
     sourceBranch,
@@ -698,6 +737,9 @@ function main() {
   const bridgePackageTarget = path.join(bridgeResourceDir, 'src', 'evaos_desktop_bridge');
   const bridgeBinDir = path.join(bridgeResourceDir, 'bin');
 
+  if (shouldRequireRealBridge()) {
+    assertVendoredBridgeSourceMatchesHead();
+  }
   const sourceProvenance = vendoredBridgeSourceMetadata(bridgeSourceDir);
   const sourceRepositoryRoot =
     path.resolve(bridgeSourceDir) === path.resolve(vendoredBridgeSourceDir) ? projectRoot : bridgeSourceDir;
@@ -734,7 +776,10 @@ function main() {
     requireMachOReleaseBinary(path.join(bridgeBinDir, 'peekaboo'), 'bundled Peekaboo helper');
     requireMachOReleaseBinary(helperPath, 'bundled evaOS connector helper');
   }
-  const bundledTools = peekabooBundleMetadata(peekabooBinary) || {};
+  const bundledTools = {
+    ...(peekabooBundleMetadata(peekabooBinary) || {}),
+    bridgeWrapper: bridgeWrapperMetadata(bridgeExecutable),
+  };
   if (pythonRuntime) bundledTools.python = pythonRuntime;
 
   const manifest = bridgeManifest({
@@ -760,7 +805,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  assertVendoredBridgeSourceMatchesHead,
   bridgeManifest,
+  bridgeWrapperMetadata,
   bridgeWrapperScript,
   installPythonRuntime,
   installPeekabooLicense,

@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from ..audit import append_audit, default_state_dir
 from ..bundled_tools import bundled_bridge_bin_candidates
@@ -49,6 +49,7 @@ WORKBENCH_APP_ALIASES = {
     "evaos",
     "evaos workbench",
 }
+WORKBENCH_LEGACY_APP_PATHS = {"/applications/evaos.app"}
 PEEKABOO_BIN_CANDIDATES = (
     "peekaboo",
     "evaos-connector-helper",
@@ -579,6 +580,11 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         return CommandResult(
             ok=True,
             data={
+                "proof_scope": {
+                    "kind": "local_capability_posture",
+                    "proves_broker_authentication": False,
+                    "proves_vm_reachability": False,
+                },
                 "platform": self.platform_name,
                 "device": self._device_identity(),
                 "frontmost_app": redact_value(frontmost),
@@ -1360,6 +1366,24 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
     def app_focus(self, *, app_name: str, dry_run: bool = False) -> CommandResult:
         if not self._safe_app_name(app_name):
             return CommandResult(ok=False, data={"focused": False, "would_focus": dry_run}, errors=[make_error(code="app_name_not_allowed", message="App name is outside the safe named-action character set.", guidance="Use a visible macOS app name with letters, numbers, spaces, dots, underscores, plus, at-sign, slash, colon, hash, or hyphen.")])
+        if self._is_legacy_workbench_app_path(app_name):
+            return CommandResult(
+                ok=False,
+                data={
+                    "focused": False,
+                    "would_focus": False,
+                    "app_name": app_name,
+                    "app_path": str(WORKBENCH_CANONICAL_APP_PATH),
+                    "process_name": WORKBENCH_PROCESS_NAME,
+                },
+                errors=[
+                    make_error(
+                        code="legacy_workbench_app_blocked",
+                        message="The legacy evaOS app bundle is not a valid Mac-control target.",
+                        guidance=f"Use the current Workbench at {WORKBENCH_CANONICAL_APP_PATH}.",
+                    )
+                ],
+            )
         if self._is_sensitive_app(app_name):
             return CommandResult(ok=False, data={"focused": False, "would_focus": dry_run, "app_name": app_name}, errors=[make_error(code="sensitive_app_blocked", message="This app is on the sensitive-app denylist.", guidance="Only request named actions against non-sensitive apps.")])
         workbench_focus = self._workbench_focus_result(app_name=app_name, dry_run=dry_run, verify_frontmost=True)
@@ -2707,10 +2731,27 @@ print(json.dumps({"ok": True, "matches": safe_matches, "count": len(safe_matches
         return CommandResult(ok=True, data=data if not verify_frontmost else {**data, "frontmost": True}, warnings=warnings, provenance={"source": "macos_open_path"})
 
     def _is_workbench_app_alias(self, app_name: str) -> bool:
+        app_path = self._normalized_app_bundle_path(app_name)
+        if app_path == os.path.normpath(str(WORKBENCH_CANONICAL_APP_PATH)).casefold():
+            return True
         normalized = " ".join(app_name.strip().split()).casefold()
         if normalized.endswith(".app"):
             normalized = normalized[:-4]
         return normalized in WORKBENCH_APP_ALIASES
+
+    def _is_legacy_workbench_app_path(self, app_name: str) -> bool:
+        return self._normalized_app_bundle_path(app_name) in WORKBENCH_LEGACY_APP_PATHS
+
+    def _normalized_app_bundle_path(self, app_name: str) -> str | None:
+        raw_value = app_name.strip()
+        parsed = urlparse(raw_value)
+        if parsed.scheme:
+            if parsed.scheme.casefold() != "file" or parsed.netloc.casefold() not in {"", "localhost"}:
+                return None
+            raw_value = unquote(parsed.path)
+        if not os.path.isabs(raw_value):
+            return None
+        return os.path.normpath(raw_value).casefold()
 
     def _wait_for_frontmost(self, app_name: str, *, timeout_seconds: float) -> bool:
         if self.platform_name != "Darwin":

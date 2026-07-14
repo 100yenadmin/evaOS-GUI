@@ -57,39 +57,29 @@ export interface EvaosNativeCompanionCanary {
 }
 
 export const EVAOS_NATIVE_COMPANION_BOUNDARY_VERSION = '2026-06-06.rc-parity';
+export const EVAOS_PACKAGED_BRIDGE_COMMAND =
+  '"/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge"';
+const EVAOS_CANARY_ARTIFACT_DIR_ARG =
+  '"${EVAOS_CANARY_ARTIFACT_DIR:?Set EVAOS_CANARY_ARTIFACT_DIR to an empty evidence directory}"';
+const EVAOS_CONNECTOR_URL_ARG =
+  '"${EVAOS_DESKTOP_BRIDGE_URL:?Set EVAOS_DESKTOP_BRIDGE_URL to the selected connector URL}"';
 
 export const EVAOS_NATIVE_COMPANION_CANARIES = [
   {
     id: 'pre-canary-bridge-peekaboo',
-    command: 'PYTHONPATH=src python3 -m evaos_desktop_bridge.pre_canary --json --control-surface bridge-peekaboo',
+    command: `${EVAOS_PACKAGED_BRIDGE_COMMAND} pre-canary --json --control-surface bridge-peekaboo --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG}`,
     requiredArtifact: 'qa-report.json',
     forbidsSkips: true,
   },
   {
     id: 'connector-all',
-    command:
-      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface connector --suite all --operator-ack-live-control',
-    requiredArtifact: 'qa-report.json',
-    forbidsSkips: true,
-  },
-  {
-    id: 'openclaw-all',
-    command:
-      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface openclaw --suite all --operator-ack-live-control',
-    requiredArtifact: 'qa-report.json',
-    forbidsSkips: true,
-  },
-  {
-    id: 'hermes-all',
-    command:
-      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface hermes --suite all --operator-ack-live-control',
+    command: `${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary --connector-url ${EVAOS_CONNECTOR_URL_ARG} --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG} --surface connector --suite all --operator-ack-live-control`,
     requiredArtifact: 'qa-report.json',
     forbidsSkips: true,
   },
   {
     id: 'connector-kill-switch',
-    command:
-      'PYTHONPATH=src python3 -m evaos_desktop_bridge.qa_canary --surface connector --suite kill_switch --operator-ack-live-control',
+    command: `${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary --connector-url ${EVAOS_CONNECTOR_URL_ARG} --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG} --surface connector --suite kill_switch --operator-ack-live-control`,
     requiredArtifact: 'qa-report.json',
     forbidsSkips: true,
   },

@@ -3,7 +3,7 @@
   "owner": "100yenadmin/evaOS-GUI",
   "sourcePath": "resources/evaos-beta/bridge/src/evaos_desktop_bridge",
   "importedFrom": "electricsheephq/evaos-desktop-bridge",
-  "importedCommit": "9e3b7332a88fbdea22291923bfd10dd37494d92d",
+  "importedCommit": "908e3cad8c5f11dca739bbfc2c697c3e6d52f79e",
   "importedAt": "2026-07-14",
   "status": "vendored"
 }

@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
+const { bridgeWrapperScript } = require('./prepareEvaosDesktopBridgeResource');
 
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const LIVE_CANARY_VERIFIER_SHA256 = '692d88c72217b44f7957d78228748991ff65a12afda253c03b365a30b63e6127';
@@ -2225,7 +2226,7 @@ function assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms) {
   }
 }
 
-function inspectMacosZipBridgePayload(zipPath) {
+function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit) {
   const script = [
     'import hashlib',
     'import json',
@@ -2245,6 +2246,8 @@ function inspectMacosZipBridgePayload(zipPath) {
     `expected_python_license_path = "${PYTHON_RUNTIME_LICENSE_PATH}"`,
     `expected_python_license_sha256 = "${PYTHON_RUNTIME_LICENSE_SHA256}"`,
     `expected_python_packages = ${JSON.stringify(PYTHON_RUNTIME_PACKAGES)}`,
+    `expected_bridge_wrapper_sha256 = "${createHash('sha256').update(bridgeWrapperScript()).digest('hex')}"`,
+    `expected_source_commit = ${JSON.stringify(String(expectedSourceCommit || ''))}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
     'expected_cpu_types = {"arm64": 0x0100000c, "x64": 0x01000007}',
     'def thin_macho_cpu(data):',
@@ -2313,7 +2316,7 @@ function inspectMacosZipBridgePayload(zipPath) {
     '        return False',
     '    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(relative_path), target))',
     '    return resolved != ".." and not resolved.startswith("../")',
-    'result = {"zipLayoutValid": False, "singleAppRoot": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
+    'result = {"zipLayoutValid": False, "singleAppRoot": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
     'with zipfile.ZipFile(path) as archive:',
     '    infos = archive.infolist()',
     '    names = [info.filename for info in infos]',
@@ -2350,7 +2353,33 @@ function inspectMacosZipBridgePayload(zipPath) {
     '            manifest = {}',
     '    peekaboo = manifest.get("bundledTools", {}).get("peekaboo", {}) if isinstance(manifest, dict) else {}',
     '    python_runtime = manifest.get("bundledTools", {}).get("python", {}) if isinstance(manifest, dict) else {}',
+    '    bridge_wrapper = manifest.get("bundledTools", {}).get("bridgeWrapper", {}) if isinstance(manifest, dict) else {}',
+    '    source_provenance = manifest.get("sourceProvenance", {}) if isinstance(manifest, dict) else {}',
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
+    '    imported_commit = str(source_provenance.get("importedCommit", ""))',
+    '    result["bridgeCommitBindingValid"] = manifest.get("sourceCommit") == expected_source_commit and manifest.get("requestedSourceRef") == expected_source_commit and manifest.get("sourcePath") == "resources/evaos-beta/bridge" and source_provenance.get("schema") == "evaos-workbench-vendored-bridge-source/v1" and source_provenance.get("owner") == "100yenadmin/evaOS-GUI" and source_provenance.get("status") == "vendored" and len(imported_commit) == 40 and all(char in "0123456789abcdefABCDEF" for char in imported_commit)',
+    '    if result["hasBridgeExecutable"]:',
+    '        wrapper_sha256 = sha256_info(archive, entries["evaos-desktop-bridge"])',
+    '        result["bridgeWrapperValid"] = bridge_wrapper.get("schema") == "evaos-workbench-bridge-wrapper/v1" and bridge_wrapper.get("path") == "evaos-desktop-bridge" and bridge_wrapper.get("sourceSha256") == wrapper_sha256 == expected_bridge_wrapper_sha256',
+    '    bridge_source_prefix = "src/evaos_desktop_bridge/"',
+    '    bridge_source_entries = []',
+    '    bridge_source_layout_valid = True',
+    '    for suffix, info in entries.items():',
+    '        if not suffix.startswith(bridge_source_prefix):',
+    '            continue',
+    '        relative_path = suffix[len(bridge_source_prefix):]',
+    '        if not relative_path or "__pycache__" in relative_path.split("/") or not stat.S_ISREG(zip_mode(info)):',
+    '            bridge_source_layout_valid = False',
+    '            continue',
+    '        bridge_source_entries.append((relative_path, info))',
+    '    if bridge_source_layout_valid and bridge_source_entries:',
+    '        bridge_source_hash = hashlib.sha256()',
+    '        for relative_path, info in sorted(bridge_source_entries, key=lambda item: item[0]):',
+    '            bridge_source_hash.update(relative_path.encode("utf-8"))',
+    '            bridge_source_hash.update(b"\\0")',
+    '            bridge_source_hash.update(archive.read(info))',
+    '            bridge_source_hash.update(b"\\0")',
+    '        result["bridgeSourceDigestValid"] = source_provenance.get("sourceSha256") == bridge_source_hash.hexdigest()',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
     '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("sourceUrl") == expected_python_source_url[expected_python_arch] and python_runtime.get("license") == "Python-2.0" and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("licenseSha256") == expected_python_license_sha256 and python_runtime.get("packages") == expected_python_packages',
@@ -2480,18 +2509,21 @@ function macosZipAssetNames(outputDir, releaseTargetPlatforms) {
   return names.filter((name) => /-mac-|darwin-|arm64|x64/.test(name));
 }
 
-function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms) {
+function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, expectedSourceCommit) {
   const zipNames = macosZipAssetNames(outputDir, releaseTargetPlatforms);
   if (releaseTargetPlatforms !== 'windows' && zipNames.length === 0) {
     throw new Error('Release manifest verification requires a macOS ZIP payload for Electron auto-update.');
   }
 
   for (const zipName of zipNames) {
-    const probe = inspectMacosZipBridgePayload(path.join(outputDir, zipName));
+    const probe = inspectMacosZipBridgePayload(path.join(outputDir, zipName), expectedSourceCommit);
     assertZipBridgeProbe(probe, 'zipLayoutValid', zipName, 'safe ZIP layout');
     assertZipBridgeProbe(probe, 'singleAppRoot', zipName, 'exactly one .app root');
     assertZipBridgeProbe(probe, 'hasBridgeExecutable', zipName, 'executable');
     assertZipBridgeProbe(probe, 'hasBridgeManifest', zipName, 'manifest');
+    assertZipBridgeProbe(probe, 'bridgeWrapperValid', zipName, 'canonical launcher digest');
+    assertZipBridgeProbe(probe, 'bridgeSourceDigestValid', zipName, 'GUI-owned Python source digest');
+    assertZipBridgeProbe(probe, 'bridgeCommitBindingValid', zipName, 'exact GUI commit binding');
     assertZipBridgeProbe(probe, 'hasPeekaboo', zipName, 'Peekaboo binary');
     assertZipBridgeProbe(probe, 'peekabooMachO', zipName, 'Peekaboo binary Mach-O shape');
     assertZipBridgeProbe(probe, 'hasConnectorHelper', zipName, 'connector helper');
@@ -2561,7 +2593,7 @@ function verifyReleaseManifest(outputDir, tag, env = process.env) {
   }
 
   assertMacosAutoUpdateMetadata(outputDir, releaseTargetPlatforms);
-  assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms);
+  assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, manifest.releaseCommit);
   verifyReleaseProvenance(manifest, env);
   return true;
 }

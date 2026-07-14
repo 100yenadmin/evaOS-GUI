@@ -6,10 +6,12 @@
 
 import type { IEvaosAccountPolicyScope, IEvaosRuntimeKey } from '@/common/evaos/bridgeTypes';
 
+// Historical Swift Workbench parity evidence only. The current packaged Mac
+// bridge is owned by evaOS-GUI under resources/evaos-beta/bridge.
 export const GOLDEN_WORKBENCH_RELEASE_BASELINE = {
   releaseTag: 'evaos-workbench-v0.6.27',
   releaseUrl: 'https://github.com/electricsheephq/evaos-desktop-bridge/releases/tag/evaos-workbench-v0.6.27',
-  sourceCheckout: '/Volumes/LEXAR/repos/evaos-desktop-bridge',
+  archivedSource: 'electricsheephq/evaos-desktop-bridge@evaos-workbench-v0.6.27',
 } as const;
 
 export type GoldenWorkbenchSidebarSection =

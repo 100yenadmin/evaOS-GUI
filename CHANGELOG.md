@@ -21,6 +21,9 @@
 - Routes current and legacy Workbench focus aliases only to
   `/Applications/evaOS Workbench.app`, verifies the `evaOS Workbench` process,
   and refuses the legacy `/Applications/evaOS.app` target.
+- Uses one authenticated connector-readiness snapshot across diagnostics and
+  status, and gives the larger authenticated diagnostics response its own
+  bounded deadline so a healthy Mac is not misreported as unauthenticated.
 - Binds the packaged bridge source digest and ownership provenance to the exact
   evaOS-GUI release commit before signing.
 

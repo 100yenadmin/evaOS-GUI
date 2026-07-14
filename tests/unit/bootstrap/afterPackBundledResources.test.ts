@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const cpythonLicense = readFileSync(join(__dirname, '../../fixtures/licenses/CPython-3.12.13-LICENSE.txt'));
@@ -12,6 +12,8 @@ const afterPack = require('../../../scripts/afterPack.js') as {
   verifyEvaosDesktopBridgeResource: (resourcesDir: string, electronPlatformName: string, targetArch?: string) => void;
 };
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
+  bridgeWrapperMetadata: (filePath: string) => { schema: string; path: string; sourceSha256: string };
+  bridgeWrapperScript: () => string;
   writePythonRuntimeInventory: (resourceDir: string) => {
     inventoryPath: string;
     inventorySha256: string;
@@ -21,6 +23,8 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
 };
 
 const tempDirs: string[] = [];
+const strictSourceCommit = '82bb944d2c61586472fe3c8fe20b85f61ba0f4df';
+let previousSourceRef: string | undefined;
 
 function makeTempResources(): string {
   const dir = mkdtempSync(join(tmpdir(), 'evaos-afterpack-'));
@@ -60,7 +64,8 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
   mkdirSync(join(bridgeDir, 'licenses'), { recursive: true });
   const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
   const peekabooPath = join(bridgeDir, 'bin', 'peekaboo');
-  writeExecutableScript(bridgePath);
+  writeFileSync(bridgePath, bridgeResource.bridgeWrapperScript());
+  chmodSync(bridgePath, 0o755);
   if (options.nativeHelpers) {
     writeMachOFixture(peekabooPath);
   } else {
@@ -100,10 +105,11 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
         schema: 'evaos-workbench-vendored-bridge-source/v1',
         owner: '100yenadmin/evaOS-GUI',
         status: 'vendored',
-        importedCommit: '9e3b7332a88fbdea22291923bfd10dd37494d92d',
+        importedCommit: '908e3cad8c5f11dca739bbfc2c697c3e6d52f79e',
         ...bridgeSourceIdentity,
       },
       bundledTools: {
+        bridgeWrapper: bridgeResource.bridgeWrapperMetadata(bridgePath),
         python: {
           version: '3.12.13',
           sourceSha256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17',
@@ -155,7 +161,13 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
   }
 }
 
+beforeEach(() => {
+  previousSourceRef = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF;
+  process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF = strictSourceCommit;
+});
+
 afterEach(() => {
+  restoreEnv('EVAOS_DESKTOP_BRIDGE_SOURCE_REF', previousSourceRef);
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { force: true, recursive: true });
   }
@@ -297,6 +309,22 @@ describe('afterPack bundled resource verification', () => {
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'peekaboo'))).toBe(true);
       expect(afterPack.isMachOExecutable(join(resourcesDir, 'Bridge', 'bin', 'evaos-connector-helper'))).toBe(true);
       expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).not.toThrow();
+    } finally {
+      restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
+    }
+  });
+
+  it('rejects a strict packaged bridge whose launcher changed after preparation', () => {
+    const previous = process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL;
+    const resourcesDir = makeTempResources();
+    writeBridgeFixture(resourcesDir, { helper: true, nativeHelpers: true });
+    writeExecutableScript(join(resourcesDir, 'Bridge', 'evaos-desktop-bridge'));
+
+    try {
+      process.env.EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL = '1';
+      expect(() => afterPack.verifyEvaosDesktopBridgeResource(resourcesDir, 'darwin', 'arm64')).toThrow(
+        /exact evaOS-GUI-owned source/
+      );
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL', previous);
     }

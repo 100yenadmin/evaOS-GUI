@@ -1712,6 +1712,9 @@ def _connector_label_from_env(env: dict[str, str] | None = None) -> str:
 
 CONNECTOR_LABEL = _connector_label_from_env()
 CONNECTOR_PORT = 8765
+CONNECTOR_PUBLIC_PROBE_TIMEOUT_SECONDS = 1.0
+CONNECTOR_AUTHENTICATED_DIAGNOSTICS_TIMEOUT_SECONDS = 5.0
+CONNECTOR_HTTP_RESPONSE_LIMIT_BYTES = 65536
 CONNECTOR_SYSTEM_PLIST = Path(f"/Library/LaunchAgents/{CONNECTOR_LABEL}.plist")
 CONNECTOR_USER_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{CONNECTOR_LABEL}.plist"
 PEEKABOO_BIN_CANDIDATES = (
@@ -1814,18 +1817,40 @@ def _complete_connector_service_enrollment(args: argparse.Namespace, *, state_di
     }
 
 
-def _build_cli_ready_payload(*, token: str | None, token_file: str | None = None, state_dir: Path | None = None) -> dict[str, object]:
+def _build_cli_ready_payload(
+    *,
+    token: str | None,
+    token_file: str | None = None,
+    state_dir: Path | None = None,
+    service_status: dict[str, object] | None = None,
+) -> dict[str, object]:
     payload = dict(build_ready_payload(token=token, state_dir=state_dir))
-    service_status = _connector_service_status(token=token, token_file=token_file, state_dir=state_dir)
+    if service_status is None:
+        service_status = _connector_service_status(token=token, token_file=token_file, state_dir=state_dir)
     health = service_status.get("health") if isinstance(service_status.get("health"), dict) else {}
     blockers = list(payload.get("blockers") if isinstance(payload.get("blockers"), list) else [])
 
-    if service_status.get("ready") is not True:
-        code = "connector_service_unreachable" if health.get("reachable") is not True else "connector_service_not_ready"
+    if service_status.get("ready") is not True and service_status.get("token_present") is True:
+        code = _connector_service_readiness_reason(service_status)
+        message = {
+            "connector_service_unreachable": "Connector service is unreachable; Workbench must start the signed bridge before Mac control is ready.",
+            "connector_authentication_rejected": "Connector service rejected the configured credential; Mac control is not ready.",
+            "connector_diagnostics_timeout": "Authenticated connector diagnostics exceeded the bounded readiness deadline; authentication was not disproven.",
+            "connector_diagnostics_incomplete": "Authenticated connector diagnostics ended before the complete response arrived; authentication was not disproven.",
+            "connector_diagnostics_invalid_json": "Authenticated connector diagnostics returned an invalid response; Mac control is not ready.",
+            "connector_health_timeout": "The short public connector health probe exceeded its bounded deadline; Mac control is not ready.",
+            "connector_health_incomplete": "The public connector health response ended before it was complete; Mac control is not ready.",
+            "connector_health_invalid_json": "The public connector health response was invalid; Mac control is not ready.",
+            "connector_identity_unverified": "Connector service identity is incompatible with this Workbench bridge; Mac control is not ready.",
+            "connector_connection_failed": "Connector diagnostics could not establish a connection; Mac control is not ready.",
+            "connector_diagnostics_http_error": "Connector diagnostics returned an unexpected HTTP response; Mac control is not ready.",
+            "connector_service_unauthenticated": "Connector service is reachable but did not authenticate; Mac control is not ready.",
+            "connector_service_not_ready": "Connector service is authenticated but not ready for Mac control.",
+        }.get(code, "Connector service is not ready for Mac control.")
         blockers.append(
             {
                 "code": code,
-                "message": "Connector service is not ready; Workbench must start the signed bridge before Mac control is ready.",
+                "message": message,
                 "host_kind": _connector_host_kind(str(health.get("host") or "")),
             }
         )
@@ -1841,11 +1866,20 @@ def _build_cli_ready_payload(*, token: str | None, token_file: str | None = None
 
 def _build_cli_diagnostics_payload(*, token: str | None, token_file: str | None = None, state_dir: Path | None = None) -> dict[str, object]:
     service_status = _connector_service_status(token=token, token_file=token_file, state_dir=state_dir)
-    return build_diagnostics_payload(
+    payload = build_diagnostics_payload(
         token=token,
         state_dir=state_dir,
         owner=_public_bridge_owner_from_status(service_status),
     )
+    connector = payload.get("connector") if isinstance(payload.get("connector"), dict) else {}
+    connector["ready"] = _build_cli_ready_payload(
+        token=token,
+        token_file=token_file,
+        state_dir=state_dir,
+        service_status=service_status,
+    )
+    payload["connector"] = connector
+    return payload
 
 
 def _connector_http_owner_summary() -> dict[str, object]:
@@ -1889,6 +1923,7 @@ def _public_ready_connector_service_status(status: dict[str, object]) -> dict[st
     public: dict[str, object] = {
         "ok": status.get("ok") is True,
         "ready": status.get("ready") is True,
+        "readiness_reason": _connector_service_readiness_reason(status),
         "managed_by": status.get("managed_by") if isinstance(status.get("managed_by"), str) else "unknown",
         "token_present": status.get("token_present") is True,
         "loaded": status.get("loaded") is True,
@@ -2068,50 +2103,7 @@ def _wait_for_public_connector_service_ready(
 
 
 def _public_connector_service_probe_status(*, state_dir: Path | None = None) -> dict[str, object]:
-    domain = _launchctl_domain()
-    print_result = _run_launchctl(["print", f"{domain}/{CONNECTOR_LABEL}"])
-    token_path = _connector_token_path(None, state_dir=state_dir)
-    plist_path = _connector_plist_path()
-    loaded = print_result["returncode"] == 0
-    connector_token = _connector_token_value(None, state_dir=state_dir)
-    health = _connector_loopback_health(connector_token=connector_token) if connector_token else _connector_public_loopback_health()
-    reachable = health.get("reachable") is True
-    ready = connector_token is not None and health.get("ready") is True and health.get("authenticated") is True
-    running = loaded and ready
-    program_arguments = _connector_plist_program_arguments(plist_path)
-    active_program_path = _active_connector_process_program_path() if reachable else None
-    tailscale_status = _tailscale_status_snapshot()
-    status = {
-        "ok": ready,
-        "ready": ready,
-        "label": CONNECTOR_LABEL,
-        "domain": domain,
-        "managed_by": "launchagent" if running else "workbench-or-manual" if ready else "offline",
-        "plist_path": str(plist_path) if plist_path else None,
-        "plist_installed": plist_path is not None,
-        "token_path": str(token_path),
-        "token_present": connector_token is not None,
-        "loaded": loaded,
-        "running": running,
-        "tailnet_ip": _tailscale_ip(tailscale_status),
-        "private_network": _private_network_evidence(tailscale_status),
-        "bridge_runtime": _workbench_runtime_compatibility(_bridge_runtime_version()),
-        "health": health,
-        "owner": _bridge_owner_summary(
-            label=CONNECTOR_LABEL,
-            plist_path=plist_path,
-            program_arguments=program_arguments,
-            ready=ready,
-            active_program_path=active_program_path,
-        ),
-        "permission_target": _connector_permission_target(
-            "launchagent" if running else "workbench-or-manual" if ready else "offline",
-            health,
-            program_arguments,
-        ),
-        "guidance": _connector_service_guidance(plist_path, connector_token is not None, health),
-    }
-    return _public_connector_service_status(status)
+    return _public_connector_service_status(_connector_service_status(state_dir=state_dir))
 
 
 def _public_connector_service_result(result: dict[str, object]) -> dict[str, object]:
@@ -2237,11 +2229,40 @@ def _public_launchctl_notes(value: object) -> list[dict[str, object]]:
     return notes
 
 
+def _connector_service_readiness_reason(status: dict[str, object]) -> str:
+    if status.get("ready") is True:
+        return "ready"
+    if status.get("token_present") is not True:
+        return "token_missing"
+    health = status.get("health") if isinstance(status.get("health"), dict) else {}
+    error = health.get("error")
+    safe_probe_reasons = {
+        "connector_authentication_rejected",
+        "connector_connection_failed",
+        "connector_diagnostics_http_error",
+        "connector_diagnostics_incomplete",
+        "connector_diagnostics_invalid_json",
+        "connector_diagnostics_timeout",
+        "connector_health_incomplete",
+        "connector_health_invalid_json",
+        "connector_health_timeout",
+        "connector_identity_unverified",
+    }
+    if isinstance(error, str) and error in safe_probe_reasons:
+        return error
+    if health.get("reachable") is not True:
+        return "connector_service_unreachable"
+    if health.get("authenticated") is not True:
+        return "connector_service_unauthenticated"
+    return "connector_service_not_ready"
+
+
 def _public_connector_service_status(status: dict[str, object]) -> dict[str, object]:
     health = status.get("health") if isinstance(status.get("health"), dict) else {}
     public: dict[str, object] = {
         "ok": status.get("ok") is True,
         "ready": status.get("ready") is True,
+        "readiness_reason": _connector_service_readiness_reason(status),
         "label": status.get("label") if isinstance(status.get("label"), str) else CONNECTOR_LABEL,
         "domain": status.get("domain") if isinstance(status.get("domain"), str) else _launchctl_domain(),
         "managed_by": status.get("managed_by") if isinstance(status.get("managed_by"), str) else "unknown",
@@ -2523,7 +2544,7 @@ def _connector_service_status(*, token: str | None = None, token_file: str | Non
     plist_path = _connector_plist_path()
     loaded = print_result["returncode"] == 0
     reachable = health["reachable"] is True
-    ready = health.get("ready") is True
+    ready = bool(connector_token) and health.get("ready") is True and health.get("authenticated") is True
     running = loaded and ready
     tailscale_status = _tailscale_status_snapshot()
     tailnet_ip = _tailscale_ip(tailscale_status)
@@ -2680,7 +2701,11 @@ def _connector_loopback_health(*, connector_token: str | None = None) -> dict[st
     plist_path = _connector_plist_path()
     host = _connector_plist_host(plist_path) or _tailscale_ip() or "127.0.0.1"
     try:
-        health = _connector_http_get(host, "/health")
+        health = _connector_http_get(
+            host,
+            "/health",
+            timeout_seconds=CONNECTOR_PUBLIC_PROBE_TIMEOUT_SECONDS,
+        )
         health_json = health.get("json") if isinstance(health.get("json"), dict) else {}
         reachable = health.get("status_code") == 200 and health_json.get("service") == "evaos-desktop-bridge-connector"
         result: dict[str, object] = {
@@ -2692,13 +2717,18 @@ def _connector_loopback_health(*, connector_token: str | None = None) -> dict[st
             "status_line": health.get("status_line") if isinstance(health.get("status_line"), str) else "",
         }
         if not reachable:
-            result["error"] = "connector_identity_unverified"
+            result["error"] = _connector_probe_failure_reason(health, phase="health")
             return result
         if not connector_token:
             result["error"] = "connector_token_missing"
             return result
 
-        diagnostics = _connector_http_get(host, "/v1/diagnostics", authorization=f"Bearer {connector_token}")
+        diagnostics = _connector_http_get(
+            host,
+            "/v1/diagnostics",
+            authorization=f"Bearer {connector_token}",
+            timeout_seconds=CONNECTOR_AUTHENTICATED_DIAGNOSTICS_TIMEOUT_SECONDS,
+        )
         diagnostics_json = diagnostics.get("json") if isinstance(diagnostics.get("json"), dict) else {}
         connector = diagnostics_json.get("connector") if isinstance(diagnostics_json.get("connector"), dict) else {}
         ready_payload = connector.get("ready") if isinstance(connector.get("ready"), dict) else {}
@@ -2713,17 +2743,25 @@ def _connector_loopback_health(*, connector_token: str | None = None) -> dict[st
         result["ready"] = ready
         result["ready_status_line"] = diagnostics.get("status_line") if isinstance(diagnostics.get("status_line"), str) else ""
         if not ready:
-            result["error"] = "connector_ready_probe_failed"
+            result["error"] = (
+                "connector_ready_probe_failed"
+                if authenticated
+                else _connector_probe_failure_reason(diagnostics, phase="diagnostics")
+            )
         return result
-    except Exception as exc:
-        return {"reachable": False, "host": host, "port": CONNECTOR_PORT, "error": str(exc)}
+    except Exception:
+        return {"reachable": False, "ready": False, "authenticated": False, "host": host, "port": CONNECTOR_PORT, "error": "connector_connection_failed"}
 
 
 def _connector_public_loopback_health() -> dict[str, object]:
     plist_path = _connector_plist_path()
     host = _connector_plist_host(plist_path) or _tailscale_ip() or "127.0.0.1"
     try:
-        ready_probe = _connector_http_get(host, "/ready")
+        ready_probe = _connector_http_get(
+            host,
+            "/ready",
+            timeout_seconds=CONNECTOR_PUBLIC_PROBE_TIMEOUT_SECONDS,
+        )
         ready_json = ready_probe.get("json") if isinstance(ready_probe.get("json"), dict) else {}
         if ready_json.get("schema") == "evaos.desktop_bridge.ready.v1":
             ready = ready_probe.get("status_code") == 200 and ready_json.get("ok") is True and ready_json.get("ready") is True
@@ -2739,7 +2777,11 @@ def _connector_public_loopback_health() -> dict[str, object]:
                 result["error"] = "connector_ready_probe_failed"
             return result
 
-        health = _connector_http_get(host, "/health")
+        health = _connector_http_get(
+            host,
+            "/health",
+            timeout_seconds=CONNECTOR_PUBLIC_PROBE_TIMEOUT_SECONDS,
+        )
         health_json = health.get("json") if isinstance(health.get("json"), dict) else {}
         reachable = health.get("status_code") == 200 and health_json.get("service") == "evaos-desktop-bridge-connector"
         result: dict[str, object] = {
@@ -2753,33 +2795,89 @@ def _connector_public_loopback_health() -> dict[str, object]:
         if not reachable:
             result["error"] = "connector_identity_unverified"
         return result
-    except Exception as exc:
-        return {"reachable": False, "host": host, "port": CONNECTOR_PORT, "error": str(exc)}
+    except Exception:
+        return {"reachable": False, "ready": False, "authenticated": False, "host": host, "port": CONNECTOR_PORT, "error": "connector_connection_failed"}
 
 
-def _connector_http_get(host: str, path: str, *, authorization: str | None = None) -> dict[str, object]:
+def _connector_probe_failure_reason(probe: dict[str, object], *, phase: str) -> str:
+    status_code = probe.get("status_code")
+    outcome = probe.get("outcome")
+    if outcome == "timeout":
+        return f"connector_{phase}_timeout"
+    if outcome == "incomplete_response":
+        return f"connector_{phase}_incomplete"
+    if outcome == "invalid_json":
+        return f"connector_{phase}_invalid_json"
+    if outcome == "connection_failed":
+        return "connector_connection_failed"
+    if phase == "diagnostics" and outcome == "complete" and status_code in {401, 403}:
+        return "connector_authentication_rejected"
+    if status_code == 200:
+        return "connector_identity_unverified"
+    if phase == "diagnostics":
+        return "connector_diagnostics_http_error"
+    return "connector_service_unreachable"
+
+
+def _connector_http_get(
+    host: str,
+    path: str,
+    *,
+    authorization: str | None = None,
+    timeout_seconds: float = CONNECTOR_PUBLIC_PROBE_TIMEOUT_SECONDS,
+) -> dict[str, object]:
     connect_host = host[1:-1] if host.startswith("[") and host.endswith("]") else host
     headers = [f"GET {path} HTTP/1.1", f"Host: {host}", "Connection: close"]
     if authorization:
         headers.append(f"Authorization: {authorization}")
     request = ("\r\n".join(headers) + "\r\n\r\n").encode("utf-8")
-    with socket.create_connection((connect_host, CONNECTOR_PORT), timeout=1.0) as sock:
-        sock.settimeout(1.0)
-        sock.sendall(request)
-        chunks: list[bytes] = []
-        while True:
-            try:
-                chunk = sock.recv(4096)
-            except TimeoutError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-            if sum(len(item) for item in chunks) >= 65536:
-                break
+    bounded_timeout = max(0.01, float(timeout_seconds))
+    deadline = time.monotonic() + bounded_timeout
+    chunks: list[bytes] = []
+    timed_out = False
+    response_limit_reached = False
+    framed_response_complete = False
+    try:
+        with socket.create_connection((connect_host, CONNECTOR_PORT), timeout=bounded_timeout) as sock:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return _connector_http_probe_result("timeout")
+            sock.settimeout(remaining)
+            sock.sendall(request)
+            received_bytes = 0
+            while received_bytes < CONNECTOR_HTTP_RESPONSE_LIMIT_BYTES:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                sock.settimeout(remaining)
+                try:
+                    chunk = sock.recv(min(4096, CONNECTOR_HTTP_RESPONSE_LIMIT_BYTES - received_bytes))
+                except TimeoutError:
+                    timed_out = True
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                received_bytes += len(chunk)
+                if _connector_http_declared_body_complete(b"".join(chunks)):
+                    framed_response_complete = True
+                    break
+            response_limit_reached = received_bytes >= CONNECTOR_HTTP_RESPONSE_LIMIT_BYTES and not framed_response_complete
+    except TimeoutError:
+        return _connector_http_probe_result("timeout")
+    except OSError:
+        return _connector_http_probe_result("connection_failed")
+
+    if timed_out:
+        return _connector_http_probe_result("timeout")
+    if response_limit_reached:
+        return _connector_http_probe_result("incomplete_response")
+
     data = b"".join(chunks)
-    text = data.decode("utf-8", errors="replace")
-    status_line = text.splitlines()[0] if text else ""
+    header_bytes, separator, body_bytes = data.partition(b"\r\n\r\n")
+    header_text = header_bytes.decode("iso-8859-1", errors="replace")
+    status_line = header_text.splitlines()[0] if header_text else ""
     status_code = None
     parts = status_line.split()
     if len(parts) >= 2:
@@ -2787,14 +2885,61 @@ def _connector_http_get(host: str, path: str, *, authorization: str | None = Non
             status_code = int(parts[1])
         except ValueError:
             status_code = None
-    _, _, body = text.partition("\r\n\r\n")
-    parsed_json: object | None = None
-    if body.strip():
+
+    if not separator:
+        return _connector_http_probe_result("incomplete_response", status_code=status_code, status_line=status_line)
+
+    content_length: int | None = None
+    for header_line in header_text.splitlines()[1:]:
+        name, separator, value = header_line.partition(":")
+        if separator and name.strip().lower() == "content-length":
+            try:
+                content_length = int(value.strip())
+            except ValueError:
+                return _connector_http_probe_result("incomplete_response", status_code=status_code, status_line=status_line)
+            break
+    if content_length is not None:
+        if content_length < 0 or len(body_bytes) < content_length:
+            return _connector_http_probe_result("incomplete_response", status_code=status_code, status_line=status_line)
+        body_bytes = body_bytes[:content_length]
+
+    try:
+        parsed_json = json.loads(body_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _connector_http_probe_result("invalid_json", status_code=status_code, status_line=status_line)
+    return _connector_http_probe_result("complete", status_code=status_code, status_line=status_line, parsed_json=parsed_json)
+
+
+def _connector_http_probe_result(
+    outcome: str,
+    *,
+    status_code: int | None = None,
+    status_line: str = "",
+    parsed_json: object | None = None,
+) -> dict[str, object]:
+    return {
+        "outcome": outcome,
+        "status_code": status_code,
+        "status_line": status_line,
+        "json": parsed_json,
+    }
+
+
+def _connector_http_declared_body_complete(data: bytes) -> bool:
+    header_bytes, separator, body_bytes = data.partition(b"\r\n\r\n")
+    if not separator:
+        return False
+    header_text = header_bytes.decode("iso-8859-1", errors="replace")
+    for header_line in header_text.splitlines()[1:]:
+        name, separator, value = header_line.partition(":")
+        if not separator or name.strip().lower() != "content-length":
+            continue
         try:
-            parsed_json = json.loads(body)
-        except json.JSONDecodeError:
-            parsed_json = None
-    return {"status_code": status_code, "status_line": status_line, "json": parsed_json}
+            content_length = int(value.strip())
+        except ValueError:
+            return False
+        return content_length >= 0 and len(body_bytes) >= content_length
+    return False
 
 
 def _connector_permission_target(
