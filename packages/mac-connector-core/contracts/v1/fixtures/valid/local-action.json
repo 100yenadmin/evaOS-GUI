@@ -1,0 +1,19 @@
+{
+  "schema_version": "evaos.mac_access.authenticated_local_action.v1",
+  "connection_id": "local-connection-01",
+  "peer": {
+    "verification": "verified_designated_requirement",
+    "role": "workbench_main",
+    "signing_identifier": "com.evaos.workbench",
+    "audit_token_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "designated_requirement_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "request": {
+    "schema_version": "evaos.mac_access.local_action.v1",
+    "request_id": "local-request-01",
+    "action": "set_access_mode",
+    "client_nonce": "bm9uY2UtMDE",
+    "expected_policy_epoch": 7,
+    "target_mode": "ask_every_time"
+  }
+}

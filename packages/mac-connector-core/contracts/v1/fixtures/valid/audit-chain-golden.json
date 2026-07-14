@@ -1,0 +1,55 @@
+{
+  "schema_version": "evaos.mac_access.audit_chain_golden.v1",
+  "canonicalization": "RFC8785-JCS",
+  "records": [
+    {
+      "payload": {
+        "schema_version": "evaos.mac_access.audit_event.v1",
+        "audit_id": "audit-01",
+        "sequence": 1,
+        "previous_record_sha256": null,
+        "occurred_at": "2026-07-15T08:01:03Z",
+        "event_type": "command_result",
+        "actor": { "kind": "broker_runtime", "identity": "openclaw" },
+        "binding_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "command_id": "command-01",
+        "request_digest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "access_mode": "ask_every_time",
+        "outcome": "executed",
+        "reason_code": "approved_exact_scope",
+        "evidence": {
+          "capability": "customer_mac.desktop_click",
+          "target_path_hash": "path-hash-01",
+          "artifact_count": 0,
+          "redaction_policy": "default_v1"
+        }
+      },
+      "canonical_payload_utf8": "{\"access_mode\":\"ask_every_time\",\"actor\":{\"identity\":\"openclaw\",\"kind\":\"broker_runtime\"},\"audit_id\":\"audit-01\",\"binding_fingerprint_sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"command_id\":\"command-01\",\"event_type\":\"command_result\",\"evidence\":{\"artifact_count\":0,\"capability\":\"customer_mac.desktop_click\",\"redaction_policy\":\"default_v1\",\"target_path_hash\":\"path-hash-01\"},\"occurred_at\":\"2026-07-15T08:01:03Z\",\"outcome\":\"executed\",\"previous_record_sha256\":null,\"reason_code\":\"approved_exact_scope\",\"request_digest_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"schema_version\":\"evaos.mac_access.audit_event.v1\",\"sequence\":1}",
+      "record_sha256": "ec3235267ea927e32c2f99ad05b7926c6ed4942ca3055263d3b000d88eb585f7"
+    },
+    {
+      "payload": {
+        "schema_version": "evaos.mac_access.audit_event.v1",
+        "audit_id": "audit-02",
+        "sequence": 2,
+        "previous_record_sha256": "ec3235267ea927e32c2f99ad05b7926c6ed4942ca3055263d3b000d88eb585f7",
+        "occurred_at": "2026-07-15T08:01:04Z",
+        "event_type": "lifecycle",
+        "actor": { "kind": "local_user", "identity": "console-user" },
+        "binding_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "command_id": null,
+        "request_digest_sha256": null,
+        "access_mode": "off",
+        "outcome": "stopped",
+        "reason_code": "local_stop",
+        "evidence": {
+          "state_from": "ask_every_time",
+          "state_to": "off",
+          "redaction_policy": "default_v1"
+        }
+      },
+      "canonical_payload_utf8": "{\"access_mode\":\"off\",\"actor\":{\"identity\":\"console-user\",\"kind\":\"local_user\"},\"audit_id\":\"audit-02\",\"binding_fingerprint_sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"command_id\":null,\"event_type\":\"lifecycle\",\"evidence\":{\"redaction_policy\":\"default_v1\",\"state_from\":\"ask_every_time\",\"state_to\":\"off\"},\"occurred_at\":\"2026-07-15T08:01:04Z\",\"outcome\":\"stopped\",\"previous_record_sha256\":\"ec3235267ea927e32c2f99ad05b7926c6ed4942ca3055263d3b000d88eb585f7\",\"reason_code\":\"local_stop\",\"request_digest_sha256\":null,\"schema_version\":\"evaos.mac_access.audit_event.v1\",\"sequence\":2}",
+      "record_sha256": "b811f2f3442a900a214ffb6d2d691cff51c32088bca50109df0b7cd044666614"
+    }
+  ]
+}

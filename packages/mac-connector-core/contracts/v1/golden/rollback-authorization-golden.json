@@ -1,0 +1,32 @@
+{
+  "schema_version": "evaos.mac_access.signed_rollback_authorization.v1",
+  "canonicalization": "RFC8785-JCS",
+  "payload": {
+    "schema_version": "evaos.mac_access.rollback_authorization_payload.v1",
+    "domain": "evaos.mac-access/rollback-authorization/v1",
+    "authorization_id": "rollback-01",
+    "source": {
+      "build_version": "0.2.0",
+      "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "signed_lineage_id": "mac-access-production",
+      "security_epoch": 2,
+      "credential_security_epoch": 2
+    },
+    "target": {
+      "build_version": "0.1.0-architecture",
+      "source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+      "signed_lineage_id": "mac-access-production",
+      "security_epoch": 1,
+      "credential_security_epoch": 1
+    },
+    "resulting_minimum_reader_security_epoch": 1,
+    "resulting_minimum_writer_security_epoch": 1,
+    "issued_at": "2026-07-15T07:55:00Z",
+    "expires_at": "2026-07-15T08:05:00Z"
+  },
+  "canonical_payload_utf8": "{\"authorization_id\":\"rollback-01\",\"domain\":\"evaos.mac-access/rollback-authorization/v1\",\"expires_at\":\"2026-07-15T08:05:00Z\",\"issued_at\":\"2026-07-15T07:55:00Z\",\"resulting_minimum_reader_security_epoch\":1,\"resulting_minimum_writer_security_epoch\":1,\"schema_version\":\"evaos.mac_access.rollback_authorization_payload.v1\",\"source\":{\"build_version\":\"0.2.0\",\"credential_security_epoch\":2,\"security_epoch\":2,\"signed_lineage_id\":\"mac-access-production\",\"source_commit\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"target\":{\"build_version\":\"0.1.0-architecture\",\"credential_security_epoch\":1,\"security_epoch\":1,\"signed_lineage_id\":\"mac-access-production\",\"source_commit\":\"ae9f35062f8a4b212fab4576d44602b57dc0303a\"}}",
+  "payload_sha256": "af25d8ea75ce353e322e31bb855501af2c375e7388e603933b84d2d875c412a1",
+  "broker_key_id": "rollback-key-2026-01",
+  "signature_base64url": "GDifM36m6ciwLkEqKU5o4DlDFkkUwoYPsdU4-JXSIwemKrbP64MTZGVOQ-GSfbAz62SmfeLvQUo8BpJpI6coAQ",
+  "public_key_spki_base64url": "MCowBQYDK2VwAyEAHLkdfJpt68p2FYvrvSLtqZBhghT0w6gxkPpA9rYZfd0"
+}

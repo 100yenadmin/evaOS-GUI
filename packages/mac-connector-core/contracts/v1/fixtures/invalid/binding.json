@@ -1,0 +1,117 @@
+[
+  {
+    "id": "wrong-customer",
+    "threat": "wrong_customer",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/binding/customer_id",
+        "value": "customer-02"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "execution_context_binding_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "stale-binding-version",
+    "threat": "stale_binding",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/binding/binding_version",
+        "value": "v2"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "execution_context_binding_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "wrong-device",
+    "threat": "wrong_device",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/binding/device_id",
+        "value": "mac-02"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "selected_device_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "revoked-grant",
+    "threat": "revoked_grant",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [],
+    "expected_stage": "runtime",
+    "expected_error": "grant_revoked",
+    "required_runtime_rejection": "Reject the envelope when the local revocation tombstone or newer broker policy epoch marks grant-01 revoked."
+  },
+  {
+    "id": "wrong-grant",
+    "threat": "wrong_grant",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/binding/grant_id", "value": "grant-02" }],
+    "expected_stage": "schema",
+    "expected_error": "selected_grant_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "wrong-runtime",
+    "threat": "wrong_runtime",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/binding/runtime", "value": "hermes" }],
+    "expected_stage": "schema",
+    "expected_error": "selected_runtime_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "wrong-installation",
+    "threat": "wrong_installation",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/binding/connector_installation_id", "value": "install-02" }],
+    "expected_stage": "schema",
+    "expected_error": "connector_installation_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "wrong-connector-key",
+    "threat": "wrong_connector_key",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/binding/connector_key_id", "value": "mac-key-02" }],
+    "expected_stage": "schema",
+    "expected_error": "connector_key_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "signed-payload-tampered-grant",
+    "threat": "command_authority_tampering",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/binding/grant_id", "value": "grant-02" },
+      {
+        "operation": "set",
+        "pointer": "/authorization/payload/binding/grant_id",
+        "value": "grant-02"
+      }
+    ],
+    "expected_stage": "runtime",
+    "expected_error": "command_authorization_digest_or_signature_mismatch",
+    "required_runtime_rejection": "RFC 8785 canonicalize the complete command-authority payload, recompute its SHA-256, verify the Ed25519 signature, and compare the selected grant with local enrollment before policy evaluation."
+  }
+]

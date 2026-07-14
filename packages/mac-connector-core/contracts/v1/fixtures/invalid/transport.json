@@ -1,0 +1,84 @@
+[
+  {
+    "id": "expired-command",
+    "threat": "expired_authority",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/expires_at",
+        "value": "2026-07-15T08:02:30Z"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "command_authority_too_long",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "replayed-command",
+    "threat": "replay",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [],
+    "expected_stage": "runtime",
+    "expected_error": "command_replayed",
+    "required_runtime_rejection": "Submit the same context ID, command ID, nonce, and sequence twice; the second attempt must be denied before local approval or actuation."
+  },
+  {
+    "id": "offline-broker-actuation",
+    "threat": "offline_broker",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [],
+    "expected_stage": "runtime",
+    "expected_error": "broker_authority_offline",
+    "required_runtime_rejection": "After the authority deadline or broker disconnect barrier, queued and newly received commands must be denied even if their JSON shape remains valid."
+  },
+  {
+    "id": "request-digest-mismatch",
+    "threat": "request_tampering",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/command/request/target_snapshot_id",
+        "value": "snapshot-tampered"
+      }
+    ],
+    "expected_stage": "runtime",
+    "expected_error": "request_digest_mismatch",
+    "required_runtime_rejection": "Recompute the canonical request and envelope digests and reject before policy evaluation when either signed digest differs."
+  },
+  {
+    "id": "wrong-channel-generation",
+    "threat": "reconnect_replay",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/channel_generation_id", "value": "channel-generation-02" }],
+    "expected_stage": "schema",
+    "expected_error": "channel_generation_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "authority-outlives-context",
+    "threat": "context_expiry_escape",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/execution_context/claims/expires_at", "value": 1784102470 }],
+    "expected_stage": "schema",
+    "expected_error": "authority_outlives_execution_context",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "execution-context-payload-tampered",
+    "threat": "execution_context_tampering",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [{ "operation": "set", "pointer": "/execution_context/payload_base64url", "value": "dGFtcGVyZWQ" }],
+    "expected_stage": "runtime",
+    "expected_error": "execution_context_digest_or_signature_mismatch",
+    "required_runtime_rejection": "Decode the execution-context payload, recompute its SHA-256, verify its Ed25519 signature, and require the decoded claims to equal the typed claims before command authorization."
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "untrusted-local-client",
+    "threat": "local_untrusted_client",
+    "contract": "authenticated_local_action",
+    "base_fixture": "../valid/local-action.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/peer/signing_identifier",
+        "value": "com.evaos.mac-access"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "peer_designated_requirement_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "duplicate-leader",
+    "threat": "duplicate_process",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/leader/runtime_instance_id",
+        "value": "runtime-instance-02"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "leader_runtime_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "helper-replacement",
+    "threat": "helper_replacement",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/leader/helper_service_id",
+        "value": "com.attacker.helper"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "helper_identity_mismatch",
+    "required_runtime_rejection": null
+  }
+]

@@ -1,0 +1,83 @@
+{
+  "schema_version": "evaos.mac_access.broker_control.v1",
+  "message_type": "command",
+  "session_id": "session-01",
+  "channel_generation_id": "channel-generation-01",
+  "command_id": "command-01",
+  "issued_at": "2026-07-15T08:01:00Z",
+  "expires_at": "2026-07-15T08:01:45Z",
+  "sequence": 42,
+  "nonce": "YnJva2VyLW5vbmNlLTAx",
+  "binding": {
+    "customer_id": "customer-01",
+    "customer_vm_id": "vm-01",
+    "device_id": "mac-01",
+    "grant_id": "grant-01",
+    "runtime": "openclaw",
+    "binding_id": "binding-01",
+    "binding_version": "v3",
+    "connector_installation_id": "install-01",
+    "connector_key_id": "mac-key-01",
+    "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "execution_context": {
+    "claims": {
+      "schema_version": "evaos.mac_control_execution_context.v1",
+      "key_id": "broker-signing-key-01",
+      "runtime": "openclaw",
+      "customer_id": "customer-01",
+      "customer_vm_id": "vm-01",
+      "binding_id": "binding-01",
+      "binding_version": "v3",
+      "issued_at": 1784102460,
+      "expires_at": 1784102505,
+      "context_id": "Y29udGV4dC0wMQ"
+    },
+    "payload_base64url": "ZXhlY3V0aW9uLWNvbnRleHQ",
+    "payload_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+    "signature_base64url": "c2lnbmF0dXJlLTAx",
+    "key_id": "broker-signing-key-01"
+  },
+  "command": {
+    "capability": "customer_mac.desktop_click",
+    "request": {
+      "target_snapshot_id": "snapshot-01",
+      "target_path_hash": "path-hash-01",
+      "dry_run": false
+    },
+    "request_digest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "authorization": {
+    "schema_version": "evaos.mac_access.command_authorization.v1",
+    "canonicalization": "RFC8785-JCS",
+    "payload": {
+      "schema_version": "evaos.mac_access.command_authority_payload.v1",
+      "domain": "evaos.mac-access/command-authority/v1",
+      "session_id": "session-01",
+      "channel_generation_id": "channel-generation-01",
+      "command_id": "command-01",
+      "issued_at": "2026-07-15T08:01:00Z",
+      "expires_at": "2026-07-15T08:01:45Z",
+      "sequence": 42,
+      "nonce": "YnJva2VyLW5vbmNlLTAx",
+      "binding": {
+        "customer_id": "customer-01",
+        "customer_vm_id": "vm-01",
+        "device_id": "mac-01",
+        "grant_id": "grant-01",
+        "runtime": "openclaw",
+        "binding_id": "binding-01",
+        "binding_version": "v3",
+        "connector_installation_id": "install-01",
+        "connector_key_id": "mac-key-01",
+        "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "execution_context_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+      "capability": "customer_mac.desktop_click",
+      "request_digest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "payload_sha256": "5b53ab9ae88fd29ba82759bb7d6b0d900ce0367f9fe65314267a6667751dadf4",
+    "key_id": "broker-command-key-01",
+    "signature_base64url": "LY7Liy_zR2J4TexXTYYNe-wgoZ7EBee9aMGVk32M0Cd65LqRQ3dH4sYeE540WBTIEoZxgVhmqWhdPnn0i3DQBA"
+  }
+}

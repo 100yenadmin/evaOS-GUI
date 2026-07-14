@@ -1,0 +1,111 @@
+{
+  "schema_version": "evaos.mac_access.local_status.v1",
+  "observed_at": "2026-07-15T08:00:10Z",
+  "leader": {
+    "runtime_instance_id": "runtime-instance-01",
+    "pid": 4102,
+    "app_bundle_id": "com.evaos.mac-access",
+    "helper_service_id": "com.evaos.mac-access.helper",
+    "connector_service_id": "com.evaos.mac-access.connector",
+    "helper_designated_requirement_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "build": {
+      "build_version": "0.1.0-architecture",
+      "source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+      "signed_lineage_id": "mac-access-production",
+      "security_epoch": 1,
+      "schema_reader_version": 1,
+      "schema_writer_version": 1,
+      "rollback_authorization_id": "rollback-01"
+    }
+  },
+  "keychain": {
+    "custodian_signing_identifier": "com.evaos.mac-access.helper",
+    "access_group_suffix": "com.evaos.mac-access.credentials.epoch-1",
+    "credential_security_epoch": 1,
+    "service": "com.evaos.mac-access.connector-credential",
+    "accessibility": "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+    "synchronizable": false,
+    "exportable_private_key": false
+  },
+  "relay_authorization": {
+    "accepted_build_version": "0.1.0-architecture",
+    "accepted_source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+    "accepted_security_epoch": 1,
+    "credential_security_epoch": 1,
+    "rollback_authorization": {
+      "schema_version": "evaos.mac_access.signed_rollback_authorization.v1",
+      "canonicalization": "RFC8785-JCS",
+      "payload": {
+        "schema_version": "evaos.mac_access.rollback_authorization_payload.v1",
+        "domain": "evaos.mac-access/rollback-authorization/v1",
+        "authorization_id": "rollback-01",
+        "source": {
+          "build_version": "0.2.0",
+          "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signed_lineage_id": "mac-access-production",
+          "security_epoch": 2,
+          "credential_security_epoch": 2
+        },
+        "target": {
+          "build_version": "0.1.0-architecture",
+          "source_commit": "ae9f35062f8a4b212fab4576d44602b57dc0303a",
+          "signed_lineage_id": "mac-access-production",
+          "security_epoch": 1,
+          "credential_security_epoch": 1
+        },
+        "resulting_minimum_reader_security_epoch": 1,
+        "resulting_minimum_writer_security_epoch": 1,
+        "issued_at": "2026-07-15T07:55:00Z",
+        "expires_at": "2026-07-15T08:05:00Z"
+      },
+      "payload_sha256": "af25d8ea75ce353e322e31bb855501af2c375e7388e603933b84d2d875c412a1",
+      "broker_key_id": "rollback-key-2026-01",
+      "signature_base64url": "GDifM36m6ciwLkEqKU5o4DlDFkkUwoYPsdU4-JXSIwemKrbP64MTZGVOQ-GSfbAz62SmfeLvQUo8BpJpI6coAQ"
+    }
+  },
+  "access": {
+    "schema_version": "evaos.mac_access.access_state.v1",
+    "runtime_instance_id": "runtime-instance-01",
+    "state_security_epoch": 1,
+    "minimum_reader_security_epoch": 1,
+    "minimum_writer_security_epoch": 1,
+    "policy_epoch": 7,
+    "pairing_state": "paired",
+    "configured_mode": "ask_every_time",
+    "effective_mode": "ask_every_time",
+    "paused": false,
+    "kill_switch": false,
+    "local_confirmation_required": false,
+    "confirmed_runtime_instance_id": null,
+    "confirmed_policy_epoch": null,
+    "confirmed_binding_fingerprint_sha256": null,
+    "binding": {
+      "customer_id": "customer-01",
+      "customer_vm_id": "vm-01",
+      "device_id": "mac-01",
+      "grant_id": "grant-01",
+      "runtime": "openclaw",
+      "binding_id": "binding-01",
+      "binding_version": "v3",
+      "connector_installation_id": "install-01",
+      "connector_key_id": "mac-key-01",
+      "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "changed_at": "2026-07-15T08:00:00Z",
+    "reason_code": "pairing_confirmed"
+  },
+  "transport": {
+    "state": "connected",
+    "channel_id": "channel-01",
+    "last_error_code": null
+  },
+  "tcc": {
+    "responsible_identity": "com.evaos.mac-access",
+    "accessibility": "granted",
+    "screen_recording": "granted"
+  },
+  "audit": {
+    "writable": true,
+    "last_audit_id": "audit-01"
+  }
+}

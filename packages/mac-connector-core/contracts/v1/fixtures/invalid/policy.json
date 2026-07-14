@@ -1,0 +1,303 @@
+[
+  {
+    "id": "stale-rollback-authorization-id",
+    "threat": "signed_downgrade",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/relay_authorization/rollback_authorization/payload/authorization_id",
+        "value": "rollback-stale"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "rollback_authorization_id_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "rollback-wrong-target",
+    "threat": "signed_downgrade",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/relay_authorization/rollback_authorization/payload/target/source_commit",
+        "value": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "rollback_target_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "expired-rollback-authorization",
+    "threat": "signed_downgrade",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/relay_authorization/rollback_authorization/payload/expires_at",
+        "value": "2026-07-15T08:00:00Z"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "rollback_authorization_expired",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "stop-with-pending-authority",
+    "threat": "stop_race",
+    "contract": "access_transition",
+    "base_fixture": "../valid/access-transition-stop.json",
+    "mutations": [{ "operation": "set", "pointer": "/invalidated_pending_authority", "value": false }],
+    "expected_stage": "schema",
+    "expected_error": "stop_pending_authority_not_invalidated",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "crash-restores-full-access",
+    "threat": "crash_recovery",
+    "contract": "access_state",
+    "base_fixture": "../valid/access-state.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/configured_mode",
+        "value": "full_access"
+      },
+      {
+        "operation": "set",
+        "pointer": "/effective_mode",
+        "value": "full_access"
+      },
+      {
+        "operation": "set",
+        "pointer": "/local_confirmation_required",
+        "value": true
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "full_access_reconfirmation_required",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "raw-secret-audit",
+    "threat": "log_secret_exposure",
+    "contract": "audit_event",
+    "base_fixture": "../valid/audit-event.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/evidence/connector_token",
+        "value": "must-not-be-recorded"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "audit_forbidden_field",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "unsupported-downgrade-schema",
+    "threat": "downgrade",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/schema_version",
+        "value": "evaos.mac_access.broker_control.v0"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "unsupported_schema",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "stolen-pairing-code",
+    "threat": "stolen_pairing_code",
+    "contract": "authenticated_local_action",
+    "base_fixture": "../valid/local-action.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/request/action",
+        "value": "begin_pairing"
+      },
+      {
+        "operation": "set",
+        "pointer": "/request/target_mode",
+        "value": null
+      }
+    ],
+    "expected_stage": "runtime",
+    "expected_error": "pairing_code_reused_or_claimed",
+    "required_runtime_rejection": "The one-time code must be short-lived, rate-limited, atomically claimed, and bound to the locally displayed installation nonce before pairing state changes."
+  },
+  {
+    "id": "audit-write-failure",
+    "threat": "audit_unavailable",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/audit/writable",
+        "value": false
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "audit_failure_not_off",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "configured-off-effective-ask",
+    "threat": "authority_exceeds_user_intent",
+    "contract": "access_state",
+    "base_fixture": "../valid/access-state.json",
+    "mutations": [{ "operation": "set", "pointer": "/configured_mode", "value": "off" }],
+    "expected_stage": "schema",
+    "expected_error": "effective_mode_exceeds_configured_mode",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "tcc-denied-with-effective-access",
+    "threat": "tcc_loss",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [{ "operation": "set", "pointer": "/tcc/accessibility", "value": "denied" }],
+    "expected_stage": "schema",
+    "expected_error": "tcc_loss_not_off",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "connected-without-channel",
+    "threat": "transport_state_confusion",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [{ "operation": "set", "pointer": "/transport/channel_id", "value": null }],
+    "expected_stage": "schema",
+    "expected_error": "connected_channel_missing",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "begin-pairing-without-epoch",
+    "threat": "stale_local_client",
+    "contract": "authenticated_local_action",
+    "base_fixture": "../valid/local-action.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/request/action", "value": "begin_pairing" },
+      { "operation": "set", "pointer": "/request/expected_policy_epoch", "value": null },
+      { "operation": "set", "pointer": "/request/target_mode", "value": null }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "pairing_epoch_required",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "audit-screenshot-field",
+    "threat": "raw_screen_persistence",
+    "contract": "audit_event",
+    "base_fixture": "../valid/audit-event.json",
+    "mutations": [{ "operation": "set", "pointer": "/evidence/screenshot", "value": "raw-data" }],
+    "expected_stage": "schema",
+    "expected_error": "audit_evidence_not_allowlisted",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "audit-clipboard-field",
+    "threat": "clipboard_persistence",
+    "contract": "audit_event",
+    "base_fixture": "../valid/audit-event.json",
+    "mutations": [{ "operation": "set", "pointer": "/evidence/clipboard", "value": "copied-data" }],
+    "expected_stage": "schema",
+    "expected_error": "audit_evidence_not_allowlisted",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "audit-secret-bearing-value",
+    "threat": "secret_value_persistence",
+    "contract": "audit_event",
+    "base_fixture": "../valid/audit-event.json",
+    "mutations": [{ "operation": "set", "pointer": "/evidence/detail_code", "value": "Bearer-secret-material" }],
+    "expected_stage": "schema",
+    "expected_error": "audit_secret_bearing_value",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "audit-chain-gap",
+    "threat": "audit_tampering",
+    "contract": "audit_event",
+    "base_fixture": "../valid/audit-event.json",
+    "mutations": [{ "operation": "set", "pointer": "/sequence", "value": 2 }],
+    "expected_stage": "schema",
+    "expected_error": "audit_previous_digest_required",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "signed-downgrade-below-security-floor",
+    "threat": "signed_downgrade",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/access/minimum_reader_security_epoch", "value": 2 },
+      { "operation": "set", "pointer": "/access/minimum_writer_security_epoch", "value": 2 }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "build_below_security_floor",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "pairing-directly-enables-full-access",
+    "threat": "pairing_consent_escalation",
+    "contract": "access_transition",
+    "base_fixture": "../valid/access-transition.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/target_mode", "value": "full_access" },
+      { "operation": "set", "pointer": "/to/configured_mode", "value": "full_access" },
+      { "operation": "set", "pointer": "/to/effective_mode", "value": "full_access" },
+      {
+        "operation": "set",
+        "pointer": "/to/confirmed_runtime_instance_id",
+        "value": "runtime-instance-01"
+      },
+      { "operation": "set", "pointer": "/to/confirmed_policy_epoch", "value": 7 },
+      {
+        "operation": "set",
+        "pointer": "/to/confirmed_binding_fingerprint_sha256",
+        "value": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "pairing_must_default_to_ask_every_time",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "full-access-stale-policy-confirmation",
+    "threat": "stale_full_access_confirmation",
+    "contract": "access_state",
+    "base_fixture": "../valid/full-access-state.json",
+    "mutations": [{ "operation": "set", "pointer": "/confirmed_policy_epoch", "value": 6 }],
+    "expected_stage": "schema",
+    "expected_error": "full_access_policy_epoch_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "full-access-stale-binding-confirmation",
+    "threat": "stale_full_access_binding",
+    "contract": "access_state",
+    "base_fixture": "../valid/full-access-state.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/confirmed_binding_fingerprint_sha256",
+        "value": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "full_access_binding_mismatch",
+    "required_runtime_rejection": null
+  }
+]
