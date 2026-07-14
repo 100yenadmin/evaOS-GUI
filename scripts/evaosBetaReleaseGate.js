@@ -939,9 +939,7 @@ function collectRcCanaryWorkflowIssues(workflow) {
       '.github/workflows/evaos-beta-rc-canary.yml: must contain exactly one Launch beta and audit feed isolation step'
     );
   } else {
-    const runLines = getExecutableBlockLines(
-      getWorkflowStepPropertyBlock(installedCandidateStep[0], 'run', true)
-    );
+    const runLines = getExecutableBlockLines(getWorkflowStepPropertyBlock(installedCandidateStep[0], 'run', true));
     if (
       !runLines.includes('--suite control_start \\') ||
       !runLines.includes('--operator-ack-live-control \\') ||
