@@ -9,9 +9,8 @@ const projectRoot = path.resolve(__dirname, '..');
 const bridgeResourceDir = process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR
   ? path.resolve(process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR)
   : path.join(projectRoot, 'resources', 'Bridge');
-const bridgeSourceCacheDir = path.join(projectRoot, '.cache', 'evaos-desktop-bridge-source');
-const defaultBridgeSourceRepo = 'https://github.com/electricsheephq/evaos-desktop-bridge.git';
-const defaultBridgeSourceRef = 'main';
+const vendoredBridgeSourceDir = path.join(projectRoot, 'resources', 'evaos-beta', 'bridge');
+const vendoredBridgeProvenancePath = path.join(vendoredBridgeSourceDir, 'SOURCE.json');
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
@@ -50,38 +49,19 @@ function shouldRequireRealBridge() {
   );
 }
 
-function selectedBridgeSourceRef() {
-  return String(process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || '').trim() || defaultBridgeSourceRef;
-}
-
-function isMutableBridgeSourceRef(ref) {
-  const normalized = String(ref || '')
-    .trim()
-    .toLowerCase();
-  return !normalized || normalized === 'main' || normalized === 'master' || normalized === 'head';
+function selectedBridgeSourceRef(sourceCommit) {
+  return String(process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || sourceCommit || '').trim();
 }
 
 function isFullCommitSha(ref) {
   return /^[0-9a-f]{40}$/i.test(String(ref || '').trim());
 }
 
-function shouldCloneBridgeRefAsBranch(ref) {
-  return !isFullCommitSha(ref);
-}
-
 function sourceCandidates() {
-  if (process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR) {
-    return [process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR];
-  }
   if (process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES === '1') {
     return [];
   }
-  if (process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF) {
-    return [];
-  }
-  return [path.resolve(projectRoot, '..', 'evaos-desktop-bridge'), '/Volumes/LEXAR/repos/evaos-desktop-bridge'].filter(
-    Boolean
-  );
+  return [vendoredBridgeSourceDir];
 }
 
 function resolveBridgeSourceDir() {
@@ -91,86 +71,13 @@ function resolveBridgeSourceDir() {
       return sourceDir;
     }
   }
-  return prepareBridgeSourceCheckout();
-}
-
-function prepareBridgeSourceCheckout() {
-  const repo = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REPO || defaultBridgeSourceRepo;
-  const ref = selectedBridgeSourceRef();
-  if (shouldRequireRealBridge() && isMutableBridgeSourceRef(ref)) {
-    throw new Error(
-      [
-        'Release builds require a pinned evaos-desktop-bridge source ref.',
-        'Set EVAOS_DESKTOP_BRIDGE_SOURCE_REF to an approved tag or commit SHA, not main/master/HEAD.',
-      ].join(' ')
-    );
-  }
-  const cloneRepo = repoWithToken(repo);
-  console.log(`evaos-desktop-bridge source was not found locally; fetching ${sanitizeRepoForLog(repo)}#${ref}`);
-  fs.rmSync(bridgeSourceCacheDir, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(bridgeSourceCacheDir), { recursive: true });
-
-  if (shouldCloneBridgeRefAsBranch(ref)) {
-    try {
-      runGit(['clone', '--depth', '1', '--branch', ref, cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
-    } catch {
-      fs.rmSync(bridgeSourceCacheDir, { recursive: true, force: true });
-      runGit(['clone', '--depth', '1', cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
-      runGit(['fetch', '--depth', '1', 'origin', ref], bridgeSourceCacheDir, repo);
-      runGit(['checkout', '--detach', 'FETCH_HEAD'], bridgeSourceCacheDir, repo);
-    }
-  } else {
-    runGit(['clone', '--depth', '1', cloneRepo, bridgeSourceCacheDir], projectRoot, repo);
-    runGit(['fetch', '--depth', '1', 'origin', ref], bridgeSourceCacheDir, repo);
-    runGit(['checkout', '--detach', 'FETCH_HEAD'], bridgeSourceCacheDir, repo);
-  }
-
-  if (fs.existsSync(path.join(bridgeSourceCacheDir, 'src', 'evaos_desktop_bridge', 'cli.py'))) {
-    return bridgeSourceCacheDir;
-  }
-
   throw new Error(
     [
-      'evaos-desktop-bridge source was not found.',
-      'Set EVAOS_DESKTOP_BRIDGE_SOURCE_DIR to a checkout that contains src/evaos_desktop_bridge/cli.py,',
-      'or set EVAOS_DESKTOP_BRIDGE_SOURCE_REPO/EVAOS_DESKTOP_BRIDGE_SOURCE_REF to a reachable bridge source.',
+      'The evaOS-GUI-owned Workbench bridge source is missing.',
+      `Expected src/evaos_desktop_bridge/cli.py under ${vendoredBridgeSourceDir}.`,
+      'Release builds do not fetch the deprecated external bridge repository.',
     ].join(' ')
   );
-}
-
-function repoWithToken(repo) {
-  const token = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
-  if (!token || !repo.startsWith('https://github.com/')) {
-    return repo;
-  }
-  return repo.replace('https://github.com/', `https://x-access-token:${encodeURIComponent(token)}@github.com/`);
-}
-
-function sanitizeRepoForLog(repo) {
-  return repo.replace(/https:\/\/[^/@]+:[^/@]+@github\.com\//, 'https://github.com/');
-}
-
-function sanitizeCommandText(value, repo) {
-  return String(value || '')
-    .replaceAll(repoWithToken(repo), sanitizeRepoForLog(repo))
-    .replace(/https:\/\/x-access-token:[^/@]+@github\.com\//g, 'https://github.com/');
-}
-
-function runGit(args, cwd, repoForRedaction) {
-  try {
-    return execFileSync('git', args, {
-      cwd,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (error) {
-    const stdout = sanitizeCommandText(error.stdout, repoForRedaction).trim();
-    const stderr = sanitizeCommandText(error.stderr, repoForRedaction).trim();
-    if (stdout) console.error(stdout);
-    if (stderr) console.error(stderr);
-    error.message = sanitizeCommandText(error.message, repoForRedaction);
-    throw error;
-  }
 }
 
 function gitValue(cwd, args) {
@@ -189,6 +96,77 @@ function copyDirectory(source, target) {
     verbatimSymlinks: true,
     filter: (sourcePath) => !path.relative(source, sourcePath).split(path.sep).includes('__pycache__'),
   });
+}
+
+function directorySha256(sourceDir) {
+  const source = path.resolve(sourceDir);
+  const entries = [];
+  const pending = [source];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === '__pycache__') continue;
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (entry.isFile()) {
+        entries.push(entryPath);
+      } else {
+        throw new Error(`Vendored Workbench bridge contains an unsupported filesystem entry: ${entryPath}`);
+      }
+    }
+  }
+  const hash = crypto.createHash('sha256');
+  for (const entryPath of entries.sort()) {
+    const relativePath = path.relative(source, entryPath).split(path.sep).join('/');
+    hash.update(relativePath);
+    hash.update('\0');
+    hash.update(fs.readFileSync(entryPath));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function verifyWorkbenchBridgeIdentity(bridgePackageDir) {
+  const packageDir = path.resolve(bridgePackageDir);
+  const adapterPath = path.join(packageDir, 'adapters', 'customer_mac.py');
+  const adapter = fs.readFileSync(adapterPath, 'utf8');
+  const requiredIdentity = [
+    'WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS Workbench.app")',
+    'WORKBENCH_PROCESS_NAME = "evaOS Workbench"',
+    '"com.evaos.workbench",',
+  ];
+  for (const requiredText of requiredIdentity) {
+    if (adapter.split(requiredText).length !== 2) {
+      throw new Error(`Vendored Workbench bridge identity is missing or ambiguous: ${requiredText}`);
+    }
+  }
+  if (adapter.includes('WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS.app")')) {
+    throw new Error('Vendored Workbench bridge still targets the legacy /Applications/evaOS.app bundle.');
+  }
+  return { sourceSha256: directorySha256(packageDir) };
+}
+
+function vendoredBridgeSourceMetadata(sourceDir = vendoredBridgeSourceDir) {
+  const resolvedSourceDir = path.resolve(sourceDir);
+  if (resolvedSourceDir !== path.resolve(vendoredBridgeSourceDir)) {
+    throw new Error('Workbench builds require the evaOS-GUI-owned vendored bridge source.');
+  }
+
+  const provenance = JSON.parse(fs.readFileSync(vendoredBridgeProvenancePath, 'utf8'));
+  if (
+    provenance.schema !== 'evaos-workbench-vendored-bridge-source/v1' ||
+    provenance.owner !== '100yenadmin/evaOS-GUI' ||
+    provenance.status !== 'vendored' ||
+    !isFullCommitSha(provenance.importedCommit)
+  ) {
+    throw new Error('Vendored Workbench bridge SOURCE.json is missing required ownership provenance.');
+  }
+
+  return {
+    ...provenance,
+    ...verifyWorkbenchBridgeIdentity(path.join(resolvedSourceDir, 'src', 'evaos_desktop_bridge')),
+  };
 }
 
 function pythonRuntimeInventoryEntries(runtimeDir) {
@@ -555,7 +533,7 @@ if [ "\${1:-}" = "--version" ] || [ "\${1:-}" = "version" ]; then
 fi
 
 echo "evaos-desktop-bridge diagnostic placeholder: ${escapeForShellDoubleQuotes(reason)}" >&2
-echo "This PR/build artifact is not valid for Mac pairing release proof. Configure EVAOS_DESKTOP_BRIDGE_SOURCE_DIR or EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN for a real release build." >&2
+echo "This PR/build artifact is not valid for Mac pairing release proof. Restore the evaOS-GUI-owned vendored Workbench bridge source." >&2
 exit 78
 `
   );
@@ -574,10 +552,19 @@ function writeManifest(manifest) {
   fs.writeFileSync(path.join(bridgeResourceDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-function bridgeManifest({ sourcePath, sourceCommit, sourceBranch, placeholder, placeholderReason, bundledTools }) {
+function bridgeManifest({
+  requestedSourceRef,
+  sourcePath,
+  sourceCommit,
+  sourceBranch,
+  sourceProvenance,
+  placeholder,
+  placeholderReason,
+  bundledTools,
+}) {
   const manifest = {
     schema: 'evaos-desktop-bridge-resource/v1',
-    requestedSourceRef: selectedBridgeSourceRef(),
+    requestedSourceRef: selectedBridgeSourceRef(requestedSourceRef || sourceCommit),
     sourcePath,
     sourceCommit,
     sourceBranch,
@@ -589,6 +576,9 @@ function bridgeManifest({ sourcePath, sourceCommit, sourceBranch, placeholder, p
   }
   if (placeholderReason !== undefined) {
     manifest.placeholderReason = placeholderReason;
+  }
+  if (sourceProvenance !== undefined) {
+    manifest.sourceProvenance = sourceProvenance;
   }
   return manifest;
 }
@@ -662,7 +652,10 @@ function preparePlaceholderBridgeResource(error) {
     throw error;
   }
 
-  const reason = sanitizeCommandText(error?.message || 'bridge source unavailable', defaultBridgeSourceRepo);
+  const reason = String(error?.message || 'bridge source unavailable').replace(
+    /https:\/\/x-access-token:[^/@]+@github\.com\//g,
+    'https://github.com/'
+  );
   console.warn('::warning::Using evaOS desktop bridge diagnostic placeholder for non-release build smoke.');
   fs.rmSync(bridgeResourceDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(bridgeResourceDir, 'bin'), { recursive: true });
@@ -705,6 +698,17 @@ function main() {
   const bridgePackageTarget = path.join(bridgeResourceDir, 'src', 'evaos_desktop_bridge');
   const bridgeBinDir = path.join(bridgeResourceDir, 'bin');
 
+  const sourceProvenance = vendoredBridgeSourceMetadata(bridgeSourceDir);
+  const sourceRepositoryRoot =
+    path.resolve(bridgeSourceDir) === path.resolve(vendoredBridgeSourceDir) ? projectRoot : bridgeSourceDir;
+  const sourceCommit = gitValue(sourceRepositoryRoot, ['rev-parse', 'HEAD']);
+  const requestedSourceRef = selectedBridgeSourceRef(sourceCommit);
+  if (shouldRequireRealBridge() && (!isFullCommitSha(sourceCommit) || requestedSourceRef !== sourceCommit)) {
+    throw new Error(
+      'Release builds require the vendored Workbench bridge manifest to match the exact evaOS-GUI commit.'
+    );
+  }
+
   fs.rmSync(bridgeResourceDir, { recursive: true, force: true });
   fs.mkdirSync(bridgeBinDir, { recursive: true });
   copyDirectory(bridgePackageSource, bridgePackageTarget);
@@ -734,9 +738,14 @@ function main() {
   if (pythonRuntime) bundledTools.python = pythonRuntime;
 
   const manifest = bridgeManifest({
-    sourcePath: bridgeSourceDir,
-    sourceCommit: gitValue(bridgeSourceDir, ['rev-parse', 'HEAD']),
-    sourceBranch: gitValue(bridgeSourceDir, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    requestedSourceRef,
+    sourcePath:
+      path.resolve(bridgeSourceDir) === path.resolve(vendoredBridgeSourceDir)
+        ? path.relative(projectRoot, bridgeSourceDir).split(path.sep).join('/')
+        : bridgeSourceDir,
+    sourceCommit,
+    sourceBranch: gitValue(sourceRepositoryRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    sourceProvenance,
     placeholder: false,
     bundledTools,
   });
@@ -759,8 +768,9 @@ module.exports = {
   peekabooBundleMetadata,
   peekabooIdentity,
   resolveBridgeSourceDir,
-  shouldCloneBridgeRefAsBranch,
   sourceCandidates,
+  vendoredBridgeSourceMetadata,
   verifyPythonRuntimeInventory,
+  verifyWorkbenchBridgeIdentity,
   writePythonRuntimeInventory,
 };

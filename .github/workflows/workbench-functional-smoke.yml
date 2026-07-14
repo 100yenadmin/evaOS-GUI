@@ -16,11 +16,6 @@ on:
         required: false
         default: true
         type: boolean
-      bridge_ref:
-        description: evaos-desktop-bridge ref to bundle; defaults to EVAOS_DESKTOP_BRIDGE_SOURCE_REF repo variable
-        required: false
-        default: ''
-        type: string
 
 concurrency:
   group: workbench-functional-smoke-${{ github.event.inputs.ref }}
@@ -45,7 +40,6 @@ env:
   PYTHON_RUNTIME_RELEASE: '20260510'
   PYTHON_RUNTIME_ARM64_SHA256: '5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17'
   PYTHON_RUNTIME_X64_SHA256: 'cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894'
-  WORKBENCH_SMOKE_BRIDGE_REF: ${{ inputs.bridge_ref || vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
   WORKBENCH_SMOKE_REF: ${{ inputs.ref }}
 
 jobs:
@@ -70,14 +64,16 @@ jobs:
           echo "short=$SHORT" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Validate immutable bridge ref
+      - name: Bind vendored bridge to checked-out Workbench commit
         shell: bash
         run: |
           set -euo pipefail
+          WORKBENCH_SMOKE_BRIDGE_REF="${{ steps.commit.outputs.sha }}"
           if [[ ! "$WORKBENCH_SMOKE_BRIDGE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "::error::Workbench functional smoke requires a full immutable evaos-desktop-bridge commit SHA."
+            echo "::error::Workbench functional smoke requires an exact evaOS-GUI commit SHA."
             exit 1
           fi
+          echo "WORKBENCH_SMOKE_BRIDGE_REF=$WORKBENCH_SMOKE_BRIDGE_REF" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -180,9 +176,7 @@ jobs:
         shell: bash
         env:
           AIONUI_MANAGED_RESOURCES_BUNDLE: no-acp
-          EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES: '1'
           EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ env.WORKBENCH_SMOKE_BRIDGE_REF }}
-          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
         run: |
           set -euo pipefail
           echo "NODE_OPTIONS=${NODE_OPTIONS:-}"

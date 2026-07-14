@@ -11,7 +11,7 @@ const {
 } = require('./rebuildNativeModules');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 const { clearDmgRetryCompletionMarkers, markCompletedAfterPack } = require('./dmgRetryEligibility');
-const { verifyPythonRuntimeInventory } = require('./prepareEvaosDesktopBridgeResource');
+const { verifyPythonRuntimeInventory, verifyWorkbenchBridgeIdentity } = require('./prepareEvaosDesktopBridgeResource');
 
 /**
  * afterPack hook for electron-builder
@@ -378,6 +378,26 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
   }
   if (strictReleaseBridge) {
+    const expectedSourceCommit = String(
+      process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || manifest.sourceCommit || ''
+    ).trim();
+    const sourceProvenance = manifest.sourceProvenance;
+    const packagedSourceIdentity = verifyWorkbenchBridgeIdentity(
+      path.join(resourcesDir, 'Bridge', 'src', 'evaos_desktop_bridge')
+    );
+    if (
+      !/^[0-9a-f]{40}$/i.test(expectedSourceCommit) ||
+      manifest.sourceCommit !== expectedSourceCommit ||
+      manifest.requestedSourceRef !== expectedSourceCommit ||
+      manifest.sourcePath !== 'resources/evaos-beta/bridge' ||
+      sourceProvenance?.schema !== 'evaos-workbench-vendored-bridge-source/v1' ||
+      sourceProvenance?.owner !== '100yenadmin/evaOS-GUI' ||
+      sourceProvenance?.status !== 'vendored' ||
+      !/^[0-9a-f]{40}$/i.test(String(sourceProvenance?.importedCommit || '')) ||
+      sourceProvenance?.sourceSha256 !== packagedSourceIdentity.sourceSha256
+    ) {
+      throw new Error('Packaged evaOS desktop bridge is not bound to the exact evaOS-GUI-owned source.');
+    }
     if (!targetArch || !PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH[targetArch]) {
       throw new Error('Packaged evaOS desktop bridge target architecture is required for strict release validation.');
     }

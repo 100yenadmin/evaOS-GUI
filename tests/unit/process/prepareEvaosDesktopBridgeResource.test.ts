@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -31,9 +32,11 @@ type PythonRuntimeMetadata = {
 
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   bridgeManifest: (input: {
+    requestedSourceRef?: string;
     sourcePath: string;
     sourceCommit?: string;
     sourceBranch?: string;
+    sourceProvenance?: Record<string, unknown>;
     placeholder: boolean;
     placeholderReason?: string;
     bundledTools?: {
@@ -70,8 +73,8 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     resourceDir?: string
   ) => { peekaboo: Record<string, string> } | undefined;
   peekabooIdentity: (filePath: string, execute?: PeekabooVersionRunner) => { version: string; sourceSha256: string };
-  shouldCloneBridgeRefAsBranch: (ref: string) => boolean;
   sourceCandidates: () => string[];
+  vendoredBridgeSourceMetadata: (sourceDir?: string) => Record<string, unknown>;
 };
 const { copyDir } = require('builder-util/out/fs') as {
   copyDir: (source: string, destination: string) => Promise<void>;
@@ -275,7 +278,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     }
   });
 
-  it('does not use local mutable bridge checkouts when a source ref is pinned', () => {
+  it('uses the evaOS-GUI-owned vendored bridge despite deprecated source overrides', () => {
     const previousSourceDir = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR;
     const previousSourceRef = process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF;
     const previousDisableDefault = process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES;
@@ -285,16 +288,73 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       delete process.env.EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES;
       process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF = '8cdc02cee0f1e5d53ae430a942848c721762b00a';
 
-      expect(bridgeResource.sourceCandidates()).toEqual([]);
+      expect(bridgeResource.sourceCandidates()).toEqual([join(process.cwd(), 'resources', 'evaos-beta', 'bridge')]);
 
-      process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR = '/Volumes/LEXAR/repos/evaos-desktop-bridge';
+      process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_DIR = '/tmp/development-bridge';
 
-      expect(bridgeResource.sourceCandidates()).toEqual(['/Volumes/LEXAR/repos/evaos-desktop-bridge']);
+      expect(bridgeResource.sourceCandidates()).toEqual([join(process.cwd(), 'resources', 'evaos-beta', 'bridge')]);
     } finally {
       restoreEnv('EVAOS_DESKTOP_BRIDGE_SOURCE_DIR', previousSourceDir);
       restoreEnv('EVAOS_DESKTOP_BRIDGE_SOURCE_REF', previousSourceRef);
       restoreEnv('EVAOS_DESKTOP_BRIDGE_DISABLE_DEFAULT_CANDIDATES', previousDisableDefault);
     }
+  });
+
+  it('records owned bridge provenance and the current Workbench focus identity', () => {
+    const metadata = bridgeResource.vendoredBridgeSourceMetadata();
+    const adapter = readFileSync(
+      join(
+        process.cwd(),
+        'resources',
+        'evaos-beta',
+        'bridge',
+        'src',
+        'evaos_desktop_bridge',
+        'adapters',
+        'customer_mac.py'
+      ),
+      'utf8'
+    );
+
+    expect(metadata).toMatchObject({
+      schema: 'evaos-workbench-vendored-bridge-source/v1',
+      owner: '100yenadmin/evaOS-GUI',
+      status: 'vendored',
+      importedCommit: '9e3b7332a88fbdea22291923bfd10dd37494d92d',
+    });
+    expect(metadata.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(adapter).toContain('WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS Workbench.app")');
+    expect(adapter).not.toContain('WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS.app")');
+  });
+
+  it('routes current and legacy aliases only to the current Workbench app', () => {
+    const sourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+    const script = [
+      'from pathlib import Path',
+      'from tempfile import TemporaryDirectory',
+      'from evaos_desktop_bridge.adapters.customer_mac import CustomerMacObserver',
+      'with TemporaryDirectory() as state:',
+      '    observer = CustomerMacObserver(state_dir=Path(state), platform_name="Darwin")',
+      '    for alias in ("EvaDesktop", "evaOS", "evaOS Workbench", "com.evaos.workbench"):',
+      '        result = observer.app_focus(app_name=alias, dry_run=True)',
+      '        assert result.ok, (alias, result.errors)',
+      '        assert result.data["app_path"] == "/Applications/evaOS Workbench.app", (alias, result.data)',
+      '        assert result.data["process_name"] == "evaOS Workbench", (alias, result.data)',
+      'print("ok")',
+    ].join('\n');
+
+    expect(
+      execFileSync('python3', ['-B', '-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: sourceDir },
+      }).trim()
+    ).toBe('ok');
+  });
+
+  it('rejects an external bridge source in every build mode', () => {
+    expect(() => bridgeResource.vendoredBridgeSourceMetadata('/tmp/external-bridge')).toThrow(
+      /evaOS-GUI-owned vendored bridge source/
+    );
   });
 
   it('records the requested bridge source ref in packaged resource manifests', () => {
@@ -357,11 +417,6 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       },
     });
     expect(JSON.stringify(manifest)).not.toContain('/opt/homebrew');
-  });
-
-  it('does not try to clone a full bridge commit SHA as a branch name', () => {
-    expect(bridgeResource.shouldCloneBridgeRefAsBranch('60f7e87aa373fbae5ac91b8e6c50b86cfe5e064b')).toBe(false);
-    expect(bridgeResource.shouldCloneBridgeRefAsBranch('evaos-workbench-v0.6.27')).toBe(true);
   });
 
   it('derives the bundled Peekaboo version and digest from the copied executable', () => {

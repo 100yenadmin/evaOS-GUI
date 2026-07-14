@@ -492,7 +492,6 @@ jobs:
           CI: true
           GH_TOKEN: ${{ github.token }}
           EVAOS_DESKTOP_BRIDGE_ALLOW_PLACEHOLDER: '1'
-          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || github.token }}
 
       - name: Verify build artifacts exist
         shell: bash
