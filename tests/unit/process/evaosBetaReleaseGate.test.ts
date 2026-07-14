@@ -764,7 +764,9 @@ describe('evaOS beta release gate', () => {
     const missingNoBytecodeProbe = workflow
       .replace(
         `"$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`,
-        `"$BRIDGE_PYTHON" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`
+        `"$BRIDGE_PYTHON" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
+          `          # "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
+          `          printf '%s\\n' 'env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c import ApplicationServices, Cocoa, CoreText, Quartz'`
       )
       .concat(
         `\n# "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
@@ -1430,6 +1432,10 @@ describe('evaOS beta release gate', () => {
       ...workflows,
       distribute: workflows.distribute
         .replace("github.ref_type == 'branch' &&", 'true &&')
+        .replace(
+          '    if: |',
+          `    env:\n      BRANCH_GUARD_DECOY: "github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)"\n    if: |`
+        )
         .concat(
           "\n# github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)\n"
         ),
@@ -1437,6 +1443,51 @@ describe('evaOS beta release gate', () => {
     expect(releaseGate.collectPublicationWorkflowIssues(missingRefGuard)).toContain(
       '.github/workflows/release-distribute.yml: jobs.distribute must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH'
     );
+
+    const publicationJobs = [
+      { workflowKey: 'buildRelease' as const, jobName: 'create-tag', file: '.github/workflows/build-and-release.yml' },
+      { workflowKey: 'buildRelease' as const, jobName: 'release', file: '.github/workflows/build-and-release.yml' },
+      {
+        workflowKey: 'buildRelease' as const,
+        jobName: 'register-local-signed-dmg-manifest',
+        file: '.github/workflows/build-and-release.yml',
+      },
+      { workflowKey: 'distribute' as const, jobName: 'distribute', file: '.github/workflows/release-distribute.yml' },
+    ];
+    const guards = [
+      {
+        guard: "vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'",
+        issue: (file: string, jobName: string) =>
+          `${file}: jobs.${jobName} must require vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED`,
+      },
+      {
+        guard: "github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)",
+        issue: (file: string, jobName: string) =>
+          `${file}: jobs.${jobName} must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH`,
+      },
+    ];
+    for (const { workflowKey, jobName, file } of publicationJobs) {
+      const workflow = workflows[workflowKey];
+      const start = workflow.indexOf(`  ${jobName}:`);
+      const remainder = workflow.slice(start + 1);
+      const nextJobOffset = remainder.search(/^  [A-Za-z0-9_-]+:\s*(?:#.*)?$/m);
+      const end = nextJobOffset === -1 ? workflow.length : start + 1 + nextJobOffset;
+      const jobBlock = workflow.slice(start, end);
+      expect(start).toBeGreaterThanOrEqual(0);
+      for (const { guard, issue } of guards) {
+        const driftedJob = jobBlock
+          .replace(guard, 'true')
+          .replace('    if: |', `    env:\n      AUTH_GUARD_DECOY: "${guard}"\n    if: |`)
+          .concat(`\n    # ${guard}\n`);
+        expect(driftedJob).not.toBe(jobBlock);
+        expect(
+          releaseGate.collectPublicationWorkflowIssues({
+            ...workflows,
+            [workflowKey]: workflow.slice(0, start) + driftedJob + workflow.slice(end),
+          })
+        ).toContain(issue(file, jobName));
+      }
+    }
   });
 
   it('binds the live-canary audit to the exact distribute job named step and executable data flow', () => {
@@ -1471,6 +1522,26 @@ describe('evaOS beta release gate', () => {
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
     );
     expect(issues).toContain(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
+    );
+
+    const driftedWithInlineComments = workflow
+      .replace(
+        '          MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")',
+        `          MAC_CONTROL_PROOF_REQUIRED=false\n` +
+          `          # MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")\n` +
+          `          echo 'MAC_CONTROL_PROOF_REQUIRED=$(node scripts/evaosBetaReleaseGate.js requires-mac-control-proof "$TAG")'`
+      )
+      .replace(
+        '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
+        `          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: decoy\n` +
+          `          # EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}`
+      );
+    const inlineCommentIssues = releaseGate.collectReleaseDistributeWorkflowIssues(driftedWithInlineComments);
+    expect(inlineCommentIssues).toContain(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof must derive the version-bounded Mac-control requirement in its executable run block'
+    );
+    expect(inlineCommentIssues).toContain(
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
     );
   });
