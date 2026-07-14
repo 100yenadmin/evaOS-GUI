@@ -95,4 +95,49 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).not.toContain('printenv');
     expect(workflow).not.toContain('set -x');
   });
+
+  it('runs the selected-binding Mac-control lane only with exact acknowledgement, dedicated secrets, and unconditional session cleanup', () => {
+    const workflow = readWorkflow();
+
+    expect(workflow).toContain('run_mac_control_canary:');
+    expect(workflow).toContain('mac_control_canary_ack:');
+    expect(workflow).toContain('evaos-mac-control-canary');
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL }}'
+    );
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID }}'
+    );
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT }}'
+    );
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST }}'
+    );
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL }}'
+    );
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY }}'
+    );
+    expect(workflow).not.toMatch(/AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_(?:URL|SERVICE_ROLE_KEY):[^\n]*\|\|/);
+    expect(workflow).not.toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID ||'
+    );
+    expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision-mac-control');
+    expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js --mac-control');
+    expect(workflow).toContain('> "$PROOF_DIR/mac-control-runtime.json"');
+    expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control');
+    expect(workflow).toMatch(
+      /- name: Cleanup Mac-control canary session[\s\S]*if: always\(\)[\s\S]*cleanup-mac-control/
+    );
+    expect(workflow).toContain('mac-control-runtime.json');
+    expect(workflow).toContain('secret/redaction scan');
+    expect(workflow).toMatch(/- name: Run Mac-control proof secret\/redaction scan\n\s+id: mac-control-proof-scan/);
+    expect(workflow).toContain("cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1'");
+    expect(workflow).toContain('cleanupProof.sessionRevoked !== true');
+    expect(workflow).toContain(
+      "if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-proof-scan.outcome == 'success')"
+    );
+  });
 });

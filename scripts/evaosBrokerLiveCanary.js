@@ -8,6 +8,35 @@ const REQUIRED_BROKER_SURFACES = Object.freeze([
   Object.freeze({ surface: 'shared-browser', runtime: 'browser' }),
   Object.freeze({ surface: 'terminal', runtime: 'terminal' }),
 ]);
+const MAC_CONTROL_CANARY_ACK = 'evaos-mac-control-canary';
+const MAC_CONTROL_RUNTIME = 'openclaw';
+const MAC_CONTROL_REQUIRED_CAPABILITY_GROUPS = Object.freeze([
+  Object.freeze(['customer_mac_status']),
+  Object.freeze(['customer_mac_snapshot', 'desktop_see']),
+  Object.freeze(['customer_mac_ax_tree', 'desktop_control', 'desktop_control_status']),
+]);
+const MAC_CONTROL_SAFE_REASON_CODES = new Set([
+  'acl_stale',
+  'binding_ambiguous',
+  'binding_authority_unavailable',
+  'binding_expired',
+  'binding_missing',
+  'binding_replay_conflict',
+  'callback_rejected',
+  'connector_secret_missing',
+  'device_revoked',
+  'grant_revoked',
+  'headscale_acl_stale',
+  'invalid_configuration',
+  'invalid_response',
+  'mac_connector_material_missing',
+  'mac_node_offline',
+  'mac_node_unpaired',
+  'missing_required_capability',
+  'runtime_launch_blocked',
+  'selected_customer_scope_mismatch',
+  'selected_scope_not_ready',
+]);
 
 const DENIED_RUNTIME_PATTERN =
   /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/i;
@@ -42,6 +71,15 @@ class BrokerCanaryError extends Error {
     super(message);
     this.name = 'BrokerCanaryError';
     this.proof = proof;
+  }
+}
+
+class MacControlCanaryError extends Error {
+  constructor(message, proof, reason = 'invalid_response') {
+    super(message);
+    this.name = 'MacControlCanaryError';
+    this.proof = proof;
+    this.reason = reason;
   }
 }
 
@@ -106,6 +144,66 @@ function assertAllowedBrokerCanaryCustomerId(customerId) {
       `Live broker canary target ${customerId} is an internal support or golden VM target. Use a dedicated non-internal broker proof customer.`
     );
   }
+}
+
+function resolveMacControlCanaryConfig(env) {
+  if (envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK') !== MAC_CONTROL_CANARY_ACK) {
+    throw new Error(`Mac-control live canary requires acknowledgement ${MAC_CONTROL_CANARY_ACK}.`);
+  }
+
+  const names = [
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+  ];
+  const missing = names.filter((name) => !envText(env, name));
+  if (missing.length > 0) {
+    throw new Error(`Missing dedicated Mac-control canary configuration: ${missing.join(', ')}.`);
+  }
+
+  const customerId = envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID');
+  assertAllowedBrokerCanaryCustomerId(customerId);
+  const endpoint = envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT');
+  let endpointUrl;
+  try {
+    endpointUrl = new URL(endpoint);
+  } catch {
+    throw new Error('Dedicated Mac-control canary endpoint must be an absolute HTTPS URL.');
+  }
+  if (endpointUrl.protocol !== 'https:') {
+    throw new Error('Dedicated Mac-control canary endpoint must be an absolute HTTPS URL.');
+  }
+
+  const expectedCallbackHostInput = envText(
+    env,
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST'
+  ).toLowerCase();
+  let expectedCallbackUrl;
+  try {
+    expectedCallbackUrl = new URL(`https://${expectedCallbackHostInput}`);
+  } catch {
+    throw new Error('Dedicated Mac-control canary callback host is invalid.');
+  }
+  if (
+    !/^[a-z0-9.-]+$/.test(expectedCallbackUrl.hostname) ||
+    expectedCallbackUrl.hostname.includes('..') ||
+    expectedCallbackUrl.username ||
+    expectedCallbackUrl.password ||
+    expectedCallbackUrl.pathname !== '/' ||
+    expectedCallbackUrl.search ||
+    expectedCallbackUrl.hash
+  ) {
+    throw new Error('Dedicated Mac-control canary callback host is invalid.');
+  }
+  const expectedCallbackHost = expectedCallbackUrl.host.toLowerCase();
+
+  return {
+    desktopSession: envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION'),
+    customerId,
+    endpoint: endpointUrl.toString(),
+    expectedCallbackHost,
+  };
 }
 
 function resolveBrokerCanaryCredentials(env) {
@@ -214,6 +312,163 @@ function runtimeLaunchRecordForSecretScan(record) {
   delete redacted.runtime_launch_url;
   delete redacted.url;
   return redacted;
+}
+
+function macControlReason(value, fallback = 'runtime_launch_blocked') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return MAC_CONTROL_SAFE_REASON_CODES.has(normalized) ? normalized : fallback;
+}
+
+function macControlFailure(reason, message, extras = {}) {
+  const error = new Error(message);
+  error.reason = macControlReason(reason, 'invalid_response');
+  Object.assign(error, extras);
+  return error;
+}
+
+function asPlainRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
+}
+
+function macControlCapabilitiesReady(capabilities) {
+  const available = new Set(
+    Array.isArray(capabilities) ? capabilities.filter((value) => typeof value === 'string') : []
+  );
+  return MAC_CONTROL_REQUIRED_CAPABILITY_GROUPS.every((group) => group.some((capability) => available.has(capability)));
+}
+
+function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.now()) {
+  const record = runtimeRecord(raw);
+  assertNoSecretMaterial(runtimeLaunchRecordForSecretScan(record));
+
+  if (safeText(record.customer_id ?? record.customerId) !== request.customerId) {
+    throw macControlFailure('selected_customer_scope_mismatch', 'Mac-control launch customer mismatch.');
+  }
+  if (safeText(record.runtime_key ?? record.runtimeKey ?? record.runtime) !== request.runtime) {
+    throw macControlFailure('invalid_response', 'Mac-control launch runtime mismatch.');
+  }
+  if (safeText(record.status) !== 'attached') {
+    throw macControlFailure(record.code ?? record.error_code ?? record.error, 'Mac-control launch was not attached.');
+  }
+  if (safeText(record.launch_mode ?? record.launchMode) !== 'mac_control_tools') {
+    throw macControlFailure('invalid_response', 'Mac-control launch mode mismatch.');
+  }
+
+  const selected = asPlainRecord(record.mac_control ?? record.macControl);
+  const runtimeStatus = asPlainRecord(record.runtime_status ?? record.runtimeStatus);
+  const selectedFromStatus = asPlainRecord(runtimeStatus?.mac_control ?? runtimeStatus?.macControl);
+  if (!selected || !selectedFromStatus) {
+    throw macControlFailure('binding_missing', 'Mac-control launch omitted selected-binding readiness.');
+  }
+  if (
+    selected.schema_version !== 'evaos.mac_control_runtime_readiness.v1' ||
+    selected.required !== true ||
+    selected.customer_id !== request.customerId ||
+    selected.runtime !== request.runtime
+  ) {
+    throw macControlFailure('invalid_response', 'Mac-control selected-binding readiness schema mismatch.');
+  }
+  if (selectedFromStatus.customer_id !== request.customerId || selectedFromStatus.runtime !== request.runtime) {
+    throw macControlFailure(
+      'selected_customer_scope_mismatch',
+      'Mac-control runtime-status binding customer scope mismatch.'
+    );
+  }
+  if (
+    selectedFromStatus.schema_version !== 'evaos.mac_control_runtime_readiness.v1' ||
+    selectedFromStatus.required !== true
+  ) {
+    throw macControlFailure('invalid_response', 'Mac-control runtime-status binding readiness schema mismatch.');
+  }
+  if (selected.tools_ready !== true || runtimeStatus?.tools_ready !== true || selectedFromStatus.tools_ready !== true) {
+    throw macControlFailure('selected_scope_not_ready', 'Mac-control selected binding is not tools-ready.');
+  }
+  if (selected.grant_state !== 'active' || selectedFromStatus.grant_state !== 'active') {
+    throw macControlFailure(
+      selected.grant_state === 'revoked' ? 'grant_revoked' : 'selected_scope_not_ready',
+      'Mac-control selected grant is not active.'
+    );
+  }
+  if (!macControlCapabilitiesReady(selected.allowed_capabilities)) {
+    throw macControlFailure(
+      'missing_required_capability',
+      'Mac-control selected binding is missing a required capability group.'
+    );
+  }
+
+  const bindingId = safeText(selected.binding_id);
+  const nestedBindingId = safeText(selectedFromStatus.binding_id);
+  if (!bindingId || !nestedBindingId) {
+    throw macControlFailure('binding_missing', 'Mac-control selected binding ID is missing.');
+  }
+  if (bindingId !== nestedBindingId) {
+    throw macControlFailure('binding_replay_conflict', 'Mac-control selected binding ID mismatch.');
+  }
+  const bindingVersion = safeText(selected.binding_version);
+  const nestedBindingVersion = safeText(selectedFromStatus.binding_version);
+  if (!bindingVersion || !nestedBindingVersion) {
+    throw macControlFailure('binding_missing', 'Mac-control selected binding version is missing.');
+  }
+  if (bindingVersion !== nestedBindingVersion) {
+    throw macControlFailure('binding_replay_conflict', 'Mac-control selected binding version mismatch.');
+  }
+  const bindingExpiresAt = safeText(selected.binding_expires_at);
+  const nestedBindingExpiresAt = safeText(selectedFromStatus.binding_expires_at);
+  if (!bindingExpiresAt || !nestedBindingExpiresAt) {
+    throw macControlFailure('binding_missing', 'Mac-control selected binding expiry is missing.');
+  }
+  if (bindingExpiresAt !== nestedBindingExpiresAt) {
+    throw macControlFailure('binding_replay_conflict', 'Mac-control selected binding expiry mismatch.');
+  }
+  const bindingExpiry = Date.parse(bindingExpiresAt);
+  if (!Number.isFinite(bindingExpiry) || bindingExpiry <= now) {
+    throw macControlFailure('binding_expired', 'Mac-control selected binding is expired.');
+  }
+
+  const launchUrlText = record.launch_url ?? record.runtime_launch_url ?? record.url;
+  let launchUrl;
+  try {
+    launchUrl = new URL(String(launchUrlText || ''));
+  } catch {
+    throw macControlFailure('invalid_response', 'Mac-control launch target is invalid.');
+  }
+  if (
+    launchUrl.protocol !== 'https:' ||
+    launchUrl.host.toLowerCase() !== request.expectedCallbackHost ||
+    launchUrl.pathname !== '/auth/callback' ||
+    launchUrl.searchParams.get('customer_id') !== request.customerId ||
+    !launchUrl.searchParams.get('session')
+  ) {
+    throw macControlFailure(
+      'invalid_response',
+      'Mac-control launch target did not match the dedicated staging callback.'
+    );
+  }
+  if (!safeText(record.source_pointer ?? record.sourcePointer) || !safeText(record.audit_id ?? record.auditId)) {
+    throw macControlFailure('invalid_response', 'Mac-control launch omitted source or audit evidence.');
+  }
+
+  return {
+    launchUrl: launchUrl.toString(),
+    assertions: {
+      attached: true,
+      toolsReady: true,
+      activeGrant: true,
+      requiredCapabilityGroups: true,
+      bindingIdPresent: true,
+      bindingIdMatched: true,
+      bindingVersionPresent: true,
+      bindingVersionMatched: true,
+      bindingExpiryPresent: true,
+      bindingExpiryMatched: true,
+      bindingExpiryValid: true,
+      expectedLaunchTarget: true,
+    },
+  };
 }
 
 function responseShapeSummary(raw) {
@@ -488,6 +743,158 @@ async function runBrokerSurfaceCanary({ env, fetchImpl, endpoint, desktopSession
   };
 }
 
+function macControlProofSource(env) {
+  const sourceHeadSha = /^[0-9a-f]{40}$/i.test(envText(env, 'GITHUB_SHA')) ? envText(env, 'GITHUB_SHA') : undefined;
+  const sourceRunId = /^\d+$/.test(envText(env, 'GITHUB_RUN_ID')) ? envText(env, 'GITHUB_RUN_ID') : undefined;
+  return {
+    ...(sourceHeadSha ? { sourceHeadSha } : {}),
+    ...(sourceRunId ? { sourceRunId } : {}),
+  };
+}
+
+function splitCombinedSetCookie(value) {
+  return String(value || '').split(/,(?=\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+=)/);
+}
+
+function responseSetCookieHeaders(headers) {
+  if (headers && typeof headers.getSetCookie === 'function') {
+    const values = headers.getSetCookie();
+    if (Array.isArray(values) && values.length > 0) return values;
+  }
+  const combined = headers?.get?.('set-cookie') || '';
+  return combined ? splitCombinedSetCookie(combined) : [];
+}
+
+function hasLiveProxySessionCookie(headers, now) {
+  for (const header of responseSetCookieHeaders(headers)) {
+    const parts = String(header)
+      .split(';')
+      .map((part) => part.trim());
+    const separator = parts[0].indexOf('=');
+    if (separator < 1 || parts[0].slice(0, separator).trim().toLowerCase() !== 'evaos_session') continue;
+    let value = parts[0].slice(separator + 1).trim();
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    if (!value || value.toLowerCase() === 'deleted') continue;
+
+    const attributes = new Map();
+    for (const part of parts.slice(1)) {
+      const index = part.indexOf('=');
+      const name = (index === -1 ? part : part.slice(0, index)).trim().toLowerCase();
+      const attributeValue = index === -1 ? '' : part.slice(index + 1).trim();
+      if (name) attributes.set(name, attributeValue);
+    }
+    if (attributes.has('max-age')) {
+      const maxAge = Number(attributes.get('max-age'));
+      if (!Number.isFinite(maxAge) || maxAge <= 0) continue;
+    }
+    if (attributes.has('expires')) {
+      const expiresAt = Date.parse(attributes.get('expires'));
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function failedMacControlProof(env, reason, extras = {}) {
+  return {
+    schema: 'evaos-mac-control-live-canary/v1',
+    ok: false,
+    runtime: MAC_CONTROL_RUNTIME,
+    launchMode: 'mac_control_tools',
+    reason: macControlReason(reason, 'invalid_response'),
+    ...macControlProofSource(env),
+    ...(Number.isInteger(extras.httpStatus) ? { httpStatus: extras.httpStatus } : {}),
+    secretScan: 'passed',
+  };
+}
+
+async function postMacControlRuntimeLaunch(fetchImpl, config) {
+  const response = await fetchImpl(config.endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.desktopSession}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'runtime_launch',
+      customer_id: config.customerId,
+      runtime: MAC_CONTROL_RUNTIME,
+      launch_mode: 'mac_control_tools',
+    }),
+  });
+
+  if (!response.ok) {
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    const record = asPlainRecord(body);
+    throw macControlFailure(
+      record?.code ?? record?.error_code ?? record?.reason,
+      'Mac-control runtime launch was blocked.',
+      {
+        httpStatus: response.status,
+      }
+    );
+  }
+  return response.json();
+}
+
+async function runMacControlLiveCanary(options = {}) {
+  const env = options.env ?? process.env;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const now = typeof options.now === 'function' ? options.now : Date.now;
+  let config;
+  try {
+    config = resolveMacControlCanaryConfig(env);
+    const raw = await postMacControlRuntimeLaunch(fetchImpl, config);
+    const launch = sanitizeMacControlRuntimeLaunchCanaryResponse(
+      raw,
+      {
+        customerId: config.customerId,
+        runtime: MAC_CONTROL_RUNTIME,
+        expectedCallbackHost: config.expectedCallbackHost,
+      },
+      now()
+    );
+    const callback = await fetchImpl(launch.launchUrl, { method: 'GET', redirect: 'manual' });
+    const callbackAccepted = callback.status === 302 && callback.headers.get('location') === '/ui/';
+    const proxySessionAccepted = hasLiveProxySessionCookie(callback.headers, now());
+    if (!callbackAccepted || !proxySessionAccepted) {
+      throw macControlFailure('callback_rejected', 'Mac-control proxy callback did not accept the staged session.', {
+        httpStatus: callback.status,
+      });
+    }
+
+    return {
+      schema: 'evaos-mac-control-live-canary/v1',
+      ok: true,
+      runtime: MAC_CONTROL_RUNTIME,
+      launchMode: 'mac_control_tools',
+      reason: 'ready',
+      httpStatus: callback.status,
+      ...macControlProofSource(env),
+      assertions: {
+        ...launch.assertions,
+        callbackAccepted: true,
+        proxySessionAccepted: true,
+      },
+      secretScan: 'passed',
+    };
+  } catch (error) {
+    if (error instanceof MacControlCanaryError) throw error;
+    const reason = macControlReason(error?.reason, config ? 'invalid_response' : 'invalid_configuration');
+    throw new MacControlCanaryError(
+      'Mac-control live canary failed.',
+      failedMacControlProof(env, reason, { httpStatus: error?.httpStatus }),
+      reason
+    );
+  }
+}
+
 async function runBrokerLiveCanary(options = {}) {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -548,13 +955,13 @@ async function runBrokerLiveCanary(options = {}) {
 }
 
 async function main() {
-  const result = await runBrokerLiveCanary();
+  const result = process.argv.includes('--mac-control') ? await runMacControlLiveCanary() : await runBrokerLiveCanary();
   console.log(JSON.stringify(result, null, 2));
 }
 
 if (require.main === module) {
   main().catch((error) => {
-    if (error instanceof BrokerCanaryError && error.proof) {
+    if ((error instanceof BrokerCanaryError || error instanceof MacControlCanaryError) && error.proof) {
       console.log(JSON.stringify(error.proof, null, 2));
     }
     console.error(error instanceof Error ? error.message : String(error));
@@ -566,9 +973,13 @@ module.exports = {
   DEFAULT_ENDPOINT,
   REQUIRED_BROKER_SURFACES,
   assertNoSecretMaterial,
+  MAC_CONTROL_CANARY_ACK,
   runBrokerLiveCanary,
+  runMacControlLiveCanary,
   sanitizeBrokerRuntimeCanaryResponse,
   sanitizeBrokerRuntimeLaunchCanaryResponse,
+  sanitizeMacControlRuntimeLaunchCanaryResponse,
   resolveBrokerCanaryCredentials,
+  resolveMacControlCanaryConfig,
   nonOkResponseShapeSummary,
 };

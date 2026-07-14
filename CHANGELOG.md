@@ -13,6 +13,18 @@
 - Removes repeated start actions after an unproven handoff or once Mac Access
   is already ready, and routes recovery through the existing status refresh.
 
+### Selected-Binding Mac-control Canary
+
+- Adds a separately acknowledged, staging-only live canary for the deployed
+  selected-binding `mac_control_tools` launch and ws-proxy callback path while
+  leaving the ordinary `dashboard_surface` canary behavior unchanged.
+- Uses dedicated staging configuration and one short-lived desktop session;
+  cleanup revokes only that temporary session, and proof artifacts omit private
+  customer, binding, endpoint, callback, cookie, and credential material.
+- Requires the next release proof packet to contain exactly one successful
+  same-head Mac-control canary result with all binding, capability, launch, and
+  proxy-session assertions true.
+
 ### Release Boundary
 
 - This entry identifies candidate source only. Signed, notarized, stapled,

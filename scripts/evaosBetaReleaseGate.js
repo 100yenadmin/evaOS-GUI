@@ -83,6 +83,8 @@ const MACOS_UPDATE_MINIMUM_SYSTEM_VERSION = '24.0.0';
 const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME = 'business-browser.json';
+const MAC_CONTROL_LIVE_CANARY_PROOF_NAME = 'mac-control-runtime.json';
+const MAC_CONTROL_CLEANUP_PROOF_NAME = 'mac-control-session-cleanup.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
 const RELEASE_PROVENANCE_GITHUB_WORKFLOW = 'github-release-workflow';
 const RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK = 'local-signed-dmg-fallback';
@@ -215,6 +217,22 @@ const LIVE_CANARY_SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._-]{8,}\b/i,
   /[?&#](?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|api[_-]?key|service[_-]?role|token|secret|password|credential)=/i,
 ];
+const MAC_CONTROL_LIVE_CANARY_ASSERTIONS = Object.freeze([
+  'attached',
+  'toolsReady',
+  'activeGrant',
+  'requiredCapabilityGroups',
+  'bindingIdPresent',
+  'bindingIdMatched',
+  'bindingVersionPresent',
+  'bindingVersionMatched',
+  'bindingExpiryPresent',
+  'bindingExpiryMatched',
+  'bindingExpiryValid',
+  'expectedLaunchTarget',
+  'callbackAccepted',
+  'proxySessionAccepted',
+]);
 
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
@@ -771,6 +789,34 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     distribute,
+    'mac-control-runtime.json',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'selected-binding Mac-control proof artifact'
+  );
+  requireText(
+    distribute,
+    "EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF: 'true'",
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'required Mac-control release proof gate'
+  );
+  requireText(
+    distribute,
+    'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'Mac-control proof source-head binding'
+  );
+  requireText(
+    distribute,
+    'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'Mac-control proof source-run binding'
+  );
+  requireText(
+    distribute,
     'EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID',
     '.github/workflows/release-distribute.yml',
     issues,
@@ -810,6 +856,13 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     '.github/workflows/release-distribute.yml',
     issues,
     'live canary follow-up disposition marker'
+  );
+  requireText(
+    distribute,
+    'Run Mac-control canary: true',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'required Mac-control canary disposition marker'
   );
   requireText(
     distribute,
@@ -2301,6 +2354,108 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
     verifyBusinessBrowserLiveCanaryProof(proofDir, proofCustomerId, options);
   }
 
+  if (normalizeBoolean(env.EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF)) {
+    verifyMacControlLiveCanaryProof(proofDir, env);
+  }
+
+  return true;
+}
+
+function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
+  const proofPath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_LIVE_CANARY_PROOF_NAME,
+    'Mac-control live canary proof'
+  );
+  const proof = readManifestFile(proofPath);
+  assertLiveCanaryPlainObject(proof, 'Mac-control live canary proof');
+
+  const allowedTopLevelFields = new Set([
+    'schema',
+    'ok',
+    'runtime',
+    'launchMode',
+    'reason',
+    'httpStatus',
+    'sourceHeadSha',
+    'sourceRunId',
+    'assertions',
+    'secretScan',
+  ]);
+  for (const field of Object.keys(proof)) {
+    if (!allowedTopLevelFields.has(field)) {
+      throw new Error(`Mac-control live canary proof contains forbidden field: ${field}.`);
+    }
+  }
+  assertLiveCanaryNoSecretMaterial(proof, 'macControl');
+
+  if (proof.schema !== 'evaos-mac-control-live-canary/v1') {
+    throw new Error(`Unexpected Mac-control live canary proof schema: ${proof.schema}`);
+  }
+  if (
+    proof.ok !== true ||
+    proof.runtime !== 'openclaw' ||
+    proof.launchMode !== 'mac_control_tools' ||
+    proof.reason !== 'ready' ||
+    proof.httpStatus !== 302
+  ) {
+    throw new Error('Mac-control live canary release gate requires a successful ready proof.');
+  }
+  if (proof.secretScan !== 'passed') {
+    throw new Error('Mac-control live canary proof must pass secret scanning.');
+  }
+
+  const expectedHeadSha = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA || '').trim();
+  const expectedRunId = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID || '').trim();
+  if (!/^[0-9a-f]{40}$/i.test(expectedHeadSha)) {
+    throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA.');
+  }
+  if (!/^\d+$/.test(expectedRunId)) {
+    throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID.');
+  }
+  if (proof.sourceHeadSha !== expectedHeadSha) {
+    throw new Error('Mac-control live canary proof source head does not match the release commit.');
+  }
+  if (String(proof.sourceRunId || '') !== expectedRunId) {
+    throw new Error('Mac-control live canary proof source run does not match the selected proof run.');
+  }
+
+  assertLiveCanaryPlainObject(proof.assertions, 'Mac-control live canary assertions');
+  const assertionKeys = Object.keys(proof.assertions);
+  if (
+    assertionKeys.length !== MAC_CONTROL_LIVE_CANARY_ASSERTIONS.length ||
+    assertionKeys.some((assertion) => !MAC_CONTROL_LIVE_CANARY_ASSERTIONS.includes(assertion))
+  ) {
+    throw new Error('Mac-control live canary proof assertions do not match the required release contract.');
+  }
+  for (const assertion of MAC_CONTROL_LIVE_CANARY_ASSERTIONS) {
+    if (proof.assertions[assertion] !== true) {
+      throw new Error(`Mac-control live canary proof assertion ${assertion} must be true.`);
+    }
+  }
+
+  const cleanupPath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_CLEANUP_PROOF_NAME,
+    'Mac-control cleanup proof'
+  );
+  const cleanupProof = readManifestFile(cleanupPath);
+  assertLiveCanaryPlainObject(cleanupProof, 'Mac-control cleanup proof');
+  const allowedCleanupFields = new Set(['schema', 'sessionRevoked', 'sensitiveOutput']);
+  for (const field of Object.keys(cleanupProof)) {
+    if (!allowedCleanupFields.has(field)) {
+      throw new Error(`Mac-control cleanup proof contains forbidden field: ${field}.`);
+    }
+  }
+  assertLiveCanaryNoSecretMaterial(cleanupProof, 'macControlCleanup');
+  if (
+    cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1' ||
+    cleanupProof.sessionRevoked !== true ||
+    cleanupProof.sensitiveOutput !== 'passed'
+  ) {
+    throw new Error('Mac-control cleanup proof must prove that the temporary session was revoked.');
+  }
+
   return true;
 }
 
@@ -2606,6 +2761,7 @@ module.exports = {
   RELEASE_PROVENANCE_GITHUB_WORKFLOW,
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK,
   verifyBrokerLiveCanaryProof,
+  verifyMacControlLiveCanaryProof,
   verifyReleaseManifest,
   verifyRcProof,
   normalizeBoolean,

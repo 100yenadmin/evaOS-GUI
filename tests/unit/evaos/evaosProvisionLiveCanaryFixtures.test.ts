@@ -18,7 +18,17 @@ const provisioner = require('../../../scripts/evaosProvisionLiveCanaryFixtures.j
     options?: Record<string, unknown>
   ) => Promise<Record<string, unknown>>;
   loadCoreBrokerOptions: (env: Record<string, string>) => Record<string, unknown>;
+  loadMacControlCanaryOptions: (env: Record<string, string>) => Record<string, unknown>;
   loadOptions: (env: Record<string, string>) => Record<string, unknown>;
+  macControlCanaryEnvFromProvision: (state: Record<string, unknown>, desktopSession: string) => Record<string, string>;
+  provisionMacControlCanarySessionWithAdmin: (
+    admin: FakeMacControlCanaryAdmin,
+    options: Record<string, unknown>
+  ) => Promise<{ state: Record<string, unknown>; env: Record<string, string>; report: Record<string, unknown> }>;
+  cleanupMacControlCanarySessionWithAdmin: (
+    admin: FakeMacControlCanaryAdmin,
+    state: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
   providerCleanupReportFromState: (state: Record<string, unknown>) => Record<string, unknown>;
   providerFixtureSubjectsFromRows: (rows: ProviderRow[]) => string[];
   renderGithubEnvFile: (env: Record<string, string>) => string;
@@ -269,6 +279,50 @@ class FakeMembershipAdmin {
   }
 }
 
+class FakeMacControlCanaryAdmin {
+  inserts: Array<{ table: string; body: ProviderRow; options: Record<string, unknown> }> = [];
+  patches: Array<{ table: string; query: Record<string, string>; body: ProviderRow }> = [];
+  reads: Array<{ table: string; query: Record<string, unknown> }> = [];
+
+  async single(table: string, query: Record<string, unknown>) {
+    this.reads.push({ table, query });
+    if (table === 'profiles') return { id: 'owner-profile-id', email: 'owner@staging.invalid' };
+    if (table === 'customer_accounts') return { id: 'staging-account-id', customer_id: 'staging-mac-owner' };
+    if (table === 'customer_account_memberships') {
+      return { id: 'active-membership-id', role: 'owner', status: 'active' };
+    }
+    throw new Error(`unexpected single table ${table}`);
+  }
+
+  async insert(table: string, body: ProviderRow, options: Record<string, unknown> = {}) {
+    this.inserts.push({ table, body, options });
+    if (table !== 'desktop_app_sessions') throw new Error(`unexpected insert table ${table}`);
+    return { id: 'temporary-session-id', expires_at: body.expires_at };
+  }
+
+  async patch(table: string, query: Record<string, string>, body: ProviderRow, _options?: Record<string, unknown>) {
+    this.patches.push({ table, query, body });
+    return [
+      {
+        id: 'temporary-session-id',
+        revoked_at: String(body.revoked_at).replace(/Z$/, '+00:00'),
+      },
+    ];
+  }
+}
+
+class NoEvidenceMacControlCanaryAdmin extends FakeMacControlCanaryAdmin {
+  override async patch(
+    table: string,
+    query: Record<string, string>,
+    body: ProviderRow,
+    _options?: Record<string, unknown>
+  ) {
+    this.patches.push({ table, query, body });
+    return [];
+  }
+}
+
 function fixtureState() {
   return {
     brokerEndpoint: 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session',
@@ -417,6 +471,142 @@ describe('evaOS live canary fixture provisioner', () => {
     });
 
     expect(options.customerId).toBe('customer-under-proof');
+  });
+
+  it('requires dedicated secret-backed Mac-control owner and customer configuration without generic fallback', () => {
+    expect(() =>
+      provisioner.loadMacControlCanaryOptions({
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: 'https://dashboard-staging.example.test',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
+        AIONUI_EVAOS_FIXTURE_ADMIN_EMAIL: 'generic@staging.invalid',
+        AIONUI_EVAOS_FIXTURE_CUSTOMER_ID: 'generic-customer',
+      })
+    ).toThrow(/AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL/);
+
+    expect(() =>
+      provisioner.loadMacControlCanaryOptions({
+        SUPABASE_URL: 'https://generic-production.example.test',
+        SUPABASE_SECRET_KEY: 'generic-production-service-key',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: 'owner@staging.invalid',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+      })
+    ).toThrow(/AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL/);
+
+    expect(() =>
+      provisioner.loadMacControlCanaryOptions({
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: 'https://dashboard-staging.example.test',
+        SUPABASE_SECRET_KEY: 'generic-production-service-key',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: 'owner@staging.invalid',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+      })
+    ).toThrow(/AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY/);
+
+    const options = provisioner.loadMacControlCanaryOptions({
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: 'https://dashboard-staging.example.test',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: 'owner@staging.invalid',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_TTL_MINUTES: '10',
+    });
+
+    expect(options).toMatchObject({
+      accountEmail: 'owner@staging.invalid',
+      customerId: 'staging-mac-owner',
+      ttlMinutes: 10,
+    });
+  });
+
+  it('mints only a fresh desktop session for an existing staging Mac owner and emits sanitized proof', async () => {
+    const admin = new FakeMacControlCanaryAdmin();
+    const { state, env, report } = await provisioner.provisionMacControlCanarySessionWithAdmin(admin, {
+      accountEmail: 'owner@staging.invalid',
+      customerId: 'staging-mac-owner',
+      endpoint: 'https://dashboard-staging.example.test/runtime',
+      expectedCallbackHost: 'openclaw-staging.example.test',
+      ttlMinutes: 10,
+    });
+
+    expect(admin.reads.map((read) => read.table)).toEqual([
+      'profiles',
+      'customer_accounts',
+      'customer_account_memberships',
+    ]);
+    expect(admin.inserts).toHaveLength(1);
+    expect(admin.inserts[0]).toMatchObject({
+      table: 'desktop_app_sessions',
+      body: {
+        user_id: 'owner-profile-id',
+        email: 'owner@staging.invalid',
+        metadata: { source: 'evaos-mac-control-live-canary' },
+      },
+    });
+    expect(env).toMatchObject({
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+    });
+    expect(env.AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION).toMatch(/^eds_/);
+    expect(report).toMatchObject({
+      schema: 'evaos-mac-control-canary-session-provision/v1',
+      accountConfigured: true,
+      customerConfigured: true,
+      activeMembershipVerified: true,
+      sessionMinted: true,
+      sessionExpiryPresent: true,
+      sensitiveOutput: 'passed',
+    });
+    expect(JSON.stringify(report)).not.toMatch(
+      /owner@|staging-mac-owner|staging-account-id|owner-profile-id|temporary-session-id|eds_|example\.test/
+    );
+    expect(state).toMatchObject({ schema: 'evaos-mac-control-canary-session-state/v1' });
+    expect(JSON.stringify(state)).not.toMatch(/eds_|"raw"/);
+    expect(state).toMatchObject({
+      sessions: {
+        macControl: {
+          id: 'temporary-session-id',
+          expiresAt: expect.any(String),
+        },
+      },
+    });
+  });
+
+  it('revokes only the temporary Mac-control desktop session during unconditional cleanup', async () => {
+    const admin = new FakeMacControlCanaryAdmin();
+    const report = await provisioner.cleanupMacControlCanarySessionWithAdmin(admin, {
+      schema: 'evaos-mac-control-canary-session-state/v1',
+      sessions: { macControl: { id: 'temporary-session-id' } },
+    });
+
+    expect(admin.patches).toEqual([
+      {
+        table: 'desktop_app_sessions',
+        query: { id: 'eq.temporary-session-id', revoked_at: 'is.null' },
+        body: { revoked_at: expect.any(String), last_used_at: expect.any(String) },
+      },
+    ]);
+    expect(report).toMatchObject({
+      schema: 'evaos-mac-control-canary-session-cleanup/v1',
+      sessionRevoked: true,
+      sensitiveOutput: 'passed',
+    });
+    expect(JSON.stringify(report)).not.toContain('temporary-session-id');
+  });
+
+  it('refuses to claim cleanup when the exact temporary session row was not returned', async () => {
+    const admin = new NoEvidenceMacControlCanaryAdmin();
+
+    await expect(
+      provisioner.cleanupMacControlCanarySessionWithAdmin(admin, {
+        schema: 'evaos-mac-control-canary-session-state/v1',
+        sessions: { macControl: { id: 'temporary-session-id' } },
+      })
+    ).rejects.toThrow(/did not prove.*revoked/i);
   });
 
   it('reuses an existing active admin membership for core broker provisioning', async () => {

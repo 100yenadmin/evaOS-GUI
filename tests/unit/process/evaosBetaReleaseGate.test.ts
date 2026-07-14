@@ -23,6 +23,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK: string;
   normalizeBoolean: (value: unknown) => boolean;
   verifyBrokerLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
+  verifyMacControlLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
@@ -521,6 +522,57 @@ function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<s
   const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
   mutator(proof);
   fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+}
+
+function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
+  fs.mkdirSync(proofDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(proofDir, 'mac-control-runtime.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-mac-control-live-canary/v1',
+        ok: true,
+        runtime: 'openclaw',
+        launchMode: 'mac_control_tools',
+        reason: 'ready',
+        httpStatus: 302,
+        sourceHeadSha: 'a'.repeat(40),
+        sourceRunId: '12345',
+        assertions: {
+          attached: true,
+          toolsReady: true,
+          activeGrant: true,
+          requiredCapabilityGroups: true,
+          bindingIdPresent: true,
+          bindingIdMatched: true,
+          bindingVersionPresent: true,
+          bindingVersionMatched: true,
+          bindingExpiryPresent: true,
+          bindingExpiryMatched: true,
+          bindingExpiryValid: true,
+          expectedLaunchTarget: true,
+          callbackAccepted: true,
+          proxySessionAccepted: true,
+        },
+        secretScan: 'passed',
+        ...overrides,
+      },
+      null,
+      2
+    )}\n`
+  );
+  fs.writeFileSync(
+    path.join(proofDir, 'mac-control-session-cleanup.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-mac-control-canary-session-cleanup/v1',
+        sessionRevoked: true,
+        sensitiveOutput: 'passed',
+      },
+      null,
+      2
+    )}\n`
+  );
 }
 
 function writeProofReleaseAssetsReference(
@@ -1347,6 +1399,20 @@ describe('evaOS beta release gate', () => {
     expect(issues.filter((issue: string) => /follow-up canary disposition/i.test(issue))).toEqual([]);
   });
 
+  it('requires the distribution workflow to bind the Mac-control proof to the selected same-head run', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/release-distribute.yml'), 'utf8');
+
+    expect(workflow).toContain('mac-control-runtime.json');
+    expect(workflow).toContain('Run Mac-control canary: true');
+    expect(workflow).toContain("EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF: 'true'");
+    expect(workflow).toContain(
+      'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: ${{ steps.provenance.outputs.tag_commit }}'
+    );
+    expect(workflow).toContain(
+      'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}'
+    );
+  });
+
   it('verifies live broker-surface proof before distribution can publish', () => {
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-broker-proof-'));
     try {
@@ -1355,6 +1421,105 @@ describe('evaOS beta release gate', () => {
       expect(releaseGate.verifyBrokerLiveCanaryProof(proofDir, liveCanaryProofEnv)).toBe(true);
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires one sanitized same-head Mac-control proof when the release gate enables it', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-proof-'));
+    const releaseEnv = {
+      ...liveCanaryProofEnv,
+      EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF: 'true',
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: 'a'.repeat(40),
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    try {
+      writeBrokerLiveCanaryProof(proofDir);
+      expect(() => releaseGate.verifyBrokerLiveCanaryProof(proofDir, releaseEnv)).toThrow(/Mac-control.*proof/i);
+
+      writeMacControlLiveCanaryProof(proofDir);
+      expect(releaseGate.verifyBrokerLiveCanaryProof(proofDir, releaseEnv)).toBe(true);
+      expect(releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toBe(true);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires sanitized proof that the temporary Mac-control session was revoked', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-cleanup-proof-'));
+    const releaseEnv = {
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: 'a'.repeat(40),
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    try {
+      writeMacControlLiveCanaryProof(proofDir);
+      const cleanupPath = path.join(proofDir, 'mac-control-session-cleanup.json');
+      fs.writeFileSync(
+        cleanupPath,
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: false,
+          sensitiveOutput: 'passed',
+        })}\n`
+      );
+      expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(/cleanup.*revoked/i);
+
+      fs.rmSync(cleanupPath);
+      expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(/cleanup.*proof/i);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects failed, incomplete, unsafe, or wrong-head Mac-control release proof', () => {
+    const releaseEnv = {
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: 'a'.repeat(40),
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    const cases: Array<{ name: string; mutate: (proof: Record<string, unknown>) => void; error: RegExp }> = [
+      {
+        name: 'failed',
+        mutate: (proof) => {
+          proof.ok = false;
+          proof.reason = 'binding_missing';
+        },
+        error: /successful ready proof/,
+      },
+      {
+        name: 'incomplete',
+        mutate: (proof) => {
+          const assertions = proof.assertions as Record<string, unknown>;
+          assertions.bindingExpiryValid = false;
+        },
+        error: /bindingExpiryValid/,
+      },
+      {
+        name: 'unsafe',
+        mutate: (proof) => {
+          proof.customerId = 'private-customer';
+        },
+        error: /forbidden field|secret material/,
+      },
+      {
+        name: 'wrong-head',
+        mutate: (proof) => {
+          proof.sourceHeadSha = 'b'.repeat(40);
+        },
+        error: /source head/i,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-${testCase.name}-`));
+      try {
+        writeMacControlLiveCanaryProof(proofDir);
+        const proofPath = path.join(proofDir, 'mac-control-runtime.json');
+        const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+        testCase.mutate(proof);
+        fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+        expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(testCase.error);
+      } finally {
+        fs.rmSync(proofDir, { recursive: true, force: true });
+      }
     }
   });
 
