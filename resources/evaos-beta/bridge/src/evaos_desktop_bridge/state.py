@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -24,6 +25,7 @@ CONTROL_SESSION_LOCK_FILE = "control-session.lock"
 APPROVAL_AUDIT_MAX_AGE_SECONDS = 15 * 60
 CONTROL_MODES = {"full_access", "ask_permission"}
 TAKEOVER_WARNING_SECONDS = 10
+CONTROL_SESSION_MAX_BYTES = 64 * 1024
 _CONTROL_SESSION_PROCESS_LOCK = threading.RLock()
 _CONTROL_SESSION_LOCK_STATE = threading.local()
 
@@ -164,23 +166,94 @@ def default_control_session() -> dict[str, Any]:
     }
 
 
+def _fail_closed_control_session(*, code: str, payload: object | None = None) -> dict[str, Any]:
+    session = default_control_session()
+    if isinstance(payload, dict):
+        generation = payload.get("generation")
+        if type(generation) is int and generation >= 0:
+            session["generation"] = generation
+    session.update(
+        {
+            "active": False,
+            "kill_switch": True,
+            "state_integrity": "invalid",
+            "state_error_code": code,
+            "recovery_required": True,
+        }
+    )
+    return annotate_control_session(session)
+
+
+def _valid_optional_control_timestamp(value: object) -> bool:
+    return value is None or (
+        isinstance(value, str) and bool(value.strip()) and _parse_control_timestamp(value) is not None
+    )
+
+
+def _valid_control_session_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if type(payload.get("active")) is not bool or type(payload.get("kill_switch")) is not bool:
+        return False
+    generation = payload.get("generation")
+    if type(generation) is not int or generation < 0:
+        return False
+    if payload.get("mode") not in CONTROL_MODES:
+        return False
+    agent_label = payload.get("agent_label")
+    if agent_label is not None and (not isinstance(agent_label, str) or len(agent_label) > 160):
+        return False
+    for field in ("started_at", "stopped_at", "takeover_warning_started_at", "takeover_warning_until"):
+        if not _valid_optional_control_timestamp(payload.get(field)):
+            return False
+    warning_started = payload.get("takeover_warning_started_at")
+    warning_until = payload.get("takeover_warning_until")
+    if (warning_started is None) != (warning_until is None):
+        return False
+    if isinstance(warning_started, str) and isinstance(warning_until, str):
+        parsed_started = _parse_control_timestamp(warning_started)
+        parsed_until = _parse_control_timestamp(warning_until)
+        if parsed_started is None or parsed_until is None or parsed_until < parsed_started:
+            return False
+    warning_seconds = payload.get("takeover_warning_seconds")
+    if type(warning_seconds) is not int or warning_seconds <= 0:
+        return False
+    if not isinstance(payload.get("takeover_alert_signal_status"), dict):
+        return False
+    return True
+
+
 def _read_control_session_unlocked(state_dir: Path | None = None) -> dict[str, Any]:
     path = control_session_path(state_dir)
-    if not path.exists():
-        return annotate_control_session(default_control_session())
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
         return annotate_control_session(default_control_session())
-    if not isinstance(payload, dict):
-        return annotate_control_session(default_control_session())
+    except OSError:
+        return _fail_closed_control_session(code="control_session_state_unreadable")
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return _fail_closed_control_session(code="control_session_state_invalid")
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            descriptor = None
+            raw = handle.read(CONTROL_SESSION_MAX_BYTES + 1)
+    except (OSError, UnicodeError):
+        return _fail_closed_control_session(code="control_session_state_unreadable")
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if len(raw.encode("utf-8")) > CONTROL_SESSION_MAX_BYTES:
+        return _fail_closed_control_session(code="control_session_state_invalid")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return _fail_closed_control_session(code="control_session_state_invalid")
+    if not _valid_control_session_payload(payload):
+        return _fail_closed_control_session(code="control_session_state_invalid", payload=payload)
     merged = default_control_session()
     merged.update(redact_value(payload))
-    if merged.get("mode") not in CONTROL_MODES:
-        merged["mode"] = "ask_permission"
-    merged["active"] = bool(merged.get("active"))
-    merged["kill_switch"] = bool(merged.get("kill_switch"))
-    merged["generation"] = max(0, int(merged.get("generation", 0))) if str(merged.get("generation", 0)).isdigit() else 0
     return annotate_control_session(merged)
 
 
@@ -196,10 +269,11 @@ def _write_control_session_unlocked(payload: dict[str, Any], state_dir: Path | N
     normalized.update(payload)
     normalized.pop("ready", None)
     normalized.pop("takeover_warning", None)
-    if normalized.get("mode") not in CONTROL_MODES:
-        normalized["mode"] = "ask_permission"
-    generation = normalized.get("generation", 0)
-    normalized["generation"] = generation if isinstance(generation, int) and generation >= 0 else 0
+    normalized.pop("state_integrity", None)
+    normalized.pop("state_error_code", None)
+    normalized.pop("recovery_required", None)
+    if not _valid_control_session_payload(normalized):
+        raise ValueError("Control-session state contains invalid persisted field types.")
     path = root / CONTROL_SESSION_FILE
     descriptor, temporary_name = tempfile.mkstemp(prefix=".control-session.", suffix=".tmp", dir=root)
     temporary_path = Path(temporary_name)

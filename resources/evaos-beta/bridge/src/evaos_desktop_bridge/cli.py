@@ -34,7 +34,15 @@ from .policy import PolicyError, command_metadata, ensure_allowed
 from .queue import append_queue_event, list_queue_events
 from .redaction import redact_value
 from .schema import build_envelope, make_error
-from .state import approval_audit_freshness_error, read_audit_record, read_audit_tail, read_control_session, read_latest, write_latest
+from .state import (
+    approval_audit_freshness_error,
+    control_session_transaction,
+    read_audit_record,
+    read_audit_tail,
+    read_control_session,
+    read_latest,
+    write_latest,
+)
 from .types import CommandResult
 
 LATEST_OBSERVATION_COMMANDS = frozenset(
@@ -841,9 +849,15 @@ def main(
         observer = observer_factory() if observer_factory is not None else MacOSCodexObserver(state_dir=state_dir)
         customer_mac = customer_mac_factory() if customer_mac_factory is not None else CustomerMacObserver(state_dir=state_dir)
         app_server = app_server_factory() if app_server_factory is not None else CodexAppServerObserver()
-        result = _validate_guarded_approval(command_id, args, state_dir)
-        if result.ok:
-            result = _run_command(command_id, observer, customer_mac, app_server, args)
+        if _is_generation_bound_live_action(command_id, args):
+            with control_session_transaction(state_dir):
+                result = _validate_guarded_approval(command_id, args, state_dir)
+                if result.ok:
+                    result = _run_command(command_id, observer, customer_mac, app_server, args)
+        else:
+            result = _validate_guarded_approval(command_id, args, state_dir)
+            if result.ok:
+                result = _run_command(command_id, observer, customer_mac, app_server, args)
     except PolicyError as exc:
         result = CommandResult(ok=False, errors=[exc.error])
     except Exception as exc:
@@ -902,6 +916,16 @@ def _run_bridge_argv(argv: list[str], *, state_dir: Path | None = None) -> tuple
     exit_code = main(argv, stdout=stdout, stderr=stderr, state_dir=state_dir)
     output = stdout.getvalue() or stderr.getvalue()
     return exit_code, output
+
+
+def _is_generation_bound_live_action(command_id: str, args: argparse.Namespace) -> bool:
+    generation = getattr(args, "remote_control_generation", None)
+    return (
+        command_id in CONTROLLED_LIVE_COMMANDS
+        and getattr(args, "dry_run", None) is False
+        and type(generation) is int
+        and generation >= 0
+    )
 
 
 def _short_hash(value: str) -> str:
