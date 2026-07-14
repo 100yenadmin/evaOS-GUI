@@ -15,6 +15,8 @@ const FIXTURE_PROVIDER_KEYS = ['google_workspace', 'slack', 'linear', 'notion'];
 const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
 const FIXTURE_VM_DISPLAY_NAME = 'AionUi Live Canary Support VM';
 const INTERNAL_BROKER_CANARY_CUSTOMER_IDS = new Set(['evaos-support', 'golden', 'internal', 'support', 'support-vm']);
+const MAC_CONTROL_CANARY_TARGET_SCHEMA = 'evaos.mac_control_canary_target.v1';
+const EXPLICIT_CANARY_TARGET_ID = /(^|[-_])(staging|canary|synthetic)([-_]|$)/i;
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
   /\bepg_[A-Za-z0-9_-]{8,}\b/i,
@@ -282,10 +284,22 @@ async function loadCustomerAccount(admin, customerId) {
     {
       customer_id: `eq.${customerId}`,
       merged_into_customer_account_id: 'is.null',
-      select: 'id,customer_id,display_name',
+      select: 'id,customer_id,display_name,metadata',
     },
     `customer account ${customerId}`
   );
+}
+
+function assertDatabaseBackedMacControlCanaryTarget(customerAccount) {
+  const metadata = asRecord(customerAccount?.metadata);
+  const marker = asRecord(metadata?.evaos_mac_control_canary);
+  if (
+    marker?.schema !== MAC_CONTROL_CANARY_TARGET_SCHEMA ||
+    marker?.environment !== 'staging' ||
+    marker?.enabled !== true
+  ) {
+    throw new Error('Mac-control canary target is missing the required database-backed staging canary marker.');
+  }
 }
 
 async function loadAdminMembership(admin, adminProfileId, customerAccountId) {
@@ -1019,13 +1033,42 @@ function loadMacControlCanaryOptions(env = process.env) {
   if (isInternalBrokerCanaryCustomerId(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID)) {
     throw new Error('Mac-control canary customer must be a dedicated non-internal staging target.');
   }
+  if (!EXPLICIT_CANARY_TARGET_ID.test(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID)) {
+    throw new Error('Mac-control canary customer ID must name an explicit staging, canary, or synthetic target.');
+  }
+
+  let supabaseUrl;
+  let endpointUrl;
+  try {
+    supabaseUrl = new URL(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL);
+    endpointUrl = new URL(values.AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT);
+  } catch {
+    throw new Error('Mac-control canary Supabase URL and endpoint must be absolute HTTPS URLs.');
+  }
+  if (
+    supabaseUrl.protocol !== 'https:' ||
+    endpointUrl.protocol !== 'https:' ||
+    supabaseUrl.username ||
+    supabaseUrl.password ||
+    supabaseUrl.pathname !== '/' ||
+    supabaseUrl.search ||
+    supabaseUrl.hash
+  ) {
+    throw new Error('Mac-control canary Supabase URL and endpoint must be absolute HTTPS URLs.');
+  }
+  if (supabaseUrl.origin === new URL(DEFAULT_SUPABASE_URL).origin) {
+    throw new Error('Mac-control canary refuses the production/default Supabase project.');
+  }
+  if (endpointUrl.origin !== supabaseUrl.origin) {
+    throw new Error('Mac-control canary endpoint must use the same staging origin as its Supabase project.');
+  }
 
   return {
-    supabaseUrl: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL,
+    supabaseUrl: supabaseUrl.origin,
     serviceKey: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY,
     accountEmail: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL,
     customerId: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID,
-    endpoint: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT,
+    endpoint: endpointUrl.toString(),
     expectedCallbackHost: values.AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST,
     ttlMinutes,
     statePath: optionalEnv(
@@ -1044,6 +1087,7 @@ function sanitizedMacControlCanaryProvisionReport() {
     accountConfigured: true,
     customerConfigured: true,
     activeMembershipVerified: true,
+    stagingMarkerVerified: true,
     sessionMinted: true,
     sessionExpiryPresent: true,
     sensitiveOutput: 'passed',
@@ -1055,6 +1099,7 @@ function sanitizedMacControlCanaryProvisionReport() {
 async function provisionMacControlCanarySessionWithAdmin(admin, options) {
   const ownerProfile = await loadAdminProfile(admin, options.accountEmail);
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
+  assertDatabaseBackedMacControlCanaryTarget(customerAccount);
   const membership = await loadAdminMembership(admin, ownerProfile.id, customerAccount.id);
   const desktopSession = await createDesktopSession(admin, {
     userId: ownerProfile.id,

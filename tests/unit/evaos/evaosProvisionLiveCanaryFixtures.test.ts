@@ -284,10 +284,24 @@ class FakeMacControlCanaryAdmin {
   patches: Array<{ table: string; query: Record<string, string>; body: ProviderRow }> = [];
   reads: Array<{ table: string; query: Record<string, unknown> }> = [];
 
+  constructor(
+    private readonly canaryMarker: unknown = {
+      schema: 'evaos.mac_control_canary_target.v1',
+      environment: 'staging',
+      enabled: true,
+    }
+  ) {}
+
   async single(table: string, query: Record<string, unknown>) {
     this.reads.push({ table, query });
     if (table === 'profiles') return { id: 'owner-profile-id', email: 'owner@staging.invalid' };
-    if (table === 'customer_accounts') return { id: 'staging-account-id', customer_id: 'staging-mac-owner' };
+    if (table === 'customer_accounts') {
+      return {
+        id: 'staging-account-id',
+        customer_id: 'staging-mac-owner',
+        metadata: { evaos_mac_control_canary: this.canaryMarker },
+      };
+    }
     if (table === 'customer_account_memberships') {
       return { id: 'active-membership-id', role: 'owner', status: 'active' };
     }
@@ -522,6 +536,63 @@ describe('evaOS live canary fixture provisioner', () => {
     });
   });
 
+  it('rejects production, cross-origin, or customer-like Mac-control configuration before database access', () => {
+    const baseEnv = {
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: 'https://dashboard-staging.example.test',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: 'owner@staging.invalid',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+    };
+
+    expect(() =>
+      provisioner.loadMacControlCanaryOptions({
+        ...baseEnv,
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: 'https://rhfojelkgtwcxnrfhtlj.supabase.co',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT:
+          'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session',
+      })
+    ).toThrow(/production|default/i);
+    expect(() =>
+      provisioner.loadMacControlCanaryOptions({
+        ...baseEnv,
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://different-staging.example.test/runtime',
+      })
+    ).toThrow(/same staging origin/i);
+    expect(() =>
+      provisioner.loadMacControlCanaryOptions({
+        ...baseEnv,
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'real-customer-name',
+      })
+    ).toThrow(/explicit staging, canary, or synthetic target/i);
+  });
+
+  it('requires the database-backed staging canary marker before minting a desktop session', async () => {
+    const missingMarkerAdmin = new FakeMacControlCanaryAdmin(null);
+    const productionMarkerAdmin = new FakeMacControlCanaryAdmin({
+      schema: 'evaos.mac_control_canary_target.v1',
+      environment: 'production',
+      enabled: true,
+    });
+    const options = {
+      accountEmail: 'owner@staging.invalid',
+      customerId: 'staging-mac-owner',
+      endpoint: 'https://dashboard-staging.example.test/runtime',
+      expectedCallbackHost: 'openclaw-staging.example.test',
+      ttlMinutes: 10,
+    };
+
+    await expect(provisioner.provisionMacControlCanarySessionWithAdmin(missingMarkerAdmin, options)).rejects.toThrow(
+      /database-backed staging canary marker/i
+    );
+    await expect(provisioner.provisionMacControlCanarySessionWithAdmin(productionMarkerAdmin, options)).rejects.toThrow(
+      /database-backed staging canary marker/i
+    );
+    expect(missingMarkerAdmin.inserts).toHaveLength(0);
+    expect(productionMarkerAdmin.inserts).toHaveLength(0);
+  });
+
   it('mints only a fresh desktop session for an existing staging Mac owner and emits sanitized proof', async () => {
     const admin = new FakeMacControlCanaryAdmin();
     const { state, env, report } = await provisioner.provisionMacControlCanarySessionWithAdmin(admin, {
@@ -557,6 +628,7 @@ describe('evaOS live canary fixture provisioner', () => {
       accountConfigured: true,
       customerConfigured: true,
       activeMembershipVerified: true,
+      stagingMarkerVerified: true,
       sessionMinted: true,
       sessionExpiryPresent: true,
       sensitiveOutput: 'passed',

@@ -727,6 +727,66 @@ describe('evaOS broker live canary', () => {
     ).toThrow(/launch target/i);
   });
 
+  it('requires exactly one customer_id and one session query parameter with no extras', () => {
+    const now = Date.parse('2026-07-14T05:00:00.000Z');
+    const binding = {
+      schema_version: 'evaos.mac_control_runtime_readiness.v1',
+      required: true,
+      customer_id: 'staging-mac-owner',
+      runtime: 'openclaw',
+      grant_state: 'active',
+      tools_ready: true,
+      binding_id: '11111111-1111-4111-8111-111111111111',
+      binding_version: '7',
+      binding_expires_at: new Date(now + 20_000).toISOString(),
+      allowed_capabilities: ['customer_mac_status', 'desktop_see', 'desktop_control'],
+    };
+    const response = (launchUrl: string) => ({
+      status: 'attached',
+      customer_id: 'staging-mac-owner',
+      runtime: 'openclaw',
+      launch_mode: 'mac_control_tools',
+      launch_url: launchUrl,
+      source_pointer: 'broker:runtime_launch:openclaw',
+      audit_id: 'broker:runtime_launch:staging-mac-owner:openclaw',
+      mac_control: binding,
+      runtime_status: { tools_ready: true, mac_control: { ...binding } },
+    });
+    const request = {
+      customerId: 'staging-mac-owner',
+      runtime: 'openclaw',
+      expectedCallbackHost: 'openclaw-staging.example.test',
+    };
+
+    expect(() =>
+      liveCanary.sanitizeMacControlRuntimeLaunchCanaryResponse(
+        response(
+          'https://openclaw-staging.example.test/auth/callback?customer_id=staging-mac-owner&customer_id=staging-mac-owner&session=callback_secret_for_test'
+        ),
+        request,
+        now
+      )
+    ).toThrow(/exactly one customer_id and one session/i);
+    expect(() =>
+      liveCanary.sanitizeMacControlRuntimeLaunchCanaryResponse(
+        response(
+          'https://openclaw-staging.example.test/auth/callback?customer_id=staging-mac-owner&session=callback_secret_for_test&session=second_secret_for_test'
+        ),
+        request,
+        now
+      )
+    ).toThrow(/exactly one customer_id and one session/i);
+    expect(() =>
+      liveCanary.sanitizeMacControlRuntimeLaunchCanaryResponse(
+        response(
+          'https://openclaw-staging.example.test/auth/callback?customer_id=staging-mac-owner&session=callback_secret_for_test&access_token=credential_for_test'
+        ),
+        request,
+        now
+      )
+    ).toThrow(/secret material/i);
+  });
+
   it('fails closed when the runtime-status binding copy contradicts the selected customer scope', () => {
     const now = Date.parse('2026-07-14T05:00:00.000Z');
     const binding = {

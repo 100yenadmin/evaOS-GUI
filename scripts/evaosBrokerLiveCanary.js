@@ -314,6 +314,18 @@ function runtimeLaunchRecordForSecretScan(record) {
   return redacted;
 }
 
+function macControlLaunchUrlStructureForSecretScan(launchUrl) {
+  return {
+    protocol: launchUrl.protocol,
+    host: launchUrl.host,
+    pathname: launchUrl.pathname,
+    hash: launchUrl.hash,
+    query: [...launchUrl.searchParams.entries()].map(([key, value]) => ({
+      [key]: key === 'session' ? '[redacted]' : value,
+    })),
+  };
+}
+
 function macControlReason(value, fallback = 'runtime_launch_blocked') {
   const normalized = String(value || '')
     .trim()
@@ -436,10 +448,25 @@ function sanitizeMacControlRuntimeLaunchCanaryResponse(raw, request, now = Date.
   } catch {
     throw macControlFailure('invalid_response', 'Mac-control launch target is invalid.');
   }
+  assertNoSecretMaterial(macControlLaunchUrlStructureForSecretScan(launchUrl));
+  const launchQueryKeys = [...launchUrl.searchParams.keys()];
+  const exactQueryMultiset =
+    launchQueryKeys.length === 2 &&
+    launchUrl.searchParams.getAll('customer_id').length === 1 &&
+    launchUrl.searchParams.getAll('session').length === 1;
+  if (!exactQueryMultiset) {
+    throw macControlFailure(
+      'invalid_response',
+      'Mac-control launch target requires exactly one customer_id and one session query parameter.'
+    );
+  }
   if (
     launchUrl.protocol !== 'https:' ||
     launchUrl.host.toLowerCase() !== request.expectedCallbackHost ||
     launchUrl.pathname !== '/auth/callback' ||
+    launchUrl.username ||
+    launchUrl.password ||
+    launchUrl.hash ||
     launchUrl.searchParams.get('customer_id') !== request.customerId ||
     !launchUrl.searchParams.get('session')
   ) {

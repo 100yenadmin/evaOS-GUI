@@ -84,6 +84,7 @@ const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME = 'business-browser.json';
 const MAC_CONTROL_LIVE_CANARY_PROOF_NAME = 'mac-control-runtime.json';
+const MAC_CONTROL_PROVISION_PROOF_NAME = 'mac-control-session-provisioning.json';
 const MAC_CONTROL_CLEANUP_PROOF_NAME = 'mac-control-session-cleanup.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
 const RELEASE_PROVENANCE_GITHUB_WORKFLOW = 'github-release-workflow';
@@ -359,6 +360,21 @@ function betaTagVersion(tag) {
     version = version.slice(1);
   }
   return version;
+}
+
+function requiresMacControlLiveCanaryProof(tagOrVersion) {
+  const version = betaTagVersion(tagOrVersion);
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-|$)/.exec(version);
+  if (!match) {
+    throw new Error(`Could not determine release version from ${tagOrVersion}.`);
+  }
+  const candidate = match.slice(1).map(Number);
+  const minimum = [2, 1, 36];
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (candidate[index] > minimum[index]) return true;
+    if (candidate[index] < minimum[index]) return false;
+  }
+  return true;
 }
 
 function hasEvaosBetaVersionMarker(tag) {
@@ -796,10 +812,17 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
   );
   requireText(
     distribute,
-    "EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF: 'true'",
+    'requires-mac-control-proof',
     '.github/workflows/release-distribute.yml',
     issues,
-    'required Mac-control release proof gate'
+    'version-bounded Mac-control release proof gate'
+  );
+  requireText(
+    distribute,
+    'EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"',
+    '.github/workflows/release-distribute.yml',
+    issues,
+    'version-bounded Mac-control proof verifier input'
   );
   requireText(
     distribute,
@@ -2434,6 +2457,42 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
     }
   }
 
+  const provisionPath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_PROVISION_PROOF_NAME,
+    'Mac-control provisioning proof'
+  );
+  const provisionProof = readManifestFile(provisionPath);
+  assertLiveCanaryPlainObject(provisionProof, 'Mac-control provisioning proof');
+  const allowedProvisionFields = new Set([
+    'schema',
+    'accountConfigured',
+    'customerConfigured',
+    'activeMembershipVerified',
+    'stagingMarkerVerified',
+    'sessionMinted',
+    'sessionExpiryPresent',
+    'sensitiveOutput',
+  ]);
+  for (const field of Object.keys(provisionProof)) {
+    if (!allowedProvisionFields.has(field)) {
+      throw new Error(`Mac-control provisioning proof contains forbidden field: ${field}.`);
+    }
+  }
+  assertLiveCanaryNoSecretMaterial(provisionProof, 'macControlProvisioning');
+  if (
+    provisionProof.schema !== 'evaos-mac-control-canary-session-provision/v1' ||
+    provisionProof.accountConfigured !== true ||
+    provisionProof.customerConfigured !== true ||
+    provisionProof.activeMembershipVerified !== true ||
+    provisionProof.stagingMarkerVerified !== true ||
+    provisionProof.sessionMinted !== true ||
+    provisionProof.sessionExpiryPresent !== true ||
+    provisionProof.sensitiveOutput !== 'passed'
+  ) {
+    throw new Error('Mac-control provisioning proof must prove the database-backed staging marker and session mint.');
+  }
+
   const cleanupPath = requireExistingRelativeFile(
     proofDir,
     MAC_CONTROL_CLEANUP_PROOF_NAME,
@@ -2728,6 +2787,15 @@ function main() {
     return;
   }
 
+  if (command === 'requires-mac-control-proof') {
+    const tagOrVersion = process.argv[3];
+    if (!tagOrVersion) {
+      throw new Error('Usage: evaosBetaReleaseGate.js requires-mac-control-proof <tag-or-version>');
+    }
+    console.log(requiresMacControlLiveCanaryProof(tagOrVersion) ? 'true' : 'false');
+    return;
+  }
+
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -2765,5 +2833,6 @@ module.exports = {
   verifyReleaseManifest,
   verifyRcProof,
   normalizeBoolean,
+  requiresMacControlLiveCanaryProof,
   writeRcProofTemplate,
 };

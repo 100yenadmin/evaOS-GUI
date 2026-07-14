@@ -19,11 +19,15 @@
   selected-binding `mac_control_tools` launch and ws-proxy callback path while
   leaving the ordinary `dashboard_surface` canary behavior unchanged.
 - Uses dedicated staging configuration and one short-lived desktop session;
-  cleanup revokes only that temporary session, and proof artifacts omit private
-  customer, binding, endpoint, callback, cookie, and credential material.
-- Requires the next release proof packet to contain exactly one successful
-  same-head Mac-control canary result with all binding, capability, launch, and
-  proxy-session assertions true.
+  provisioning also requires an exact database-backed staging-canary marker
+  and rejects the production/default project, cross-origin endpoints, and
+  customer-like target names. Cleanup revokes only that temporary session, and
+  proof artifacts omit private customer, binding, endpoint, callback, cookie,
+  and credential material.
+- Starting with 2.1.36, requires the release proof packet to contain exactly
+  one successful same-head Mac-control canary result with all binding,
+  capability, launch, and proxy-session assertions true; historical tag retries
+  remain governed by their original proof contract.
 
 ### Release Boundary
 

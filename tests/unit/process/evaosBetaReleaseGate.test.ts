@@ -22,6 +22,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   releaseProvenanceFromEnv: (env: Record<string, string | undefined>) => unknown;
   RELEASE_PROVENANCE_LOCAL_SIGNED_DMG_FALLBACK: string;
   normalizeBoolean: (value: unknown) => boolean;
+  requiresMacControlLiveCanaryProof: (tagOrVersion: string) => boolean;
   verifyBrokerLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
   verifyMacControlLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
@@ -526,6 +527,23 @@ function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<s
 
 function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
   fs.mkdirSync(proofDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(proofDir, 'mac-control-session-provisioning.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-mac-control-canary-session-provision/v1',
+        accountConfigured: true,
+        customerConfigured: true,
+        activeMembershipVerified: true,
+        stagingMarkerVerified: true,
+        sessionMinted: true,
+        sessionExpiryPresent: true,
+        sensitiveOutput: 'passed',
+      },
+      null,
+      2
+    )}\n`
+  );
   fs.writeFileSync(
     path.join(proofDir, 'mac-control-runtime.json'),
     `${JSON.stringify(
@@ -1404,13 +1422,23 @@ describe('evaOS beta release gate', () => {
 
     expect(workflow).toContain('mac-control-runtime.json');
     expect(workflow).toContain('Run Mac-control canary: true');
-    expect(workflow).toContain("EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF: 'true'");
+    expect(workflow).toContain('requires-mac-control-proof');
+    expect(workflow).toContain('EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"');
     expect(workflow).toContain(
       'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: ${{ steps.provenance.outputs.tag_commit }}'
     );
     expect(workflow).toContain(
       'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}'
     );
+  });
+
+  it('requires Mac-control proof starting at 2.1.36 without breaking historical tag retries', () => {
+    expect(releaseGate.requiresMacControlLiveCanaryProof('evaos-beta-v2.1.35-evaos-beta')).toBe(false);
+    expect(releaseGate.requiresMacControlLiveCanaryProof('2.1.35-evaos-beta.4')).toBe(false);
+    expect(releaseGate.requiresMacControlLiveCanaryProof('evaos-beta-v2.1.36-evaos-beta')).toBe(true);
+    expect(releaseGate.requiresMacControlLiveCanaryProof('2.1.36-evaos-beta.0')).toBe(true);
+    expect(releaseGate.requiresMacControlLiveCanaryProof('evaos-beta-v2.2.0-evaos-beta')).toBe(true);
+    expect(() => releaseGate.requiresMacControlLiveCanaryProof('evaos-beta-latest')).toThrow(/version/i);
   });
 
   it('verifies live broker-surface proof before distribution can publish', () => {
@@ -1465,6 +1493,23 @@ describe('evaOS beta release gate', () => {
 
       fs.rmSync(cleanupPath);
       expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(/cleanup.*proof/i);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires sanitized proof of the database-backed staging marker', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-staging-marker-'));
+    const releaseEnv = {
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: 'a'.repeat(40),
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    try {
+      writeMacControlLiveCanaryProof(proofDir);
+      fs.rmSync(path.join(proofDir, 'mac-control-session-provisioning.json'));
+      expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(
+        /staging marker|provisioning proof/i
+      );
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
     }
