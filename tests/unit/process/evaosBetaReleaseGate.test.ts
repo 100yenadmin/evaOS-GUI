@@ -20,6 +20,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
     reusableBuild: string;
   }) => string[];
   collectReleaseDistributeWorkflowIssues: (workflow: string) => string[];
+  collectLiveCanaryVerifierBehaviorIssues: (rootDir: string) => string[];
   collectReleaseConfigIssues: (rootDir: string) => string[];
   createReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => unknown;
   isLocalSignedDmgFallbackManifest: (manifest: unknown) => boolean;
@@ -779,13 +780,110 @@ describe('evaOS beta release gate', () => {
     const unusedSafeProbe = workflow.replace(
       `          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`,
       `          never_called_probe() {\n` +
-        `            env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
+        `          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'\n` +
         `          }\n` +
-        `          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -c 'import ApplicationServices, Cocoa, CoreText, Quartz'`
+        `          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -c "import ApplicationServices, Cocoa, CoreText, Quartz"`
     );
     expect(releaseGate.collectFunctionalSmokeConfigIssues(unusedSafeProbe)).toContain(
       '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
     );
+
+    for (const skippedOrNonBlockingProbe of [
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        if: ${{ false }}\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        continue-on-error: true\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        "if": ${{ false }}\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        "      - name: Verify packaged PyObjC imports without bytecode writes\n        'continue-on-error': true\n        shell:"
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        "if" : ${{ false }}\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        continue-on-error : true\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        shell:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n        "i\\u0066": ${{ false }}\n        shell:'
+      ),
+    ]) {
+      expect(releaseGate.collectFunctionalSmokeConfigIssues(skippedOrNonBlockingProbe)).toContain(
+        '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+      );
+    }
+
+    const decoyVerifyOutput = workflow.replace(
+      '      - name: Verify functional-smoke artifact shape\n        id: verify',
+      '      - name: Decoy artifact output\n' +
+        '        id: verify\n' +
+        '        shell: bash\n' +
+        '        run: echo "app_path=/tmp/decoy.app" >> "$GITHUB_OUTPUT"\n\n' +
+        '      - name: Verify functional-smoke artifact shape\n' +
+        '        id: actual-verify'
+    );
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(decoyVerifyOutput)).toContain(
+      '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+    );
+
+    const decoyAppPathOutput = workflow.replace(
+      '          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"',
+      '          echo "app_path=/tmp/decoy.app" >> "$GITHUB_OUTPUT"'
+    );
+    expect(releaseGate.collectFunctionalSmokeConfigIssues(decoyAppPathOutput)).toContain(
+      '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+    );
+
+    for (const alteredAppPathControlFlow of [
+      workflow.replace(
+        `          APP_PATH="$(find out -type d -name '*.app' -print -quit)"`,
+        `          APP_PATH="$(find out -type d -name '*.app' -print -quit)"\n` +
+          `          printf -v APP_PATH '%s' '/tmp/decoy.app'`
+      ),
+      workflow.replace(
+        '          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"',
+        `          if false; then\n` +
+          `            echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"\n` +
+          `          fi\n` +
+          `          printf '%s=%s\\n' app_path /tmp/decoy.app >> "$GITHUB_OUTPUT"`
+      ),
+    ]) {
+      expect(releaseGate.collectFunctionalSmokeConfigIssues(alteredAppPathControlFlow)).toContain(
+        '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+      );
+    }
+
+    for (const alteredProbeEnvironmentOrShell of [
+      workflow.replace(
+        '        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}',
+        '        shell: /usr/bin/true {0}'
+      ),
+      workflow.replace(
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n' +
+          '        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}\n' +
+          '        env:\n' +
+          '          WORKBENCH_APP_PATH:',
+        '      - name: Verify packaged PyObjC imports without bytecode writes\n' +
+          '        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}\n' +
+          '        env:\n' +
+          '          BASH_ENV: /tmp/exit-zero\n' +
+          '          WORKBENCH_APP_PATH:'
+      ),
+    ]) {
+      expect(releaseGate.collectFunctionalSmokeConfigIssues(alteredProbeEnvironmentOrShell)).toContain(
+        '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
+      );
+    }
   });
 
   it('detects strict public beta release mode', () => {
@@ -1519,14 +1617,14 @@ describe('evaOS beta release gate', () => {
 
     const driftedWithDecoys = workflow
       .replace(
-        '          bash scripts/evaosValidateLiveCanaryProofRun.sh',
-        '          if false; then\n            bash scripts/evaosValidateLiveCanaryProofRun.sh\n          fi'
+        '          /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh',
+        '          if false; then\n            /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh\n          fi'
       )
       .replace(
         '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
         '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: decoy'
       ).concat(`
-# bash scripts/evaosValidateLiveCanaryProofRun.sh
+# /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh
 # EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}
   unused-decoy:
     runs-on: ubuntu-latest
@@ -1535,7 +1633,7 @@ describe('evaOS beta release gate', () => {
         env:
           EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: \${{ github.event.inputs.live_canary_proof_run_id }}
         run: |
-          bash scripts/evaosValidateLiveCanaryProofRun.sh
+          /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh
 `);
 
     const issues = releaseGate.collectReleaseDistributeWorkflowIssues(driftedWithDecoys);
@@ -1548,9 +1646,9 @@ describe('evaOS beta release gate', () => {
 
     const driftedWithInlineComments = workflow
       .replace(
-        '          bash scripts/evaosValidateLiveCanaryProofRun.sh',
-        `          # bash scripts/evaosValidateLiveCanaryProofRun.sh\n` +
-          `          echo 'bash scripts/evaosValidateLiveCanaryProofRun.sh'`
+        '          /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh',
+        `          # /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh\n` +
+          `          echo '/bin/bash scripts/evaosValidateLiveCanaryProofRun.sh'`
       )
       .replace(
         '          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}',
@@ -1565,13 +1663,161 @@ describe('evaOS beta release gate', () => {
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must bind the selected proof run id through its env block'
     );
 
+    for (const skippedOrNonBlockingProof of [
+      workflow.replace(
+        '      - name: Validate live broker surface proof\n        shell:',
+        '      - name: Validate live broker surface proof\n        if: ${{ false }}\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Validate live broker surface proof\n        shell:',
+        '      - name: Validate live broker surface proof\n        continue-on-error: true\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Validate live broker surface proof\n        shell:',
+        '      - name: Validate live broker surface proof\n        "if" : ${{ false }}\n        shell:'
+      ),
+      workflow.replace(
+        '      - name: Validate live broker surface proof\n        shell:',
+        '      - name: Validate live broker surface proof\n        "i\\u0066": ${{ false }}\n        shell:'
+      ),
+    ]) {
+      expect(releaseGate.collectReleaseDistributeWorkflowIssues(skippedOrNonBlockingProof)).toContain(
+        '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
+      );
+    }
+
+    for (const alteredProofEnvironmentOrShell of [
+      workflow.replace(
+        '        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}',
+        '        shell: /usr/bin/true {0}'
+      ),
+      workflow.replace(
+        '      - name: Validate live broker surface proof\n' +
+          '        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}\n' +
+          '        env:\n' +
+          '          GH_TOKEN:',
+        '      - name: Validate live broker surface proof\n' +
+          '        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}\n' +
+          '        env:\n' +
+          '          BASH_ENV: /tmp/exit-zero\n' +
+          '          GH_TOKEN:'
+      ),
+    ]) {
+      expect(releaseGate.collectReleaseDistributeWorkflowIssues(alteredProofEnvironmentOrShell)).toContain(
+        '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
+      );
+    }
+
+    const staleProofWindow = workflow.replace(
+      "          EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24'",
+      "          EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '999999'"
+    );
+    expect(releaseGate.collectReleaseDistributeWorkflowIssues(staleProofWindow)).toContain(
+      '.github/workflows/release-distribute.yml: Validate live broker surface proof env block is missing EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: 24'
+    );
+
     const skippedProof = workflow.replace(
-      '          bash scripts/evaosValidateLiveCanaryProofRun.sh',
-      '          if false; then\n            bash scripts/evaosValidateLiveCanaryProofRun.sh\n          fi'
+      '          /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh',
+      '          if false; then\n            /bin/bash scripts/evaosValidateLiveCanaryProofRun.sh\n          fi'
     );
     expect(releaseGate.collectReleaseDistributeWorkflowIssues(skippedProof)).toContain(
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
     );
+  });
+
+  it('behaviorally requires the live-canary verifier script to execute the proof verifier', () => {
+    if (process.platform === 'win32') return;
+    expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(repoRoot)).toEqual([]);
+
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-canary-verifier-bypass-'));
+    try {
+      const scriptDir = path.join(fixtureRoot, 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      const verifier = fs.readFileSync(path.join(repoRoot, 'scripts/evaosValidateLiveCanaryProofRun.sh'), 'utf8');
+      const bypassedVerifier = verifier.replace('set -euo pipefail', 'set -euo pipefail\n\nif false; then');
+      const fixtureVerifier = path.join(scriptDir, 'evaosValidateLiveCanaryProofRun.sh');
+      fs.writeFileSync(fixtureVerifier, `${bypassedVerifier}\nfi\nexit 0\n`);
+      fs.chmodSync(fixtureVerifier, 0o755);
+
+      expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(fixtureRoot)).toContain(
+        'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier'
+      );
+
+      const partialProvenanceVerifier = verifier.replace(
+        /node - "\$RUN_JSON" "\$EXPECTED_RELEASE_COMMIT" <<'NODE'[\s\S]*?\nNODE/,
+        `node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<'NODE'\n` +
+          `const run = JSON.parse(process.argv[2]);\n` +
+          `if (run.conclusion !== 'success') throw new Error('Live canary proof run failed.');\n` +
+          `NODE`
+      );
+      fs.writeFileSync(fixtureVerifier, partialProvenanceVerifier);
+      expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(fixtureRoot)).toContain(
+        'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier'
+      );
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects forged verifier audit evidence and swallowed proof-verifier failures', () => {
+    if (process.platform === 'win32') return;
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-canary-verifier-forgery-'));
+    try {
+      const scriptDir = path.join(fixtureRoot, 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      const fixtureVerifier = path.join(scriptDir, 'evaosValidateLiveCanaryProofRun.sh');
+      fs.writeFileSync(
+        fixtureVerifier,
+        `#!/bin/bash\n` +
+          `set -euo pipefail\n` +
+          `printf '%s\\n' 'gh|args=run view 123456789' >> "\${EVAOS_VERIFIER_AUDIT_LOG}"\n` +
+          `printf '%s\\n' 'gh|args=run download 123456789' >> "\${EVAOS_VERIFIER_AUDIT_LOG}"\n` +
+          `printf '%s\\n' 'node|required=true|args=scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof' >> "\${EVAOS_VERIFIER_AUDIT_LOG}"\n`
+      );
+      fs.chmodSync(fixtureVerifier, 0o755);
+      expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(fixtureRoot)).toContain(
+        'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier'
+      );
+
+      const verifier = fs.readFileSync(path.join(repoRoot, 'scripts/evaosValidateLiveCanaryProofRun.sh'), 'utf8');
+      fs.writeFileSync(
+        fixtureVerifier,
+        verifier.replace(
+          'node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof',
+          'node scripts/evaosBetaReleaseGate.js verify-live-canary-proof live-canary-proof || true'
+        )
+      );
+      expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(fixtureRoot)).toContain(
+        'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier'
+      );
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('requires the verifier to execute and enforce live-canary run provenance validation', () => {
+    if (process.platform === 'win32') return;
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-canary-provenance-bypass-'));
+    try {
+      const scriptDir = path.join(fixtureRoot, 'scripts');
+      fs.mkdirSync(scriptDir, { recursive: true });
+      const verifier = fs.readFileSync(path.join(repoRoot, 'scripts/evaosValidateLiveCanaryProofRun.sh'), 'utf8');
+      const bypassedVerifier = verifier
+        .replace(
+          'node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<\'NODE\'',
+          'if false; then\nnode - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<\'NODE\''
+        )
+        .replace('\nNODE\n\nrm -rf live-canary-proof-download', '\nNODE\nfi\n\nrm -rf live-canary-proof-download');
+      const fixtureVerifier = path.join(scriptDir, 'evaosValidateLiveCanaryProofRun.sh');
+      fs.writeFileSync(fixtureVerifier, bypassedVerifier);
+      fs.chmodSync(fixtureVerifier, 0o755);
+
+      expect(releaseGate.collectLiveCanaryVerifierBehaviorIssues(fixtureRoot)).toContain(
+        'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier'
+      );
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it('forces the no-ACP managed resource profile in the beta release workflow', () => {
@@ -1616,7 +1862,7 @@ describe('evaOS beta release gate', () => {
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/release-distribute.yml'), 'utf8');
     const verifier = fs.readFileSync(path.join(repoRoot, 'scripts/evaosValidateLiveCanaryProofRun.sh'), 'utf8');
 
-    expect(workflow).toContain('bash scripts/evaosValidateLiveCanaryProofRun.sh');
+    expect(workflow).toContain('/bin/bash scripts/evaosValidateLiveCanaryProofRun.sh');
     expect(verifier).toContain('mac-control-runtime.json');
     expect(verifier).toContain('Run Mac-control canary: true');
     expect(verifier).toContain('requires-mac-control-proof');

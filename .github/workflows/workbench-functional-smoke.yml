@@ -190,7 +190,7 @@ jobs:
 
       - name: Verify functional-smoke artifact shape
         id: verify
-        shell: bash
+        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
         env:
           WORKBENCH_SMOKE_SHA: ${{ steps.commit.outputs.sha }}
         run: |
@@ -269,7 +269,6 @@ jobs:
           fi
           test "$(readlink "$BRIDGE_PYTHON")" = python3.12
           test "$(lipo -archs "$APP_PATH/Contents/Resources/Bridge/python/bin/python3.12")" = arm64
-          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'
           env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE" status --json | jq -e '.ok == true or .ok == false' >/dev/null
 
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
@@ -300,6 +299,16 @@ jobs:
             du -sh "$APP_PATH" out
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify packaged PyObjC imports without bytecode writes
+        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
+        env:
+          WORKBENCH_APP_PATH: ${{ steps.verify.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          BRIDGE_PYTHON="$WORKBENCH_APP_PATH/Contents/Resources/Bridge/python/bin/python3"
+          test -x "$BRIDGE_PYTHON"
+          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c 'import ApplicationServices, Cocoa, CoreText, Quartz'
 
       - name: Archive unpacked app
         shell: bash

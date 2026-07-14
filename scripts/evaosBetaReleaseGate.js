@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
+const LIVE_CANARY_VERIFIER_SHA256 = '692d88c72217b44f7957d78228748991ff65a12afda253c03b365a30b63e6127';
+const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '427e7ad95cf5d10399620463f3b789d2ef62f7f30e0c49ae14d68c10de0663a6';
 
 const REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV = [
   {
@@ -548,6 +551,40 @@ function getWorkflowNamedStepBlocks(jobBlock, stepName) {
   });
 }
 
+function getWorkflowStepBlocks(jobBlock) {
+  const lines = String(jobBlock || '').split(/\r?\n/);
+  const starts = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^ {6}-\s+/.test(lines[index])) starts.push(index);
+  }
+  return starts.map((start, index) => {
+    const end = starts[index + 1] ?? lines.length;
+    return lines.slice(start, end).join('\n');
+  });
+}
+
+function getWorkflowStepPropertyNames(stepBlock) {
+  return String(stepBlock || '')
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const match = line.match(/^(?: {6}- | {8})(?:(['"])([A-Za-z0-9_-]+)\1|([A-Za-z0-9_-]+))\s*:/);
+      if (match) return [match[2] || match[3]];
+      if (/^(?: {6}- | {8})(?!#)\S/.test(line)) return ['__unparsed_workflow_property__'];
+      return [];
+    });
+}
+
+function getWorkflowStepScalarValues(stepBlock, property) {
+  const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const binding = new RegExp(`^ {8}${escapedProperty}:\\s*(.*?)\\s*$`);
+  return String(stepBlock || '')
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*#/.test(line))
+    .map((line) => line.match(binding))
+    .filter(Boolean)
+    .map((match) => match[1].trim().replace(/^(['"])(.*)\1$/, '$2'));
+}
+
 function getWorkflowStepPropertyBlock(stepBlock, property, blockScalar = false) {
   const lines = String(stepBlock || '').split(/\r?\n/);
   const header = blockScalar ? new RegExp(`^ {8}${property}:\\s*\\|\\s*$`) : new RegExp(`^ {8}${property}:\\s*$`);
@@ -582,6 +619,18 @@ function getWorkflowStepEnvValues(stepBlock, key) {
     .map((match) => match[1].trim().replace(/^(['"])(.*)\1$/, '$2'));
 }
 
+function getWorkflowStepEnvKeys(stepBlock) {
+  const envBlock = getWorkflowStepPropertyBlock(stepBlock, 'env');
+  return String(envBlock || '')
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const match = line.match(/^ {10}(?:(['"])([A-Za-z0-9_-]+)\1|([A-Za-z0-9_-]+))\s*:/);
+      if (match) return [match[2] || match[3]];
+      if (/^ {10}(?!#)\S/.test(line)) return ['__unparsed_workflow_env__'];
+      return [];
+    });
+}
+
 function executableWorkflowText(workflow) {
   return String(workflow || '')
     .split(/\r?\n/)
@@ -599,16 +648,54 @@ function collectFunctionalSmokeConfigIssues(workflow) {
     issues.push('.github/workflows/workbench-functional-smoke.yml: bridge ref must be a full immutable commit SHA');
   }
   const appJob = getWorkflowJobBlock(jobs, 'macos-arm64-app');
-  const verifySteps = getWorkflowNamedStepBlocks(appJob, 'Verify functional-smoke artifact shape');
-  const verifyRun = verifySteps.length === 1 ? getWorkflowStepPropertyBlock(verifySteps[0], 'run', true) : '';
-  const expectedProbe =
+  const shapeSteps = getWorkflowNamedStepBlocks(appJob, 'Verify functional-smoke artifact shape');
+  const shapeStep = shapeSteps.length === 1 ? shapeSteps[0] : '';
+  const shapeStepIds = getWorkflowStepScalarValues(shapeStep, 'id');
+  const shapeStepShellValues = getWorkflowStepScalarValues(shapeStep, 'shell');
+  const shapeRunBlock = getWorkflowStepPropertyBlock(shapeStep, 'run', true);
+  const shapeRunSha256 = createHash('sha256').update(shapeRunBlock.replace(/\r\n/g, '\n')).digest('hex');
+  const shapeRunLines = getExecutableBlockLines(shapeRunBlock);
+  const shapeAppPathAssignments = shapeRunLines.filter((line) => line.startsWith('APP_PATH='));
+  const shapeAppPathOutputs = shapeRunLines.filter((line) => line.includes('app_path='));
+  const verifyIdSteps = getWorkflowStepBlocks(appJob).filter((step) =>
+    getWorkflowStepScalarValues(step, 'id').includes('verify')
+  );
+  const probeSteps = getWorkflowNamedStepBlocks(appJob, 'Verify packaged PyObjC imports without bytecode writes');
+  const probeStep = probeSteps.length === 1 ? probeSteps[0] : '';
+  const probeRun = getWorkflowStepPropertyBlock(probeStep, 'run', true);
+  const probeRunLines = getExecutableBlockLines(probeRun);
+  const expectedProbeRunLines = [
+    'run: |',
+    'set -euo pipefail',
+    'BRIDGE_PYTHON="$WORKBENCH_APP_PATH/Contents/Resources/Bridge/python/bin/python3"',
+    'test -x "$BRIDGE_PYTHON"',
     `env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BRIDGE_PYTHON" -I -B -c ` +
-    `'import ApplicationServices, Cocoa, CoreText, Quartz'`;
-  const targetProbeSuffix = `-c 'import ApplicationServices, Cocoa, CoreText, Quartz'`;
-  const targetProbeLines = String(verifyRun || '')
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*#/.test(line) && line.includes('"$BRIDGE_PYTHON"') && line.includes(targetProbeSuffix));
-  if (targetProbeLines.length !== 1 || targetProbeLines[0] !== `          ${expectedProbe}`) {
+      `'import ApplicationServices, Cocoa, CoreText, Quartz'`,
+  ];
+  const appPathBindings = getWorkflowStepEnvValues(probeStep, 'WORKBENCH_APP_PATH');
+  const probeShellValues = getWorkflowStepScalarValues(probeStep, 'shell');
+  if (
+    shapeSteps.length !== 1 ||
+    shapeStepIds.length !== 1 ||
+    shapeStepIds[0] !== 'verify' ||
+    verifyIdSteps.length !== 1 ||
+    JSON.stringify(getWorkflowStepPropertyNames(shapeStep)) !== JSON.stringify(['name', 'id', 'shell', 'env', 'run']) ||
+    JSON.stringify(getWorkflowStepEnvKeys(shapeStep)) !== JSON.stringify(['WORKBENCH_SMOKE_SHA']) ||
+    shapeStepShellValues.length !== 1 ||
+    shapeStepShellValues[0] !== '/usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}' ||
+    shapeRunSha256 !== FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 ||
+    JSON.stringify(shapeAppPathAssignments) !==
+      JSON.stringify([`APP_PATH="$(find out -type d -name '*.app' -print -quit)"`]) ||
+    JSON.stringify(shapeAppPathOutputs) !== JSON.stringify(['echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"']) ||
+    probeSteps.length !== 1 ||
+    JSON.stringify(getWorkflowStepPropertyNames(probeStep)) !== JSON.stringify(['name', 'shell', 'env', 'run']) ||
+    JSON.stringify(getWorkflowStepEnvKeys(probeStep)) !== JSON.stringify(['WORKBENCH_APP_PATH']) ||
+    probeShellValues.length !== 1 ||
+    probeShellValues[0] !== '/usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}' ||
+    appPathBindings.length !== 1 ||
+    appPathBindings[0] !== '${{ steps.verify.outputs.app_path }}' ||
+    JSON.stringify(probeRunLines) !== JSON.stringify(expectedProbeRunLines)
+  ) {
     issues.push(
       '.github/workflows/workbench-functional-smoke.yml: packaged PyObjC import probe must disable bytecode writes with -B'
     );
@@ -703,10 +790,26 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
   }
   const runBlock = getWorkflowStepPropertyBlock(steps[0], 'run', true);
   const runLines = getExecutableBlockLines(runBlock);
+  const proofShellValues = getWorkflowStepScalarValues(steps[0], 'shell');
+  const expectedProofEnvKeys = [
+    'GH_TOKEN',
+    'LIVE_CANARY_PROOF_RUN_ID',
+    'TAG',
+    'EXPECTED_RELEASE_COMMIT',
+    'EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID',
+    'EVAOS_LIVE_CANARY_EXPECTED_RELEASE_CANARY_CUSTOMER_ID',
+    'EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS',
+    'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA',
+    'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID',
+  ];
   if (
+    JSON.stringify(getWorkflowStepPropertyNames(steps[0])) !== JSON.stringify(['name', 'shell', 'env', 'run']) ||
+    JSON.stringify(getWorkflowStepEnvKeys(steps[0])) !== JSON.stringify(expectedProofEnvKeys) ||
+    proofShellValues.length !== 1 ||
+    proofShellValues[0] !== '/usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}' ||
     runLines.length !== 2 ||
     runLines[0] !== 'run: |' ||
-    runLines[1] !== 'bash scripts/evaosValidateLiveCanaryProofRun.sh'
+    runLines[1] !== '/bin/bash scripts/evaosValidateLiveCanaryProofRun.sh'
   ) {
     issues.push(
       '.github/workflows/release-distribute.yml: Validate live broker surface proof must execute only the dedicated verifier script'
@@ -716,6 +819,7 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
     ['LIVE_CANARY_PROOF_RUN_ID', '${{ github.event.inputs.live_canary_proof_run_id }}'],
     ['TAG', '${{ steps.version.outputs.tag }}'],
     ['EXPECTED_RELEASE_COMMIT', '${{ steps.provenance.outputs.tag_commit }}'],
+    ['EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS', '24'],
     ['EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA', '${{ steps.provenance.outputs.tag_commit }}'],
     ['EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID', '${{ github.event.inputs.live_canary_proof_run_id }}'],
   ]) {
@@ -729,6 +833,175 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
     }
   }
   return issues;
+}
+
+function writeExecutableAuditStub(filePath, lines) {
+  fs.writeFileSync(filePath, `${lines.join('\n')}\n`, { mode: 0o755 });
+}
+
+function shellSingleQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode) {
+  const auditRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-canary-verifier-audit-'));
+  const binDir = path.join(auditRoot, 'bin');
+  const stateDir = path.join(auditRoot, 'state');
+  const markers = Object.fromEntries(
+    ['requires', 'view', 'metadata-invoked', 'metadata-passed', 'download', 'verify-invoked', 'verify-passed'].map(
+      (name) => [name, path.join(stateDir, name)]
+    )
+  );
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(stateDir, { recursive: true });
+  try {
+    writeExecutableAuditStub(path.join(binDir, 'node'), [
+      '#!/bin/bash',
+      'set -euo pipefail',
+      `REAL_NODE=${shellSingleQuote(process.execPath)}`,
+      'if [ "${1:-}" = "scripts/evaosBetaReleaseGate.js" ] && [ "${2:-}" = "requires-mac-control-proof" ]; then',
+      `  touch ${shellSingleQuote(markers.requires)}`,
+      "  printf 'true\\n'",
+      '  exit 0',
+      'fi',
+      'if [ "${1:-}" = "-" ]; then',
+      `  test -f ${shellSingleQuote(markers.view)}`,
+      `  touch ${shellSingleQuote(markers['metadata-invoked'])}`,
+      '  "$REAL_NODE" "$@"',
+      `  touch ${shellSingleQuote(markers['metadata-passed'])}`,
+      '  exit 0',
+      'fi',
+      'if [ "${1:-}" = "scripts/evaosBetaReleaseGate.js" ] && [ "${2:-}" = "verify-live-canary-proof" ]; then',
+      `  test -f ${shellSingleQuote(markers.download)}`,
+      `  touch ${shellSingleQuote(markers['verify-invoked'])}`,
+      mode === 'final-verifier-failure' ? '  exit 73' : `  touch ${shellSingleQuote(markers['verify-passed'])}`,
+      'fi',
+      mode === 'final-verifier-failure' ? 'exit 73' : 'exit 0',
+    ]);
+    writeExecutableAuditStub(path.join(binDir, 'gh'), [
+      '#!/bin/bash',
+      'set -euo pipefail',
+      'if [ "${1:-} ${2:-}" = "run view" ]; then',
+      `  touch ${shellSingleQuote(markers.view)}`,
+      `  printf '%s\\n' '${
+        {
+          'invalid-conclusion':
+            '{"conclusion":"failure","event":"workflow_dispatch","workflowName":"evaOS Live Canary Proof","headSha":"0123456789abcdef0123456789abcdef01234567"}',
+          'invalid-event':
+            '{"conclusion":"success","event":"push","workflowName":"evaOS Live Canary Proof","headSha":"0123456789abcdef0123456789abcdef01234567"}',
+          'invalid-workflow':
+            '{"conclusion":"success","event":"workflow_dispatch","workflowName":"Unexpected Workflow","headSha":"0123456789abcdef0123456789abcdef01234567"}',
+          'invalid-head':
+            '{"conclusion":"success","event":"workflow_dispatch","workflowName":"evaOS Live Canary Proof","headSha":"ffffffffffffffffffffffffffffffffffffffff"}',
+        }[mode] ||
+        '{"conclusion":"success","event":"workflow_dispatch","workflowName":"evaOS Live Canary Proof","headSha":"0123456789abcdef0123456789abcdef01234567"}'
+      }'`,
+      '  exit 0',
+      'fi',
+      'if [ "${1:-} ${2:-}" = "run download" ]; then',
+      ...(mode.startsWith('invalid-') ? [] : [`  test -f ${shellSingleQuote(markers['metadata-passed'])}`]),
+      `  touch ${shellSingleQuote(markers.download)}`,
+      '  output_dir=""',
+      '  while [ "$#" -gt 0 ]; do',
+      '    if [ "$1" = "--dir" ]; then',
+      '      shift',
+      '      output_dir="${1:-}"',
+      '    fi',
+      '    shift',
+      '  done',
+      '  test -n "$output_dir"',
+      '  mkdir -p "$output_dir/packet"',
+      '  : > "$output_dir/packet/broker-runtime-status.json"',
+      '  : > "$output_dir/packet/mac-control-runtime.json"',
+      `  printf '%s\\n' 'Run live canaries: true' 'Run follow-up canaries: none' 'Run Mac-control canary: true' > "$output_dir/packet/proof-run.md"`,
+      '  exit 0',
+      'fi',
+      'exit 1',
+    ]);
+
+    const bashPath = ['/opt/homebrew/bin/bash', '/usr/local/bin/bash', '/bin/bash'].find((candidate) =>
+      fs.existsSync(candidate)
+    );
+    let succeeded = false;
+    try {
+      execFileSync(bashPath || '/bin/bash', [verifierPath], {
+        cwd: auditRoot,
+        env: {
+          PATH: `${binDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
+          HOME: auditRoot,
+          TMPDIR: auditRoot,
+          LANG: 'C',
+          LC_ALL: 'C',
+          LIVE_CANARY_PROOF_RUN_ID: '123456789',
+          GITHUB_REPOSITORY: 'fixture/evaos-gui',
+          TAG: 'evaos-beta-v2.1.36-evaos-beta',
+          EXPECTED_RELEASE_COMMIT: '0123456789abcdef0123456789abcdef01234567',
+        },
+        encoding: 'utf8',
+        timeout: 15_000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      succeeded = true;
+    } catch {
+      succeeded = false;
+    }
+    const has = (name) => fs.existsSync(markers[name]);
+    if (mode.startsWith('invalid-')) {
+      return !succeeded && has('requires') && has('view') && has('metadata-invoked') && !has('metadata-passed');
+    }
+    if (mode === 'final-verifier-failure') {
+      return (
+        !succeeded &&
+        has('requires') &&
+        has('view') &&
+        has('metadata-passed') &&
+        has('download') &&
+        has('verify-invoked') &&
+        !has('verify-passed')
+      );
+    }
+    return (
+      succeeded &&
+      has('requires') &&
+      has('view') &&
+      has('metadata-passed') &&
+      has('download') &&
+      has('verify-invoked') &&
+      has('verify-passed')
+    );
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(auditRoot, { recursive: true, force: true });
+  }
+}
+
+const liveCanaryVerifierBehaviorCache = new Map();
+
+function collectLiveCanaryVerifierBehaviorIssues(rootDir = process.cwd()) {
+  const issue =
+    'scripts/evaosValidateLiveCanaryProofRun.sh: isolated behavior probe must execute the live-canary proof verifier';
+  const verifierPath = path.join(rootDir, 'scripts/evaosValidateLiveCanaryProofRun.sh');
+  if (!fs.existsSync(verifierPath)) return [issue];
+  const verifierSource = fs.readFileSync(verifierPath, 'utf8').replace(/\r\n/g, '\n');
+  const verifierSha256 = createHash('sha256').update(verifierSource).digest('hex');
+  if (verifierSha256 !== LIVE_CANARY_VERIFIER_SHA256) return [issue];
+  if (process.platform === 'win32') return [];
+
+  const cacheKey = `${process.platform}:${verifierSha256}`;
+  if (liveCanaryVerifierBehaviorCache.has(cacheKey)) {
+    return liveCanaryVerifierBehaviorCache.get(cacheKey) ? [] : [issue];
+  }
+  const passed = [
+    'success',
+    'invalid-conclusion',
+    'invalid-event',
+    'invalid-workflow',
+    'invalid-head',
+    'final-verifier-failure',
+  ].every((mode) => runLiveCanaryVerifierBehaviorProbe(verifierPath, mode));
+  liveCanaryVerifierBehaviorCache.set(cacheKey, passed);
+  return passed ? [] : [issue];
 }
 
 function collectReleaseConfigIssues(rootDir = process.cwd()) {
@@ -925,6 +1198,7 @@ function collectReleaseConfigIssues(rootDir = process.cwd()) {
     'manual macOS packaging must use a Sequoia runner for the native control helper'
   );
   issues.push(...collectFunctionalSmokeConfigIssues(functionalSmoke));
+  issues.push(...collectLiveCanaryVerifierBehaviorIssues(rootDir));
   requireText(
     buildRelease,
     'EVAOS_BETA_RELEASE_PROVENANCE_MODE: local-signed-dmg-fallback',
@@ -3050,6 +3324,7 @@ module.exports = {
   collectBuildReleaseWorkflowIssues,
   collectPublicationWorkflowIssues,
   collectReleaseDistributeWorkflowIssues,
+  collectLiveCanaryVerifierBehaviorIssues,
   collectReleaseConfigIssues,
   createReleaseManifest,
   getEnvValue,
