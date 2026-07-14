@@ -290,9 +290,12 @@ class FakeMacControlCanaryAdmin {
 
   constructor(
     private readonly canaryMarker: unknown = {
-      schema: 'evaos.mac_control_canary_target.v1',
+      schema: 'evaos.mac_control_canary_target.v2',
       environment: 'staging',
       enabled: true,
+      supabase_origin: 'https://dashboard-staging.example.test',
+      endpoint_origin: 'https://dashboard-staging.example.test',
+      expected_callback_host: 'openclaw-staging.example.test',
     }
   ) {}
 
@@ -320,9 +323,10 @@ class FakeMacControlCanaryAdmin {
 
   async patch(table: string, query: Record<string, string>, body: ProviderRow, _options?: Record<string, unknown>) {
     this.patches.push({ table, query, body });
+    const sessionId = query.id?.startsWith('eq.') ? query.id.slice(3) : 'temporary-session-id';
     return [
       {
-        id: 'temporary-session-id',
+        id: sessionId,
         revoked_at: String(body.revoked_at).replace(/Z$/, '+00:00'),
       },
     ];
@@ -339,6 +343,76 @@ class NoEvidenceMacControlCanaryAdmin extends FakeMacControlCanaryAdmin {
     this.patches.push({ table, query, body });
     return [];
   }
+
+  async select() {
+    return [];
+  }
+}
+
+class RetrySafeMacControlCanaryAdmin extends FakeMacControlCanaryAdmin {
+  selects: Array<{ table: string; query: Record<string, unknown> }> = [];
+
+  constructor(
+    private readonly fallbackRows: ProviderRow[],
+    private readonly patchOutcome: 'zero' | 'throw-after-commit'
+  ) {
+    super();
+  }
+
+  override async patch(
+    table: string,
+    query: Record<string, string>,
+    body: ProviderRow,
+    _options?: Record<string, unknown>
+  ) {
+    this.patches.push({ table, query, body });
+    if (this.patchOutcome === 'throw-after-commit') {
+      throw new Error('simulated response loss after commit');
+    }
+    return [];
+  }
+
+  async select(table: string, query: Record<string, unknown>) {
+    this.selects.push({ table, query });
+    return this.fallbackRows.map((row) => ({ ...row }));
+  }
+}
+
+class CleanupKeyLookupMacControlCanaryAdmin extends FakeMacControlCanaryAdmin {
+  selects: Array<{ table: string; query: Record<string, unknown> }> = [];
+
+  constructor(private readonly matchingRows: ProviderRow[]) {
+    super();
+  }
+
+  async select(table: string, query: Record<string, unknown>) {
+    this.selects.push({ table, query });
+    return this.matchingRows.map((row) => ({ ...row }));
+  }
+}
+
+function failingMacControlFileSystem(phase: 'state' | 'env' | 'proof') {
+  return {
+    mkdirSync: fs.mkdirSync.bind(fs),
+    existsSync: fs.existsSync.bind(fs),
+    readFileSync: fs.readFileSync.bind(fs),
+    rmSync: fs.rmSync.bind(fs),
+    renameSync: fs.renameSync.bind(fs),
+    writeFileSync(filePath: fs.PathOrFileDescriptor, data: string, options?: fs.WriteFileOptions) {
+      const rendered = String(filePath);
+      if (
+        (phase === 'state' && rendered.includes('session-state.json')) ||
+        (phase === 'proof' && rendered.includes('mac-control-session-'))
+      ) {
+        throw new Error(`simulated ${phase} write failure at private-path`);
+      }
+      return fs.writeFileSync(filePath, data, options);
+    },
+    appendFileSync(filePath: fs.PathOrFileDescriptor, data: string) {
+      if (phase === 'env') throw new Error('simulated env export failure at private-path');
+      return fs.appendFileSync(filePath, data);
+    },
+  };
 }
 
 function fixtureState() {
@@ -537,6 +611,24 @@ describe('evaOS live canary fixture provisioner', () => {
       accountEmail: 'owner@staging.invalid',
       customerId: 'staging-mac-owner',
       ttlMinutes: 10,
+      cleanupKey: expect.stringMatching(/^local-/),
+      cleanupKeySource: 'generated',
+    });
+
+    const githubOptions = provisioner.loadMacControlCanaryOptions({
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: 'https://dashboard-staging.example.test',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: 'fixture-service-key',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ACCOUNT_EMAIL: 'owner@staging.invalid',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+      GITHUB_REPOSITORY: 'electricsheephq/evaOS-GUI',
+      GITHUB_RUN_ID: '123456789',
+      GITHUB_RUN_ATTEMPT: '2',
+    });
+    expect(githubOptions).toMatchObject({
+      cleanupKey: expect.stringMatching(/^github-/),
+      cleanupKeySource: 'github',
     });
   });
 
@@ -575,11 +667,15 @@ describe('evaOS live canary fixture provisioner', () => {
   it('requires the database-backed staging canary marker before minting a desktop session', async () => {
     const missingMarkerAdmin = new FakeMacControlCanaryAdmin(null);
     const productionMarkerAdmin = new FakeMacControlCanaryAdmin({
-      schema: 'evaos.mac_control_canary_target.v1',
+      schema: 'evaos.mac_control_canary_target.v2',
       environment: 'production',
       enabled: true,
+      supabase_origin: 'https://dashboard-staging.example.test',
+      endpoint_origin: 'https://dashboard-staging.example.test',
+      expected_callback_host: 'openclaw-staging.example.test',
     });
     const options = {
+      supabaseUrl: 'https://dashboard-staging.example.test',
       accountEmail: 'owner@staging.invalid',
       customerId: 'staging-mac-owner',
       endpoint: 'https://dashboard-staging.example.test/runtime',
@@ -597,9 +693,44 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(productionMarkerAdmin.inserts).toHaveLength(0);
   });
 
+  it('requires the database marker to bind the exact staging origins and callback host before insertion', async () => {
+    const options = {
+      supabaseUrl: 'https://dashboard-staging.example.test',
+      accountEmail: 'owner@staging.invalid',
+      customerId: 'staging-mac-owner',
+      endpoint: 'https://dashboard-staging.example.test/runtime',
+      expectedCallbackHost: 'openclaw-staging.example.test',
+      ttlMinutes: 10,
+    };
+    const marker = {
+      schema: 'evaos.mac_control_canary_target.v2',
+      environment: 'staging',
+      enabled: true,
+      supabase_origin: 'https://dashboard-staging.example.test',
+      endpoint_origin: 'https://dashboard-staging.example.test',
+      expected_callback_host: 'openclaw-staging.example.test',
+    };
+    const mismatchedAdmins = [
+      new FakeMacControlCanaryAdmin({ ...marker, supabase_origin: 'https://other-staging.example.test' }),
+      new FakeMacControlCanaryAdmin({ ...marker, endpoint_origin: 'https://other-staging.example.test' }),
+      new FakeMacControlCanaryAdmin({ ...marker, expected_callback_host: 'other-staging.example.test' }),
+      new FakeMacControlCanaryAdmin({ ...marker, schema: 'evaos.mac_control_canary_target.v1' }),
+    ];
+
+    await Promise.all(
+      mismatchedAdmins.map((admin) =>
+        expect(provisioner.provisionMacControlCanarySessionWithAdmin(admin, options)).rejects.toThrow(
+          /database-backed staging canary marker/i
+        )
+      )
+    );
+    for (const admin of mismatchedAdmins) expect(admin.inserts).toHaveLength(0);
+  });
+
   it('mints only a fresh desktop session for an existing staging Mac owner and emits sanitized proof', async () => {
     const admin = new FakeMacControlCanaryAdmin();
     const { state, env, report } = await provisioner.provisionMacControlCanarySessionWithAdmin(admin, {
+      supabaseUrl: 'https://dashboard-staging.example.test',
       accountEmail: 'owner@staging.invalid',
       customerId: 'staging-mac-owner',
       endpoint: 'https://dashboard-staging.example.test/runtime',
@@ -618,7 +749,10 @@ describe('evaOS live canary fixture provisioner', () => {
       body: {
         user_id: 'owner-profile-id',
         email: 'owner@staging.invalid',
-        metadata: { source: 'evaos-mac-control-live-canary' },
+        metadata: {
+          source: 'evaos-mac-control-live-canary',
+          cleanup_key: expect.stringMatching(/^local-/),
+        },
       },
     });
     expect(env).toMatchObject({
@@ -640,7 +774,11 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(JSON.stringify(report)).not.toMatch(
       /owner@|staging-mac-owner|staging-account-id|owner-profile-id|temporary-session-id|eds_|example\.test/
     );
-    expect(state).toMatchObject({ schema: 'evaos-mac-control-canary-session-state/v1' });
+    expect(state).toMatchObject({
+      schema: 'evaos-mac-control-canary-session-state/v1',
+      cleanupKey: expect.stringMatching(/^local-/),
+      cleanupKeySource: 'generated',
+    });
     expect(JSON.stringify(state)).not.toMatch(/eds_|"raw"/);
     expect(state).toMatchObject({
       sessions: {
@@ -650,6 +788,98 @@ describe('evaOS live canary fixture provisioner', () => {
         },
       },
     });
+  });
+
+  it('generates a unique run-scoped cleanup key for each local canary session', async () => {
+    const options = {
+      supabaseUrl: 'https://dashboard-staging.example.test',
+      accountEmail: 'owner@staging.invalid',
+      customerId: 'staging-mac-owner',
+      endpoint: 'https://dashboard-staging.example.test/runtime',
+      expectedCallbackHost: 'openclaw-staging.example.test',
+      ttlMinutes: 10,
+    };
+    const first = await provisioner.provisionMacControlCanarySessionWithAdmin(new FakeMacControlCanaryAdmin(), options);
+    const second = await provisioner.provisionMacControlCanarySessionWithAdmin(
+      new FakeMacControlCanaryAdmin(),
+      options
+    );
+
+    expect(first.state.cleanupKey).toMatch(/^local-/);
+    expect(second.state.cleanupKey).toMatch(/^local-/);
+    expect(first.state.cleanupKey).not.toBe(second.state.cleanupKey);
+  });
+
+  it.each(['state', 'env', 'proof'] as const)(
+    'compensates an exact inserted session when %s persistence fails',
+    async (phase) => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-mac-control-${phase}-failure-`));
+      const admin = new FakeMacControlCanaryAdmin();
+      const options = {
+        supabaseUrl: 'https://dashboard-staging.example.test',
+        serviceKey: 'fixture-service-key',
+        accountEmail: 'owner@staging.invalid',
+        customerId: 'staging-mac-owner',
+        endpoint: 'https://dashboard-staging.example.test/runtime',
+        expectedCallbackHost: 'openclaw-staging.example.test',
+        ttlMinutes: 10,
+        statePath: path.join(tempDir, 'session-state.json'),
+        githubEnvPath: path.join(tempDir, 'github-env'),
+        proofDir: path.join(tempDir, 'proof'),
+        admin,
+        fileSystem: failingMacControlFileSystem(phase),
+      };
+
+      try {
+        const error = await provisioner.provisionMacControlCanarySession(options).catch((caught) => caught);
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toMatch(/provisioning failed after session creation/i);
+        expect(error.message).not.toMatch(/private-path|temporary-session-id|fixture-service-key|eds_/i);
+        expect(admin.inserts).toHaveLength(1);
+        expect(admin.patches).toHaveLength(1);
+        expect(admin.patches[0]).toMatchObject({
+          table: 'desktop_app_sessions',
+          query: { id: 'eq.temporary-session-id', revoked_at: 'is.null' },
+        });
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it('retains sanitized compensation-failure evidence and persisted state', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-compensation-failure-'));
+    const statePath = path.join(tempDir, 'session-state.json');
+    const admin = new NoEvidenceMacControlCanaryAdmin();
+
+    try {
+      const error = await provisioner
+        .provisionMacControlCanarySession({
+          supabaseUrl: 'https://dashboard-staging.example.test',
+          serviceKey: 'fixture-service-key',
+          accountEmail: 'owner@staging.invalid',
+          customerId: 'staging-mac-owner',
+          endpoint: 'https://dashboard-staging.example.test/runtime',
+          expectedCallbackHost: 'openclaw-staging.example.test',
+          ttlMinutes: 10,
+          statePath,
+          githubEnvPath: path.join(tempDir, 'github-env'),
+          proofDir: path.join(tempDir, 'proof'),
+          admin,
+          fileSystem: failingMacControlFileSystem('env'),
+        })
+        .catch((caught) => caught);
+
+      expect(error).toMatchObject({
+        code: 'MAC_CONTROL_PROVISION_PERSISTENCE_FAILED',
+        compensation: 'failed',
+      });
+      expect(error.message).toMatch(/compensation could not be proven/i);
+      expect(error.message).not.toMatch(/private-path|temporary-session-id|fixture-service-key|eds_/i);
+      expect(fs.existsSync(statePath)).toBe(true);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('revokes only the temporary Mac-control desktop session during unconditional cleanup', async () => {
@@ -674,6 +904,61 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(JSON.stringify(report)).not.toContain('temporary-session-id');
   });
 
+  it('accepts an exact revoked row after an ambiguous PATCH commit', async () => {
+    const admin = new RetrySafeMacControlCanaryAdmin(
+      [{ id: 'temporary-session-id', revoked_at: '2026-07-14T05:00:00.000Z' }],
+      'throw-after-commit'
+    );
+
+    await expect(
+      provisioner.cleanupMacControlCanarySessionWithAdmin(admin, {
+        schema: 'evaos-mac-control-canary-session-state/v1',
+        sessions: { macControl: { id: 'temporary-session-id' } },
+      })
+    ).resolves.toMatchObject({ sessionRevoked: true });
+    expect(admin.selects).toEqual([
+      {
+        table: 'desktop_app_sessions',
+        query: { id: 'eq.temporary-session-id', select: 'id,revoked_at', limit: 2 },
+      },
+    ]);
+  });
+
+  it('accepts an already-revoked exact state-owned row when the conditional PATCH returns zero', async () => {
+    const admin = new RetrySafeMacControlCanaryAdmin(
+      [{ id: 'temporary-session-id', revoked_at: '2026-07-14T05:00:00.000Z' }],
+      'zero'
+    );
+
+    await expect(
+      provisioner.cleanupMacControlCanarySessionWithAdmin(admin, {
+        schema: 'evaos-mac-control-canary-session-state/v1',
+        sessions: { macControl: { id: 'temporary-session-id' } },
+      })
+    ).resolves.toMatchObject({ sessionRevoked: true });
+  });
+
+  it.each([
+    ['missing', []],
+    ['null revoked_at', [{ id: 'temporary-session-id', revoked_at: null }]],
+    [
+      'multiple',
+      [
+        { id: 'temporary-session-id', revoked_at: '2026-07-14T05:00:00.000Z' },
+        { id: 'temporary-session-id', revoked_at: '2026-07-14T05:00:01.000Z' },
+      ],
+    ],
+  ])('rejects %s fallback revocation evidence', async (_label, rows) => {
+    const admin = new RetrySafeMacControlCanaryAdmin(rows, 'zero');
+
+    await expect(
+      provisioner.cleanupMacControlCanarySessionWithAdmin(admin, {
+        schema: 'evaos-mac-control-canary-session-state/v1',
+        sessions: { macControl: { id: 'temporary-session-id' } },
+      })
+    ).rejects.toThrow(/did not prove.*revoked/i);
+  });
+
   it('fails explicitly and without sensitive output when required Mac-control cleanup state is missing', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-cleanup-missing-'));
     try {
@@ -685,6 +970,101 @@ describe('evaOS live canary fixture provisioner', () => {
         })
       ).rejects.toThrow('Mac-control cleanup cannot proceed because the required canary session state is missing.');
       expect(fs.existsSync(path.join(tempDir, 'mac-control-session-cleanup.json'))).toBe(false);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses an explicit run-scoped cleanup key to recover exactly one state-less canary session', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-cleanup-key-'));
+    const admin = new CleanupKeyLookupMacControlCanaryAdmin([{ id: 'recovered-session-id', revoked_at: null }]);
+    try {
+      const report = await provisioner.cleanupMacControlCanarySession({
+        serviceKey: 'fixture-service-key',
+        supabaseUrl: 'https://dashboard-staging.example.test',
+        statePath: path.join(tempDir, 'missing-state.json'),
+        cleanupKey: 'explicit-0123456789abcdef',
+        cleanupKeySource: 'explicit',
+        admin,
+      });
+
+      expect(admin.selects[0]).toEqual({
+        table: 'desktop_app_sessions',
+        query: {
+          'metadata->>cleanup_key': 'eq.explicit-0123456789abcdef',
+          'metadata->>source': 'eq.evaos-mac-control-live-canary',
+          select: 'id,revoked_at',
+          limit: 2,
+        },
+      });
+      expect(admin.patches[0]).toMatchObject({
+        query: { id: 'eq.recovered-session-id', revoked_at: 'is.null' },
+      });
+      expect(report).toMatchObject({ sessionRevoked: true });
+      expect(JSON.stringify(report)).not.toMatch(/recovered-session-id|explicit-/i);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['zero', []],
+    [
+      'multiple',
+      [
+        { id: 'recovered-session-id-1', revoked_at: null },
+        { id: 'recovered-session-id-2', revoked_at: null },
+      ],
+    ],
+  ])('rejects %s cleanup-key matches when state is missing', async (_label, matchingRows) => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-cleanup-key-reject-'));
+    const admin = new CleanupKeyLookupMacControlCanaryAdmin(matchingRows);
+    try {
+      await expect(
+        provisioner.cleanupMacControlCanarySession({
+          serviceKey: 'fixture-service-key',
+          supabaseUrl: 'https://dashboard-staging.example.test',
+          statePath: path.join(tempDir, 'missing-state.json'),
+          cleanupKey: 'explicit-0123456789abcdef',
+          cleanupKeySource: 'explicit',
+          admin,
+        })
+      ).rejects.toThrow(/exactly one temporary session/i);
+      expect(admin.patches).toHaveLength(0);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('retains retryable state when atomic cleanup-proof persistence fails', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-cleanup-proof-failure-'));
+    const statePath = path.join(tempDir, 'session-state.json');
+    fs.writeFileSync(
+      statePath,
+      `${JSON.stringify({
+        schema: 'evaos-mac-control-canary-session-state/v1',
+        sessions: { macControl: { id: 'temporary-session-id' } },
+      })}\n`
+    );
+    const admin = new FakeMacControlCanaryAdmin();
+
+    try {
+      const error = await provisioner
+        .cleanupMacControlCanarySession({
+          serviceKey: 'fixture-service-key',
+          supabaseUrl: 'https://dashboard-staging.example.test',
+          statePath,
+          proofDir: path.join(tempDir, 'proof'),
+          admin,
+          fileSystem: failingMacControlFileSystem('proof'),
+        })
+        .catch((caught) => caught);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toMatch(/cleanup proof.*state.*retained/i);
+      expect(error.message).not.toMatch(/private-path|temporary-session-id|fixture-service-key/i);
+      expect(fs.existsSync(statePath)).toBe(true);
+      expect(admin.patches).toHaveLength(1);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
