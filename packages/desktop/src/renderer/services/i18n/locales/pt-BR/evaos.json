@@ -131,6 +131,7 @@
       "clientStoppedDetail": "Abra o app de rede segura instalado, permita o aviso de VPN do macOS se aparecer e verifique novamente.",
       "unenrolledTitle": "Conectar este Mac",
       "unenrolledDetail": "O Workbench precisa de uma inscrição aprovada do cliente selecionado antes de conectar este Mac com segurança.",
+      "enrollmentConnectingDetail": "Conectando este Mac com segurança. Isso pode levar alguns minutos; não clique novamente.",
       "enrollmentSubmittedDetail": "A inscrição foi enviada. O Workbench aguarda a verificação do nó do broker e da política de acesso antes de mostrar que está pronto.",
       "enrollmentFailedDetail": "O Workbench não conseguiu concluir nem cancelar a inscrição com segurança. Reabra o Tailscale, aguarde a inscrição curta expirar se necessário e tente novamente ou use Relatório.",
       "enrollmentSessionDetail": "Atualize sua sessão do evaOS Workbench e tente novamente a inscrição aprovada deste Mac.",

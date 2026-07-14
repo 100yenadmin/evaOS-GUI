@@ -51,6 +51,7 @@ const i18nMocks = vi.hoisted(() => ({
       'evaos.nativeCompanion.onboarding.clientStoppedDetail': 'Open the installed secure-network app.',
       'evaos.nativeCompanion.onboarding.unenrolledTitle': 'Connect this Mac',
       'evaos.nativeCompanion.onboarding.unenrolledDetail': 'Approved enrollment is required.',
+      'evaos.nativeCompanion.onboarding.enrollmentConnectingDetail': 'Localized enrollment is connecting.',
       'evaos.nativeCompanion.onboarding.enrollmentSubmittedDetail':
         'Localized enrollment is waiting for broker verification.',
       'evaos.nativeCompanion.onboarding.enrollmentFailedDetail': 'Localized enrollment failed safely.',
@@ -895,6 +896,15 @@ describe('NativeCompanionPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Show advanced connector controls' }));
     await user.click(screen.getByRole('button', { name: 'Full Access' }));
+    await waitFor(() =>
+      expect(bridgeMocks.runAction).toHaveBeenCalledWith({
+        action: 'control_start',
+        mode: 'full-access',
+        customerId: 'golden',
+        agentLabel: 'evaOS Workbench',
+      })
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show Audit Tail' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Show Audit Tail' }));
     await user.click(screen.getByRole('button', { name: 'Stop Agent Control' }));
     await user.click(screen.getByRole('button', { name: 'Kill Switch' }));
@@ -1203,6 +1213,118 @@ describe('NativeCompanionPage', () => {
     expect(bridgeMocks.openRepairAction).not.toHaveBeenCalled();
   });
 
+  it('shows durable in-progress enrollment feedback while the native action is pending', async () => {
+    mockUnenrolledMacStatus();
+    let resolveAction: ((value: unknown) => void) | undefined;
+    bridgeMocks.runAction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAction = resolve;
+        })
+    );
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    expect(await screen.findByText('Localized enrollment is connecting.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
+
+    await act(async () => {
+      resolveAction?.({
+        success: true,
+        data: {
+          action: 'secure_network_enroll',
+          status: 'repair_required',
+          message: 'Enrollment failed safely.',
+          sourcePointer: 'native-companion:secure-network-enrollment-client-failed',
+          auditIds: [],
+          refreshRecommended: false,
+          blockerReason: 'secure_network_link_required',
+        },
+      });
+    });
+
+    expect((await screen.findAllByText('Localized enrollment failed safely.')).length).toBe(2);
+  });
+
+  it('replaces enrollment progress with a safe failure when the native IPC action rejects', async () => {
+    mockUnenrolledMacStatus();
+    bridgeMocks.runAction.mockRejectedValueOnce(
+      new Error('sensitive transport failure https://private.example 100.64.0.9')
+    );
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    expect((await screen.findAllByText('Localized enrollment failed safely.')).length).toBe(2);
+    expect(screen.queryByText('Localized enrollment is connecting.')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('private.example');
+    expect(document.body.textContent).not.toContain('100.64.0.9');
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeEnabled();
+  });
+
+  it('keeps emergency stop available and ignores a stale enrollment result', async () => {
+    mockUnenrolledMacStatus();
+    let resolveEnrollment: ((value: unknown) => void) | undefined;
+    bridgeMocks.runAction.mockImplementation((request) => {
+      if (request.action === 'secure_network_enroll') {
+        return new Promise((resolve) => {
+          resolveEnrollment = resolve;
+        });
+      }
+      if (request.action === 'connector_stop') {
+        return Promise.resolve({
+          success: true,
+          data: {
+            action: 'connector_stop',
+            status: 'succeeded',
+            message: 'Emergency Mac Access stop completed.',
+            sourcePointer: 'native-companion:connector-stop',
+            auditIds: [],
+            refreshRecommended: false,
+          },
+        });
+      }
+      throw new Error(`unexpected action ${request.action}`);
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Show advanced connector controls' }));
+    await user.click(screen.getByRole('button', { name: 'Connect this Mac' }));
+
+    expect(await screen.findByText('Localized enrollment is connecting.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect this Mac' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stop Mac Access' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Stop Mac Access' }));
+    expect((await screen.findAllByText('Emergency Mac Access stop completed.')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeDisabled();
+    const statusCallsAfterStop = bridgeMocks.getStatus.mock.calls.length;
+
+    await act(async () => {
+      resolveEnrollment?.({
+        success: true,
+        data: {
+          action: 'secure_network_enroll',
+          status: 'succeeded',
+          message: 'Stale enrollment result must not be presented.',
+          sourcePointer: 'native-companion:secure-network-enrollment-submitted',
+          auditIds: [],
+          refreshRecommended: true,
+        },
+      });
+    });
+
+    expect(screen.queryByText('Localized enrollment is waiting for broker verification.')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Emergency Mac Access stop completed.').length).toBeGreaterThan(0);
+    expect(bridgeMocks.getStatus).toHaveBeenCalledTimes(statusCallsAfterStop);
+    expect(screen.getByRole('button', { name: 'Run Setup Check' })).toBeEnabled();
+  });
+
   it.each([
     [
       'native-companion:secure-network-enrollment-broker-session-required',
@@ -1230,6 +1352,37 @@ describe('NativeCompanionPage', () => {
 
     expect((await screen.findAllByText(localizedMessage)).length).toBe(2);
     expect(screen.queryByText('Raw process message must not be rendered.')).not.toBeInTheDocument();
+  });
+
+  it('renders only the structured sanitized enrollment diagnostic', async () => {
+    mockUnenrolledMacStatus();
+    bridgeMocks.runAction.mockResolvedValue({
+      success: true,
+      data: {
+        action: 'secure_network_enroll',
+        status: 'repair_required',
+        message: 'Raw process message with secret-key-material must not be rendered.',
+        sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
+        auditIds: [],
+        refreshRecommended: false,
+        blockerReason: 'secure_network_link_required',
+        enrollmentDiagnostic: {
+          code: 'tailscale_cli_failed',
+          exitCode: '1',
+          message: 'control server rejected enrollment at [redacted-url]',
+          cancellationState: 'unconfirmed_not_found',
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderNativeCompanion();
+    await user.click(await screen.findByRole('button', { name: 'Connect this Mac' }));
+
+    const safeMessage =
+      'Localized enrollment failed safely. Tailscale exited with code 1. control server rejected enrollment at [redacted-url] The broker reported the key consumed or not found; cancellation remains unconfirmed.';
+    expect((await screen.findAllByText(safeMessage)).length).toBe(2);
+    expect(screen.queryByText(/secret-key-material/)).not.toBeInTheDocument();
   });
 
   it('clears secure-network session recovery after the broker session refreshes', async () => {

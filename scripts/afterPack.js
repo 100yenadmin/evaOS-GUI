@@ -11,7 +11,11 @@ const {
 } = require('./rebuildNativeModules');
 const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/src/prepare-aioncore.js');
 const { clearDmgRetryCompletionMarkers, markCompletedAfterPack } = require('./dmgRetryEligibility');
-const { verifyPythonRuntimeInventory } = require('./prepareEvaosDesktopBridgeResource');
+const {
+  bridgeWrapperScript,
+  verifyPythonRuntimeInventory,
+  verifyWorkbenchBridgeSourceRoot,
+} = require('./prepareEvaosDesktopBridgeResource');
 
 /**
  * afterPack hook for electron-builder
@@ -378,6 +382,29 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     throw new Error('Packaged evaOS desktop bridge is a diagnostic placeholder; release builds require a real bridge.');
   }
   if (strictReleaseBridge) {
+    const expectedSourceCommit = String(process.env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || '').trim();
+    const sourceProvenance = manifest.sourceProvenance;
+    const bridgeWrapper = manifest.bundledTools?.bridgeWrapper;
+    const packagedBridgeWrapperSha256 = crypto.createHash('sha256').update(fs.readFileSync(bridgePath)).digest('hex');
+    const expectedBridgeWrapperSha256 = crypto.createHash('sha256').update(bridgeWrapperScript()).digest('hex');
+    const packagedSourceIdentity = verifyWorkbenchBridgeSourceRoot(path.join(resourcesDir, 'Bridge', 'src'));
+    if (
+      !/^[0-9a-f]{40}$/i.test(expectedSourceCommit) ||
+      manifest.sourceCommit !== expectedSourceCommit ||
+      manifest.requestedSourceRef !== expectedSourceCommit ||
+      manifest.sourcePath !== 'resources/evaos-beta/bridge' ||
+      sourceProvenance?.schema !== 'evaos-workbench-vendored-bridge-source/v1' ||
+      sourceProvenance?.owner !== '100yenadmin/evaOS-GUI' ||
+      sourceProvenance?.status !== 'vendored' ||
+      !/^[0-9a-f]{40}$/i.test(String(sourceProvenance?.importedCommit || '')) ||
+      sourceProvenance?.sourceSha256 !== packagedSourceIdentity.sourceSha256 ||
+      bridgeWrapper?.schema !== 'evaos-workbench-bridge-wrapper/v1' ||
+      bridgeWrapper?.path !== 'evaos-desktop-bridge' ||
+      bridgeWrapper?.sourceSha256 !== packagedBridgeWrapperSha256 ||
+      packagedBridgeWrapperSha256 !== expectedBridgeWrapperSha256
+    ) {
+      throw new Error('Packaged evaOS desktop bridge is not bound to the exact evaOS-GUI-owned source.');
+    }
     if (!targetArch || !PYTHON_RUNTIME_SOURCE_SHA256_BY_ARCH[targetArch]) {
       throw new Error('Packaged evaOS desktop bridge target architecture is required for strict release validation.');
     }

@@ -6,10 +6,17 @@
  * @vitest-environment node
  */
 
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
+const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
+  verifyMacControlLiveCanaryProof: (proofDir: string, env: Record<string, string>) => boolean;
+};
 const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
   REQUIRED_BROKER_SURFACES: Array<{ surface: string; runtime: string }>;
   runBrokerLiveCanary: (options: {
@@ -673,6 +680,68 @@ describe('evaOS broker live canary', () => {
     expect(JSON.stringify(proof)).not.toMatch(
       /staging-mac-owner|11111111-1111-4111-8111-111111111111|binding_version|binding_expires_at|callback_secret|proxy_session_secret|example\.test|eds_/
     );
+
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-contract-'));
+    try {
+      const proofPath = path.join(proofDir, 'mac-control-runtime.json');
+      fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-provisioning.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-provision/v1',
+          accountConfigured: true,
+          customerConfigured: true,
+          activeMembershipVerified: true,
+          stagingMarkerVerified: true,
+          sessionMinted: true,
+          sessionExpiryPresent: true,
+          sensitiveOutput: 'passed',
+        })}\n`
+      );
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: true,
+          sensitiveOutput: 'passed',
+        })}\n`
+      );
+
+      expect(
+        releaseGate.verifyMacControlLiveCanaryProof(proofDir, {
+          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: '4192aadf6b45bf1c6535f209fcc96f2be806863e',
+          EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '123456789',
+        })
+      ).toBe(true);
+
+      const pythonSource = [
+        'import sys',
+        'from pathlib import Path',
+        'from evaos_desktop_bridge import qa_canary',
+        'result = qa_canary.selected_binding_proof_binding(',
+        '    Path(sys.argv[1]),',
+        '    expected_source_commit="4192aadf6b45bf1c6535f209fcc96f2be806863e",',
+        '    expected_source_run_id="123456789",',
+        '    expected_source_sha256="0" * 64,',
+        '    expected_version="2.1.36",',
+        '    expected_build="2.1.36",',
+        ')',
+        'assert result["ok"] is True, result',
+        'print("ok")',
+      ].join('\n');
+      expect(
+        execFileSync('python3', ['-B', '-c', pythonSource, proofPath], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PYTHONDONTWRITEBYTECODE: '1',
+            PYTHONPATH: path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src'),
+          },
+        }).trim()
+      ).toBe('ok');
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects an incomplete top-level capability set even when runtime status is complete', () => {

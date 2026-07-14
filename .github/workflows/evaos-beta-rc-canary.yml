@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       beta_rc_ack:
-        description: 'Type evaos-beta-rc to acknowledge this canary installs and launches release-candidate macOS apps.'
+        description: 'Type evaos-beta-rc to acknowledge this canary installs and launches the candidate, then locally starts Full Access and Ask Permission without performing desktop actions.'
         required: true
         type: string
       tag:
@@ -299,6 +299,114 @@ jobs:
           NODE
           node scripts/evaosBetaReleaseGate.js write-rc-proof-template "$PROOF_DIR" "$TAG"
 
+      - name: Verify updater ZIP signature and notarization
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          TAG_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
+        run: |
+          set -euo pipefail
+          ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'
+          const fs = require('fs');
+          const metadataPath = process.argv[2];
+          const text = fs.readFileSync(metadataPath, 'utf8');
+          const refs = [];
+          for (const line of text.split(/\r?\n/)) {
+            const match = line.match(/^\s*(?:-\s*)?(?:path|url):\s*(.+?)\s*$/);
+            if (!match) continue;
+            let ref = match[1].trim().replace(/^['"]|['"]$/g, '');
+            if (/^https?:\/\//i.test(ref)) ref = new URL(ref).pathname.split('/').pop();
+            if (ref?.endsWith('.zip')) refs.push(ref);
+          }
+          const unique = [...new Set(refs)];
+          if (unique.length !== 1 || !/arm64/i.test(unique[0])) {
+            throw new Error('latest-arm64-mac.yml must identify exactly one arm64 updater ZIP.');
+          }
+          process.stdout.write(unique[0]);
+          NODE
+          )
+          UPDATER_ZIP="release-assets/$ZIP_NAME"
+          if [ ! -f "$UPDATER_ZIP" ]; then
+            echo "::error::Updater metadata references missing arm64 ZIP: $ZIP_NAME"
+            exit 1
+          fi
+          EXPECTED_SHA=$(node - release-assets/evaos-beta-release-manifest.json "$ZIP_NAME" <<'NODE'
+          const fs = require('fs');
+          const [manifestPath, assetName] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const asset = (manifest.assets || []).find((candidate) => candidate.name === assetName);
+          if (!asset || !/^[0-9a-f]{64}$/i.test(String(asset.sha256 || ''))) {
+            throw new Error(`Trusted manifest does not bind updater ZIP ${assetName}.`);
+          }
+          process.stdout.write(asset.sha256);
+          NODE
+          )
+          ACTUAL_SHA=$(shasum -a 256 "$UPDATER_ZIP" | awk '{print $1}')
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Updater ZIP checksum does not match the trusted release manifest."
+            exit 1
+          fi
+
+          EXTRACT_DIR="$RUNNER_TEMP/evaos-updater-zip-arm64"
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
+          ditto -x -k "$UPDATER_ZIP" "$EXTRACT_DIR"
+          ZIP_APP="$EXTRACT_DIR/$BETA_APP_NAME"
+          APP_ROOT_COUNT=$(find "$EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')
+          if [ ! -d "$ZIP_APP" ] || [ "$APP_ROOT_COUNT" != "1" ]; then
+            echo "::error::Updater ZIP did not contain $BETA_APP_NAME."
+            exit 1
+          fi
+          INFO_PLIST="$ZIP_APP/Contents/Info.plist"
+          if [ ! -f "$INFO_PLIST" ]; then
+            echo "::error::Updater ZIP is missing the canonical app Info.plist."
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c Print "$INFO_PLIST" >/dev/null
+          if [[ ! "$TAG" =~ ^evaos-beta-v?([0-9]+\.[0-9]+\.[0-9]+)-evaos-beta(\.[0-9]+)?$ ]]; then
+            echo "::error::Unable to derive the updater app version from tag $TAG."
+            exit 1
+          fi
+          EXPECTED_VERSION="${BASH_REMATCH[1]}"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")
+          PRODUCT_NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")
+          SHORT_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")
+          BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")
+          if [ "$BUNDLE_ID" != "com.evaos.workbench" ] || [ "$PRODUCT_NAME" != "evaOS Workbench" ] || [ "$SHORT_VERSION" != "$EXPECTED_VERSION" ] || [ "$BUNDLE_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Updater ZIP app identity does not match the RC tag and canonical Workbench identity."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$ZIP_APP" > "$PROOF_DIR/codesign-updater-zip-macos-arm64.txt" 2>&1
+          xcrun stapler validate "$ZIP_APP" > "$PROOF_DIR/stapler-updater-zip-macos-arm64.txt" 2>&1
+          spctl --assess --type execute --verbose "$ZIP_APP" > "$PROOF_DIR/spctl-updater-zip-macos-arm64.txt" 2>&1
+          node - "$PROOF_DIR/updater-zip-macos-arm64.json" "$TAG" "$TAG_COMMIT" "$ZIP_NAME" "$ACTUAL_SHA" "$BETA_APP_NAME" "$BUNDLE_ID" "$PRODUCT_NAME" "$SHORT_VERSION" "$BUNDLE_VERSION" <<'NODE'
+          const fs = require('fs');
+          const [outputPath, tag, releaseCommit, assetName, sha256, appName, bundleId, productName, shortVersion, bundleVersion] = process.argv.slice(2);
+          fs.writeFileSync(
+            outputPath,
+            `${JSON.stringify(
+              {
+                schema: 'evaos-updater-zip-trust/v2',
+                tag,
+                releaseCommit,
+                assetName,
+                sha256,
+                appName,
+                bundleId,
+                productName,
+                shortVersion,
+                bundleVersion,
+                codesignVerified: true,
+                staplerVerified: true,
+                gatekeeperVerified: true,
+              },
+              null,
+              2
+            )}\n`
+          );
+          NODE
+          rm -rf "$EXTRACT_DIR"
+
       - name: Install fallback and beta apps
         env:
           FALLBACK_APP_NAME: ${{ github.event.inputs.fallback_app_name }}
@@ -340,6 +448,7 @@ jobs:
             fi
             rm -rf "/Applications/$app_name"
             ditto "$app_path" "/Applications/$app_name"
+            rm -rf "$extract_dir"
           }
 
           install_fallback_app() {
@@ -427,6 +536,8 @@ jobs:
           spctl --assess --type execute --verbose "$BETA_APP" > "$PROOF_DIR/spctl-macos-arm64.txt" 2>&1
 
       - name: Launch beta and audit feed isolation
+        env:
+          TAG_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
         run: |
           set -euo pipefail
           BETA_APP="/Applications/$BETA_APP_NAME"
@@ -532,6 +643,80 @@ jobs:
           if [ -n "$STALE_RUNNING_APPS" ]; then
             echo "::error::Stale Workbench app process is running from a Lexar proof/extract path."
             printf '%s\n' "$STALE_RUNNING_APPS"
+            exit 1
+          fi
+
+          BRIDGE_COMMAND="$BETA_APP/Contents/Resources/Bridge/evaos-desktop-bridge"
+          if [ ! -x "$BRIDGE_COMMAND" ]; then
+            echo "::error::Installed Workbench bridge launcher is missing or not executable."
+            exit 1
+          fi
+          PRE_CANARY_DIR="$PROOF_DIR/installed-candidate-pre-canary"
+          CONNECTOR_CANARY_DIR="$PROOF_DIR/installed-candidate-connector"
+          rm -rf "$PRE_CANARY_DIR" "$CONNECTOR_CANARY_DIR"
+          "$BRIDGE_COMMAND" pre-canary \
+            --json \
+            --control-surface bridge-peekaboo \
+            --expected-version "$SHORT_VERSION" \
+            --expected-build "$BUNDLE_VERSION" \
+            --expected-source-commit "$TAG_COMMIT" \
+            --artifact-dir "$PRE_CANARY_DIR" \
+            > "$PROOF_DIR/installed-candidate-pre-canary.stdout.json" \
+            2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"
+          cp "$PRE_CANARY_DIR/qa-report.json" "$PROOF_DIR/installed-candidate-pre-canary.json"
+
+          TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"
+          for _attempt in $(seq 1 30); do
+            if [ -s "$TOKEN_FILE" ] && curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if [ ! -s "$TOKEN_FILE" ]; then
+            echo "::error::Installed Workbench did not create its connector token."
+            exit 1
+          fi
+          if ! curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/health >/dev/null; then
+            echo "::error::Installed Workbench connector did not become reachable."
+            exit 1
+          fi
+          CONNECTOR_TOKEN=$(tr -d '\r\n' < "$TOKEN_FILE")
+          if [ -z "$CONNECTOR_TOKEN" ]; then
+            echo "::error::Installed Workbench connector token is empty."
+            exit 1
+          fi
+          set +e
+          EVAOS_DESKTOP_BRIDGE_TOKEN="$CONNECTOR_TOKEN" "$BRIDGE_COMMAND" qa-canary \
+            --connector-url http://127.0.0.1:8765 \
+            --artifact-dir "$CONNECTOR_CANARY_DIR" \
+            --version-under-test "$SHORT_VERSION" \
+            --build-under-test "$BUNDLE_VERSION" \
+            --source-commit-under-test "$TAG_COMMIT" \
+            --surface connector \
+            --suite control_start \
+            --operator-ack-live-control \
+            > "$PROOF_DIR/installed-candidate-connector.stdout.json" \
+            2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"
+          QA_CANARY_EXIT=$?
+          set -e
+          if [ -f "$CONNECTOR_CANARY_DIR/qa-report.json" ]; then
+            cp "$CONNECTOR_CANARY_DIR/qa-report.json" "$PROOF_DIR/installed-candidate-connector.json"
+          fi
+          TOKEN_SCAN_EXIT=0
+          LC_ALL=C grep -R -F -- "$CONNECTOR_TOKEN" "$PROOF_DIR" >/dev/null 2>&1 || TOKEN_SCAN_EXIT=$?
+          if [ "$TOKEN_SCAN_EXIT" -eq 0 ]; then
+            echo "::error::Installed candidate proof leaked the connector token."
+            unset CONNECTOR_TOKEN
+            exit 1
+          fi
+          if [ "$TOKEN_SCAN_EXIT" -ne 1 ]; then
+            echo "::error::Installed candidate proof token scan could not complete safely."
+            unset CONNECTOR_TOKEN
+            exit 1
+          fi
+          unset CONNECTOR_TOKEN
+          if [ "$QA_CANARY_EXIT" -ne 0 ]; then
+            echo "::error::Installed candidate connector canary failed; inspect the sanitized proof artifact."
             exit 1
           fi
           pkill -f "EvaOSWorkbench|evaOS Workbench" || true
@@ -667,6 +852,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: release-assets
         run: |
           set -euo pipefail
           {

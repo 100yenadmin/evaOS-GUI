@@ -114,6 +114,7 @@ jobs:
         run: |
           SHORT=$(git rev-parse --short HEAD)
           echo "short=$SHORT" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           echo "Commit: $SHORT"
 
       - name: Setup Node.js
@@ -782,8 +783,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
           EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL: '1'
-          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ vars.EVAOS_DESKTOP_BRIDGE_SOURCE_REF }}
-          EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN: ${{ secrets.EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN || secrets.GH_TOKEN || secrets.GITHUB_TOKEN || github.token }}
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: ${{ steps.commit.outputs.sha }}
 
       - name: Validate macOS app staple inside DMG
         if: startsWith(matrix.platform, 'macos')

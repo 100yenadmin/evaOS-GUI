@@ -19,15 +19,22 @@ The required order is:
 
 ## Bridge Packaging Gate
 
-Pull request build smoke may set `EVAOS_DESKTOP_BRIDGE_ALLOW_PLACEHOLDER=1` so CI can verify Electron packaging even when the private `evaos-desktop-bridge` source is not readable from a pull request runner.
+The Workbench bridge source is owned and vendored by `evaOS-GUI` at
+`resources/evaos-beta/bridge`. Pull request build smoke may still set
+`EVAOS_DESKTOP_BRIDGE_ALLOW_PLACEHOLDER=1` for explicit negative-path packaging
+tests, but a normal checkout does not fetch bridge source from another repository.
 
-That placeholder is never release proof. Any public or signed release build must set or inherit `EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL=1` and must provide one of:
+That placeholder is never release proof. Any public or signed release build must set or inherit `EVAOS_DESKTOP_BRIDGE_REQUIRE_REAL=1` and must provide both:
 
-- `EVAOS_DESKTOP_BRIDGE_SOURCE_DIR` pointing at a checkout with `src/evaos_desktop_bridge/cli.py`
-- `EVAOS_DESKTOP_BRIDGE_SOURCE_TOKEN` with read access to `electricsheephq/evaos-desktop-bridge`
-- `EVAOS_DESKTOP_BRIDGE_SOURCE_REPO` / `EVAOS_DESKTOP_BRIDGE_SOURCE_REF` for an approved, reachable bridge source
+- the checked-out `resources/evaos-beta/bridge/src/evaos_desktop_bridge` package;
+- `EVAOS_DESKTOP_BRIDGE_SOURCE_REF` set to the exact 40-character `evaOS-GUI`
+  checkout commit.
 
-For CI release builds, `EVAOS_DESKTOP_BRIDGE_SOURCE_REF` must be a pinned tag or commit SHA, not `main`, `master`, or `HEAD`. If those inputs are missing, mutable, or inaccessible, the release build must fail before a public artifact is created.
+The packaged manifest must record that same GUI commit, the owned source path,
+the vendored ownership metadata, and the matching deterministic source digest.
+External source-directory, repository, and token overrides are not release inputs.
+If the owned source, exact commit binding, identity, or digest is missing or
+different, the release build must fail before a public artifact is created.
 
 ## Functional Acceptance
 

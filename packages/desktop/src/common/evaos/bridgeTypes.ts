@@ -403,6 +403,21 @@ export interface IEvaosNativeCompanionConnectorGrant {
   auditId?: string;
 }
 
+export type IEvaosPrivateNetworkEnrollmentDiagnosticCode =
+  | 'enrollment_setup_failed'
+  | 'enrollment_secret_cleanup_failed'
+  | 'enrollment_state_changed'
+  | 'tailscale_cli_failed';
+
+export type IEvaosPrivateNetworkEnrollmentCancellationState = 'cancelled' | 'unconfirmed' | 'unconfirmed_not_found';
+
+export interface IEvaosPrivateNetworkEnrollmentDiagnostic {
+  code: IEvaosPrivateNetworkEnrollmentDiagnosticCode;
+  exitCode?: string;
+  message?: string;
+  cancellationState?: IEvaosPrivateNetworkEnrollmentCancellationState;
+}
+
 export interface IEvaosNativeCompanionActionResult {
   action: IEvaosNativeCompanionAction;
   status: IEvaosNativeCompanionActionStatus;
@@ -419,6 +434,7 @@ export interface IEvaosNativeCompanionActionResult {
   events?: IEvaosNativeCompanionAuditEvent[];
   blockerReason?: IEvaosMacControlBlockerReason;
   bootstrapGrantId?: string;
+  enrollmentDiagnostic?: IEvaosPrivateNetworkEnrollmentDiagnostic;
 }
 
 export interface IEvaosWorkbenchDiagnosticPacketV1 {

@@ -113,7 +113,7 @@ extraResources:
     to: bundled-aioncore
   - from: resources/hub
     to: hub
-  # evaOS Mac connector bridge, generated from evaos-desktop-bridge by scripts/prepareEvaosDesktopBridgeResource.js
+  # evaOS-GUI-owned Mac connector bridge, assembled by scripts/prepareEvaosDesktopBridgeResource.js
   - from: resources/Bridge-${arch}
     to: Bridge
 win:

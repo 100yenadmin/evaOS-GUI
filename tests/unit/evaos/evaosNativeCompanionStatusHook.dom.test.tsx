@@ -197,6 +197,31 @@ describe('useEvaosNativeCompanionStatus', () => {
     expect(JSON.stringify(packet)).not.toContain('100.64.0.10');
   });
 
+  it('turns an enrollment IPC rejection into a safe visible action result', async () => {
+    bridgeMocks.getStatus.mockResolvedValueOnce({ success: false, msg: 'not needed' });
+    bridgeMocks.runAction.mockRejectedValueOnce(
+      new Error('request failed for https://private.example.test with auth-key=tskey-secret and device 100.64.0.10')
+    );
+    const { result } = renderHook(() => useEvaosNativeCompanionStatus(false, 'bound-customer'));
+
+    const actionResult = await result.current.runAction({
+      action: 'secure_network_enroll',
+      customerId: 'bound-customer',
+    });
+
+    expect(actionResult).toEqual({
+      action: 'secure_network_enroll',
+      status: 'failed',
+      message: 'Workbench connector action could not be reached.',
+      sourcePointer: 'native-companion:secure-network-enrollment-action-unreachable',
+      auditIds: [],
+      refreshRecommended: true,
+    });
+    expect(JSON.stringify(actionResult)).not.toContain('private.example.test');
+    expect(JSON.stringify(actionResult)).not.toContain('tskey-secret');
+    expect(JSON.stringify(actionResult)).not.toContain('100.64.0.10');
+  });
+
   it('carries the broker-issued enrollment grant into the next scope-less status refresh', async () => {
     bridgeMocks.getStatus.mockResolvedValue({ success: false, msg: 'not ready' });
     bridgeMocks.runAction.mockResolvedValueOnce({

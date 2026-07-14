@@ -62,6 +62,11 @@ const MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS: ReadonlySet<IEvaosNativeCompani
   'create_pairing_prompt',
   'secure_network_enroll',
 ]);
+const NATIVE_COMPANION_SAFETY_ACTIONS: ReadonlySet<IEvaosNativeCompanionActionRequest['action']> = new Set([
+  'control_stop',
+  'kill_switch',
+  'connector_stop',
+]);
 
 const NativeCompanionPage: React.FC = () => {
   const { t } = useTranslation();
@@ -92,7 +97,14 @@ const NativeCompanionPage: React.FC = () => {
   const [connectorActionsOpen, setConnectorActionsOpen] = React.useState(false);
   const [handoffMessage, setHandoffMessage] = React.useState<string | null>(null);
   const [actionResult, setActionResult] = React.useState<IEvaosNativeCompanionActionResult | null>(null);
-  const [actionInFlight, setActionInFlight] = React.useState<IEvaosNativeCompanionActionRequest['action'] | null>(null);
+  const [actionsInFlight, setActionsInFlight] = React.useState<
+    ReadonlySet<IEvaosNativeCompanionActionRequest['action']>
+  >(() => new Set());
+  const activeActionsRef = React.useRef(new Set<IEvaosNativeCompanionActionRequest['action']>());
+  const nextOperationIdRef = React.useRef(0);
+  const latestPresentationIdRef = React.useRef(0);
+  const takeoverCueOwnerRef = React.useRef<number | null>(null);
+  const anyActionInFlight = actionsInFlight.size > 0;
   const [authInFlight, setAuthInFlight] = React.useState(false);
   const [copyMessage, setCopyMessage] = React.useState<string | null>(null);
   const [authUrl, setAuthUrl] = React.useState<string | null>(null);
@@ -260,9 +272,21 @@ const NativeCompanionPage: React.FC = () => {
 
   const handleRunAction = React.useCallback(
     async (request: IEvaosNativeCompanionActionRequest) => {
-      setActionInFlight(request.action);
+      const safetyAction = NATIVE_COMPANION_SAFETY_ACTIONS.has(request.action);
+      if (activeActionsRef.current.has(request.action) || (activeActionsRef.current.size > 0 && !safetyAction)) {
+        return;
+      }
+      const operationId = ++nextOperationIdRef.current;
+      latestPresentationIdRef.current = operationId;
+      activeActionsRef.current.add(request.action);
+      setActionsInFlight(new Set(activeActionsRef.current));
       setCopyMessage(null);
+      takeoverCueOwnerRef.current = null;
+      setTakeoverCue(null);
       setTakeoverCueWarning(null);
+      if (request.action === 'secure_network_enroll') {
+        setHandoffMessage(t('evaos.nativeCompanion.onboarding.enrollmentConnectingDetail'));
+      }
       const targetsMacControlCustomer = MAC_TARGET_BOUND_NATIVE_COMPANION_ACTIONS.has(request.action);
       const requestCustomerId =
         request.customerId ?? (targetsMacControlCustomer ? selectedPairingCustomerId : selectedCustomerId);
@@ -271,8 +295,13 @@ const NativeCompanionPage: React.FC = () => {
       }
       try {
         if (request.action === 'control_start') {
-          const cueResult = await runMacControlTakeoverCue(setTakeoverCue);
-          if (cueResult.warning) {
+          takeoverCueOwnerRef.current = operationId;
+          const cueResult = await runMacControlTakeoverCue((message) => {
+            if (takeoverCueOwnerRef.current === operationId && latestPresentationIdRef.current === operationId) {
+              setTakeoverCue(message);
+            }
+          });
+          if (cueResult.warning && latestPresentationIdRef.current === operationId) {
             setTakeoverCueWarning(cueResult.warning);
           }
         }
@@ -281,6 +310,9 @@ const NativeCompanionPage: React.FC = () => {
           customerId: requestCustomerId,
           agentLabel: request.agentLabel ?? 'evaOS Workbench',
         });
+        if (operationId !== latestPresentationIdRef.current) {
+          return;
+        }
         if (targetsMacControlCustomer && requestCustomerId !== selectedPairingCustomerRef.current) {
           return;
         }
@@ -297,9 +329,34 @@ const NativeCompanionPage: React.FC = () => {
         if (result.refreshRecommended) {
           await refresh();
         }
+      } catch {
+        if (operationId !== latestPresentationIdRef.current) {
+          return;
+        }
+        if (targetsMacControlCustomer && requestCustomerId !== selectedPairingCustomerRef.current) {
+          return;
+        }
+        const failedResult: IEvaosNativeCompanionActionResult = {
+          action: request.action,
+          status: 'failed',
+          message: 'Workbench connector action could not be reached.',
+          sourcePointer:
+            request.action === 'secure_network_enroll'
+              ? 'native-companion:secure-network-enrollment-action-unreachable'
+              : 'native-companion:action-unreachable',
+          auditIds: [],
+          refreshRecommended: false,
+        };
+        setActionResult(failedResult);
+        setActionResultCustomerId(targetsMacControlCustomer ? requestCustomerId : undefined);
+        setHandoffMessage(localizedNativeCompanionActionResultMessage(failedResult, t));
       } finally {
-        setTakeoverCue(null);
-        setActionInFlight(null);
+        if (takeoverCueOwnerRef.current === operationId) {
+          takeoverCueOwnerRef.current = null;
+          setTakeoverCue(null);
+        }
+        activeActionsRef.current.delete(request.action);
+        setActionsInFlight(new Set(activeActionsRef.current));
       }
     },
     [refresh, runAction, selectedCustomerId, selectedPairingCustomerId, t]
@@ -556,6 +613,7 @@ const NativeCompanionPage: React.FC = () => {
                   targets={pairableMacControlTargets}
                   selectedCustomerId={selectedPairingCustomerId}
                   selectedTarget={selectedPairingTarget}
+                  disabled={anyActionInFlight}
                   onChange={handlePairingTargetChange}
                 />
               </div>
@@ -590,12 +648,12 @@ const NativeCompanionPage: React.FC = () => {
                 <Button
                   data-testid='native-companion-next-action'
                   type='primary'
-                  disabled={viewModel.nextAction.disabled}
+                  disabled={viewModel.nextAction.disabled || anyActionInFlight}
                   loading={
                     viewModel.nextAction.kind === 'reconnect'
                       ? authInFlight
                       : viewModel.nextAction.action
-                        ? actionInFlight === viewModel.nextAction.action
+                        ? actionsInFlight.has(viewModel.nextAction.action)
                         : loading
                   }
                   onClick={() => void handleNextAction(viewModel.nextAction)}
@@ -637,7 +695,8 @@ const NativeCompanionPage: React.FC = () => {
                 {connectorStartAvailable ? (
                   <Button
                     type='secondary'
-                    loading={actionInFlight === 'connector_start'}
+                    disabled={anyActionInFlight}
+                    loading={actionsInFlight.has('connector_start')}
                     onClick={() => void handleRunAction({ action: 'connector_start' })}
                   >
                     Turn On Mac Access
@@ -645,15 +704,21 @@ const NativeCompanionPage: React.FC = () => {
                 ) : null}
                 <Button
                   type='secondary'
-                  loading={actionInFlight === 'setup_check'}
+                  disabled={anyActionInFlight}
+                  loading={actionsInFlight.has('setup_check')}
                   onClick={() => void handleRunAction({ action: 'setup_check' })}
                 >
                   Run Setup Check
                 </Button>
                 <Button
                   type='secondary'
-                  disabled={!canCreatePairingPrompt || brokerSessionRequired || brokerAuthenticated === false}
-                  loading={actionInFlight === 'create_pairing_prompt'}
+                  disabled={
+                    anyActionInFlight ||
+                    !canCreatePairingPrompt ||
+                    brokerSessionRequired ||
+                    brokerAuthenticated === false
+                  }
+                  loading={actionsInFlight.has('create_pairing_prompt')}
                   onClick={() => void handleRunAction({ action: 'create_pairing_prompt' })}
                 >
                   Export Pairing Prompt
@@ -661,7 +726,8 @@ const NativeCompanionPage: React.FC = () => {
                 {agentPairingStatus === 'agent_paired' ? (
                   <Button
                     type='secondary'
-                    loading={actionInFlight === 'control_start'}
+                    disabled={anyActionInFlight}
+                    loading={actionsInFlight.has('control_start')}
                     onClick={() => void handleRunAction({ action: 'control_start', mode: 'full-access' })}
                   >
                     Full Access
@@ -669,14 +735,16 @@ const NativeCompanionPage: React.FC = () => {
                 ) : null}
                 <Button
                   type='secondary'
-                  loading={actionInFlight === 'control_start'}
+                  disabled={anyActionInFlight}
+                  loading={actionsInFlight.has('control_start')}
                   onClick={() => void handleRunAction({ action: 'control_start', mode: 'ask-permission' })}
                 >
                   Ask Permission
                 </Button>
                 <Button
                   type='secondary'
-                  loading={actionInFlight === 'audit_tail'}
+                  disabled={anyActionInFlight}
+                  loading={actionsInFlight.has('audit_tail')}
                   onClick={() => void handleRunAction({ action: 'audit_tail' })}
                 >
                   Show Audit Tail
@@ -728,8 +796,8 @@ const NativeCompanionPage: React.FC = () => {
             <div className='mt-12px flex flex-wrap gap-8px' aria-label='Mac control safety controls'>
               <Button
                 type='secondary'
-                disabled={selectedPairingStatus?.controlSession?.active !== true}
-                loading={actionInFlight === 'control_stop'}
+                disabled={selectedPairingStatus?.controlSession?.active !== true || actionsInFlight.has('control_stop')}
+                loading={actionsInFlight.has('control_stop')}
                 onClick={() => void handleRunAction({ action: 'control_stop' })}
               >
                 Stop Agent Control
@@ -737,18 +805,21 @@ const NativeCompanionPage: React.FC = () => {
               <Button
                 type='secondary'
                 disabled={
-                  selectedPairingStatus?.customerMac.killSwitchAvailable !== true &&
-                  selectedPairingStatus?.controlSession?.active !== true
+                  actionsInFlight.has('kill_switch') ||
+                  (selectedPairingStatus?.customerMac.killSwitchAvailable !== true &&
+                    selectedPairingStatus?.controlSession?.active !== true)
                 }
-                loading={actionInFlight === 'kill_switch'}
+                loading={actionsInFlight.has('kill_switch')}
                 onClick={() => void handleRunAction({ action: 'kill_switch' })}
               >
                 Kill Switch
               </Button>
               <Button
                 type='secondary'
-                disabled={selectedPairingStatus?.connectorService?.running !== true}
-                loading={actionInFlight === 'connector_stop'}
+                disabled={
+                  selectedPairingStatus?.connectorService?.running !== true || actionsInFlight.has('connector_stop')
+                }
+                loading={actionsInFlight.has('connector_stop')}
                 onClick={() => void handleRunAction({ action: 'connector_stop' })}
               >
                 Stop Mac Access
@@ -1255,20 +1326,52 @@ function localizedNativeCompanionActionResultMessage(
     return translate('evaos.nativeCompanion.onboarding.enrollmentSessionDetail');
   }
   if (actionResult.sourcePointer.startsWith('native-companion:secure-network-enrollment-')) {
-    return translate('evaos.nativeCompanion.onboarding.enrollmentFailedDetail');
+    const summary = translate('evaos.nativeCompanion.onboarding.enrollmentFailedDetail');
+    const diagnostic = privateNetworkEnrollmentDiagnosticMessage(actionResult);
+    return diagnostic ? `${summary} ${diagnostic}` : summary;
   }
   return actionResult.message;
+}
+
+function privateNetworkEnrollmentDiagnosticMessage(
+  actionResult: IEvaosNativeCompanionActionResult
+): string | undefined {
+  const diagnostic = actionResult.enrollmentDiagnostic;
+  if (!diagnostic) return undefined;
+  const parts: string[] = [];
+  if (diagnostic.code === 'tailscale_cli_failed') {
+    parts.push(
+      diagnostic.exitCode ? `Tailscale exited with code ${diagnostic.exitCode}.` : 'Tailscale enrollment failed.'
+    );
+  } else if (diagnostic.code === 'enrollment_setup_failed') {
+    parts.push('Workbench could not prepare temporary enrollment material.');
+  } else if (diagnostic.code === 'enrollment_secret_cleanup_failed') {
+    parts.push('Workbench could not confirm temporary enrollment-material cleanup.');
+  } else if (diagnostic.code === 'enrollment_state_changed') {
+    parts.push('The local Tailscale state changed before enrollment.');
+  }
+  if (diagnostic.message) parts.push(diagnostic.message);
+  if (diagnostic.cancellationState === 'cancelled') {
+    parts.push('Unused key cancellation was confirmed.');
+  } else if (diagnostic.cancellationState === 'unconfirmed_not_found') {
+    parts.push('The broker reported the key consumed or not found; cancellation remains unconfirmed.');
+  } else if (diagnostic.cancellationState === 'unconfirmed') {
+    parts.push('Unused key cancellation remains unconfirmed.');
+  }
+  return parts.join(' ') || undefined;
 }
 
 function MacPairingTargetControl({
   targets,
   selectedCustomerId,
   selectedTarget,
+  disabled,
   onChange,
 }: {
   targets: IEvaosCustomerTargetView[];
   selectedCustomerId?: string;
   selectedTarget?: IEvaosCustomerTargetView;
+  disabled?: boolean;
   onChange: (customerId: string) => void;
 }) {
   const targetText = selectedTarget ? macPairingTargetLabel(selectedTarget) : 'Choose Mac target';
@@ -1280,6 +1383,7 @@ function MacPairingTargetControl({
           data-testid='native-companion-mac-target-select'
           aria-label='Mac control target'
           value={selectedCustomerId ?? ''}
+          disabled={disabled}
           onChange={(event) => onChange(event.currentTarget.value)}
           className='h-30px w-full min-w-0 rd-6px border border-solid border-[var(--color-border-2)] bg-fill-1 px-8px text-12px text-t-primary outline-none'
         >

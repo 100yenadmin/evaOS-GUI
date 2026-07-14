@@ -131,6 +131,7 @@
       "clientStoppedDetail": "설치된 보안 네트워크 앱을 열고 macOS VPN 메시지가 표시되면 허용한 다음 다시 확인하세요.",
       "unenrolledTitle": "이 Mac 연결",
       "unenrolledDetail": "이 Mac을 안전하게 연결하려면 선택한 고객의 승인된 등록이 필요합니다.",
+      "enrollmentConnectingDetail": "이 Mac을 안전하게 연결하는 중입니다. 몇 분 정도 걸릴 수 있으니 다시 클릭하지 마세요.",
       "enrollmentSubmittedDetail": "등록을 제출했습니다. 준비 완료로 표시하기 전에 Workbench가 브로커 노드와 액세스 정책 검증을 기다리고 있습니다.",
       "enrollmentFailedDetail": "Workbench가 등록을 완료하거나 안전하게 취소하지 못했습니다. Tailscale을 다시 열고, 필요하면 단기 등록이 만료될 때까지 기다린 후 다시 시도하거나 보고를 사용하세요.",
       "enrollmentSessionDetail": "evaOS Workbench 세션을 새로 고친 다음 이 Mac의 승인된 등록을 다시 시도하세요.",

@@ -13,6 +13,20 @@
 - Removes repeated start actions after an unproven handoff or once Mac Access
   is already ready, and routes recovery through the existing status refresh.
 
+### Workbench-Owned Mac Bridge
+
+- Moves the bundled Mac bridge source into evaOS-GUI so Workbench release and
+  functional-smoke builds no longer clone or require the deprecated bridge
+  repository.
+- Routes current and legacy Workbench focus aliases only to
+  `/Applications/evaOS Workbench.app`, verifies the `evaOS Workbench` process,
+  and refuses the legacy `/Applications/evaOS.app` target.
+- Uses one authenticated connector-readiness snapshot across diagnostics and
+  status, and gives the larger authenticated diagnostics response its own
+  bounded deadline so a healthy Mac is not misreported as unauthenticated.
+- Binds the packaged bridge source digest and ownership provenance to the exact
+  evaOS-GUI release commit before signing.
+
 ### Selected-Binding Mac-control Canary
 
 - Adds a separately acknowledged, staging-only live canary for the deployed

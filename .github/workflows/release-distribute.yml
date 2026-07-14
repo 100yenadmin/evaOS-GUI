@@ -269,6 +269,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           EXPECTED_RELEASE_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
           EVAOS_BETA_LOCAL_SIGNED_DMG_FALLBACK_ACK: ${{ github.event.inputs.local_signed_dmg_fallback_ack }}
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: dist
         run: |
           set -euo pipefail
           if [ -z "$RC_PROOF_RUN_ID" ]; then
@@ -276,9 +277,10 @@ jobs:
             exit 1
           fi
 
-          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName)
-          node - "$RUN_JSON" <<'NODE'
+          RUN_JSON=$(gh run view "$RC_PROOF_RUN_ID" --repo "${{ github.repository }}" --json conclusion,event,workflowName,headSha,createdAt)
+          node - "$RUN_JSON" "$EXPECTED_RELEASE_COMMIT" <<'NODE'
           const run = JSON.parse(process.argv[2]);
+          const expectedHead = process.argv[3];
           if (run.conclusion !== 'success') {
             throw new Error(`RC proof run did not succeed: ${run.conclusion}`);
           }
@@ -287,6 +289,14 @@ jobs:
           }
           if (run.event !== 'workflow_dispatch') {
             throw new Error(`RC proof run was not manually dispatched: ${run.event}`);
+          }
+          if (run.headSha !== expectedHead) {
+            throw new Error(`RC proof head ${run.headSha} does not match release commit ${expectedHead}.`);
+          }
+          const createdAt = Date.parse(run.createdAt || '');
+          const ageMs = Date.now() - createdAt;
+          if (!Number.isFinite(createdAt) || ageMs < -5 * 60 * 1000 || ageMs > 24 * 60 * 60 * 1000) {
+            throw new Error(`RC proof run is outside the 24-hour publication window: ${run.createdAt || 'missing'}.`);
           }
           NODE
 
