@@ -588,8 +588,14 @@ function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', 
 
   const requiredBranchGuard =
     "github.ref_type == 'branch' && github.ref == format('refs/heads/{0}', vars.EVAOS_BETA_RELEASE_BRANCH)";
+  const requiredPublishGuard = "vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'";
   for (const jobName of ['create-tag', 'release', 'register-local-signed-dmg-manifest']) {
     const normalizedJob = executableWorkflowText(getWorkflowJobBlock(buildRelease, jobName)).replace(/\s+/g, ' ');
+    if (!normalizedJob.includes(requiredPublishGuard)) {
+      issues.push(
+        `.github/workflows/build-and-release.yml: jobs.${jobName} must require vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED`
+      );
+    }
     if (!normalizedJob.includes(requiredBranchGuard)) {
       issues.push(
         `.github/workflows/build-and-release.yml: jobs.${jobName} must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH`
@@ -600,6 +606,11 @@ function collectPublicationWorkflowIssues({ buildRelease = '', distribute = '', 
     /\s+/g,
     ' '
   );
+  if (!normalizedDistributeJob.includes(requiredPublishGuard)) {
+    issues.push(
+      '.github/workflows/release-distribute.yml: jobs.distribute must require vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED'
+    );
+  }
   if (!normalizedDistributeJob.includes(requiredBranchGuard)) {
     issues.push(
       '.github/workflows/release-distribute.yml: jobs.distribute must require a branch ref matching vars.EVAOS_BETA_RELEASE_BRANCH'

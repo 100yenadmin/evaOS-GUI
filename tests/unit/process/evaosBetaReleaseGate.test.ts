@@ -1418,6 +1418,14 @@ describe('evaOS beta release gate', () => {
       '.github/workflows/release-distribute.yml: executable publication paths must not use vars.EVAOS_BETA_RELEASE_PUBLISH_ENABLED'
     );
 
+    const unguardedCreateTag = {
+      ...workflows,
+      buildRelease: workflows.buildRelease.replace("vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED == 'true'", 'true'),
+    };
+    expect(releaseGate.collectPublicationWorkflowIssues(unguardedCreateTag)).toContain(
+      '.github/workflows/build-and-release.yml: jobs.create-tag must require vars.EVAOS_BETA_RELEASE_V2136_PUBLISH_ENABLED'
+    );
+
     const missingRefGuard = {
       ...workflows,
       distribute: workflows.distribute
