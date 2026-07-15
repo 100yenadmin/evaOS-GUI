@@ -785,14 +785,16 @@ describe('evaOS installed app product proof', () => {
           owners: [
             {
               pid: '17959',
-              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765',
+              command:
+                '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765',
               matchesExpectedBridge: false,
             },
           ],
           staleOwners: [
             {
               pid: '17959',
-              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765',
+              command:
+                '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765',
               matchesExpectedBridge: false,
             },
           ],
