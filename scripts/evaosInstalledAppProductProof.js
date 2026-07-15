@@ -15,6 +15,8 @@ const WORKBENCH_BUNDLE_IDS = [DEFAULT_BUNDLE_ID, 'com.evaos.workbench.beta'];
 const LEXAR_CODEX_PREFIX = '/Volumes/LEXAR/Codex/';
 const BRIDGE_LAUNCH_AGENT_LABEL = 'com.electricsheep.evaos-desktop-bridge';
 const BRIDGE_LISTENER_PORT = '8765';
+const PACKAGED_BRIDGE_BOOTSTRAP =
+  'import runpy, sys; source_root = sys.argv.pop(1); module = sys.argv.pop(1); sys.path.insert(0, source_root); runpy.run_module(module, run_name="__main__", alter_sys=True)';
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ARTIFACT_BASE = '/Volumes/LEXAR/Codex/aionui-rd/2026-06-public-beta/67-real-admin-product-reality-pass';
 const REPORT_SCHEMA = 'evaos-installed-app-product-proof/v1';
@@ -288,10 +290,14 @@ function redactProcessCommand(command) {
 
 function commandLooksLikeBridgeServer(command, expectedBridgePath) {
   const text = String(command || '');
+  const packagedBridgeInvocation = `-c ${PACKAGED_BRIDGE_BOOTSTRAP} ${path.join(
+    path.dirname(expectedBridgePath),
+    'src'
+  )} evaos_desktop_bridge.host.cli serve`;
   return (
     text.includes(expectedBridgePath) ||
     /(?:^|\s)-m\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
-    /(?:^|\s)-c\s+.+\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
+    text.includes(packagedBridgeInvocation) ||
     /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
   );
 }

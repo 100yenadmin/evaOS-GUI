@@ -1042,7 +1042,7 @@ describe('evaOS installed app product proof', () => {
     ]);
   });
 
-  it('keeps a Workbench child stale when the listener command is not the bridge server', () => {
+  it('keeps an unrelated Python -c Workbench child stale when it only appends bridge-like arguments', () => {
     const fakeExec = (command: string, args: string[]): string => {
       if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {
         return '/Applications/evaOS Workbench.app\n';
@@ -1055,7 +1055,9 @@ describe('evaOS installed app product proof', () => {
       }
       if (command === '/bin/ps') {
         if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
-        if (argsEqual(args, ['-p', '4242', '-o', 'command='])) return '/usr/bin/python3 -m http.server 8765\n';
+        if (argsEqual(args, ['-p', '4242', '-o', 'command='])) {
+          return '/usr/bin/python3 -c print("not the bridge") /Applications/evaOS Workbench.app/Contents/Resources/Bridge/src evaos_desktop_bridge.host.cli serve --port 8765\n';
+        }
         if (argsEqual(args, ['-p', '4242', '-o', 'ppid='])) return '85316\n';
         if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
           return '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench\n';
@@ -1080,7 +1082,8 @@ describe('evaOS installed app product proof', () => {
     expect(state.bridgeListener.staleOwners).toEqual([
       expect.objectContaining({
         pid: '4242',
-        command: '/usr/bin/python3 -m http.server 8765',
+        command:
+          '/usr/bin/python3 -c print("not the bridge") /Applications/evaOS Workbench.app/Contents/Resources/Bridge/src evaos_desktop_bridge.host.cli serve --port [redacted-port]',
         cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
         parentExecutable: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
         matchesExpectedBridge: false,
