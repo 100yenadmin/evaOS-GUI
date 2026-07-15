@@ -1,6 +1,6 @@
 {
   "name": "@100yenadmin/evaos-desktop-bridge-openclaw",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Guarded OpenClaw plugin wrapper for evaos-desktop-bridge.",
   "author": "100yenadmin/evaOS-GUI",
