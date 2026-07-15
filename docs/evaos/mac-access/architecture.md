@@ -2,8 +2,8 @@
 
 Issue: [#699](https://github.com/100yenadmin/evaOS-GUI/issues/699)
 Parent: [#698](https://github.com/100yenadmin/evaOS-GUI/issues/698)
-Contract version: `2026-07-15.v1`
-Inspected Workbench source: PR [#697](https://github.com/100yenadmin/evaOS-GUI/pull/697) head `f197d2e51828f9f6a50e8448a09d5b064d14b498`
+Contract version: `2026-07-15.v2`
+Inspected Workbench source: PR #697 final head `fff813ef1da6b766ae09344b20021b4a4b0672c4`, merge `0ac9742cc8c42d777da627adb9cf4179567d1373`; PR #708 final head `5b1308fadc481f83116c54de2b9713ab2363bed2`, merge `5c86e8e91660772da5b1b6f49b43f2de3afee737`; PR [#709](https://github.com/100yenadmin/evaOS-GUI/pull/709) final head `f92d45f984db29c132e65f458df85567f04186ca`, merge `27b28cd234d537a491028e9024070cf8d33b9611`
 
 ## Decision
 
@@ -13,7 +13,9 @@ The Mac opens an outbound authenticated WebSocket to the evaOS broker relay. It 
 
 Backend support for that outbound Mac relay does not exist at the inspected ws-proxy head. It is tracked in [electricsheephq/evaos-ws-proxy#73](https://github.com/electricsheephq/evaos-ws-proxy/issues/73). Implementation must remain fail closed until that contract exists; the current browser-to-VM proxy path is not a substitute.
 
-The inspected #697 head adds Workbench candidate-source/app attestation, Tailscale enrollment diagnostics, connector URL/token readiness, generation-linearized stop/kill/start behavior, content-hashed audit evidence, packaged CLI canaries, and stricter beta/live release gates. Those are migration and parity inputs only. They reinforce the target ban on Workbench-owned networking, lifecycle, credentials, TCC/CUA, and release authority; they do not become Mac Access runtime dependencies or relax any v1 contract.
+Public one-use code issue and redemption is tracked in [dashboard #669](https://github.com/electricsheephq/electric-sheep-website-dashboard-6158a244/issues/669). An authenticated broker handoff may be an optional convenience, but it cannot replace or bypass that code path.
+
+Merged #697 provides the owned bridge source and its generation-linearized stop/kill/start, local-consent, stale-session, pristine-runtime, audit, and release-gate behavior. Merged #708 adds the signed runtime-receipt route, `receipt_canary.py`, native Ed25519 verifier, Workbench proof consumers, and bundled OpenClaw/Hermes verifier consumers. #709 makes explicit staging signer configuration fail closed before LaunchAgent mutation. These are migration and parity inputs only. They reinforce the target ban on Workbench-owned networking, lifecycle, credentials, TCC/CUA, and release authority; they do not become Mac Access runtime dependencies or substitute for #73's outbound relay.
 
 This document is executable design evidence. It is not a working-app, signed-artifact, notarization, pristine-Mac, VM-to-Mac, customer-readiness, publication, or rollout claim.
 
@@ -58,7 +60,7 @@ Target: one customer-facing app, one persistent connector leader, one TCC author
 
 1. **Delete** public/private inbound connector URLs, tailnet discovery, token export, and Workbench-owned lifecycle from the target path.
 2. **Simplify** local authority to one signed helper and a small versioned IPC contract.
-3. **Accelerate** implementation with shared pure contracts and the PR #697 Python behavior as an embedded implementation detail.
+3. **Accelerate** implementation with shared pure contracts and the canonical Workbench Python behavior through #709 as an embedded implementation detail.
 4. **Automate** schema fixtures, negative cases, code-sign checks, orphan cleanup, rollback checks, and exact-head release evidence.
 
 ### Proof needed
@@ -116,11 +118,23 @@ PR #699 introduces only the versioned contract source/fixtures under `packages/m
 | Embedded helper/XPC service | `com.evaos.mac-access.helper`    | Sole native policy/TCC/CUA authority. Must share the app's signed designated requirement and release lineage.                                     |
 | Per-user connector service  | `com.evaos.mac-access.connector` | Stable SMAppService/LaunchAgent identity if persistence needs a login item. It starts or brokers the same helper; it is never a second authority. |
 
-The certificate chain, helper embedding rule, and concrete designated requirements become signed-build inputs, not caller-supplied wire fields. Local IPC derives and verifies the caller from the connection audit token. A request cannot assert its own identity.
+The approved Developer ID Team ID is frozen as `TC6MS3T6NN`. The expected release requirements are:
+
+```text
+app:       anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.mac-access"
+helper:    anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.mac-access.helper"
+connector: anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.mac-access.connector"
+```
+
+The contract SHA-256 is over the exact UTF-8 requirement text above: app `da635352f249b4213aa1a96c41d7979d8b25d86b056b9f0929c1b414e35896fb`, helper `222107bb855cfc463805777c76ca8cfdac0d1145957c5f190c234e52bfd277aa`, connector `0c3de778270de5b4a1992d0e13d4f27e41929c7ace94ae143bcba92a555be422`. Authenticated Workbench client allowlists use the same anchor/Team ID with identifier `com.evaos.workbench` (digest `ff4fc126bb70bbf7fcc3cc0957377d67185124b5e31b19760357333a8a0ae329`) or the shipped legacy identifier `com.electricsheephq.EvaDesktop` (digest `c6038eaf8a20c83a1aabfd1bf8eb4053877b7af5627e570eb1de37721e76b776`). The native verifier selects the frozen requirement for the expected role, obtains the connection process from the audit token, evaluates that `SecCode` against the requirement, and records the digest of the frozen requirement used. Wire callers cannot supply a trusted role or digest.
+
+The artifact relationship is frozen before implementation: the app main executable is `Contents/MacOS/evaOS Mac Access`; the persistent connector is a nested signed login item at `Contents/Library/LoginItems/evaOS Mac Access Connector.app`; and the CUA helper is a nested signed XPC service at `Contents/XPCServices/evaOS Mac Access Helper.xpc`. The helper is launched only by the signed app/connector and accepts only frozen app or Workbench client requirements. The app and connector receive no production credential access group. Only the helper receives `TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-N`; no target receives `get-task-allow`, JIT, unsigned-executable-memory, disable-library-validation, inbound network-server, or Apple-events automation entitlements. If App Sandbox is enabled, outbound `com.apple.security.network.client` belongs only to the connector. Development entitlements and access groups are disjoint.
+
+The main executable inside `/Applications/evaOS Mac Access.app` is the intended TCC responsible executable shown to the user. Only the embedded helper invokes Accessibility and Screen Recording APIs. #705 proves—not chooses—the actual `codesign -dr -` output, nested-code placement, entitlements, responsible identity, helper relationship, and TCC attribution on the installed artifact. Any mismatch stops live proof and returns to #699 before an identity or relationship changes. Local IPC derives and verifies the caller from the connection audit token. A request cannot assert its own identity.
 
 Keychain custody is frozen as follows: the production access-group base is `com.evaos.mac-access.credentials`, with an effective group `com.evaos.mac-access.credentials.epoch-N` for each security-critical credential epoch; development uses the disjoint `com.evaos.mac-access.development.credentials` base; the item service is `com.evaos.mac-access.connector-credential`; items are non-synchronizing `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`; and only the production helper target for the accepted epoch receives that epoch's production access-group entitlement. The menu app, Workbench, Python, debug builds, and old/replaced helpers must be denied. Connector private keys are non-exportable `SecKey` material, using hardware protection where the selected algorithm and Mac support it. #705 must record the resolved Team-ID prefix and prove the built entitlements/ACLs; it may not broaden this custody contract.
 
-The stable helper identity does not make an old validly signed binary safe. ws-proxy #73 registration and reconnect must reject a missing or below-floor immutable build/security identity before accepting the device credential. Raising a security-critical floor atomically issues a new credential/key into a new epoch access group, registers only the exact accepted build/source/security epoch, commits the new broker epoch, then revokes and deletes the prior credential. Old binaries lack the new group entitlement and their old broker credential is rejected. Exceptional rollback uses `evaos.mac_access.rollback_authorization_payload.v1`, signed over RFC 8785/JCS bytes, to name the authorization ID, exact source and target version/commit/lineage/security epoch, both credential epochs, resulting reader/writer floors, and issue/expiry interval. The relay and local status must equal those validated target claims. `golden/rollback-authorization-golden.json` freezes canonical bytes, digest, broker key, and Ed25519 signature. No opaque ID or local-only authorization can revive an old credential.
+The stable helper identity does not make an old validly signed binary safe. ws-proxy #73 registration and reconnect must reject a missing or below-floor immutable build/security identity before accepting the device credential. Raising a security-critical floor atomically issues a new credential/key into a new epoch access group, registers only the exact accepted build/source/security epoch, commits the new broker epoch, then revokes and deletes the prior credential. Old binaries lack the new group entitlement and their old broker credential is rejected. Exceptional rollback uses `evaos.mac_access.rollback_authorization_payload.v1`, signed over RFC 8785/JCS bytes, to name the authorization ID, exact source and target version/commit/lineage/security epoch, schema reader/writer versions, both credential epochs, resulting reader/writer security and schema floors, and issue/expiry interval. The persisted verified pre-rollback build must equal the signed source, and relay/local status must equal the signed target and resulting floors. `golden/rollback-authorization-golden.json` freezes canonical bytes, digest, broker key, and Ed25519 signature. No opaque ID or local-only authorization can revive an old credential.
 
 Live proof must record `codesign --display --requirements`, `codesign --verify --strict --deep`, notarization/stapling, SMAppService registration, actual TCC attribution, helper replacement rejection, and upgrade continuity. If those checks expose a collision, the replacement identity must be recorded in #699 before any downstream TCC/live proof. No source document alone freezes macOS TCC behavior.
 
@@ -199,8 +213,8 @@ Each command uses `evaos.mac_access.broker_control.v1` and carries:
 
 - the selected tuple;
 - the server-owned Ed25519 `evaos.mac_control_execution_context.v1` produced by ws-proxy #69;
-- a separate `evaos.mac_access.command_authority_payload.v1` signed authorization that exhaustively includes session, channel generation, the full selected tuple, execution-context digest, command ID, capability, exact request digest, random nonce, sequence, and issue/expiry times;
-- a maximum 60-second command authority fully contained inside the signed #69 execution-context interval;
+- a separate `evaos.mac_access.command_authority_payload.v1` signed authorization that exhaustively includes session, channel generation, the full selected tuple and grant expiry, current policy epoch, execution-context digest, command ID, capability, exact request digest, random nonce, sequence, and issue/expiry times;
+- a maximum 60-second command authority fully contained inside the signed #69 execution-context interval and ending before grant expiry;
 - no reusable connector URL/token.
 
 The command authorization signs the UTF-8 RFC 8785/JCS serialization of the payload object only, prefixed semantically by the fixed domain field `evaos.mac-access/command-authority/v1`. The authorization wrapper, its digest, key ID, and signature are not part of the signed payload, avoiding self-reference. Base64url is unpadded. SHA-256 covers the exact canonical bytes, and Ed25519 verifies those same bytes. `command-authority-golden.json` freezes canonical bytes, digest, public key, and a valid signature so TypeScript, Swift, Python, and ws-proxy #73 can prove byte-for-byte interoperability and one-bit mutation rejection.
@@ -213,12 +227,13 @@ The helper validates in this order before any prompt or Python call:
 4. RFC 8785 command-authority canonical bytes, digest, signature, and equality of every signed field with the delivered envelope;
 5. command interval containment inside the #69 context and a monotonic receipt deadline;
 6. context ID, session ID, channel generation, command ID, nonce, and sequence replay windows;
-7. equality of every complete signed tuple field with the locally enrolled binding;
-8. local revocation tombstone, policy epoch, pause, and kill switch;
+7. equality of every complete signed tuple field and grant expiry with the locally enrolled binding;
+8. exact current policy epoch, unexpired grant, local revocation tombstone, pause, and kill switch;
 9. access-mode decision and exact-scope local approval;
 10. durable redacted decision audit write;
 11. normalized CUA execution through the helper;
-12. durable redacted result audit write and signed/attested result receipt.
+
+Grant expiry is an authority transition: rotate the policy epoch, invalidate pending work, request safe cancellation, clear the binding, tombstone the grant, close transport, and force effective Off. No resume may restore an expired grant. 12. durable redacted result audit write and signed/attested result receipt.
 
 Any failed step prevents all later steps. An audit-write failure is a denial, not a warning.
 
@@ -226,7 +241,7 @@ Reconnect uses exponential backoff with jitter and a bounded ceiling. A new conn
 
 ## Python embedding boundary
 
-PR #697's `evaos_desktop_bridge` source moves into `packages/mac-connector-core/python` only after #697 merges or is superseded. The Mac Access artifact includes a pinned private CPython runtime and wheels built for supported architectures. Runtime discovery never searches `/usr/bin/python3`, Homebrew, pyenv, PATH, or a customer virtual environment.
+The canonical `evaos_desktop_bridge` source through #709 moves into `packages/mac-connector-core/python` in #700. The Mac Access artifact includes a pinned private CPython runtime and wheels built for supported architectures. Runtime discovery never searches `/usr/bin/python3`, Homebrew, pyenv, PATH, or a customer virtual environment.
 
 Python may own normalized capability planning, adapters, policy-table data, redaction helpers, and behavior/canary harnesses. It may not own:
 
@@ -277,14 +292,14 @@ Cutover is prepare-before-atomic-commit:
 
 1. detect a signed, compatible Mac Access helper;
 2. authenticate Workbench main over XPC and read a fresh status with matching runtime identity/policy epoch;
-3. broker prepares, but does not activate, the replacement binding and exact rollback record;
-4. prove local audit writable, kill switch clear, and rollback metadata present;
+3. broker prepares, but does not activate, the replacement binding and exact one-use commit record;
+4. prove local audit writable, kill switch clear, and commit metadata present;
 5. both local connectors enter deny-new-work and the broker performs one compare-and-swap that deactivates the legacy grant/lease and activates the prepared Mac Access binding/lease in the same commit;
 6. Mac Access acknowledges the committed generation, then Workbench stops only the exact verified legacy connector;
 7. remove Workbench access to connector tokens, URL/host discovery, grant creation, bridge process spawning, packaging/signing, and TCC execution;
-8. retain a signed, time-bounded reverse-handoff authorization; after commit neither client accepts work during rollback ambiguity.
+8. after commit, permit only client-integration disablement or signed compatible repair under the same `com.evaos.mac-access*` identity; never reactivate the Workbench connector.
 
-On any ambiguous step, Workbench does not kill or replace an unknown connector. It shows a fail-closed blocker and preserves the previously verified owner. Dual listeners, duplicate grants, and simultaneous TCC prompts are test failures.
+On any ambiguous step, Workbench does not kill or replace an unknown connector. Before atomic commit it shows a blocker and preserves the previously verified owner. After commit both clients remain effective Off until same-identity repair. Dual listeners, duplicate grants, simultaneous TCC prompts, and post-cutover Workbench fallback are test failures.
 
 ## Update, downgrade, uninstall, and orphan cleanup
 
@@ -292,7 +307,7 @@ Mac Access owns its appcast/update channel, signing/notarization, install locati
 
 Before update, the helper moves effective access to `Off`, drains/cancels work, persists a redacted lifecycle audit, closes the channel, and releases leadership. Protected state records minimum reader/writer schema versions and a monotonic security epoch. Status/handshake records exact build version, source commit, signed lineage, reader/writer versions, credential epoch, and security epoch. The replacement must meet every floor, have a compatible schema range and matching designated requirement, and complete the broker-enforced credential-epoch migration above before it reads the new credential. Failed replacement leaves access off and restores the last signed compatible artifact only through the independent rollback path and exact broker authorization.
 
-Downgrade across an unsupported state/schema or below the protected security/build floor refuses to start remote transport. It does not rewrite new state with old defaults. Exceptional rollback requires an exact signed, time-bounded authorization naming source/target build and resulting security floor. Full Access is never restored across any update or rollback without current-runtime, current-policy-epoch, current-binding local confirmation.
+Downgrade across an unsupported state/schema or below the protected security/build floor refuses to start remote transport. It does not rewrite new state with old defaults. Exceptional rollback requires an exact signed, time-bounded authorization naming the verified source, exact target build/schema identity, and resulting schema/security floors. Full Access is never restored across any update or rollback without current-runtime, current-policy-epoch, current-binding local confirmation.
 
 Uninstall/revoke order is: activate local deny barrier, invalidate approvals/queue, write revocation tombstone, notify broker best effort, close channel, delete active device credentials, unregister login item/helper, and remove executable/runtime files. A minimal non-secret tombstone may remain to prevent an old grant from being accepted after reinstall; retention and reset behavior must be explicit in #703/#705. Orphan cleanup removes only processes/files whose path and signed identity match the current or recorded prior Mac Access installation.
 
@@ -321,24 +336,24 @@ The negative manifests distinguish:
 
 Downstream issues may claim completion only with the following evidence:
 
-| Issue lane       | Minimum evidence                                                                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #700 core        | Bounded subpackages; TS/Python/Swift parity; complete host-operation integration without Electron/system Python; negative fixtures; native-port boundaries. |
-| #701 app         | native menu flow; truthful states; signed identity inspection; no Workbench dependency.                                                                     |
-| #702 transport   | ws-proxy #73 source contract; exact selected-binding positive and all negative cases; outbound-only packet/listener evidence.                               |
-| #703 policy      | transition tests, exact-scope prompt, restart downgrade, stop/revoke/kill race tests, redacted audit chain.                                                 |
-| #704 coexistence | single leader/listener/grant/TCC identity with both apps; make-before-break and rollback.                                                                   |
-| #705 release     | signed, notarized, stapled independent artifact/appcast; upgrade/downgrade/uninstall/orphan proof.                                                          |
-| #706 live proof  | pristine supported Mac onboarding and broker-selected VM-to-Mac CUA with exact audit IDs.                                                                   |
+| Issue lane       | Minimum evidence                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #700 core        | Bounded subpackages; TS/Python/Swift parity; complete host-operation integration without Electron/system Python; negative fixtures; native-port boundaries.       |
+| #701 app         | native menu flow; truthful states; signed identity inspection; no Workbench dependency.                                                                           |
+| #702 transport   | dashboard #669 code redemption plus ws-proxy #73 source contract; exact selected-binding positive and all negative cases; outbound-only packet/listener evidence. |
+| #703 policy      | transition tests, exact-scope prompt, restart downgrade, stop/revoke/kill race tests, redacted audit chain.                                                       |
+| #704 coexistence | single leader/listener/grant/TCC identity with both apps; make-before-break and rollback.                                                                         |
+| #705 release     | signed, notarized, stapled independent artifact/appcast; upgrade/downgrade/uninstall/orphan proof.                                                                |
+| #706 live proof  | pristine supported Mac onboarding and broker-selected VM-to-Mac CUA with exact audit IDs.                                                                         |
 
 Public publication, rollout, and customer readiness remain separately authorized gates after all of the above.
 
 ## Current blockers and sequencing
 
-- PR #697 was still open at the inspected head. No connector implementation may land from a pre-#697 copy.
-- ws-proxy #73 must supply the outbound selected-binding relay; no fallback is authorized.
-- ws-proxy #69 proves an optional source-level signed execution context only. Signer deployment, downstream verification, and enforcement were unproven at inspection time.
-- OpenClaw #16 and the owned Hermes/final connector verifier lanes must consume and propagate the signed context before enforcement.
+- #709 is merged at exact canonical commit `27b28cd234d537a491028e9024070cf8d33b9611`; #699/#700 branches must contain that merge or a later explicitly recorded canonical supersession.
+- Dashboard #669 must supply one-use public code authority and ws-proxy #73 must supply the outbound selected-binding relay; no direct-network or raw-secret fallback is authorized.
+- ws-proxy #69's signed execution-context source is merged; production remains signer-disabled and isolated-staging selected-binding enforcement is not yet live proof.
+- #708's bundled OpenClaw/Hermes verifiers and runtime-receipt consumers are parity inputs. Their source/CI does not prove deployed relay enforcement or VM-to-Mac CUA.
 - #699 blocks #700-#706. Architecture approval does not authorize merging, release work, customer mutation, or v2.1.36 changes.
 
 ## Non-goals

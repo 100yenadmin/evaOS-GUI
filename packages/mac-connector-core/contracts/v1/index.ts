@@ -12,9 +12,25 @@ const safePositiveCounter = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER)
 const safeNonnegativeCounter = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
 export const MAC_ACCESS_IDENTITIES = {
+  teamId: 'TC6MS3T6NN',
   appBundleId: 'com.evaos.mac-access',
   helperServiceId: 'com.evaos.mac-access.helper',
   connectorServiceId: 'com.evaos.mac-access.connector',
+  appDesignatedRequirement:
+    'anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.mac-access"',
+  helperDesignatedRequirement:
+    'anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.mac-access.helper"',
+  connectorDesignatedRequirement:
+    'anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.mac-access.connector"',
+  workbenchDesignatedRequirement:
+    'anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.evaos.workbench"',
+  legacyWorkbenchDesignatedRequirement:
+    'anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.electricsheephq.EvaDesktop"',
+  appDesignatedRequirementSha256: 'da635352f249b4213aa1a96c41d7979d8b25d86b056b9f0929c1b414e35896fb',
+  helperDesignatedRequirementSha256: '222107bb855cfc463805777c76ca8cfdac0d1145957c5f190c234e52bfd277aa',
+  connectorDesignatedRequirementSha256: '0c3de778270de5b4a1992d0e13d4f27e41929c7ace94ae143bcba92a555be422',
+  workbenchDesignatedRequirementSha256: 'ff4fc126bb70bbf7fcc3cc0957377d67185124b5e31b19760357333a8a0ae329',
+  legacyWorkbenchDesignatedRequirementSha256: 'c6038eaf8a20c83a1aabfd1bf8eb4053877b7af5627e570eb1de37721e76b776',
   productionKeychainAccessGroupSuffix: 'com.evaos.mac-access.credentials',
   developmentKeychainAccessGroupSuffix: 'com.evaos.mac-access.development.credentials',
   connectorCredentialService: 'com.evaos.mac-access.connector-credential',
@@ -29,6 +45,7 @@ export const selectedBindingSchema = z
     runtime: z.enum(['openclaw', 'hermes']),
     binding_id: identifier,
     binding_version: identifier,
+    grant_expires_at: instant,
     connector_installation_id: identifier,
     connector_key_id: identifier,
     binding_fingerprint_sha256: sha256,
@@ -47,6 +64,7 @@ function selectedBindingsEqual(
     left.runtime === right.runtime &&
     left.binding_id === right.binding_id &&
     left.binding_version === right.binding_version &&
+    left.grant_expires_at === right.grant_expires_at &&
     left.connector_installation_id === right.connector_installation_id &&
     left.connector_key_id === right.connector_key_id &&
     left.binding_fingerprint_sha256 === right.binding_fingerprint_sha256
@@ -59,8 +77,8 @@ export const buildIdentitySchema = z
     source_commit: z.string().regex(/^[a-f0-9]{40}$/),
     signed_lineage_id: identifier,
     security_epoch: safeNonnegativeCounter,
-    schema_reader_version: z.literal(1),
-    schema_writer_version: z.literal(1),
+    schema_reader_version: safePositiveCounter,
+    schema_writer_version: safePositiveCounter,
     rollback_authorization_id: identifier.nullable(),
   })
   .strict();
@@ -93,6 +111,8 @@ const rollbackBuildSchema = z
     signed_lineage_id: identifier,
     security_epoch: safeNonnegativeCounter,
     credential_security_epoch: safePositiveCounter,
+    schema_reader_version: safePositiveCounter,
+    schema_writer_version: safePositiveCounter,
   })
   .strict();
 
@@ -105,6 +125,8 @@ export const rollbackAuthorizationPayloadSchema = z
     target: rollbackBuildSchema,
     resulting_minimum_reader_security_epoch: safeNonnegativeCounter,
     resulting_minimum_writer_security_epoch: safeNonnegativeCounter,
+    resulting_minimum_reader_schema_version: safePositiveCounter,
+    resulting_minimum_writer_schema_version: safePositiveCounter,
     issued_at: instant,
     expires_at: instant,
   })
@@ -175,6 +197,7 @@ export const authenticatedPeerSchema = z
   .object({
     verification: z.literal('verified_designated_requirement'),
     role: z.enum(['mac_access_menu', 'workbench_main']),
+    team_id: z.literal(MAC_ACCESS_IDENTITIES.teamId),
     signing_identifier: z.enum(['com.evaos.mac-access', 'com.evaos.workbench', 'com.electricsheephq.EvaDesktop']),
     audit_token_sha256: sha256,
     designated_requirement_sha256: sha256,
@@ -192,6 +215,18 @@ export const authenticatedPeerSchema = z
         path: ['signing_identifier'],
       });
     }
+    const requirementDigestByIdentifier = {
+      'com.evaos.mac-access': MAC_ACCESS_IDENTITIES.appDesignatedRequirementSha256,
+      'com.evaos.workbench': MAC_ACCESS_IDENTITIES.workbenchDesignatedRequirementSha256,
+      'com.electricsheephq.EvaDesktop': MAC_ACCESS_IDENTITIES.legacyWorkbenchDesignatedRequirementSha256,
+    } as const;
+    if (peer.designated_requirement_sha256 !== requirementDigestByIdentifier[peer.signing_identifier]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'peer designated requirement digest is not in the frozen role allowlist',
+        path: ['designated_requirement_sha256'],
+      });
+    }
   });
 
 export const accessStateSchema = z
@@ -201,6 +236,8 @@ export const accessStateSchema = z
     state_security_epoch: safeNonnegativeCounter,
     minimum_reader_security_epoch: safeNonnegativeCounter,
     minimum_writer_security_epoch: safeNonnegativeCounter,
+    minimum_reader_schema_version: safePositiveCounter,
+    minimum_writer_schema_version: safePositiveCounter,
     policy_epoch: safeNonnegativeCounter,
     pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
     configured_mode: z.enum(['off', 'ask_every_time', 'full_access']),
@@ -331,7 +368,10 @@ export const localStatusSchema = z
         app_bundle_id: z.literal(MAC_ACCESS_IDENTITIES.appBundleId),
         helper_service_id: z.literal(MAC_ACCESS_IDENTITIES.helperServiceId),
         connector_service_id: z.literal(MAC_ACCESS_IDENTITIES.connectorServiceId),
-        helper_designated_requirement_sha256: sha256,
+        team_id: z.literal(MAC_ACCESS_IDENTITIES.teamId),
+        app_designated_requirement_sha256: z.literal(MAC_ACCESS_IDENTITIES.appDesignatedRequirementSha256),
+        helper_designated_requirement_sha256: z.literal(MAC_ACCESS_IDENTITIES.helperDesignatedRequirementSha256),
+        connector_designated_requirement_sha256: z.literal(MAC_ACCESS_IDENTITIES.connectorDesignatedRequirementSha256),
         build: buildIdentitySchema,
       })
       .strict(),
@@ -342,6 +382,7 @@ export const localStatusSchema = z
         accepted_source_commit: z.string().regex(/^[a-f0-9]{40}$/),
         accepted_security_epoch: safePositiveCounter,
         credential_security_epoch: safePositiveCounter,
+        verified_pre_rollback_source: rollbackBuildSchema.nullable(),
         rollback_authorization: signedRollbackAuthorizationSchema.nullable(),
       })
       .strict(),
@@ -405,6 +446,20 @@ export const localStatusSchema = z
         path: ['leader', 'build', 'security_epoch'],
       });
     }
+    if (status.leader.build.schema_reader_version < status.access.minimum_reader_schema_version) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'helper build is below the protected state reader schema floor',
+        path: ['leader', 'build', 'schema_reader_version'],
+      });
+    }
+    if (status.leader.build.schema_writer_version < status.access.minimum_writer_schema_version) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'helper build is below the protected state writer schema floor',
+        path: ['leader', 'build', 'schema_writer_version'],
+      });
+    }
     const relayBuild = status.relay_authorization;
     const localBuild = status.leader.build;
     if (
@@ -437,14 +492,35 @@ export const localStatusSchema = z
       });
     }
     if (rollback !== null) {
+      const source = relayBuild.verified_pre_rollback_source;
+      const sourceMatches =
+        source !== null &&
+        source.build_version === rollback.source.build_version &&
+        source.source_commit === rollback.source.source_commit &&
+        source.signed_lineage_id === rollback.source.signed_lineage_id &&
+        source.security_epoch === rollback.source.security_epoch &&
+        source.credential_security_epoch === rollback.source.credential_security_epoch &&
+        source.schema_reader_version === rollback.source.schema_reader_version &&
+        source.schema_writer_version === rollback.source.schema_writer_version;
+      if (!sourceMatches) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'rollback authorization source must match the persisted verified pre-rollback build',
+          path: ['relay_authorization', 'verified_pre_rollback_source'],
+        });
+      }
       const targetMatches =
         rollback.target.build_version === localBuild.build_version &&
         rollback.target.source_commit === localBuild.source_commit &&
         rollback.target.signed_lineage_id === localBuild.signed_lineage_id &&
         rollback.target.security_epoch === localBuild.security_epoch &&
         rollback.target.credential_security_epoch === status.keychain.credential_security_epoch &&
+        rollback.target.schema_reader_version === localBuild.schema_reader_version &&
+        rollback.target.schema_writer_version === localBuild.schema_writer_version &&
         rollback.resulting_minimum_reader_security_epoch === status.access.minimum_reader_security_epoch &&
-        rollback.resulting_minimum_writer_security_epoch === status.access.minimum_writer_security_epoch;
+        rollback.resulting_minimum_writer_security_epoch === status.access.minimum_writer_security_epoch &&
+        rollback.resulting_minimum_reader_schema_version === status.access.minimum_reader_schema_version &&
+        rollback.resulting_minimum_writer_schema_version === status.access.minimum_writer_schema_version;
       if (!targetMatches) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -460,6 +536,22 @@ export const localStatusSchema = z
           path: ['relay_authorization', 'rollback_authorization', 'payload', 'expires_at'],
         });
       }
+    } else if (relayBuild.verified_pre_rollback_source !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pre-rollback source is valid only with an exact rollback authorization',
+        path: ['relay_authorization', 'verified_pre_rollback_source'],
+      });
+    }
+    if (
+      status.access.binding !== null &&
+      Date.parse(status.observed_at) >= Date.parse(status.access.binding.grant_expires_at)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'expired grant must clear the selected binding and force access off',
+        path: ['access', 'binding', 'grant_expires_at'],
+      });
     }
     const connected = status.transport.state === 'connected';
     if (connected !== (status.transport.channel_id !== null)) {
@@ -494,6 +586,7 @@ export const accessTransitionSchema = z
       'tcc_lost',
       'audit_failed',
       'binding_changed',
+      'grant_expired',
     ]),
     explicit_user_consent: z.boolean(),
     invalidated_pending_authority: z.boolean(),
@@ -510,6 +603,30 @@ export const accessTransitionSchema = z
         code: z.ZodIssueCode.custom,
         message: 'every authority transition must advance the policy epoch exactly once',
         path: ['to', 'policy_epoch'],
+      });
+    }
+    const authorityInvalidating =
+      [
+        'restart',
+        'pause',
+        'stop',
+        'revoke',
+        'kill_switch',
+        'tcc_lost',
+        'audit_failed',
+        'binding_changed',
+        'grant_expired',
+      ].includes(transition.event) ||
+      (transition.event === 'set_mode' && transition.target_mode === 'off');
+    if (
+      authorityInvalidating &&
+      (!transition.invalidated_pending_authority || !transition.safe_cancellation_requested)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'destructive or authority-changing transition must invalidate pending authority and request safe cancellation',
+        path: ['event'],
       });
     }
     if (transition.event === 'pair_confirmed') {
@@ -613,6 +730,20 @@ export const accessTransitionSchema = z
         });
       }
     }
+    if (transition.event === 'grant_expired') {
+      const validExpiry =
+        to.pairing_state === 'revoked' &&
+        to.configured_mode === 'off' &&
+        to.effective_mode === 'off' &&
+        to.binding === null;
+      if (!validExpiry) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'grant expiry must tombstone authority, clear the binding, and force access off',
+          path: ['to'],
+        });
+      }
+    }
     if (transition.event === 'kill_switch' && (!to.kill_switch || to.effective_mode !== 'off')) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -706,6 +837,7 @@ export const commandAuthorityPayloadSchema = z
     issued_at: instant,
     expires_at: instant,
     sequence: safePositiveCounter,
+    policy_epoch: safeNonnegativeCounter,
     nonce: base64Url,
     binding: selectedBindingSchema,
     execution_context_sha256: sha256,
@@ -736,6 +868,7 @@ export const brokerControlEnvelopeSchema = z
     issued_at: instant,
     expires_at: instant,
     sequence: safePositiveCounter,
+    policy_epoch: safeNonnegativeCounter,
     nonce: base64Url,
     binding: selectedBindingSchema,
     execution_context: z
@@ -774,6 +907,13 @@ export const brokerControlEnvelopeSchema = z
         code: z.ZodIssueCode.custom,
         message: 'command authority must be positive and no longer than 60 seconds',
         path: ['expires_at'],
+      });
+    }
+    if (expiresAt > Date.parse(envelope.binding.grant_expires_at)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'command authority must expire before the selected grant',
+        path: ['binding', 'grant_expires_at'],
       });
     }
     const claims = envelope.execution_context.claims;
@@ -815,6 +955,7 @@ export const brokerControlEnvelopeSchema = z
       authority.issued_at === envelope.issued_at &&
       authority.expires_at === envelope.expires_at &&
       authority.sequence === envelope.sequence &&
+      authority.policy_epoch === envelope.policy_epoch &&
       authority.nonce === envelope.nonce &&
       authority.execution_context_sha256 === envelope.execution_context.payload_sha256 &&
       authority.capability === envelope.command.capability &&

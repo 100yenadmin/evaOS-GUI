@@ -126,6 +126,38 @@
     "required_runtime_rejection": "Persist the last accepted sequence for the host-session lifetime and reject duplicate or lower sequence values before dispatch."
   },
   {
+    "id": "wrong-team-local-client",
+    "threat": "local_untrusted_client",
+    "contract": "authenticated_local_action",
+    "base_fixture": "../valid/local-action.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/peer/team_id",
+        "value": "ATTACKER00"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "peer_team_identifier_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "forged-local-client-requirement",
+    "threat": "local_untrusted_client",
+    "contract": "authenticated_local_action",
+    "base_fixture": "../valid/local-action.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/peer/designated_requirement_sha256",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "peer_designated_requirement_hash_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
     "id": "untrusted-local-client",
     "threat": "local_untrusted_client",
     "contract": "authenticated_local_action",
@@ -171,6 +203,54 @@
     ],
     "expected_stage": "schema",
     "expected_error": "helper_identity_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "forged-app-requirement",
+    "threat": "helper_replacement",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/leader/app_designated_requirement_sha256",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "app_requirement_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "forged-helper-requirement",
+    "threat": "helper_replacement",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/leader/helper_designated_requirement_sha256",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "helper_requirement_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "forged-connector-requirement",
+    "threat": "helper_replacement",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/leader/connector_designated_requirement_sha256",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "connector_requirement_mismatch",
     "required_runtime_rejection": null
   }
 ]

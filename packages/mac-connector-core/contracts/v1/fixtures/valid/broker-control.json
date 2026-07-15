@@ -7,6 +7,7 @@
   "issued_at": "2026-07-15T08:01:00Z",
   "expires_at": "2026-07-15T08:01:45Z",
   "sequence": 42,
+  "policy_epoch": 7,
   "nonce": "YnJva2VyLW5vbmNlLTAx",
   "binding": {
     "customer_id": "customer-01",
@@ -16,6 +17,7 @@
     "runtime": "openclaw",
     "binding_id": "binding-01",
     "binding_version": "v3",
+    "grant_expires_at": "2026-07-15T09:00:00Z",
     "connector_installation_id": "install-01",
     "connector_key_id": "mac-key-01",
     "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
@@ -59,6 +61,7 @@
       "issued_at": "2026-07-15T08:01:00Z",
       "expires_at": "2026-07-15T08:01:45Z",
       "sequence": 42,
+      "policy_epoch": 7,
       "nonce": "YnJva2VyLW5vbmNlLTAx",
       "binding": {
         "customer_id": "customer-01",
@@ -68,6 +71,7 @@
         "runtime": "openclaw",
         "binding_id": "binding-01",
         "binding_version": "v3",
+        "grant_expires_at": "2026-07-15T09:00:00Z",
         "connector_installation_id": "install-01",
         "connector_key_id": "mac-key-01",
         "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
@@ -76,8 +80,8 @@
       "capability": "customer_mac.desktop_click",
       "request_digest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     },
-    "payload_sha256": "5b53ab9ae88fd29ba82759bb7d6b0d900ce0367f9fe65314267a6667751dadf4",
+    "payload_sha256": "fb84c2148a0badf2eb45d44d5b61ef0e4b9dea1951d04d1686aaebd8cd214088",
     "key_id": "broker-command-key-01",
-    "signature_base64url": "LY7Liy_zR2J4TexXTYYNe-wgoZ7EBee9aMGVk32M0Cd65LqRQ3dH4sYeE540WBTIEoZxgVhmqWhdPnn0i3DQBA"
+    "signature_base64url": "oNz1ORiixjkjMJDtoidzZJh3BL1QyAIRBgEPjpcRiLMdsmlZWhoQSfQ3ZqepamtpEWOCreYcyRWqIpqwLTggCg"
   }
 }

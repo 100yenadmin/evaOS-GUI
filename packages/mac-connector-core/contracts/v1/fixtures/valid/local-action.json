@@ -4,9 +4,10 @@
   "peer": {
     "verification": "verified_designated_requirement",
     "role": "workbench_main",
+    "team_id": "TC6MS3T6NN",
     "signing_identifier": "com.evaos.workbench",
     "audit_token_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "designated_requirement_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    "designated_requirement_sha256": "ff4fc126bb70bbf7fcc3cc0957377d67185124b5e31b19760357333a8a0ae329"
   },
   "request": {
     "schema_version": "evaos.mac_access.local_action.v1",

@@ -7,10 +7,13 @@
     "app_bundle_id": "com.evaos.mac-access",
     "helper_service_id": "com.evaos.mac-access.helper",
     "connector_service_id": "com.evaos.mac-access.connector",
-    "helper_designated_requirement_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "team_id": "TC6MS3T6NN",
+    "app_designated_requirement_sha256": "da635352f249b4213aa1a96c41d7979d8b25d86b056b9f0929c1b414e35896fb",
+    "helper_designated_requirement_sha256": "222107bb855cfc463805777c76ca8cfdac0d1145957c5f190c234e52bfd277aa",
+    "connector_designated_requirement_sha256": "0c3de778270de5b4a1992d0e13d4f27e41929c7ace94ae143bcba92a555be422",
     "build": {
-      "build_version": "0.1.0-architecture",
-      "source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
+      "build_version": "0.1.0-contract-fixture",
+      "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "signed_lineage_id": "mac-access-production",
       "security_epoch": 1,
       "schema_reader_version": 1,
@@ -28,10 +31,19 @@
     "exportable_private_key": false
   },
   "relay_authorization": {
-    "accepted_build_version": "0.1.0-architecture",
-    "accepted_source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
+    "accepted_build_version": "0.1.0-contract-fixture",
+    "accepted_source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "accepted_security_epoch": 1,
     "credential_security_epoch": 1,
+    "verified_pre_rollback_source": {
+      "build_version": "0.2.0",
+      "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "signed_lineage_id": "mac-access-production",
+      "security_epoch": 2,
+      "credential_security_epoch": 2,
+      "schema_reader_version": 2,
+      "schema_writer_version": 2
+    },
     "rollback_authorization": {
       "schema_version": "evaos.mac_access.signed_rollback_authorization.v1",
       "canonicalization": "RFC8785-JCS",
@@ -44,23 +56,29 @@
           "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "signed_lineage_id": "mac-access-production",
           "security_epoch": 2,
-          "credential_security_epoch": 2
+          "credential_security_epoch": 2,
+          "schema_reader_version": 2,
+          "schema_writer_version": 2
         },
         "target": {
-          "build_version": "0.1.0-architecture",
-          "source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
+          "build_version": "0.1.0-contract-fixture",
+          "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "signed_lineage_id": "mac-access-production",
           "security_epoch": 1,
-          "credential_security_epoch": 1
+          "credential_security_epoch": 1,
+          "schema_reader_version": 1,
+          "schema_writer_version": 1
         },
         "resulting_minimum_reader_security_epoch": 1,
         "resulting_minimum_writer_security_epoch": 1,
+        "resulting_minimum_reader_schema_version": 1,
+        "resulting_minimum_writer_schema_version": 1,
         "issued_at": "2026-07-15T07:55:00Z",
         "expires_at": "2026-07-15T08:05:00Z"
       },
-      "payload_sha256": "41799f46249c2e7979cecb751665ac9f107886704dff8ea9da85708620ed64bc",
+      "payload_sha256": "78ff364baf4916a58b30ea3fcc06a6c9cb9c39516c9ba6d55db3b9532efa8134",
       "broker_key_id": "rollback-key-2026-01",
-      "signature_base64url": "_zjknB7xwtvOhE2VtprsVZXf3ty2R0eefst8u8TFkq9vhXcIw4oCLHvMsPgD5ySuQ_VKW-odAvX8OdFCtnvSBg"
+      "signature_base64url": "nmLW05er6btIWJI62UT72NNTX-DgxpuxhxYvUgsZnL2Wy4SnuSjNbt5oGgwBu-HbSCdVoafhguIpJuLCYjpUBg"
     }
   },
   "access": {
@@ -69,6 +87,8 @@
     "state_security_epoch": 1,
     "minimum_reader_security_epoch": 1,
     "minimum_writer_security_epoch": 1,
+    "minimum_reader_schema_version": 1,
+    "minimum_writer_schema_version": 1,
     "policy_epoch": 7,
     "pairing_state": "paired",
     "configured_mode": "ask_every_time",
@@ -87,6 +107,7 @@
       "runtime": "openclaw",
       "binding_id": "binding-01",
       "binding_version": "v3",
+      "grant_expires_at": "2026-07-15T09:00:00Z",
       "connector_installation_id": "install-01",
       "connector_key_id": "mac-key-01",
       "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"

@@ -10,23 +10,29 @@
       "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "signed_lineage_id": "mac-access-production",
       "security_epoch": 2,
-      "credential_security_epoch": 2
+      "credential_security_epoch": 2,
+      "schema_reader_version": 2,
+      "schema_writer_version": 2
     },
     "target": {
-      "build_version": "0.1.0-architecture",
-      "source_commit": "f197d2e51828f9f6a50e8448a09d5b064d14b498",
+      "build_version": "0.1.0-contract-fixture",
+      "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "signed_lineage_id": "mac-access-production",
       "security_epoch": 1,
-      "credential_security_epoch": 1
+      "credential_security_epoch": 1,
+      "schema_reader_version": 1,
+      "schema_writer_version": 1
     },
     "resulting_minimum_reader_security_epoch": 1,
     "resulting_minimum_writer_security_epoch": 1,
+    "resulting_minimum_reader_schema_version": 1,
+    "resulting_minimum_writer_schema_version": 1,
     "issued_at": "2026-07-15T07:55:00Z",
     "expires_at": "2026-07-15T08:05:00Z"
   },
-  "canonical_payload_utf8": "{\"authorization_id\":\"rollback-01\",\"domain\":\"evaos.mac-access/rollback-authorization/v1\",\"expires_at\":\"2026-07-15T08:05:00Z\",\"issued_at\":\"2026-07-15T07:55:00Z\",\"resulting_minimum_reader_security_epoch\":1,\"resulting_minimum_writer_security_epoch\":1,\"schema_version\":\"evaos.mac_access.rollback_authorization_payload.v1\",\"source\":{\"build_version\":\"0.2.0\",\"credential_security_epoch\":2,\"security_epoch\":2,\"signed_lineage_id\":\"mac-access-production\",\"source_commit\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"target\":{\"build_version\":\"0.1.0-architecture\",\"credential_security_epoch\":1,\"security_epoch\":1,\"signed_lineage_id\":\"mac-access-production\",\"source_commit\":\"f197d2e51828f9f6a50e8448a09d5b064d14b498\"}}",
-  "payload_sha256": "b38eeec01be61c5b73453bb9d2b0441225c664c672244de833b5ad9774fd47a3",
+  "canonical_payload_utf8": "{\"authorization_id\":\"rollback-01\",\"domain\":\"evaos.mac-access/rollback-authorization/v1\",\"expires_at\":\"2026-07-15T08:05:00Z\",\"issued_at\":\"2026-07-15T07:55:00Z\",\"resulting_minimum_reader_schema_version\":1,\"resulting_minimum_reader_security_epoch\":1,\"resulting_minimum_writer_schema_version\":1,\"resulting_minimum_writer_security_epoch\":1,\"schema_version\":\"evaos.mac_access.rollback_authorization_payload.v1\",\"source\":{\"build_version\":\"0.2.0\",\"credential_security_epoch\":2,\"schema_reader_version\":2,\"schema_writer_version\":2,\"security_epoch\":2,\"signed_lineage_id\":\"mac-access-production\",\"source_commit\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"target\":{\"build_version\":\"0.1.0-contract-fixture\",\"credential_security_epoch\":1,\"schema_reader_version\":1,\"schema_writer_version\":1,\"security_epoch\":1,\"signed_lineage_id\":\"mac-access-production\",\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+  "payload_sha256": "78ff364baf4916a58b30ea3fcc06a6c9cb9c39516c9ba6d55db3b9532efa8134",
   "broker_key_id": "rollback-key-2026-01",
-  "signature_base64url": "ffwsZjguT9lqi4I6V2OILxoQXiR0mifRXiqso9j2e77tG34hSQNkjJHbfJxzMf56RVP2d2S9BwHGn1F1_SORBQ",
-  "public_key_spki_base64url": "MCowBQYDK2VwAyEA6XnZ8LYYflm0uBRwwhm-my0DETifwelQbjUoZHEpnDM"
+  "signature_base64url": "nmLW05er6btIWJI62UT72NNTX-DgxpuxhxYvUgsZnL2Wy4SnuSjNbt5oGgwBu-HbSCdVoafhguIpJuLCYjpUBg",
+  "public_key_spki_base64url": "MCowBQYDK2VwAyEAcIhgSfos2h9yuLvFu46o3Y8JSYSsyCnt5h3ZPuxs2uY"
 }

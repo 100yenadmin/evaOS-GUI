@@ -32,6 +32,22 @@
     "required_runtime_rejection": null
   },
   {
+    "id": "rollback-wrong-source",
+    "threat": "signed_downgrade",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/relay_authorization/verified_pre_rollback_source/source_commit",
+        "value": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "rollback_source_mismatch",
+    "required_runtime_rejection": null
+  },
+  {
     "id": "expired-rollback-authorization",
     "threat": "signed_downgrade",
     "contract": "local_status",
@@ -56,6 +72,84 @@
     "expected_stage": "schema",
     "expected_error": "stop_pending_authority_not_invalidated",
     "required_runtime_rejection": null
+  },
+  {
+    "id": "pause-with-pending-authority",
+    "threat": "stop_race",
+    "contract": "access_transition",
+    "base_fixture": "../valid/access-transition-stop.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/event", "value": "pause" },
+      { "operation": "set", "pointer": "/invalidated_pending_authority", "value": false }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "destructive_transition_preserves_authority",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "revoke-with-pending-authority",
+    "threat": "stop_race",
+    "contract": "access_transition",
+    "base_fixture": "../valid/access-transition-grant-expired.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/event", "value": "revoke" },
+      { "operation": "set", "pointer": "/safe_cancellation_requested", "value": false }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "destructive_transition_preserves_authority",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "kill-switch-with-pending-authority",
+    "threat": "kill_switch_race",
+    "contract": "access_transition",
+    "base_fixture": "../valid/access-transition-stop.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/event", "value": "kill_switch" },
+      { "operation": "set", "pointer": "/invalidated_pending_authority", "value": false }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "destructive_transition_preserves_authority",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "grant-expiry-with-pending-authority",
+    "threat": "revoked_grant",
+    "contract": "access_transition",
+    "base_fixture": "../valid/access-transition-grant-expired.json",
+    "mutations": [{ "operation": "set", "pointer": "/invalidated_pending_authority", "value": false }],
+    "expected_stage": "schema",
+    "expected_error": "destructive_transition_preserves_authority",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "expired-grant-remains-active",
+    "threat": "revoked_grant",
+    "contract": "local_status",
+    "base_fixture": "../valid/local-status.json",
+    "mutations": [
+      {
+        "operation": "set",
+        "pointer": "/access/binding/grant_expires_at",
+        "value": "2026-07-15T08:00:00Z"
+      }
+    ],
+    "expected_stage": "schema",
+    "expected_error": "grant_expiry_not_fail_closed",
+    "required_runtime_rejection": null
+  },
+  {
+    "id": "stale-command-policy-epoch",
+    "threat": "replay",
+    "contract": "broker_control",
+    "base_fixture": "../valid/broker-control.json",
+    "mutations": [
+      { "operation": "set", "pointer": "/policy_epoch", "value": 6 },
+      { "operation": "set", "pointer": "/authorization/payload/policy_epoch", "value": 6 }
+    ],
+    "expected_stage": "runtime",
+    "expected_error": "command_policy_epoch_stale",
+    "required_runtime_rejection": "Reject before prompt or actuation unless the signed and delivered policy epoch equals the helper's current protected policy epoch and the host request expected epoch."
   },
   {
     "id": "crash-restores-full-access",

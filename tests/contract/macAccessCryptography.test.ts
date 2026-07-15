@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import {
   auditChainGoldenSchema,
   commandAuthorityGoldenSchema,
+  localStatusSchema,
+  MAC_ACCESS_IDENTITIES,
   rollbackAuthorizationGoldenSchema,
 } from '../../packages/mac-connector-core/contracts/v1';
 
@@ -33,6 +35,28 @@ function canonicalizeJcs(value: unknown): string {
 }
 
 describe('evaOS Mac Access canonical cryptographic contracts', () => {
+  it('freezes designated-requirement bytes and digests', () => {
+    const pairs = [
+      [MAC_ACCESS_IDENTITIES.appDesignatedRequirement, MAC_ACCESS_IDENTITIES.appDesignatedRequirementSha256],
+      [MAC_ACCESS_IDENTITIES.helperDesignatedRequirement, MAC_ACCESS_IDENTITIES.helperDesignatedRequirementSha256],
+      [
+        MAC_ACCESS_IDENTITIES.connectorDesignatedRequirement,
+        MAC_ACCESS_IDENTITIES.connectorDesignatedRequirementSha256,
+      ],
+      [
+        MAC_ACCESS_IDENTITIES.workbenchDesignatedRequirement,
+        MAC_ACCESS_IDENTITIES.workbenchDesignatedRequirementSha256,
+      ],
+      [
+        MAC_ACCESS_IDENTITIES.legacyWorkbenchDesignatedRequirement,
+        MAC_ACCESS_IDENTITIES.legacyWorkbenchDesignatedRequirementSha256,
+      ],
+    ] as const;
+    for (const [requirement, digest] of pairs) {
+      expect(createHash('sha256').update(requirement).digest('hex')).toBe(digest);
+    }
+  });
+
   it('verifies the cross-language command authorization golden vector', () => {
     const vector = commandAuthorityGoldenSchema.parse(readJson(path.join(validRoot, 'command-authority-golden.json')));
     const canonical = canonicalizeJcs(vector.payload);
@@ -77,11 +101,59 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     expect(verify(null, Buffer.from(canonical), publicKey, Buffer.from(vector.signature_base64url, 'base64url'))).toBe(
       true
     );
+
+    const {
+      canonical_payload_utf8: _canonicalPayload,
+      public_key_spki_base64url: _publicKey,
+      ...signedVector
+    } = vector;
+    const localStatus = localStatusSchema.parse(readJson(path.join(validRoot, 'local-status.json')));
+    expect(localStatus.relay_authorization.rollback_authorization).toEqual(signedVector);
+  });
+
+  it('rejects rollback payload, digest, signature, and key substitution', () => {
+    const vector = rollbackAuthorizationGoldenSchema.parse(
+      readJson(path.join(goldenRoot, 'rollback-authorization-golden.json'))
+    );
+    const publicKey = createPublicKey({
+      key: Buffer.from(vector.public_key_spki_base64url, 'base64url'),
+      format: 'der',
+      type: 'spki',
+    });
+    const tamperedPayload = {
+      ...vector.payload,
+      target: { ...vector.payload.target, source_commit: 'cccccccccccccccccccccccccccccccccccccccc' },
+    };
+    const tamperedCanonical = canonicalizeJcs(tamperedPayload);
+    expect(createHash('sha256').update(tamperedCanonical).digest('hex')).not.toBe(vector.payload_sha256);
+    expect(
+      verify(null, Buffer.from(tamperedCanonical), publicKey, Buffer.from(vector.signature_base64url, 'base64url'))
+    ).toBe(false);
+
+    const tamperedSignature = Buffer.from(vector.signature_base64url, 'base64url');
+    tamperedSignature[0] ^= 1;
+    expect(verify(null, Buffer.from(vector.canonical_payload_utf8), publicKey, tamperedSignature)).toBe(false);
+
+    const commandVector = commandAuthorityGoldenSchema.parse(
+      readJson(path.join(validRoot, 'command-authority-golden.json'))
+    );
+    const wrongKey = createPublicKey({
+      key: Buffer.from(commandVector.public_key_spki_base64url, 'base64url'),
+      format: 'der',
+      type: 'spki',
+    });
+    expect(
+      verify(
+        null,
+        Buffer.from(vector.canonical_payload_utf8),
+        wrongKey,
+        Buffer.from(vector.signature_base64url, 'base64url')
+      )
+    ).toBe(false);
   });
 
   it.todo('rejects an edited audit payload whose record digest is unchanged');
   it.todo('rejects deletion of an audit record from a persisted chain');
   it.todo('rejects reordered audit records');
   it.todo('rejects a previous-record digest mismatch');
-  it.todo('rejects a rollback payload digest or broker signature mismatch');
 });
