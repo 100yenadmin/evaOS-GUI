@@ -330,7 +330,10 @@ class FakeMacControlCanaryAdmin {
 
   async select(table: string, query: Record<string, unknown>) {
     this.reads.push({ table, query });
-    if (table === 'customer_devices') return this.deviceRows.map((row) => ({ ...row }));
+    if (table === 'customer_devices') {
+      const limit = Number(query.limit);
+      return this.deviceRows.slice(0, Number.isSafeInteger(limit) ? limit : undefined).map((row) => ({ ...row }));
+    }
     throw new Error(`unexpected select table ${table}`);
   }
 
@@ -829,6 +832,12 @@ describe('evaOS live canary fixture provisioner', () => {
         status: 'active',
       },
     ]);
+    const truncatedAmbiguous = new FakeMacControlCanaryAdmin(undefined, [
+      { id: 'pending-device-1', device_identifier: null, status: 'pending' },
+      { id: 'pending-device-2', device_identifier: null, status: 'pending' },
+      { id: 'staging-device-id-1', device_identifier: 'staging-device-one', status: 'active' },
+      { id: 'staging-device-id-2', device_identifier: 'staging-device-two', status: 'active' },
+    ]);
 
     await expect(provisioner.provisionMacControlCanarySessionWithAdmin(missing, options)).rejects.toThrow(
       /exactly one current staging Mac/i
@@ -839,9 +848,13 @@ describe('evaOS live canary fixture provisioner', () => {
     await expect(provisioner.provisionMacControlCanarySessionWithAdmin(workflowCommand, options)).rejects.toThrow(
       /exactly one current staging Mac/i
     );
+    await expect(provisioner.provisionMacControlCanarySessionWithAdmin(truncatedAmbiguous, options)).rejects.toThrow(
+      /exactly one current staging Mac/i
+    );
     expect(missing.inserts).toHaveLength(0);
     expect(ambiguous.inserts).toHaveLength(0);
     expect(workflowCommand.inserts).toHaveLength(0);
+    expect(truncatedAmbiguous.inserts).toHaveLength(0);
   });
 
   it('generates a unique run-scoped cleanup key for each local canary session', async () => {

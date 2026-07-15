@@ -221,6 +221,7 @@ function resolveMacControlCanaryConfig(env) {
     networkEndpointUrl.protocol !== 'https:' ||
     endpointUrl.username ||
     endpointUrl.password ||
+    endpointUrl.search ||
     endpointUrl.hash ||
     networkEndpointUrl.username ||
     networkEndpointUrl.password ||

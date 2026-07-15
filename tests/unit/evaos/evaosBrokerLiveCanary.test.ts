@@ -622,6 +622,14 @@ describe('evaOS broker live canary', () => {
       }).expectedCallbackHost
     ).toBe('openclaw-staging.example.test');
 
+    expect(() =>
+      liveCanary.resolveMacControlCanaryConfig({
+        ...env,
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime?mode=unexpected',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+      })
+    ).toThrow(/same-origin absolute HTTPS URLs/i);
+
     for (const callbackHost of [
       '.openclaw-staging.example.test',
       'openclaw-staging.example.test.',

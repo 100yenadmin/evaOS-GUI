@@ -1178,21 +1178,20 @@ async function loadUniqueMacControlCanaryDeviceIdentifier(admin, ownerId, custom
     owner_id: `eq.${ownerId}`,
     status: 'neq.revoked',
     select: 'id,device_identifier,status',
-    limit: 3,
+    limit: 2,
   });
-  const current = Array.isArray(rows)
-    ? rows.filter(
-        (row) =>
-          safeText(row?.id, 160) &&
-          typeof row?.device_identifier === 'string' &&
-          MAC_CONTROL_DEVICE_IDENTIFIER_PATTERN.test(row.device_identifier) &&
-          ['pending', 'active', 'needs_attention'].includes(safeText(row?.status, 80))
-      )
-    : [];
-  if (current.length !== 1) {
+  const current = Array.isArray(rows) ? rows : [];
+  const device = current[0];
+  if (
+    current.length !== 1 ||
+    !safeText(device?.id, 160) ||
+    typeof device?.device_identifier !== 'string' ||
+    !MAC_CONTROL_DEVICE_IDENTIFIER_PATTERN.test(device.device_identifier) ||
+    !['pending', 'active', 'needs_attention'].includes(safeText(device?.status, 80))
+  ) {
     throw new Error('Mac-control canary requires exactly one current staging Mac for the configured owner.');
   }
-  return current[0].device_identifier;
+  return device.device_identifier;
 }
 
 async function provisionMacControlCanarySessionWithAdmin(admin, options) {
