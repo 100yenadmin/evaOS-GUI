@@ -36,6 +36,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
     sourcePaths: string[];
     coreSourceSha256: string;
     sourceManifestSha256: string;
+    importedCommit: string;
     fileSha256ByPath: Record<string, string>;
   };
   collectLiveCanaryVerifierBehaviorIssues: (rootDir: string) => string[];
@@ -71,6 +72,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     sourceSha256: string;
     coreSourceSha256: string;
     sourceManifestSha256: string;
+    importedCommit: string;
   };
 };
 const afterSign = require('../../../scripts/afterSign.js') as {
@@ -422,6 +424,7 @@ function writeMacosBridgeZip(
     wrongProductName?: boolean;
     wrongShortVersion?: boolean;
     wrongBundleVersion?: boolean;
+    wrongImportedCommit?: boolean;
   } = {}
 ) {
   const bridgeWrapperBase64 = Buffer.from(bridgeResource.bridgeWrapperScript()).toString('base64');
@@ -480,6 +483,7 @@ function writeMacosBridgeZip(
     'wrong_product_name = sys.argv[41] == "1"',
     'wrong_short_version = sys.argv[42] == "1"',
     'wrong_bundle_version = sys.argv[43] == "1"',
+    'wrong_imported_commit = sys.argv[44] == "1"',
     `bridge_wrapper_bytes = base64.b64decode("${bridgeWrapperBase64}")`,
     `ed25519_verifier_source_sha256 = "${ed25519VerifierSourceSha256}"`,
     'app_root = "Wrong Workbench.app" if wrong_app_root else "evaOS Workbench.app"',
@@ -563,7 +567,7 @@ function writeMacosBridgeZip(
     '    bridge_source_hash.update(contents)',
     '    bridge_source_hash.update(b"\\0")',
     'bridge_wrapper_metadata = {"schema": "evaos-workbench-bridge-wrapper/v1", "path": "evaos-desktop-bridge", "sourceSha256": hashlib.sha256(bridge_wrapper_bytes).hexdigest()}',
-    `source_provenance = {"schema": "evaos-mac-connector-core-source/v1", "owner": "100yenadmin/evaOS-GUI", "status": "canonical", "importedCommit": "908e3cad8c5f11dca739bbfc2c697c3e6d52f79e", "sourceSha256": bridge_source_hash.hexdigest(), "coreSourceSha256": ${JSON.stringify(connectorCoreIdentity.coreSourceSha256)}, "sourceManifestSha256": ${JSON.stringify(connectorCoreIdentity.sourceManifestSha256)}}`,
+    `source_provenance = {"schema": "evaos-mac-connector-core-source/v1", "owner": "100yenadmin/evaOS-GUI", "status": "canonical", "importedCommit": ("0" * 40 if wrong_imported_commit else ${JSON.stringify(connectorCoreIdentity.importedCommit)}), "sourceSha256": bridge_source_hash.hexdigest(), "coreSourceSha256": ${JSON.stringify(connectorCoreIdentity.coreSourceSha256)}, "sourceManifestSha256": ${JSON.stringify(connectorCoreIdentity.sourceManifestSha256)}}`,
     'manifest = {"placeholder": False, "requestedSourceRef": bridge_source_commit, "sourcePath": "packages/mac-connector-core", "sourceCommit": bridge_source_commit, "sourceProvenance": source_provenance, "bundledTools": {"bridgeWrapper": bridge_wrapper_metadata, "ed25519Verifier": {"schema": "evaos-workbench-ed25519-verifier/v1", "path": "bin/evaos-ed25519-verify", "architecture": python_arch, "minimumMacOS": "15.0", "sourceSha256": ed25519_verifier_source_sha256}, "peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
     'def write_regular(archive, name, data, mode=0o644):',
     '    info = zipfile.ZipInfo(name)',
@@ -676,6 +680,7 @@ function writeMacosBridgeZip(
     options.wrongProductName ? '1' : '0',
     options.wrongShortVersion ? '1' : '0',
     options.wrongBundleVersion ? '1' : '0',
+    options.wrongImportedCommit ? '1' : '0',
   ]);
 }
 
@@ -1072,6 +1077,7 @@ describe('evaOS beta release gate', () => {
         owner: '100yenadmin/evaOS-GUI',
         sourcePath: 'packages/mac-connector-core',
         status: 'canonical',
+        provenance: { importedCommit: '6'.repeat(40) },
         files: [
           ...files.map((file) => ({
             path: `python/evaos_desktop_bridge/${file.name}`,
@@ -1543,6 +1549,26 @@ printf '%s\\n' ok
       ).toBe(true);
 
       expect(() => afterSign.assertSignedBridgeSourceIdentity(appPath, {})).toThrow(/exact canonical connector core/);
+
+      fs.writeFileSync(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            placeholder: false,
+            sourcePath: 'packages/mac-connector-core',
+            sourceCommit: fixtureReleaseCommit,
+            requestedSourceRef: fixtureReleaseCommit,
+            sourceProvenance: { ...canonical, importedCommit: '0'.repeat(40) },
+          },
+          null,
+          2
+        )}\n`
+      );
+      expect(() =>
+        afterSign.assertSignedBridgeSourceIdentity(appPath, {
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: fixtureReleaseCommit,
+        })
+      ).toThrow(/exact canonical connector core/);
 
       fs.writeFileSync(
         manifestPath,
@@ -3345,6 +3371,11 @@ printf '%s\\n' ok
         name: 'unexpected importable bridge source sibling',
         options: { extraBridgeSourceEntry: true },
         expected: /exact committed GUI source tree/,
+      },
+      {
+        name: 'wrong provenance import commit',
+        options: { wrongImportedCommit: true },
+        expected: /exact GUI commit binding/,
       },
       {
         name: 'self-consistent altered CPython license',

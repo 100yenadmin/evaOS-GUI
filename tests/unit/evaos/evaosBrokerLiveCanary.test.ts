@@ -18,6 +18,7 @@ import {
   TEST_RECEIPT_KEY_ID,
 } from './fixtures/signedMacControlAttestation';
 
+const coreTestPython = process.env.EVAOS_CORE_TEST_PYTHON || 'python3';
 const TRUST_FIXTURE = signedMacControlAttestation({
   runRef: 'gha:12345:111111111111111111111111',
   executedAt: '2026-07-15T00:00:00Z',
@@ -875,7 +876,7 @@ describe('evaOS broker live canary', () => {
         'print("ok")',
       ].join('\n');
       expect(
-        execFileSync('python3', ['-B', '-c', pythonSource, proofPath], {
+        execFileSync(coreTestPython, ['-B', '-c', pythonSource, proofPath], {
           encoding: 'utf8',
           env: {
             ...process.env,
@@ -896,7 +897,7 @@ describe('evaOS broker live canary', () => {
         'assert result["ok"] is False and result["reason"] == "selected_binding_proof_signature_invalid", result'
       );
       expect(
-        execFileSync('python3', ['-B', '-c', malformedPythonSource, nonAsciiProofPath], {
+        execFileSync(coreTestPython, ['-B', '-c', malformedPythonSource, nonAsciiProofPath], {
           encoding: 'utf8',
           env: {
             ...process.env,

@@ -58,7 +58,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     };
   }) => Record<string, unknown>;
   bridgeWrapperMetadata: (filePath: string) => { schema: string; path: string; sourceSha256: string };
-  bridgeWrapperScript: () => string;
+  bridgeWrapperScript: (sourcePath?: string) => string;
   buildEd25519Verifier: (options?: {
     sourcePath?: string;
     targetDir?: string;
@@ -98,6 +98,13 @@ const { copyDir } = require('builder-util/out/fs') as {
 };
 
 describe('prepareEvaosDesktopBridgeResource', () => {
+  it('reports a stable error when the canonical bridge launcher source is missing', () => {
+    const missing = join(tmpdir(), `missing-evaos-bridge-wrapper-${process.pid}.sh`);
+    expect(() => bridgeResource.bridgeWrapperScript(missing)).toThrow(
+      /canonical evaOS desktop bridge launcher source is missing/
+    );
+  });
+
   it('rejects a packaged source root that is itself a symlink', () => {
     const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-source-root-'));
     try {

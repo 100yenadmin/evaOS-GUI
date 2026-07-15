@@ -535,8 +535,17 @@ function findOnPath(command) {
   }
 }
 
-function bridgeWrapperScript() {
-  return fs.readFileSync(bridgeWrapperSourcePath, 'utf8');
+function bridgeWrapperScript(sourcePath = bridgeWrapperSourcePath) {
+  let metadata;
+  try {
+    metadata = fs.lstatSync(sourcePath);
+  } catch {
+    throw new Error('The canonical evaOS desktop bridge launcher source is missing.');
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error('The canonical evaOS desktop bridge launcher source must be a regular file.');
+  }
+  return fs.readFileSync(sourcePath, 'utf8');
 }
 
 function installPythonRuntime(

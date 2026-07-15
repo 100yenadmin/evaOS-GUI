@@ -9,9 +9,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const bridgeSourceDir = join(process.cwd(), 'packages', 'mac-connector-core', 'python');
+const coreTestPython = process.env.EVAOS_CORE_TEST_PYTHON || 'python3';
 
 function runPython(script: string): string {
-  return execFileSync('python3', ['-B', '-c', script], {
+  return execFileSync(coreTestPython, ['-B', '-c', script], {
     encoding: 'utf8',
     env: {
       ...process.env,

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from evaos_desktop_bridge.host.api import CoreHost, HostPorts, InMemoryStatePort, SAFE_INTEGER_MAX
+from evaos_desktop_bridge.contracts.redaction import audit_value_is_redacted, redact_audit_value
 
 FIXTURES = Path(__file__).resolve().parents[2] / "contracts" / "v1" / "fixtures"
 HOST_SESSION = "host-session-01"
@@ -555,6 +556,33 @@ class CoreHostTests(unittest.TestCase):
         self.assertEqual(response["error"]["code"], "audit_write_failed")
         self.assertEqual(self.native.executions, 0)
         self.assertEqual(self.state.load()["effective_mode"], "off")
+
+    def test_redacted_warning_arrays_are_safe_but_raw_warnings_are_not(self) -> None:
+        self.assertTrue(audit_value_is_redacted({"warnings": []}))
+        self.assertTrue(audit_value_is_redacted({"warnings": ["<redacted>"]}))
+        self.assertFalse(audit_value_is_redacted({"warnings": ["raw local warning"]}))
+        self.assertEqual(redact_audit_value({"warnings": ["raw local warning"]}), {"warnings": ["<redacted>"]})
+
+    def test_initial_audit_page_must_begin_at_sequence_one(self) -> None:
+        self.audit.sequence = 99
+        self.audit.previous_record_sha256 = "aa" * 32
+        event = self.audit._record(
+            broker_envelope(0),
+            "command_decision",
+            "denied",
+            None,
+            "denied_access_off",
+        )
+        self.audit.summary = lambda after_cursor, limit: {
+            "kind": "audit_summary",
+            "page_anchor": None,
+            "events": [event],
+            "causal_decisions": [],
+            "next_cursor": {"sequence": event["sequence"], "record_sha256": event["record_sha256"]},
+        }
+        response = self.host.handle(request("audit_summary", 1, 0, after_cursor=None, limit=10))
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "invalid_audit_summary")
 
     def test_unknown_fields_fail_before_port_access(self) -> None:
         invalid = request("status", 1, None, renderer_secret="forbidden")

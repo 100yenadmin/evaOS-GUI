@@ -10,6 +10,7 @@ const {
 const { withAfterSignCompletion } = require('./dmgRetryEligibility');
 const {
   vendoredBridgeSourceMetadata,
+  verifyGeneratedCoreSource,
   verifyWorkbenchBridgeSourceRoot,
 } = require('./prepareEvaosDesktopBridgeResource');
 
@@ -49,6 +50,10 @@ function assertSignedBridgeSourceIdentity(appPath, env = process.env) {
   const manifestPath = path.join(bridgeRoot, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const packaged = verifyWorkbenchBridgeSourceRoot(path.join(bridgeRoot, 'src'));
+  const packagedCore = verifyGeneratedCoreSource(
+    path.join(__dirname, '..', 'packages', 'mac-connector-core'),
+    bridgeRoot
+  );
   const canonical = vendoredBridgeSourceMetadata();
   const provenance = manifest.sourceProvenance;
   const expectedSourceCommit = String(env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || '').trim();
@@ -61,8 +66,11 @@ function assertSignedBridgeSourceIdentity(appPath, env = process.env) {
     provenance?.schema !== 'evaos-mac-connector-core-source/v1' ||
     provenance?.owner !== '100yenadmin/evaOS-GUI' ||
     provenance?.status !== 'canonical' ||
+    provenance?.importedCommit !== canonical.importedCommit ||
     provenance?.sourceSha256 !== packaged.sourceSha256 ||
     provenance?.sourceSha256 !== canonical.sourceSha256 ||
+    provenance?.coreSourceSha256 !== packagedCore.coreSourceSha256 ||
+    provenance?.sourceManifestSha256 !== packagedCore.sourceManifestSha256 ||
     provenance?.coreSourceSha256 !== canonical.coreSourceSha256 ||
     provenance?.sourceManifestSha256 !== canonical.sourceManifestSha256
   ) {

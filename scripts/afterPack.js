@@ -398,7 +398,7 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
       sourceProvenance?.schema !== 'evaos-mac-connector-core-source/v1' ||
       sourceProvenance?.owner !== '100yenadmin/evaOS-GUI' ||
       sourceProvenance?.status !== 'canonical' ||
-      !/^[0-9a-f]{40}$/i.test(String(sourceProvenance?.importedCommit || '')) ||
+      sourceProvenance?.importedCommit !== canonicalSourceIdentity.importedCommit ||
       sourceProvenance?.sourceSha256 !== packagedSourceIdentity.sourceSha256 ||
       sourceProvenance?.sourceSha256 !== canonicalSourceIdentity.sourceSha256 ||
       sourceProvenance?.coreSourceSha256 !== canonicalSourceIdentity.coreSourceSha256 ||

@@ -1315,12 +1315,12 @@ def _validate_audit_summary(summary: Any, after_cursor: Any, limit: int) -> None
         raise HostError("unsafe_audit_summary")
     for event in [*events, *decisions]:
         _validate_audit_event(event)
-    previous_sequence = after_cursor.get("sequence") if isinstance(after_cursor, Mapping) else None
+    previous_sequence = after_cursor.get("sequence") if isinstance(after_cursor, Mapping) else 0
     previous_digest = after_cursor.get("record_sha256") if isinstance(after_cursor, Mapping) else None
     for event in events:
         if not isinstance(event, Mapping) or not _safe_positive(event.get("sequence")) or not _sha256(event.get("record_sha256")):
             raise HostError("invalid_audit_summary")
-        if previous_sequence is not None and event["sequence"] != previous_sequence + 1:
+        if event["sequence"] != previous_sequence + 1:
             raise HostError("invalid_audit_summary")
         if event.get("previous_record_sha256") != previous_digest:
             raise HostError("invalid_audit_summary")

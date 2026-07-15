@@ -74,7 +74,7 @@
       "path": "python/evaos_desktop_bridge/contracts/redaction.py",
       "destination": "src/evaos_desktop_bridge/contracts/redaction.py",
       "mode": 420,
-      "sha256": "9d598fd28eccc2c91035b4839741762f55693f1f0a3f9c21c8c330e046fc47cf"
+      "sha256": "35302ba91ac5b62985ca093dd2cf40e0a6b194416cceab089530824348471348"
     },
     {
       "path": "python/evaos_desktop_bridge/contracts/schema.py",
@@ -98,7 +98,7 @@
       "path": "python/evaos_desktop_bridge/host/api.py",
       "destination": "src/evaos_desktop_bridge/host/api.py",
       "mode": 420,
-      "sha256": "b53154951582751df44adbf2abaff45a484c88a1a2709cb48df46c2fabf5353e"
+      "sha256": "e89f4f54d0e886bdcb1db6ae990e5fb051bfa5a0778b6798fb2981f29ef766df"
     },
     {
       "path": "python/evaos_desktop_bridge/host/bundled_tools.py",

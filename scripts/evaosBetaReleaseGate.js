@@ -2430,6 +2430,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       sourcePaths: [...cached.sourcePaths],
       coreSourceSha256: cached.coreSourceSha256,
       sourceManifestSha256: cached.sourceManifestSha256,
+      importedCommit: cached.importedCommit,
       fileSha256ByPath: { ...cached.fileSha256ByPath },
     };
   }
@@ -2476,6 +2477,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
     sourceManifest.owner !== '100yenadmin/evaOS-GUI' ||
     sourceManifest.sourcePath !== CONNECTOR_CORE_ROOT ||
     sourceManifest.status !== 'canonical' ||
+    !/^[0-9a-f]{40}$/.test(String(sourceManifest.provenance?.importedCommit || '')) ||
     !Array.isArray(sourceManifest.files) ||
     sourceManifest.files.length === 0
   ) {
@@ -2597,6 +2599,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
     sourcePaths: generatedSourceFiles.map((sourceFile) => sourceFile.relativePath),
     coreSourceSha256: coreDigest.digest('hex'),
     sourceManifestSha256: createHash('sha256').update(manifestBuffer).digest('hex'),
+    importedCommit: sourceManifest.provenance.importedCommit,
     fileSha256ByPath,
   };
   if (cacheKey) {
@@ -2605,6 +2608,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       sourcePaths: Object.freeze([...identity.sourcePaths]),
       coreSourceSha256: identity.coreSourceSha256,
       sourceManifestSha256: identity.sourceManifestSha256,
+      importedCommit: identity.importedCommit,
       fileSha256ByPath: Object.freeze({ ...identity.fileSha256ByPath }),
     });
   }
@@ -2655,6 +2659,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     `expected_bridge_source_paths = ${JSON.stringify(committedSourceIdentity.sourcePaths)}`,
     `expected_core_source_sha256 = ${JSON.stringify(committedSourceIdentity.coreSourceSha256)}`,
     `expected_source_manifest_sha256 = ${JSON.stringify(committedSourceIdentity.sourceManifestSha256)}`,
+    `expected_imported_commit = ${JSON.stringify(committedSourceIdentity.importedCommit)}`,
     `expected_app_version = ${JSON.stringify(String(expectedAppVersion || ''))}`,
     `expected_ed25519_verifier_source_sha256 = ${JSON.stringify(expectedEd25519VerifierSourceSha256)}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
@@ -2782,7 +2787,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '    source_provenance = manifest.get("sourceProvenance", {}) if isinstance(manifest, dict) else {}',
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
     '    imported_commit = str(source_provenance.get("importedCommit", ""))',
-    '    result["bridgeCommitBindingValid"] = manifest.get("sourceCommit") == expected_source_commit and manifest.get("requestedSourceRef") == expected_source_commit and manifest.get("sourcePath") == "packages/mac-connector-core" and source_provenance.get("schema") == "evaos-mac-connector-core-source/v1" and source_provenance.get("owner") == "100yenadmin/evaOS-GUI" and source_provenance.get("status") == "canonical" and source_provenance.get("coreSourceSha256") == expected_core_source_sha256 and source_provenance.get("sourceManifestSha256") == expected_source_manifest_sha256 and len(imported_commit) == 40 and all(char in "0123456789abcdefABCDEF" for char in imported_commit)',
+    '    result["bridgeCommitBindingValid"] = manifest.get("sourceCommit") == expected_source_commit and manifest.get("requestedSourceRef") == expected_source_commit and manifest.get("sourcePath") == "packages/mac-connector-core" and source_provenance.get("schema") == "evaos-mac-connector-core-source/v1" and source_provenance.get("owner") == "100yenadmin/evaOS-GUI" and source_provenance.get("status") == "canonical" and source_provenance.get("coreSourceSha256") == expected_core_source_sha256 and source_provenance.get("sourceManifestSha256") == expected_source_manifest_sha256 and imported_commit == expected_imported_commit',
     '    if result["hasBridgeExecutable"]:',
     '        wrapper_sha256 = sha256_info(archive, entries["evaos-desktop-bridge"])',
     '        result["bridgeWrapperValid"] = bridge_wrapper.get("schema") == "evaos-workbench-bridge-wrapper/v1" and bridge_wrapper.get("path") == "evaos-desktop-bridge" and bridge_wrapper.get("sourceSha256") == wrapper_sha256 == expected_bridge_wrapper_sha256',

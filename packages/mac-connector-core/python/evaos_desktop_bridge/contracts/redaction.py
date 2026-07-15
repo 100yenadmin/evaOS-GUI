@@ -129,6 +129,8 @@ def redact_audit_value(value: Any, *, key: str | None = None) -> Any:
 
 
 def audit_value_is_redacted(value: Any, *, key: str | None = None) -> bool:
+    if key == "warnings" and isinstance(value, (list, tuple)):
+        return all(audit_value_is_redacted(item, key="warning") for item in value)
     if _audit_key_is_sensitive(key):
         return value is None or value == "<redacted>"
     if isinstance(value, str):
