@@ -163,10 +163,14 @@ pinned `EVAOS_MAC_CONTROL_CONTEXT_KEY_ID` and unpadded base64url raw 32-byte
 `EVAOS_MAC_CONTROL_CONTEXT_PUBLIC_KEY`. Before the connector can be called, the
 route also requires a pinned `EVAOS_MAC_CONTROL_RECEIPT_KEY_ID`, raw 32-byte
 `EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY`, and exact expected source commit,
-source digest, app version, and build. It verifies the connector SSHSIG and
-every selected-scope, action, state, audit, expiry, and candidate claim, then
-returns only the allowlisted `evaos.mac_control.runtime_proof.v2` view. The
-route exposes no generic tool, proxy, action, raw receipt, or signing API.
+source digest, app version, and build. It verifies the private connector SSHSIG
+and every selected-scope, action, state, audit, expiry, and candidate claim,
+cross-checks the separately signed minimal public attestation against that
+private receipt, then returns the unchanged
+`evaos.mac_control.public_runtime_attestation_envelope.v1` envelope. Release
+gates verify that public SSHSIG again against an externally configured key; the
+artifact never supplies its own trust key. The route exposes no generic tool,
+proxy, action, raw private receipt, or signing API.
 
 Local plugin tools call fixed bridge argv mappings with `shell: false`. Remote
 plugin tools post fixed command keys to `/v1/commands` on the paired Mac

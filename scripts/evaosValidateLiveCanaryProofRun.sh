@@ -57,6 +57,15 @@ if [ "$MAC_CONTROL_PROOF_REQUIRED" = "true" ]; then
     echo "::error::Broker and Mac-control live canary proofs must come from the same proof packet."
     exit 1
   fi
+  mapfile -t MAC_CONTROL_DEPLOYED_PROOFS < <(find live-canary-proof-download -type f -name mac-control-deployed-route.json)
+  if [ "${#MAC_CONTROL_DEPLOYED_PROOFS[@]}" -ne 1 ]; then
+    echo "::error::Live canary artifact must contain exactly one mac-control-deployed-route.json, found ${#MAC_CONTROL_DEPLOYED_PROOFS[@]}."
+    exit 1
+  fi
+  if [ "$(dirname "${MAC_CONTROL_DEPLOYED_PROOFS[0]}")" != "$PROOF_ROOT" ]; then
+    echo "::error::Broker, Mac-control, and deployed-route proofs must come from the same proof packet."
+    exit 1
+  fi
 fi
 mkdir -p live-canary-proof
 cp -R "$PROOF_ROOT"/. live-canary-proof/

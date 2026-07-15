@@ -144,11 +144,21 @@ async function proveAuthorityRedacted() {
     now: () => nowMs,
     fetchImpl: async () =>
       fetchResponse(200, {
-        schema: 'evaos.mac_control.runtime_receipt_envelope.v1',
-        receiptBase64: leakingReceipt.toString('base64url'),
-        signature: '-----BEGIN SSH SIGNATURE-----\nQUFBQQ==\n-----END SSH SIGNATURE-----\n',
-        keyId: receiptKeyId,
-        namespace: 'evaos-mac-control-receipt-v1',
+        schema: 'evaos.mac_control.runtime_receipt_bundle.v2',
+        privateReceipt: {
+          schema: 'evaos.mac_control.runtime_receipt_envelope.v1',
+          receiptBase64: leakingReceipt.toString('base64url'),
+          signature: '-----BEGIN SSH SIGNATURE-----\nQUFBQQ==\n-----END SSH SIGNATURE-----\n',
+          keyId: receiptKeyId,
+          namespace: 'evaos-mac-control-receipt-v1',
+        },
+        publicAttestation: {
+          schema: 'evaos.mac_control.public_runtime_attestation_envelope.v1',
+          attestationBase64: Buffer.from('{}').toString('base64url'),
+          signature: '-----BEGIN SSH SIGNATURE-----\nQUFBQQ==\n-----END SSH SIGNATURE-----\n',
+          keyId: receiptKeyId,
+          namespace: 'evaos-mac-control-public-attestation-v1',
+        },
       }),
   });
   const response = await invoke(handler, requestBody(4), authority.headers);

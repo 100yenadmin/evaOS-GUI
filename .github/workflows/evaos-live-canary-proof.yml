@@ -108,6 +108,10 @@ jobs:
       AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL }}
       AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY }}
       AIONUI_EVAOS_MAC_CONTROL_CANARY_TTL_MINUTES: '10'
+      AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_PROBE_OUTPUT: live-canary-proof/mac-control-deployed-route.json
+      EVAOS_LIVE_CANARY_CONTEXT_KEY_ID: ${{ vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID }}
+      EVAOS_LIVE_CANARY_RECEIPT_KEY_ID: ${{ vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID }}
+      EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY: ${{ vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY }}
     steps:
       - name: Validate proof inputs
         env:
@@ -231,7 +235,8 @@ jobs:
         if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true'
         run: |
           set -euo pipefail
-          npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin install --ignore-scripts --omit=peer --no-audit --no-fund
+          test -f resources/evaos-beta/bridge/agent-tools/openclaw-plugin/package-lock.json
+          npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin ci --ignore-scripts --omit=peer --no-audit --no-fund
           npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin run proof:runtime-receipt-negative -- \
             "$PROOF_DIR/mac-control-runtime-negative.json" "$GITHUB_SHA" "$GITHUB_RUN_ID"
 

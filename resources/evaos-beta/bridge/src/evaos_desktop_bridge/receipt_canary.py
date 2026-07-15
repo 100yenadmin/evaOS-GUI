@@ -22,6 +22,12 @@ CONTEXT_SCHEMA = "evaos.mac_control_execution_context.v1"
 RECEIPT_SCHEMA = "evaos.mac_control.runtime_receipt.v1"
 RECEIPT_ENVELOPE_SCHEMA = "evaos.mac_control.runtime_receipt_envelope.v1"
 RECEIPT_NAMESPACE = "evaos-mac-control-receipt-v1"
+RECEIPT_BUNDLE_SCHEMA = "evaos.mac_control.runtime_receipt_bundle.v2"
+PUBLIC_ATTESTATION_SCHEMA = "evaos.mac_control.public_runtime_attestation.v1"
+PUBLIC_ATTESTATION_ENVELOPE_SCHEMA = (
+    "evaos.mac_control.public_runtime_attestation_envelope.v1"
+)
+PUBLIC_ATTESTATION_NAMESPACE = "evaos-mac-control-public-attestation-v1"
 NATIVE_VERIFIER_NAME = "evaos-ed25519-verify"
 REPLAY_FILE = "mac-control-canary-replay.jsonl"
 MAX_CONTEXT_BYTES = 64 * 1024
@@ -462,14 +468,15 @@ def build_receipt(
     }
 
 
-def sign_receipt(
-    receipt: dict[str, Any],
+def sign_payload(
+    payload: dict[str, Any],
     config: CanaryConfig,
     *,
+    namespace: str,
     run_process: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
 ) -> str:
     key_path, before = validate_receipt_signer_key(config)
-    message = _canonical_json(receipt)
+    message = _canonical_json(payload)
     try:
         result = run_process(
             [
@@ -480,7 +487,7 @@ def sign_receipt(
                 "-f",
                 str(key_path),
                 "-n",
-                RECEIPT_NAMESPACE,
+                namespace,
                 "-",
             ],
             input=message,
@@ -515,6 +522,66 @@ def sign_receipt(
     return signature
 
 
+def sign_receipt(
+    receipt: dict[str, Any],
+    config: CanaryConfig,
+    *,
+    run_process: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
+) -> str:
+    return sign_payload(
+        receipt,
+        config,
+        namespace=RECEIPT_NAMESPACE,
+        run_process=run_process,
+    )
+
+
+def build_public_attestation(
+    receipt: dict[str, Any], config: CanaryConfig
+) -> dict[str, Any]:
+    candidate = receipt.get("candidate")
+    if not isinstance(candidate, dict):
+        raise CanaryError("receipt_public_attestation_invalid", status=503)
+    private_receipt = _canonical_json(receipt)
+    return {
+        "schema": PUBLIC_ATTESTATION_SCHEMA,
+        "keyId": config.receipt_key_id,
+        "namespace": PUBLIC_ATTESTATION_NAMESPACE,
+        "proofKind": "selected_binding_direct_mac_control",
+        "runtime": "openclaw",
+        "tool": "customer_mac.desktop_hotkey",
+        "outcome": "succeeded",
+        "runRef": receipt.get("runRef"),
+        "executedAt": receipt.get("executedAt"),
+        "authorityIssuedAt": receipt.get("contextIssuedAt"),
+        "authorityExpiresAt": receipt.get("contextExpiresAt"),
+        "contextKeyId": receipt.get("contextKeyId"),
+        "controlState": "ready_unchanged",
+        "auditRecorded": True,
+        "privateReceiptSha256": hashlib.sha256(private_receipt).hexdigest(),
+        "connectorCandidate": {
+            "sourceCommit": candidate.get("sourceCommit"),
+            "sourceSha256": candidate.get("sourceSha256"),
+            "appVersion": candidate.get("appVersion"),
+            "appBuild": candidate.get("appBuild"),
+        },
+    }
+
+
+def sign_public_attestation(
+    attestation: dict[str, Any],
+    config: CanaryConfig,
+    *,
+    run_process: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
+) -> str:
+    return sign_payload(
+        attestation,
+        config,
+        namespace=PUBLIC_ATTESTATION_NAMESPACE,
+        run_process=run_process,
+    )
+
+
 def validate_receipt_signer_key(config: CanaryConfig) -> tuple[Path, os.stat_result]:
     key_path = config.receipt_private_key
     if not key_path.is_absolute():
@@ -547,6 +614,35 @@ def receipt_envelope(
         "signature": sshsig,
         "keyId": config.receipt_key_id,
         "namespace": RECEIPT_NAMESPACE,
+    }
+
+
+def public_attestation_envelope(
+    attestation: dict[str, Any], sshsig: str, config: CanaryConfig
+) -> dict[str, Any]:
+    return {
+        "schema": PUBLIC_ATTESTATION_ENVELOPE_SCHEMA,
+        "attestationBase64": _base64url_encode(_canonical_json(attestation)),
+        "signature": sshsig,
+        "keyId": config.receipt_key_id,
+        "namespace": PUBLIC_ATTESTATION_NAMESPACE,
+    }
+
+
+def receipt_bundle(
+    *,
+    receipt: dict[str, Any],
+    receipt_signature: str,
+    public_attestation: dict[str, Any],
+    public_signature: str,
+    config: CanaryConfig,
+) -> dict[str, Any]:
+    return {
+        "schema": RECEIPT_BUNDLE_SCHEMA,
+        "privateReceipt": receipt_envelope(receipt, receipt_signature, config),
+        "publicAttestation": public_attestation_envelope(
+            public_attestation, public_signature, config
+        ),
     }
 
 

@@ -9,6 +9,7 @@ describe('evaOS signed Mac-control receipt connector', () => {
   it('fails closed around the fixed authenticated canary route and emits a verifiable sanitized receipt', () => {
     const script = String.raw`
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -182,9 +183,14 @@ try:
     status, envelope = post(valid)
     assert status == 200, (status, envelope)
     assert action_calls == [["customer-mac", "--remote-control-generation", "7", "desktop", "hotkey", "--json", "--keys", "escape"]]
-    assert envelope["schema"] == "evaos.mac_control.runtime_receipt_envelope.v1"
-    assert envelope["namespace"] == "evaos-mac-control-receipt-v1"
-    receipt_bytes = base64.urlsafe_b64decode(envelope["receiptBase64"] + "=" * (-len(envelope["receiptBase64"]) % 4))
+    assert envelope["schema"] == "evaos.mac_control.runtime_receipt_bundle.v2"
+    private_envelope = envelope["privateReceipt"]
+    public_envelope = envelope["publicAttestation"]
+    assert private_envelope["schema"] == "evaos.mac_control.runtime_receipt_envelope.v1"
+    assert private_envelope["namespace"] == "evaos-mac-control-receipt-v1"
+    assert public_envelope["schema"] == "evaos.mac_control.public_runtime_attestation_envelope.v1"
+    assert public_envelope["namespace"] == "evaos-mac-control-public-attestation-v1"
+    receipt_bytes = base64.urlsafe_b64decode(private_envelope["receiptBase64"] + "=" * (-len(private_envelope["receiptBase64"]) % 4))
     receipt = json.loads(receipt_bytes)
     assert receipt_bytes == json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     assert receipt["action"] == {"command": "customer_mac.desktop_hotkey", "args": {"dryRun": False, "keys": "escape"}}
@@ -207,14 +213,37 @@ try:
     public = (key_path.with_suffix(".pub")).read_text(encoding="utf-8").strip()
     allowed.write_text(f"evaos {public}\n", encoding="utf-8")
     signature_path = root / "receipt.sshsig"
-    signature_path.write_text(envelope["signature"], encoding="ascii")
+    signature_path.write_text(private_envelope["signature"], encoding="ascii")
     verified = subprocess.run(
-        ["/usr/bin/ssh-keygen", "-Y", "verify", "-f", str(allowed), "-I", "evaos", "-n", envelope["namespace"], "-s", str(signature_path)],
+        ["/usr/bin/ssh-keygen", "-Y", "verify", "-f", str(allowed), "-I", "evaos", "-n", private_envelope["namespace"], "-s", str(signature_path)],
         input=receipt_bytes,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     assert verified.returncode == 0
+
+    attestation_bytes = base64.urlsafe_b64decode(public_envelope["attestationBase64"] + "=" * (-len(public_envelope["attestationBase64"]) % 4))
+    attestation = json.loads(attestation_bytes)
+    assert attestation_bytes == json.dumps(attestation, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    assert attestation["schema"] == "evaos.mac_control.public_runtime_attestation.v1"
+    assert attestation["privateReceiptSha256"] == hashlib.sha256(receipt_bytes).hexdigest()
+    assert attestation["connectorCandidate"] == {
+        "sourceCommit": "a" * 40,
+        "sourceSha256": "b" * 64,
+        "appVersion": "2.1.36",
+        "appBuild": "2.1.36",
+    }
+    for forbidden_field in ["challenge", "bindingRef", "sessionRef", "auditRef", "customerRef", "vmRef"]:
+        assert forbidden_field not in attestation
+    public_signature_path = root / "public-attestation.sshsig"
+    public_signature_path.write_text(public_envelope["signature"], encoding="ascii")
+    public_verified = subprocess.run(
+        ["/usr/bin/ssh-keygen", "-Y", "verify", "-f", str(allowed), "-I", "evaos", "-n", public_envelope["namespace"], "-s", str(public_signature_path)],
+        input=attestation_bytes,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    assert public_verified.returncode == 0
 
     count = len(action_calls)
     assert post(valid)[0] == 409

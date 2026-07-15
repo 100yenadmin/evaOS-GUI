@@ -23,14 +23,16 @@ from .candidate_identity import public_packaged_bridge_candidate
 from .receipt_canary import (
     CanaryError,
     build_receipt,
+    build_public_attestation,
     burn_replay_token,
     candidate_snapshot,
     default_process_identity,
     load_canary_config,
-    receipt_envelope,
+    receipt_bundle,
     require_canary_authority_fresh,
     require_canary_control_state,
     sign_receipt,
+    sign_public_attestation,
     validate_action_audit,
     validate_canary_request,
     validate_receipt_signer_key,
@@ -1609,8 +1611,19 @@ def _make_handler(
                     .replace("+00:00", "Z"),
                     binding_expires_at=str(payload["binding"]["bindingExpiresAt"]),
                 )
-                signature = sign_receipt(receipt, config)
-                self._write_json(200, receipt_envelope(receipt, signature, config))
+                receipt_signature = sign_receipt(receipt, config)
+                public_attestation = build_public_attestation(receipt, config)
+                public_signature = sign_public_attestation(public_attestation, config)
+                self._write_json(
+                    200,
+                    receipt_bundle(
+                        receipt=receipt,
+                        receipt_signature=receipt_signature,
+                        public_attestation=public_attestation,
+                        public_signature=public_signature,
+                        config=config,
+                    ),
+                )
             except CanaryError as exc:
                 self._write_json(exc.status, {"ok": False, "error": exc.code})
             except Exception:

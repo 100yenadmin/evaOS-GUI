@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { signedMacControlAttestation } from './fixtures/signedMacControlAttestation';
 
 const WORKFLOW_PATH = '.github/workflows/evaos-live-canary-proof.yml';
 const require = createRequire(import.meta.url);
@@ -16,27 +17,18 @@ function readWorkflow(): string {
 }
 
 function validMacControlRuntimeProof(): Record<string, unknown> {
-  return {
-    ok: true,
-    schema: 'evaos.mac_control.runtime_proof.v2',
-    proofKind: 'selected_binding_direct_mac_control',
-    tool: 'customer_mac.desktop_hotkey',
-    outcome: 'succeeded',
+  return signedMacControlAttestation({
     runRef: 'gha:12345:111111111111111111111111',
     executedAt: '2026-07-15T00:00:00.000Z',
-    bindingRef: 'a'.repeat(64),
-    bindingVersion: '7',
-    sessionRef: 'b'.repeat(64),
-    expiresAt: 1784073660,
-    auditRef: 'c'.repeat(64),
-    sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+    authorityIssuedAt: 1784073599,
+    authorityExpiresAt: 1784073659,
     candidate: {
       sourceCommit: 'd'.repeat(40),
       sourceSha256: 'e'.repeat(64),
       appVersion: '2.1.36',
       appBuild: '2.1.36',
     },
-  };
+  }).envelope;
 }
 
 function writeCompleteMacControlProofSet(proofDir: string): void {
@@ -66,9 +58,24 @@ function writeCompleteMacControlProofSet(proofDir: string): void {
       authorityRedacted: true,
     },
   };
+  const deployedRoute = {
+    schema: 'evaos.mac_control.deployed_route_probe.v1',
+    sourceHeadSha: 'd'.repeat(40),
+    sourceRunId: '12345',
+    checkedAt: '2026-07-15T00:00:01.000Z',
+    assertions: {
+      gatewayAuthRequired: true,
+      postOnly: true,
+      exactMatch: true,
+      strictBody: true,
+      callerAuthorityBodyRejected: true,
+      sensitiveOutputAbsent: true,
+    },
+  };
   const proofs = {
     'mac-control-runtime.json': validMacControlRuntimeProof(),
     'mac-control-runtime-negative.json': negative,
+    'mac-control-deployed-route.json': deployedRoute,
     'mac-control-session-provisioning.json': provision,
     'mac-control-session-provisioning.stdout.json': provision,
     'mac-control-session-cleanup.json': cleanup,
@@ -199,6 +206,12 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js provision-mac-control');
     expect(workflow).toContain('node scripts/evaosBrokerLiveCanary.js --mac-control');
     expect(workflow).toContain('> "$PROOF_DIR/mac-control-runtime.json"');
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_PROBE_OUTPUT: live-canary-proof/mac-control-deployed-route.json'
+    );
+    expect(workflow).toContain('vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID');
+    expect(workflow).toContain('vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID');
+    expect(workflow).toContain('vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY');
     expect(workflow).toContain('Prove Mac-control runtime-receipt negative boundaries');
     const negativeStep = workflow.slice(
       workflow.indexOf('- name: Prove Mac-control runtime-receipt negative boundaries'),
@@ -207,6 +220,10 @@ describe('evaOS live canary proof workflow', () => {
     expect(negativeStep).toContain(
       "if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true'"
     );
+    expect(negativeStep).toContain(
+      'npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin ci --ignore-scripts --omit=peer --no-audit --no-fund'
+    );
+    expect(workflow).toContain('resources/evaos-beta/bridge/agent-tools/openclaw-plugin/package-lock.json');
     expect(negativeStep).toContain('run proof:runtime-receipt-negative --');
     expect(negativeStep).toContain('"$PROOF_DIR/mac-control-runtime-negative.json" "$GITHUB_SHA" "$GITHUB_RUN_ID"');
     expect(negativeStep).not.toContain('continue-on-error');
@@ -239,7 +256,7 @@ describe('evaOS live canary proof workflow', () => {
       expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/missing required artifact/i);
 
       writeCompleteMacControlProofSet(proofDir);
-      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 6 });
+      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 7 });
 
       for (const unsafe of [
         { Cookie: 'opaque-cookie-value-123456' },
@@ -276,7 +293,7 @@ describe('evaOS live canary proof workflow', () => {
         path.join(proofDir, 'mac-control-runtime.json'),
         `${JSON.stringify(validMacControlRuntimeProof())}\n`
       );
-      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 6 });
+      expect(proofScanner.scanMacControlProofDirectory(proofDir)).toEqual({ ok: true, scanned: 7 });
       expect(() =>
         proofScanner.assertMacControlProofSanitized({
           keyId: 'public-key-id',

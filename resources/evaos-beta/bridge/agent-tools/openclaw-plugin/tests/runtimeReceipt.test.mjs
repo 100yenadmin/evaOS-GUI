@@ -19,6 +19,7 @@ const NOW_MS = Date.parse('2026-07-15T00:00:00Z');
 const KEY_ID = 'mac-context-test-2026-07';
 const RECEIPT_KEY_ID = 'connector-receipt-test-2026-07';
 const RECEIPT_NAMESPACE = 'evaos-mac-control-receipt-v1';
+const PUBLIC_ATTESTATION_NAMESPACE = 'evaos-mac-control-public-attestation-v1';
 const CONNECTOR_TOKEN = 'connector-token-value-at-least-24';
 const EXPECTED_COMMIT = 'a'.repeat(40);
 const EXPECTED_SOURCE_SHA256 = 'b'.repeat(64);
@@ -124,22 +125,26 @@ test('verifies server authority and forwards only the fixed connector canary con
   });
   const response = await invoke(handler, { challenge, runRef }, authority.headers);
   assert.equal(response.statusCode, 200);
-  const proof = JSON.parse(response.body);
-  assert.deepEqual(proof, {
-    ok: true,
-    schema: 'evaos.mac_control.runtime_proof.v2',
+  const envelope = JSON.parse(response.body);
+  assert.deepEqual(envelope, connectorEnvelope.publicAttestation);
+  const attestation = JSON.parse(Buffer.from(envelope.attestationBase64, 'base64url'));
+  assert.deepEqual(attestation, {
+    schema: 'evaos.mac_control.public_runtime_attestation.v1',
+    keyId: RECEIPT_KEY_ID,
+    namespace: PUBLIC_ATTESTATION_NAMESPACE,
     proofKind: 'selected_binding_direct_mac_control',
+    runtime: 'openclaw',
     tool: 'customer_mac.desktop_hotkey',
     outcome: 'succeeded',
     runRef,
     executedAt: '2026-07-15T00:00:10Z',
-    bindingRef: receipt.bindingRef,
-    bindingVersion: '7',
-    sessionRef: receipt.sessionRef,
-    expiresAt: Math.floor(NOW_MS / 1000) + 50,
-    auditRef: saltedHash(challenge, receipt.auditId),
-    sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
-    candidate: {
+    authorityIssuedAt: Math.floor(NOW_MS / 1000),
+    authorityExpiresAt: Math.floor(NOW_MS / 1000) + 50,
+    contextKeyId: KEY_ID,
+    controlState: 'ready_unchanged',
+    auditRecorded: true,
+    privateReceiptSha256: sha256(canonicalBytes(receipt)),
+    connectorCandidate: {
       sourceCommit: EXPECTED_COMMIT,
       sourceSha256: EXPECTED_SOURCE_SHA256,
       appVersion: '2.1.36',
@@ -147,9 +152,12 @@ test('verifies server authority and forwards only the fixed connector canary con
     },
   });
   assert.equal(response.body.includes('receiptBase64'), false);
-  assert.equal(response.body.includes('SSH SIGNATURE'), false);
+  assert.equal(response.body.includes('SSH SIGNATURE'), true);
   assert.equal(response.body.includes(CONNECTOR_TOKEN), false);
   assert.equal(response.body.includes('customer-1'), false);
+  for (const field of ['challenge', 'bindingRef', 'sessionRef', 'auditRef', 'customerRef', 'vmRef']) {
+    assert.equal(field in attestation, false);
+  }
   assert.equal(connectorCalls, 1);
 });
 
@@ -237,7 +245,7 @@ test('rejects forged signatures and re-signed wrong release claims', async (t) =
       'forged signature',
       () => {
         const envelope = signedConnectorEnvelope(valid);
-        envelope.signature = sshSignature(canonicalBytes({ ...valid, runRef: 'other-run' }));
+        envelope.privateReceipt.signature = sshSignature(canonicalBytes({ ...valid, runRef: 'other-run' }));
         return envelope;
       },
     ],
@@ -248,6 +256,28 @@ test('rejects forged signatures and re-signed wrong release claims', async (t) =
           ...valid,
           candidate: { ...valid.candidate, sourceCommit: 'd'.repeat(40) },
         }),
+    ],
+    [
+      'forged public attestation',
+      () => {
+        const envelope = signedConnectorEnvelope(valid);
+        envelope.publicAttestation.signature = sshSignature(
+          canonicalBytes({ ...publicAttestation(valid), outcome: 'failed' }),
+          PUBLIC_ATTESTATION_NAMESPACE
+        );
+        return envelope;
+      },
+    ],
+    [
+      'public attestation paired with another private receipt',
+      () => {
+        const envelope = signedConnectorEnvelope(valid);
+        envelope.publicAttestation = signedConnectorEnvelope({
+          ...valid,
+          auditRecordDigest: 'd'.repeat(64),
+        }).publicAttestation;
+        return envelope;
+      },
     ],
   ];
   for (const [name, envelope] of cases) {
@@ -287,12 +317,30 @@ test('verifies a real OpenSSH SSHSIG over the exact canonical receipt bytes', as
       input: receiptBytes,
     });
     assert.equal(signed.status, 0, signed.stderr.toString('utf8'));
+    const attestation = publicAttestation(receipt);
+    const attestationBytes = canonicalBytes(attestation);
+    const publicSigned = spawnSync(
+      '/usr/bin/ssh-keygen',
+      ['-Y', 'sign', '-q', '-f', keyPath, '-n', PUBLIC_ATTESTATION_NAMESPACE, '-'],
+      { input: attestationBytes }
+    );
+    assert.equal(publicSigned.status, 0, publicSigned.stderr.toString('utf8'));
     const envelope = {
-      schema: 'evaos.mac_control.runtime_receipt_envelope.v1',
-      receiptBase64: receiptBytes.toString('base64url'),
-      signature: signed.stdout.toString('ascii'),
-      keyId: RECEIPT_KEY_ID,
-      namespace: RECEIPT_NAMESPACE,
+      schema: 'evaos.mac_control.runtime_receipt_bundle.v2',
+      privateReceipt: {
+        schema: 'evaos.mac_control.runtime_receipt_envelope.v1',
+        receiptBase64: receiptBytes.toString('base64url'),
+        signature: signed.stdout.toString('ascii'),
+        keyId: RECEIPT_KEY_ID,
+        namespace: RECEIPT_NAMESPACE,
+      },
+      publicAttestation: {
+        schema: 'evaos.mac_control.public_runtime_attestation_envelope.v1',
+        attestationBase64: attestationBytes.toString('base64url'),
+        signature: publicSigned.stdout.toString('ascii'),
+        keyId: RECEIPT_KEY_ID,
+        namespace: PUBLIC_ATTESTATION_NAMESPACE,
+      },
     };
     const handler = createMacControlRuntimeReceiptHandler({
       env: { ...env, EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY: actualPublicKey.toString('base64url') },
@@ -301,7 +349,7 @@ test('verifies a real OpenSSH SSHSIG over the exact canonical receipt bytes', as
     });
     const response = await invoke(handler, { challenge, runRef }, authority.headers);
     assert.equal(response.statusCode, 200, response.body);
-    assert.equal(JSON.parse(response.body).schema, 'evaos.mac_control.runtime_proof.v2');
+    assert.equal(JSON.parse(response.body).schema, 'evaos.mac_control.public_runtime_attestation_envelope.v1');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -538,23 +586,61 @@ function validReceipt(authority, challenge, runRef, overrides = {}) {
 
 function signedConnectorEnvelope(receipt) {
   const receiptBytes = canonicalBytes(receipt);
+  const attestation = publicAttestation(receipt);
+  const attestationBytes = canonicalBytes(attestation);
   return {
-    schema: 'evaos.mac_control.runtime_receipt_envelope.v1',
-    receiptBase64: receiptBytes.toString('base64url'),
-    signature: sshSignature(receiptBytes),
-    keyId: RECEIPT_KEY_ID,
-    namespace: RECEIPT_NAMESPACE,
+    schema: 'evaos.mac_control.runtime_receipt_bundle.v2',
+    privateReceipt: {
+      schema: 'evaos.mac_control.runtime_receipt_envelope.v1',
+      receiptBase64: receiptBytes.toString('base64url'),
+      signature: sshSignature(receiptBytes, RECEIPT_NAMESPACE),
+      keyId: RECEIPT_KEY_ID,
+      namespace: RECEIPT_NAMESPACE,
+    },
+    publicAttestation: {
+      schema: 'evaos.mac_control.public_runtime_attestation_envelope.v1',
+      attestationBase64: attestationBytes.toString('base64url'),
+      signature: sshSignature(attestationBytes, PUBLIC_ATTESTATION_NAMESPACE),
+      keyId: RECEIPT_KEY_ID,
+      namespace: PUBLIC_ATTESTATION_NAMESPACE,
+    },
   };
 }
 
-function sshSignature(message) {
+function publicAttestation(receipt) {
+  return {
+    schema: 'evaos.mac_control.public_runtime_attestation.v1',
+    keyId: RECEIPT_KEY_ID,
+    namespace: PUBLIC_ATTESTATION_NAMESPACE,
+    proofKind: 'selected_binding_direct_mac_control',
+    runtime: 'openclaw',
+    tool: 'customer_mac.desktop_hotkey',
+    outcome: 'succeeded',
+    runRef: receipt.runRef,
+    executedAt: receipt.executedAt,
+    authorityIssuedAt: receipt.contextIssuedAt,
+    authorityExpiresAt: receipt.contextExpiresAt,
+    contextKeyId: receipt.contextKeyId,
+    controlState: 'ready_unchanged',
+    auditRecorded: true,
+    privateReceiptSha256: sha256(canonicalBytes(receipt)),
+    connectorCandidate: {
+      sourceCommit: receipt.candidate.sourceCommit,
+      sourceSha256: receipt.candidate.sourceSha256,
+      appVersion: receipt.candidate.appVersion,
+      appBuild: receipt.candidate.appBuild,
+    },
+  };
+}
+
+function sshSignature(message, namespace = RECEIPT_NAMESPACE) {
   const algorithm = Buffer.from('ssh-ed25519');
-  const namespace = Buffer.from(RECEIPT_NAMESPACE);
+  const namespaceBytes = Buffer.from(namespace);
   const hashAlgorithm = Buffer.from('sha512');
   const digest = createHash('sha512').update(message).digest();
   const signedData = Buffer.concat([
     Buffer.from('SSHSIG'),
-    sshString(namespace),
+    sshString(namespaceBytes),
     sshString(Buffer.alloc(0)),
     sshString(hashAlgorithm),
     sshString(digest),
@@ -566,7 +652,7 @@ function sshSignature(message) {
     Buffer.from('SSHSIG'),
     uint32(1),
     sshString(publicKeyBlob),
-    sshString(namespace),
+    sshString(namespaceBytes),
     sshString(Buffer.alloc(0)),
     sshString(hashAlgorithm),
     sshString(signatureBlob),

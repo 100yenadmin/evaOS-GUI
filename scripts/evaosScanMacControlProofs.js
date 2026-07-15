@@ -6,6 +6,7 @@ const path = require('node:path');
 const MAC_CONTROL_PROOF_NAMES = Object.freeze([
   'mac-control-runtime.json',
   'mac-control-runtime-negative.json',
+  'mac-control-deployed-route.json',
   'mac-control-session-provisioning.json',
   'mac-control-session-provisioning.stdout.json',
   'mac-control-session-cleanup.json',
@@ -13,28 +14,8 @@ const MAC_CONTROL_PROOF_NAMES = Object.freeze([
 ]);
 const MAC_CONTROL_PROOF_CONTRACTS = Object.freeze({
   'mac-control-runtime.json': {
-    schema: 'evaos.mac_control.runtime_proof.v2',
-    fields: [
-      'ok',
-      'schema',
-      'proofKind',
-      'tool',
-      'outcome',
-      'runRef',
-      'executedAt',
-      'bindingRef',
-      'bindingVersion',
-      'sessionRef',
-      'expiresAt',
-      'auditRef',
-      'sourcePointer',
-      'candidate',
-    ],
-    nested: {
-      candidate: {
-        fields: ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'],
-      },
-    },
+    schema: 'evaos.mac_control.public_runtime_attestation_envelope.v1',
+    fields: ['schema', 'attestationBase64', 'signature', 'keyId', 'namespace'],
   },
   'mac-control-runtime-negative.json': {
     schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
@@ -42,6 +23,22 @@ const MAC_CONTROL_PROOF_CONTRACTS = Object.freeze({
     nested: {
       assertions: {
         fields: ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'],
+      },
+    },
+  },
+  'mac-control-deployed-route.json': {
+    schema: 'evaos.mac_control.deployed_route_probe.v1',
+    fields: ['schema', 'sourceHeadSha', 'sourceRunId', 'checkedAt', 'assertions'],
+    nested: {
+      assertions: {
+        fields: [
+          'gatewayAuthRequired',
+          'postOnly',
+          'exactMatch',
+          'strictBody',
+          'callerAuthorityBodyRejected',
+          'sensitiveOutputAbsent',
+        ],
       },
     },
   },
@@ -181,6 +178,71 @@ function assertExactProofContract(value, contract, location) {
   }
 }
 
+function assertPublicAttestationEnvelopeSanitized(value, location) {
+  const contract = MAC_CONTROL_PROOF_CONTRACTS['mac-control-runtime.json'];
+  assertExactProofContract(value, contract, location);
+  assertMacControlProofSanitized({ schema: value.schema, keyId: value.keyId, namespace: value.namespace }, location);
+  if (
+    typeof value.attestationBase64 !== 'string' ||
+    value.attestationBase64.length < 32 ||
+    value.attestationBase64.length > 32768 ||
+    !/^[A-Za-z0-9_-]+$/.test(value.attestationBase64)
+  ) {
+    throw new Error(`Mac-control proof contains invalid public attestation bytes at ${location}.`);
+  }
+  const attestationBytes = Buffer.from(value.attestationBase64, 'base64url');
+  if (
+    attestationBytes.byteLength === 0 ||
+    attestationBytes.byteLength > 16384 ||
+    attestationBytes.toString('base64url') !== value.attestationBase64
+  ) {
+    throw new Error(`Mac-control proof contains noncanonical public attestation bytes at ${location}.`);
+  }
+  let attestation;
+  try {
+    attestation = JSON.parse(attestationBytes.toString('utf8'));
+  } catch {
+    throw new Error(`Mac-control proof contains invalid public attestation JSON at ${location}.`);
+  }
+  const attestationContract = {
+    fields: [
+      'schema',
+      'keyId',
+      'namespace',
+      'proofKind',
+      'runtime',
+      'tool',
+      'outcome',
+      'runRef',
+      'executedAt',
+      'authorityIssuedAt',
+      'authorityExpiresAt',
+      'contextKeyId',
+      'controlState',
+      'auditRecorded',
+      'privateReceiptSha256',
+      'connectorCandidate',
+    ],
+    nested: {
+      connectorCandidate: {
+        fields: ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'],
+      },
+    },
+  };
+  assertExactProofContract(attestation, attestationContract, `${location}.decodedAttestation`);
+  if (attestation.schema !== 'evaos.mac_control.public_runtime_attestation.v1') {
+    throw new Error(`Mac-control proof contains an unexpected public attestation schema at ${location}.`);
+  }
+  assertMacControlProofSanitized(attestation, `${location}.decodedAttestation`);
+  if (
+    typeof value.signature !== 'string' ||
+    value.signature.length > 8192 ||
+    !/^-----BEGIN SSH SIGNATURE-----\n(?:[A-Za-z0-9+/=]{1,76}\n)+-----END SSH SIGNATURE-----\n$/.test(value.signature)
+  ) {
+    throw new Error(`Mac-control proof contains an invalid public attestation signature at ${location}.`);
+  }
+}
+
 function scanMacControlProofDirectory(proofDir) {
   const resolvedProofDir = path.resolve(String(proofDir || ''));
   let scanned = 0;
@@ -190,12 +252,16 @@ function scanMacControlProofDirectory(proofDir) {
       throw new Error(`Mac-control proof is missing required artifact ${proofName}.`);
     }
     const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
-    assertMacControlProofSanitized(proof, proofName);
     const contract = MAC_CONTROL_PROOF_CONTRACTS[proofName];
     if (!contract || proof.schema !== contract.schema) {
       throw new Error(`Mac-control proof has an unexpected schema in ${proofName}.`);
     }
-    assertExactProofContract(proof, contract, proofName);
+    if (proofName === 'mac-control-runtime.json') {
+      assertPublicAttestationEnvelopeSanitized(proof, proofName);
+    } else {
+      assertMacControlProofSanitized(proof, proofName);
+      assertExactProofContract(proof, contract, proofName);
+    }
     scanned += 1;
   }
   const cleanupPath = path.join(resolvedProofDir, 'mac-control-session-cleanup.json');

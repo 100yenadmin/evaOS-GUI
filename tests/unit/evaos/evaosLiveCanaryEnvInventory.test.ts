@@ -158,6 +158,9 @@ describe('evaOS live canary GitHub environment inventory', () => {
         'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
         'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
         'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+        'EVAOS_MAC_CONTROL_CONTEXT_KEY_ID',
+        'EVAOS_MAC_CONTROL_RECEIPT_KEY_ID',
+        'EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY',
       ])
     );
 
@@ -177,6 +180,9 @@ describe('evaOS live canary GitHub environment inventory', () => {
           'AIONUI_EVAOS_RELEASE_CANARY_CUSTOMER_ID',
           'AIONUI_EVAOS_RELEASE_CANARY_TARGET_KIND',
           'AIONUI_EVAOS_RELEASE_CANARY_TARGET_LABEL',
+          'EVAOS_MAC_CONTROL_CONTEXT_KEY_ID',
+          'EVAOS_MAC_CONTROL_RECEIPT_KEY_ID',
+          'EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY',
         ],
       },
       { provisioned: true, macControl: true }
@@ -240,11 +246,14 @@ describe('evaOS live canary GitHub environment inventory', () => {
     expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID');
     expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT');
     expect(template).toContain('gh secret set AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST');
+    expect(template).toContain('gh variable set EVAOS_MAC_CONTROL_CONTEXT_KEY_ID');
+    expect(template).toContain('gh variable set EVAOS_MAC_CONTROL_RECEIPT_KEY_ID');
+    expect(template).toContain('gh variable set EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY');
     expect(template).toContain('-f run_mac_control_canary=true');
     expect(template).toContain('-f mac_control_canary_ack=evaos-mac-control-canary');
     expect(template).toContain("-f proof_ref='https://github.com/100yenadmin/AionUi/issues/41'");
     expect(template).toContain(
-      "node scripts/evaosLiveCanaryEnvInventory.js --repo '100yenadmin/AionUi' --env 'evaos-staging' --strict --markdown --provisioned"
+      "node scripts/evaosLiveCanaryEnvInventory.js --repo '100yenadmin/AionUi' --env 'evaos-staging' --strict --markdown --provisioned --mac-control"
     );
     expect(template).not.toContain('eds_live_session_for_test');
     expect(template).not.toContain('https://workspace.example.test');

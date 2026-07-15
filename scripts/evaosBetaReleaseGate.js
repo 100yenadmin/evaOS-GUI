@@ -6,13 +6,17 @@ const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 const { bridgeWrapperScript } = require('./prepareEvaosDesktopBridgeResource');
+const {
+  PUBLIC_ATTESTATION_ENVELOPE_FIELDS,
+  verifyMacControlPublicAttestation,
+} = require('./evaosMacControlSignedProof');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const WORKBENCH_BRIDGE_SOURCE_DIR = 'resources/evaos-beta/bridge/src/evaos_desktop_bridge';
 const committedBridgeSourceIdentityCache = new Map();
 
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
-const LIVE_CANARY_VERIFIER_SHA256 = '692d88c72217b44f7957d78228748991ff65a12afda253c03b365a30b63e6127';
+const LIVE_CANARY_VERIFIER_SHA256 = '701828332e3c35497294359980944e7021064384a6a0304157af7885897462bd';
 const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '7d3bc23e52e3e342782b2903664572b15754782db4e67155cdb869c4c8d93d3b';
 
 const REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV = [
@@ -93,6 +97,7 @@ const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME = 'business-browser.json';
 const MAC_CONTROL_LIVE_CANARY_PROOF_NAME = 'mac-control-runtime.json';
 const MAC_CONTROL_NEGATIVE_PROOF_NAME = 'mac-control-runtime-negative.json';
+const MAC_CONTROL_DEPLOYED_PROBE_NAME = 'mac-control-deployed-route.json';
 const MAC_CONTROL_PROVISION_PROOF_NAME = 'mac-control-session-provisioning.json';
 const MAC_CONTROL_CLEANUP_PROOF_NAME = 'mac-control-session-cleanup.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
@@ -280,22 +285,7 @@ const LIVE_CANARY_SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._-]{8,}\b/i,
   /[?&#](?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|api[_-]?key|service[_-]?role|token|secret|password|credential)=/i,
 ];
-const MAC_CONTROL_RUNTIME_PROOF_FIELDS = Object.freeze([
-  'ok',
-  'schema',
-  'proofKind',
-  'tool',
-  'outcome',
-  'runRef',
-  'executedAt',
-  'bindingRef',
-  'bindingVersion',
-  'sessionRef',
-  'expiresAt',
-  'auditRef',
-  'sourcePointer',
-  'candidate',
-]);
+const MAC_CONTROL_RUNTIME_PROOF_FIELDS = PUBLIC_ATTESTATION_ENVELOPE_FIELDS;
 
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
@@ -889,6 +879,9 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
     'EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS',
     'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA',
     'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID',
+    'EVAOS_LIVE_CANARY_CONTEXT_KEY_ID',
+    'EVAOS_LIVE_CANARY_RECEIPT_KEY_ID',
+    'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY',
   ];
   if (
     JSON.stringify(getWorkflowStepPropertyNames(steps[0])) !== JSON.stringify(['name', 'shell', 'env', 'run']) ||
@@ -910,6 +903,9 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
     ['EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS', '24'],
     ['EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA', '${{ steps.provenance.outputs.tag_commit }}'],
     ['EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID', '${{ github.event.inputs.live_canary_proof_run_id }}'],
+    ['EVAOS_LIVE_CANARY_CONTEXT_KEY_ID', '${{ vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID }}'],
+    ['EVAOS_LIVE_CANARY_RECEIPT_KEY_ID', '${{ vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID }}'],
+    ['EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY', '${{ vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY }}'],
   ]) {
     const values = getWorkflowStepEnvValues(steps[0], key);
     if (values.length !== 1 || values[0] !== expectedValue) {
@@ -1032,6 +1028,7 @@ function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode, bashPath) {
       '  mkdir -p "$output_dir/packet"',
       '  : > "$output_dir/packet/broker-runtime-status.json"',
       '  : > "$output_dir/packet/mac-control-runtime.json"',
+      '  : > "$output_dir/packet/mac-control-deployed-route.json"',
       `  printf '%s\\n' 'Run live canaries: true' 'Run follow-up canaries: none' 'Run Mac-control canary: true' > "$output_dir/packet/proof-run.md"`,
       '  exit 0',
       'fi',
@@ -3286,36 +3283,56 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env, verificati
   assertLiveCanaryNoSecretMaterial(proof, 'macControl');
 
   if (Object.keys(proof).length !== allowedTopLevelFields.size) {
-    throw new Error('Mac-control live canary proof is missing required runtime-receipt fields.');
-  }
-  if (proof.schema !== 'evaos.mac_control.runtime_proof.v2') {
-    throw new Error(`Unexpected Mac-control live canary proof schema: ${proof.schema}`);
-  }
-  if (
-    proof.ok !== true ||
-    proof.proofKind !== 'selected_binding_direct_mac_control' ||
-    proof.tool !== 'customer_mac.desktop_hotkey' ||
-    proof.outcome !== 'succeeded' ||
-    proof.sourcePointer !== 'evaos-desktop-bridge:runtime-receipt'
-  ) {
-    throw new Error('Mac-control live canary release gate requires a successful direct-control runtime receipt.');
+    throw new Error('Mac-control live canary proof is missing required signed-attestation fields.');
   }
 
   const expectedHeadSha = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA || '').trim();
   const expectedRunId = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID || '').trim();
+  const receiptKeyId = String(env.EVAOS_LIVE_CANARY_RECEIPT_KEY_ID || '').trim();
+  const receiptPublicKey = String(env.EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY || '').trim();
+  const expectedContextKeyId = String(env.EVAOS_LIVE_CANARY_CONTEXT_KEY_ID || '').trim();
   if (!/^[0-9a-f]{40}$/i.test(expectedHeadSha)) {
     throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA.');
   }
   if (!/^\d+$/.test(expectedRunId)) {
     throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID.');
   }
-  if (!new RegExp(`^gha:${expectedRunId}:[0-9a-f]{24}$`).test(String(proof.runRef || ''))) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(expectedContextKeyId)) {
+    throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_CONTEXT_KEY_ID.');
+  }
+  let attestation;
+  try {
+    attestation = verifyMacControlPublicAttestation(proof, {
+      keyId: receiptKeyId,
+      publicKey: receiptPublicKey,
+    });
+  } catch {
+    throw new Error('Mac-control live canary public attestation signature is invalid.');
+  }
+  assertLiveCanaryNoSecretMaterial(attestation, 'macControlAttestation');
+  if (
+    attestation.proofKind !== 'selected_binding_direct_mac_control' ||
+    attestation.runtime !== 'openclaw' ||
+    attestation.tool !== 'customer_mac.desktop_hotkey' ||
+    attestation.outcome !== 'succeeded' ||
+    attestation.controlState !== 'ready_unchanged' ||
+    attestation.auditRecorded !== true ||
+    attestation.contextKeyId !== expectedContextKeyId
+  ) {
+    throw new Error('Mac-control live canary release gate requires a successful signed direct-control attestation.');
+  }
+  if (!new RegExp(`^gha:${expectedRunId}:[0-9a-f]{24}$`).test(String(attestation.runRef || ''))) {
     throw new Error('Mac-control live canary proof run does not match the selected proof run.');
   }
 
-  const executedAtText = String(proof.executedAt || '');
+  const executedAtText = String(attestation.executedAt || '');
   const executedAt = Date.parse(executedAtText);
-  const expiresAtMs = Number.isSafeInteger(proof.expiresAt) ? proof.expiresAt * 1000 : Number.NaN;
+  const authorityIssuedAtMs = Number.isSafeInteger(attestation.authorityIssuedAt)
+    ? attestation.authorityIssuedAt * 1000
+    : Number.NaN;
+  const authorityExpiresAtMs = Number.isSafeInteger(attestation.authorityExpiresAt)
+    ? attestation.authorityExpiresAt * 1000
+    : Number.NaN;
   const maxAgeRaw = String(env.EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS || '24').trim();
   const configuredMaxAgeHours = Number.parseFloat(maxAgeRaw);
   const maxAgeHours =
@@ -3331,34 +3348,34 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env, verificati
   if (
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(executedAtText) ||
     !Number.isFinite(executedAt) ||
-    !Number.isFinite(expiresAtMs) ||
+    !Number.isFinite(authorityIssuedAtMs) ||
+    !Number.isFinite(authorityExpiresAtMs) ||
     receiptAgeMs < -5_000 ||
     receiptAgeMs > maxAgeHours * 60 * 60 * 1000 ||
-    executedAt > expiresAtMs ||
-    expiresAtMs - executedAt > 66_000 ||
-    !/^[0-9a-f]{64}$/.test(String(proof.bindingRef || '')) ||
-    !/^[1-9][0-9]{0,18}$/.test(String(proof.bindingVersion || '')) ||
-    !/^[0-9a-f]{64}$/.test(String(proof.sessionRef || '')) ||
-    !/^[0-9a-f]{64}$/.test(String(proof.auditRef || ''))
+    authorityExpiresAtMs <= authorityIssuedAtMs ||
+    authorityExpiresAtMs - authorityIssuedAtMs > 60_000 ||
+    executedAt < authorityIssuedAtMs - 5_000 ||
+    executedAt > authorityExpiresAtMs ||
+    !/^[0-9a-f]{64}$/.test(String(attestation.privateReceiptSha256 || ''))
   ) {
-    throw new Error('Mac-control live canary runtime receipt fields are invalid.');
+    throw new Error('Mac-control live canary signed attestation fields are invalid.');
   }
 
-  assertLiveCanaryPlainObject(proof.candidate, 'Mac-control live canary candidate');
+  assertLiveCanaryPlainObject(attestation.connectorCandidate, 'Mac-control live canary candidate');
   const candidateFields = ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'];
   if (
-    Object.keys(proof.candidate).length !== candidateFields.length ||
-    Object.keys(proof.candidate).some((field) => !candidateFields.includes(field))
+    Object.keys(attestation.connectorCandidate).length !== candidateFields.length ||
+    Object.keys(attestation.connectorCandidate).some((field) => !candidateFields.includes(field))
   ) {
     throw new Error('Mac-control live canary candidate fields do not match the required release contract.');
   }
   const expectedSourceSha256 = committedBridgeSourceIdentity(expectedHeadSha).sourceSha256;
   const expectedVersion = packageVersionAtCommit(expectedHeadSha);
   if (
-    proof.candidate.sourceCommit !== expectedHeadSha ||
-    proof.candidate.sourceSha256 !== expectedSourceSha256 ||
-    proof.candidate.appVersion !== expectedVersion ||
-    proof.candidate.appBuild !== expectedVersion
+    attestation.connectorCandidate.sourceCommit !== expectedHeadSha ||
+    attestation.connectorCandidate.sourceSha256 !== expectedSourceSha256 ||
+    attestation.connectorCandidate.appVersion !== expectedVersion ||
+    attestation.connectorCandidate.appBuild !== expectedVersion
   ) {
     throw new Error('Mac-control live canary candidate does not match the exact release commit.');
   }
@@ -3389,6 +3406,45 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env, verificati
     negativeAssertions.some((field) => negativeProof.assertions[field] !== true)
   ) {
     throw new Error('Mac-control runtime-receipt negative assertions are incomplete.');
+  }
+
+  const deployedProbePath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_DEPLOYED_PROBE_NAME,
+    'Mac-control deployed route probe'
+  );
+  const deployedProbe = readManifestFile(deployedProbePath);
+  assertLiveCanaryPlainObject(deployedProbe, 'Mac-control deployed route probe');
+  assertLiveCanaryNoSecretMaterial(deployedProbe, 'macControlDeployedRoute');
+  const deployedProbeFields = ['schema', 'sourceHeadSha', 'sourceRunId', 'checkedAt', 'assertions'];
+  if (
+    Object.keys(deployedProbe).length !== deployedProbeFields.length ||
+    Object.keys(deployedProbe).some((field) => !deployedProbeFields.includes(field)) ||
+    deployedProbe.schema !== 'evaos.mac_control.deployed_route_probe.v1' ||
+    deployedProbe.sourceHeadSha !== expectedHeadSha ||
+    String(deployedProbe.sourceRunId || '') !== expectedRunId
+  ) {
+    throw new Error('Mac-control deployed route probe does not match the exact release run.');
+  }
+  assertLiveCanaryFresh(deployedProbe.checkedAt, 'macControlDeployedRoute.checkedAt', {
+    now: new Date(verificationNow),
+    maxAgeHours,
+  });
+  assertLiveCanaryPlainObject(deployedProbe.assertions, 'Mac-control deployed route assertions');
+  const deployedAssertions = [
+    'gatewayAuthRequired',
+    'postOnly',
+    'exactMatch',
+    'strictBody',
+    'callerAuthorityBodyRejected',
+    'sensitiveOutputAbsent',
+  ];
+  if (
+    Object.keys(deployedProbe.assertions).length !== deployedAssertions.length ||
+    Object.keys(deployedProbe.assertions).some((field) => !deployedAssertions.includes(field)) ||
+    deployedAssertions.some((field) => deployedProbe.assertions[field] !== true)
+  ) {
+    throw new Error('Mac-control deployed route assertions are incomplete.');
   }
 
   const provisionPath = requireExistingRelativeFile(

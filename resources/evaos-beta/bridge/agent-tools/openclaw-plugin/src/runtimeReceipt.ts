@@ -5,12 +5,14 @@ export const MAC_CONTROL_RUNTIME_RECEIPT_PATH = '/api/v1/evaos/mac-control/runti
 const CONTEXT_SCHEMA = 'evaos.mac_control_execution_context.v1';
 const CONTRACT_SCHEMA = 'evaos.mac_control_runtime_contract.v2';
 const CONNECTOR_REQUEST_SCHEMA = 'evaos.mac_control.canary_request.v1';
-const CONNECTOR_RESPONSE_SCHEMA = 'evaos.mac_control.runtime_receipt_envelope.v1';
+const CONNECTOR_RESPONSE_SCHEMA = 'evaos.mac_control.runtime_receipt_bundle.v2';
+const PRIVATE_RECEIPT_ENVELOPE_SCHEMA = 'evaos.mac_control.runtime_receipt_envelope.v1';
 const RECEIPT_SCHEMA = 'evaos.mac_control.runtime_receipt.v1';
 const RECEIPT_NAMESPACE = 'evaos-mac-control-receipt-v1';
-const PUBLIC_PROOF_SCHEMA = 'evaos.mac_control.runtime_proof.v2';
+const PUBLIC_ATTESTATION_SCHEMA = 'evaos.mac_control.public_runtime_attestation.v1';
+const PUBLIC_ATTESTATION_ENVELOPE_SCHEMA = 'evaos.mac_control.public_runtime_attestation_envelope.v1';
+const PUBLIC_ATTESTATION_NAMESPACE = 'evaos-mac-control-public-attestation-v1';
 const PUBLIC_PROOF_KIND = 'selected_binding_direct_mac_control';
-const PUBLIC_PROOF_SOURCE = 'evaos-desktop-bridge:runtime-receipt';
 const CONTEXT_TTL_SECONDS = 60;
 const CLOCK_SKEW_SECONDS = 5;
 const DEFAULT_CONNECTOR_TIMEOUT_MS = 10_000;
@@ -29,7 +31,9 @@ const CONTEXT_FIELDS = [
   'expires_at',
   'context_id',
 ] as const;
-const RESPONSE_FIELDS = ['schema', 'receiptBase64', 'signature', 'keyId', 'namespace'] as const;
+const RESPONSE_FIELDS = ['schema', 'privateReceipt', 'publicAttestation'] as const;
+const PRIVATE_RECEIPT_ENVELOPE_FIELDS = ['schema', 'receiptBase64', 'signature', 'keyId', 'namespace'] as const;
+const PUBLIC_ATTESTATION_ENVELOPE_FIELDS = ['schema', 'attestationBase64', 'signature', 'keyId', 'namespace'] as const;
 const RECEIPT_FIELDS = [
   'schema',
   'keyId',
@@ -89,6 +93,25 @@ const OWNER_FIELDS = [
 const PATH_FIELDS = ['kind', 'value'] as const;
 const ACTION_FIELDS = ['command', 'args'] as const;
 const ACTION_ARGS_FIELDS = ['keys', 'dryRun'] as const;
+const PUBLIC_ATTESTATION_FIELDS = [
+  'schema',
+  'keyId',
+  'namespace',
+  'proofKind',
+  'runtime',
+  'tool',
+  'outcome',
+  'runRef',
+  'executedAt',
+  'authorityIssuedAt',
+  'authorityExpiresAt',
+  'contextKeyId',
+  'controlState',
+  'auditRecorded',
+  'privateReceiptSha256',
+  'connectorCandidate',
+] as const;
+const PUBLIC_CANDIDATE_FIELDS = ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'] as const;
 
 const HEADER = {
   context: 'x-evaos-mac-control-execution-context',
@@ -180,26 +203,36 @@ type ReceiptVerifierConfig = {
   expectedAppBuild: string;
 };
 
-type PublicRuntimeProof = {
-  ok: true;
-  schema: typeof PUBLIC_PROOF_SCHEMA;
+type PublicRuntimeAttestation = {
+  schema: typeof PUBLIC_ATTESTATION_SCHEMA;
+  keyId: string;
+  namespace: typeof PUBLIC_ATTESTATION_NAMESPACE;
   proofKind: typeof PUBLIC_PROOF_KIND;
+  runtime: 'openclaw';
   tool: 'customer_mac.desktop_hotkey';
   outcome: 'succeeded';
   runRef: string;
   executedAt: string;
-  bindingRef: string;
-  bindingVersion: string;
-  sessionRef: string;
-  expiresAt: number;
-  auditRef: string;
-  sourcePointer: typeof PUBLIC_PROOF_SOURCE;
-  candidate: {
+  authorityIssuedAt: number;
+  authorityExpiresAt: number;
+  contextKeyId: string;
+  controlState: 'ready_unchanged';
+  auditRecorded: true;
+  privateReceiptSha256: string;
+  connectorCandidate: {
     sourceCommit: string;
     sourceSha256: string;
     appVersion: string;
     appBuild: string;
   };
+};
+
+type PublicAttestationEnvelope = {
+  schema: typeof PUBLIC_ATTESTATION_ENVELOPE_SCHEMA;
+  attestationBase64: string;
+  signature: string;
+  keyId: string;
+  namespace: typeof PUBLIC_ATTESTATION_NAMESPACE;
 };
 
 type PluginHttpApi = {
@@ -558,7 +591,7 @@ function validateConnectorEnvelope(
   authority: VerifiedAuthority,
   request: PublicRequest,
   verifier: ReceiptVerifierConfig
-): { ok: true; value: PublicRuntimeProof } | { ok: false } {
+): { ok: true; value: PublicAttestationEnvelope } | { ok: false } {
   if (Buffer.from(raw).byteLength > MAX_CONNECTOR_RESPONSE_BYTES) {
     return { ok: false };
   }
@@ -571,21 +604,27 @@ function validateConnectorEnvelope(
   if (!isRecord(parsed) || !hasExactKeys(parsed, RESPONSE_FIELDS)) {
     return { ok: false };
   }
+  const privateReceipt = parsed.privateReceipt;
+  const publicAttestation = parsed.publicAttestation;
   if (
     parsed.schema !== CONNECTOR_RESPONSE_SCHEMA ||
-    parsed.namespace !== RECEIPT_NAMESPACE ||
-    typeof parsed.receiptBase64 !== 'string' ||
-    parsed.receiptBase64.length < 32 ||
-    parsed.receiptBase64.length > 32768 ||
-    typeof parsed.signature !== 'string' ||
-    parsed.signature.length > 8192 ||
-    typeof parsed.keyId !== 'string' ||
-    parsed.keyId !== verifier.keyId
+    !isRecord(privateReceipt) ||
+    !hasExactKeys(privateReceipt, PRIVATE_RECEIPT_ENVELOPE_FIELDS) ||
+    !isRecord(publicAttestation) ||
+    !hasExactKeys(publicAttestation, PUBLIC_ATTESTATION_ENVELOPE_FIELDS) ||
+    privateReceipt.schema !== PRIVATE_RECEIPT_ENVELOPE_SCHEMA ||
+    privateReceipt.namespace !== RECEIPT_NAMESPACE ||
+    typeof privateReceipt.receiptBase64 !== 'string' ||
+    privateReceipt.receiptBase64.length < 32 ||
+    privateReceipt.receiptBase64.length > 32768 ||
+    typeof privateReceipt.signature !== 'string' ||
+    privateReceipt.signature.length > 8192 ||
+    privateReceipt.keyId !== verifier.keyId
   ) {
     return { ok: false };
   }
-  const receiptBytes = decodeBase64Url(parsed.receiptBase64);
-  if (!receiptBytes || receiptBytes.byteLength > 24576 || !validSshSignature(parsed.signature)) {
+  const receiptBytes = decodeBase64Url(privateReceipt.receiptBase64);
+  if (!receiptBytes || receiptBytes.byteLength > 24576 || !validSshSignature(privateReceipt.signature)) {
     return { ok: false };
   }
   const receiptText = receiptBytes.toString('utf8');
@@ -607,10 +646,14 @@ function validateConnectorEnvelope(
   ) {
     return { ok: false };
   }
-  if (!verifySshSignature(receiptBytes, parsed.signature, verifier.publicKey)) {
+  if (!verifySshSignature(receiptBytes, privateReceipt.signature, verifier.publicKey, RECEIPT_NAMESPACE)) {
     return { ok: false };
   }
-  return validateReceipt(receiptBytes, authority, request, verifier);
+  const expectedAttestation = validateReceipt(receiptBytes, authority, request, verifier);
+  if (!expectedAttestation.ok) {
+    return { ok: false };
+  }
+  return validatePublicAttestationEnvelope(publicAttestation, expectedAttestation.value, authority, verifier);
 }
 
 function validateReceipt(
@@ -618,7 +661,7 @@ function validateReceipt(
   authority: VerifiedAuthority,
   request: PublicRequest,
   verifier: ReceiptVerifierConfig
-): { ok: true; value: PublicRuntimeProof } | { ok: false } {
+): { ok: true; value: PublicRuntimeAttestation } | { ok: false } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(receiptBytes.toString('utf8'));
@@ -696,25 +739,100 @@ function validateReceipt(
   return {
     ok: true,
     value: {
-      ok: true,
-      schema: PUBLIC_PROOF_SCHEMA,
+      schema: PUBLIC_ATTESTATION_SCHEMA,
+      keyId: verifier.keyId,
+      namespace: PUBLIC_ATTESTATION_NAMESPACE,
       proofKind: PUBLIC_PROOF_KIND,
+      runtime: 'openclaw',
       tool: 'customer_mac.desktop_hotkey',
       outcome: 'succeeded',
       runRef: request.runRef,
       executedAt: parsed.executedAt as string,
-      bindingRef: parsed.bindingRef as string,
-      bindingVersion: authority.context.binding_version,
-      sessionRef: parsed.sessionRef as string,
-      expiresAt: authority.context.expires_at,
-      auditRef: saltedHash(request.challenge, parsed.auditId),
-      sourcePointer: PUBLIC_PROOF_SOURCE,
-      candidate: {
+      authorityIssuedAt: authority.context.issued_at,
+      authorityExpiresAt: authority.context.expires_at,
+      contextKeyId: authority.contextKeyId,
+      controlState: 'ready_unchanged',
+      auditRecorded: true,
+      privateReceiptSha256: sha256Hex(receiptBytes),
+      connectorCandidate: {
         sourceCommit: typedCandidate.sourceCommit as string,
         sourceSha256: typedCandidate.sourceSha256 as string,
         appVersion: typedCandidate.appVersion as string,
         appBuild: typedCandidate.appBuild as string,
       },
+    },
+  };
+}
+
+function validatePublicAttestationEnvelope(
+  value: Record<string, unknown>,
+  expected: PublicRuntimeAttestation,
+  authority: VerifiedAuthority,
+  verifier: ReceiptVerifierConfig
+): { ok: true; value: PublicAttestationEnvelope } | { ok: false } {
+  if (
+    value.schema !== PUBLIC_ATTESTATION_ENVELOPE_SCHEMA ||
+    value.namespace !== PUBLIC_ATTESTATION_NAMESPACE ||
+    value.keyId !== verifier.keyId ||
+    typeof value.attestationBase64 !== 'string' ||
+    value.attestationBase64.length < 32 ||
+    value.attestationBase64.length > 24576 ||
+    typeof value.signature !== 'string' ||
+    value.signature.length > 8192 ||
+    !validSshSignature(value.signature)
+  ) {
+    return { ok: false };
+  }
+  const attestationBytes = decodeBase64Url(value.attestationBase64);
+  if (!attestationBytes || attestationBytes.byteLength > 16384) {
+    return { ok: false };
+  }
+  const attestationText = attestationBytes.toString('utf8');
+  const forbiddenValues = [
+    authority.connectorToken,
+    authority.connectorUrl,
+    authority.context.customer_id,
+    authority.context.customer_vm_id,
+    authority.context.binding_id,
+    authority.contextPayload,
+    authority.contextSignature,
+  ];
+  if (
+    forbiddenValues.some((forbidden) => forbidden.length > 0 && attestationText.includes(forbidden)) ||
+    /https?:\/\//i.test(attestationText) ||
+    /\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}\b/.test(attestationText) ||
+    /(?:\/tmp\/|\/private\/var\/folders\/)/i.test(attestationText) ||
+    /"(?:challenge|token|secret|authorization|connector_url|customer_id|customer_vm_id|binding_id|bindingRef|sessionRef|auditRef)"\s*:/i.test(
+      attestationText
+    )
+  ) {
+    return { ok: false };
+  }
+  let attestation: unknown;
+  try {
+    attestation = JSON.parse(attestationText);
+  } catch {
+    return { ok: false };
+  }
+  if (
+    !isRecord(attestation) ||
+    !hasExactKeys(attestation, PUBLIC_ATTESTATION_FIELDS) ||
+    !isRecord(attestation.connectorCandidate) ||
+    !hasExactKeys(attestation.connectorCandidate, PUBLIC_CANDIDATE_FIELDS) ||
+    canonicalJson(attestation) !== attestationText ||
+    canonicalJson(attestation) !== canonicalJson(expected) ||
+    !verifySshSignature(attestationBytes, value.signature, verifier.publicKey, PUBLIC_ATTESTATION_NAMESPACE)
+  ) {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    value: {
+      schema: PUBLIC_ATTESTATION_ENVELOPE_SCHEMA,
+      attestationBase64: value.attestationBase64,
+      signature: value.signature,
+      keyId: verifier.keyId,
+      namespace: PUBLIC_ATTESTATION_NAMESPACE,
     },
   };
 }
@@ -790,7 +908,12 @@ function validReceiptAction(value: unknown): value is { command: string; args: R
   );
 }
 
-function verifySshSignature(message: ByteBuffer, armor: string, pinnedPublicKey: ByteBuffer): boolean {
+function verifySshSignature(
+  message: ByteBuffer,
+  armor: string,
+  pinnedPublicKey: ByteBuffer,
+  expectedNamespace: string
+): boolean {
   const decoded = decodeSshSignatureArmor(armor);
   if (!decoded) {
     return false;
@@ -805,7 +928,7 @@ function verifySshSignature(message: ByteBuffer, armor: string, pinnedPublicKey:
     const reserved = reader.readString();
     const hashAlgorithm = reader.readString().toString('ascii');
     const signatureBlob = reader.readString();
-    if (!reader.done() || namespace !== RECEIPT_NAMESPACE || reserved.byteLength !== 0) {
+    if (!reader.done() || namespace !== expectedNamespace || reserved.byteLength !== 0) {
       return false;
     }
 

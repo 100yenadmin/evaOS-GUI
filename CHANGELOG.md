@@ -26,6 +26,12 @@
   bounded deadline so a healthy Mac is not misreported as unauthenticated.
 - Binds the packaged bridge source digest and ownership provenance to the exact
   evaOS-GUI release commit before signing.
+- Treats Tailscale `NeedsLogin` as an installed, running client that still
+  needs enrollment, immediately shows progress for the single allowed
+  `Connect this Mac` action, keeps the renderer IPC alive for the bounded
+  enrollment window, and surfaces a strictly sanitized rejection instead of
+  leaving the button apparently inert. Duplicate enrollment clicks remain
+  disabled while the first action is in flight.
 
 ### Selected-Binding Mac-control Canary
 
@@ -47,6 +53,15 @@
   compensates failed persistence by revoking the exact temporary session.
 - Requires matching normalized capability sets, a secure host-only browser
   session cookie, and a still-live selected binding after callback completion.
+- Cross-binds the connector's private SSHSIG receipt to a separately signed,
+  minimal public runtime attestation. OpenClaw verifies both signatures and
+  returns the public envelope unchanged; the live canary and distribution gate
+  independently verify it against protected external key configuration and
+  reject legacy unsigned, forged, replayed, stale, wrong-run, or wrong-head
+  evidence.
+- Adds deployed-route behavior probes for gateway authentication, POST-only
+  routing, exact path matching, strict body validation, and rejection of
+  caller-supplied authority before Mac-control proof can authorize publication.
 
 ### Release Authorization And Bundle Integrity
 

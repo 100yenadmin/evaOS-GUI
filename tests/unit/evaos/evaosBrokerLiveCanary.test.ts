@@ -7,12 +7,34 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  signedMacControlAttestation,
+  TEST_CONTEXT_KEY_ID,
+  TEST_RECEIPT_KEY_ID,
+} from './fixtures/signedMacControlAttestation';
+
+const TRUST_FIXTURE = signedMacControlAttestation({
+  runRef: 'gha:12345:111111111111111111111111',
+  executedAt: '2026-07-15T00:00:00Z',
+  authorityIssuedAt: 1784073600,
+  authorityExpiresAt: 1784073660,
+  candidate: {
+    sourceCommit: 'a'.repeat(40),
+    sourceSha256: 'b'.repeat(64),
+    appVersion: '2.1.36',
+    appBuild: '2.1.36',
+  },
+});
+const TRUST_ENV = {
+  EVAOS_LIVE_CANARY_CONTEXT_KEY_ID: TRUST_FIXTURE.trust.contextKeyId,
+  EVAOS_LIVE_CANARY_RECEIPT_KEY_ID: TRUST_FIXTURE.trust.receiptKeyId,
+  EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY: TRUST_FIXTURE.trust.receiptPublicKey,
+};
 
 const require = createRequire(import.meta.url);
 const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
@@ -46,12 +68,16 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
     customerId: string;
     endpoint: string;
     expectedCallbackHost: string;
+    receiptKeyId: string;
+    receiptPublicKey: string;
+    contextKeyId: string;
   };
   runMacControlLiveCanary: (options: {
     env: Record<string, string | undefined>;
     fetchImpl: typeof fetch;
     now?: () => number;
     randomBytes?: (size: number) => Uint8Array;
+    onDeployedProbe?: (proof: Record<string, unknown>) => void | Promise<void>;
   }) => Promise<Record<string, unknown>>;
   expectedMacControlCandidate: (env: Record<string, string | undefined>) => {
     sourceCommit: string;
@@ -62,14 +88,14 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
   sanitizeMacControlRuntimeProof: (
     raw: unknown,
     options: {
-      challenge: string;
       runRef: string;
       expectedCandidate: Record<string, string>;
-      selectedBindingId: string;
-      selectedBindingVersion: string;
       bindingExpiry: number;
       requestStartedAt: number;
       now: number;
+      receiptKeyId: string;
+      receiptPublicKey: string;
+      contextKeyId: string;
     }
   ) => Record<string, unknown>;
   sanitizeMacControlRuntimeLaunchCanaryResponse: (
@@ -85,14 +111,6 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
-}
-
-function saltedReference(challenge: string, value: string): string {
-  return createHash('sha256')
-    .update(Buffer.from(challenge, 'ascii'))
-    .update(Buffer.from([0]))
-    .update(Buffer.from(value, 'utf8'))
-    .digest('hex');
 }
 
 describe('evaOS broker live canary', () => {
@@ -587,6 +605,7 @@ describe('evaOS broker live canary', () => {
 
   it('strictly validates and normalizes the dedicated callback host', () => {
     const env = {
+      ...TRUST_ENV,
       AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
@@ -625,6 +644,16 @@ describe('evaOS broker live canary', () => {
     const challenge = challengeBytes.toString('base64url');
     const runRef = `gha:123456789:${runNonceBytes.toString('hex')}`;
     const expectedCandidate = liveCanary.expectedMacControlCandidate({ GITHUB_SHA: sourceHeadSha });
+    const signedProof = signedMacControlAttestation({
+      runRef,
+      executedAt: new Date(now).toISOString(),
+      authorityIssuedAt: Math.floor(now / 1000) - 1,
+      authorityExpiresAt: Math.floor(now / 1000) + 15,
+      candidate: expectedCandidate,
+      keyId: TEST_RECEIPT_KEY_ID,
+      contextKeyId: TEST_CONTEXT_KEY_ID,
+      keyPair: TRUST_FIXTURE.keyPair,
+    });
     const bindingExpiresAt = new Date(now + 20_000).toISOString();
     const binding = {
       schema_version: 'evaos.mac_control_runtime_readiness.v1',
@@ -669,24 +698,19 @@ describe('evaOS broker live canary', () => {
           },
         })
       )
+      .mockResolvedValueOnce(jsonResponse(signedProof.envelope))
+      .mockResolvedValueOnce(jsonResponse({ ok: false }, { status: 401 }))
       .mockResolvedValueOnce(
-        jsonResponse({
-          ok: true,
-          schema: 'evaos.mac_control.runtime_proof.v2',
-          proofKind: 'selected_binding_direct_mac_control',
-          tool: 'customer_mac.desktop_hotkey',
-          outcome: 'succeeded',
-          runRef,
-          executedAt: new Date(now).toISOString(),
-          bindingRef: saltedReference(challenge, binding.binding_id),
-          bindingVersion: '7',
-          sessionRef: 'b'.repeat(64),
-          expiresAt: Math.floor(now / 1000) + 15,
-          auditRef: 'c'.repeat(64),
-          sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
-          candidate: expectedCandidate,
-        })
-      );
+        jsonResponse(
+          { ok: false, error: { code: 'method_not_allowed' } },
+          { status: 405, headers: { 'Content-Type': 'application/json', Allow: 'POST' } }
+        )
+      )
+      .mockResolvedValueOnce(jsonResponse({ ok: false }, { status: 404 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: false, error: { code: 'invalid_request' } }, { status: 400 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: false, error: { code: 'invalid_request' } }, { status: 400 }));
+
+    let deployedProbe: Record<string, unknown> | undefined;
 
     const proof = await liveCanary.runMacControlLiveCanary({
       env: {
@@ -695,15 +719,19 @@ describe('evaOS broker live canary', () => {
         AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+        ...TRUST_ENV,
         GITHUB_SHA: sourceHeadSha,
         GITHUB_RUN_ID: '123456789',
       },
       fetchImpl,
       now: () => now,
       randomBytes: (size: number) => (size === 32 ? challengeBytes : runNonceBytes),
+      onDeployedProbe: (value) => {
+        deployedProbe = value;
+      },
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(8);
     expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
       action: 'runtime_launch',
       customer_id: 'staging-mac-owner',
@@ -724,25 +752,28 @@ describe('evaOS broker live canary', () => {
       },
     });
     expect(JSON.parse(String(fetchImpl.mock.calls[2][1]?.body))).toEqual({ challenge, runRef });
-    expect(proof).toEqual({
-      ok: true,
-      schema: 'evaos.mac_control.runtime_proof.v2',
-      proofKind: 'selected_binding_direct_mac_control',
-      tool: 'customer_mac.desktop_hotkey',
-      outcome: 'succeeded',
-      runRef,
-      executedAt: new Date(now).toISOString(),
-      bindingRef: saltedReference(challenge, binding.binding_id),
-      bindingVersion: '7',
-      sessionRef: 'b'.repeat(64),
-      expiresAt: Math.floor(now / 1000) + 15,
-      auditRef: 'c'.repeat(64),
-      sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
-      candidate: expectedCandidate,
+    expect(proof).toEqual(signedProof.envelope);
+    expect(deployedProbe).toMatchObject({
+      schema: 'evaos.mac_control.deployed_route_probe.v1',
+      sourceHeadSha,
+      sourceRunId: '123456789',
+      assertions: {
+        gatewayAuthRequired: true,
+        postOnly: true,
+        exactMatch: true,
+        strictBody: true,
+        callerAuthorityBodyRejected: true,
+        sensitiveOutputAbsent: true,
+      },
     });
+    const publicAttestation = JSON.parse(Buffer.from(signedProof.envelope.attestationBase64, 'base64url').toString());
     expect(JSON.stringify(proof)).not.toMatch(
       /staging-mac-owner|11111111-1111-4111-8111-111111111111|binding_version|binding_expires_at|callback_secret|proxy_session_secret|example\.test|eds_/
     );
+    expect(publicAttestation).not.toHaveProperty('challenge');
+    expect(publicAttestation).not.toHaveProperty('bindingRef');
+    expect(publicAttestation).not.toHaveProperty('sessionRef');
+    expect(publicAttestation).not.toHaveProperty('auditRef');
 
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-contract-'));
     try {
@@ -783,6 +814,7 @@ describe('evaOS broker live canary', () => {
           },
         })}\n`
       );
+      fs.writeFileSync(path.join(proofDir, 'mac-control-deployed-route.json'), `${JSON.stringify(deployedProbe)}\n`);
 
       expect(
         releaseGate.verifyMacControlLiveCanaryProof(
@@ -790,6 +822,7 @@ describe('evaOS broker live canary', () => {
           {
             EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: sourceHeadSha,
             EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '123456789',
+            ...TRUST_ENV,
           },
           { now: new Date(now), maxAgeHours: 24 }
         )
@@ -817,6 +850,7 @@ describe('evaOS broker live canary', () => {
             ...process.env,
             PYTHONDONTWRITEBYTECODE: '1',
             PYTHONPATH: path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src'),
+            ...TRUST_ENV,
           },
         }).trim()
       ).toBe('ok');
@@ -825,11 +859,8 @@ describe('evaOS broker live canary', () => {
     }
   });
 
-  it('rejects runtime receipts that are stale, overlong, future-dated, or cross-bound', () => {
+  it('rejects unsigned, forged, stale, overlong, future-dated, or cross-run attestations', () => {
     const now = Date.parse('2026-07-15T00:00:20.000Z');
-    const challenge = Buffer.alloc(32, 15).toString('base64url');
-    const selectedBindingId = 'binding-selected-test';
-    const selectedBindingVersion = '7';
     const runRef = 'gha:123456789:111111111111111111111111';
     const expectedCandidate = {
       sourceCommit: 'a'.repeat(40),
@@ -837,48 +868,52 @@ describe('evaOS broker live canary', () => {
       appVersion: '2.1.36',
       appBuild: '2.1.36',
     };
-    const baseProof = {
-      ok: true,
-      schema: 'evaos.mac_control.runtime_proof.v2',
-      proofKind: 'selected_binding_direct_mac_control',
-      tool: 'customer_mac.desktop_hotkey',
-      outcome: 'succeeded',
+    const valid = signedMacControlAttestation({
       runRef,
       executedAt: '2026-07-15T00:00:20.000Z',
-      bindingRef: saltedReference(challenge, selectedBindingId),
-      bindingVersion: selectedBindingVersion,
-      sessionRef: 'b'.repeat(64),
-      expiresAt: Math.floor(now / 1000) + 60,
-      auditRef: 'c'.repeat(64),
-      sourcePointer: 'evaos-desktop-bridge:runtime-receipt',
+      authorityIssuedAt: Math.floor(now / 1000) - 1,
+      authorityExpiresAt: Math.floor(now / 1000) + 59,
       candidate: expectedCandidate,
-    };
+      keyId: TEST_RECEIPT_KEY_ID,
+      contextKeyId: TEST_CONTEXT_KEY_ID,
+      keyPair: TRUST_FIXTURE.keyPair,
+    });
     const options = {
-      challenge,
       runRef,
       expectedCandidate,
-      selectedBindingId,
-      selectedBindingVersion,
       bindingExpiry: now + 120_000,
       requestStartedAt: now,
       now,
+      receiptKeyId: TRUST_ENV.EVAOS_LIVE_CANARY_RECEIPT_KEY_ID,
+      receiptPublicKey: TRUST_ENV.EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY,
+      contextKeyId: TRUST_ENV.EVAOS_LIVE_CANARY_CONTEXT_KEY_ID,
     };
 
-    for (const mutation of [
-      { schema: 'evaos.mac_control.runtime_proof.v1' },
-      { unexpected: true },
-      { runRef: 'gha:123456789:222222222222222222222222' },
-      { bindingRef: 'd'.repeat(64) },
-      { bindingVersion: '999' },
-      { candidate: { ...expectedCandidate, sourceCommit: 'd'.repeat(40) } },
-      { executedAt: '2026-07-15T00:00:14.999Z' },
-      { executedAt: '2026-07-15T00:00:25.001Z' },
-      { executedAt: '2026-07-15 00:00:20Z' },
-      { expiresAt: Math.floor(now / 1000) + 67 },
+    const resigned = (overrides: Partial<Parameters<typeof signedMacControlAttestation>[0]>) =>
+      signedMacControlAttestation({
+        runRef,
+        executedAt: '2026-07-15T00:00:20.000Z',
+        authorityIssuedAt: Math.floor(now / 1000) - 1,
+        authorityExpiresAt: Math.floor(now / 1000) + 59,
+        candidate: expectedCandidate,
+        keyId: TEST_RECEIPT_KEY_ID,
+        contextKeyId: TEST_CONTEXT_KEY_ID,
+        keyPair: TRUST_FIXTURE.keyPair,
+        ...overrides,
+      }).envelope;
+    for (const invalid of [
+      { schema: 'evaos.mac_control.runtime_proof.v2' },
+      { ...valid.envelope, unexpected: true },
+      { ...valid.envelope, signature: valid.envelope.signature.replace('A', 'B') },
+      resigned({ runRef: 'gha:123456789:222222222222222222222222' }),
+      resigned({ candidate: { ...expectedCandidate, sourceCommit: 'd'.repeat(40) } }),
+      resigned({ executedAt: '2026-07-15T00:00:14.999Z' }),
+      resigned({ executedAt: '2026-07-15T00:00:25.001Z' }),
+      resigned({ executedAt: '2026-07-15 00:00:20Z' }),
+      resigned({ authorityExpiresAt: Math.floor(now / 1000) + 60 }),
+      resigned({ contextKeyId: 'wrong-context-key' }),
     ]) {
-      expect(() => liveCanary.sanitizeMacControlRuntimeProof({ ...baseProof, ...mutation }, options)).toThrow(
-        /runtime receipt did not match/i
-      );
+      expect(() => liveCanary.sanitizeMacControlRuntimeProof(invalid, options)).toThrow(/attestation/i);
     }
   });
 
@@ -1233,6 +1268,7 @@ describe('evaOS broker live canary', () => {
           AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+          ...TRUST_ENV,
         },
         fetchImpl,
         now: () => now,
@@ -1298,6 +1334,7 @@ describe('evaOS broker live canary', () => {
           AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+          ...TRUST_ENV,
         },
         fetchImpl,
         now: () => times.shift() ?? callbackNow,
@@ -1366,6 +1403,7 @@ describe('evaOS broker live canary', () => {
               AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
               AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
               AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+              ...TRUST_ENV,
             },
             fetchImpl,
             now: () => now,

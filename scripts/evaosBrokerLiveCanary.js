@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
-const { createHash, randomBytes } = require('node:crypto');
+const { randomBytes } = require('node:crypto');
+const fs = require('node:fs');
 
 const { committedBridgeSourceIdentity } = require('./evaosBetaReleaseGate.js');
+const { verifyMacControlPublicAttestation } = require('./evaosMacControlSignedProof.js');
 const { version: WORKBENCH_VERSION } = require('../package.json');
 
 const DEFAULT_ENDPOINT = 'https://rhfojelkgtwcxnrfhtlj.supabase.co/functions/v1/desktop-runtime-session';
@@ -164,6 +166,9 @@ function resolveMacControlCanaryConfig(env) {
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
+    'EVAOS_LIVE_CANARY_RECEIPT_KEY_ID',
+    'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY',
+    'EVAOS_LIVE_CANARY_CONTEXT_KEY_ID',
   ];
   const missing = names.filter((name) => !envText(env, name));
   if (missing.length > 0) {
@@ -204,12 +209,28 @@ function resolveMacControlCanaryConfig(env) {
   const expectedCallbackHost = new URL(
     `https://${callbackHostname}${callbackPort ? `:${callbackPort}` : ''}`
   ).host.toLowerCase();
+  const receiptKeyId = envText(env, 'EVAOS_LIVE_CANARY_RECEIPT_KEY_ID');
+  const receiptPublicKey = envText(env, 'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY');
+  const contextKeyId = envText(env, 'EVAOS_LIVE_CANARY_CONTEXT_KEY_ID');
+  const decodedReceiptKey = Buffer.from(receiptPublicKey, 'base64url');
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(receiptKeyId) ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(contextKeyId) ||
+    !/^[A-Za-z0-9_-]+$/.test(receiptPublicKey) ||
+    decodedReceiptKey.byteLength !== 32 ||
+    decodedReceiptKey.toString('base64url') !== receiptPublicKey
+  ) {
+    throw new Error('Dedicated Mac-control canary trust anchors are invalid.');
+  }
 
   return {
     desktopSession: envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION'),
     customerId,
     endpoint: endpointUrl.toString(),
     expectedCallbackHost,
+    receiptKeyId,
+    receiptPublicKey,
+    contextKeyId,
   };
 }
 
@@ -895,82 +916,58 @@ function expectedMacControlCandidate(env) {
   };
 }
 
-function macControlSaltedReference(challenge, value) {
-  return createHash('sha256')
-    .update(Buffer.from(challenge, 'ascii'))
-    .update(Buffer.from([0]))
-    .update(Buffer.from(value, 'utf8'))
-    .digest('hex');
-}
-
 function sanitizeMacControlRuntimeProof(
   raw,
-  {
-    challenge,
-    runRef,
-    expectedCandidate,
-    selectedBindingId,
-    selectedBindingVersion,
-    bindingExpiry,
-    requestStartedAt,
-    now,
-  }
+  { runRef, expectedCandidate, bindingExpiry, requestStartedAt, now, receiptKeyId, receiptPublicKey, contextKeyId }
 ) {
-  const proof = asPlainRecord(raw);
-  const candidate = asPlainRecord(proof?.candidate);
-  const exactProofFields = new Set([
-    'ok',
-    'schema',
-    'proofKind',
-    'tool',
-    'outcome',
-    'runRef',
-    'executedAt',
-    'bindingRef',
-    'bindingVersion',
-    'sessionRef',
-    'expiresAt',
-    'auditRef',
-    'sourcePointer',
-    'candidate',
-  ]);
-  const exactCandidateFields = new Set(['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild']);
+  const envelope = asPlainRecord(raw);
+  let attestation;
   try {
-    assertNoSecretMaterial(proof);
+    assertNoSecretMaterial(envelope);
+    attestation = verifyMacControlPublicAttestation(envelope, {
+      keyId: receiptKeyId,
+      publicKey: receiptPublicKey,
+    });
+    assertNoSecretMaterial(attestation);
   } catch {
-    throw macControlFailure('runtime_receipt_rejected', 'Mac-control runtime receipt contained forbidden material.');
+    throw macControlFailure(
+      'runtime_receipt_rejected',
+      'Mac-control public runtime attestation could not be verified.'
+    );
   }
-  const executedAtText = String(proof?.executedAt || '');
+  const candidate = asPlainRecord(attestation?.connectorCandidate);
+  const executedAtText = String(attestation?.executedAt || '');
   const executedAt = Date.parse(executedAtText);
-  const expiresAtMs = Number.isSafeInteger(proof?.expiresAt) ? proof.expiresAt * 1000 : Number.NaN;
-  const expectedBindingRef = macControlSaltedReference(challenge, selectedBindingId);
+  const authorityIssuedAtMs = Number.isSafeInteger(attestation?.authorityIssuedAt)
+    ? attestation.authorityIssuedAt * 1000
+    : Number.NaN;
+  const authorityExpiresAtMs = Number.isSafeInteger(attestation?.authorityExpiresAt)
+    ? attestation.authorityExpiresAt * 1000
+    : Number.NaN;
   if (
-    !proof ||
+    !envelope ||
     !candidate ||
-    Object.keys(proof).length !== exactProofFields.size ||
-    Object.keys(proof).some((field) => !exactProofFields.has(field)) ||
-    Object.keys(candidate).length !== exactCandidateFields.size ||
-    Object.keys(candidate).some((field) => !exactCandidateFields.has(field)) ||
-    proof.ok !== true ||
-    proof.schema !== 'evaos.mac_control.runtime_proof.v2' ||
-    proof.proofKind !== 'selected_binding_direct_mac_control' ||
-    proof.tool !== 'customer_mac.desktop_hotkey' ||
-    proof.outcome !== 'succeeded' ||
-    proof.runRef !== runRef ||
+    attestation.proofKind !== 'selected_binding_direct_mac_control' ||
+    attestation.runtime !== 'openclaw' ||
+    attestation.tool !== 'customer_mac.desktop_hotkey' ||
+    attestation.outcome !== 'succeeded' ||
+    attestation.runRef !== runRef ||
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(executedAtText) ||
     !Number.isFinite(executedAt) ||
     executedAt < requestStartedAt - 5_000 ||
     executedAt > now + 5_000 ||
-    !Number.isFinite(expiresAtMs) ||
-    executedAt > expiresAtMs ||
-    expiresAtMs - executedAt > 66_000 ||
-    proof.bindingRef !== expectedBindingRef ||
-    proof.bindingVersion !== selectedBindingVersion ||
-    !/^[0-9a-f]{64}$/.test(String(proof.sessionRef || '')) ||
-    expiresAtMs <= now ||
-    expiresAtMs > bindingExpiry ||
-    !/^[0-9a-f]{64}$/.test(String(proof.auditRef || '')) ||
-    proof.sourcePointer !== 'evaos-desktop-bridge:runtime-receipt' ||
+    !Number.isFinite(authorityIssuedAtMs) ||
+    !Number.isFinite(authorityExpiresAtMs) ||
+    authorityExpiresAtMs <= authorityIssuedAtMs ||
+    authorityExpiresAtMs - authorityIssuedAtMs > 60_000 ||
+    executedAt < authorityIssuedAtMs - 5_000 ||
+    executedAt > authorityExpiresAtMs ||
+    authorityExpiresAtMs <= now ||
+    authorityExpiresAtMs > bindingExpiry ||
+    attestation.contextKeyId !== contextKeyId ||
+    attestation.controlState !== 'ready_unchanged' ||
+    attestation.auditRecorded !== true ||
+    !/^[0-9a-f]{64}$/.test(String(attestation.privateReceiptSha256 || '')) ||
     candidate.sourceCommit !== expectedCandidate.sourceCommit ||
     candidate.sourceSha256 !== expectedCandidate.sourceSha256 ||
     candidate.appVersion !== expectedCandidate.appVersion ||
@@ -978,30 +975,10 @@ function sanitizeMacControlRuntimeProof(
   ) {
     throw macControlFailure(
       'runtime_receipt_rejected',
-      'Mac-control runtime receipt did not match the exact signed candidate.'
+      'Mac-control public runtime attestation did not match the exact signed candidate.'
     );
   }
-  return {
-    ok: true,
-    schema: proof.schema,
-    proofKind: proof.proofKind,
-    tool: proof.tool,
-    outcome: proof.outcome,
-    runRef: proof.runRef,
-    executedAt: proof.executedAt,
-    bindingRef: proof.bindingRef,
-    bindingVersion: proof.bindingVersion,
-    sessionRef: proof.sessionRef,
-    expiresAt: proof.expiresAt,
-    auditRef: proof.auditRef,
-    sourcePointer: proof.sourcePointer,
-    candidate: {
-      sourceCommit: candidate.sourceCommit,
-      sourceSha256: candidate.sourceSha256,
-      appVersion: candidate.appVersion,
-      appBuild: candidate.appBuild,
-    },
-  };
+  return envelope;
 }
 
 function failedMacControlProof(env, reason, extras = {}) {
@@ -1063,6 +1040,111 @@ async function postMacControlRuntimeReceipt(fetchImpl, launchUrl, sessionCookie,
     },
     body: JSON.stringify({ challenge, runRef }),
   });
+}
+
+async function safeMacControlProbeResponse(response) {
+  let text;
+  try {
+    text = await response.text();
+  } catch {
+    throw macControlFailure('invalid_response', 'Mac-control deployed route probe response was unreadable.');
+  }
+  if (Buffer.byteLength(text) > 4096) {
+    throw macControlFailure('invalid_response', 'Mac-control deployed route probe response was oversized.');
+  }
+  let body;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = {};
+  }
+  try {
+    assertNoSecretMaterial(body);
+    assertNoSecretMaterial(text);
+  } catch {
+    throw macControlFailure('invalid_response', 'Mac-control deployed route probe response was unsafe.');
+  }
+  return asPlainRecord(body);
+}
+
+function macControlProbeErrorCode(body) {
+  const nested = asPlainRecord(body?.error);
+  return String(nested?.code || body?.code || body?.error_code || '');
+}
+
+async function runMacControlDeployedRouteProbes({ fetchImpl, launchUrl, sessionCookie, env, now }) {
+  const endpoint = new URL(MAC_CONTROL_RUNTIME_RECEIPT_PATH, launchUrl);
+  const authenticatedHeaders = {
+    Cookie: sessionCookie,
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/json',
+  };
+  const unauthenticated = await fetchImpl(endpoint.toString(), {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'Cache-Control': 'no-store', 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  await safeMacControlProbeResponse(unauthenticated);
+
+  const method = await fetchImpl(endpoint.toString(), {
+    method: 'GET',
+    redirect: 'manual',
+    headers: { Cookie: sessionCookie, 'Cache-Control': 'no-store' },
+  });
+  const methodBody = await safeMacControlProbeResponse(method);
+
+  const trailing = await fetchImpl(`${endpoint.toString()}/`, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: authenticatedHeaders,
+    body: '{}',
+  });
+  await safeMacControlProbeResponse(trailing);
+
+  const empty = await fetchImpl(endpoint.toString(), {
+    method: 'POST',
+    redirect: 'manual',
+    headers: authenticatedHeaders,
+    body: '{}',
+  });
+  const emptyBody = await safeMacControlProbeResponse(empty);
+
+  const injected = await fetchImpl(endpoint.toString(), {
+    method: 'POST',
+    redirect: 'manual',
+    headers: authenticatedHeaders,
+    body: JSON.stringify({
+      action: 'customer_mac.desktop_type',
+      binding: { bindingId: 'caller-supplied' },
+      connector: { endpoint: 'caller-supplied' },
+      executionContext: { payload: 'caller-supplied' },
+    }),
+  });
+  const injectedBody = await safeMacControlProbeResponse(injected);
+  const source = macControlProofSource(env);
+  const proof = {
+    schema: 'evaos.mac_control.deployed_route_probe.v1',
+    sourceHeadSha: source.sourceHeadSha,
+    sourceRunId: source.sourceRunId,
+    checkedAt: new Date(now).toISOString(),
+    assertions: {
+      gatewayAuthRequired: unauthenticated.status === 401 || unauthenticated.status === 403,
+      postOnly:
+        method.status === 405 &&
+        method.headers.get('allow') === 'POST' &&
+        macControlProbeErrorCode(methodBody) === 'method_not_allowed',
+      exactMatch: trailing.status === 404,
+      strictBody: empty.status === 400 && macControlProbeErrorCode(emptyBody) === 'invalid_request',
+      callerAuthorityBodyRejected:
+        injected.status === 400 && macControlProbeErrorCode(injectedBody) === 'invalid_request',
+      sensitiveOutputAbsent: true,
+    },
+  };
+  if (!proof.sourceHeadSha || !proof.sourceRunId || Object.values(proof.assertions).some((value) => value !== true)) {
+    throw macControlFailure('runtime_receipt_rejected', 'Mac-control deployed route boundary probes failed.');
+  }
+  return proof;
 }
 
 async function runMacControlLiveCanary(options = {}) {
@@ -1139,13 +1221,24 @@ async function runMacControlLiveCanary(options = {}) {
     const runtimeProof = sanitizeMacControlRuntimeProof(rawRuntimeProof, {
       runRef,
       expectedCandidate,
-      challenge,
-      selectedBindingId: launchPrivate.bindingId,
-      selectedBindingVersion: launchPrivate.bindingVersion,
       bindingExpiry: launchPrivate.bindingExpiry,
       requestStartedAt: receiptRequestStartedAt,
       now: now(),
+      receiptKeyId: config.receiptKeyId,
+      receiptPublicKey: config.receiptPublicKey,
+      contextKeyId: config.contextKeyId,
     });
+
+    const deployedProbe = await runMacControlDeployedRouteProbes({
+      fetchImpl,
+      launchUrl: launchPrivate.launchUrl,
+      sessionCookie: proxySessionCookie,
+      env,
+      now: now(),
+    });
+    if (typeof options.onDeployedProbe === 'function') {
+      await options.onDeployedProbe(deployedProbe);
+    }
 
     return runtimeProof;
   } catch (error) {
@@ -1219,7 +1312,26 @@ async function runBrokerLiveCanary(options = {}) {
 }
 
 async function main() {
-  const result = process.argv.includes('--mac-control') ? await runMacControlLiveCanary() : await runBrokerLiveCanary();
+  let result;
+  if (process.argv.includes('--mac-control')) {
+    const outputPath = envText(process.env, 'AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_PROBE_OUTPUT');
+    if (!outputPath) {
+      throw new Error('AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_PROBE_OUTPUT is required for Mac-control proof.');
+    }
+    result = await runMacControlLiveCanary({
+      onDeployedProbe: (proof) => {
+        const descriptor = fs.openSync(outputPath, 'wx', 0o600);
+        try {
+          fs.writeFileSync(descriptor, `${JSON.stringify(proof, null, 2)}\n`, 'utf8');
+          fs.fsyncSync(descriptor);
+        } finally {
+          fs.closeSync(descriptor);
+        }
+      },
+    });
+  } else {
+    result = await runBrokerLiveCanary();
+  }
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -1228,7 +1340,9 @@ if (require.main === module) {
     if ((error instanceof BrokerCanaryError || error instanceof MacControlCanaryError) && error.proof) {
       console.log(JSON.stringify(error.proof, null, 2));
     }
-    console.error(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    const safeReason = error instanceof MacControlCanaryError ? macControlReason(error.reason) : undefined;
+    console.error(safeReason ? `${message} Safe reason: ${safeReason}.` : message);
     process.exit(1);
   });
 }
@@ -1244,6 +1358,7 @@ module.exports = {
   sanitizeBrokerRuntimeLaunchCanaryResponse,
   sanitizeMacControlRuntimeLaunchCanaryResponse,
   sanitizeMacControlRuntimeProof,
+  runMacControlDeployedRouteProbes,
   expectedMacControlCandidate,
   resolveBrokerCanaryCredentials,
   resolveMacControlCanaryConfig,

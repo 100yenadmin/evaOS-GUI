@@ -39,6 +39,7 @@ jspm_packages/
 
 # Lock files for other package managers (project uses bun.lock)
 package-lock.json
+!resources/evaos-beta/bridge/agent-tools/openclaw-plugin/package-lock.json
 yarn.lock
 
 # TypeScript v1 declaration files
