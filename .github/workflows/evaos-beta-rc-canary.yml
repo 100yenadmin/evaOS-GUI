@@ -339,7 +339,7 @@ jobs:
           if (!asset || !/^[0-9a-f]{64}$/i.test(String(asset.sha256 || ''))) {
             throw new Error(`Trusted manifest does not bind updater ZIP ${assetName}.`);
           }
-          fs.writeFileSync(outputPath, asset.sha256, 'utf8');
+          fs.writeFileSync(outputPath, String(asset.sha256).toLowerCase(), 'utf8');
           NODE
           EXPECTED_SHA=$(cat "$EXPECTED_SHA_PATH")
           ACTUAL_SHA=$(shasum -a 256 "$UPDATER_ZIP" | awk '{print $1}')

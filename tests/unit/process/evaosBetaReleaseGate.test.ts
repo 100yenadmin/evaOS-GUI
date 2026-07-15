@@ -1144,6 +1144,7 @@ describe('evaOS beta release gate', () => {
       '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite';
 
     expect(releaseGate.collectRcCanaryWorkflowIssues(workflow)).toEqual([]);
+    expect(workflow).toContain("fs.writeFileSync(outputPath, String(asset.sha256).toLowerCase(), 'utf8');");
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
         `${workflow}\n          ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'\n          NODE\n          )\n`
@@ -1157,6 +1158,11 @@ describe('evaOS beta release gate', () => {
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
         `${workflow}\n          ZIP_NAME=$( node - release-assets/latest-arm64-mac.yml << 'NODE'\n          NODE\n          )\n`
+      )
+    ).toContain(commandSubstitutionHeredocIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        `${workflow}\n          ZIP_NAME="$(node - release-assets/latest-arm64-mac.yml <<'NODE'\n          NODE\n          )"\n`
       )
     ).toContain(commandSubstitutionHeredocIssue);
     const drifted = workflow.replace(

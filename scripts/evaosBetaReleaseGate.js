@@ -924,7 +924,7 @@ function collectRcCanaryWorkflowIssues(workflow) {
   const issues = [];
   const workflowText = String(workflow || '');
   const unsafeUpdaterCommandSubstitution =
-    /(?:^|\n)\s*(?:ZIP_NAME|EXPECTED_SHA)\s*=\s*\$\(\s*node(?:\s|$)[\s\S]{0,500}?<<-?\s*['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/;
+    /(?:^|\n)\s*(?:ZIP_NAME|EXPECTED_SHA)\s*=\s*['"]?\s*\$\(\s*node(?:\s|$)[\s\S]{0,500}?<<-?\s*['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/;
   if (unsafeUpdaterCommandSubstitution.test(workflowText)) {
     issues.push(
       '.github/workflows/evaos-beta-rc-canary.yml: macOS Bash 3.2 must not wrap updater ZIP Node heredocs in command substitution'
