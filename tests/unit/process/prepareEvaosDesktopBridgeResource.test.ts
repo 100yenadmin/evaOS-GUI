@@ -266,6 +266,83 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     }
   });
 
+  it('captures pre-canary failures as sanitized check summaries before preserving the exit code', () => {
+    const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'evaos-beta-rc-canary.yml'), 'utf8');
+    const sanitizerCommand = 'node - "$PRE_CANARY_REPORT" <<\'NODE\'';
+    const sanitizerStart = workflow.indexOf(sanitizerCommand);
+    const sanitizerBodyStart = workflow.indexOf('\n', sanitizerStart) + 1;
+    const sanitizerBodyEnd = workflow.indexOf('\n          NODE', sanitizerBodyStart);
+    const sanitizerScript = workflow
+      .slice(sanitizerBodyStart, sanitizerBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
+    const failureBlock = workflow.slice(
+      workflow.indexOf('PRE_CANARY_EXIT=$?'),
+      workflow.indexOf('TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"')
+    );
+
+    expect(failureBlock).toContain('PRE_CANARY_EXIT=$?');
+    expect(workflow).toContain('--canary-artifact-root "$RUNNER_TEMP"');
+    expect(failureBlock).toContain('Pre-canary exit code: $PRE_CANARY_EXIT');
+    expect(failureBlock).toContain('Pre-canary sanitized check: ${JSON.stringify(check)}');
+    expect(failureBlock).toContain('exit "$PRE_CANARY_EXIT"');
+    expect(failureBlock.indexOf('exit "$PRE_CANARY_EXIT"')).toBeLessThan(
+      failureBlock.indexOf('cp "$PRE_CANARY_REPORT" "$PROOF_DIR/installed-candidate-pre-canary.json"')
+    );
+    expect(failureBlock).not.toMatch(/\.evidence|\.inventory/);
+    expect(sanitizerStart).toBeGreaterThan(-1);
+    expect(sanitizerBodyEnd).toBeGreaterThan(sanitizerBodyStart);
+
+    const reportDir = mkdtempSync(join(tmpdir(), 'evaos-pre-canary-sanitizer-'));
+    try {
+      const reportPath = join(reportDir, 'qa-report.json');
+      writeFileSync(
+        reportPath,
+        JSON.stringify({
+          checks: Array.from({ length: 25 }, (_, index) => ({
+            code: index === 0 ? 'unsafe/code' : `fixture_${index}`,
+            status: 'fail',
+            message:
+              'Authorization: Bearer fixture-secret eyJhbGciOiJIUzI1NiJ9.fixture.signature 2001:db8::1 /tmp/private path\n' +
+              'x'.repeat(300),
+            evidence: 'raw-evidence',
+          })),
+          inventory: { registered_paths: ['/tmp/private'] },
+        })
+      );
+      const sanitized = spawnSync(process.execPath, ['-', reportPath], {
+        encoding: 'utf8',
+        input: sanitizerScript,
+      });
+      expect(sanitized.status).toBe(0);
+      expect(sanitized.stderr).toContain('invalid_check_code');
+      expect(sanitized.stderr).toContain('Installed candidate did not satisfy this pre-canary check.');
+      expect(
+        sanitized.stderr.split('\n').filter((line) => line.startsWith('Pre-canary sanitized check: '))
+      ).toHaveLength(20);
+      expect(
+        sanitized.stderr
+          .split('\n')
+          .filter((line) => line === 'Additional pre-canary failed checks were omitted from the sanitized log.')
+      ).toHaveLength(1);
+      expect(sanitized.stderr).not.toMatch(
+        /fixture-secret|eyJhbGciOiJIUzI1NiJ9|2001:db8::1|\/tmp\/private|raw-evidence|x{20}/
+      );
+
+      writeFileSync(reportPath, '{"checks":[{"message":"token malformed-secret"}');
+      const malformed = spawnSync(process.execPath, ['-', reportPath], {
+        encoding: 'utf8',
+        input: sanitizerScript,
+      });
+      expect(malformed.status).toBe(1);
+      expect(malformed.stderr).toBe('');
+      expect(malformed.stdout).toBe('');
+    } finally {
+      rmSync(reportDir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects dirty or untracked vendored bridge bytes in strict provenance checks', () => {
     expect(() =>
       bridgeResource.assertVendoredBridgeSourceMatchesHead(
@@ -613,14 +690,67 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       'from evaos_desktop_bridge import pre_canary',
       'from pathlib import Path',
       'from tempfile import TemporaryDirectory',
+      'from unittest.mock import patch',
       'assert pre_canary.DEFAULT_CANONICAL_PATH == "/Applications/evaOS Workbench.app"',
       'assert pre_canary.DEFAULT_BUNDLE_ID == "com.evaos.workbench"',
+      'pre_canary._artifact_roots_from_environment = lambda: ("/baseline-artifacts", "/shared-artifacts")',
+      'assert pre_canary._artifact_roots_with_additions(("/runner-temp", "/shared-artifacts")) == ("/baseline-artifacts", "/shared-artifacts", "/runner-temp")',
       'current = pre_canary.AppBundle(path=pre_canary.DEFAULT_CANONICAL_PATH, bundle_id=pre_canary.DEFAULT_BUNDLE_ID, version="2.1.36", build="2.1.36", team_id=pre_canary.DEFAULT_TEAM_ID)',
       'current_process = pre_canary.ProcessInfo(pid=1, command="/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench", path=pre_canary.DEFAULT_CANONICAL_PATH, kind="workbench")',
       'inventory = pre_canary.WorkbenchInventory(registered_paths=(pre_canary.DEFAULT_CANONICAL_PATH,), app_bundles=(current,), processes=(current_process,))',
       'report = pre_canary.evaluate_inventory(inventory, expected_version="2.1.36", expected_build="2.1.36")',
       'assert report.ok, report.to_dict()',
       'assert pre_canary._workbench_app_path_from_command(current_process.command) == pre_canary.DEFAULT_CANONICAL_PATH',
+      'with TemporaryDirectory() as inventory_root:',
+      '    canonical = Path(inventory_root) / "evaOS Workbench.app"',
+      '    canonical.mkdir()',
+      '    removed = Path(inventory_root) / "removed-updater-extract" / "evaOS Workbench.app"',
+      '    removed_parent = Path(inventory_root) / "removed-parent"',
+      '    removed_parent.write_text("not a directory", encoding="utf-8")',
+      '    removed_below_file = removed_parent / "evaOS Workbench.app"',
+      '    existing_duplicate = Path(inventory_root) / "fallback-extract" / "evaOS Workbench.app"',
+      '    pre_canary._read_app_bundle = lambda path: pre_canary.AppBundle(path=path, bundle_id=pre_canary.DEFAULT_BUNDLE_ID, version="2.1.36", build="2.1.36", team_id=pre_canary.DEFAULT_TEAM_ID)',
+      '    pre_canary._process_inventory = lambda: (pre_canary.ProcessInfo(pid=2, command=f"{canonical}/Contents/MacOS/evaOS Workbench", path=str(canonical), kind="workbench"),)',
+      '    pre_canary._mdfind_bundle_paths = lambda _bundle_id: (str(canonical), str(removed), str(removed_below_file))',
+      '    filtered_inventory = pre_canary.gather_inventory(canonical_path=str(canonical), artifact_roots=())',
+      '    assert filtered_inventory.registered_paths == (str(canonical),), filtered_inventory.to_dict()',
+      '    filtered_report = pre_canary.evaluate_inventory(filtered_inventory, canonical_path=str(canonical), expected_version="2.1.36", expected_build="2.1.36")',
+      '    assert filtered_report.ok, filtered_report.to_dict()',
+      '    existing_duplicate.mkdir(parents=True)',
+      '    pre_canary._mdfind_bundle_paths = lambda _bundle_id: (str(canonical), str(removed), str(removed_below_file), str(existing_duplicate), str(existing_duplicate))',
+      '    duplicate_inventory = pre_canary.gather_inventory(canonical_path=str(canonical), artifact_roots=())',
+      '    assert str(removed) not in duplicate_inventory.registered_paths, duplicate_inventory.to_dict()',
+      '    assert str(removed_below_file) not in duplicate_inventory.registered_paths, duplicate_inventory.to_dict()',
+      '    assert duplicate_inventory.registered_paths == (str(canonical), str(existing_duplicate)), duplicate_inventory.to_dict()',
+      '    duplicate_report = pre_canary.evaluate_inventory(duplicate_inventory, canonical_path=str(canonical))',
+      '    assert not duplicate_report.ok, duplicate_report.to_dict()',
+      '    assert "duplicate_registered_workbench_app" in {check.code for check in duplicate_report.checks}',
+      '    unverifiable = Path(inventory_root) / "permission-blocked" / "evaOS Workbench.app"',
+      '    original_stat = Path.stat',
+      '    def guarded_stat(path, *args, **kwargs):',
+      '        if path == unverifiable:',
+      '            raise PermissionError("fixture permission boundary")',
+      '        return original_stat(path, *args, **kwargs)',
+      '    pre_canary._mdfind_bundle_paths = lambda _bundle_id: (str(canonical), str(unverifiable), str(unverifiable))',
+      '    with patch.object(Path, "stat", guarded_stat):',
+      '        unverifiable_inventory = pre_canary.gather_inventory(canonical_path=str(canonical), artifact_roots=())',
+      '    assert unverifiable_inventory.registered_paths == (str(canonical), str(unverifiable)), unverifiable_inventory.to_dict()',
+      '    assert str(unverifiable) in {bundle.path for bundle in unverifiable_inventory.app_bundles}, unverifiable_inventory.to_dict()',
+      '    unverifiable_report = pre_canary.evaluate_inventory(unverifiable_inventory, canonical_path=str(canonical))',
+      '    assert not unverifiable_report.ok, unverifiable_report.to_dict()',
+      '    assert "duplicate_registered_workbench_app" in {check.code for check in unverifiable_report.checks}',
+      '    uninspectable_artifact = Path(inventory_root) / "artifact-only" / "EvaDesktop.app"',
+      '    def artifact_guarded_stat(path, *args, **kwargs):',
+      '        if path == uninspectable_artifact:',
+      '            raise PermissionError("artifact fixture permission boundary")',
+      '        return original_stat(path, *args, **kwargs)',
+      '    pre_canary._mdfind_bundle_paths = lambda _bundle_id: (str(canonical),)',
+      '    with patch.object(pre_canary, "_artifact_workbench_bundle_paths", return_value=(str(uninspectable_artifact),)), patch.object(Path, "stat", artifact_guarded_stat):',
+      '        artifact_inventory = pre_canary.gather_inventory(canonical_path=str(canonical), artifact_roots=())',
+      '    assert str(uninspectable_artifact) in {bundle.path for bundle in artifact_inventory.app_bundles}, artifact_inventory.to_dict()',
+      '    artifact_report = pre_canary.evaluate_inventory(artifact_inventory, canonical_path=str(canonical))',
+      '    assert not artifact_report.ok, artifact_report.to_dict()',
+      '    assert "stale_workbench_app_bundle_present" in {check.code for check in artifact_report.checks}',
       'with TemporaryDirectory() as artifact_dir:',
       '    report_path = pre_canary._write_report(report.to_dict(), Path(artifact_dir))',
       '    assert report_path.name == "qa-report.json" and report_path.is_file()',
