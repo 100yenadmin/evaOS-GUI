@@ -262,7 +262,7 @@ describe('evaOS Mac Access v1 contracts', () => {
       expected_policy_epoch: 7,
     };
     const reason = { reason_code: 'local_user_request' };
-    const requests = [
+    const requests: unknown[] = [
       { ...identity, request_id: 'host-status', operation: 'status', expected_policy_epoch: null, sequence: 1 },
       {
         ...identity,
@@ -325,7 +325,7 @@ describe('evaOS Mac Access v1 contracts', () => {
       expect(dispatchResult.error.issues.some((issue) => issue.path.join('/') === 'envelope/sequence')).toBe(true);
     }
 
-    const statusResponse = {
+    const statusResponse: Record<string, unknown> = {
       schema_version: 'evaos.mac_connector_core.host_response.v1',
       request_id: 'host-status-unsafe',
       host_session_id: 'host-session-01',
@@ -349,7 +349,7 @@ describe('evaOS Mac Access v1 contracts', () => {
       ).toBe(true);
     }
 
-    const auditResponse = {
+    const auditResponse: Record<string, unknown> = {
       schema_version: 'evaos.mac_connector_core.host_response.v1',
       request_id: 'host-audit-unsafe',
       host_session_id: 'host-session-01',
@@ -415,6 +415,20 @@ describe('evaOS Mac Access v1 contracts', () => {
     }
   });
 
+  it('rejects command authority that shares the selected grant expiry boundary', () => {
+    const envelope = cloneJson(
+      brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')))
+    );
+    envelope.expires_at = envelope.binding.grant_expires_at;
+    envelope.authorization.payload.expires_at = envelope.expires_at;
+
+    const parsed = brokerControlEnvelopeSchema.safeParse(envelope);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'binding/grant_expires_at')).toBe(true);
+    }
+  });
+
   it('rejects silent binding replacement outside an explicit binding transition', () => {
     const transition = cloneJson(readJson(path.join(validRoot, 'state/access-transition-stop.json'))) as {
       to: {
@@ -431,6 +445,110 @@ describe('evaOS Mac Access v1 contracts', () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'to/binding')).toBe(true);
+    }
+  });
+
+  it('invalidates pending authority when access narrows from full access to ask every time', () => {
+    const transition = cloneJson(readJson(path.join(validRoot, 'state/access-transition.json'))) as {
+      event: string;
+      explicit_user_consent: boolean;
+      invalidated_pending_authority: boolean;
+      safe_cancellation_requested: boolean;
+      target_mode: string | null;
+      from: { configured_mode: string; effective_mode: string };
+      to: { configured_mode: string; effective_mode: string };
+    };
+    transition.event = 'set_mode';
+    transition.explicit_user_consent = true;
+    transition.invalidated_pending_authority = false;
+    transition.safe_cancellation_requested = false;
+    transition.target_mode = 'ask_every_time';
+    transition.from.configured_mode = 'full_access';
+    transition.from.effective_mode = 'full_access';
+    transition.to.configured_mode = 'ask_every_time';
+    transition.to.effective_mode = 'ask_every_time';
+
+    const parsed = accessTransitionSchema.safeParse(transition);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'event')).toBe(true);
+    }
+  });
+
+  it('rejects successful host responses whose operation outcome did not take effect', () => {
+    const status = cloneJson(readJson(path.join(validRoot, 'state/local-status.json')));
+    const identity: Record<string, unknown> = {
+      schema_version: 'evaos.mac_connector_core.host_response.v1',
+      request_id: 'host-outcome-check',
+      host_session_id: 'host-session-01',
+      sequence: 1,
+      ok: true,
+      policy_epoch: 7,
+      error: null,
+    };
+    const responses: Array<Record<string, unknown> & { operation: string; expectedPath: string }> = [
+      {
+        ...identity,
+        operation: 'status',
+        policy_epoch: 8,
+        result: { kind: 'status', status },
+        expectedPath: 'result/status/access/policy_epoch',
+      },
+      {
+        ...identity,
+        operation: 'pair',
+        result: {
+          kind: 'pairing',
+          pairing_state: 'unpaired',
+          device_id: null,
+          binding_fingerprint_sha256: null,
+        },
+        expectedPath: 'result/pairing_state',
+      },
+      {
+        ...identity,
+        operation: 'unpair',
+        result: {
+          kind: 'pairing',
+          pairing_state: 'paired',
+          device_id: 'mac-01',
+          binding_fingerprint_sha256: '1'.repeat(64),
+        },
+        expectedPath: 'result/pairing_state',
+      },
+      {
+        ...identity,
+        operation: 'connect',
+        result: {
+          kind: 'lifecycle',
+          effective_mode: 'ask_every_time',
+          pairing_state: 'paired',
+          transport_state: 'disconnected',
+        },
+        expectedPath: 'result/transport_state',
+      },
+      {
+        ...identity,
+        operation: 'disconnect',
+        result: {
+          kind: 'lifecycle',
+          effective_mode: 'ask_every_time',
+          pairing_state: 'paired',
+          transport_state: 'connected',
+        },
+        expectedPath: 'result/transport_state',
+      },
+    ];
+
+    for (const response of responses) {
+      const parsed = coreHostResponseSchema.safeParse(response);
+      expect(parsed.success, response.operation).toBe(false);
+      if (!parsed.success) {
+        expect(
+          parsed.error.issues.some((issue) => issue.path.join('/') === response.expectedPath),
+          `${response.operation} must reject at ${response.expectedPath}`
+        ).toBe(true);
+      }
     }
   });
 

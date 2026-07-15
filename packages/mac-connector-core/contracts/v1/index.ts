@@ -623,6 +623,11 @@ export const accessTransitionSchema = z
         path: ['to', 'policy_epoch'],
       });
     }
+    const accessModeRank = { off: 0, ask_every_time: 1, full_access: 2 } as const;
+    const narrowsAccess =
+      transition.event === 'set_mode' &&
+      transition.target_mode !== null &&
+      accessModeRank[transition.target_mode] < accessModeRank[from.configured_mode];
     const authorityInvalidating =
       [
         'restart',
@@ -635,7 +640,8 @@ export const accessTransitionSchema = z
         'binding_changed',
         'grant_expired',
       ].includes(transition.event) ||
-      (transition.event === 'set_mode' && transition.target_mode === 'off');
+      (transition.event === 'set_mode' && transition.target_mode === 'off') ||
+      narrowsAccess;
     if (
       authorityInvalidating &&
       (!transition.invalidated_pending_authority || !transition.safe_cancellation_requested)
@@ -929,7 +935,7 @@ export const brokerControlEnvelopeSchema = z
         path: ['expires_at'],
       });
     }
-    if (expiresAt > Date.parse(envelope.binding.grant_expires_at)) {
+    if (expiresAt >= Date.parse(envelope.binding.grant_expires_at)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'command authority must expire before the selected grant',
@@ -1272,7 +1278,56 @@ export const coreHostResponseSchema = z
         path: ['result', 'kind'],
       });
     }
+
+    if (
+      response.operation === 'status' &&
+      response.result.kind === 'status' &&
+      response.policy_epoch !== response.result.status.access.policy_epoch
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'status response policy epoch must match the nested access state',
+        path: ['result', 'status', 'access', 'policy_epoch'],
+      });
+    }
+    if (response.operation === 'pair' && response.result.kind === 'pairing') {
+      if (
+        response.result.pairing_state !== 'paired' ||
+        response.result.device_id === null ||
+        response.result.binding_fingerprint_sha256 === null
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'pair response must establish paired device and binding identity',
+          path: ['result', 'pairing_state'],
+        });
+      }
+    }
+    if (response.operation === 'unpair' && response.result.kind === 'pairing') {
+      if (
+        response.result.pairing_state !== 'unpaired' ||
+        response.result.device_id !== null ||
+        response.result.binding_fingerprint_sha256 !== null
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'unpair response must clear paired device and binding identity',
+          path: ['result', 'pairing_state'],
+        });
+      }
+    }
     if (response.result.kind !== 'lifecycle') return;
+
+    if (
+      response.operation === 'connect' &&
+      (response.result.pairing_state !== 'paired' || response.result.transport_state !== 'connected')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'connect response must report paired access and connected transport',
+        path: ['result', 'transport_state'],
+      });
+    }
 
     if (
       ['pause', 'stop', 'revoke', 'activate_kill_switch', 'shutdown'].includes(response.operation) &&
@@ -1295,12 +1350,12 @@ export const coreHostResponseSchema = z
       });
     }
     if (
-      ['stop', 'shutdown'].includes(response.operation) &&
+      ['disconnect', 'stop', 'shutdown'].includes(response.operation) &&
       ['connecting', 'connected'].includes(response.result.transport_state)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'stop and shutdown responses cannot retain an active transport',
+        message: 'disconnect, stop, and shutdown responses cannot retain an active transport',
         path: ['result', 'transport_state'],
       });
     }

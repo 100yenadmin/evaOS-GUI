@@ -23,6 +23,8 @@
   },
   "include": [
     "packages/desktop/src/**/*",
+    "packages/mac-connector-core/**/*.ts",
+    "tests/contract/macAccess*.test.ts",
     "uno.config.ts",
     "packages/desktop/electron.vite.config.ts",
     "playwright.config.ts",

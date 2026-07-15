@@ -91,13 +91,14 @@ packages/mac-access/                         # at most 8 direct children
 packages/mac-connector-core/                 # at most 6 direct children
 ├── contracts/                              # versioned language-neutral contracts and fixtures
 ├── python/
-│   └── evaos_desktop_bridge/               # at most 6 direct children
+│   └── evaos_desktop_bridge/               # at most 7 direct children
 │       ├── __init__.py
 │       ├── adapters/                       # protocol, planner, and temporary CUA adapters
 │       ├── contracts/                      # capability, schema, types, and redaction
 │       ├── host/                           # host API, CLI, compatibility dispatcher, tooling
 │       ├── persistence/                    # audit, queue, and state compatibility
-│       └── policy/                         # policy compatibility before native retirement
+│       ├── policy/                         # policy compatibility before native retirement
+│       └── proof/                          # packaged Workbench canary and receipt compatibility
 ├── native/                                 # SwiftPM native ports: verification, Keychain, IPC, TCC/CUA, transport
 ├── tests/                                  # cross-language behavior and negative fixtures
 ├── scripts/                                # generation and parity checks
@@ -105,6 +106,8 @@ packages/mac-connector-core/                 # at most 6 direct children
 ```
 
 Subdirectories also obey the repository limit of ten direct children. Pure parsing, canonicalization, binding comparison, policy transitions, redaction, and receipt construction remain separate from Keychain, WebSocket, filesystem, audit, TCC, process, and CUA I/O.
+
+The `proof/` package is not merely a test directory in A1. Workbench's generated wrapper and canary workflows still execute `pre_canary.py` and `qa_canary.py`, and `connector_server.py` imports `receipt_canary.py` for the signed runtime-receipt route. #700 moves those modules once into `proof/`, packages them from the canonical core, and keeps their installed import/entry-point compatibility explicit. A later phase may retire them only together with every production, workflow, release-gate, and VM-consumer caller; a test-only move at A1 would break the accepted #708 proof route.
 
 The A1 core host boundary is `evaos.mac_connector_core.host_request.v1` / `host_response.v1`, implemented by `python/evaos_desktop_bridge/host/api.py` without importing Electron or renderer code. It is a fixed-operation private interface for status, pair/unpair, connect/disconnect, access mode, action dispatch, audit summary, pause/resume, emergency stop, revoke/kill, and shutdown. Requests bind a helper-created host session, monotonic safe-integer sequence, request ID, and safe-integer expected policy epoch; unknown operations and fields fail closed. Stop is distinct from process shutdown: it must synchronously rotate policy authority, force effective Off, invalidate pending approvals/commands, and safely cancel active work before returning. The helper launches the embedded core over a private inherited channel with a one-runtime lifetime—never HTTP, a public socket, PATH discovery, or a renderer-callable endpoint.
 
