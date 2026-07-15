@@ -2616,6 +2616,9 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
 }
 
 function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity, expectedAppVersion) {
+  // coreSourceSha256/sourceManifestSha256 attest the canonical source commit, including build-only native
+  // sources that are intentionally not shipped in the ZIP. Shipped derivatives are independently rebound below:
+  // generated Python bytes, launcher bytes, and the verifier digest over both Swift inputs plus Mach-O architecture.
   const verifierSourcePaths = ['native/EvaOSEd25519Verify.swift', 'native/main.swift'];
   const verifierSourceDigest = createHash('sha256');
   for (const sourcePath of verifierSourcePaths) {

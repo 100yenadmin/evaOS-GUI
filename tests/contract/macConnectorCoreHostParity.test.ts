@@ -7,7 +7,14 @@ import { CORE_HOST_OPERATIONS, coreHostExchangeSchema } from '../../packages/mac
 
 describe('embedded Mac connector core host parity', () => {
   it('validates all fourteen live Python host exchanges with the TypeScript contract', () => {
-    const python = process.env.EVAOS_CORE_TEST_PYTHON || 'python3';
+    const configuredPython = process.env.EVAOS_CORE_TEST_PYTHON;
+    if (process.env.EVAOS_REQUIRE_PINNED_CORE_TEST_PYTHON === '1' && !configuredPython) {
+      throw new Error('Canonical connector-core parity requires EVAOS_CORE_TEST_PYTHON.');
+    }
+    const python = configuredPython || 'python3';
+    if (configuredPython) {
+      expect(execFileSync(python, ['--version'], { encoding: 'utf8' }).trim()).toBe('Python 3.12.13');
+    }
     const script = path.join(process.cwd(), 'packages', 'mac-connector-core', 'tests', 'python', 'host_matrix.py');
     const exchanges = JSON.parse(
       execFileSync(python, ['-I', '-B', script], {

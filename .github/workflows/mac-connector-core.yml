@@ -45,6 +45,7 @@ jobs:
       - name: Focused source and Workbench parity
         env:
           EVAOS_CORE_TEST_PYTHON: ${{ env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR }}/bin/python3
+          EVAOS_REQUIRE_PINNED_CORE_TEST_PYTHON: '1'
         run: >-
           bunx vitest run
           tests/contract/macAccessContracts.test.ts

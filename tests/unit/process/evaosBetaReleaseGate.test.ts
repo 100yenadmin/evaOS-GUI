@@ -1046,6 +1046,9 @@ describe('evaOS beta release gate', () => {
       'utf8'
     );
     expect(mockArtifactScript).toContain("raise ValueError(f'Connector-core source digest mismatch");
+    expect(mockArtifactScript).toContain(
+      'raise ValueError("Connector-core source manifest entries must be strictly UTF-8 sorted.")'
+    );
     expect(mockArtifactScript).not.toContain('assert hashlib.sha256(contents).hexdigest()');
   });
 
@@ -1558,6 +1561,27 @@ printf '%s\\n' ok
       ).toBe(true);
 
       expect(() => afterSign.assertSignedBridgeSourceIdentity(appPath, {})).toThrow(/exact canonical connector core/);
+
+      const nonCheckoutCommit = '0'.repeat(40);
+      fs.writeFileSync(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            placeholder: false,
+            sourcePath: 'packages/mac-connector-core',
+            sourceCommit: nonCheckoutCommit,
+            requestedSourceRef: nonCheckoutCommit,
+            sourceProvenance: canonical,
+          },
+          null,
+          2
+        )}\n`
+      );
+      expect(() =>
+        afterSign.assertSignedBridgeSourceIdentity(appPath, {
+          EVAOS_DESKTOP_BRIDGE_SOURCE_REF: nonCheckoutCommit,
+        })
+      ).toThrow(/exact canonical connector core/);
 
       fs.writeFileSync(
         manifestPath,

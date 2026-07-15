@@ -116,12 +116,17 @@ source_manifest_bytes = source_provenance_path.read_bytes()
 source_manifest = json.loads(source_manifest_bytes)
 core_root = bridge_source_path.parents[1]
 core_hash = hashlib.sha256()
+previous_path = None
 for entry in source_manifest["files"]:
+    path_bytes = entry["path"].encode("utf-8")
+    if previous_path is not None and previous_path >= path_bytes:
+        raise ValueError("Connector-core source manifest entries must be strictly UTF-8 sorted.")
+    previous_path = path_bytes
     source_file = core_root / entry["path"]
     contents = source_file.read_bytes()
     if hashlib.sha256(contents).hexdigest() != entry["sha256"]:
         raise ValueError(f'Connector-core source digest mismatch for {entry["path"]}.')
-    core_hash.update(entry["path"].encode("utf-8"))
+    core_hash.update(path_bytes)
     core_hash.update(b"\0")
     core_hash.update(contents)
     core_hash.update(b"\0")

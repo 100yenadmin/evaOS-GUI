@@ -18,7 +18,11 @@ import {
   TEST_RECEIPT_KEY_ID,
 } from './fixtures/signedMacControlAttestation';
 
-const coreTestPython = process.env.EVAOS_CORE_TEST_PYTHON || 'python3';
+const configuredCoreTestPython = process.env.EVAOS_CORE_TEST_PYTHON;
+if (process.env.EVAOS_REQUIRE_PINNED_CORE_TEST_PYTHON === '1' && !configuredCoreTestPython) {
+  throw new Error('Canonical connector-core broker proof requires EVAOS_CORE_TEST_PYTHON.');
+}
+const coreTestPython = configuredCoreTestPython || 'python3';
 const TRUST_FIXTURE = signedMacControlAttestation({
   runRef: 'gha:12345:111111111111111111111111',
   executedAt: '2026-07-15T00:00:00Z',

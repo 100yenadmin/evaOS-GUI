@@ -57,8 +57,16 @@ function assertSignedBridgeSourceIdentity(appPath, env = process.env) {
   const canonical = vendoredBridgeSourceMetadata();
   const provenance = manifest.sourceProvenance;
   const expectedSourceCommit = String(env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || '').trim();
+  const checkoutHead = String(
+    execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  ).trim();
   if (
     !/^[0-9a-f]{40}$/.test(expectedSourceCommit) ||
+    checkoutHead !== expectedSourceCommit ||
     manifest.placeholder !== false ||
     manifest.sourcePath !== 'packages/mac-connector-core' ||
     manifest.sourceCommit !== expectedSourceCommit ||

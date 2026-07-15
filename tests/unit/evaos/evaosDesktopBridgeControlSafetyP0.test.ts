@@ -9,7 +9,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const bridgeSourceDir = join(process.cwd(), 'packages', 'mac-connector-core', 'python');
-const coreTestPython = process.env.EVAOS_CORE_TEST_PYTHON || 'python3';
+const configuredCoreTestPython = process.env.EVAOS_CORE_TEST_PYTHON;
+if (process.env.EVAOS_REQUIRE_PINNED_CORE_TEST_PYTHON === '1' && !configuredCoreTestPython) {
+  throw new Error('Canonical connector-core P0 proof requires EVAOS_CORE_TEST_PYTHON.');
+}
+const coreTestPython = configuredCoreTestPython || 'python3';
 
 function runPython(script: string): string {
   return execFileSync(coreTestPython, ['-B', '-c', script], {
