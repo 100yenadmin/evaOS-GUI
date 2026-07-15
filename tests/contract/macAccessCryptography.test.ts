@@ -125,6 +125,14 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     expect(verify(null, Buffer.from(canonical), publicKey, Buffer.from(vector.signature_base64url, 'base64url'))).toBe(
       true
     );
+
+    const tamperedPayload = structuredClone(vector);
+    tamperedPayload.payload.expires_at = '2026-07-15T08:01:44Z';
+    expect(commandAuthorityGoldenSchema.safeParse(tamperedPayload).success).toBe(false);
+
+    const tamperedCanonicalBytes = structuredClone(vector);
+    tamperedCanonicalBytes.canonical_payload_utf8 += ' ';
+    expect(commandAuthorityGoldenSchema.safeParse(tamperedCanonicalBytes).success).toBe(false);
   });
 
   it('verifies the two-record audit-chain golden vector', () => {
@@ -182,6 +190,10 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     } = vector;
     const localStatus = localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json')));
     expect(localStatus.relay_authorization.rollback_authorization).toEqual(signedVector);
+
+    const tamperedCanonicalBytes = structuredClone(vector);
+    tamperedCanonicalBytes.canonical_payload_utf8 += ' ';
+    expect(rollbackAuthorizationGoldenSchema.safeParse(tamperedCanonicalBytes).success).toBe(false);
 
     const tamperedStatus = structuredClone(localStatus);
     if (tamperedStatus.relay_authorization.rollback_authorization === null) {

@@ -189,6 +189,16 @@ export const MAC_ACCESS_IDENTITIES = {
   auditAnchorService: 'com.evaos.mac-access.audit-anchor',
 } as const;
 
+function literalPrefixPattern(prefix: string): RegExp {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped}\\.epoch-[1-9][0-9]*$`);
+}
+
+const productionKeychainAccessGroupPattern = literalPrefixPattern(
+  MAC_ACCESS_IDENTITIES.productionKeychainAccessGroupSuffix
+);
+const auditAnchorAccessGroupPattern = literalPrefixPattern(MAC_ACCESS_IDENTITIES.auditAnchorAccessGroupSuffix);
+
 export const selectedBindingSchema = z
   .object({
     customer_id: identifier,
@@ -239,7 +249,7 @@ export const buildIdentitySchema = z
 export const keychainCustodySchema = z
   .object({
     custodian_signing_identifier: z.literal(MAC_ACCESS_IDENTITIES.helperServiceId),
-    access_group_suffix: z.string().regex(/^com\.evaos\.mac-access\.credentials\.epoch-[1-9][0-9]*$/),
+    access_group_suffix: z.string().regex(productionKeychainAccessGroupPattern),
     credential_security_epoch: safePositiveCounter,
     service: z.literal(MAC_ACCESS_IDENTITIES.connectorCredentialService),
     accessibility: z.literal('kSecAttrAccessibleWhenUnlockedThisDeviceOnly'),
@@ -261,7 +271,7 @@ export const auditAnchorSchema = z
   .object({
     schema_version: z.literal('evaos.mac_access.audit_anchor.v1'),
     custodian_signing_identifier: z.literal(MAC_ACCESS_IDENTITIES.helperServiceId),
-    access_group_suffix: z.string().regex(/^com\.evaos\.mac-access\.audit-anchor\.epoch-[1-9][0-9]*$/),
+    access_group_suffix: z.string().regex(auditAnchorAccessGroupPattern),
     security_epoch: safePositiveCounter,
     service: z.literal(MAC_ACCESS_IDENTITIES.auditAnchorService),
     accessibility: z.literal('kSecAttrAccessibleWhenUnlockedThisDeviceOnly'),
@@ -371,10 +381,14 @@ const signedRollbackAuthorizationShape = {
 };
 
 function requireRollbackPayloadDigest(
-  authorization: { payload: unknown; payload_sha256: string },
+  authorization: { payload?: unknown; payload_sha256?: string },
   context: z.RefinementCtx
 ): void {
-  if (canonicalJsonSha256(authorization.payload) !== authorization.payload_sha256) {
+  if (
+    authorization.payload === undefined ||
+    authorization.payload_sha256 === undefined ||
+    canonicalJsonSha256(authorization.payload) !== authorization.payload_sha256
+  ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'rollback authorization payload digest must match its RFC 8785 canonical payload',
@@ -395,7 +409,16 @@ export const rollbackAuthorizationGoldenSchema = z
     public_key_spki_base64url: base64Url,
   })
   .strict()
-  .superRefine(requireRollbackPayloadDigest);
+  .superRefine((authorization, context) => {
+    requireRollbackPayloadDigest(authorization, context);
+    if (canonicalJson(authorization.payload) !== authorization.canonical_payload_utf8) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'rollback authorization canonical payload bytes must match its RFC 8785 payload',
+        path: ['canonical_payload_utf8'],
+      });
+    }
+  });
 
 export const executionContextClaimsSchema = z
   .object({
@@ -1186,7 +1209,24 @@ export const commandAuthorityGoldenSchema = z
     public_key_spki_base64url: base64Url,
     signature_base64url: base64Url,
   })
-  .strict();
+  .strict()
+  .superRefine((vector, context) => {
+    const canonicalPayload = canonicalJson(vector.payload);
+    if (canonicalPayload !== vector.canonical_payload_utf8) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'command authority canonical payload bytes must match its RFC 8785 payload',
+        path: ['canonical_payload_utf8'],
+      });
+    }
+    if (canonicalJsonSha256(vector.payload) !== vector.payload_sha256) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'command authority payload digest must match its RFC 8785 canonical payload',
+        path: ['payload_sha256'],
+      });
+    }
+  });
 
 export const brokerControlEnvelopeSchema = z
   .object({
@@ -1326,8 +1366,18 @@ const coreHostRequestIdentity = {
   sequence: safePositiveCounter,
 };
 
-const coreHostLifecycleRequest = (
-  operation: 'unpair' | 'disconnect' | 'pause' | 'resume' | 'stop' | 'revoke' | 'activate_kill_switch' | 'shutdown'
+const coreHostLifecycleRequest = <
+  Operation extends
+    | 'unpair'
+    | 'disconnect'
+    | 'pause'
+    | 'resume'
+    | 'stop'
+    | 'revoke'
+    | 'activate_kill_switch'
+    | 'shutdown',
+>(
+  operation: Operation
 ) =>
   z
     .object({
