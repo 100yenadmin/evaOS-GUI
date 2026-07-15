@@ -25,6 +25,9 @@ WORKBENCH_APP_NAME_STEMS = tuple(sorted(name[: -len(".app")].casefold() for name
 WORKBENCH_EXECUTABLE_PATTERN = re.compile(
     r'^\s*"?(?P<path>/.*?\.app(?:\.[^/"\s]+)?)/Contents/MacOS/(?:evaOS Workbench(?: Beta)?|EvaDesktop|evaOS)"?(?:\s|$)'
 )
+WORKBENCH_ELECTRON_HELPER_PATTERN = re.compile(
+    r'^\s*"?(?P<path>(?P<outer>/.*?\.app(?:\.[^/"\s]+)?)/Contents/Frameworks/(?P<helper>evaOS Workbench Helper(?: \((?:GPU|Plugin|Renderer)\))?)\.app)/Contents/MacOS/(?P=helper)"?(?:\s+--.*)?\s*$'
+)
 DEFAULT_TEAM_ID = "TC6MS3T6NN"
 COMPUTER_USE_CLIENT_SUFFIX = "SkyComputerUseClient mcp"
 # Optional developer/canary artifact locations. Missing roots are ignored.
@@ -570,6 +573,14 @@ def _is_computer_use_mcp_helper(command: str) -> bool:
 
 
 def _workbench_app_path_from_command(command: str) -> str | None:
+    helper_match = WORKBENCH_ELECTRON_HELPER_PATTERN.match(command)
+    if helper_match is not None:
+        outer_path = helper_match.group("outer")
+        has_lexical_traversal = any(part in {".", ".."} for part in outer_path.split("/"))
+        if not has_lexical_traversal and _is_workbench_app_artifact_name(Path(outer_path).name):
+            return outer_path
+        return helper_match.group("path")
+
     match = WORKBENCH_EXECUTABLE_PATTERN.match(command)
     return match.group("path") if match else None
 
