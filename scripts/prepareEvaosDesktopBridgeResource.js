@@ -192,6 +192,10 @@ function verifyWorkbenchBridgeIdentity(bridgePackageDir) {
 
 function verifyWorkbenchBridgeSourceRoot(sourceRoot) {
   const resolvedSourceRoot = path.resolve(sourceRoot);
+  const rootMetadata = fs.lstatSync(resolvedSourceRoot);
+  if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+    throw new Error('Packaged Workbench bridge src root must be a real directory.');
+  }
   const entries = fs.readdirSync(resolvedSourceRoot, { withFileTypes: true });
   if (
     entries.length !== 1 ||

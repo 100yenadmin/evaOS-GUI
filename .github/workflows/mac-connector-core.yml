@@ -11,10 +11,13 @@ on:
       - 'scripts/afterSign.js'
       - 'scripts/create-mock-release-artifacts.sh'
       - 'scripts/evaosBetaReleaseGate.js'
+      - 'scripts/evaosInstalledAppProductProof.js'
       - 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh'
       - 'scripts/prepareEvaosDesktopBridgeResource.js'
       - 'tests/unit/bootstrap/afterPackBundledResources.test.ts'
       - 'tests/unit/evaos/evaosDesktopBridge*.test.ts'
+      - 'tests/unit/evaos/evaosBrokerLiveCanary.test.ts'
+      - 'tests/unit/evaos/evaosInstalledAppProductProof.test.ts'
       - 'tests/unit/evaos/evaosQaCanaryLocalControl.test.ts'
       - 'tests/unit/process/evaosBetaReleaseGate.test.ts'
       - 'tests/unit/process/macConnectorCorePackaging.test.ts'
@@ -54,6 +57,8 @@ jobs:
           tests/unit/evaos/evaosDesktopBridgeSafety.test.ts
           tests/unit/evaos/evaosDesktopBridgeReceipt.test.ts
           tests/unit/evaos/evaosDesktopBridgeControlSafetyP0.test.ts
+          tests/unit/evaos/evaosBrokerLiveCanary.test.ts
+          tests/unit/evaos/evaosInstalledAppProductProof.test.ts
           tests/unit/evaos/evaosQaCanaryLocalControl.test.ts
           --maxWorkers=2
       - name: Prove VM agent-tool receipt parity

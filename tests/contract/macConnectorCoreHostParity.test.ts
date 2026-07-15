@@ -23,6 +23,17 @@ describe('embedded Mac connector core host parity', () => {
       })
     ) as unknown[];
     const parsed = exchanges.map((candidate) => coreHostExchangeSchema.parse(candidate));
-    expect(parsed.map((entry) => entry.request.operation).toSorted()).toEqual([...CORE_HOST_OPERATIONS].toSorted());
+    expect([...new Set(parsed.map((entry) => entry.request.operation))].toSorted()).toEqual(
+      [...CORE_HOST_OPERATIONS].toSorted()
+    );
+    expect(
+      parsed.some(
+        (entry) =>
+          entry.request.operation === 'dispatch_action' &&
+          !entry.response.ok &&
+          entry.response.error?.code === 'grant_expired' &&
+          entry.response.policy_epoch === entry.request.expected_policy_epoch! + 1
+      )
+    ).toBe(true);
   });
 });

@@ -177,6 +177,10 @@ function verifyGeneratedCoreSource(coreRoot, resourceRoot) {
   const targetRoot = path.resolve(resourceRoot);
   const expected = identity.manifest.files.filter((entry) => entry.destination !== null);
   const generatedSourceRoot = path.join(targetRoot, 'src');
+  const generatedRootMetadata = fs.lstatSync(generatedSourceRoot);
+  if (generatedRootMetadata.isSymbolicLink() || !generatedRootMetadata.isDirectory()) {
+    throw new Error('Generated connector-core source root must be a real directory.');
+  }
   const actual = walkFiles(generatedSourceRoot)
     .map((filePath) => path.relative(targetRoot, filePath).split(path.sep).join('/'))
     .sort(utf8Sort);

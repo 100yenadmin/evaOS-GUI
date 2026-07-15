@@ -91,6 +91,15 @@ describe('canonical Mac connector core packaging', () => {
     expect(() => manifest.coreSourceIdentity(linkedRoot)).toThrow(/not a real directory/);
   });
 
+  it('rejects a generated source root that is itself a symlink', () => {
+    const external = mkdtempSync(join(tmpdir(), 'evaos-generated-core-external-'));
+    const linked = mkdtempSync(join(tmpdir(), 'evaos-generated-core-linked-'));
+    tempDirs.push(external, linked);
+    manifest.copyCorePythonSource(coreRoot, external);
+    symlinkSync(join(external, 'src'), join(linked, 'src'), 'dir');
+    expect(() => manifest.verifyGeneratedCoreSource(coreRoot, linked)).toThrow(/real directory/);
+  });
+
   it('keeps the host API dependency-injected and the package fanout bounded', () => {
     const api = readFileSync(join(coreRoot, 'python', 'evaos_desktop_bridge', 'host', 'api.py'), 'utf8');
     const imports = api

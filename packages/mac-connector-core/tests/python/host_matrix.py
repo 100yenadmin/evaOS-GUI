@@ -51,6 +51,16 @@ def main() -> None:
         isolated.pair()
         exchanges.append(exchange(isolated, request(operation, 2, 1)))
 
+    expired = CoreHostTests(methodName="runTest")
+    expired.setUp()
+    expired.pair()
+    exchange(expired, request("connect", 2, 1, binding=BINDING))
+    exchange(expired, request("set_access_mode", 3, 1, target_mode="ask_every_time"))
+    expired.clock.rejection = "grant_expired"
+    exchanges.append(
+        exchange(expired, request("dispatch_action", 4, 2, envelope=broker_envelope(2)))
+    )
+
     shutdown = CoreHostTests(methodName="runTest")
     shutdown.setUp()
     exchanges.append(exchange(shutdown, request("shutdown", 1, 0)))

@@ -90,12 +90,24 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   peekabooIdentity: (filePath: string, execute?: PeekabooVersionRunner) => { version: string; sourceSha256: string };
   sourceCandidates: () => string[];
   vendoredBridgeSourceMetadata: (sourceDir?: string) => Record<string, unknown>;
+  verifyWorkbenchBridgeSourceRoot: (sourceRoot: string) => Record<string, unknown>;
 };
 const { copyDir } = require('builder-util/out/fs') as {
   copyDir: (source: string, destination: string) => Promise<void>;
 };
 
 describe('prepareEvaosDesktopBridgeResource', () => {
+  it('rejects a packaged source root that is itself a symlink', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-bridge-source-root-'));
+    try {
+      const linkedRoot = join(dir, 'src');
+      symlinkSync(join(process.cwd(), 'packages', 'mac-connector-core', 'python'), linkedRoot, 'dir');
+      expect(() => bridgeResource.verifyWorkbenchBridgeSourceRoot(linkedRoot)).toThrow(/real directory/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('pins the native verifier to the selected architecture and macOS 15', () => {
     expect(bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'arm64')).toEqual([
       'swiftc',
