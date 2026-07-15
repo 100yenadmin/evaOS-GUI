@@ -48,6 +48,14 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function rehashAuditEvent<T extends Record<string, unknown> & { record_sha256: string }>(event: T): T {
+  const { record_sha256: _recordSha256, ...payload } = event;
+  return {
+    ...event,
+    record_sha256: createHash('sha256').update(canonicalize(payload)!).digest('hex'),
+  };
+}
+
 type LifecycleResponseFixture = {
   schema_version: string;
   request_id: string;
@@ -63,6 +71,7 @@ type LifecycleResponseFixture = {
     requested_target_mode: 'off' | 'ask_every_time' | 'full_access' | null;
     pairing_state: 'unpaired' | 'paired' | 'revoked';
     transport_state: 'disconnected' | 'connecting' | 'connected' | 'revoked' | 'blocked';
+    selected_binding: Record<string, unknown> | null;
   };
   error: { code: string; audit_id: string | null } | null;
 };
@@ -517,6 +526,7 @@ describe('evaOS Mac Access v1 contracts', () => {
 
   it('rejects successful host responses whose operation outcome did not take effect', () => {
     const status = cloneJson(readJson(path.join(validRoot, 'state/local-status.json')));
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
     const identity: Record<string, unknown> = {
       schema_version: 'evaos.mac_connector_core.host_response.v1',
       request_id: 'host-outcome-check',
@@ -566,6 +576,7 @@ describe('evaOS Mac Access v1 contracts', () => {
           requested_target_mode: null,
           pairing_state: 'paired',
           transport_state: 'disconnected',
+          selected_binding: envelope.binding,
         },
         expectedPath: 'result/transport_state',
       },
@@ -579,6 +590,7 @@ describe('evaOS Mac Access v1 contracts', () => {
           requested_target_mode: null,
           pairing_state: 'paired',
           transport_state: 'connected',
+          selected_binding: envelope.binding,
         },
         expectedPath: 'result/transport_state',
       },
@@ -746,6 +758,7 @@ describe('evaOS Mac Access v1 contracts', () => {
   });
 
   it('binds policy-changing lifecycle receipts to one exact epoch advance', () => {
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
     const cases = [
       { operation: 'pause', configured: 'ask_every_time', effective: 'off', pairing: 'paired', transport: 'connected' },
       {
@@ -796,6 +809,7 @@ describe('evaOS Mac Access v1 contracts', () => {
           requested_target_mode: null,
           pairing_state: testCase.pairing,
           transport_state: testCase.transport,
+          selected_binding: testCase.pairing === 'paired' ? envelope.binding : null,
         },
         error: null,
       };
@@ -803,6 +817,117 @@ describe('evaOS Mac Access v1 contracts', () => {
       response.policy_epoch = 999;
       expect(coreHostExchangeSchema.safeParse({ request, response }).success, testCase.operation).toBe(false);
     }
+  });
+
+  it('binds pairing receipts and connect receipts to the exact request authority', () => {
+    const identity = {
+      schema_version: 'evaos.mac_connector_core.host_request.v1',
+      host_session_id: 'host-session-01',
+      expected_policy_epoch: 7,
+    } as const;
+    const pairRequest = {
+      ...identity,
+      request_id: 'host-pair-authority',
+      sequence: 1,
+      operation: 'pair',
+      pairing_code: 'ABC123',
+      local_installation_nonce: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY',
+    };
+    const pairResponse = {
+      schema_version: 'evaos.mac_connector_core.host_response.v1',
+      request_id: pairRequest.request_id,
+      host_session_id: pairRequest.host_session_id,
+      sequence: pairRequest.sequence,
+      operation: pairRequest.operation,
+      ok: true,
+      policy_epoch: 8,
+      result: {
+        kind: 'pairing',
+        pairing_state: 'paired',
+        device_id: 'mac-01',
+        binding_fingerprint_sha256: '1'.repeat(64),
+      },
+      error: null as { code: string; audit_id: string | null } | null,
+    };
+    expect(coreHostExchangeSchema.safeParse({ request: pairRequest, response: pairResponse }).success).toBe(true);
+
+    const stalePairing = cloneJson(pairResponse);
+    stalePairing.policy_epoch = 7;
+    expect(coreHostExchangeSchema.safeParse({ request: pairRequest, response: stalePairing }).success).toBe(false);
+    const skippedPairingEpoch = cloneJson(pairResponse);
+    skippedPairingEpoch.policy_epoch = 9;
+    expect(coreHostExchangeSchema.safeParse({ request: pairRequest, response: skippedPairingEpoch }).success).toBe(
+      false
+    );
+
+    const unpairRequest = {
+      schema_version: pairRequest.schema_version,
+      request_id: 'host-unpair-authority',
+      host_session_id: pairRequest.host_session_id,
+      sequence: 2,
+      operation: 'unpair',
+      expected_policy_epoch: 8,
+    };
+    const unpairResponse = {
+      ...cloneJson(pairResponse),
+      request_id: unpairRequest.request_id,
+      sequence: unpairRequest.sequence,
+      operation: unpairRequest.operation,
+      policy_epoch: 9,
+      result: {
+        kind: 'pairing',
+        pairing_state: 'unpaired',
+        device_id: null as string | null,
+        binding_fingerprint_sha256: null as string | null,
+      },
+    };
+    expect(coreHostExchangeSchema.safeParse({ request: unpairRequest, response: unpairResponse }).success).toBe(true);
+    unpairResponse.policy_epoch = 8;
+    expect(coreHostExchangeSchema.safeParse({ request: unpairRequest, response: unpairResponse }).success).toBe(false);
+
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
+    const connectRequest = {
+      ...identity,
+      request_id: 'host-connect-authority',
+      sequence: 2,
+      operation: 'connect',
+      binding: envelope.binding,
+    };
+    const connectResponse = readLifecycleResponseFixture();
+    connectResponse.request_id = connectRequest.request_id;
+    connectResponse.sequence = connectRequest.sequence;
+    connectResponse.operation = connectRequest.operation;
+    connectResponse.policy_epoch = connectRequest.expected_policy_epoch;
+    connectResponse.result.requested_target_mode = null;
+    expect(coreHostExchangeSchema.safeParse({ request: connectRequest, response: connectResponse }).success).toBe(true);
+
+    const bindingMismatches = [
+      ['/result/selected_binding/customer_id', 'customer-02'],
+      ['/result/selected_binding/customer_vm_id', 'vm-02'],
+      ['/result/selected_binding/device_id', 'mac-02'],
+      ['/result/selected_binding/grant_id', 'grant-02'],
+      ['/result/selected_binding/runtime', 'hermes'],
+      ['/result/selected_binding/binding_id', 'binding-02'],
+      ['/result/selected_binding/binding_version', 'v4'],
+      ['/result/selected_binding/grant_expires_at', '2026-07-15T08:59:59Z'],
+      ['/result/selected_binding/connector_installation_id', 'install-02'],
+      ['/result/selected_binding/connector_key_id', 'mac-key-02'],
+      ['/result/selected_binding/binding_fingerprint_sha256', '2'.repeat(64)],
+    ] as const;
+    for (const [pointer, value] of bindingMismatches) {
+      const mismatchedConnect = cloneJson(connectResponse);
+      applyMutation(mismatchedConnect, { operation: 'set', pointer, value });
+      expect(
+        coreHostExchangeSchema.safeParse({ request: connectRequest, response: mismatchedConnect }).success,
+        pointer
+      ).toBe(false);
+    }
+
+    const missingConnectBinding = cloneJson(connectResponse);
+    missingConnectBinding.result.selected_binding = null;
+    expect(coreHostExchangeSchema.safeParse({ request: connectRequest, response: missingConnectBinding }).success).toBe(
+      false
+    );
   });
 
   it('rejects runtime identity drift outside restart and preserves configured intent', () => {
@@ -1048,6 +1173,36 @@ describe('evaOS Mac Access v1 contracts', () => {
     continuation.result.causal_decisions = [events[0]];
     expect(coreHostResponseSchema.safeParse(continuation).success).toBe(true);
 
+    const reorderedCursorRequest = {
+      schema_version: 'evaos.mac_connector_core.host_request.v1',
+      request_id: continuation.request_id,
+      host_session_id: continuation.host_session_id,
+      sequence: continuation.sequence,
+      operation: 'audit_summary',
+      expected_policy_epoch: continuation.policy_epoch,
+      after_cursor: {
+        record_sha256: continuation.result.page_anchor.record_sha256,
+        sequence: continuation.result.page_anchor.sequence,
+      },
+      limit: 25,
+    };
+    expect(coreHostExchangeSchema.safeParse({ request: reorderedCursorRequest, response: continuation }).success).toBe(
+      true
+    );
+    for (const afterCursor of [
+      null,
+      {
+        sequence: continuation.result.page_anchor.sequence + 1,
+        record_sha256: continuation.result.page_anchor.record_sha256,
+      },
+      { sequence: continuation.result.page_anchor.sequence, record_sha256: 'f'.repeat(64) },
+    ]) {
+      const mismatchedCursorRequest = { ...reorderedCursorRequest, after_cursor: afterCursor };
+      expect(
+        coreHostExchangeSchema.safeParse({ request: mismatchedCursorRequest, response: continuation }).success
+      ).toBe(false);
+    }
+
     const wrongDecision = cloneJson(continuation);
     wrongDecision.result.causal_decisions[0].command_id = 'unrelated-command';
     expect(coreHostResponseSchema.safeParse(wrongDecision).success).toBe(false);
@@ -1106,6 +1261,21 @@ describe('evaOS Mac Access v1 contracts', () => {
       error: null as { code: string; audit_id: string | null } | null,
     };
     expect(coreHostExchangeSchema.safeParse({ request, response }).success).toBe(true);
+
+    const standaloneAuditMismatch = cloneJson(response);
+    standaloneAuditMismatch.result.command_id = 'unrelated-command';
+    expect(coreHostResponseSchema.safeParse(standaloneAuditMismatch).success).toBe(false);
+
+    const standaloneDigestMismatch = cloneJson(response);
+    standaloneDigestMismatch.result.request_digest_sha256 = '2'.repeat(64);
+    expect(coreHostResponseSchema.safeParse(standaloneDigestMismatch).success).toBe(false);
+
+    const standaloneResultBindingMismatch = cloneJson(response);
+    standaloneResultBindingMismatch.result.result_audit = rehashAuditEvent({
+      ...standaloneResultBindingMismatch.result.result_audit!,
+      binding_fingerprint_sha256: '2'.repeat(64),
+    });
+    expect(coreHostResponseSchema.safeParse(standaloneResultBindingMismatch).success).toBe(false);
 
     const wrongCommand = cloneJson(response);
     wrongCommand.result.command_id = 'unrelated-command';

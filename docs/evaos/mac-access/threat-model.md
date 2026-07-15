@@ -146,6 +146,7 @@ These risks do not justify weaker local identity, direct networking, silent fall
 ## Required adversarial evidence before downstream completion
 
 - Every negative fixture under `packages/mac-connector-core/contracts/v1/fixtures/invalid` is exercised at its declared schema or runtime gate.
+- Rollback status rejects any RFC 8785 payload/digest mismatch before trusting authorization fields; pairing receipts reject unchanged or skipped policy epochs; connect receipts reject a missing or field-mismatched selected binding; standalone action receipts reject audit correlation drift; and audit cursors compare semantic fields rather than serialization order.
 - Signed-client impersonation and helper replacement matrix passes on supported macOS versions.
 - Binding/signature/digest/replay/expiry/key-rotation matrix passes against source-only relay canary before deployment.
 - Crash, update, downgrade, uninstall, offline, audit-failure, stop/revoke/kill races remain fail closed.

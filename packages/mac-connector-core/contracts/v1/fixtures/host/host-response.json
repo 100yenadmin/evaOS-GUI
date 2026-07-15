@@ -12,7 +12,20 @@
     "effective_mode": "ask_every_time",
     "requested_target_mode": "ask_every_time",
     "pairing_state": "paired",
-    "transport_state": "connected"
+    "transport_state": "connected",
+    "selected_binding": {
+      "customer_id": "customer-01",
+      "customer_vm_id": "vm-01",
+      "device_id": "mac-01",
+      "grant_id": "grant-01",
+      "runtime": "openclaw",
+      "binding_id": "binding-01",
+      "binding_version": "v3",
+      "grant_expires_at": "2026-07-15T09:00:00Z",
+      "connector_installation_id": "install-01",
+      "connector_key_id": "mac-key-01",
+      "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
   },
   "error": null
 }

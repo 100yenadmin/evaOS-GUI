@@ -361,21 +361,41 @@ export const rollbackAuthorizationPayloadSchema = z
     }
   });
 
-export const signedRollbackAuthorizationSchema = z
-  .object({
-    schema_version: z.literal('evaos.mac_access.signed_rollback_authorization.v1'),
-    canonicalization: z.literal('RFC8785-JCS'),
-    payload: rollbackAuthorizationPayloadSchema,
-    payload_sha256: sha256,
-    broker_key_id: identifier,
-    signature_base64url: base64Url,
-  })
-  .strict();
+const signedRollbackAuthorizationShape = {
+  schema_version: z.literal('evaos.mac_access.signed_rollback_authorization.v1'),
+  canonicalization: z.literal('RFC8785-JCS'),
+  payload: rollbackAuthorizationPayloadSchema,
+  payload_sha256: sha256,
+  broker_key_id: identifier,
+  signature_base64url: base64Url,
+};
 
-export const rollbackAuthorizationGoldenSchema = signedRollbackAuthorizationSchema.extend({
-  canonical_payload_utf8: z.string().min(1).max(65_536),
-  public_key_spki_base64url: base64Url,
-});
+function requireRollbackPayloadDigest(
+  authorization: { payload: unknown; payload_sha256: string },
+  context: z.RefinementCtx
+): void {
+  if (canonicalJsonSha256(authorization.payload) !== authorization.payload_sha256) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'rollback authorization payload digest must match its RFC 8785 canonical payload',
+      path: ['payload_sha256'],
+    });
+  }
+}
+
+export const signedRollbackAuthorizationSchema = z
+  .object(signedRollbackAuthorizationShape)
+  .strict()
+  .superRefine(requireRollbackPayloadDigest);
+
+export const rollbackAuthorizationGoldenSchema = z
+  .object({
+    ...signedRollbackAuthorizationShape,
+    canonical_payload_utf8: z.string().min(1).max(65_536),
+    public_key_spki_base64url: base64Url,
+  })
+  .strict()
+  .superRefine(requireRollbackPayloadDigest);
 
 export const executionContextClaimsSchema = z
   .object({
@@ -1724,6 +1744,7 @@ const lifecycleResultSchema = z
     requested_target_mode: z.enum(['off', 'ask_every_time', 'full_access']).nullable(),
     pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
     transport_state: transportStateSchema,
+    selected_binding: selectedBindingSchema.nullable(),
   })
   .strict()
   .superRefine((result, context) => {
@@ -1747,6 +1768,20 @@ const lifecycleResultSchema = z
         code: z.ZodIssueCode.custom,
         message: 'connected lifecycle transport requires paired state',
         path: ['transport_state'],
+      });
+    }
+    if (result.transport_state === 'connected' && result.selected_binding === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'connected lifecycle transport requires the complete selected binding',
+        path: ['selected_binding'],
+      });
+    }
+    if (result.pairing_state !== 'paired' && result.selected_binding !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'unpaired or revoked lifecycle state must clear the selected binding',
+        path: ['selected_binding'],
       });
     }
     if (result.transport_state === 'revoked' && result.pairing_state !== 'revoked') {
@@ -1785,7 +1820,9 @@ const coreHostResultSchema = z.union([
       if (
         result.decision_audit_id !== result.decision_audit.audit_id ||
         result.decision_audit.event_type !== 'command_decision' ||
-        result.decision_audit.outcome !== (denied ? 'denied' : 'allowed')
+        result.decision_audit.outcome !== (denied ? 'denied' : 'allowed') ||
+        result.decision_audit.command_id !== result.command_id ||
+        result.decision_audit.request_digest_sha256 !== result.request_digest_sha256
       ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -1809,7 +1846,10 @@ const coreHostResultSchema = z.union([
           result.result_audit.event_type !== 'command_result' ||
           result.result_audit.outcome !== result.outcome ||
           result.result_audit.causation_audit_id !== result.decision_audit.audit_id ||
-          result.result_audit.sequence <= result.decision_audit.sequence)
+          result.result_audit.sequence <= result.decision_audit.sequence ||
+          result.result_audit.command_id !== result.command_id ||
+          result.result_audit.request_digest_sha256 !== result.request_digest_sha256 ||
+          result.result_audit.binding_fingerprint_sha256 !== result.decision_audit.binding_fingerprint_sha256)
       ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -2024,16 +2064,32 @@ export const coreHostExchangeSchema = z
       });
     }
     if (
-      ['set_access_mode', 'pause', 'resume', 'stop', 'revoke', 'activate_kill_switch'].includes(request.operation) &&
+      ['pair', 'unpair', 'set_access_mode', 'pause', 'resume', 'stop', 'revoke', 'activate_kill_switch'].includes(
+        request.operation
+      ) &&
       typeof request.expected_policy_epoch === 'number' &&
       response.ok &&
-      response.result?.kind === 'lifecycle' &&
+      (response.result?.kind === 'lifecycle' || response.result?.kind === 'pairing') &&
       response.policy_epoch !== request.expected_policy_epoch + 1
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'policy-changing lifecycle response must advance the exact expected policy epoch once',
         path: ['response', 'policy_epoch'],
+      });
+    }
+    if (
+      request.operation === 'connect' &&
+      response.ok &&
+      response.result?.kind === 'lifecycle' &&
+      (response.policy_epoch !== request.expected_policy_epoch ||
+        response.result.selected_binding === null ||
+        !selectedBindingsEqual(response.result.selected_binding, request.binding))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'connect response must bind the exact expected policy epoch and complete selected binding',
+        path: ['response', 'result', 'selected_binding'],
       });
     }
     if (
@@ -2065,7 +2121,11 @@ export const coreHostExchangeSchema = z
       request.operation === 'audit_summary' &&
       response.ok &&
       response.result?.kind === 'audit_summary' &&
-      JSON.stringify(response.result.page_anchor) !== JSON.stringify(request.after_cursor)
+      (response.result.page_anchor === null
+        ? request.after_cursor !== null
+        : request.after_cursor === null ||
+          response.result.page_anchor.sequence !== request.after_cursor.sequence ||
+          response.result.page_anchor.record_sha256 !== request.after_cursor.record_sha256)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

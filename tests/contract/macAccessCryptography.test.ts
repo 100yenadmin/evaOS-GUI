@@ -182,6 +182,13 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     } = vector;
     const localStatus = localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json')));
     expect(localStatus.relay_authorization.rollback_authorization).toEqual(signedVector);
+
+    const tamperedStatus = structuredClone(localStatus);
+    if (tamperedStatus.relay_authorization.rollback_authorization === null) {
+      throw new Error('Expected rollback authorization fixture');
+    }
+    tamperedStatus.relay_authorization.rollback_authorization.payload.expires_at = '2026-07-15T10:30:00Z';
+    expect(localStatusSchema.safeParse(tamperedStatus).success).toBe(false);
   });
 
   it('rejects rollback payload, digest, signature, and key substitution', () => {
