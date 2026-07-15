@@ -3327,7 +3327,7 @@ def _connector_mac_control_canary_environment(env: Mapping[str, str] | None = No
         return {}
     configured = {key: str(source_env.get(key) or "").strip() for key in CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS}
     present = {key: value for key, value in configured.items() if value}
-    if present and len(present) != len(CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS):
+    if len(present) != len(CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS):
         missing = sorted(key for key, value in configured.items() if not value)
         raise RuntimeError("Mac-control canary configuration is incomplete; missing " + ", ".join(missing))
     return present

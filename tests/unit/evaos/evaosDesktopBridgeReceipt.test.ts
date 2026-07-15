@@ -47,8 +47,22 @@ try:
     assert len(launchctl_calls) == 3
 
     launchctl_calls.clear()
-    cli.CONNECTOR_USER_PLIST = root / "staging.plist"
+    cli.CONNECTOR_USER_PLIST = root / "mode-only.plist"
+    for key in cli.CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS:
+        os.environ.pop(key, None)
     os.environ[cli.CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY] = cli.CONNECTOR_MAC_CONTROL_CANARY_MODE
+    try:
+        cli._launchctl_start()
+    except RuntimeError as error:
+        assert "configuration is incomplete" in str(error)
+    else:
+        raise AssertionError("staging mode without signer configuration was accepted")
+    assert not cli.CONNECTOR_USER_PLIST.exists()
+    assert launchctl_calls == []
+
+    launchctl_calls.clear()
+    cli.CONNECTOR_USER_PLIST = root / "staging.plist"
+    os.environ.update(signer_env)
     cli._launchctl_start()
 
     payload = plistlib.loads(cli.CONNECTOR_USER_PLIST.read_bytes())
