@@ -1149,6 +1149,11 @@ describe('evaOS beta release gate', () => {
         `${workflow}\n          ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'\n          NODE\n          )\n`
       )
     ).toContain(commandSubstitutionHeredocIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        `${workflow}\n          EXPECTED_SHA=$(node - release-assets/evaos-beta-release-manifest.json "$ZIP_NAME" <<'NODE'\n          NODE\n          )\n`
+      )
+    ).toContain(commandSubstitutionHeredocIssue);
     const drifted = workflow.replace(
       '            hdiutil detach "$mount_dir" -quiet',
       '            rm -rf "$extract_dir"\n            hdiutil detach "$mount_dir" -quiet'
