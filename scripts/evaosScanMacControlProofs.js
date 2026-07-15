@@ -12,20 +12,21 @@ const MAC_CONTROL_PROOF_NAMES = Object.freeze([
   'mac-control-session-cleanup.json',
   'mac-control-session-cleanup.stdout.json',
 ]);
+const MAC_CONTROL_RUNTIME_NEGATIVE_PROOF_CONTRACT = Object.freeze({
+  schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
+  fields: ['schema', 'sourceHeadSha', 'sourceRunId', 'assertions'],
+  nested: {
+    assertions: {
+      fields: ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'],
+    },
+  },
+});
 const MAC_CONTROL_PROOF_CONTRACTS = Object.freeze({
   'mac-control-runtime.json': {
     schema: 'evaos.mac_control.public_runtime_attestation_envelope.v1',
     fields: ['schema', 'attestationBase64', 'signature', 'keyId', 'namespace'],
   },
-  'mac-control-runtime-negative.json': {
-    schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
-    fields: ['schema', 'sourceHeadSha', 'sourceRunId', 'assertions'],
-    nested: {
-      assertions: {
-        fields: ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'],
-      },
-    },
-  },
+  'mac-control-runtime-negative.json': MAC_CONTROL_RUNTIME_NEGATIVE_PROOF_CONTRACT,
   'mac-control-deployed-route.json': {
     schema: 'evaos.mac_control.deployed_route_probe.v1',
     fields: ['schema', 'sourceHeadSha', 'sourceRunId', 'checkedAt', 'assertions'],
@@ -178,6 +179,12 @@ function assertExactProofContract(value, contract, location) {
   }
 }
 
+function assertSensitiveOutputPassed(value, contract, location) {
+  if (contract.fields.includes('sensitiveOutput') && value.sensitiveOutput !== 'passed') {
+    throw new Error(`Mac-control proof did not pass the sensitive-output contract in ${location}.`);
+  }
+}
+
 function assertPublicAttestationEnvelopeSanitized(value, location) {
   const contract = MAC_CONTROL_PROOF_CONTRACTS['mac-control-runtime.json'];
   assertExactProofContract(value, contract, location);
@@ -243,14 +250,24 @@ function assertPublicAttestationEnvelopeSanitized(value, location) {
   }
 }
 
-function scanMacControlProofDirectory(proofDir) {
+function scanMacControlProofDirectory(proofDir, options = {}) {
   const resolvedProofDir = path.resolve(String(proofDir || ''));
-  let scanned = 0;
+  const allowPartial = options.allowPartial === true;
+  const missing = [];
+  const existing = [];
+
   for (const proofName of MAC_CONTROL_PROOF_NAMES) {
-    const proofPath = path.join(resolvedProofDir, proofName);
-    if (!fs.existsSync(proofPath)) {
-      throw new Error(`Mac-control proof is missing required artifact ${proofName}.`);
+    if (fs.existsSync(path.join(resolvedProofDir, proofName))) {
+      existing.push(proofName);
+    } else {
+      missing.push(proofName);
     }
+  }
+
+  let scanned = 0;
+  const parsedProofs = new Map();
+  for (const proofName of existing) {
+    const proofPath = path.join(resolvedProofDir, proofName);
     const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
     const contract = MAC_CONTROL_PROOF_CONTRACTS[proofName];
     if (!contract || proof.schema !== contract.schema) {
@@ -262,28 +279,58 @@ function scanMacControlProofDirectory(proofDir) {
       assertMacControlProofSanitized(proof, proofName);
       assertExactProofContract(proof, contract, proofName);
     }
+    assertSensitiveOutputPassed(proof, contract, proofName);
+    parsedProofs.set(proofName, proof);
     scanned += 1;
   }
-  const cleanupPath = path.join(resolvedProofDir, 'mac-control-session-cleanup.json');
-  const cleanupProof = JSON.parse(fs.readFileSync(cleanupPath, 'utf8'));
-  if (
-    cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1' ||
-    cleanupProof.sessionRevoked !== true ||
-    cleanupProof.sensitiveOutput !== 'passed'
-  ) {
+
+  if (allowPartial) {
+    return { ok: true, scanned, missing };
+  }
+  if (missing.length > 0) {
+    throw new Error(`Mac-control proof is missing required artifacts: ${missing.join(', ')}.`);
+  }
+
+  const cleanupProof = parsedProofs.get('mac-control-session-cleanup.json');
+  if (cleanupProof.sessionRevoked !== true) {
     throw new Error('Mac-control proof did not prove temporary session revocation.');
   }
   return { ok: true, scanned };
 }
 
-if (require.main === module) {
-  const proofDir = process.argv[2];
+function parseScanArguments(args) {
+  let allowPartial = false;
+  let proofDir = '';
+  for (const arg of args) {
+    if (arg === '--allow-partial') {
+      allowPartial = true;
+    } else if (arg.startsWith('--')) {
+      throw new Error(`Unknown Mac-control proof scanner option: ${arg}.`);
+    } else if (proofDir) {
+      throw new Error('Mac-control proof scanner accepts exactly one proof directory.');
+    } else {
+      proofDir = arg;
+    }
+  }
   if (!proofDir) throw new Error('Mac-control proof directory is required.');
-  scanMacControlProofDirectory(proofDir);
+  return { allowPartial, proofDir };
+}
+
+if (require.main === module) {
+  const { allowPartial, proofDir } = parseScanArguments(process.argv.slice(2));
+  const result = scanMacControlProofDirectory(proofDir, { allowPartial });
+  if (allowPartial) {
+    const missing = result.missing.length > 0 ? result.missing.join(', ') : '(none)';
+    process.stdout.write(
+      `Mac-control partial proof scan inspected ${result.scanned} existing allowlisted artifact(s).\n` +
+        `Mac-control partial proof scan missing allowlisted artifacts: ${missing}.\n`
+    );
+  }
 }
 
 module.exports = {
   MAC_CONTROL_PROOF_NAMES,
+  MAC_CONTROL_RUNTIME_NEGATIVE_PROOF_CONTRACT,
   assertMacControlProofSanitized,
   normalizedProofFieldName,
   scanMacControlProofDirectory,

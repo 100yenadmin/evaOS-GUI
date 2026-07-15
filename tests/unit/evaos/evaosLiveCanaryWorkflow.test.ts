@@ -9,7 +9,10 @@ const WORKFLOW_PATH = '.github/workflows/evaos-live-canary-proof.yml';
 const require = createRequire(import.meta.url);
 const proofScanner = require('../../../scripts/evaosScanMacControlProofs.js') as {
   assertMacControlProofSanitized: (proof: unknown) => void;
-  scanMacControlProofDirectory: (proofDir: string) => { ok: boolean; scanned: number };
+  scanMacControlProofDirectory: (
+    proofDir: string,
+    options?: { allowPartial?: boolean }
+  ) => { ok: boolean; scanned: number; missing?: string[] };
 };
 
 function readWorkflow(): string {
@@ -234,12 +237,167 @@ describe('evaOS live canary proof workflow', () => {
       /- name: Cleanup Mac-control canary session[\s\S]*if: always\(\)[\s\S]*cleanup-mac-control/
     );
     expect(workflow).toContain('mac-control-runtime.json');
-    expect(workflow).toContain('secret/redaction scan');
-    expect(workflow).toMatch(/- name: Run Mac-control proof secret\/redaction scan\n\s+id: mac-control-proof-scan/);
-    expect(workflow).toContain('node scripts/evaosScanMacControlProofs.js "$PROOF_DIR"');
-    expect(workflow).toContain(
-      "if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-proof-scan.outcome == 'success')"
+    expect(workflow).toContain('Scan existing Mac-control proofs for safe diagnostic upload');
+    expect(workflow).toContain('Require complete Mac-control proof set');
+  });
+
+  it('keeps producer failures terminal while scanning safe partial diagnostics before strict completeness', () => {
+    const workflow = readWorkflow();
+    const producerStart = workflow.indexOf('- name: Provision Mac-control canary session');
+    const partialStart = workflow.indexOf('- name: Scan existing Mac-control proofs for safe diagnostic upload');
+    const strictStart = workflow.indexOf('- name: Require complete Mac-control proof set');
+    const summaryStart = workflow.indexOf('- name: Write summary');
+
+    expect(producerStart).toBeGreaterThan(-1);
+    expect(partialStart).toBeGreaterThan(producerStart);
+    expect(strictStart).toBeGreaterThan(partialStart);
+    expect(summaryStart).toBeGreaterThan(strictStart);
+
+    const producerBlock = workflow.slice(producerStart, partialStart);
+    const partialStep = workflow.slice(partialStart, strictStart);
+    const strictStep = workflow.slice(strictStart, summaryStart);
+    expect(producerBlock).not.toContain('continue-on-error');
+    expect(partialStep).toContain('id: mac-control-partial-proof-scan');
+    expect(partialStep).toContain("if: always() && github.event.inputs.run_mac_control_canary == 'true'");
+    expect(partialStep).toContain('node scripts/evaosScanMacControlProofs.js --allow-partial "$PROOF_DIR"');
+    expect(strictStep).toContain('id: mac-control-complete-proof-scan');
+    expect(strictStep).toContain(
+      "if: success() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true' && github.event.inputs.provision_fixtures == 'true' && steps.mac-control-partial-proof-scan.outcome == 'success'"
     );
+    expect(strictStep).toContain('node scripts/evaosScanMacControlProofs.js "$PROOF_DIR"');
+    expect(strictStep).not.toContain('--allow-partial');
+  });
+
+  it('uploads Mac-control diagnostics only after the partial safety scan passes', () => {
+    const workflow = readWorkflow();
+    const uploadStep = workflow.slice(workflow.indexOf('- name: Upload live canary proof packet'));
+
+    expect(uploadStep).toContain(
+      "if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-partial-proof-scan.outcome == 'success')"
+    );
+    expect(uploadStep).not.toContain('mac-control-complete-proof-scan.outcome');
+  });
+
+  it('allows an empty partial scan and reports every missing allowlisted artifact', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-partial-empty-'));
+    try {
+      expect(proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toEqual({
+        ok: true,
+        scanned: 0,
+        missing: [
+          'mac-control-runtime.json',
+          'mac-control-runtime-negative.json',
+          'mac-control-deployed-route.json',
+          'mac-control-session-provisioning.json',
+          'mac-control-session-provisioning.stdout.json',
+          'mac-control-session-cleanup.json',
+          'mac-control-session-cleanup.stdout.json',
+        ],
+      });
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('scans a safe cleanup diagnostic without inferring successful revocation', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-partial-cleanup-'));
+    try {
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: false,
+          sensitiveOutput: 'passed',
+        })}\n`
+      );
+
+      expect(proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toEqual({
+        ok: true,
+        scanned: 1,
+        missing: [
+          'mac-control-runtime.json',
+          'mac-control-runtime-negative.json',
+          'mac-control-deployed-route.json',
+          'mac-control-session-provisioning.json',
+          'mac-control-session-provisioning.stdout.json',
+          'mac-control-session-cleanup.stdout.json',
+        ],
+      });
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an unsafe existing artifact in partial mode', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-partial-unsafe-'));
+    try {
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: false,
+          sensitiveOutput: 'passed',
+          connectorToken: 'opaque-token-value-123456',
+        })}\n`
+      );
+
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toThrow(/forbidden/i);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a failed sensitive-output claim in partial mode', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-partial-sensitive-output-'));
+    try {
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: false,
+          sensitiveOutput: 'failed',
+        })}\n`
+      );
+
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toThrow(
+        /sensitive-output contract/i
+      );
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a strict scan with the exact missing artifact name', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-strict-missing-'));
+    try {
+      writeCompleteMacControlProofSet(proofDir);
+      fs.rmSync(path.join(proofDir, 'mac-control-runtime-negative.json'));
+
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(
+        'Mac-control proof is missing required artifacts: mac-control-runtime-negative.json.'
+      );
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires successful session revocation in a strict complete-set scan', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-strict-cleanup-'));
+    try {
+      writeCompleteMacControlProofSet(proofDir);
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-session-cleanup.json'),
+        `${JSON.stringify({
+          schema: 'evaos-mac-control-canary-session-cleanup/v1',
+          sessionRevoked: false,
+          sensitiveOutput: 'passed',
+        })}\n`
+      );
+
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/temporary session revocation/i);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
   });
 
   it('executes a case-normalized Mac-control artifact scanner', () => {
