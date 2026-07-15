@@ -300,16 +300,14 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       writeFileSync(
         reportPath,
         JSON.stringify({
-          checks: [
-            {
-              code: 'unsafe/code',
-              status: 'fail',
-              message:
-                'Authorization: Bearer fixture-secret eyJhbGciOiJIUzI1NiJ9.fixture.signature 2001:db8::1 /tmp/private path\n' +
-                'x'.repeat(300),
-              evidence: 'raw-evidence',
-            },
-          ],
+          checks: Array.from({ length: 25 }, (_, index) => ({
+            code: index === 0 ? 'unsafe/code' : `fixture_${index}`,
+            status: 'fail',
+            message:
+              'Authorization: Bearer fixture-secret eyJhbGciOiJIUzI1NiJ9.fixture.signature 2001:db8::1 /tmp/private path\n' +
+              'x'.repeat(300),
+            evidence: 'raw-evidence',
+          })),
           inventory: { registered_paths: ['/tmp/private'] },
         })
       );
@@ -320,6 +318,14 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       expect(sanitized.status).toBe(0);
       expect(sanitized.stderr).toContain('invalid_check_code');
       expect(sanitized.stderr).toContain('Installed candidate did not satisfy this pre-canary check.');
+      expect(
+        sanitized.stderr.split('\n').filter((line) => line.startsWith('Pre-canary sanitized check: '))
+      ).toHaveLength(20);
+      expect(
+        sanitized.stderr
+          .split('\n')
+          .filter((line) => line === 'Additional pre-canary failed checks were omitted from the sanitized log.')
+      ).toHaveLength(1);
       expect(sanitized.stderr).not.toMatch(
         /fixture-secret|eyJhbGciOiJIUzI1NiJ9|2001:db8::1|\/tmp\/private|raw-evidence|x{20}/
       );
@@ -729,10 +735,22 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       '    with patch.object(Path, "stat", guarded_stat):',
       '        unverifiable_inventory = pre_canary.gather_inventory(canonical_path=str(canonical), artifact_roots=())',
       '    assert unverifiable_inventory.registered_paths == (str(canonical), str(unverifiable)), unverifiable_inventory.to_dict()',
-      '    assert str(unverifiable) not in {bundle.path for bundle in unverifiable_inventory.app_bundles}, unverifiable_inventory.to_dict()',
+      '    assert str(unverifiable) in {bundle.path for bundle in unverifiable_inventory.app_bundles}, unverifiable_inventory.to_dict()',
       '    unverifiable_report = pre_canary.evaluate_inventory(unverifiable_inventory, canonical_path=str(canonical))',
       '    assert not unverifiable_report.ok, unverifiable_report.to_dict()',
       '    assert "duplicate_registered_workbench_app" in {check.code for check in unverifiable_report.checks}',
+      '    uninspectable_artifact = Path(inventory_root) / "artifact-only" / "EvaDesktop.app"',
+      '    def artifact_guarded_stat(path, *args, **kwargs):',
+      '        if path == uninspectable_artifact:',
+      '            raise PermissionError("artifact fixture permission boundary")',
+      '        return original_stat(path, *args, **kwargs)',
+      '    pre_canary._mdfind_bundle_paths = lambda _bundle_id: (str(canonical),)',
+      '    with patch.object(pre_canary, "_artifact_workbench_bundle_paths", return_value=(str(uninspectable_artifact),)), patch.object(Path, "stat", artifact_guarded_stat):',
+      '        artifact_inventory = pre_canary.gather_inventory(canonical_path=str(canonical), artifact_roots=())',
+      '    assert str(uninspectable_artifact) in {bundle.path for bundle in artifact_inventory.app_bundles}, artifact_inventory.to_dict()',
+      '    artifact_report = pre_canary.evaluate_inventory(artifact_inventory, canonical_path=str(canonical))',
+      '    assert not artifact_report.ok, artifact_report.to_dict()',
+      '    assert "stale_workbench_app_bundle_present" in {check.code for check in artifact_report.checks}',
       'with TemporaryDirectory() as artifact_dir:',
       '    report_path = pre_canary._write_report(report.to_dict(), Path(artifact_dir))',
       '    assert report_path.name == "qa-report.json" and report_path.is_file()',

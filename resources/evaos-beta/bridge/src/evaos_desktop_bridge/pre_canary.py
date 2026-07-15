@@ -438,12 +438,14 @@ def _registered_path_exists_or_is_unverifiable(path: str) -> bool:
 def _read_app_bundle_if_inspectable(path: str) -> AppBundle | None:
     try:
         Path(path).stat()
-    except OSError:
-        # The registered-path inventory remains authoritative for duplicate
-        # failures. Avoid a Python-version-dependent Path.exists() exception
-        # while keeping an uninspectable canonical bundle fail-closed as
-        # missing from the readable bundle inventory.
+    except (FileNotFoundError, NotADirectoryError):
         return None
+    except OSError:
+        # Preserve uninspectable bundles as path-only evidence. Registered
+        # duplicates still fail from registered_paths, while artifact-only or
+        # canonical paths fail their bundle-presence/identity checks instead
+        # of disappearing from the inventory.
+        return AppBundle(path=path)
     return _read_app_bundle(path)
 
 

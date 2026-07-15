@@ -678,6 +678,7 @@ jobs:
           const fs = require('fs');
           const reportPath = process.argv[2];
           try {
+            const MAX_SANITIZED_CHECKS = 20;
             const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
             const checks = Array.isArray(report.checks) ? report.checks : [];
             const failedChecks = checks.filter((check) => check && check.status === 'fail');
@@ -694,8 +695,11 @@ jobs:
             if (sanitizedChecks.length === 0) {
               console.error('Pre-canary failed without a non-passing sanitized check.');
             } else {
-              for (const check of sanitizedChecks) {
+              for (const check of sanitizedChecks.slice(0, MAX_SANITIZED_CHECKS)) {
                 console.error(`Pre-canary sanitized check: ${JSON.stringify(check)}`);
+              }
+              if (sanitizedChecks.length > MAX_SANITIZED_CHECKS) {
+                console.error('Additional pre-canary failed checks were omitted from the sanitized log.');
               }
             }
           } catch {
