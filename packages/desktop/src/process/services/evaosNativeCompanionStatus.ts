@@ -2321,8 +2321,11 @@ async function verifiedSecureNetworkClient(
       const clientVariant = identifier ? SECURE_NETWORK_APP_IDENTIFIERS[identifier] : undefined;
       if (teamIdentifier !== SECURE_NETWORK_APP_TEAM_ID || !clientVariant) continue;
       const requirement =
-        `anchor apple generic and certificate leaf[subject.OU] = "${SECURE_NETWORK_APP_TEAM_ID}" ` +
-        `and identifier "${identifier}"`;
+        clientVariant === 'tailscale_app_store'
+          ? `anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists ` +
+            `and identifier "${identifier}"`
+          : `anchor apple generic and certificate leaf[subject.OU] = "${SECURE_NETWORK_APP_TEAM_ID}" ` +
+            `and identifier "${identifier}"`;
       await execFile('/usr/bin/codesign', ['--verify', '--deep', '--strict', `-R=${requirement}`, appPath], {
         timeout: COMMAND_TIMEOUT_MS,
       });

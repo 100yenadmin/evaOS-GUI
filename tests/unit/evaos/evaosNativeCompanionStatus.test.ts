@@ -5128,9 +5128,10 @@ describe('evaosNativeCompanionStatus', () => {
         }
         if (file === '/usr/bin/codesign' && args[0] === '--verify') {
           expect(args.find((arg) => arg.startsWith('-R='))).toContain(
-            'anchor apple generic and certificate leaf[subject.OU] = "W5364U7YZB"'
+            'anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists'
           );
           expect(args.find((arg) => arg.startsWith('-R='))).toContain('identifier "io.tailscale.ipn.macos"');
+          expect(args.find((arg) => arg.startsWith('-R='))).not.toContain('certificate leaf[subject.OU]');
           return { stdout: '', stderr: '' };
         }
         if (file === '/usr/bin/codesign' && args[0] === '-dv') {
@@ -5330,6 +5331,10 @@ describe('evaosNativeCompanionStatus', () => {
         return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
       }
       if (file === '/usr/bin/codesign' && args[0] === '--verify') {
+        expect(args.find((arg) => arg.startsWith('-R='))).toContain(
+          'anchor apple generic and certificate leaf[subject.OU] = "W5364U7YZB"'
+        );
+        expect(args.find((arg) => arg.startsWith('-R='))).toContain('identifier "io.tailscale.ipn.macsys"');
         const candidate = args.at(-1);
         if (candidate === systemApp) throw new Error('metadata-only self-signed app');
         if (candidate === userApp) return { stdout: '', stderr: '' };

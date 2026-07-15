@@ -6,7 +6,7 @@ const repoRoot = process.cwd();
 const bridgeSource = join(repoRoot, 'resources', 'evaos-beta', 'bridge', 'src');
 
 describe('evaOS signed Mac-control receipt connector', () => {
-  it('carries only a complete signer configuration through the normal LaunchAgent start path', () => {
+  it('isolates signer configuration to an explicit complete staging LaunchAgent start', () => {
     const script = String.raw`
 import os
 import plistlib
@@ -28,12 +28,27 @@ signer_env = {
     "EVAOS_MAC_CONTROL_RECEIPT_KEY_ID": "receipt-key-v1",
     "EVAOS_MAC_CONTROL_RECEIPT_PRIVATE_KEY_PATH": str(root / "receipt-key"),
 }
-managed_keys = (*cli.CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS, "EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST")
+managed_keys = (
+    *cli.CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS,
+    cli.CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY,
+    "EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST",
+)
 previous = {key: os.environ.get(key) for key in managed_keys}
 try:
     for key in managed_keys:
         os.environ.pop(key, None)
     os.environ.update(signer_env)
+    cli._launchctl_start()
+
+    payload = plistlib.loads(cli.CONNECTOR_USER_PLIST.read_bytes())
+    assert payload["EnvironmentVariables"] == {
+        "EVAOS_DESKTOP_BRIDGE_MODE": "customer-mac-connector",
+    }
+    assert len(launchctl_calls) == 3
+
+    launchctl_calls.clear()
+    cli.CONNECTOR_USER_PLIST = root / "staging.plist"
+    os.environ[cli.CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY] = cli.CONNECTOR_MAC_CONTROL_CANARY_MODE
     cli._launchctl_start()
 
     payload = plistlib.loads(cli.CONNECTOR_USER_PLIST.read_bytes())

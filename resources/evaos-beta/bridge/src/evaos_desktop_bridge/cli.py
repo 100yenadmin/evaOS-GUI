@@ -1789,6 +1789,8 @@ CONNECTOR_AUTHENTICATED_DIAGNOSTICS_TIMEOUT_SECONDS = 5.0
 CONNECTOR_HTTP_RESPONSE_LIMIT_BYTES = 65536
 CONNECTOR_SYSTEM_PLIST = Path(f"/Library/LaunchAgents/{CONNECTOR_LABEL}.plist")
 CONNECTOR_USER_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{CONNECTOR_LABEL}.plist"
+CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY = "EVAOS_MAC_CONTROL_CANARY_MODE"
+CONNECTOR_MAC_CONTROL_CANARY_MODE = "staging"
 CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS = (
     "EVAOS_MAC_CONTROL_CONTEXT_KEY_ID",
     "EVAOS_MAC_CONTROL_CONTEXT_PUBLIC_KEY",
@@ -3320,6 +3322,9 @@ def _connector_program_path() -> str:
 
 def _connector_mac_control_canary_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
     source_env = env if env is not None else os.environ
+    mode = str(source_env.get(CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY) or "").strip()
+    if mode != CONNECTOR_MAC_CONTROL_CANARY_MODE:
+        return {}
     configured = {key: str(source_env.get(key) or "").strip() for key in CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS}
     present = {key: value for key, value in configured.items() if value}
     if present and len(present) != len(CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS):

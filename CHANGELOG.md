@@ -32,6 +32,10 @@
   enrollment window, and surfaces a strictly sanitized rejection instead of
   leaving the button apparently inert. Duplicate enrollment clicks remain
   disabled while the first action is in flight.
+- Verifies genuine Mac App Store Tailscale with Apple's App Store signing
+  requirement while retaining the exact Tailscale team and bundle-identifier
+  checks; standalone Tailscale remains pinned to its Apple-anchored Developer
+  ID team requirement.
 - Makes the Hermes adapter parse only the two connector assignments instead of
   executing an environment file, carries JSON parameters over standard input,
   and rejects caller-selected local payload paths in the OpenClaw fallback.
@@ -62,6 +66,10 @@
   independently verify it against protected external key configuration and
   reject legacy unsigned, forged, replayed, stale, wrong-run, or wrong-head
   evidence.
+- Carries connector receipt-signer settings into the LaunchAgent only for an
+  explicitly selected staging canary; ordinary customer starts ignore ambient
+  canary variables, while incomplete explicit staging configuration still
+  fails before writing or starting the service.
 - Adds deployed-route behavior probes for gateway authentication, POST-only
   routing, exact path matching, strict body validation, and rejection of
   caller-supplied authority before Mac-control proof can authorize publication.
