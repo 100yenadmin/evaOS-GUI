@@ -27,9 +27,9 @@ WORKBENCH_EXECUTABLE_PATTERN = re.compile(
 )
 DEFAULT_TEAM_ID = "TC6MS3T6NN"
 COMPUTER_USE_CLIENT_SUFFIX = "SkyComputerUseClient mcp"
-# Optional developer/canary artifact locations. Missing roots are ignored, and
-# callers can override them with --canary-artifact-root or
-# EVAOS_CANARY_ARTIFACT_ROOTS.
+# Optional developer/canary artifact locations. Missing roots are ignored.
+# EVAOS_CANARY_ARTIFACT_ROOTS replaces these defaults, while each
+# --canary-artifact-root adds a run-specific root to that baseline.
 DEFAULT_ARTIFACT_ROOTS = (
     "/Volumes/LEXAR/Codex/artifacts",
     "/Volumes/LEXAR/Codex/evaos-provider-auth-96-canary",
@@ -274,7 +274,9 @@ def gather_inventory(
     )
     artifact_paths = tuple(_artifact_workbench_bundle_paths(artifact_roots=artifact_roots))
     bundle_paths = _unique_paths((*registered_paths, *artifact_paths, canonical_path))
-    app_bundles = tuple(_read_app_bundle(path) for path in bundle_paths if Path(path).exists())
+    app_bundles = tuple(
+        bundle for path in bundle_paths if (bundle := _read_app_bundle_if_inspectable(path)) is not None
+    )
     processes = tuple(_process_inventory())
     return WorkbenchInventory(registered_paths=registered_paths, app_bundles=app_bundles, processes=processes)
 
@@ -303,11 +305,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--canary-artifact-root",
         action="append",
         dest="artifact_roots",
-        help="Optional root to scan for stale EvaDesktop.app canary artifacts. Repeatable; overrides EVAOS_CANARY_ARTIFACT_ROOTS/default roots.",
+        help="Additional root to scan for stale Workbench canary artifacts. Repeatable; appends to EVAOS_CANARY_ARTIFACT_ROOTS/default roots.",
     )
     args = parser.parse_args(argv)
 
-    inventory = gather_inventory(canonical_path=args.canonical_path, bundle_id=args.bundle_id, artifact_roots=args.artifact_roots)
+    inventory = gather_inventory(
+        canonical_path=args.canonical_path,
+        bundle_id=args.bundle_id,
+        artifact_roots=_artifact_roots_with_additions(args.artifact_roots),
+    )
     report = evaluate_inventory(
         inventory,
         canonical_path=args.canonical_path,
@@ -429,6 +435,18 @@ def _registered_path_exists_or_is_unverifiable(path: str) -> bool:
     return True
 
 
+def _read_app_bundle_if_inspectable(path: str) -> AppBundle | None:
+    try:
+        Path(path).stat()
+    except OSError:
+        # The registered-path inventory remains authoritative for duplicate
+        # failures. Avoid a Python-version-dependent Path.exists() exception
+        # while keeping an uninspectable canonical bundle fail-closed as
+        # missing from the readable bundle inventory.
+        return None
+    return _read_app_bundle(path)
+
+
 def _run(command: Sequence[str]) -> str:
     try:
         completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=10)
@@ -470,6 +488,10 @@ def _artifact_workbench_bundle_paths(*, artifact_roots: Sequence[str] | None = N
             if line.strip() and _is_workbench_app_artifact_name(Path(line.strip()).name)
         )
     return tuple(paths)
+
+
+def _artifact_roots_with_additions(additional_roots: Sequence[str] | None) -> tuple[str, ...]:
+    return _unique_paths((*_artifact_roots_from_environment(), *(additional_roots or ())))
 
 
 def _is_workbench_app_artifact_name(name: str) -> bool:
