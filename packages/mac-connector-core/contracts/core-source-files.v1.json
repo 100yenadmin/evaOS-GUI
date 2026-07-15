@@ -10,34 +10,185 @@
     "dependencyStatus": "provenance-only"
   },
   "files": [
-    { "path": "native/EvaOSEd25519Verify.swift", "destination": null, "mode": 420, "sha256": "a96acabd38802ae8c44fbe51f921154350a7ee2a78fe477bb8f5ab9af52c554d" },
-    { "path": "native/main.swift", "destination": null, "mode": 420, "sha256": "f6a28a34219bf4b65aeb9329536bc3d69efb34eebee458a5662f721c6d26deca" },
-    { "path": "python/evaos_desktop_bridge/__init__.py", "destination": "src/evaos_desktop_bridge/__init__.py", "mode": 420, "sha256": "fd488e18476f4265e6f99f0c172fc5cd9d6f34c6cafcf151c01dc9bf9c54387d" },
-    { "path": "python/evaos_desktop_bridge/adapters/__init__.py", "destination": "src/evaos_desktop_bridge/adapters/__init__.py", "mode": 420, "sha256": "f8b9eb396a96a7b60376132321f9274bf19c76e8a9aa631c795f5591e1d8116e" },
-    { "path": "python/evaos_desktop_bridge/adapters/codex_app_server.py", "destination": "src/evaos_desktop_bridge/adapters/codex_app_server.py", "mode": 420, "sha256": "2fb1fe401115a8762f7bcd2e292eccee48db0514c8ee278eee9841aef2adcc08" },
-    { "path": "python/evaos_desktop_bridge/adapters/codex_macos.py", "destination": "src/evaos_desktop_bridge/adapters/codex_macos.py", "mode": 420, "sha256": "5604af67eee0ca99bd11761b64f515eddc02fc2d4766367a718ecbb9127ddb04" },
-    { "path": "python/evaos_desktop_bridge/adapters/customer_mac.py", "destination": "src/evaos_desktop_bridge/adapters/customer_mac.py", "mode": 420, "sha256": "1af0351d3167b956080cbe1032d4329719f55bc4caa0a10ec8813639a3c1ad58" },
-    { "path": "python/evaos_desktop_bridge/contracts/__init__.py", "destination": "src/evaos_desktop_bridge/contracts/__init__.py", "mode": 420, "sha256": "b41f5a3df3166d0293a86e653499dc0e0d2c84320ffa16afbd124858e8cd7c7e" },
-    { "path": "python/evaos_desktop_bridge/contracts/capability_manifest.py", "destination": "src/evaos_desktop_bridge/contracts/capability_manifest.py", "mode": 420, "sha256": "170217715d745508f2641b38f1b2fa6804365e21d96731c4f2b73f9e001344e3" },
-    { "path": "python/evaos_desktop_bridge/contracts/redaction.py", "destination": "src/evaos_desktop_bridge/contracts/redaction.py", "mode": 420, "sha256": "0e6ba1a910826a25f6cfff1e9e923bbf5e7e668ffde212d0a1c4cdc8592d53fd" },
-    { "path": "python/evaos_desktop_bridge/contracts/schema.py", "destination": "src/evaos_desktop_bridge/contracts/schema.py", "mode": 420, "sha256": "092414e9e9fd7aca923daf53ad64d1022802b9af57f99b3adb81ae66a65a0783" },
-    { "path": "python/evaos_desktop_bridge/contracts/types.py", "destination": "src/evaos_desktop_bridge/contracts/types.py", "mode": 420, "sha256": "7ab9ca050d4ea5230f657fd00a89f174b61a90633216daf91fcaa67dec8d1df6" },
-    { "path": "python/evaos_desktop_bridge/host/__init__.py", "destination": "src/evaos_desktop_bridge/host/__init__.py", "mode": 420, "sha256": "0377ee6819f94c1c8d921545eeb63a6be704ea3d0caebb57c481dafbc1363606" },
-    { "path": "python/evaos_desktop_bridge/host/api.py", "destination": "src/evaos_desktop_bridge/host/api.py", "mode": 420, "sha256": "7e0bb11030b2869368e613b6e4648512307fc28b65e2c58650440d8be88ee758" },
-    { "path": "python/evaos_desktop_bridge/host/bundled_tools.py", "destination": "src/evaos_desktop_bridge/host/bundled_tools.py", "mode": 420, "sha256": "1c9706635d770b041633d7169df7721d71234fcbfe407a66bf07c3e1b4a19dcb" },
-    { "path": "python/evaos_desktop_bridge/host/candidate_identity.py", "destination": "src/evaos_desktop_bridge/host/candidate_identity.py", "mode": 420, "sha256": "20666148b51804b670c50fe504b58006abe9651a237973401c6ca3edf1aecca4" },
-    { "path": "python/evaos_desktop_bridge/host/cli.py", "destination": "src/evaos_desktop_bridge/host/cli.py", "mode": 420, "sha256": "fea3bc74224ec50d95b7be6cce728f6f90f14c915eab767b4f9aeb20ba366f69" },
-    { "path": "python/evaos_desktop_bridge/host/connector_server.py", "destination": "src/evaos_desktop_bridge/host/connector_server.py", "mode": 420, "sha256": "97880206e73aed6a9329fbed2179fa048510732c5642a4616a349065cec5d074" },
-    { "path": "python/evaos_desktop_bridge/host/helper_ipc.py", "destination": "src/evaos_desktop_bridge/host/helper_ipc.py", "mode": 420, "sha256": "afa8685bcb5a6c84a6eb1c5d1bf54368e60b2a11da467f8f2273c71d50b7c172" },
-    { "path": "python/evaos_desktop_bridge/persistence/__init__.py", "destination": "src/evaos_desktop_bridge/persistence/__init__.py", "mode": 420, "sha256": "b317fca2561ec6179394ab3d7200095fe39c11b81a2442e42c0d40d44ad05292" },
-    { "path": "python/evaos_desktop_bridge/persistence/audit.py", "destination": "src/evaos_desktop_bridge/persistence/audit.py", "mode": 420, "sha256": "f956eb558820ebbe7dc77cece4cd039b67c5bec694294187499eaa57a210fbfd" },
-    { "path": "python/evaos_desktop_bridge/persistence/queue.py", "destination": "src/evaos_desktop_bridge/persistence/queue.py", "mode": 420, "sha256": "73ec6301052621a0d576ad7afbc46a1d89a8363c5f6cc3c8a9edeb9b496e5009" },
-    { "path": "python/evaos_desktop_bridge/persistence/state.py", "destination": "src/evaos_desktop_bridge/persistence/state.py", "mode": 420, "sha256": "8fce0537635cc0f35c15758803305cce558f099635c2f28bff6b71bdb23450bf" },
-    { "path": "python/evaos_desktop_bridge/policy/__init__.py", "destination": "src/evaos_desktop_bridge/policy/__init__.py", "mode": 420, "sha256": "996bbfecc8e2b488d1a23ac3aadde4cf970c5352e636d2abf08c29fd08c1c4c5" },
-    { "path": "python/evaos_desktop_bridge/policy/policy.py", "destination": "src/evaos_desktop_bridge/policy/policy.py", "mode": 420, "sha256": "31b1e34fcf1615fc21726184a003ece1b51dd78b75be6e791b85fd88ff0978f6" },
-    { "path": "python/evaos_desktop_bridge/proof/__init__.py", "destination": "src/evaos_desktop_bridge/proof/__init__.py", "mode": 420, "sha256": "416885c8189361733b1920de44dd1c3e2bd9a3a8ffc19b8393f0188f96746fda" },
-    { "path": "python/evaos_desktop_bridge/proof/pre_canary.py", "destination": "src/evaos_desktop_bridge/proof/pre_canary.py", "mode": 420, "sha256": "84f9b65bcda57feeaa86064a61e52bff79b8a6ea37b537b78ce4ca51aa012f6d" },
-    { "path": "python/evaos_desktop_bridge/proof/qa_canary.py", "destination": "src/evaos_desktop_bridge/proof/qa_canary.py", "mode": 420, "sha256": "b0d38b177a71e09cdcd9a0a2c5fad01a487bce434fec64f689ac6096d6ed1e5e" },
-    { "path": "python/evaos_desktop_bridge/proof/receipt_canary.py", "destination": "src/evaos_desktop_bridge/proof/receipt_canary.py", "mode": 420, "sha256": "305bf0c20a79d994cf805e1e94ce3e6a681bc2dc479e3b82f51026c509c4537a" }
+    {
+      "path": "native/EvaOSEd25519Verify.swift",
+      "destination": null,
+      "mode": 420,
+      "sha256": "a96acabd38802ae8c44fbe51f921154350a7ee2a78fe477bb8f5ab9af52c554d"
+    },
+    {
+      "path": "native/evaos-desktop-bridge.sh",
+      "destination": null,
+      "mode": 493,
+      "sha256": "fcb4601bf43141b87826178089ccacb1319557a5d7c7570913e3d45d871753ba"
+    },
+    {
+      "path": "native/main.swift",
+      "destination": null,
+      "mode": 420,
+      "sha256": "f6a28a34219bf4b65aeb9329536bc3d69efb34eebee458a5662f721c6d26deca"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/__init__.py",
+      "destination": "src/evaos_desktop_bridge/__init__.py",
+      "mode": 420,
+      "sha256": "fd488e18476f4265e6f99f0c172fc5cd9d6f34c6cafcf151c01dc9bf9c54387d"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/adapters/__init__.py",
+      "destination": "src/evaos_desktop_bridge/adapters/__init__.py",
+      "mode": 420,
+      "sha256": "f8b9eb396a96a7b60376132321f9274bf19c76e8a9aa631c795f5591e1d8116e"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/adapters/codex_app_server.py",
+      "destination": "src/evaos_desktop_bridge/adapters/codex_app_server.py",
+      "mode": 420,
+      "sha256": "2fb1fe401115a8762f7bcd2e292eccee48db0514c8ee278eee9841aef2adcc08"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/adapters/codex_macos.py",
+      "destination": "src/evaos_desktop_bridge/adapters/codex_macos.py",
+      "mode": 420,
+      "sha256": "5604af67eee0ca99bd11761b64f515eddc02fc2d4766367a718ecbb9127ddb04"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/adapters/customer_mac.py",
+      "destination": "src/evaos_desktop_bridge/adapters/customer_mac.py",
+      "mode": 420,
+      "sha256": "1af0351d3167b956080cbe1032d4329719f55bc4caa0a10ec8813639a3c1ad58"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/contracts/__init__.py",
+      "destination": "src/evaos_desktop_bridge/contracts/__init__.py",
+      "mode": 420,
+      "sha256": "b41f5a3df3166d0293a86e653499dc0e0d2c84320ffa16afbd124858e8cd7c7e"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/contracts/capability_manifest.py",
+      "destination": "src/evaos_desktop_bridge/contracts/capability_manifest.py",
+      "mode": 420,
+      "sha256": "170217715d745508f2641b38f1b2fa6804365e21d96731c4f2b73f9e001344e3"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/contracts/redaction.py",
+      "destination": "src/evaos_desktop_bridge/contracts/redaction.py",
+      "mode": 420,
+      "sha256": "9d598fd28eccc2c91035b4839741762f55693f1f0a3f9c21c8c330e046fc47cf"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/contracts/schema.py",
+      "destination": "src/evaos_desktop_bridge/contracts/schema.py",
+      "mode": 420,
+      "sha256": "092414e9e9fd7aca923daf53ad64d1022802b9af57f99b3adb81ae66a65a0783"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/contracts/types.py",
+      "destination": "src/evaos_desktop_bridge/contracts/types.py",
+      "mode": 420,
+      "sha256": "7ab9ca050d4ea5230f657fd00a89f174b61a90633216daf91fcaa67dec8d1df6"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/__init__.py",
+      "destination": "src/evaos_desktop_bridge/host/__init__.py",
+      "mode": 420,
+      "sha256": "0377ee6819f94c1c8d921545eeb63a6be704ea3d0caebb57c481dafbc1363606"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/api.py",
+      "destination": "src/evaos_desktop_bridge/host/api.py",
+      "mode": 420,
+      "sha256": "8cf2cd402c1ec18b82fadca20982add5d71cb5fc7c76586c87ffb3ea3602f3d3"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/bundled_tools.py",
+      "destination": "src/evaos_desktop_bridge/host/bundled_tools.py",
+      "mode": 420,
+      "sha256": "1c9706635d770b041633d7169df7721d71234fcbfe407a66bf07c3e1b4a19dcb"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/candidate_identity.py",
+      "destination": "src/evaos_desktop_bridge/host/candidate_identity.py",
+      "mode": 420,
+      "sha256": "20666148b51804b670c50fe504b58006abe9651a237973401c6ca3edf1aecca4"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/cli.py",
+      "destination": "src/evaos_desktop_bridge/host/cli.py",
+      "mode": 420,
+      "sha256": "fea3bc74224ec50d95b7be6cce728f6f90f14c915eab767b4f9aeb20ba366f69"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/connector_server.py",
+      "destination": "src/evaos_desktop_bridge/host/connector_server.py",
+      "mode": 420,
+      "sha256": "97880206e73aed6a9329fbed2179fa048510732c5642a4616a349065cec5d074"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/host/helper_ipc.py",
+      "destination": "src/evaos_desktop_bridge/host/helper_ipc.py",
+      "mode": 420,
+      "sha256": "afa8685bcb5a6c84a6eb1c5d1bf54368e60b2a11da467f8f2273c71d50b7c172"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/persistence/__init__.py",
+      "destination": "src/evaos_desktop_bridge/persistence/__init__.py",
+      "mode": 420,
+      "sha256": "b317fca2561ec6179394ab3d7200095fe39c11b81a2442e42c0d40d44ad05292"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/persistence/audit.py",
+      "destination": "src/evaos_desktop_bridge/persistence/audit.py",
+      "mode": 420,
+      "sha256": "f956eb558820ebbe7dc77cece4cd039b67c5bec694294187499eaa57a210fbfd"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/persistence/queue.py",
+      "destination": "src/evaos_desktop_bridge/persistence/queue.py",
+      "mode": 420,
+      "sha256": "73ec6301052621a0d576ad7afbc46a1d89a8363c5f6cc3c8a9edeb9b496e5009"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/persistence/state.py",
+      "destination": "src/evaos_desktop_bridge/persistence/state.py",
+      "mode": 420,
+      "sha256": "8fce0537635cc0f35c15758803305cce558f099635c2f28bff6b71bdb23450bf"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/policy/__init__.py",
+      "destination": "src/evaos_desktop_bridge/policy/__init__.py",
+      "mode": 420,
+      "sha256": "996bbfecc8e2b488d1a23ac3aadde4cf970c5352e636d2abf08c29fd08c1c4c5"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/policy/policy.py",
+      "destination": "src/evaos_desktop_bridge/policy/policy.py",
+      "mode": 420,
+      "sha256": "31b1e34fcf1615fc21726184a003ece1b51dd78b75be6e791b85fd88ff0978f6"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/proof/__init__.py",
+      "destination": "src/evaos_desktop_bridge/proof/__init__.py",
+      "mode": 420,
+      "sha256": "416885c8189361733b1920de44dd1c3e2bd9a3a8ffc19b8393f0188f96746fda"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/proof/pre_canary.py",
+      "destination": "src/evaos_desktop_bridge/proof/pre_canary.py",
+      "mode": 420,
+      "sha256": "84f9b65bcda57feeaa86064a61e52bff79b8a6ea37b537b78ce4ca51aa012f6d"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/proof/qa_canary.py",
+      "destination": "src/evaos_desktop_bridge/proof/qa_canary.py",
+      "mode": 420,
+      "sha256": "b0d38b177a71e09cdcd9a0a2c5fad01a487bce434fec64f689ac6096d6ed1e5e"
+    },
+    {
+      "path": "python/evaos_desktop_bridge/proof/receipt_canary.py",
+      "destination": "src/evaos_desktop_bridge/proof/receipt_canary.py",
+      "mode": 420,
+      "sha256": "305bf0c20a79d994cf805e1e94ce3e6a681bc2dc479e3b82f51026c509c4537a"
+    }
   ]
 }

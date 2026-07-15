@@ -1041,9 +1041,9 @@ function validCandidate(value: unknown, verifier: ReceiptVerifierConfig): value 
   return (
     value.sourceCommit === verifier.expectedSourceCommit &&
     value.sourceSha256 === verifier.expectedSourceSha256 &&
-    value.sourcePath === 'resources/evaos-beta/bridge' &&
+    value.sourcePath === 'packages/mac-connector-core' &&
     value.sourceOwner === '100yenadmin/evaOS-GUI' &&
-    value.status === 'vendored' &&
+    value.status === 'canonical' &&
     value.appPath === '/Applications/evaOS Workbench.app' &&
     value.appVersion === verifier.expectedAppVersion &&
     value.appBuild === verifier.expectedAppBuild &&
@@ -1053,14 +1053,15 @@ function validCandidate(value: unknown, verifier: ReceiptVerifierConfig): value 
     /^\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/python\/bin\/python3(?:\.12)?$/.test(
       value.executable
     ) &&
-    value.argv0 === '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py' &&
+    value.argv0 ===
+      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py' &&
     owner.label === 'com.electricsheep.evaos-desktop-bridge' &&
     owner.classification === 'workbench_bundle' &&
     owner.bundleId === 'com.evaos.workbench' &&
     owner.sourceCommit === verifier.expectedSourceCommit &&
     validPathClaim(
       owner.programPath,
-      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py'
+      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py'
     ) &&
     validPathClaim(owner.appPath, '/Applications/evaOS Workbench.app') &&
     validPathClaim(owner.manifestPath, '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json') &&

@@ -126,3 +126,17 @@ def redact_audit_value(value: Any, *, key: str | None = None) -> Any:
     if isinstance(value, tuple):
         return [redact_audit_value(item) for item in value]
     return value
+
+
+def audit_value_is_redacted(value: Any, *, key: str | None = None) -> bool:
+    if _audit_key_is_sensitive(key):
+        return value is None or value == "<redacted>"
+    if isinstance(value, str):
+        return AUDIT_RFC3339_PATTERN.fullmatch(value) is not None or redact_audit_string(value) == value
+    if isinstance(value, Path):
+        return False
+    if isinstance(value, dict):
+        return all(audit_value_is_redacted(item, key=str(item_key)) for item_key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return all(audit_value_is_redacted(item) for item in value)
+    return True

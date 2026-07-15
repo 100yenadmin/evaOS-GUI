@@ -5,7 +5,6 @@ const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
-const { bridgeWrapperScript } = require('./prepareEvaosDesktopBridgeResource');
 const {
   PUBLIC_ATTESTATION_ENVELOPE_FIELDS,
   verifyMacControlPublicAttestation,
@@ -2431,6 +2430,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       sourcePaths: [...cached.sourcePaths],
       coreSourceSha256: cached.coreSourceSha256,
       sourceManifestSha256: cached.sourceManifestSha256,
+      fileSha256ByPath: { ...cached.fileSha256ByPath },
     };
   }
 
@@ -2445,7 +2445,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
         stdio: ['ignore', 'pipe', 'pipe'],
       })
     ).trim();
-    treeOutput = runGit('git', ['ls-tree', '-r', '-z', '--full-tree', commit, '--', WORKBENCH_BRIDGE_SOURCE_DIR], {
+    treeOutput = runGit('git', ['ls-tree', '-r', '-z', '--full-tree', commit, '--', CONNECTOR_CORE_ROOT], {
       cwd: rootDir,
       encoding: null,
       maxBuffer: 16 * 1024 * 1024,
@@ -2483,32 +2483,38 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
   }
 
   const records = Buffer.isBuffer(treeOutput) ? treeOutput.toString('utf8') : String(treeOutput || '');
+  const ownedTreeByPath = new Map();
   const treeByRelativePath = new Map();
   for (const record of records.split('\0').filter(Boolean)) {
     const separator = record.indexOf('\t');
     const header = separator >= 0 ? record.slice(0, separator) : '';
     const filePath = separator >= 0 ? record.slice(separator + 1) : '';
     const [mode, type, objectId] = header.split(' ');
-    const prefix = `${WORKBENCH_BRIDGE_SOURCE_DIR}/`;
-    if (
-      !['100644', '100755'].includes(mode) ||
-      type !== 'blob' ||
-      !/^[0-9a-f]{40,64}$/i.test(objectId || '') ||
-      !filePath.startsWith(prefix)
-    ) {
+    const corePrefix = `${CONNECTOR_CORE_ROOT}/`;
+    if (!filePath.startsWith(corePrefix)) {
       throw new Error(`Committed Workbench bridge source tree contains an unsupported entry: ${record}`);
     }
-    const relativePath = filePath.slice(prefix.length);
-    if (!relativePath || relativePath.split('/').some((part) => !part || part === '.' || part === '..')) {
+    const coreRelativePath = filePath.slice(corePrefix.length);
+    const owned = coreRelativePath.startsWith('native/') || coreRelativePath.startsWith('python/evaos_desktop_bridge/');
+    if (!owned) continue;
+    if (!['100644', '100755'].includes(mode) || type !== 'blob' || !/^[0-9a-f]{40,64}$/i.test(objectId || '')) {
+      throw new Error(`Committed connector-core owned tree contains an unsupported entry: ${record}`);
+    }
+    if (!coreRelativePath || coreRelativePath.split('/').some((part) => !part || part === '.' || part === '..')) {
       throw new Error(`Committed Workbench bridge source path is invalid: ${filePath}`);
     }
-    treeByRelativePath.set(relativePath, { mode, objectId });
+    ownedTreeByPath.set(coreRelativePath, { mode, objectId });
+    const sourcePrefix = 'python/evaos_desktop_bridge/';
+    if (coreRelativePath.startsWith(sourcePrefix)) {
+      treeByRelativePath.set(coreRelativePath.slice(sourcePrefix.length), { mode, objectId });
+    }
   }
   if (treeByRelativePath.size === 0) {
     throw new Error(`Commit ${commit} does not contain the Workbench bridge source tree.`);
   }
 
   const listedPaths = new Set();
+  const fileSha256ByPath = {};
   const generatedSourceFiles = [];
   const coreDigest = createHash('sha256');
   let previousPath;
@@ -2530,6 +2536,11 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       throw new Error(`Commit ${commit} repeats connector-core source path ${entry.path}.`);
     }
     listedPaths.add(entry.path);
+    const committedTreeEntry = ownedTreeByPath.get(entry.path);
+    const expectedMode = entry.mode === 0o755 ? '100755' : entry.mode === 0o644 ? '100644' : undefined;
+    if (!committedTreeEntry || committedTreeEntry.mode !== expectedMode) {
+      throw new Error(`Committed connector-core tree does not match manifest entry ${entry.path}.`);
+    }
     let contents;
     try {
       contents = runGit('git', ['show', `${commit}:${CONNECTOR_CORE_ROOT}/${entry.path}`], {
@@ -2542,9 +2553,11 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       throw new Error(`Unable to read committed connector-core source ${entry.path}: ${error.message}`);
     }
     const bytes = Buffer.isBuffer(contents) ? contents : Buffer.from(contents || '');
-    if (createHash('sha256').update(bytes).digest('hex') !== entry.sha256) {
+    const actualSha256 = createHash('sha256').update(bytes).digest('hex');
+    if (actualSha256 !== entry.sha256) {
       throw new Error(`Committed connector-core source digest mismatch for ${entry.path}.`);
     }
+    fileSha256ByPath[entry.path] = actualSha256;
     coreDigest.update(entry.path);
     coreDigest.update('\0');
     coreDigest.update(bytes);
@@ -2557,12 +2570,14 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       }
       const relativePath = entry.destination.slice(destinationPrefix.length);
       const treeEntry = treeByRelativePath.get(relativePath);
-      const expectedMode = entry.mode === 0o755 ? '100755' : entry.mode === 0o644 ? '100644' : undefined;
       if (!treeEntry || treeEntry.mode !== expectedMode) {
         throw new Error(`Committed Workbench bridge tree does not match manifest entry ${entry.path}.`);
       }
       generatedSourceFiles.push({ relativePath, contents: bytes });
     }
+  }
+  if (listedPaths.size !== ownedTreeByPath.size) {
+    throw new Error(`Commit ${commit} contains unlisted connector-core owned source files.`);
   }
   if (generatedSourceFiles.length !== treeByRelativePath.size) {
     throw new Error(`Commit ${commit} contains unlisted Workbench bridge source files.`);
@@ -2582,6 +2597,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
     sourcePaths: generatedSourceFiles.map((sourceFile) => sourceFile.relativePath),
     coreSourceSha256: coreDigest.digest('hex'),
     sourceManifestSha256: createHash('sha256').update(manifestBuffer).digest('hex'),
+    fileSha256ByPath,
   };
   if (cacheKey) {
     committedBridgeSourceIdentityCache.set(cacheKey, {
@@ -2589,19 +2605,19 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       sourcePaths: Object.freeze([...identity.sourcePaths]),
       coreSourceSha256: identity.coreSourceSha256,
       sourceManifestSha256: identity.sourceManifestSha256,
+      fileSha256ByPath: Object.freeze({ ...identity.fileSha256ByPath }),
     });
   }
   return identity;
 }
 
 function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity, expectedAppVersion) {
-  const expectedEd25519VerifierSourceSha256 = createHash('sha256')
-    .update(
-      fs.readFileSync(
-        path.join(PROJECT_ROOT, 'packages', 'mac-connector-core', 'native', 'EvaOSEd25519Verify.swift')
-      )
-    )
-    .digest('hex');
+  const expectedEd25519VerifierSourceSha256 =
+    committedSourceIdentity.fileSha256ByPath['native/EvaOSEd25519Verify.swift'];
+  const expectedBridgeWrapperSha256 = committedSourceIdentity.fileSha256ByPath['native/evaos-desktop-bridge.sh'];
+  if (!expectedEd25519VerifierSourceSha256 || !expectedBridgeWrapperSha256) {
+    throw new Error('Committed connector-core identity is missing native verifier or wrapper source.');
+  }
   const script = [
     'import hashlib',
     'import json',
@@ -2622,7 +2638,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     `expected_python_license_path = "${PYTHON_RUNTIME_LICENSE_PATH}"`,
     `expected_python_license_sha256 = "${PYTHON_RUNTIME_LICENSE_SHA256}"`,
     `expected_python_packages = ${JSON.stringify(PYTHON_RUNTIME_PACKAGES)}`,
-    `expected_bridge_wrapper_sha256 = "${createHash('sha256').update(bridgeWrapperScript()).digest('hex')}"`,
+    `expected_bridge_wrapper_sha256 = ${JSON.stringify(expectedBridgeWrapperSha256)}`,
     `expected_source_commit = ${JSON.stringify(String(expectedSourceCommit || ''))}`,
     `expected_bridge_source_sha256 = ${JSON.stringify(committedSourceIdentity.sourceSha256)}`,
     `expected_bridge_source_paths = ${JSON.stringify(committedSourceIdentity.sourcePaths)}`,

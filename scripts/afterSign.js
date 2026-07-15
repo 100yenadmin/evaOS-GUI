@@ -8,6 +8,10 @@ const {
   isStrictPublicBetaReleaseEnv,
 } = require('./evaosBetaReleaseGate');
 const { withAfterSignCompletion } = require('./dmgRetryEligibility');
+const {
+  vendoredBridgeSourceMetadata,
+  verifyWorkbenchBridgeSourceRoot,
+} = require('./prepareEvaosDesktopBridgeResource');
 
 const AMBIENT_APPLE_API_ENV_KEYS = [
   'APPLE_API_KEY',
@@ -39,6 +43,33 @@ const MAC_CONTROL_HELPER_RELATIVE_PATHS = [
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-connector-helper'),
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-ed25519-verify'),
 ];
+
+function assertSignedBridgeSourceIdentity(appPath, env = process.env) {
+  const bridgeRoot = path.join(appPath, 'Contents', 'Resources', 'Bridge');
+  const manifestPath = path.join(bridgeRoot, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const packaged = verifyWorkbenchBridgeSourceRoot(path.join(bridgeRoot, 'src'));
+  const canonical = vendoredBridgeSourceMetadata();
+  const provenance = manifest.sourceProvenance;
+  const expectedSourceCommit = String(env.EVAOS_DESKTOP_BRIDGE_SOURCE_REF || '').trim();
+  if (
+    !/^[0-9a-f]{40}$/.test(expectedSourceCommit) ||
+    manifest.placeholder !== false ||
+    manifest.sourcePath !== 'packages/mac-connector-core' ||
+    manifest.sourceCommit !== expectedSourceCommit ||
+    manifest.requestedSourceRef !== expectedSourceCommit ||
+    provenance?.schema !== 'evaos-mac-connector-core-source/v1' ||
+    provenance?.owner !== '100yenadmin/evaOS-GUI' ||
+    provenance?.status !== 'canonical' ||
+    provenance?.sourceSha256 !== packaged.sourceSha256 ||
+    provenance?.sourceSha256 !== canonical.sourceSha256 ||
+    provenance?.coreSourceSha256 !== canonical.coreSourceSha256 ||
+    provenance?.sourceManifestSha256 !== canonical.sourceManifestSha256
+  ) {
+    throw new Error('Signed Workbench bridge source is not the exact canonical connector core.');
+  }
+  return true;
+}
 
 function getAppleIdNotarizationOptions(env) {
   const appleId = getEnvValue(env, { aliases: ['appleId', 'APPLE_ID'] });
@@ -548,6 +579,7 @@ async function performMacAfterSign(context) {
   }
 
   if (strictPublicBetaRelease) {
+    assertSignedBridgeSourceIdentity(appPath);
     assertMacControlHelperSignatures(appPath, process.env);
   }
 
@@ -597,6 +629,7 @@ module.exports = afterSign;
 module.exports.default = afterSign;
 module.exports.assertMacControlHelperSignature = assertMacControlHelperSignature;
 module.exports.assertMacControlHelperSignatures = assertMacControlHelperSignatures;
+module.exports.assertSignedBridgeSourceIdentity = assertSignedBridgeSourceIdentity;
 module.exports.buildAppNotarytoolInfoArgs = buildAppNotarytoolInfoArgs;
 module.exports.buildAppNotarytoolSubmitArgs = buildAppNotarytoolSubmitArgs;
 module.exports.getAppNotaryCommandProcessTimeoutMs = getAppNotaryCommandProcessTimeoutMs;

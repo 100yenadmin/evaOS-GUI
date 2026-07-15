@@ -1,0 +1,74 @@
+name: Mac connector core
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mac-connector-core.yml'
+      - 'packages/mac-connector-core/**'
+      - 'resources/evaos-beta/bridge/SOURCE.json'
+      - 'resources/evaos-beta/bridge/agent-tools/**'
+      - 'scripts/afterPack.js'
+      - 'scripts/afterSign.js'
+      - 'scripts/create-mock-release-artifacts.sh'
+      - 'scripts/evaosBetaReleaseGate.js'
+      - 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh'
+      - 'scripts/prepareEvaosDesktopBridgeResource.js'
+      - 'tests/unit/bootstrap/afterPackBundledResources.test.ts'
+      - 'tests/unit/evaos/evaosDesktopBridge*.test.ts'
+      - 'tests/unit/evaos/evaosQaCanaryLocalControl.test.ts'
+      - 'tests/unit/process/evaosBetaReleaseGate.test.ts'
+      - 'tests/unit/process/macConnectorCorePackaging.test.ts'
+      - 'tests/unit/process/prepareEvaosDesktopBridgeResource.test.ts'
+      - 'tests/contract/macAccessContracts.test.ts'
+      - 'tests/contract/macAccessCryptography.test.ts'
+      - 'tests/contract/macConnectorCoreHostParity.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-core:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - name: Prepare hash-pinned private Python
+        run: scripts/prepareEvaosDesktopBridgePythonRuntime.sh arm64 "$GITHUB_ENV"
+      - name: Focused source and Workbench parity
+        env:
+          EVAOS_CORE_TEST_PYTHON: ${{ env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR }}/bin/python3
+        run: >-
+          bunx vitest run
+          tests/contract/macAccessContracts.test.ts
+          tests/contract/macAccessCryptography.test.ts
+          tests/contract/macConnectorCoreHostParity.test.ts
+          tests/unit/process/macConnectorCorePackaging.test.ts
+          tests/unit/process/prepareEvaosDesktopBridgeResource.test.ts
+          tests/unit/bootstrap/afterPackBundledResources.test.ts
+          tests/unit/process/evaosBetaReleaseGate.test.ts
+          tests/unit/evaos/evaosDesktopBridgeSafety.test.ts
+          tests/unit/evaos/evaosDesktopBridgeReceipt.test.ts
+          tests/unit/evaos/evaosDesktopBridgeControlSafetyP0.test.ts
+          tests/unit/evaos/evaosQaCanaryLocalControl.test.ts
+          --maxWorkers=2
+      - name: Prove VM agent-tool receipt parity
+        run: npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin test
+      - name: Prove private runtime and poison ambient dependencies
+        shell: bash
+        run: |
+          packages/mac-connector-core/scripts/runEmbeddedProof.sh "$GITHUB_WORKSPACE" "$EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR" "$RUNNER_TEMP/mac-core-proof"
+          "$EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR/bin/python3" -I -B packages/mac-connector-core/tests/fixture_smoke.py
+      - name: Parse shared fixtures with Swift
+        run: xcrun swift packages/mac-connector-core/tests/FixtureSmoke.swift
+      - name: Compile native verifier directly
+        run: >-
+          xcrun swiftc -O -whole-module-optimization
+          -target arm64-apple-macos15.0
+          -o "$RUNNER_TEMP/evaos-ed25519-verify"
+          packages/mac-connector-core/native/EvaOSEd25519Verify.swift
+          packages/mac-connector-core/native/main.swift

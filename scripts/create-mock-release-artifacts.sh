@@ -49,25 +49,21 @@ create_mock_macos_zip() {
   mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/bin"
   mkdir -p "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/licenses"
   mkdir -p "$tmp_dir/committed-source"
-  git -C "$REPO_ROOT" archive "$MOCK_SOURCE_COMMIT" resources/evaos-beta/bridge | tar -x -C "$tmp_dir/committed-source"
-  EVAOS_MOCK_WRAPPER_PATH="$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge" \
-    EVAOS_MOCK_PREPARE_SCRIPT="$REPO_ROOT/scripts/prepareEvaosDesktopBridgeResource.js" \
-    node <<'NODE'
-const fs = require('fs');
-const { bridgeWrapperScript } = require(process.env.EVAOS_MOCK_PREPARE_SCRIPT);
-fs.writeFileSync(process.env.EVAOS_MOCK_WRAPPER_PATH, bridgeWrapperScript());
-NODE
+  git -C "$REPO_ROOT" archive "$MOCK_SOURCE_COMMIT" packages/mac-connector-core | tar -x -C "$tmp_dir/committed-source"
+  cp \
+    "$tmp_dir/committed-source/packages/mac-connector-core/native/evaos-desktop-bridge.sh" \
+    "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
   chmod +x "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge/evaos-desktop-bridge"
   python3 - \
     "$tmp_dir/${PRODUCT_NAME}.app/Contents/Resources/Bridge" \
     "$output_path" \
     "$REPO_ROOT/tests/fixtures/licenses/CPython-3.12.13-LICENSE.txt" \
-    "$tmp_dir/committed-source/resources/evaos-beta/bridge/src/evaos_desktop_bridge" \
-    "$tmp_dir/committed-source/resources/evaos-beta/bridge/SOURCE.json" \
+    "$tmp_dir/committed-source/packages/mac-connector-core/python/evaos_desktop_bridge" \
+    "$tmp_dir/committed-source/packages/mac-connector-core/contracts/core-source-files.v1.json" \
     "$MOCK_SOURCE_COMMIT" \
     "$VERSION" \
     "$PRODUCT_NAME" \
-    "$tmp_dir/committed-source/resources/evaos-beta/bridge/native/EvaOSEd25519Verify.swift" <<'PY'
+    "$tmp_dir/committed-source/packages/mac-connector-core/native/EvaOSEd25519Verify.swift" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -116,8 +112,30 @@ for source_path in sorted(path for path in bridge_source_path.rglob("*") if path
     bridge_source_hash.update(source_path.read_bytes())
     bridge_source_hash.update(b"\0")
 bridge_source_sha256 = bridge_source_hash.hexdigest()
-source_provenance = json.loads(source_provenance_path.read_text(encoding="utf-8"))
-source_provenance["sourceSha256"] = bridge_source_sha256
+source_manifest_bytes = source_provenance_path.read_bytes()
+source_manifest = json.loads(source_manifest_bytes)
+core_root = bridge_source_path.parents[1]
+core_hash = hashlib.sha256()
+for entry in source_manifest["files"]:
+    source_file = core_root / entry["path"]
+    contents = source_file.read_bytes()
+    assert hashlib.sha256(contents).hexdigest() == entry["sha256"]
+    core_hash.update(entry["path"].encode("utf-8"))
+    core_hash.update(b"\0")
+    core_hash.update(contents)
+    core_hash.update(b"\0")
+source_provenance = {
+    "schema": source_manifest["schema"],
+    "owner": source_manifest["owner"],
+    "sourcePath": source_manifest["sourcePath"],
+    "status": source_manifest["status"],
+    "importedFrom": source_manifest["provenance"]["importedFrom"],
+    "importedCommit": source_manifest["provenance"]["importedCommit"],
+    "dependencyStatus": source_manifest["provenance"]["dependencyStatus"],
+    "sourceSha256": bridge_source_sha256,
+    "coreSourceSha256": core_hash.hexdigest(),
+    "sourceManifestSha256": hashlib.sha256(source_manifest_bytes).hexdigest(),
+}
 (bridge / "bin" / "peekaboo").write_bytes(macho)
 (bridge / "bin" / "evaos-connector-helper").write_bytes(macho)
 (bridge / "bin" / "evaos-ed25519-verify").write_bytes(python_header)
@@ -195,7 +213,7 @@ manifest = {
     "placeholder": False,
     "source": "mock-release-asset",
     "requestedSourceRef": source_commit,
-    "sourcePath": "resources/evaos-beta/bridge",
+    "sourcePath": "packages/mac-connector-core",
     "sourceCommit": source_commit,
     "sourceBranch": "mock-release-fixture",
     "sourceProvenance": source_provenance,

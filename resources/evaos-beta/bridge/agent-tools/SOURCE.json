@@ -14,7 +14,7 @@
     "openclaw-plugin/dist/index.js": "sha256:087cbabd678efa15d3657b7137c4da0c8af3b8a4f4b55eef0492e957c8bf62c9",
     "openclaw-plugin/dist/src/bridge.js": "sha256:625b964db6c16a3e7e574d4c86c757a1a11861af01daa6c4abb5c7cdcb947abf",
     "openclaw-plugin/dist/src/firewall.js": "sha256:fc86631e8df350355f2084a5dac43ba81c58e32cf29d87aa610ac88268b19f6c",
-    "openclaw-plugin/dist/src/runtimeReceipt.js": "sha256:f91deaffa437de675c3dfa12279f8111b0738b545a31e398492b5d4e6ce99858",
+    "openclaw-plugin/dist/src/runtimeReceipt.js": "sha256:75d167ba8b99387c545011f2d8334da37376362ddaa5a4e2dbf0eb89699e3934",
     "openclaw-plugin/dist/src/toolParameters.js": "sha256:a441d521980b64e571918ab4b769d13c764fdc05960303b4683ca5d8c59b5a73",
     "openclaw-plugin/index.ts": "sha256:0c472c05dde30746e87b5c0b8276e13d0cf572bd47460c7d04cc0049f64ff579",
     "openclaw-plugin/openclaw.plugin.json": "sha256:60e71f4d13ad571fa1229d7dbe78ce39db554f5dd32d7a2e35c10550d40b0ad6",
@@ -24,11 +24,11 @@
     "openclaw-plugin/scripts/runtime-receipt-negative-proof.mjs": "sha256:6a91ee0fc8ba7269ee5ff8ca3a79d7bfadb9139ed1eb629642c9c2a688130062",
     "openclaw-plugin/src/bridge.ts": "sha256:d0e0da280bd83dc71734579d12bbb8c37a50c5e8d746fb4ac967e7b69862a1f1",
     "openclaw-plugin/src/firewall.ts": "sha256:e8ef55500e577f828cb9a1422d0496bec9e5b9f0bb5ac65e06c527220aa4cf22",
-    "openclaw-plugin/src/runtimeReceipt.ts": "sha256:8f42f6b6c130cc198723a369ddc2d9ced9e5366e56be3597e46b197e7cd6dd5f",
+    "openclaw-plugin/src/runtimeReceipt.ts": "sha256:3812e04cf3c78db9e0e329fa27b3897cf97905f6a9289b0667d351923f83ccc1",
     "openclaw-plugin/src/toolParameters.ts": "sha256:dcca4a1615f7c138a03b2ff0da5e7739b2d0f29bf25fd3ffa3c9bc85b8c61b7c",
     "openclaw-plugin/src/types.d.ts": "sha256:6144e747e97c133ddaefe37af986865d6b87d842b922026a2af14b010c946bfc",
     "openclaw-plugin/tests/pluginContract.test.mjs": "sha256:33679173a252fdd97e7f9e43747fd65bce7d5a713b7f8dd7a904774d4a45a7ba",
-    "openclaw-plugin/tests/runtimeReceipt.test.mjs": "sha256:b1142ba5d65c346fb914329b2f4796c6af98dee0151f4ea46c28452c5c91df59",
+    "openclaw-plugin/tests/runtimeReceipt.test.mjs": "sha256:8202244eb7f576d85e4812b914b5a269ad5481b8f78148d5a5c10be095667242",
     "openclaw-plugin/tsconfig.json": "sha256:d5ceeadf205f97973f4d2a1e13ef20f9af854c1fbc01823af60b02eed5d5b34b"
   }
 }

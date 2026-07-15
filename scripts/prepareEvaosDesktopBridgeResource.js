@@ -15,11 +15,8 @@ const bridgeResourceDir = process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR
   ? path.resolve(process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR)
   : path.join(projectRoot, 'resources', 'Bridge');
 const vendoredBridgeSourceDir = path.join(projectRoot, 'packages', 'mac-connector-core');
-const vendoredBridgeProvenancePath = path.join(
-  vendoredBridgeSourceDir,
-  'contracts',
-  'core-source-files.v1.json'
-);
+const vendoredBridgeProvenancePath = path.join(vendoredBridgeSourceDir, 'contracts', 'core-source-files.v1.json');
+const bridgeWrapperSourcePath = path.join(vendoredBridgeSourceDir, 'native', 'evaos-desktop-bridge.sh');
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
@@ -521,54 +518,7 @@ function findOnPath(command) {
 }
 
 function bridgeWrapperScript() {
-  return `#!/bin/sh
-set -eu
-
-BRIDGE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-PYTHON_BIN="$BRIDGE_DIR/python/bin/python3"
-
-if [ ! -x "$PYTHON_BIN" ]; then
-  echo "evaos-desktop-bridge: bundled Python runtime is missing. Reinstall evaOS Workbench or contact Electric Sheep support." >&2
-  exit 127
-fi
-
-unset PYTHONHOME
-unset PYTHONUSERBASE
-unset PYTHONPATH
-unset VIRTUAL_ENV
-unset PIP_CONFIG_FILE
-unset PIP_REQUIRE_VIRTUALENV
-unset PIP_USER
-export PYTHONNOUSERSITE=1
-export PATH="$BRIDGE_DIR/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-export PYTHONDONTWRITEBYTECODE=1
-
-CACHE_ROOT="\${EVAOS_DESKTOP_BRIDGE_CACHE_DIR:-}"
-if [ -z "$CACHE_ROOT" ]; then
-  if [ -n "\${HOME:-}" ]; then
-    CACHE_ROOT="$HOME/Library/Caches/evaos-desktop-bridge"
-  else
-    CACHE_ROOT="/tmp/evaos-desktop-bridge-cache"
-  fi
-fi
-mkdir -p "$CACHE_ROOT/pycache" 2>/dev/null || true
-export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
-
-PYTHON_MODULE="evaos_desktop_bridge.host.cli"
-case "\${1:-}" in
-  pre-canary)
-    PYTHON_MODULE="evaos_desktop_bridge.proof.pre_canary"
-    shift
-    ;;
-  qa-canary)
-    PYTHON_MODULE="evaos_desktop_bridge.proof.qa_canary"
-    shift
-    ;;
-esac
-
-PYTHON_BOOTSTRAP='import runpy, sys; source_root = sys.argv.pop(1); module = sys.argv.pop(1); sys.path.insert(0, source_root); runpy.run_module(module, run_name="__main__", alter_sys=True)'
-exec "$PYTHON_BIN" -I -B -c "$PYTHON_BOOTSTRAP" "$BRIDGE_DIR/src" "$PYTHON_MODULE" "$@"
-`;
+  return fs.readFileSync(bridgeWrapperSourcePath, 'utf8');
 }
 
 function installPythonRuntime(

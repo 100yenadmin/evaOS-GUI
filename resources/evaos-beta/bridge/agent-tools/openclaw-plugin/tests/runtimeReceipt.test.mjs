@@ -932,16 +932,16 @@ function validReceipt(authority, challenge, runRef, overrides = {}) {
     candidate: {
       sourceCommit: EXPECTED_COMMIT,
       sourceSha256: EXPECTED_SOURCE_SHA256,
-      sourcePath: 'resources/evaos-beta/bridge',
+      sourcePath: 'packages/mac-connector-core',
       sourceOwner: '100yenadmin/evaOS-GUI',
-      status: 'vendored',
+      status: 'canonical',
       appPath: '/Applications/evaOS Workbench.app',
       appVersion: '2.1.36',
       appBuild: '2.1.36',
       appBundleId: 'com.evaos.workbench',
       appName: 'evaOS Workbench',
       executable: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3.12',
-      argv0: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py',
+      argv0: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py',
       owner: {
         label: 'com.electricsheep.evaos-desktop-bridge',
         classification: 'workbench_bundle',
@@ -949,7 +949,7 @@ function validReceipt(authority, challenge, runRef, overrides = {}) {
         sourceCommit: EXPECTED_COMMIT,
         programPath: {
           kind: 'path',
-          value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py',
+          value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py',
         },
         appPath: { kind: 'path', value: '/Applications/evaOS Workbench.app' },
         manifestPath: {

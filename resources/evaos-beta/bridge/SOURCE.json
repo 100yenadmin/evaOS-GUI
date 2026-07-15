@@ -1,9 +1,10 @@
 {
-  "schema": "evaos-workbench-vendored-bridge-source/v1",
+  "schema": "evaos-workbench-bridge-provenance/v1",
   "owner": "100yenadmin/evaOS-GUI",
-  "sourcePath": "resources/evaos-beta/bridge/src/evaos_desktop_bridge",
+  "canonicalSourcePath": "packages/mac-connector-core",
   "importedFrom": "electricsheephq/evaos-desktop-bridge",
   "importedCommit": "908e3cad8c5f11dca739bbfc2c697c3e6d52f79e",
   "importedAt": "2026-07-14",
-  "status": "vendored"
+  "status": "provenance-only",
+  "runtimeDependency": false
 }

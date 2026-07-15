@@ -108,8 +108,12 @@ function coreSourceIdentity(coreRoot) {
   const actual = [];
   for (const ownedRoot of ['native', 'python/evaos_desktop_bridge']) {
     const absoluteRoot = path.join(loaded.root, ...ownedRoot.split('/'));
-    if (!fs.existsSync(absoluteRoot) || !fs.statSync(absoluteRoot).isDirectory()) {
+    if (!fs.existsSync(absoluteRoot)) {
       throw new Error(`Connector-core owned source root is missing: ${ownedRoot}`);
+    }
+    const rootMetadata = fs.lstatSync(absoluteRoot);
+    if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+      throw new Error(`Connector-core owned source root is not a real directory: ${ownedRoot}`);
     }
     for (const filePath of walkFiles(absoluteRoot)) {
       actual.push(path.relative(loaded.root, filePath).split(path.sep).join('/'));
