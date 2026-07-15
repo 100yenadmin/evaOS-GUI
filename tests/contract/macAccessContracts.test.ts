@@ -1,16 +1,21 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import canonicalize from 'canonicalize';
 import { describe, expect, it } from 'vitest';
 
 import {
   CORE_HOST_OPERATIONS,
+  MAC_ACCESS_IDENTITIES,
   accessStateSchema,
   accessTransitionSchema,
+  auditChainGoldenSchema,
   auditEventSchema,
   authenticatedLocalActionSchema,
   brokerControlEnvelopeSchema,
+  coreHostExchangeSchema,
   coreHostRequestSchema,
   coreHostResponseSchema,
   localStatusSchema,
@@ -43,12 +48,42 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+type LifecycleResponseFixture = {
+  schema_version: string;
+  request_id: string;
+  host_session_id: string;
+  sequence: number;
+  operation: string;
+  ok: boolean;
+  policy_epoch: number;
+  result: {
+    kind: 'lifecycle';
+    configured_mode: 'off' | 'ask_every_time' | 'full_access';
+    effective_mode: 'off' | 'ask_every_time' | 'full_access';
+    requested_target_mode: 'off' | 'ask_every_time' | 'full_access' | null;
+    pairing_state: 'unpaired' | 'paired' | 'revoked';
+    transport_state: 'disconnected' | 'connecting' | 'connected' | 'revoked' | 'blocked';
+  };
+  error: { code: string; audit_id: string | null } | null;
+};
+
+function readLifecycleResponseFixture(): LifecycleResponseFixture {
+  const response = cloneJson(
+    coreHostResponseSchema.parse(readJson(path.join(contractRoot, 'fixtures/host/host-response.json')))
+  );
+  if (response.result?.kind !== 'lifecycle') throw new Error('Expected lifecycle response fixture');
+  return response as unknown as LifecycleResponseFixture;
+}
+
 function applyMutation(
   target: unknown,
   mutation: { operation?: 'set' | 'remove'; pointer?: string; value?: unknown }
 ): void {
   if (!mutation.operation || !mutation.pointer) {
     throw new Error('Fixture mutation is missing its operation or pointer');
+  }
+  if (mutation.operation === 'set' && !Object.hasOwn(mutation, 'value')) {
+    throw new Error('Set fixture mutation is missing its value');
   }
   const parts = mutation.pointer
     .slice(1)
@@ -227,6 +262,7 @@ describe('evaOS Mac Access v1 contracts', () => {
     ['access_transition', 'state/access-transition-grant-expired.json'],
     ['local_status', 'state/local-status.json'],
     ['authenticated_local_action', 'authority/local-action.json'],
+    ['authenticated_local_action', 'authority/begin-pairing-action.json'],
     ['broker_control', 'authority/broker-control.json'],
     ['audit_event', 'audit/audit-event.json'],
     ['core_host_request', '../host/host-request.json'],
@@ -261,7 +297,6 @@ describe('evaOS Mac Access v1 contracts', () => {
       host_session_id: 'host-session-01',
       expected_policy_epoch: 7,
     };
-    const reason = { reason_code: 'local_user_request' };
     const requests: unknown[] = [
       { ...identity, request_id: 'host-status', operation: 'status', expected_policy_epoch: null, sequence: 1 },
       {
@@ -270,11 +305,11 @@ describe('evaOS Mac Access v1 contracts', () => {
         operation: 'pair',
         sequence: 2,
         pairing_code: 'ABC123',
-        local_installation_nonce: 'bm9uY2U',
+        local_installation_nonce: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY',
       },
-      { ...identity, ...reason, request_id: 'host-unpair', operation: 'unpair', sequence: 3 },
+      { ...identity, request_id: 'host-unpair', operation: 'unpair', sequence: 3 },
       { ...identity, request_id: 'host-connect', operation: 'connect', sequence: 4, binding: envelope.binding },
-      { ...identity, ...reason, request_id: 'host-disconnect', operation: 'disconnect', sequence: 5 },
+      { ...identity, request_id: 'host-disconnect', operation: 'disconnect', sequence: 5 },
       {
         ...identity,
         request_id: 'host-mode',
@@ -288,15 +323,15 @@ describe('evaOS Mac Access v1 contracts', () => {
         request_id: 'host-audit',
         operation: 'audit_summary',
         sequence: 8,
-        after_sequence: null,
+        after_cursor: null,
         limit: 25,
       },
-      { ...identity, ...reason, request_id: 'host-pause', operation: 'pause', sequence: 9 },
-      { ...identity, ...reason, request_id: 'host-resume', operation: 'resume', sequence: 10 },
-      { ...identity, ...reason, request_id: 'host-stop', operation: 'stop', sequence: 11 },
-      { ...identity, ...reason, request_id: 'host-revoke', operation: 'revoke', sequence: 12 },
-      { ...identity, ...reason, request_id: 'host-kill', operation: 'activate_kill_switch', sequence: 13 },
-      { ...identity, ...reason, request_id: 'host-shutdown', operation: 'shutdown', sequence: 14 },
+      { ...identity, request_id: 'host-pause', operation: 'pause', sequence: 9 },
+      { ...identity, request_id: 'host-resume', operation: 'resume', sequence: 10 },
+      { ...identity, request_id: 'host-stop', operation: 'stop', sequence: 11 },
+      { ...identity, request_id: 'host-revoke', operation: 'revoke', sequence: 12 },
+      { ...identity, request_id: 'host-kill', operation: 'activate_kill_switch', sequence: 13 },
+      { ...identity, request_id: 'host-shutdown', operation: 'shutdown', sequence: 14 },
     ];
 
     for (const request of requests) expect(coreHostRequestSchema.safeParse(request).success).toBe(true);
@@ -359,8 +394,13 @@ describe('evaOS Mac Access v1 contracts', () => {
       policy_epoch: 7,
       result: {
         kind: 'audit_summary',
+        page_anchor: null,
         events: [cloneJson(readJson(path.join(validRoot, 'audit/audit-event.json')))],
-        next_sequence: null,
+        causal_decisions: [],
+        next_cursor: {
+          sequence: 1,
+          record_sha256: 'a0cf9968470f3ae354e1ef68e7aa80ba34c7b0d715e3db4a07fca5cbe7b6ced9',
+        },
       },
       error: null,
     };
@@ -521,7 +561,9 @@ describe('evaOS Mac Access v1 contracts', () => {
         operation: 'connect',
         result: {
           kind: 'lifecycle',
+          configured_mode: 'ask_every_time',
           effective_mode: 'ask_every_time',
+          requested_target_mode: null,
           pairing_state: 'paired',
           transport_state: 'disconnected',
         },
@@ -532,7 +574,9 @@ describe('evaOS Mac Access v1 contracts', () => {
         operation: 'disconnect',
         result: {
           kind: 'lifecycle',
+          configured_mode: 'ask_every_time',
           effective_mode: 'ask_every_time',
+          requested_target_mode: null,
           pairing_state: 'paired',
           transport_state: 'connected',
         },
@@ -556,6 +600,7 @@ describe('evaOS Mac Access v1 contracts', () => {
     const base = cloneJson(readJson(path.join(contractRoot, 'fixtures/host/host-response.json'))) as {
       operation: string;
       result: {
+        requested_target_mode: string | null;
         effective_mode: string;
         pairing_state: string;
         transport_state: string;
@@ -588,6 +633,7 @@ describe('evaOS Mac Access v1 contracts', () => {
     for (const testCase of cases) {
       const response = cloneJson(base);
       response.operation = testCase.operation;
+      response.result.requested_target_mode = null;
       response.result.effective_mode = testCase.effective_mode;
       response.result.pairing_state = testCase.pairing_state;
       response.result.transport_state = testCase.transport_state;
@@ -601,6 +647,490 @@ describe('evaOS Mac Access v1 contracts', () => {
           ).toBe(true);
         }
       }
+    }
+  });
+
+  it('forces effective access off for every unavailable transport owner state', () => {
+    for (const transportState of ['disconnected', 'connecting', 'revoked', 'blocked'] as const) {
+      const status = cloneJson(localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json'))));
+      status.transport.state = transportState;
+      status.transport.channel_id = null;
+      status.access.effective_mode = 'ask_every_time';
+      if (transportState === 'revoked') {
+        status.access.pairing_state = 'revoked';
+        status.access.configured_mode = 'off';
+        status.access.binding = null;
+      }
+      const parsed = localStatusSchema.safeParse(status);
+      expect(parsed.success, transportState).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'transport/state')).toBe(true);
+      }
+    }
+
+    const status = cloneJson(localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json'))));
+    applyMutation(status, {
+      operation: 'set',
+      pointer: '/transport/responsible_identity',
+      value: MAC_ACCESS_IDENTITIES.connectorServiceId,
+    });
+    const parsed = localStatusSchema.safeParse(status);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'transport/responsible_identity')).toBe(true);
+    }
+  });
+
+  it('forces access off while an audit anchor commit is pending', () => {
+    const status = cloneJson(localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json'))));
+    status.audit.anchor.pending_sequence = 2;
+    status.audit.anchor.pending_audit_id = 'audit-02';
+    status.audit.anchor.pending_record_sha256 = '8'.repeat(64);
+    const parsed = localStatusSchema.safeParse(status);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'audit/anchor/pending_sequence')).toBe(true);
+    }
+  });
+
+  it('binds successful access-mode responses to the exact request target', () => {
+    const request = readJson(path.join(contractRoot, 'fixtures/host/host-request.json'));
+    const response = readLifecycleResponseFixture();
+    expect(coreHostExchangeSchema.safeParse({ request, response }).success).toBe(true);
+
+    response.result.configured_mode = 'off';
+    response.result.effective_mode = 'off';
+    response.result.requested_target_mode = 'off';
+    const mismatchedExchange = coreHostExchangeSchema.safeParse({ request, response });
+    expect(mismatchedExchange.success).toBe(false);
+    if (!mismatchedExchange.success) {
+      expect(
+        mismatchedExchange.error.issues.some(
+          (issue) => issue.path.join('/') === 'response/result/requested_target_mode'
+        )
+      ).toBe(true);
+    }
+
+    response.result.configured_mode = 'ask_every_time';
+    const inconsistentResponse = coreHostResponseSchema.safeParse(response);
+    expect(inconsistentResponse.success).toBe(false);
+
+    const staleEpochResponse = readLifecycleResponseFixture();
+    staleEpochResponse.policy_epoch = 999;
+    const staleEpochExchange = coreHostExchangeSchema.safeParse({ request, response: staleEpochResponse });
+    expect(staleEpochExchange.success).toBe(false);
+    if (!staleEpochExchange.success) {
+      expect(staleEpochExchange.error.issues.some((issue) => issue.path.join('/') === 'response/policy_epoch')).toBe(
+        true
+      );
+    }
+  });
+
+  it('rejects lifecycle receipts that exceed configured or pairing authority', () => {
+    const exceedsConfigured = readLifecycleResponseFixture();
+    exceedsConfigured.result.configured_mode = 'off';
+    exceedsConfigured.result.requested_target_mode = 'off';
+    exceedsConfigured.result.effective_mode = 'full_access';
+    expect(coreHostResponseSchema.safeParse(exceedsConfigured).success).toBe(false);
+
+    const unpairedConnected = readLifecycleResponseFixture();
+    unpairedConnected.result.pairing_state = 'unpaired';
+    expect(coreHostResponseSchema.safeParse(unpairedConnected).success).toBe(false);
+
+    const pairedRevoked = readLifecycleResponseFixture();
+    pairedRevoked.result.configured_mode = 'off';
+    pairedRevoked.result.effective_mode = 'off';
+    pairedRevoked.result.requested_target_mode = 'off';
+    pairedRevoked.result.transport_state = 'revoked';
+    expect(coreHostResponseSchema.safeParse(pairedRevoked).success).toBe(false);
+  });
+
+  it('binds policy-changing lifecycle receipts to one exact epoch advance', () => {
+    const cases = [
+      { operation: 'pause', configured: 'ask_every_time', effective: 'off', pairing: 'paired', transport: 'connected' },
+      {
+        operation: 'resume',
+        configured: 'ask_every_time',
+        effective: 'ask_every_time',
+        pairing: 'paired',
+        transport: 'connected',
+      },
+      {
+        operation: 'stop',
+        configured: 'ask_every_time',
+        effective: 'off',
+        pairing: 'paired',
+        transport: 'disconnected',
+      },
+      { operation: 'revoke', configured: 'off', effective: 'off', pairing: 'revoked', transport: 'revoked' },
+      {
+        operation: 'activate_kill_switch',
+        configured: 'off',
+        effective: 'off',
+        pairing: 'paired',
+        transport: 'blocked',
+      },
+    ] as const;
+
+    for (const [index, testCase] of cases.entries()) {
+      const request = {
+        schema_version: 'evaos.mac_connector_core.host_request.v1',
+        request_id: `policy-lifecycle-${index}`,
+        host_session_id: 'host-session-01',
+        sequence: index + 1,
+        operation: testCase.operation,
+        expected_policy_epoch: 7,
+      };
+      const response: LifecycleResponseFixture = {
+        schema_version: 'evaos.mac_connector_core.host_response.v1',
+        request_id: request.request_id,
+        host_session_id: request.host_session_id,
+        sequence: request.sequence,
+        operation: request.operation,
+        ok: true,
+        policy_epoch: 8,
+        result: {
+          kind: 'lifecycle',
+          configured_mode: testCase.configured,
+          effective_mode: testCase.effective,
+          requested_target_mode: null,
+          pairing_state: testCase.pairing,
+          transport_state: testCase.transport,
+        },
+        error: null,
+      };
+      expect(coreHostExchangeSchema.safeParse({ request, response }).success, testCase.operation).toBe(true);
+      response.policy_epoch = 999;
+      expect(coreHostExchangeSchema.safeParse({ request, response }).success, testCase.operation).toBe(false);
+    }
+  });
+
+  it('rejects runtime identity drift outside restart and preserves configured intent', () => {
+    const transition = cloneJson(
+      accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')))
+    );
+    transition.to.runtime_instance_id = 'runtime-instance-02';
+    const drift = accessTransitionSchema.safeParse(transition);
+    expect(drift.success).toBe(false);
+    if (!drift.success) {
+      expect(drift.error.issues.some((issue) => issue.path.join('/') === 'to/runtime_instance_id')).toBe(true);
+    }
+
+    const unsafeStop = cloneJson(
+      accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')))
+    );
+    unsafeStop.to.local_confirmation_required = false;
+    const stop = accessTransitionSchema.safeParse(unsafeStop);
+    expect(stop.success).toBe(false);
+    if (!stop.success) expect(stop.error.issues.some((issue) => issue.path.join('/') === 'event')).toBe(true);
+
+    const intentEscalation = cloneJson(
+      accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')))
+    );
+    intentEscalation.from.configured_mode = 'ask_every_time';
+    intentEscalation.from.effective_mode = 'ask_every_time';
+    intentEscalation.from.confirmed_runtime_instance_id = null;
+    intentEscalation.from.confirmed_policy_epoch = null;
+    intentEscalation.from.confirmed_binding_fingerprint_sha256 = null;
+    intentEscalation.from.reason_code = 'pairing_confirmed';
+    const escalated = accessTransitionSchema.safeParse(intentEscalation);
+    expect(escalated.success).toBe(false);
+    if (!escalated.success) {
+      expect(escalated.error.issues.some((issue) => issue.path.join('/') === 'to/configured_mode')).toBe(true);
+    }
+  });
+
+  it('preserves configured full-access intent through restart and resume while requiring reconfirmation', () => {
+    const base = accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')));
+    const restart = cloneJson(base);
+    restart.event = 'restart';
+    restart.to.runtime_instance_id = 'runtime-instance-02';
+    restart.to.effective_mode = 'ask_every_time';
+    restart.to.reason_code = 'runtime_restart';
+    expect(accessTransitionSchema.safeParse(restart).success).toBe(true);
+
+    const restartMutation = cloneJson(restart);
+    restartMutation.to.configured_mode = 'ask_every_time';
+    restartMutation.to.local_confirmation_required = false;
+    expect(accessTransitionSchema.safeParse(restartMutation).success).toBe(false);
+
+    const resume = cloneJson(base);
+    resume.event = 'resume';
+    resume.invalidated_pending_authority = false;
+    resume.safe_cancellation_requested = false;
+    resume.from.effective_mode = 'off';
+    resume.from.paused = true;
+    resume.from.local_confirmation_required = true;
+    resume.from.confirmed_runtime_instance_id = null;
+    resume.from.confirmed_policy_epoch = null;
+    resume.from.confirmed_binding_fingerprint_sha256 = null;
+    resume.to.effective_mode = 'ask_every_time';
+    resume.to.reason_code = 'local_resume';
+    expect(accessTransitionSchema.safeParse(resume).success).toBe(true);
+
+    const resumeMutation = cloneJson(resume);
+    resumeMutation.to.configured_mode = 'ask_every_time';
+    resumeMutation.to.local_confirmation_required = false;
+    expect(accessTransitionSchema.safeParse(resumeMutation).success).toBe(false);
+  });
+
+  it('makes the kill switch a fail-closed configured-off transition', () => {
+    const base = accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')));
+    const killSwitch = cloneJson(base);
+    killSwitch.event = 'kill_switch';
+    killSwitch.to.configured_mode = 'off';
+    killSwitch.to.kill_switch = true;
+    killSwitch.to.local_confirmation_required = false;
+    killSwitch.to.reason_code = 'local_kill_switch';
+    expect(accessTransitionSchema.safeParse(killSwitch).success).toBe(true);
+
+    const unsafeIntent = cloneJson(killSwitch);
+    unsafeIntent.to.configured_mode = 'full_access';
+    unsafeIntent.to.local_confirmation_required = true;
+    expect(accessTransitionSchema.safeParse(unsafeIntent).success).toBe(false);
+  });
+
+  it('requires pairing code and installation nonce only for begin pairing', () => {
+    const pairing = cloneJson(
+      authenticatedLocalActionSchema.parse(readJson(path.join(validRoot, 'authority/begin-pairing-action.json')))
+    );
+    expect(authenticatedLocalActionSchema.safeParse(pairing).success).toBe(true);
+    pairing.request.pairing_code = null;
+    const missingCode = authenticatedLocalActionSchema.safeParse(pairing);
+    expect(missingCode.success).toBe(false);
+    if (!missingCode.success) {
+      expect(missingCode.error.issues.some((issue) => issue.path.join('/') === 'request/pairing_code')).toBe(true);
+    }
+    pairing.request.pairing_code = 'ABC123';
+    pairing.request.local_installation_nonce = null;
+    const missingNonce = authenticatedLocalActionSchema.safeParse(pairing);
+    expect(missingNonce.success).toBe(false);
+    if (!missingNonce.success) {
+      expect(
+        missingNonce.error.issues.some((issue) => issue.path.join('/') === 'request/local_installation_nonce')
+      ).toBe(true);
+    }
+
+    for (const invalidNonce of ['A', 'A'.repeat(44), `${'A'.repeat(42)}B`]) {
+      pairing.request.local_installation_nonce = invalidNonce;
+      expect(authenticatedLocalActionSchema.safeParse(pairing).success, invalidNonce.length.toString()).toBe(false);
+    }
+
+    const hostPair = {
+      schema_version: 'evaos.mac_connector_core.host_request.v1',
+      request_id: 'host-pair-nonce',
+      host_session_id: 'host-session-01',
+      sequence: 1,
+      operation: 'pair',
+      expected_policy_epoch: 7,
+      pairing_code: 'ABC123',
+      local_installation_nonce: 'A',
+    };
+    expect(coreHostRequestSchema.safeParse(hostPair).success).toBe(false);
+    hostPair.local_installation_nonce = `${'A'.repeat(42)}B`;
+    expect(coreHostRequestSchema.safeParse(hostPair).success).toBe(false);
+  });
+
+  it('uses unambiguous JSON fixture mutations', () => {
+    const base = {
+      id: 'mutation-shape',
+      threat: 'fixture_integrity',
+      contract: 'access_state',
+      base_fixture: '../valid/state/access-state.json',
+      expected_stage: 'schema',
+      expected_error: 'fixture_integrity',
+      required_runtime_rejection: null as string | null,
+    };
+    expect(
+      negativeFixtureCaseSchema.safeParse({
+        ...base,
+        mutations: [{ operation: 'set', pointer: '/reason_code' }],
+      }).success
+    ).toBe(false);
+    expect(
+      negativeFixtureCaseSchema.safeParse({
+        ...base,
+        mutations: [{ operation: 'remove', pointer: '/reason_code', value: 'unexpected' }],
+      }).success
+    ).toBe(false);
+  });
+
+  it('requires closed redacted evidence and causal command audit records', () => {
+    const event = cloneJson(auditEventSchema.parse(readJson(path.join(validRoot, 'audit/audit-event.json'))));
+    event.command_id = null;
+    event.request_digest_sha256 = null;
+    const uncorrelated = auditEventSchema.safeParse(event);
+    expect(uncorrelated.success).toBe(false);
+    if (!uncorrelated.success) {
+      expect(uncorrelated.error.issues.some((issue) => issue.path.join('/') === 'command_id')).toBe(true);
+    }
+
+    const unsafeEvidence = cloneJson(auditEventSchema.parse(readJson(path.join(validRoot, 'audit/audit-event.json'))));
+    applyMutation(unsafeEvidence, {
+      operation: 'set',
+      pointer: '/evidence/target_path_hash',
+      value: 'private-path',
+    });
+    expect(auditEventSchema.safeParse(unsafeEvidence).success).toBe(false);
+
+    const unsafeReason = cloneJson(auditEventSchema.parse(readJson(path.join(validRoot, 'audit/audit-event.json'))));
+    applyMutation(unsafeReason, {
+      operation: 'set',
+      pointer: '/reason_code',
+      value: 'Bearer-secret-material',
+    });
+    expect(auditEventSchema.safeParse(unsafeReason).success).toBe(false);
+
+    const invalidEvidenceCases = [
+      ['/evidence/capability', 'customer_mac.desktop_unknown'],
+      ['/evidence/state_from', 'private_state'],
+      ['/evidence/transport_state', 'online'],
+      ['/evidence/detail_code', 'custom_detail'],
+      ['/evidence/schema_version', 'evaos.unknown.v99'],
+      ['/evidence/build_version', 'build-secret'],
+      ['/evidence/build_version', `1.2.3-${'a'.repeat(129)}`],
+    ] as const;
+    for (const [pointer, value] of invalidEvidenceCases) {
+      const candidate = cloneJson(auditEventSchema.parse(readJson(path.join(validRoot, 'audit/audit-event.json'))));
+      applyMutation(candidate, { operation: 'set', pointer, value });
+      expect(auditEventSchema.safeParse(candidate).success, pointer).toBe(false);
+    }
+
+    const selfCausal = cloneJson(
+      auditChainGoldenSchema.parse(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))).records[1].payload
+    );
+    selfCausal.causation_audit_id = selfCausal.audit_id;
+    expect(auditEventSchema.safeParse({ ...selfCausal, record_sha256: '8'.repeat(64) }).success).toBe(false);
+  });
+
+  it('validates audit pages as cursor-bound contiguous digest chains', () => {
+    const golden = auditChainGoldenSchema.parse(
+      readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))
+    ) as unknown as {
+      records: Array<{
+        payload: Record<string, unknown> & { sequence: number; previous_record_sha256: string | null };
+        record_sha256: string;
+      }>;
+    };
+    const events = golden.records.map((record) =>
+      Object.assign({}, record.payload, { record_sha256: record.record_sha256 })
+    );
+    const response = {
+      schema_version: 'evaos.mac_connector_core.host_response.v1',
+      request_id: 'host-audit-page',
+      host_session_id: 'host-session-01',
+      sequence: 1,
+      operation: 'audit_summary',
+      ok: true,
+      policy_epoch: 7,
+      result: {
+        kind: 'audit_summary',
+        page_anchor: null as { sequence: number; record_sha256: string } | null,
+        events,
+        causal_decisions: [] as typeof events,
+        next_cursor: { sequence: events[1].sequence, record_sha256: events[1].record_sha256 },
+      },
+      error: null as { code: string; audit_id: string | null } | null,
+    };
+    expect(coreHostResponseSchema.safeParse(response).success).toBe(true);
+
+    const reordered = cloneJson(response);
+    reordered.result.events.reverse();
+    expect(coreHostResponseSchema.safeParse(reordered).success).toBe(false);
+
+    const tamperedRecord = cloneJson(response);
+    tamperedRecord.result.events[0].outcome = 'denied';
+    expect(coreHostResponseSchema.safeParse(tamperedRecord).success).toBe(false);
+
+    const continuation = cloneJson(response);
+    continuation.result.page_anchor = { sequence: events[0].sequence, record_sha256: events[0].record_sha256 };
+    continuation.result.events = [events[1]];
+    continuation.result.causal_decisions = [events[0]];
+    expect(coreHostResponseSchema.safeParse(continuation).success).toBe(true);
+
+    const wrongDecision = cloneJson(continuation);
+    wrongDecision.result.causal_decisions[0].command_id = 'unrelated-command';
+    expect(coreHostResponseSchema.safeParse(wrongDecision).success).toBe(false);
+
+    const foreignDecision = cloneJson(continuation);
+    const foreignDecisionRecord = cloneJson(events[0]);
+    foreignDecisionRecord.occurred_at = '2026-07-14T12:00:02Z';
+    const { record_sha256: _foreignDigest, ...foreignDecisionPayload } = foreignDecisionRecord;
+    foreignDecisionRecord.record_sha256 = createHash('sha256')
+      .update(canonicalize(foreignDecisionPayload)!)
+      .digest('hex');
+    foreignDecision.result.causal_decisions = [foreignDecisionRecord];
+    expect(coreHostResponseSchema.safeParse(foreignDecision).success).toBe(false);
+
+    const hiddenSuffix = cloneJson(response);
+    hiddenSuffix.result.next_cursor = null;
+    expect(coreHostResponseSchema.safeParse(hiddenSuffix).success).toBe(false);
+
+    continuation.result.page_anchor.record_sha256 = 'f'.repeat(64);
+    expect(coreHostResponseSchema.safeParse(continuation).success).toBe(false);
+  });
+
+  it('binds action receipts to the exact signed dispatch envelope and distinct audits', () => {
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
+    const auditGolden = auditChainGoldenSchema.parse(readJson(path.join(validRoot, 'audit/audit-chain-golden.json')));
+    const [decisionRecord, resultRecord] = auditGolden.records;
+    const decisionAudit = { ...decisionRecord.payload, record_sha256: decisionRecord.record_sha256 };
+    const resultAudit = { ...resultRecord.payload, record_sha256: resultRecord.record_sha256 };
+    const request = {
+      schema_version: 'evaos.mac_connector_core.host_request.v1',
+      request_id: 'host-dispatch-receipt',
+      host_session_id: 'host-session-01',
+      sequence: 1,
+      operation: 'dispatch_action',
+      expected_policy_epoch: envelope.policy_epoch,
+      envelope,
+    };
+    const response = {
+      schema_version: 'evaos.mac_connector_core.host_response.v1',
+      request_id: request.request_id,
+      host_session_id: request.host_session_id,
+      sequence: request.sequence,
+      operation: request.operation,
+      ok: true,
+      policy_epoch: request.expected_policy_epoch,
+      result: {
+        kind: 'action',
+        command_id: envelope.command_id,
+        request_digest_sha256: envelope.command.request_digest_sha256,
+        outcome: 'executed',
+        decision_audit_id: decisionAudit.audit_id,
+        result_audit_id: resultAudit.audit_id,
+        decision_audit: decisionAudit,
+        result_audit: resultAudit,
+      },
+      error: null as { code: string; audit_id: string | null } | null,
+    };
+    expect(coreHostExchangeSchema.safeParse({ request, response }).success).toBe(true);
+
+    const wrongCommand = cloneJson(response);
+    wrongCommand.result.command_id = 'unrelated-command';
+    expect(coreHostExchangeSchema.safeParse({ request, response: wrongCommand }).success).toBe(false);
+
+    const reusedAudit = cloneJson(response);
+    reusedAudit.result.result_audit_id = reusedAudit.result.decision_audit_id;
+    expect(coreHostExchangeSchema.safeParse({ request, response: reusedAudit }).success).toBe(false);
+
+    const arbitraryAudits = cloneJson(response);
+    arbitraryAudits.result.decision_audit_id = 'unrelated-decision';
+    arbitraryAudits.result.result_audit_id = 'unrelated-result';
+    expect(coreHostExchangeSchema.safeParse({ request, response: arbitraryAudits }).success).toBe(false);
+  });
+
+  it('rejects resume responses that silently restore full access', () => {
+    const response = readLifecycleResponseFixture();
+    response.operation = 'resume';
+    response.result.configured_mode = 'full_access';
+    response.result.effective_mode = 'full_access';
+    response.result.requested_target_mode = null;
+    const parsed = coreHostResponseSchema.safeParse(response);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'result/effective_mode')).toBe(true);
     }
   });
 

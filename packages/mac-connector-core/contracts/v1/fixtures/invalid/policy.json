@@ -213,19 +213,8 @@
     "id": "stolen-pairing-code",
     "threat": "stolen_pairing_code",
     "contract": "authenticated_local_action",
-    "base_fixture": "../valid/authority/local-action.json",
-    "mutations": [
-      {
-        "operation": "set",
-        "pointer": "/request/action",
-        "value": "begin_pairing"
-      },
-      {
-        "operation": "set",
-        "pointer": "/request/target_mode",
-        "value": null
-      }
-    ],
+    "base_fixture": "../valid/authority/begin-pairing-action.json",
+    "mutations": [],
     "expected_stage": "runtime",
     "expected_error": "pairing_code_reused_or_claimed",
     "required_runtime_rejection": "The one-time code must be short-lived, rate-limited, atomically claimed, and bound to the locally displayed installation nonce before pairing state changes."
@@ -280,12 +269,8 @@
     "id": "begin-pairing-without-epoch",
     "threat": "stale_local_client",
     "contract": "authenticated_local_action",
-    "base_fixture": "../valid/authority/local-action.json",
-    "mutations": [
-      { "operation": "set", "pointer": "/request/action", "value": "begin_pairing" },
-      { "operation": "set", "pointer": "/request/expected_policy_epoch", "value": null },
-      { "operation": "set", "pointer": "/request/target_mode", "value": null }
-    ],
+    "base_fixture": "../valid/authority/begin-pairing-action.json",
+    "mutations": [{ "operation": "set", "pointer": "/request/expected_policy_epoch", "value": null }],
     "expected_stage": "schema",
     "expected_error": "pairing_epoch_required",
     "required_runtime_rejection": null

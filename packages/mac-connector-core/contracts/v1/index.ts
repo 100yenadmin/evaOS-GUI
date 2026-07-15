@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+
+import canonicalize from 'canonicalize';
 import { z } from 'zod';
 
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
@@ -7,9 +10,157 @@ const base64Url = z
   .min(1)
   .max(16_384)
   .regex(/^[A-Za-z0-9_-]+$/);
+const installationNonce = z
+  .string()
+  .length(43)
+  .regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/);
 const instant = z.string().datetime({ offset: true });
 const safePositiveCounter = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 const safeNonnegativeCounter = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ])
+);
+
+function hasValidUnicode(value: unknown): boolean {
+  if (typeof value === 'string') {
+    for (let index = 0; index < value.length; index += 1) {
+      const codeUnit = value.charCodeAt(index);
+      if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+        const next = value.charCodeAt(index + 1);
+        if (!Number.isInteger(next) || next < 0xdc00 || next > 0xdfff) return false;
+        index += 1;
+      } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(value)) return value.every(hasValidUnicode);
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value).every(([key, child]) => hasValidUnicode(key) && hasValidUnicode(child));
+  }
+  return true;
+}
+
+function canonicalJson(value: unknown): string | null {
+  if (!hasValidUnicode(value)) return null;
+  const serialized = canonicalize(value);
+  return serialized ?? null;
+}
+
+function canonicalJsonSha256(value: unknown): string | null {
+  const serialized = canonicalJson(value);
+  return serialized === null ? null : createHash('sha256').update(serialized).digest('hex');
+}
+
+export const auditCursorSchema = z
+  .object({
+    sequence: safePositiveCounter,
+    record_sha256: sha256,
+  })
+  .strict();
+
+export const macControlCapabilitySchema = z.enum([
+  'customer_mac.desktop_see',
+  'customer_mac.desktop_click',
+  'customer_mac.desktop_type',
+  'customer_mac.desktop_set_value',
+  'customer_mac.desktop_scroll',
+  'customer_mac.desktop_drag',
+  'customer_mac.desktop_hotkey',
+  'customer_mac.desktop_focus_app',
+  'customer_mac.desktop_window',
+  'customer_mac.desktop_menu',
+  'customer_mac.desktop_browser_action',
+]);
+
+const accessEvidenceStateSchema = z.enum([
+  'unpaired',
+  'paired',
+  'revoked',
+  'off',
+  'ask_every_time',
+  'full_access',
+  'paused',
+  'active',
+  'kill_switch_active',
+]);
+const transportStateSchema = z.enum(['disconnected', 'connecting', 'connected', 'revoked', 'blocked']);
+const auditReasonCodeSchema = z.enum([
+  'approved_exact_scope',
+  'denied_access_off',
+  'denied_approval',
+  'denied_audit_unhealthy',
+  'denied_binding_mismatch',
+  'denied_expired_authority',
+  'denied_policy_epoch',
+  'denied_replay',
+  'denied_tcc',
+  'denied_transport',
+  'grant_expired',
+  'local_full_access_confirmed',
+  'local_kill_switch',
+  'local_pause',
+  'local_resume',
+  'local_revoke',
+  'local_stop',
+  'pairing_confirmed',
+  'pairing_failed',
+  'runtime_restart',
+]);
+const auditDetailCodeSchema = z.enum([
+  'actuation_cancelled',
+  'actuation_failed',
+  'actuation_succeeded',
+  'anchor_mismatch',
+  'anchor_unavailable',
+  'approval_expired',
+  'approval_rejected',
+  'approval_satisfied',
+  'audit_append_failed',
+  'binding_mismatch',
+  'command_expired',
+  'command_replayed',
+  'grant_expired',
+  'policy_epoch_stale',
+  'request_digest_mismatch',
+  'tcc_unavailable',
+  'transport_unavailable',
+]);
+const accessStateReasonCodeSchema = z.enum([
+  'not_paired',
+  'pairing_confirmed',
+  'pairing_failed',
+  'local_full_access_confirmed',
+  'local_mode_changed',
+  'local_pause',
+  'local_resume',
+  'local_stop',
+  'local_revoke',
+  'local_kill_switch',
+  'runtime_restart',
+  'tcc_lost',
+  'audit_failed',
+  'binding_changed',
+  'grant_expired',
+]);
+const auditActorSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local_user'), identity: z.literal('console_user') }).strict(),
+  z.object({ kind: z.literal('workbench'), identity: z.literal('workbench_main') }).strict(),
+  z.object({ kind: z.literal('broker_runtime'), identity: z.enum(['openclaw', 'hermes']) }).strict(),
+  z
+    .object({
+      kind: z.literal('system'),
+      identity: z.enum(['audit_subsystem', 'connector_core', 'policy_engine', 'updater']),
+    })
+    .strict(),
+]);
 
 export const MAC_ACCESS_IDENTITIES = {
   teamId: 'TC6MS3T6NN',
@@ -34,6 +185,8 @@ export const MAC_ACCESS_IDENTITIES = {
   productionKeychainAccessGroupSuffix: 'com.evaos.mac-access.credentials',
   developmentKeychainAccessGroupSuffix: 'com.evaos.mac-access.development.credentials',
   connectorCredentialService: 'com.evaos.mac-access.connector-credential',
+  auditAnchorAccessGroupSuffix: 'com.evaos.mac-access.audit-anchor',
+  auditAnchorService: 'com.evaos.mac-access.audit-anchor',
 } as const;
 
 export const selectedBindingSchema = z
@@ -100,6 +253,61 @@ export const keychainCustodySchema = z
         code: z.ZodIssueCode.custom,
         message: 'production credential access group must match its security epoch',
         path: ['access_group_suffix'],
+      });
+    }
+  });
+
+export const auditAnchorSchema = z
+  .object({
+    schema_version: z.literal('evaos.mac_access.audit_anchor.v1'),
+    custodian_signing_identifier: z.literal(MAC_ACCESS_IDENTITIES.helperServiceId),
+    access_group_suffix: z.string().regex(/^com\.evaos\.mac-access\.audit-anchor\.epoch-[1-9][0-9]*$/),
+    security_epoch: safePositiveCounter,
+    service: z.literal(MAC_ACCESS_IDENTITIES.auditAnchorService),
+    accessibility: z.literal('kSecAttrAccessibleWhenUnlockedThisDeviceOnly'),
+    synchronizable: z.literal(false),
+    journal_id: identifier,
+    committed_sequence: safeNonnegativeCounter,
+    committed_audit_id: identifier.nullable(),
+    committed_record_sha256: sha256.nullable(),
+    pending_sequence: safePositiveCounter.nullable(),
+    pending_audit_id: identifier.nullable(),
+    pending_record_sha256: sha256.nullable(),
+  })
+  .strict()
+  .superRefine((anchor, context) => {
+    if (!anchor.access_group_suffix.endsWith(`.epoch-${anchor.security_epoch}`)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit anchor access group must match its security epoch',
+        path: ['access_group_suffix'],
+      });
+    }
+    const committedEmpty = anchor.committed_sequence === 0;
+    if (
+      committedEmpty !== (anchor.committed_audit_id === null) ||
+      committedEmpty !== (anchor.committed_record_sha256 === null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'committed audit anchor fields must be empty only at sequence zero',
+        path: ['committed_sequence'],
+      });
+    }
+    const pendingFields = [anchor.pending_sequence, anchor.pending_audit_id, anchor.pending_record_sha256];
+    const hasPending = pendingFields.some((value) => value !== null);
+    if (hasPending && pendingFields.some((value) => value === null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pending audit anchor fields must be committed as one complete tuple',
+        path: ['pending_sequence'],
+      });
+    }
+    if (anchor.pending_sequence !== null && anchor.pending_sequence !== anchor.committed_sequence + 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pending audit anchor must name exactly the next journal sequence',
+        path: ['pending_sequence'],
       });
     }
   });
@@ -250,7 +458,7 @@ export const accessStateSchema = z
     confirmed_binding_fingerprint_sha256: sha256.nullable(),
     binding: selectedBindingSchema.nullable(),
     changed_at: instant,
-    reason_code: identifier,
+    reason_code: accessStateReasonCodeSchema,
   })
   .strict()
   .superRefine((state, context) => {
@@ -389,9 +597,10 @@ export const localStatusSchema = z
     access: accessStateSchema,
     transport: z
       .object({
+        responsible_identity: z.literal(MAC_ACCESS_IDENTITIES.helperServiceId),
         state: z.enum(['disconnected', 'connecting', 'connected', 'revoked', 'blocked']),
         channel_id: identifier.nullable(),
-        last_error_code: identifier.nullable(),
+        last_error_code: auditDetailCodeSchema.nullable(),
       })
       .strict(),
     tcc: z
@@ -404,7 +613,8 @@ export const localStatusSchema = z
     audit: z
       .object({
         writable: z.boolean(),
-        last_audit_id: identifier.nullable(),
+        anchor_healthy: z.boolean(),
+        anchor: auditAnchorSchema,
       })
       .strict(),
   })
@@ -422,6 +632,20 @@ export const localStatusSchema = z
         code: z.ZodIssueCode.custom,
         message: 'audit failure must force effective access off',
         path: ['audit', 'writable'],
+      });
+    }
+    if (!status.audit.anchor_healthy && status.access.effective_mode !== 'off') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit anchor failure must force effective access off',
+        path: ['audit', 'anchor_healthy'],
+      });
+    }
+    if (status.audit.anchor.pending_sequence !== null && status.access.effective_mode !== 'off') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pending audit anchor commit must force effective access off',
+        path: ['audit', 'anchor', 'pending_sequence'],
       });
     }
     const tccGranted = status.tcc.accessibility === 'granted' && status.tcc.screen_recording === 'granted';
@@ -462,6 +686,13 @@ export const localStatusSchema = z
     }
     const relayBuild = status.relay_authorization;
     const localBuild = status.leader.build;
+    if (status.audit.anchor.security_epoch !== localBuild.security_epoch) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit anchor security epoch must match the accepted helper build',
+        path: ['audit', 'anchor', 'security_epoch'],
+      });
+    }
     if (
       relayBuild.accepted_build_version !== localBuild.build_version ||
       relayBuild.accepted_source_commit !== localBuild.source_commit ||
@@ -575,6 +806,13 @@ export const localStatusSchema = z
         path: ['transport', 'state'],
       });
     }
+    if (!connected && status.access.effective_mode !== 'off') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'unavailable transport must force effective access off',
+        path: ['transport', 'state'],
+      });
+    }
   });
 
 export const accessTransitionSchema = z
@@ -614,6 +852,27 @@ export const accessTransitionSchema = z
         code: z.ZodIssueCode.custom,
         message: 'selected binding may change only through an explicit binding authority transition',
         path: ['to', 'binding'],
+      });
+    }
+    const configuredModeMutationEvents = new Set([
+      'pair_confirmed',
+      'set_mode',
+      'revoke',
+      'kill_switch',
+      'grant_expired',
+    ]);
+    if (from.configured_mode !== to.configured_mode && !configuredModeMutationEvents.has(transition.event)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'configured user intent may change only through an explicit mode-authority transition',
+        path: ['to', 'configured_mode'],
+      });
+    }
+    if (transition.event !== 'restart' && from.runtime_instance_id !== to.runtime_instance_id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'runtime instance may change only through an explicit restart transition',
+        path: ['to', 'runtime_instance_id'],
       });
     }
     if (to.policy_epoch !== from.policy_epoch + 1) {
@@ -677,6 +936,7 @@ export const accessTransitionSchema = z
     if (transition.event === 'restart') {
       const validRestart =
         from.runtime_instance_id !== to.runtime_instance_id &&
+        to.configured_mode === from.configured_mode &&
         to.confirmed_runtime_instance_id === null &&
         to.confirmed_policy_epoch === null &&
         to.confirmed_binding_fingerprint_sha256 === null &&
@@ -717,7 +977,8 @@ export const accessTransitionSchema = z
         transition.safe_cancellation_requested &&
         to.confirmed_runtime_instance_id === null &&
         to.confirmed_policy_epoch === null &&
-        to.confirmed_binding_fingerprint_sha256 === null;
+        to.confirmed_binding_fingerprint_sha256 === null &&
+        (to.configured_mode !== 'full_access' || to.local_confirmation_required);
       if (!validStop) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -730,6 +991,7 @@ export const accessTransitionSchema = z
       const validResume =
         from.paused &&
         !to.paused &&
+        to.configured_mode === from.configured_mode &&
         (to.configured_mode !== 'full_access' ||
           (to.effective_mode === 'ask_every_time' && to.local_confirmation_required));
       if (!validResume) {
@@ -768,10 +1030,13 @@ export const accessTransitionSchema = z
         });
       }
     }
-    if (transition.event === 'kill_switch' && (!to.kill_switch || to.effective_mode !== 'off')) {
+    if (
+      transition.event === 'kill_switch' &&
+      (!to.kill_switch || to.configured_mode !== 'off' || to.effective_mode !== 'off')
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'kill switch must synchronously force effective access off',
+        message: 'kill switch must synchronously clear configured and effective access',
         path: ['to'],
       });
     }
@@ -817,6 +1082,11 @@ export const localActionRequestSchema = z
     client_nonce: base64Url,
     expected_policy_epoch: safeNonnegativeCounter.nullable(),
     target_mode: z.enum(['off', 'ask_every_time', 'full_access']).nullable(),
+    pairing_code: z
+      .string()
+      .regex(/^[A-Z0-9]{6,12}$/)
+      .nullable(),
+    local_installation_nonce: installationNonce.nullable(),
   })
   .strict()
   .superRefine((request, context) => {
@@ -840,6 +1110,20 @@ export const localActionRequestSchema = z
         code: z.ZodIssueCode.custom,
         message: 'target_mode is only valid for set_access_mode',
         path: ['target_mode'],
+      });
+    }
+    if ((request.action === 'begin_pairing') !== (request.pairing_code !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pairing_code is required only for begin_pairing',
+        path: ['pairing_code'],
+      });
+    }
+    if ((request.action === 'begin_pairing') !== (request.local_installation_nonce !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'local_installation_nonce is required only for begin_pairing',
+        path: ['local_installation_nonce'],
       });
     }
   });
@@ -867,7 +1151,7 @@ export const commandAuthorityPayloadSchema = z
     nonce: base64Url,
     binding: selectedBindingSchema,
     execution_context_sha256: sha256,
-    capability: identifier,
+    capability: macControlCapabilitySchema,
     request_digest_sha256: sha256,
   })
   .strict();
@@ -908,7 +1192,7 @@ export const brokerControlEnvelopeSchema = z
       .strict(),
     command: z
       .object({
-        capability: identifier,
+        capability: macControlCapabilitySchema,
         request: z.record(z.string(), z.unknown()),
         request_digest_sha256: sha256,
       })
@@ -1030,7 +1314,6 @@ const coreHostLifecycleRequest = (
       ...coreHostRequestIdentity,
       operation: z.literal(operation),
       expected_policy_epoch: safeNonnegativeCounter,
-      reason_code: identifier,
     })
     .strict();
 
@@ -1049,7 +1332,7 @@ export const coreHostRequestSchema = z
         operation: z.literal('pair'),
         expected_policy_epoch: safeNonnegativeCounter,
         pairing_code: z.string().regex(/^[A-Z0-9]{6,12}$/),
-        local_installation_nonce: base64Url,
+        local_installation_nonce: installationNonce,
       })
       .strict(),
     coreHostLifecycleRequest('unpair'),
@@ -1083,7 +1366,7 @@ export const coreHostRequestSchema = z
         ...coreHostRequestIdentity,
         operation: z.literal('audit_summary'),
         expected_policy_epoch: safeNonnegativeCounter,
-        after_sequence: safeNonnegativeCounter.nullable(),
+        after_cursor: auditCursorSchema.nullable(),
         limit: z.number().int().min(1).max(100),
       })
       .strict(),
@@ -1104,29 +1387,40 @@ export const coreHostRequestSchema = z
     }
   });
 
-const safeEvidenceIdentifier = identifier.refine(
-  (value) => !/(?:authorization|bearer|cookie|password|secret|token|eyJ[A-Za-z0-9_-]{8})/i.test(value),
-  'audit evidence identifier resembles secret-bearing content'
-);
-
 export const auditEvidenceSchema = z
   .object({
-    capability: safeEvidenceIdentifier.optional(),
-    target_path_hash: safeEvidenceIdentifier.optional(),
+    capability: macControlCapabilitySchema.optional(),
+    target_path_hash: sha256.optional(),
     target_fingerprint_sha256: sha256.optional(),
-    state_from: safeEvidenceIdentifier.optional(),
-    state_to: safeEvidenceIdentifier.optional(),
-    transport_state: safeEvidenceIdentifier.optional(),
-    detail_code: safeEvidenceIdentifier.optional(),
-    build_version: safeEvidenceIdentifier.optional(),
-    schema_version: safeEvidenceIdentifier.optional(),
+    state_from: accessEvidenceStateSchema.optional(),
+    state_to: accessEvidenceStateSchema.optional(),
+    transport_state: transportStateSchema.optional(),
+    detail_code: auditDetailCodeSchema.optional(),
+    build_version: z
+      .string()
+      .max(128)
+      .regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?$/)
+      .optional(),
+    schema_version: z
+      .enum([
+        'evaos.mac_access.access_state.v1',
+        'evaos.mac_access.audit_anchor.v1',
+        'evaos.mac_access.audit_event.v1',
+        'evaos.mac_access.broker_control.v1',
+        'evaos.mac_access.command_authority_payload.v1',
+        'evaos.mac_access.local_action.v1',
+        'evaos.mac_access.local_status.v1',
+        'evaos.mac_connector_core.host_request.v1',
+        'evaos.mac_connector_core.host_response.v1',
+      ])
+      .optional(),
     artifact_count: z.number().int().min(0).max(16).optional(),
     record_count: z.number().int().min(0).max(10_000).optional(),
     redaction_policy: z.literal('default_v1'),
   })
   .strict();
 
-export const auditRecordPayloadSchema = z
+const auditRecordPayloadBaseSchema = z
   .object({
     schema_version: z.literal('evaos.mac_access.audit_event.v1'),
     audit_id: identifier,
@@ -1143,25 +1437,81 @@ export const auditRecordPayloadSchema = z
       'kill_switch',
       'lifecycle',
     ]),
-    actor: z
-      .object({
-        kind: z.enum(['local_user', 'workbench', 'broker_runtime', 'system']),
-        identity: identifier,
-      })
-      .strict(),
+    actor: auditActorSchema,
     binding_fingerprint_sha256: sha256.nullable(),
     command_id: identifier.nullable(),
     request_digest_sha256: sha256.nullable(),
+    causation_audit_id: identifier.nullable(),
     access_mode: z.enum(['off', 'ask_every_time', 'full_access']),
     outcome: z.enum(['allowed', 'denied', 'executed', 'failed', 'revoked', 'stopped']),
-    reason_code: identifier,
+    reason_code: auditReasonCodeSchema,
     evidence: auditEvidenceSchema,
   })
   .strict();
 
-export const auditEventSchema = auditRecordPayloadSchema
+function requireCommandAuditCorrelation(
+  event: z.infer<typeof auditRecordPayloadBaseSchema>,
+  context: z.RefinementCtx
+): void {
+  const commandEvent = ['command_decision', 'command_result'].includes(event.event_type);
+  if (
+    commandEvent &&
+    (event.binding_fingerprint_sha256 === null || event.command_id === null || event.request_digest_sha256 === null)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'command audit events require binding, command, and request-digest correlation',
+      path: ['command_id'],
+    });
+  }
+  if (
+    !commandEvent &&
+    (event.command_id !== null || event.request_digest_sha256 !== null || event.causation_audit_id !== null)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'non-command audit events cannot carry command correlation fields',
+      path: ['command_id'],
+    });
+  }
+  if (
+    event.event_type === 'command_decision' &&
+    (event.causation_audit_id !== null || !['allowed', 'denied'].includes(event.outcome))
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'command decisions must be root records with allowed or denied outcomes',
+      path: ['causation_audit_id'],
+    });
+  }
+  if (
+    event.event_type === 'command_result' &&
+    (event.causation_audit_id === null ||
+      event.causation_audit_id === event.audit_id ||
+      !['executed', 'failed', 'stopped'].includes(event.outcome))
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'command results must cite their decision audit and use a terminal execution outcome',
+      path: ['causation_audit_id'],
+    });
+  }
+}
+
+export const auditRecordPayloadSchema = auditRecordPayloadBaseSchema.superRefine(requireCommandAuditCorrelation);
+
+export const auditEventSchema = auditRecordPayloadBaseSchema
   .extend({ record_sha256: sha256 })
   .superRefine((event, context) => {
+    requireCommandAuditCorrelation(event, context);
+    const { record_sha256: expectedDigest, ...payload } = event;
+    if (canonicalJsonSha256(payload) !== expectedDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit record digest must match the exact RFC 8785 payload',
+        path: ['record_sha256'],
+      });
+    }
     if (event.sequence === 1 && event.previous_record_sha256 !== null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1194,9 +1544,221 @@ export const auditChainGoldenSchema = z
       )
       .length(2),
   })
-  .strict();
+  .strict()
+  .superRefine((golden, context) => {
+    for (const [index, record] of golden.records.entries()) {
+      const canonical = canonicalJson(record.payload);
+      if (canonical === null || canonical !== record.canonical_payload_utf8) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'audit golden canonical bytes must match the exact RFC 8785 payload',
+          path: ['records', index, 'canonical_payload_utf8'],
+        });
+      }
+      if (canonicalJsonSha256(record.payload) !== record.record_sha256) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'audit golden record digest must match its exact payload',
+          path: ['records', index, 'record_sha256'],
+        });
+      }
+      const previous = golden.records[index - 1];
+      if (
+        record.payload.sequence !== index + 1 ||
+        record.payload.previous_record_sha256 !== (previous?.record_sha256 ?? null)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'audit golden records must form one contiguous digest chain',
+          path: ['records', index, 'payload', 'previous_record_sha256'],
+        });
+      }
+    }
 
-const coreHostResultSchema = z.discriminatedUnion('kind', [
+    const [decision, result] = golden.records.map((record) => record.payload);
+    if (
+      decision.event_type !== 'command_decision' ||
+      result.event_type !== 'command_result' ||
+      result.causation_audit_id !== decision.audit_id ||
+      result.command_id !== decision.command_id ||
+      result.request_digest_sha256 !== decision.request_digest_sha256 ||
+      result.binding_fingerprint_sha256 !== decision.binding_fingerprint_sha256 ||
+      result.sequence <= decision.sequence
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit golden records must be one causally bound command decision and result',
+        path: ['records', 1, 'payload', 'causation_audit_id'],
+      });
+    }
+  });
+
+const auditSummaryResultSchema = z
+  .object({
+    kind: z.literal('audit_summary'),
+    page_anchor: auditCursorSchema.nullable(),
+    events: z.array(auditEventSchema).max(100),
+    causal_decisions: z.array(auditEventSchema).max(1),
+    next_cursor: auditCursorSchema.nullable(),
+  })
+  .strict()
+  .superRefine((summary, context) => {
+    for (const [index, decision] of summary.causal_decisions.entries()) {
+      if (
+        summary.page_anchor === null ||
+        decision.sequence !== summary.page_anchor.sequence ||
+        decision.record_sha256 !== summary.page_anchor.record_sha256
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'off-page causal decision must be the exact digest-bound page anchor record',
+          path: ['causal_decisions', index, 'record_sha256'],
+        });
+      }
+    }
+    if (summary.events.length === 0) {
+      if (summary.next_cursor !== null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'empty audit summary cannot advertise a continuation cursor',
+          path: ['next_cursor'],
+        });
+      }
+      return;
+    }
+
+    const first = summary.events[0];
+    const expectedFirstSequence = summary.page_anchor === null ? 1 : summary.page_anchor.sequence + 1;
+    if (first.sequence !== expectedFirstSequence) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit summary must begin immediately after its echoed cursor',
+        path: ['events', 0, 'sequence'],
+      });
+    }
+    const expectedFirstPreviousDigest = summary.page_anchor?.record_sha256 ?? null;
+    if (first.previous_record_sha256 !== expectedFirstPreviousDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit summary first record must link to the echoed page anchor',
+        path: ['events', 0, 'previous_record_sha256'],
+      });
+    }
+    for (let index = 1; index < summary.events.length; index += 1) {
+      const previous = summary.events[index - 1];
+      const current = summary.events[index];
+      if (current.sequence !== previous.sequence + 1) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'audit summary events must have ascending contiguous sequences',
+          path: ['events', index, 'sequence'],
+        });
+      }
+      if (current.previous_record_sha256 !== previous.record_sha256) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'audit summary events must preserve previous-record digest links',
+          path: ['events', index, 'previous_record_sha256'],
+        });
+      }
+    }
+    const last = summary.events.at(-1)!;
+    if (
+      summary.next_cursor === null ||
+      summary.next_cursor.sequence !== last.sequence ||
+      summary.next_cursor.record_sha256 !== last.record_sha256
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'every nonempty audit page must return the final record as its continuation cursor',
+        path: ['next_cursor'],
+      });
+    }
+
+    const decisions = new Map<string, z.infer<typeof auditEventSchema>>();
+    for (const [index, decision] of summary.causal_decisions.entries()) {
+      if (decision.event_type !== 'command_decision') {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'causal decision proofs may contain only command-decision audit records',
+          path: ['causal_decisions', index, 'event_type'],
+        });
+      }
+    }
+    for (const decision of [...summary.events, ...summary.causal_decisions]) {
+      if (decision.event_type !== 'command_decision') continue;
+      const existing = decisions.get(decision.audit_id);
+      if (existing !== undefined && existing.record_sha256 !== decision.record_sha256) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'causal decision audit id cannot resolve to multiple records',
+          path: ['causal_decisions'],
+        });
+      }
+      decisions.set(decision.audit_id, decision);
+    }
+    for (const [index, event] of summary.events.entries()) {
+      if (event.event_type !== 'command_result') continue;
+      const decision = event.causation_audit_id === null ? undefined : decisions.get(event.causation_audit_id);
+      if (
+        decision === undefined ||
+        decision.sequence >= event.sequence ||
+        decision.command_id !== event.command_id ||
+        decision.request_digest_sha256 !== event.request_digest_sha256 ||
+        decision.binding_fingerprint_sha256 !== event.binding_fingerprint_sha256
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'command result must resolve to a matching causal decision record',
+          path: ['events', index, 'causation_audit_id'],
+        });
+      }
+    }
+  });
+
+const lifecycleResultSchema = z
+  .object({
+    kind: z.literal('lifecycle'),
+    configured_mode: z.enum(['off', 'ask_every_time', 'full_access']),
+    effective_mode: z.enum(['off', 'ask_every_time', 'full_access']),
+    requested_target_mode: z.enum(['off', 'ask_every_time', 'full_access']).nullable(),
+    pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
+    transport_state: transportStateSchema,
+  })
+  .strict()
+  .superRefine((result, context) => {
+    const modeRank = { off: 0, ask_every_time: 1, full_access: 2 } as const;
+    if (modeRank[result.effective_mode] > modeRank[result.configured_mode]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'lifecycle effective access cannot exceed configured user intent',
+        path: ['effective_mode'],
+      });
+    }
+    if (result.pairing_state !== 'paired' && (result.configured_mode !== 'off' || result.effective_mode !== 'off')) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'unpaired or revoked lifecycle state must be configured and effective off',
+        path: ['pairing_state'],
+      });
+    }
+    if (result.transport_state === 'connected' && result.pairing_state !== 'paired') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'connected lifecycle transport requires paired state',
+        path: ['transport_state'],
+      });
+    }
+    if (result.transport_state === 'revoked' && result.pairing_state !== 'revoked') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'revoked lifecycle transport requires revoked pairing state',
+        path: ['transport_state'],
+      });
+    }
+  });
+
+const coreHostResultSchema = z.union([
   z.object({ kind: z.literal('status'), status: localStatusSchema }).strict(),
   z
     .object({
@@ -1210,25 +1772,54 @@ const coreHostResultSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('action'),
       command_id: identifier,
+      request_digest_sha256: sha256,
       outcome: z.enum(['denied', 'executed', 'failed', 'stopped']),
-      audit_id: identifier,
+      decision_audit_id: identifier,
+      result_audit_id: identifier.nullable(),
+      decision_audit: auditEventSchema,
+      result_audit: auditEventSchema.nullable(),
     })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('audit_summary'),
-      events: z.array(auditEventSchema).max(100),
-      next_sequence: safePositiveCounter.nullable(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('lifecycle'),
-      effective_mode: z.enum(['off', 'ask_every_time', 'full_access']),
-      pairing_state: z.enum(['unpaired', 'paired', 'revoked']),
-      transport_state: z.enum(['disconnected', 'connecting', 'connected', 'revoked', 'blocked']),
-    })
-    .strict(),
+    .strict()
+    .superRefine((result, context) => {
+      const denied = result.outcome === 'denied';
+      if (
+        result.decision_audit_id !== result.decision_audit.audit_id ||
+        result.decision_audit.event_type !== 'command_decision' ||
+        result.decision_audit.outcome !== (denied ? 'denied' : 'allowed')
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'action decision receipt must name the exact allowed or denied decision audit',
+          path: ['decision_audit_id'],
+        });
+      }
+      if (
+        (denied && (result.result_audit_id !== null || result.result_audit !== null)) ||
+        (!denied && (result.result_audit_id === null || result.result_audit === null))
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'denied actions have only a decision audit; attempted actions require a result audit',
+          path: ['result_audit_id'],
+        });
+      }
+      if (
+        result.result_audit !== null &&
+        (result.result_audit_id !== result.result_audit.audit_id ||
+          result.result_audit.event_type !== 'command_result' ||
+          result.result_audit.outcome !== result.outcome ||
+          result.result_audit.causation_audit_id !== result.decision_audit.audit_id ||
+          result.result_audit.sequence <= result.decision_audit.sequence)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'action result receipt must be the exact later causal result audit',
+          path: ['result_audit_id'],
+        });
+      }
+    }),
+  auditSummaryResultSchema,
+  lifecycleResultSchema,
 ]);
 
 export const coreHostResponseSchema = z
@@ -1318,6 +1909,25 @@ export const coreHostResponseSchema = z
     }
     if (response.result.kind !== 'lifecycle') return;
 
+    if (response.operation === 'set_access_mode') {
+      if (
+        response.result.requested_target_mode === null ||
+        response.result.configured_mode !== response.result.requested_target_mode
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'set-access-mode response must echo and establish the requested configured mode',
+          path: ['result', 'requested_target_mode'],
+        });
+      }
+    } else if (response.result.requested_target_mode !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'requested target mode is valid only for set-access-mode responses',
+        path: ['result', 'requested_target_mode'],
+      });
+    }
+
     if (
       response.operation === 'connect' &&
       (response.result.pairing_state !== 'paired' || response.result.transport_state !== 'connected')
@@ -1337,6 +1947,20 @@ export const coreHostResponseSchema = z
         code: z.ZodIssueCode.custom,
         message: 'destructive lifecycle responses must report effective access off',
         path: ['result', 'effective_mode'],
+      });
+    }
+    if (response.operation === 'resume' && response.result.effective_mode === 'full_access') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'resume response cannot silently restore full access',
+        path: ['result', 'effective_mode'],
+      });
+    }
+    if (response.result.transport_state !== 'connected' && response.result.effective_mode !== 'off') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'unavailable lifecycle transport must report effective access off',
+        path: ['result', 'transport_state'],
       });
     }
     if (
@@ -1368,6 +1992,89 @@ export const coreHostResponseSchema = z
     }
   });
 
+export const coreHostExchangeSchema = z
+  .object({
+    request: coreHostRequestSchema,
+    response: coreHostResponseSchema,
+  })
+  .strict()
+  .superRefine(({ request, response }, context) => {
+    if (
+      request.request_id !== response.request_id ||
+      request.host_session_id !== response.host_session_id ||
+      request.sequence !== response.sequence ||
+      request.operation !== response.operation
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'host response identity must match its exact request',
+        path: ['response', 'request_id'],
+      });
+    }
+    if (
+      request.operation === 'set_access_mode' &&
+      response.ok &&
+      response.result?.kind === 'lifecycle' &&
+      response.result.requested_target_mode !== request.target_mode
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'set-access-mode response target must match the exact request target',
+        path: ['response', 'result', 'requested_target_mode'],
+      });
+    }
+    if (
+      ['set_access_mode', 'pause', 'resume', 'stop', 'revoke', 'activate_kill_switch'].includes(request.operation) &&
+      typeof request.expected_policy_epoch === 'number' &&
+      response.ok &&
+      response.result?.kind === 'lifecycle' &&
+      response.policy_epoch !== request.expected_policy_epoch + 1
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'policy-changing lifecycle response must advance the exact expected policy epoch once',
+        path: ['response', 'policy_epoch'],
+      });
+    }
+    if (
+      request.operation === 'dispatch_action' &&
+      response.ok &&
+      response.result?.kind === 'action' &&
+      (response.policy_epoch !== request.expected_policy_epoch ||
+        response.result.command_id !== request.envelope.command_id ||
+        response.result.request_digest_sha256 !== request.envelope.command.request_digest_sha256 ||
+        response.result.decision_audit.command_id !== request.envelope.command_id ||
+        response.result.decision_audit.request_digest_sha256 !== request.envelope.command.request_digest_sha256 ||
+        response.result.decision_audit.binding_fingerprint_sha256 !==
+          request.envelope.binding.binding_fingerprint_sha256 ||
+        (response.result.result_audit !== null &&
+          (response.result.result_audit.command_id !== request.envelope.command_id ||
+            response.result.result_audit.request_digest_sha256 !== request.envelope.command.request_digest_sha256 ||
+            response.result.result_audit.binding_fingerprint_sha256 !==
+              request.envelope.binding.binding_fingerprint_sha256)) ||
+        (response.result.result_audit_id !== null &&
+          response.result.result_audit_id === response.result.decision_audit_id))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'action response must match the signed command, request digest, policy epoch, and distinct audits',
+        path: ['response', 'result', 'command_id'],
+      });
+    }
+    if (
+      request.operation === 'audit_summary' &&
+      response.ok &&
+      response.result?.kind === 'audit_summary' &&
+      JSON.stringify(response.result.page_anchor) !== JSON.stringify(request.after_cursor)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'audit summary must echo the exact requested cursor',
+        path: ['response', 'result', 'page_anchor'],
+      });
+    }
+  });
+
 export const negativeFixtureCaseSchema = z
   .object({
     id: identifier,
@@ -1384,13 +2091,21 @@ export const negativeFixtureCaseSchema = z
     ]),
     base_fixture: z.string().min(1),
     mutations: z.array(
-      z
-        .object({
-          operation: z.enum(['set', 'remove']),
-          pointer: z.string().startsWith('/'),
-          value: z.unknown().optional(),
-        })
-        .strict()
+      z.discriminatedUnion('operation', [
+        z
+          .object({
+            operation: z.literal('set'),
+            pointer: z.string().startsWith('/'),
+            value: jsonValueSchema,
+          })
+          .strict(),
+        z
+          .object({
+            operation: z.literal('remove'),
+            pointer: z.string().startsWith('/'),
+          })
+          .strict(),
+      ])
     ),
     expected_stage: z.enum(['schema', 'runtime']),
     expected_error: identifier,
@@ -1424,4 +2139,5 @@ export type BrokerControlEnvelope = z.infer<typeof brokerControlEnvelopeSchema>;
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 export type CoreHostRequest = z.infer<typeof coreHostRequestSchema>;
 export type CoreHostResponse = z.infer<typeof coreHostResponseSchema>;
+export type CoreHostExchange = z.infer<typeof coreHostExchangeSchema>;
 export type NegativeFixtureCase = z.infer<typeof negativeFixtureCaseSchema>;

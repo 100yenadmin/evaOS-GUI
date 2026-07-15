@@ -11,12 +11,12 @@
   },
   "request": {
     "schema_version": "evaos.mac_access.local_action.v1",
-    "request_id": "local-request-01",
-    "action": "set_access_mode",
+    "request_id": "local-pairing-request-01",
+    "action": "begin_pairing",
     "client_nonce": "bm9uY2UtMDE",
     "expected_policy_epoch": 7,
-    "target_mode": "ask_every_time",
-    "pairing_code": null,
-    "local_installation_nonce": null
+    "target_mode": null,
+    "pairing_code": "ABC123",
+    "local_installation_nonce": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"
   }
 }

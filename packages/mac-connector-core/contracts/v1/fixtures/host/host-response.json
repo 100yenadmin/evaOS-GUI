@@ -8,7 +8,9 @@
   "policy_epoch": 8,
   "result": {
     "kind": "lifecycle",
+    "configured_mode": "ask_every_time",
     "effective_mode": "ask_every_time",
+    "requested_target_mode": "ask_every_time",
     "pairing_state": "paired",
     "transport_state": "connected"
   },

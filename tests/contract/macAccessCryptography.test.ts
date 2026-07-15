@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import canonicalize from 'canonicalize';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -24,22 +25,51 @@ function readJson(filePath: string): unknown {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function canonicalizeJcs(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalizeJcs).join(',')}]`;
-  return `{${Object.entries(value)
-    // oxlint-disable-next-line unicorn/no-array-sort -- Object.entries returns a fresh array required for JCS key order.
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(([key, item]) => `${JSON.stringify(key)}:${canonicalizeJcs(item)}`)
-    .join(',')}}`;
+function assertValidUnicodeString(text: string): void {
+  for (let index = 0; index < text.length; index += 1) {
+    const codeUnit = text.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (!Number.isInteger(next) || next < 0xdc00 || next > 0xdfff) {
+        throw new Error('RFC 8785 forbids lone surrogate code points');
+      }
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      throw new Error('RFC 8785 forbids lone surrogate code points');
+    }
+  }
 }
 
-function verifiesAuditChainGolden(value: unknown): boolean {
-  const parsed = auditChainGoldenSchema.safeParse(value);
-  if (!parsed.success) return false;
+function assertValidUnicode(value: unknown): void {
+  if (typeof value === 'string') assertValidUnicodeString(value);
+  else if (Array.isArray(value)) value.forEach(assertValidUnicode);
+  else if (value !== null && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      assertValidUnicodeString(key);
+      assertValidUnicode(child);
+    }
+  }
+}
 
+function canonicalizeJcs(value: unknown): string {
+  assertValidUnicode(value);
+  const serialized = canonicalize(value);
+  if (serialized === undefined) throw new Error('RFC 8785 canonicalization rejected the contract value');
+  return serialized;
+}
+
+type AuditGoldenRecord = {
+  payload: { sequence: number; previous_record_sha256: string | null } & Record<string, unknown>;
+  canonical_payload_utf8: string;
+  record_sha256: string;
+};
+
+function verifiesAnchoredAuditRecords(
+  records: AuditGoldenRecord[],
+  anchor: { sequence: number; recordSha256: string } | null
+): boolean {
   let previousDigest: string | null = null;
-  for (const [index, record] of parsed.data.records.entries()) {
+  for (const [index, record] of records.entries()) {
     const canonical = canonicalizeJcs(record.payload);
     if (record.payload.sequence !== index + 1) return false;
     if (record.payload.previous_record_sha256 !== previousDigest) return false;
@@ -47,7 +77,14 @@ function verifiesAuditChainGolden(value: unknown): boolean {
     if (createHash('sha256').update(canonical).digest('hex') !== record.record_sha256) return false;
     previousDigest = record.record_sha256;
   }
-  return true;
+  if (anchor === null) return true;
+  return records.at(-1)?.payload.sequence === anchor.sequence && previousDigest === anchor.recordSha256;
+}
+
+function verifiesAuditChainGolden(value: unknown): boolean {
+  const parsed = auditChainGoldenSchema.safeParse(value);
+  if (!parsed.success) return false;
+  return verifiesAnchoredAuditRecords(parsed.data.records as unknown as AuditGoldenRecord[], null);
 }
 
 describe('evaOS Mac Access canonical cryptographic contracts', () => {
@@ -92,6 +129,34 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
 
   it('verifies the two-record audit-chain golden vector', () => {
     expect(verifiesAuditChainGolden(readJson(path.join(validRoot, 'audit/audit-chain-golden.json')))).toBe(true);
+  });
+
+  it('uses RFC 8785 number, escaping, UTF-16 ordering, and Unicode validity rules', () => {
+    expect(canonicalizeJcs({ numbers: [Number('333333333.33333329'), 1e30, 4.5, 0.002, 1e-27] })).toBe(
+      '{"numbers":[333333333.3333333,1e+30,4.5,0.002,1e-27]}'
+    );
+    expect(canonicalizeJcs({ '€': 'Euro', '\r': 'CR', '1': 'one', '\u0080': 'control', '😀': 'emoji' })).toBe(
+      '{"\\r":"CR","1":"one","":"control","€":"Euro","😀":"emoji"}'
+    );
+    expect(() => canonicalizeJcs({ invalid: '\ud800' })).toThrow('lone surrogate');
+  });
+
+  it('keeps authority, status, and audit fixtures on one selected binding', () => {
+    const broker = commandAuthorityGoldenSchema.parse(
+      readJson(path.join(validRoot, 'authority/command-authority-golden.json'))
+    );
+    const status = localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json')));
+    const audit = readJson(path.join(validRoot, 'audit/audit-event.json')) as {
+      binding_fingerprint_sha256: string;
+    };
+    expect(audit.binding_fingerprint_sha256).toBe(broker.payload.binding.binding_fingerprint_sha256);
+    expect(audit.binding_fingerprint_sha256).toBe(status.access.binding?.binding_fingerprint_sha256);
+  });
+
+  it('verifies the standalone audit event record digest', () => {
+    const event = readJson(path.join(validRoot, 'audit/audit-event.json')) as Record<string, unknown>;
+    const { record_sha256: recordSha256, ...payload } = event;
+    expect(createHash('sha256').update(canonicalizeJcs(payload)).digest('hex')).toBe(recordSha256);
   });
 
   it('verifies the exact-target rollback authorization golden vector', () => {
@@ -168,12 +233,48 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     expect(verifiesAuditChainGolden(vector)).toBe(false);
   });
 
+  it('rejects a rehashed golden result that is not causally bound to its decision', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
+      records: AuditGoldenRecord[];
+    };
+    vector.records[1].payload.command_id = 'unrelated-command';
+    vector.records[1].canonical_payload_utf8 = canonicalizeJcs(vector.records[1].payload);
+    vector.records[1].record_sha256 = createHash('sha256')
+      .update(vector.records[1].canonical_payload_utf8)
+      .digest('hex');
+    expect(auditChainGoldenSchema.safeParse(vector).success).toBe(false);
+    expect(verifiesAuditChainGolden(vector)).toBe(false);
+  });
+
   it('rejects deletion of an audit record from a persisted chain', () => {
     const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
       records: unknown[];
     };
     vector.records.splice(0, 1);
     expect(verifiesAuditChainGolden(vector)).toBe(false);
+  });
+
+  it('rejects valid-tail truncation and whole-journal replacement against the protected anchor', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
+      records: AuditGoldenRecord[];
+    };
+    const anchor = {
+      sequence: vector.records[1].payload.sequence,
+      recordSha256: vector.records[1].record_sha256,
+    };
+    expect(verifiesAnchoredAuditRecords(vector.records, anchor)).toBe(true);
+    expect(verifiesAnchoredAuditRecords(vector.records.slice(0, 1), anchor)).toBe(false);
+
+    const replacement = structuredClone(vector.records);
+    replacement[0].payload.reason_code = 'denied_access_off';
+    replacement[0].payload.outcome = 'denied';
+    replacement[0].canonical_payload_utf8 = canonicalizeJcs(replacement[0].payload);
+    replacement[0].record_sha256 = createHash('sha256').update(replacement[0].canonical_payload_utf8).digest('hex');
+    replacement[1].payload.previous_record_sha256 = replacement[0].record_sha256;
+    replacement[1].canonical_payload_utf8 = canonicalizeJcs(replacement[1].payload);
+    replacement[1].record_sha256 = createHash('sha256').update(replacement[1].canonical_payload_utf8).digest('hex');
+    expect(verifiesAnchoredAuditRecords(replacement, null)).toBe(true);
+    expect(verifiesAnchoredAuditRecords(replacement, anchor)).toBe(false);
   });
 
   it('rejects reordered audit records', () => {

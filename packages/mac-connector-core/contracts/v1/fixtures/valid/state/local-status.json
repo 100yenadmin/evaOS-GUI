@@ -116,6 +116,7 @@
     "reason_code": "pairing_confirmed"
   },
   "transport": {
+    "responsible_identity": "com.evaos.mac-access.helper",
     "state": "connected",
     "channel_id": "channel-01",
     "last_error_code": null
@@ -127,6 +128,22 @@
   },
   "audit": {
     "writable": true,
-    "last_audit_id": "audit-01"
+    "anchor_healthy": true,
+    "anchor": {
+      "schema_version": "evaos.mac_access.audit_anchor.v1",
+      "custodian_signing_identifier": "com.evaos.mac-access.helper",
+      "access_group_suffix": "com.evaos.mac-access.audit-anchor.epoch-1",
+      "security_epoch": 1,
+      "service": "com.evaos.mac-access.audit-anchor",
+      "accessibility": "kSecAttrAccessibleWhenUnlockedThisDeviceOnly",
+      "synchronizable": false,
+      "journal_id": "audit-journal-01",
+      "committed_sequence": 1,
+      "committed_audit_id": "audit-01",
+      "committed_record_sha256": "a0cf9968470f3ae354e1ef68e7aa80ba34c7b0d715e3db4a07fca5cbe7b6ced9",
+      "pending_sequence": null,
+      "pending_audit_id": null,
+      "pending_record_sha256": null
+    }
   }
 }

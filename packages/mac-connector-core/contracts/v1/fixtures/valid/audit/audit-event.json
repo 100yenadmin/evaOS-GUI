@@ -3,22 +3,23 @@
   "audit_id": "audit-01",
   "sequence": 1,
   "previous_record_sha256": null,
-  "record_sha256": "ec3235267ea927e32c2f99ad05b7926c6ed4942ca3055263d3b000d88eb585f7",
+  "record_sha256": "a0cf9968470f3ae354e1ef68e7aa80ba34c7b0d715e3db4a07fca5cbe7b6ced9",
   "occurred_at": "2026-07-15T08:01:03Z",
-  "event_type": "command_result",
+  "event_type": "command_decision",
   "actor": {
     "kind": "broker_runtime",
     "identity": "openclaw"
   },
-  "binding_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "binding_fingerprint_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
   "command_id": "command-01",
   "request_digest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "causation_audit_id": null,
   "access_mode": "ask_every_time",
-  "outcome": "executed",
+  "outcome": "allowed",
   "reason_code": "approved_exact_scope",
   "evidence": {
     "capability": "customer_mac.desktop_click",
-    "target_path_hash": "path-hash-01",
+    "target_path_hash": "2222222222222222222222222222222222222222222222222222222222222222",
     "artifact_count": 0,
     "redaction_policy": "default_v1"
   }
