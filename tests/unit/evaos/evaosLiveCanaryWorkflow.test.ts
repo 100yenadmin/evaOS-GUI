@@ -51,15 +51,35 @@ function writeCompleteMacControlProofSet(proofDir: string): void {
     sensitiveOutput: 'passed',
   };
   const negative = {
-    schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
-    sourceHeadSha: 'd'.repeat(40),
+    schema: 'evaos.mac_control.deployed_negative_probe.v1',
+    proofMode: 'deployed-staging',
     sourceRunId: '12345',
-    assertions: {
-      forgedContextRejected: true,
-      expiredContextRejected: true,
-      replayRejected: true,
-      authorityRedacted: true,
+    candidate: {
+      sourceCommit: 'd'.repeat(40),
+      sourceSha256: 'e'.repeat(64),
+      appVersion: '2.1.36',
+      appBuild: '2.1.36',
     },
+    classifications: {
+      forgedSignature: {
+        rejected: true,
+        httpStatus: 401,
+        code: 'execution_context_signature_invalid',
+      },
+      expiredContext: {
+        rejected: true,
+        httpStatus: 401,
+        code: 'execution_context_expired',
+      },
+      replay: {
+        firstAccepted: true,
+        secondRejected: true,
+        httpStatus: 409,
+        code: 'execution_context_replayed',
+      },
+    },
+    connectorActionAttempted: false,
+    sensitiveOutputAbsent: true,
   };
   const deployedRoute = {
     schema: 'evaos.mac_control.deployed_route_probe.v1',
@@ -212,25 +232,14 @@ describe('evaOS live canary proof workflow', () => {
     expect(workflow).toContain(
       'AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_PROBE_OUTPUT: live-canary-proof/mac-control-deployed-route.json'
     );
+    expect(workflow).toContain(
+      'AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_NEGATIVE_PROBE_OUTPUT: live-canary-proof/mac-control-runtime-negative.json'
+    );
     expect(workflow).toContain('vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID');
     expect(workflow).toContain('vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID');
     expect(workflow).toContain('vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY');
-    expect(workflow).toContain('Prove Mac-control runtime-receipt negative boundaries');
-    const negativeStep = workflow.slice(
-      workflow.indexOf('- name: Prove Mac-control runtime-receipt negative boundaries'),
-      workflow.indexOf('- name: Run follow-up live canaries')
-    );
-    expect(negativeStep).toContain(
-      "if: github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true'"
-    );
-    expect(negativeStep).toContain(
-      'npm --prefix resources/evaos-beta/bridge/agent-tools/openclaw-plugin ci --ignore-scripts --omit=peer --no-audit --no-fund'
-    );
-    expect(workflow).toContain('resources/evaos-beta/bridge/agent-tools/openclaw-plugin/package-lock.json');
-    expect(negativeStep).toContain('run proof:runtime-receipt-negative --');
-    expect(negativeStep).toContain('"$PROOF_DIR/mac-control-runtime-negative.json" "$GITHUB_SHA" "$GITHUB_RUN_ID"');
-    expect(negativeStep).not.toContain('continue-on-error');
-    expect(negativeStep).not.toContain('forgedContextRejected: true');
+    expect(workflow).not.toContain('Prove Mac-control runtime-receipt negative boundaries');
+    expect(workflow).not.toContain('proof:runtime-receipt-negative');
     expect(workflow).toContain('mac-control-runtime-negative.json');
     expect(workflow).toContain('node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control');
     expect(workflow).toMatch(

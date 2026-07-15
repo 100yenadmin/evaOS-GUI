@@ -887,15 +887,30 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
     path.join(proofDir, 'mac-control-runtime-negative.json'),
     `${JSON.stringify(
       {
-        schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
-        sourceHeadSha: fixtureReleaseCommit,
+        schema: 'evaos.mac_control.deployed_negative_probe.v1',
+        proofMode: 'deployed-staging',
         sourceRunId: '12345',
-        assertions: {
-          forgedContextRejected: true,
-          expiredContextRejected: true,
-          replayRejected: true,
-          authorityRedacted: true,
+        candidate,
+        classifications: {
+          forgedSignature: {
+            rejected: true,
+            httpStatus: 401,
+            code: 'execution_context_signature_invalid',
+          },
+          expiredContext: {
+            rejected: true,
+            httpStatus: 401,
+            code: 'execution_context_expired',
+          },
+          replay: {
+            firstAccepted: true,
+            secondRejected: true,
+            httpStatus: 409,
+            code: 'execution_context_replayed',
+          },
         },
+        connectorActionAttempted: false,
+        sensitiveOutputAbsent: true,
       },
       null,
       2
@@ -2682,13 +2697,14 @@ printf '%s\\n' ok
       {
         name: 'false-assertion',
         mutate: (_proofDir, proof) => {
-          (proof.assertions as Record<string, unknown>).replayRejected = false;
+          const classifications = proof.classifications as Record<string, Record<string, unknown>>;
+          classifications.replay.secondRejected = false;
         },
       },
       {
         name: 'wrong-head',
         mutate: (_proofDir, proof) => {
-          proof.sourceHeadSha = 'e'.repeat(40);
+          (proof.candidate as Record<string, unknown>).sourceCommit = 'e'.repeat(40);
         },
       },
       {
@@ -2714,7 +2730,7 @@ printf '%s\\n' ok
         testCase.mutate(proofDir, proof);
         if (fs.existsSync(proofPath)) fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
         expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(
-          /negative proof|negative assertions/i
+          /negative proof|negative candidate|negative classifications/i
         );
       } finally {
         fs.rmSync(proofDir, { recursive: true, force: true });

@@ -13,11 +13,33 @@ const MAC_CONTROL_PROOF_NAMES = Object.freeze([
   'mac-control-session-cleanup.stdout.json',
 ]);
 const MAC_CONTROL_RUNTIME_NEGATIVE_PROOF_CONTRACT = Object.freeze({
-  schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
-  fields: ['schema', 'sourceHeadSha', 'sourceRunId', 'assertions'],
+  schema: 'evaos.mac_control.deployed_negative_probe.v1',
+  fields: [
+    'schema',
+    'proofMode',
+    'sourceRunId',
+    'candidate',
+    'classifications',
+    'connectorActionAttempted',
+    'sensitiveOutputAbsent',
+  ],
   nested: {
-    assertions: {
-      fields: ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'],
+    candidate: {
+      fields: ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'],
+    },
+    classifications: {
+      fields: ['forgedSignature', 'expiredContext', 'replay'],
+      nested: {
+        forgedSignature: {
+          fields: ['rejected', 'httpStatus', 'code'],
+        },
+        expiredContext: {
+          fields: ['rejected', 'httpStatus', 'code'],
+        },
+        replay: {
+          fields: ['firstAccepted', 'secondRejected', 'httpStatus', 'code'],
+        },
+      },
     },
   },
 });
@@ -142,9 +164,16 @@ function assertMacControlProofSanitized(value, location = '$') {
   if (!value || typeof value !== 'object') return;
   for (const [key, entry] of Object.entries(value)) {
     const normalizedKey = normalizedProofFieldName(key);
+    const safeClassificationLabel =
+      normalizedKey === 'forgedsignature' &&
+      location.endsWith('.classifications') &&
+      entry !== null &&
+      typeof entry === 'object' &&
+      !Array.isArray(entry);
     if (
       FORBIDDEN_NORMALIZED_FIELDS.has(normalizedKey) ||
-      FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment)) ||
+      (!safeClassificationLabel &&
+        FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) ||
       (normalizedKey.includes('key') && !ALLOWED_PUBLIC_KEY_IDENTIFIER_FIELDS.has(normalizedKey)) ||
       /private.*key/.test(normalizedKey)
     ) {

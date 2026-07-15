@@ -3019,6 +3019,11 @@ function assertLiveCanaryPlainObject(value, label) {
   return value;
 }
 
+function hasExactLiveCanaryFields(value, fields) {
+  const keys = Object.keys(value);
+  return keys.length === fields.length && keys.every((field) => fields.includes(field));
+}
+
 function optionalLiveCanarySafeText(value, label) {
   const text = String(value || '').trim();
   if (!text) {
@@ -3389,24 +3394,65 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env, verificati
   const negativeProof = readManifestFile(negativePath);
   assertLiveCanaryPlainObject(negativeProof, 'Mac-control runtime-receipt negative proof');
   assertLiveCanaryNoSecretMaterial(negativeProof, 'macControlNegative');
-  const negativeFields = ['schema', 'sourceHeadSha', 'sourceRunId', 'assertions'];
+  const negativeFields = [
+    'schema',
+    'proofMode',
+    'sourceRunId',
+    'candidate',
+    'classifications',
+    'connectorActionAttempted',
+    'sensitiveOutputAbsent',
+  ];
   if (
-    Object.keys(negativeProof).length !== negativeFields.length ||
-    Object.keys(negativeProof).some((field) => !negativeFields.includes(field)) ||
-    negativeProof.schema !== 'evaos.mac_control.runtime_receipt_negative_proof.v1' ||
-    negativeProof.sourceHeadSha !== expectedHeadSha ||
-    String(negativeProof.sourceRunId || '') !== expectedRunId
+    !hasExactLiveCanaryFields(negativeProof, negativeFields) ||
+    negativeProof.schema !== 'evaos.mac_control.deployed_negative_probe.v1' ||
+    negativeProof.proofMode !== 'deployed-staging' ||
+    String(negativeProof.sourceRunId || '') !== expectedRunId ||
+    negativeProof.connectorActionAttempted !== false ||
+    negativeProof.sensitiveOutputAbsent !== true
   ) {
     throw new Error('Mac-control runtime-receipt negative proof does not match the exact release run.');
   }
-  assertLiveCanaryPlainObject(negativeProof.assertions, 'Mac-control runtime-receipt negative assertions');
-  const negativeAssertions = ['forgedContextRejected', 'expiredContextRejected', 'replayRejected', 'authorityRedacted'];
+  assertLiveCanaryPlainObject(negativeProof.candidate, 'Mac-control runtime-receipt negative candidate');
   if (
-    Object.keys(negativeProof.assertions).length !== negativeAssertions.length ||
-    Object.keys(negativeProof.assertions).some((field) => !negativeAssertions.includes(field)) ||
-    negativeAssertions.some((field) => negativeProof.assertions[field] !== true)
+    !hasExactLiveCanaryFields(negativeProof.candidate, candidateFields) ||
+    negativeProof.candidate.sourceCommit !== expectedHeadSha ||
+    negativeProof.candidate.sourceSha256 !== expectedSourceSha256 ||
+    negativeProof.candidate.appVersion !== expectedVersion ||
+    negativeProof.candidate.appBuild !== expectedVersion
   ) {
-    throw new Error('Mac-control runtime-receipt negative assertions are incomplete.');
+    throw new Error('Mac-control runtime-receipt negative candidate does not match the exact release commit.');
+  }
+  assertLiveCanaryPlainObject(negativeProof.classifications, 'Mac-control runtime-receipt negative classifications');
+  const negativeClassifications = ['forgedSignature', 'expiredContext', 'replay'];
+  if (!hasExactLiveCanaryFields(negativeProof.classifications, negativeClassifications)) {
+    throw new Error('Mac-control runtime-receipt negative classifications are incomplete.');
+  }
+  const forgedSignature = assertLiveCanaryPlainObject(
+    negativeProof.classifications.forgedSignature,
+    'Mac-control forged-signature classification'
+  );
+  const expiredContext = assertLiveCanaryPlainObject(
+    negativeProof.classifications.expiredContext,
+    'Mac-control expired-context classification'
+  );
+  const replay = assertLiveCanaryPlainObject(negativeProof.classifications.replay, 'Mac-control replay classification');
+  if (
+    !hasExactLiveCanaryFields(forgedSignature, ['rejected', 'httpStatus', 'code']) ||
+    forgedSignature.rejected !== true ||
+    forgedSignature.httpStatus !== 401 ||
+    forgedSignature.code !== 'execution_context_signature_invalid' ||
+    !hasExactLiveCanaryFields(expiredContext, ['rejected', 'httpStatus', 'code']) ||
+    expiredContext.rejected !== true ||
+    expiredContext.httpStatus !== 401 ||
+    expiredContext.code !== 'execution_context_expired' ||
+    !hasExactLiveCanaryFields(replay, ['firstAccepted', 'secondRejected', 'httpStatus', 'code']) ||
+    replay.firstAccepted !== true ||
+    replay.secondRejected !== true ||
+    replay.httpStatus !== 409 ||
+    replay.code !== 'execution_context_replayed'
+  ) {
+    throw new Error('Mac-control runtime-receipt negative classifications are incomplete.');
   }
 
   const deployedProbePath = requireExistingRelativeFile(
