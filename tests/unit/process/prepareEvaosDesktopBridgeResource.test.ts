@@ -268,6 +268,15 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
   it('captures pre-canary failures as sanitized check summaries before preserving the exit code', () => {
     const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'evaos-beta-rc-canary.yml'), 'utf8');
+    const sanitizerCommand = 'node - "$PROOF_DIR/installed-candidate-pre-canary.json" <<\'NODE\'';
+    const sanitizerStart = workflow.indexOf(sanitizerCommand);
+    const sanitizerBodyStart = workflow.indexOf('\n', sanitizerStart) + 1;
+    const sanitizerBodyEnd = workflow.indexOf('\n          NODE', sanitizerBodyStart);
+    const sanitizerScript = workflow
+      .slice(sanitizerBodyStart, sanitizerBodyEnd)
+      .split('\n')
+      .map((line) => line.replace(/^ {10}/, ''))
+      .join('\n');
     const failureBlock = workflow.slice(
       workflow.indexOf('PRE_CANARY_EXIT=$?'),
       workflow.indexOf('TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"')
@@ -279,6 +288,46 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(failureBlock).toContain('Pre-canary sanitized check: ${JSON.stringify(check)}');
     expect(failureBlock).toContain('exit "$PRE_CANARY_EXIT"');
     expect(failureBlock).not.toMatch(/\.evidence|\.inventory/);
+    expect(sanitizerStart).toBeGreaterThan(-1);
+    expect(sanitizerBodyEnd).toBeGreaterThan(sanitizerBodyStart);
+
+    const reportDir = mkdtempSync(join(tmpdir(), 'evaos-pre-canary-sanitizer-'));
+    try {
+      const reportPath = join(reportDir, 'qa-report.json');
+      writeFileSync(
+        reportPath,
+        JSON.stringify({
+          checks: [
+            {
+              code: 'unsafe/code',
+              status: 'fail',
+              message: 'token fixture-secret https://private.invalid /tmp/private 10.0.0.1',
+              evidence: 'raw-evidence',
+            },
+          ],
+          inventory: { registered_paths: ['/tmp/private'] },
+        })
+      );
+      const sanitized = spawnSync(process.execPath, ['-', reportPath], {
+        encoding: 'utf8',
+        input: sanitizerScript,
+      });
+      expect(sanitized.status).toBe(0);
+      expect(sanitized.stderr).toContain('invalid_check_code');
+      expect(sanitized.stderr).toContain('token=[redacted]');
+      expect(sanitized.stderr).not.toMatch(/fixture-secret|private\.invalid|\/tmp\/private|10\.0\.0\.1|raw-evidence/);
+
+      writeFileSync(reportPath, '{"checks":[{"message":"token malformed-secret"}');
+      const malformed = spawnSync(process.execPath, ['-', reportPath], {
+        encoding: 'utf8',
+        input: sanitizerScript,
+      });
+      expect(malformed.status).toBe(1);
+      expect(malformed.stderr).toBe('');
+      expect(malformed.stdout).toBe('');
+    } finally {
+      rmSync(reportDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects dirty or untracked vendored bridge bytes in strict provenance checks', () => {
