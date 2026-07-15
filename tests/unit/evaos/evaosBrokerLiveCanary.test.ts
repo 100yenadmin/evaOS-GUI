@@ -861,7 +861,7 @@ describe('evaOS broker live canary', () => {
       const pythonSource = [
         'import sys',
         'from pathlib import Path',
-        'from evaos_desktop_bridge import qa_canary',
+        'from evaos_desktop_bridge.proof import qa_canary',
         'result = qa_canary.selected_binding_proof_binding(',
         '    Path(sys.argv[1]),',
         `    expected_source_commit=${JSON.stringify(sourceHeadSha)},`,
@@ -880,7 +880,7 @@ describe('evaOS broker live canary', () => {
           env: {
             ...process.env,
             PYTHONDONTWRITEBYTECODE: '1',
-            PYTHONPATH: path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src'),
+            PYTHONPATH: path.join(process.cwd(), 'packages', 'mac-connector-core', 'python'),
             ...TRUST_ENV,
           },
         }).trim()
@@ -901,7 +901,7 @@ describe('evaOS broker live canary', () => {
           env: {
             ...process.env,
             PYTHONDONTWRITEBYTECODE: '1',
-            PYTHONPATH: path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src'),
+            PYTHONPATH: path.join(process.cwd(), 'packages', 'mac-connector-core', 'python'),
             ...TRUST_ENV,
           },
         }).trim()

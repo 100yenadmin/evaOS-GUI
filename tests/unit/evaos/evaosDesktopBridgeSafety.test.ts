@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const bridgeSourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+const bridgeSourceDir = join(process.cwd(), 'packages', 'mac-connector-core', 'python');
 
 function runPython(script: string): string {
   return execFileSync('python3', ['-B', '-c', script], {
@@ -27,7 +27,7 @@ describe('vendored desktop bridge safety boundaries', () => {
 import stat
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from evaos_desktop_bridge.state import (
+from evaos_desktop_bridge.persistence.state import (
     ControlKillSwitchActiveError,
     ControlSessionChangedError,
     kill_control_session,
@@ -92,9 +92,9 @@ import stat
 from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from evaos_desktop_bridge.audit import append_audit
-from evaos_desktop_bridge.cli import _audit_args, _prepare_audit_hashes, _validate_guarded_approval
-from evaos_desktop_bridge.state import read_audit_record, read_audit_tail
+from evaos_desktop_bridge.persistence.audit import append_audit
+from evaos_desktop_bridge.host.cli import _audit_args, _prepare_audit_hashes, _validate_guarded_approval
+from evaos_desktop_bridge.persistence.state import read_audit_record, read_audit_tail
 
 sentinel = "ordinary-private-password-42 https://private.example/path?token=abc 100.64.0.9 /tmp/private-value Bearer secret-token-value"
 with TemporaryDirectory() as temporary_root:
@@ -190,9 +190,9 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.connector_server import _make_handler
-from evaos_desktop_bridge.state import read_control_session, start_control_session, write_control_session
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.host.connector_server import _make_handler
+from evaos_desktop_bridge.persistence.state import read_control_session, start_control_session, write_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 with TemporaryDirectory() as temporary_root:
@@ -290,9 +290,9 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.connector_server import _make_handler
-from evaos_desktop_bridge.state import read_control_session, start_control_session, stop_control_session
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.host.connector_server import _make_handler
+from evaos_desktop_bridge.persistence.state import read_control_session, start_control_session, stop_control_session
 
 with TemporaryDirectory() as temporary_root:
     root = Path(temporary_root)

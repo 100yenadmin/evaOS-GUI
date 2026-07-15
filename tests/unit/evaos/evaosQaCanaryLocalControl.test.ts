@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const bridgeSourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+const bridgeSourceDir = join(process.cwd(), 'packages', 'mac-connector-core', 'python');
 
 function runPython(script: string): string {
   return execFileSync('python3', ['-B', '-c', script], {
@@ -50,8 +50,8 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.qa_canary import (
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.proof.qa_canary import (
     INSTALLED_WORKBENCH_BRIDGE_CLI,
     LOCAL_WORKBENCH_CONTROL_START,
     OperatorAcknowledgedLocalControlSurface,
@@ -59,7 +59,7 @@ from evaos_desktop_bridge.qa_canary import (
     _suite_requires_selected_binding_proof,
     build_scenarios,
 )
-from evaos_desktop_bridge.state import kill_control_session, read_control_session
+from evaos_desktop_bridge.persistence.state import kill_control_session, read_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 
@@ -171,15 +171,15 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.qa_canary import (
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.proof.qa_canary import (
     CanaryStep,
     LOCAL_WORKBENCH_CONTROL_START,
     OperatorAcknowledgedLocalControlSurface,
     SurfaceResponse,
     run_steps_with_local_control_cleanup,
 )
-from evaos_desktop_bridge.state import kill_control_session, read_control_session
+from evaos_desktop_bridge.persistence.state import kill_control_session, read_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 
@@ -252,15 +252,15 @@ import signal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.qa_canary import (
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.proof.qa_canary import (
     CanaryStep,
     LOCAL_WORKBENCH_CONTROL_START,
     OperatorAcknowledgedLocalControlSurface,
     SurfaceResponse,
     run_steps_with_local_control_cleanup,
 )
-from evaos_desktop_bridge.state import kill_control_session, read_control_session
+from evaos_desktop_bridge.persistence.state import kill_control_session, read_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 
@@ -325,7 +325,7 @@ print("ok")
 import json
 import subprocess
 
-from evaos_desktop_bridge.qa_canary import (
+from evaos_desktop_bridge.proof.qa_canary import (
     INSTALLED_WORKBENCH_BRIDGE_CLI,
     LOCAL_WORKBENCH_CONTROL_START,
     OperatorAcknowledgedLocalControlSurface,
@@ -460,12 +460,12 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.qa_canary import (
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.proof.qa_canary import (
     LOCAL_WORKBENCH_CONTROL_START,
     OperatorAcknowledgedLocalControlSurface,
 )
-from evaos_desktop_bridge.state import kill_control_session, read_control_session
+from evaos_desktop_bridge.persistence.state import kill_control_session, read_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 
@@ -519,13 +519,13 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.cli import _run_bridge_argv
-from evaos_desktop_bridge.qa_canary import (
+from evaos_desktop_bridge.host.cli import _run_bridge_argv
+from evaos_desktop_bridge.proof.qa_canary import (
     LOCAL_WORKBENCH_CONTROL_START,
     OperatorAcknowledgedLocalControlSurface,
     SurfaceResponse,
 )
-from evaos_desktop_bridge.state import kill_control_session, read_control_session
+from evaos_desktop_bridge.persistence.state import kill_control_session, read_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 

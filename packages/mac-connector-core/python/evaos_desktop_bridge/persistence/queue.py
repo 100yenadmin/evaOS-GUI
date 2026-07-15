@@ -5,10 +5,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from ..contracts.redaction import redact_value
+from ..contracts.schema import SCHEMA_VERSION, make_error, timestamp_utc
+from ..contracts.types import CommandResult
 from .audit import default_state_dir
-from .redaction import redact_value
-from .schema import SCHEMA_VERSION, make_error, timestamp_utc
-from .types import CommandResult
 
 QUEUE_FILE = "queue.jsonl"
 ALLOWED_QUEUE_KINDS = frozenset({"idle", "approval_needed", "done", "error", "attention"})

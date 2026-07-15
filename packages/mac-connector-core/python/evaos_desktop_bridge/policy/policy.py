@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .schema import make_error
+from ..contracts.schema import make_error
 
 ALLOWED_COMMANDS = frozenset(
     {

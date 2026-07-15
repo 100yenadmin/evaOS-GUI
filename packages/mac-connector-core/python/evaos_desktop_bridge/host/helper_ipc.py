@@ -18,9 +18,9 @@ from errno import ELOOP
 from pathlib import Path
 from typing import Any
 
-from .audit import default_state_dir
-from .schema import make_error, timestamp_utc
-from .types import CommandResult
+from ..contracts.schema import make_error, timestamp_utc
+from ..contracts.types import CommandResult
+from ..persistence.audit import default_state_dir
 
 HELPER_IPC_SCHEMA_VERSION = "evaos.helper_ipc.v1"
 HELPER_IPC_MAX_BYTES = 64 * 1024

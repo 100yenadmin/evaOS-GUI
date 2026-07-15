@@ -7,8 +7,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .redaction import redact_audit_value
-from .schema import SCHEMA_VERSION, timestamp_utc
+from ..contracts.redaction import redact_audit_value
+from ..contracts.schema import SCHEMA_VERSION, timestamp_utc
 
 STATE_DIR_ENV = "EVAOS_DESKTOP_BRIDGE_STATE_DIR"
 

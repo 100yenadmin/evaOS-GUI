@@ -12,7 +12,9 @@ const {
 } = require('./evaosMacControlSignedProof');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const WORKBENCH_BRIDGE_SOURCE_DIR = 'resources/evaos-beta/bridge/src/evaos_desktop_bridge';
+const CONNECTOR_CORE_ROOT = 'packages/mac-connector-core';
+const WORKBENCH_BRIDGE_SOURCE_DIR = `${CONNECTOR_CORE_ROOT}/python/evaos_desktop_bridge`;
+const CONNECTOR_CORE_MANIFEST = `${CONNECTOR_CORE_ROOT}/contracts/core-source-files.v1.json`;
 const committedBridgeSourceIdentityCache = new Map();
 
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
@@ -2424,11 +2426,17 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
   const cacheKey = runGit === execFileSync ? `${path.resolve(rootDir)}\0${commit.toLowerCase()}` : undefined;
   const cached = cacheKey ? committedBridgeSourceIdentityCache.get(cacheKey) : undefined;
   if (cached) {
-    return { sourceSha256: cached.sourceSha256, sourcePaths: [...cached.sourcePaths] };
+    return {
+      sourceSha256: cached.sourceSha256,
+      sourcePaths: [...cached.sourcePaths],
+      coreSourceSha256: cached.coreSourceSha256,
+      sourceManifestSha256: cached.sourceManifestSha256,
+    };
   }
 
   let resolvedCommit;
   let treeOutput;
+  let manifestBytes;
   try {
     resolvedCommit = String(
       runGit('git', ['rev-parse', '--verify', `${commit}^{commit}`], {
@@ -2443,6 +2451,12 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       maxBuffer: 16 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    manifestBytes = runGit('git', ['show', `${commit}:${CONNECTOR_CORE_MANIFEST}`], {
+      cwd: rootDir,
+      encoding: null,
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch (error) {
     throw new Error(`Unable to read the committed Workbench bridge source tree: ${error.message}`);
   }
@@ -2450,8 +2464,26 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
     throw new Error(`Workbench bridge source commit resolved to ${resolvedCommit}, expected ${commit}.`);
   }
 
+  const manifestBuffer = Buffer.isBuffer(manifestBytes) ? manifestBytes : Buffer.from(manifestBytes || '');
+  let sourceManifest;
+  try {
+    sourceManifest = JSON.parse(manifestBuffer.toString('utf8'));
+  } catch {
+    throw new Error(`Commit ${commit} contains an invalid connector-core source manifest.`);
+  }
+  if (
+    sourceManifest.schema !== 'evaos-mac-connector-core-source/v1' ||
+    sourceManifest.owner !== '100yenadmin/evaOS-GUI' ||
+    sourceManifest.sourcePath !== CONNECTOR_CORE_ROOT ||
+    sourceManifest.status !== 'canonical' ||
+    !Array.isArray(sourceManifest.files) ||
+    sourceManifest.files.length === 0
+  ) {
+    throw new Error(`Commit ${commit} contains an invalid connector-core source manifest identity.`);
+  }
+
   const records = Buffer.isBuffer(treeOutput) ? treeOutput.toString('utf8') : String(treeOutput || '');
-  const sourceFiles = [];
+  const treeByRelativePath = new Map();
   for (const record of records.split('\0').filter(Boolean)) {
     const separator = record.indexOf('\t');
     const header = separator >= 0 ? record.slice(0, separator) : '';
@@ -2470,27 +2502,76 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
     if (!relativePath || relativePath.split('/').some((part) => !part || part === '.' || part === '..')) {
       throw new Error(`Committed Workbench bridge source path is invalid: ${filePath}`);
     }
+    treeByRelativePath.set(relativePath, { mode, objectId });
+  }
+  if (treeByRelativePath.size === 0) {
+    throw new Error(`Commit ${commit} does not contain the Workbench bridge source tree.`);
+  }
+
+  const listedPaths = new Set();
+  const generatedSourceFiles = [];
+  const coreDigest = createHash('sha256');
+  let previousPath;
+  for (const entry of sourceManifest.files) {
+    if (
+      !entry ||
+      typeof entry.path !== 'string' ||
+      path.posix.isAbsolute(entry.path) ||
+      entry.path.split('/').some((part) => !part || part === '.' || part === '..') ||
+      (previousPath !== undefined &&
+        Buffer.compare(Buffer.from(previousPath, 'utf8'), Buffer.from(entry.path, 'utf8')) >= 0) ||
+      !Number.isInteger(entry.mode) ||
+      !/^[a-f0-9]{64}$/.test(String(entry.sha256 || ''))
+    ) {
+      throw new Error(`Commit ${commit} contains an invalid connector-core source manifest entry.`);
+    }
+    previousPath = entry.path;
+    if (listedPaths.has(entry.path)) {
+      throw new Error(`Commit ${commit} repeats connector-core source path ${entry.path}.`);
+    }
+    listedPaths.add(entry.path);
     let contents;
     try {
-      contents = runGit('git', ['cat-file', 'blob', objectId], {
+      contents = runGit('git', ['show', `${commit}:${CONNECTOR_CORE_ROOT}/${entry.path}`], {
         cwd: rootDir,
         encoding: null,
         maxBuffer: 16 * 1024 * 1024,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
-      throw new Error(`Unable to read committed Workbench bridge source blob ${objectId}: ${error.message}`);
+      throw new Error(`Unable to read committed connector-core source ${entry.path}: ${error.message}`);
     }
-    sourceFiles.push({ relativePath, contents: Buffer.isBuffer(contents) ? contents : Buffer.from(contents) });
+    const bytes = Buffer.isBuffer(contents) ? contents : Buffer.from(contents || '');
+    if (createHash('sha256').update(bytes).digest('hex') !== entry.sha256) {
+      throw new Error(`Committed connector-core source digest mismatch for ${entry.path}.`);
+    }
+    coreDigest.update(entry.path);
+    coreDigest.update('\0');
+    coreDigest.update(bytes);
+    coreDigest.update('\0');
+
+    if (entry.destination !== null) {
+      const destinationPrefix = 'src/evaos_desktop_bridge/';
+      if (typeof entry.destination !== 'string' || !entry.destination.startsWith(destinationPrefix)) {
+        throw new Error(`Committed connector-core Python destination is invalid for ${entry.path}.`);
+      }
+      const relativePath = entry.destination.slice(destinationPrefix.length);
+      const treeEntry = treeByRelativePath.get(relativePath);
+      const expectedMode = entry.mode === 0o755 ? '100755' : entry.mode === 0o644 ? '100644' : undefined;
+      if (!treeEntry || treeEntry.mode !== expectedMode) {
+        throw new Error(`Committed Workbench bridge tree does not match manifest entry ${entry.path}.`);
+      }
+      generatedSourceFiles.push({ relativePath, contents: bytes });
+    }
   }
-  if (sourceFiles.length === 0) {
-    throw new Error(`Commit ${commit} does not contain the Workbench bridge source tree.`);
+  if (generatedSourceFiles.length !== treeByRelativePath.size) {
+    throw new Error(`Commit ${commit} contains unlisted Workbench bridge source files.`);
   }
-  sourceFiles.sort((left, right) =>
+  generatedSourceFiles.sort((left, right) =>
     Buffer.compare(Buffer.from(left.relativePath, 'utf8'), Buffer.from(right.relativePath, 'utf8'))
   );
   const digest = createHash('sha256');
-  for (const sourceFile of sourceFiles) {
+  for (const sourceFile of generatedSourceFiles) {
     digest.update(sourceFile.relativePath);
     digest.update('\0');
     digest.update(sourceFile.contents);
@@ -2498,12 +2579,16 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
   }
   const identity = {
     sourceSha256: digest.digest('hex'),
-    sourcePaths: sourceFiles.map((sourceFile) => sourceFile.relativePath),
+    sourcePaths: generatedSourceFiles.map((sourceFile) => sourceFile.relativePath),
+    coreSourceSha256: coreDigest.digest('hex'),
+    sourceManifestSha256: createHash('sha256').update(manifestBuffer).digest('hex'),
   };
   if (cacheKey) {
     committedBridgeSourceIdentityCache.set(cacheKey, {
       sourceSha256: identity.sourceSha256,
       sourcePaths: Object.freeze([...identity.sourcePaths]),
+      coreSourceSha256: identity.coreSourceSha256,
+      sourceManifestSha256: identity.sourceManifestSha256,
     });
   }
   return identity;
@@ -2513,7 +2598,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
   const expectedEd25519VerifierSourceSha256 = createHash('sha256')
     .update(
       fs.readFileSync(
-        path.join(PROJECT_ROOT, 'resources', 'evaos-beta', 'bridge', 'native', 'EvaOSEd25519Verify.swift')
+        path.join(PROJECT_ROOT, 'packages', 'mac-connector-core', 'native', 'EvaOSEd25519Verify.swift')
       )
     )
     .digest('hex');
@@ -2541,6 +2626,8 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     `expected_source_commit = ${JSON.stringify(String(expectedSourceCommit || ''))}`,
     `expected_bridge_source_sha256 = ${JSON.stringify(committedSourceIdentity.sourceSha256)}`,
     `expected_bridge_source_paths = ${JSON.stringify(committedSourceIdentity.sourcePaths)}`,
+    `expected_core_source_sha256 = ${JSON.stringify(committedSourceIdentity.coreSourceSha256)}`,
+    `expected_source_manifest_sha256 = ${JSON.stringify(committedSourceIdentity.sourceManifestSha256)}`,
     `expected_app_version = ${JSON.stringify(String(expectedAppVersion || ''))}`,
     `expected_ed25519_verifier_source_sha256 = ${JSON.stringify(expectedEd25519VerifierSourceSha256)}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
@@ -2668,7 +2755,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '    source_provenance = manifest.get("sourceProvenance", {}) if isinstance(manifest, dict) else {}',
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
     '    imported_commit = str(source_provenance.get("importedCommit", ""))',
-    '    result["bridgeCommitBindingValid"] = manifest.get("sourceCommit") == expected_source_commit and manifest.get("requestedSourceRef") == expected_source_commit and manifest.get("sourcePath") == "resources/evaos-beta/bridge" and source_provenance.get("schema") == "evaos-workbench-vendored-bridge-source/v1" and source_provenance.get("owner") == "100yenadmin/evaOS-GUI" and source_provenance.get("status") == "vendored" and len(imported_commit) == 40 and all(char in "0123456789abcdefABCDEF" for char in imported_commit)',
+    '    result["bridgeCommitBindingValid"] = manifest.get("sourceCommit") == expected_source_commit and manifest.get("requestedSourceRef") == expected_source_commit and manifest.get("sourcePath") == "packages/mac-connector-core" and source_provenance.get("schema") == "evaos-mac-connector-core-source/v1" and source_provenance.get("owner") == "100yenadmin/evaOS-GUI" and source_provenance.get("status") == "canonical" and source_provenance.get("coreSourceSha256") == expected_core_source_sha256 and source_provenance.get("sourceManifestSha256") == expected_source_manifest_sha256 and len(imported_commit) == 40 and all(char in "0123456789abcdefABCDEF" for char in imported_commit)',
     '    if result["hasBridgeExecutable"]:',
     '        wrapper_sha256 = sha256_info(archive, entries["evaos-desktop-bridge"])',
     '        result["bridgeWrapperValid"] = bridge_wrapper.get("schema") == "evaos-workbench-bridge-wrapper/v1" and bridge_wrapper.get("path") == "evaos-desktop-bridge" and bridge_wrapper.get("sourceSha256") == wrapper_sha256 == expected_bridge_wrapper_sha256',
@@ -3746,9 +3833,9 @@ function assertRcInstalledCandidatePreCanaryProof(proofPath, tag, releaseManifes
     binding.ok !== true ||
     binding.source_commit !== releaseManifest.releaseCommit ||
     binding.requested_source_ref !== releaseManifest.releaseCommit ||
-    binding.source_path !== 'resources/evaos-beta/bridge' ||
+    binding.source_path !== 'packages/mac-connector-core' ||
     binding.owner !== '100yenadmin/evaOS-GUI' ||
-    binding.status !== 'vendored' ||
+    binding.status !== 'canonical' ||
     binding.app_path !== '/Applications/evaOS Workbench.app' ||
     binding.app_version !== expectedVersion ||
     binding.app_build !== summary.expected_build ||

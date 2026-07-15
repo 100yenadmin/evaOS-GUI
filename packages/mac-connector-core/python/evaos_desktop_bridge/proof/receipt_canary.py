@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .audit import default_state_dir
-from .state import read_audit_record
+from ..persistence.audit import default_state_dir
+from ..persistence.state import read_audit_record
 
 REQUEST_SCHEMA = "evaos.mac_control.canary_request.v1"
 CONTEXT_SCHEMA = "evaos.mac_control_execution_context.v1"
@@ -108,7 +108,7 @@ def load_canary_config(env: dict[str, str] | None = None) -> CanaryConfig:
 
 
 def native_verifier_path(*, module_file: str | Path = __file__) -> Path:
-    package_dir = Path(module_file).resolve().parent
+    package_dir = Path(module_file).resolve().parent.parent
     return package_dir.parents[1] / "bin" / NATIVE_VERIFIER_NAME
 
 
@@ -684,9 +684,9 @@ def candidate_snapshot(
         candidate.get("ok") is not True
         or not _COMMIT_RE.fullmatch(str(required_candidate["sourceCommit"] or ""))
         or not _SHA256_RE.fullmatch(str(required_candidate["sourceSha256"] or ""))
-        or required_candidate["sourcePath"] != "resources/evaos-beta/bridge"
+        or required_candidate["sourcePath"] != "packages/mac-connector-core"
         or required_candidate["sourceOwner"] != "100yenadmin/evaOS-GUI"
-        or required_candidate["status"] != "vendored"
+        or required_candidate["status"] != "canonical"
         or required_candidate["appPath"] != "/Applications/evaOS Workbench.app"
         or required_candidate["appBundleId"] != "com.evaos.workbench"
         or required_candidate["appName"] != "evaOS Workbench"
@@ -697,7 +697,7 @@ def candidate_snapshot(
         or owner_program
         != {
             "kind": "path",
-            "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py",
+            "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py",
         }
         or owner_app != {"kind": "path", "value": "/Applications/evaOS Workbench.app"}
         or owner_manifest
@@ -716,7 +716,7 @@ def candidate_snapshot(
             executable,
         )
         or argv0
-        != "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py"
+        != "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py"
     ):
         raise CanaryError("canary_candidate_identity_invalid", status=503)
     return {

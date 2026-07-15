@@ -4,13 +4,22 @@ const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const {
+  copyCorePythonSource,
+  coreSourceIdentity,
+  verifyGeneratedCoreSource,
+} = require('../packages/mac-connector-core/scripts/coreManifest');
 
 const projectRoot = path.resolve(__dirname, '..');
 const bridgeResourceDir = process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR
   ? path.resolve(process.env.EVAOS_DESKTOP_BRIDGE_RESOURCE_DIR)
   : path.join(projectRoot, 'resources', 'Bridge');
-const vendoredBridgeSourceDir = path.join(projectRoot, 'resources', 'evaos-beta', 'bridge');
-const vendoredBridgeProvenancePath = path.join(vendoredBridgeSourceDir, 'SOURCE.json');
+const vendoredBridgeSourceDir = path.join(projectRoot, 'packages', 'mac-connector-core');
+const vendoredBridgeProvenancePath = path.join(
+  vendoredBridgeSourceDir,
+  'contracts',
+  'core-source-files.v1.json'
+);
 const PLACEHOLDER_SOURCE = 'diagnostic-placeholder';
 const PEEKABOO_LICENSE_RELATIVE_PATH = 'licenses/Peekaboo-LICENSE.txt';
 const PYTHON_LICENSE_RELATIVE_PATH = 'licenses/CPython-LICENSE.txt';
@@ -20,6 +29,7 @@ const BRIDGE_WRAPPER_METADATA_SCHEMA = 'evaos-workbench-bridge-wrapper/v1';
 const ED25519_VERIFIER_METADATA_SCHEMA = 'evaos-workbench-ed25519-verifier/v1';
 const ED25519_VERIFIER_NAME = 'evaos-ed25519-verify';
 const ED25519_VERIFIER_SOURCE = path.join(vendoredBridgeSourceDir, 'native', 'EvaOSEd25519Verify.swift');
+const ED25519_VERIFIER_MAIN_SOURCE = path.join(vendoredBridgeSourceDir, 'native', 'main.swift');
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const MACHO_MAGICS = new Set([
@@ -71,14 +81,14 @@ function sourceCandidates() {
 function resolveBridgeSourceDir() {
   for (const candidate of sourceCandidates()) {
     const sourceDir = path.resolve(candidate);
-    if (fs.existsSync(path.join(sourceDir, 'src', 'evaos_desktop_bridge', 'cli.py'))) {
+    if (fs.existsSync(path.join(sourceDir, 'python', 'evaos_desktop_bridge', 'host', 'cli.py'))) {
       return sourceDir;
     }
   }
   throw new Error(
     [
       'The evaOS-GUI-owned Workbench bridge source is missing.',
-      `Expected src/evaos_desktop_bridge/cli.py under ${vendoredBridgeSourceDir}.`,
+      `Expected python/evaos_desktop_bridge/host/cli.py under ${vendoredBridgeSourceDir}.`,
       'Release builds do not fetch the deprecated external bridge repository.',
     ].join(' ')
   );
@@ -117,7 +127,7 @@ function assertVendoredBridgeSourceMatchesHead(runGit = execFileSync) {
       return !ignoredPath.split('/').includes('__pycache__');
     });
   if (releaseRelevantStatus.length > 0) {
-    throw new Error('Release builds require the vendored Workbench bridge source and provenance to match HEAD.');
+    throw new Error('Release builds require the canonical connector-core source and manifest to match HEAD.');
   }
   return true;
 }
@@ -204,18 +214,28 @@ function vendoredBridgeSourceMetadata(sourceDir = vendoredBridgeSourceDir) {
   }
 
   const provenance = JSON.parse(fs.readFileSync(vendoredBridgeProvenancePath, 'utf8'));
+  const identity = coreSourceIdentity(resolvedSourceDir);
   if (
-    provenance.schema !== 'evaos-workbench-vendored-bridge-source/v1' ||
+    provenance.schema !== 'evaos-mac-connector-core-source/v1' ||
     provenance.owner !== '100yenadmin/evaOS-GUI' ||
-    provenance.status !== 'vendored' ||
-    !isFullCommitSha(provenance.importedCommit)
+    provenance.sourcePath !== 'packages/mac-connector-core' ||
+    provenance.status !== 'canonical' ||
+    !isFullCommitSha(provenance.provenance?.importedCommit)
   ) {
-    throw new Error('Vendored Workbench bridge SOURCE.json is missing required ownership provenance.');
+    throw new Error('Connector-core source manifest is missing required ownership provenance.');
   }
 
   return {
-    ...provenance,
-    ...verifyWorkbenchBridgeIdentity(path.join(resolvedSourceDir, 'src', 'evaos_desktop_bridge')),
+    schema: provenance.schema,
+    owner: provenance.owner,
+    sourcePath: provenance.sourcePath,
+    status: provenance.status,
+    importedFrom: provenance.provenance.importedFrom,
+    importedCommit: provenance.provenance.importedCommit,
+    dependencyStatus: provenance.provenance.dependencyStatus,
+    ...verifyWorkbenchBridgeIdentity(path.join(resolvedSourceDir, 'python', 'evaos_desktop_bridge')),
+    coreSourceSha256: identity.coreSourceSha256,
+    sourceManifestSha256: identity.sourceManifestSha256,
   };
 }
 
@@ -395,7 +415,7 @@ function ed25519VerifierBuildArgs(sourcePath, outputPath, architecture) {
     `${targetArchitecture}-apple-macos15.0`,
     '-o',
     outputPath,
-    sourcePath,
+    ...(Array.isArray(sourcePath) ? sourcePath : [sourcePath]),
   ];
 }
 
@@ -416,7 +436,16 @@ function buildEd25519Verifier({
   }
   fs.mkdirSync(targetDir, { recursive: true });
   const outputPath = path.join(targetDir, ED25519_VERIFIER_NAME);
-  const args = ed25519VerifierBuildArgs(sourcePath, outputPath, architecture);
+  const sourcePaths =
+    path.resolve(sourcePath) === path.resolve(ED25519_VERIFIER_SOURCE)
+      ? [sourcePath, ED25519_VERIFIER_MAIN_SOURCE]
+      : [sourcePath];
+  for (const verifierSource of sourcePaths) {
+    if (!fs.existsSync(verifierSource) || !fs.statSync(verifierSource).isFile()) {
+      throw new Error('The evaOS Ed25519 verifier Swift source is missing.');
+    }
+  }
+  const args = ed25519VerifierBuildArgs(sourcePaths, outputPath, architecture);
   runCommand('xcrun', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   fs.chmodSync(outputPath, 0o755);
   requireMachOReleaseBinary(outputPath, 'bundled Ed25519 verifier');
@@ -506,8 +535,12 @@ fi
 unset PYTHONHOME
 unset PYTHONUSERBASE
 unset PYTHONPATH
+unset VIRTUAL_ENV
+unset PIP_CONFIG_FILE
+unset PIP_REQUIRE_VIRTUALENV
+unset PIP_USER
 export PYTHONNOUSERSITE=1
-export PATH="$BRIDGE_DIR/bin:$PATH"
+export PATH="$BRIDGE_DIR/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PYTHONDONTWRITEBYTECODE=1
 
 CACHE_ROOT="\${EVAOS_DESKTOP_BRIDGE_CACHE_DIR:-}"
@@ -521,14 +554,14 @@ fi
 mkdir -p "$CACHE_ROOT/pycache" 2>/dev/null || true
 export PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 
-PYTHON_MODULE="evaos_desktop_bridge.cli"
+PYTHON_MODULE="evaos_desktop_bridge.host.cli"
 case "\${1:-}" in
   pre-canary)
-    PYTHON_MODULE="evaos_desktop_bridge.pre_canary"
+    PYTHON_MODULE="evaos_desktop_bridge.proof.pre_canary"
     shift
     ;;
   qa-canary)
-    PYTHON_MODULE="evaos_desktop_bridge.qa_canary"
+    PYTHON_MODULE="evaos_desktop_bridge.proof.qa_canary"
     shift
     ;;
 esac
@@ -694,7 +727,6 @@ function bridgeManifest({
     sourceCommit,
     sourceBranch,
     placeholder,
-    generatedAt: new Date().toISOString(),
   };
   if (bundledTools !== undefined) {
     manifest.bundledTools = bundledTools;
@@ -819,7 +851,6 @@ function main() {
     preparePlaceholderBridgeResource(error);
     return;
   }
-  const bridgePackageSource = path.join(bridgeSourceDir, 'src', 'evaos_desktop_bridge');
   const bridgePackageTarget = path.join(bridgeResourceDir, 'src', 'evaos_desktop_bridge');
   const bridgeBinDir = path.join(bridgeResourceDir, 'bin');
 
@@ -839,7 +870,7 @@ function main() {
 
   fs.rmSync(bridgeResourceDir, { recursive: true, force: true });
   fs.mkdirSync(bridgeBinDir, { recursive: true });
-  copyDirectory(bridgePackageSource, bridgePackageTarget);
+  copyCorePythonSource(bridgeSourceDir, bridgeResourceDir);
   removePycache(bridgeResourceDir);
   const pythonRuntime = installPythonRuntime();
   const bridgeExecutable = writeBridgeExecutable();
@@ -874,7 +905,7 @@ function main() {
     requestedSourceRef,
     sourcePath:
       path.resolve(bridgeSourceDir) === path.resolve(vendoredBridgeSourceDir)
-        ? path.relative(projectRoot, bridgeSourceDir).split(path.sep).join('/')
+        ? 'packages/mac-connector-core'
         : bridgeSourceDir,
     sourceCommit,
     sourceBranch: gitValue(sourceRepositoryRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
@@ -908,6 +939,7 @@ module.exports = {
   resolveBridgeSourceDir,
   sourceCandidates,
   vendoredBridgeSourceMetadata,
+  verifyGeneratedCoreSource,
   verifyPythonRuntimeInventory,
   verifyWorkbenchBridgeIdentity,
   verifyWorkbenchBridgeSourceRoot,

@@ -259,7 +259,7 @@ function exactLaunchAgentPythonListenerExec(command: string, args: string[]): st
   if (command === '/bin/ps') {
     if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
     if (argsEqual(args, ['-p', '18016', '-o', 'command='])) {
-      return '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --host 100.64.0.4 --port 8765\n';
+      return '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --host 100.64.0.4 --port 8765\n';
     }
   }
   if (command === '/usr/sbin/lsof' && argsEqual(args, ['-nP', '-iTCP:8765', '-sTCP:LISTEN', '-t'])) {
@@ -785,14 +785,14 @@ describe('evaOS installed app product proof', () => {
           owners: [
             {
               pid: '17959',
-              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
+              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765',
               matchesExpectedBridge: false,
             },
           ],
           staleOwners: [
             {
               pid: '17959',
-              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765',
+              command: '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765',
               matchesExpectedBridge: false,
             },
           ],
@@ -896,7 +896,7 @@ describe('evaOS installed app product proof', () => {
       if (command === '/usr/bin/mdfind') return '/Applications/evaOS Workbench.app\n';
       if (command === '/bin/ps') {
         if (args[0] === '-p') {
-          return '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.cli serve --port 8765\n';
+          return '/opt/homebrew/Cellar/python/3.14/bin/Python -S -m evaos_desktop_bridge.host.cli serve --port 8765\n';
         }
         return '';
       }
@@ -954,7 +954,7 @@ describe('evaOS installed app product proof', () => {
       if (command === '/bin/ps') {
         if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
         if (argsEqual(args, ['-p', '44784', '-o', 'command='])) {
-          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host 100.64.0.4 --port 8765\n';
+          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.host.cli serve --host 100.64.0.4 --port 8765\n';
         }
         if (argsEqual(args, ['-p', '44784', '-o', 'ppid='])) return '85316\n';
         if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
@@ -981,7 +981,7 @@ describe('evaOS installed app product proof', () => {
       expect.objectContaining({
         pid: '44784',
         command:
-          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host [redacted-host] --port [redacted-port]',
+          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.host.cli serve --host [redacted-host] --port [redacted-port]',
         cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
         parentPid: '85316',
         parentCommand: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
@@ -1007,7 +1007,7 @@ describe('evaOS installed app product proof', () => {
       if (command === '/bin/ps') {
         if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
         if (argsEqual(args, ['-p', '44784', '-o', 'command='])) {
-          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host 100.64.0.4 --port 8765\n';
+          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.host.cli serve --host 100.64.0.4 --port 8765\n';
         }
         if (argsEqual(args, ['-p', '44784', '-o', 'ppid='])) return '85316\n';
         if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
@@ -1032,7 +1032,7 @@ describe('evaOS installed app product proof', () => {
       expect.objectContaining({
         pid: '44784',
         command:
-          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.cli serve --host [redacted-host] --port [redacted-port]',
+          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.host.cli serve --host [redacted-host] --port [redacted-port]',
         parentCommand: '/bin/sh -c "/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench --pretend-parent"',
         parentExecutable: '/bin/sh',
         matchesExpectedBridge: false,

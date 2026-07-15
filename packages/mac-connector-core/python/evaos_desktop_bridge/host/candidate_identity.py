@@ -9,10 +9,10 @@ from typing import Any
 
 FULL_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 FULL_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
-SOURCE_PROVENANCE_SCHEMA = "evaos-workbench-vendored-bridge-source/v1"
+SOURCE_PROVENANCE_SCHEMA = "evaos-mac-connector-core-source/v1"
 SOURCE_OWNER = "100yenadmin/evaOS-GUI"
-SOURCE_PATH = "resources/evaos-beta/bridge"
-SOURCE_STATUS = "vendored"
+SOURCE_PATH = "packages/mac-connector-core"
+SOURCE_STATUS = "canonical"
 PUBLIC_CANDIDATE_SCHEMA = "evaos.workbench.bridge_candidate.v1"
 
 
@@ -96,7 +96,7 @@ def _app_identity(package_dir: Path) -> dict[str, Any]:
 
 def packaged_bridge_source_identity(*, module_file: str | Path = __file__) -> dict[str, Any]:
     module_path = Path(module_file).resolve()
-    package_dir = module_path.parent
+    package_dir = module_path.parent.parent
     manifest_path = package_dir.parents[1] / "manifest.json"
     result: dict[str, Any] = {
         "ok": False,

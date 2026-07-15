@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from ..audit import default_state_dir
-from ..redaction import cap_text, redact_value
-from ..schema import make_error, timestamp_utc
-from ..types import CommandResult
+from ..contracts.redaction import cap_text, redact_value
+from ..contracts.schema import make_error, timestamp_utc
+from ..contracts.types import CommandResult
+from ..persistence.audit import default_state_dir
 
 ACCESSIBILITY_GUIDANCE = (
     "Open System Settings > Privacy & Security > Accessibility and enable the terminal "

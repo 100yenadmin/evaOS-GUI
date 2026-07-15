@@ -18,12 +18,13 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib.parse import unquote, urlparse
 
-from ..audit import append_audit, default_state_dir
-from ..bundled_tools import bundled_bridge_bin_candidates
-from ..helper_ipc import helper_client_from_environment
-from ..redaction import cap_text, redact_value
-from ..schema import make_error, timestamp_utc
-from ..state import (
+from ..contracts.redaction import cap_text, redact_value
+from ..contracts.schema import make_error, timestamp_utc
+from ..contracts.types import CommandResult
+from ..host.bundled_tools import bundled_bridge_bin_candidates
+from ..host.helper_ipc import helper_client_from_environment
+from ..persistence.audit import append_audit, default_state_dir
+from ..persistence.state import (
     ControlKillSwitchActiveError,
     ControlSessionChangedError,
     kill_control_session,
@@ -32,7 +33,6 @@ from ..state import (
     start_control_session,
     stop_control_session,
 )
-from ..types import CommandResult
 from .codex_macos import (
     ACCESSIBILITY_GUIDANCE,
     SCREEN_RECORDING_GUIDANCE,

@@ -15,8 +15,8 @@ try:
 except ImportError:  # pragma: no cover - the connector is released for macOS; the process lock remains for imports elsewhere.
     fcntl = None  # type: ignore[assignment]
 
+from ..contracts.redaction import redact_audit_value, redact_value
 from .audit import default_state_dir
-from .redaction import redact_audit_value, redact_value
 
 LATEST_FILE = "latest.json"
 AUDIT_FILE = "audit.jsonl"

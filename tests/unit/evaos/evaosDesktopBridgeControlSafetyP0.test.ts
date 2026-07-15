@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const bridgeSourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
+const bridgeSourceDir = join(process.cwd(), 'packages', 'mac-connector-core', 'python');
 
 function runPython(script: string): string {
   return execFileSync('python3', ['-B', '-c', script], {
@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-from evaos_desktop_bridge.state import (
+from evaos_desktop_bridge.persistence.state import (
     ControlKillSwitchActiveError,
     default_control_session,
     read_control_session,
@@ -76,7 +76,7 @@ with TemporaryDirectory() as temporary_root:
             raise PermissionError("simulated unreadable state")
         return real_open(path, flags, mode)
 
-    with patch("evaos_desktop_bridge.state.os.open", side_effect=unreadable_state):
+    with patch("evaos_desktop_bridge.persistence.state.os.open", side_effect=unreadable_state):
         unreadable = read_control_session(root)
         recovered_unreadable = start_control_session(
             mode="full_access",
@@ -117,14 +117,14 @@ import json
 import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from evaos_desktop_bridge.cli import main
-from evaos_desktop_bridge.state import (
+from evaos_desktop_bridge.host.cli import main
+from evaos_desktop_bridge.persistence.state import (
     kill_control_session,
     read_control_session,
     start_control_session,
     write_control_session,
 )
-from evaos_desktop_bridge.types import CommandResult
+from evaos_desktop_bridge.contracts.types import CommandResult
 
 with TemporaryDirectory() as temporary_root:
     root = Path(temporary_root)
@@ -219,15 +219,15 @@ import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.audit import append_audit
-from evaos_desktop_bridge.cli import main
-from evaos_desktop_bridge.state import (
+from evaos_desktop_bridge.persistence.audit import append_audit
+from evaos_desktop_bridge.host.cli import main
+from evaos_desktop_bridge.persistence.state import (
     kill_control_session,
     read_control_session,
     start_control_session,
     write_control_session,
 )
-from evaos_desktop_bridge.types import CommandResult
+from evaos_desktop_bridge.contracts.types import CommandResult
 
 with TemporaryDirectory() as temporary_root:
     root = Path(temporary_root)
@@ -331,9 +331,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.audit import append_audit
-from evaos_desktop_bridge.connector_server import _make_handler
-from evaos_desktop_bridge.state import start_control_session, write_control_session
+from evaos_desktop_bridge.persistence.audit import append_audit
+from evaos_desktop_bridge.host.connector_server import _make_handler
+from evaos_desktop_bridge.persistence.state import start_control_session, write_control_session
 
 def short_hash(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
@@ -431,7 +431,7 @@ import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.receipt_canary import CanaryError, REPLAY_FILE, burn_replay_token
+from evaos_desktop_bridge.proof.receipt_canary import CanaryError, REPLAY_FILE, burn_replay_token
 
 worker_count = 8
 barrier = threading.Barrier(worker_count)
@@ -476,9 +476,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from evaos_desktop_bridge.audit import append_audit
-from evaos_desktop_bridge.connector_server import _approval_field_value, _make_handler
-from evaos_desktop_bridge.state import start_control_session, write_control_session
+from evaos_desktop_bridge.persistence.audit import append_audit
+from evaos_desktop_bridge.host.connector_server import _approval_field_value, _make_handler
+from evaos_desktop_bridge.persistence.state import start_control_session, write_control_session
 
 with TemporaryDirectory() as temporary_root:
     root = Path(temporary_root)

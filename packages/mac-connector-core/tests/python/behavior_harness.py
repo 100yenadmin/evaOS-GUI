@@ -246,7 +246,7 @@ class BridgeCliIssue130Surface:
         src_path = str(self.repo_root / "src")
         env["PYTHONPATH"] = src_path + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         completed = subprocess.run(
-            [self.python_executable, "-m", "evaos_desktop_bridge.cli", *argv],
+            [self.python_executable, "-m", "evaos_desktop_bridge.host.cli", *argv],
             cwd=self.repo_root,
             env=env,
             stdout=subprocess.PIPE,

@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
 
-from ..redaction import cap_text, redact_value
-from ..schema import make_error
-from ..types import CommandResult
+from ..contracts.redaction import cap_text, redact_value
+from ..contracts.schema import make_error
+from ..contracts.types import CommandResult
 from .codex_macos import RunnerResult, run_command
 
 ALLOWED_APP_SERVER_METHODS = frozenset(

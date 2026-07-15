@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from .candidate_identity import packaged_bridge_source_binding
+from ..host.candidate_identity import packaged_bridge_source_binding
 
 DEFAULT_CANONICAL_PATH = "/Applications/evaOS Workbench.app"
 DEFAULT_BUNDLE_ID = "com.evaos.workbench"
@@ -515,7 +515,7 @@ def _process_inventory() -> tuple[ProcessInfo, ...]:
             processes.append(ProcessInfo(pid=pid, command=command, path=workbench_path, kind="workbench"))
         elif _is_computer_use_mcp_helper(command):
             processes.append(ProcessInfo(pid=pid, command=command, kind="computer_use_helper"))
-        elif "evaos_desktop_bridge.cli serve" in command or "evaos-desktop-bridge serve" in command:
+        elif "evaos_desktop_bridge.host.cli serve" in command or "evaos-desktop-bridge serve" in command:
             processes.append(ProcessInfo(pid=pid, command=command, kind="desktop_bridge"))
     return tuple(processes)
 

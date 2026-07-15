@@ -13,6 +13,7 @@ const { normalizeManagedResourcesBundle } = require('../packages/shared-scripts/
 const { clearDmgRetryCompletionMarkers, markCompletedAfterPack } = require('./dmgRetryEligibility');
 const {
   bridgeWrapperScript,
+  vendoredBridgeSourceMetadata,
   verifyPythonRuntimeInventory,
   verifyWorkbenchBridgeSourceRoot,
 } = require('./prepareEvaosDesktopBridgeResource');
@@ -388,16 +389,20 @@ function verifyEvaosDesktopBridgeResource(resourcesDir, electronPlatformName, ta
     const packagedBridgeWrapperSha256 = crypto.createHash('sha256').update(fs.readFileSync(bridgePath)).digest('hex');
     const expectedBridgeWrapperSha256 = crypto.createHash('sha256').update(bridgeWrapperScript()).digest('hex');
     const packagedSourceIdentity = verifyWorkbenchBridgeSourceRoot(path.join(resourcesDir, 'Bridge', 'src'));
+    const canonicalSourceIdentity = vendoredBridgeSourceMetadata();
     if (
       !/^[0-9a-f]{40}$/i.test(expectedSourceCommit) ||
       manifest.sourceCommit !== expectedSourceCommit ||
       manifest.requestedSourceRef !== expectedSourceCommit ||
-      manifest.sourcePath !== 'resources/evaos-beta/bridge' ||
-      sourceProvenance?.schema !== 'evaos-workbench-vendored-bridge-source/v1' ||
+      manifest.sourcePath !== 'packages/mac-connector-core' ||
+      sourceProvenance?.schema !== 'evaos-mac-connector-core-source/v1' ||
       sourceProvenance?.owner !== '100yenadmin/evaOS-GUI' ||
-      sourceProvenance?.status !== 'vendored' ||
+      sourceProvenance?.status !== 'canonical' ||
       !/^[0-9a-f]{40}$/i.test(String(sourceProvenance?.importedCommit || '')) ||
       sourceProvenance?.sourceSha256 !== packagedSourceIdentity.sourceSha256 ||
+      sourceProvenance?.sourceSha256 !== canonicalSourceIdentity.sourceSha256 ||
+      sourceProvenance?.coreSourceSha256 !== canonicalSourceIdentity.coreSourceSha256 ||
+      sourceProvenance?.sourceManifestSha256 !== canonicalSourceIdentity.sourceManifestSha256 ||
       bridgeWrapper?.schema !== 'evaos-workbench-bridge-wrapper/v1' ||
       bridgeWrapper?.path !== 'evaos-desktop-bridge' ||
       bridgeWrapper?.sourceSha256 !== packagedBridgeWrapperSha256 ||

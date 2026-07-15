@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const bridgeSource = join(repoRoot, 'resources', 'evaos-beta', 'bridge', 'src');
+const bridgeSource = join(repoRoot, 'packages', 'mac-connector-core', 'python');
 
 describe('evaOS signed Mac-control receipt connector', () => {
   it('isolates signer configuration to an explicit complete staging LaunchAgent start', () => {
@@ -13,7 +13,7 @@ import plistlib
 import tempfile
 from pathlib import Path
 
-from evaos_desktop_bridge import cli
+from evaos_desktop_bridge.host import cli
 
 root = Path(tempfile.mkdtemp(prefix="evaos-connector-plist-"))
 cli.CONNECTOR_USER_PLIST = root / "connector.plist"
@@ -127,8 +127,9 @@ from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from evaos_desktop_bridge import connector_server, receipt_canary
-from evaos_desktop_bridge.audit import append_audit
+from evaos_desktop_bridge.host import connector_server
+from evaos_desktop_bridge.proof import receipt_canary
+from evaos_desktop_bridge.persistence.audit import append_audit
 
 root = Path(tempfile.mkdtemp(prefix="evaos-receipt-http-"))
 key_dir = root / "signer"
@@ -176,9 +177,9 @@ candidate = {
     "ok": True,
     "source_commit": "a" * 40,
     "source_sha256": "b" * 64,
-    "source_path": "resources/evaos-beta/bridge",
+    "source_path": "packages/mac-connector-core",
     "owner": "100yenadmin/evaOS-GUI",
-    "status": "vendored",
+    "status": "canonical",
     "app_path": "/Applications/evaOS Workbench.app",
     "app_version": "2.1.36",
     "app_build": "2.1.36",
@@ -190,14 +191,14 @@ owner = {
     "classification": "workbench_bundle",
     "bundle_id": "com.evaos.workbench",
     "source_commit": "a" * 40,
-    "program_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py"},
+    "program_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py"},
     "app_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app"},
     "manifest_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json"},
     "plist_path": {"kind": "path", "value": "~/Library/LaunchAgents/com.electricsheep.evaos-desktop-bridge.plist"},
 }
 process = {
     "executable": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3.12",
-    "argv0": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py",
+    "argv0": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py",
 }
 receipt_canary.candidate_snapshot(candidate, owner=owner, process=process)
 wrong_owner = {
@@ -424,7 +425,7 @@ try:
             public_key=b"p" * 32,
             message=b"message",
             signature=b"s" * 64,
-            module_file=root / "missing" / "src" / "evaos_desktop_bridge" / "receipt_canary.py",
+            module_file=root / "missing" / "src" / "evaos_desktop_bridge" / "proof" / "receipt_canary.py",
         )
     except receipt_canary.CanaryError as error:
         assert error.code == "execution_context_verifier_unavailable"

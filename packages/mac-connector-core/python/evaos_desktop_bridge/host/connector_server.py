@@ -20,7 +20,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from .candidate_identity import public_packaged_bridge_candidate
-from .receipt_canary import (
+from ..proof.receipt_canary import (
     CanaryError,
     build_receipt,
     build_public_attestation,
@@ -38,9 +38,9 @@ from .receipt_canary import (
     validate_receipt_signer_key,
 )
 
-from .audit import default_state_dir
-from .schema import build_envelope, make_error
-from .state import (
+from ..contracts.schema import build_envelope, make_error
+from ..persistence.audit import default_state_dir
+from ..persistence.state import (
     approval_audit_freshness_error,
     control_session_transaction,
     read_audit_record,

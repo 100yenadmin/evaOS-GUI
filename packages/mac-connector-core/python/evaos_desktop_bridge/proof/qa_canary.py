@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from ..persistence.state import kill_control_session, read_control_session
 from .pre_canary import packaged_bridge_source_binding
-from .state import kill_control_session, read_control_session
 
 DEFAULT_RUN_ROOT = Path("/Volumes/LEXAR/Codex/evaos-workbench-qa-runs")
 LIVE_CONTROL_SUITES = {
@@ -713,7 +713,7 @@ def evaluate_connector_candidate_identity(
     )
     expected_app_path = "/Applications/evaOS Workbench.app"
     expected_bridge_root = expected_app_path + "/Contents/Resources/Bridge"
-    expected_argv0 = expected_bridge_root + "/src/evaos_desktop_bridge/cli.py"
+    expected_argv0 = expected_bridge_root + "/src/evaos_desktop_bridge/host/cli.py"
     expected_manifest_path = expected_bridge_root + "/manifest.json"
     process_executable = process.get("executable")
     process_argv0 = process.get("argv0")
@@ -743,9 +743,9 @@ def evaluate_connector_candidate_identity(
         and candidate.get("ok") is True
         and candidate.get("source_commit") == expected_source_commit
         and candidate.get("source_sha256") == expected_source_sha256
-        and candidate.get("source_path") == "resources/evaos-beta/bridge"
+        and candidate.get("source_path") == "packages/mac-connector-core"
         and candidate.get("owner") == "100yenadmin/evaOS-GUI"
-        and candidate.get("status") == "vendored"
+        and candidate.get("status") == "canonical"
         and candidate.get("app_path") == "/Applications/evaOS Workbench.app"
         and candidate.get("app_version") == expected_version
         and candidate.get("app_build") == expected_build

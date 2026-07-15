@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     inventoryEntryCount: number;
   };
   verifyWorkbenchBridgeIdentity: (bridgePackageDir: string) => { sourceSha256: string };
+  vendoredBridgeSourceMetadata: () => Record<string, unknown>;
 };
 
 const tempDirs: string[] = [];
@@ -59,7 +60,9 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
   const bridgeDir = join(resourcesDir, 'Bridge');
   const bridgePackageDir = join(bridgeDir, 'src', 'evaos_desktop_bridge');
   mkdirSync(join(bridgeDir, 'bin'), { recursive: true });
-  mkdirSync(join(bridgePackageDir, 'adapters'), { recursive: true });
+  cpSync(join(process.cwd(), 'packages', 'mac-connector-core', 'python', 'evaos_desktop_bridge'), bridgePackageDir, {
+    recursive: true,
+  });
   mkdirSync(join(bridgeDir, 'python', 'bin'), { recursive: true });
   mkdirSync(join(bridgeDir, 'licenses'), { recursive: true });
   const bridgePath = join(bridgeDir, 'evaos-desktop-bridge');
@@ -80,32 +83,23 @@ function writeBridgeFixture(resourcesDir: string, options: { helper?: boolean; n
   mkdirSync(join(bridgeDir, 'python', 'lib', 'python3.12', 'encodings'), { recursive: true });
   writeFileSync(join(bridgeDir, 'python', 'lib', 'python3.12', 'encodings', '__init__.py'), '# fixture\n');
   writeFileSync(join(bridgeDir, 'licenses', 'CPython-LICENSE.txt'), cpythonLicense);
-  writeFileSync(
-    join(bridgePackageDir, 'adapters', 'customer_mac.py'),
-    [
-      'from pathlib import Path',
-      'WORKBENCH_CANONICAL_APP_PATH = Path("/Applications/evaOS Workbench.app")',
-      'WORKBENCH_PROCESS_NAME = "evaOS Workbench"',
-      'WORKBENCH_APP_ALIASES = {',
-      '    "com.evaos.workbench",',
-      '}',
-      '',
-    ].join('\n')
-  );
   const bridgeSourceIdentity = bridgeResource.verifyWorkbenchBridgeIdentity(bridgePackageDir);
+  const canonicalSourceIdentity = bridgeResource.vendoredBridgeSourceMetadata();
   const inventoryMetadata = bridgeResource.writePythonRuntimeInventory(bridgeDir);
   writeFileSync(
     join(bridgeDir, 'manifest.json'),
     JSON.stringify({
       placeholder: false,
       requestedSourceRef: '82bb944d2c61586472fe3c8fe20b85f61ba0f4df',
-      sourcePath: 'resources/evaos-beta/bridge',
+      sourcePath: 'packages/mac-connector-core',
       sourceCommit: '82bb944d2c61586472fe3c8fe20b85f61ba0f4df',
       sourceProvenance: {
-        schema: 'evaos-workbench-vendored-bridge-source/v1',
+        schema: 'evaos-mac-connector-core-source/v1',
         owner: '100yenadmin/evaOS-GUI',
-        status: 'vendored',
+        status: 'canonical',
         importedCommit: '908e3cad8c5f11dca739bbfc2c697c3e6d52f79e',
+        coreSourceSha256: canonicalSourceIdentity.coreSourceSha256,
+        sourceManifestSha256: canonicalSourceIdentity.sourceManifestSha256,
         ...bridgeSourceIdentity,
       },
       bundledTools: {
