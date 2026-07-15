@@ -29,6 +29,12 @@ const contractRoot = path.resolve(
 const validRoot = path.join(contractRoot, 'fixtures/valid');
 const invalidRoot = path.join(contractRoot, 'fixtures/invalid');
 
+for (const requiredRoot of [contractRoot, validRoot, invalidRoot]) {
+  if (!fs.existsSync(requiredRoot)) {
+    throw new Error(`Mac Access contract fixture directory is missing: ${requiredRoot}`);
+  }
+}
+
 const schemas = {
   access_state: accessStateSchema,
   access_transition: accessTransitionSchema,
@@ -41,6 +47,9 @@ const schemas = {
 } as const;
 
 function readJson(filePath: string): unknown {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Mac Access contract fixture is missing: ${filePath}`);
+  }
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
@@ -263,6 +272,11 @@ const expectedIssuePathByError: Record<string, string> = {
 };
 
 describe('evaOS Mac Access v1 contracts', () => {
+  it('reports the exact missing fixture path before attempting to parse it', () => {
+    const missingFixture = path.join(contractRoot, 'fixtures/valid/missing-contract-fixture.json');
+    expect(() => readJson(missingFixture)).toThrow(`Mac Access contract fixture is missing: ${missingFixture}`);
+  });
+
   const validFixtures = [
     ['access_state', 'state/access-state.json'],
     ['access_state', 'state/full-access-state.json'],
