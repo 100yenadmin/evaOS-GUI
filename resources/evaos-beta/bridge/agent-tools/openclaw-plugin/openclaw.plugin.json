@@ -2,7 +2,7 @@
   "id": "evaos-desktop-bridge",
   "name": "EvaOS Desktop Bridge",
   "description": "Guarded OpenClaw tools for paired customer Mac, iPhone Mirroring, and Codex Desktop readiness.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "owner": "100yenadmin/evaOS-GUI",
   "kind": "tool",
   "main": "dist/index.js",

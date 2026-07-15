@@ -4,7 +4,7 @@ OpenClaw plugin wrapper for `evaos-desktop-bridge`. Codex Desktop tools remain
 read-oriented except the visible support fallback. Customer Mac/iPhone tools now
 use the Workbench connector's customer-granted control session:
 
-This vendored `0.2.0` package is owned by `100yenadmin/evaOS-GUI`; release tags
+This vendored `0.2.1` package is owned by `100yenadmin/evaOS-GUI`; release tags
 continue to use the `evaos-desktop-bridge-openclaw-vX.Y.Z` namespace.
 
 - **Full Access**: live desktop and iPhone actions run continuously after the
