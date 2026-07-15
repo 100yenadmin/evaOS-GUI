@@ -1,9 +1,15 @@
 import { createRequire } from 'node:module';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  signedMacControlAttestation,
+  TEST_CONTEXT_KEY_ID,
+  TEST_RECEIPT_KEY_ID,
+} from '../evaos/fixtures/signedMacControlAttestation';
 
 const require = createRequire(import.meta.url);
 const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
@@ -38,7 +44,11 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
   normalizeBoolean: (value: unknown) => boolean;
   requiresMacControlLiveCanaryProof: (tagOrVersion: string) => boolean;
   verifyBrokerLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
-  verifyMacControlLiveCanaryProof: (proofDir: string, env?: Record<string, string | undefined>) => boolean;
+  verifyMacControlLiveCanaryProof: (
+    proofDir: string,
+    env?: Record<string, string | undefined>,
+    options?: { now?: Date; maxAgeHours?: number }
+  ) => boolean;
   verifyReleaseManifest: (outputDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   verifyRcProof: (proofDir: string, tag: string, env: Record<string, string | undefined>) => boolean;
   writeRcProofTemplate: (proofDir: string, tag: string) => unknown;
@@ -148,6 +158,15 @@ afterAll(() => {
 const liveCanaryProofEnv = {
   EVAOS_LIVE_CANARY_EXPECTED_CUSTOMER_ID: 'cus_123',
   EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+};
+const macControlTestKeyPair = generateKeyPairSync('ed25519');
+const macControlProofTrustEnv = {
+  EVAOS_LIVE_CANARY_CONTEXT_KEY_ID: TEST_CONTEXT_KEY_ID,
+  EVAOS_LIVE_CANARY_RECEIPT_KEY_ID: TEST_RECEIPT_KEY_ID,
+  EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY: macControlTestKeyPair.publicKey
+    .export({ format: 'der', type: 'spki' })
+    .subarray(-32)
+    .toString('base64url'),
 };
 
 function writeArm64TrustEvidence(proofDir: string) {
@@ -279,7 +298,7 @@ function writeArm64TrustEvidence(proofDir: string) {
           },
           selected_binding: { ok: null, reason: 'selected_binding_proof_not_required_for_suite' },
         },
-        summary: { total: 5, passed: 5, failed: 0, skipped: 0 },
+        summary: { total: 6, passed: 6, failed: 0, skipped: 0 },
         results: [
           {
             id: 'control_start.bridge_status',
@@ -311,6 +330,13 @@ function writeArm64TrustEvidence(proofDir: string) {
           },
           {
             id: 'control_start.kill_switch',
+            command: 'desktop_kill_switch',
+            ok: true,
+            status: 'passed',
+            params_redacted: {},
+          },
+          {
+            id: 'control_cleanup.local_kill_switch',
             command: 'desktop_kill_switch',
             ok: true,
             status: 'passed',
@@ -361,7 +387,7 @@ function writeMacosBridgeZip(
     inventoryDirectoryArchiveMode?: number;
     inventoryFileArchiveMode?: number;
     wrongPythonSourceUrl?: boolean;
-    nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'python';
+    nonExecutablePayload?: 'bridge' | 'peekaboo' | 'helper' | 'verifier' | 'python';
     omitFoundationNative?: boolean;
     omitInventoriedRuntimeFile?: boolean;
     omitStdlibSentinel?: boolean;
@@ -382,6 +408,13 @@ function writeMacosBridgeZip(
   } = {}
 ) {
   const bridgeWrapperBase64 = Buffer.from(bridgeResource.bridgeWrapperScript()).toString('base64');
+  const ed25519VerifierSourceSha256 = createHash('sha256')
+    .update(
+      fs.readFileSync(
+        path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'native', 'EvaOSEd25519Verify.swift')
+      )
+    )
+    .digest('hex');
   const script = [
     'import base64',
     'import hashlib',
@@ -436,6 +469,7 @@ function writeMacosBridgeZip(
     'wrong_short_version = sys.argv[42] == "1"',
     'wrong_bundle_version = sys.argv[43] == "1"',
     `bridge_wrapper_bytes = base64.b64decode("${bridgeWrapperBase64}")`,
+    `ed25519_verifier_source_sha256 = "${ed25519VerifierSourceSha256}"`,
     'app_root = "Wrong Workbench.app" if wrong_app_root else "evaOS Workbench.app"',
     'info_plist = {"CFBundleIdentifier": "com.example.wrong" if wrong_bundle_identifier else "com.evaos.workbench", "CFBundleName": "Wrong Workbench" if wrong_product_name else "evaOS Workbench", "CFBundleShortVersionString": "9.9.9" if wrong_short_version else "2.1.10", "CFBundleVersion": "999" if wrong_bundle_version else "2.1.10"}',
     'info_plist_bytes = b"not-a-plist" if malformed_info_plist else plistlib.dumps(info_plist)',
@@ -518,7 +552,7 @@ function writeMacosBridgeZip(
     '    bridge_source_hash.update(b"\\0")',
     'bridge_wrapper_metadata = {"schema": "evaos-workbench-bridge-wrapper/v1", "path": "evaos-desktop-bridge", "sourceSha256": hashlib.sha256(bridge_wrapper_bytes).hexdigest()}',
     'source_provenance = {"schema": "evaos-workbench-vendored-bridge-source/v1", "owner": "100yenadmin/evaOS-GUI", "status": "vendored", "importedCommit": "908e3cad8c5f11dca739bbfc2c697c3e6d52f79e", "sourceSha256": bridge_source_hash.hexdigest()}',
-    'manifest = {"placeholder": False, "requestedSourceRef": bridge_source_commit, "sourcePath": "resources/evaos-beta/bridge", "sourceCommit": bridge_source_commit, "sourceProvenance": source_provenance, "bundledTools": {"bridgeWrapper": bridge_wrapper_metadata, "peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
+    'manifest = {"placeholder": False, "requestedSourceRef": bridge_source_commit, "sourcePath": "resources/evaos-beta/bridge", "sourceCommit": bridge_source_commit, "sourceProvenance": source_provenance, "bundledTools": {"bridgeWrapper": bridge_wrapper_metadata, "ed25519Verifier": {"schema": "evaos-workbench-ed25519-verifier/v1", "path": "bin/evaos-ed25519-verify", "architecture": python_arch, "minimumMacOS": "15.0", "sourceSha256": ed25519_verifier_source_sha256}, "peekaboo": {"version": "3.8.0", "sourceSha256": source_sha256, "license": "MIT", "licensePath": "licenses/Peekaboo-LICENSE.txt", "licenseSha256": license_sha256}, "python": python_metadata}}',
     'def write_regular(archive, name, data, mode=0o644):',
     '    info = zipfile.ZipInfo(name)',
     '    info.create_system = 3',
@@ -551,6 +585,7 @@ function writeMacosBridgeZip(
     '    if not omit_peekaboo:',
     '        write_regular(archive, f"{bridge_prefix}/bin/peekaboo", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "peekaboo" else 0o755)',
     '    write_regular(archive, f"{bridge_prefix}/bin/evaos-connector-helper", bytes.fromhex("cafebabe00000000"), 0o644 if non_executable_payload == "helper" else 0o755)',
+    '    write_regular(archive, f"{bridge_prefix}/bin/evaos-ed25519-verify", python_header, 0o644 if non_executable_payload == "verifier" else 0o755)',
     '    write_directory(archive, f"{bridge_prefix}/python", 0o600 if non_traversable_python_root else 0o755)',
     '    if normalized_python_entry_collision:',
     '        write_regular(archive, f"{bridge_prefix}/python/bin", b"shadowed runtime entry")',
@@ -806,6 +841,30 @@ function mutateBrokerLiveCanaryProof(proofDir: string, mutator: (proof: Record<s
 
 function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<string, unknown> = {}) {
   fs.mkdirSync(proofDir, { recursive: true });
+  const sourceSha256 = releaseGate.committedBridgeSourceIdentity(fixtureReleaseCommit).sourceSha256;
+  const executedAtText = String(overrides.executedAt || new Date().toISOString());
+  const executedAt = Date.parse(executedAtText);
+  const executedAtSeconds = Math.floor(executedAt / 1000);
+  const authorityIssuedAt = Number(overrides.authorityIssuedAt ?? executedAtSeconds);
+  const authorityExpiresAt = Number(overrides.authorityExpiresAt ?? overrides.expiresAt ?? executedAtSeconds + 59);
+  const candidateOverrides = (overrides.candidate as Record<string, unknown> | undefined) || {};
+  const candidate = {
+    sourceCommit: String(candidateOverrides.sourceCommit || fixtureReleaseCommit),
+    sourceSha256: String(candidateOverrides.sourceSha256 || sourceSha256),
+    appVersion: String(candidateOverrides.appVersion || '2.1.36'),
+    appBuild: String(candidateOverrides.appBuild || '2.1.36'),
+  };
+  const signed = signedMacControlAttestation({
+    runRef: String(overrides.runRef || 'gha:12345:111111111111111111111111'),
+    executedAt: executedAtText,
+    authorityIssuedAt,
+    authorityExpiresAt,
+    candidate,
+    privateReceiptSha256: String(overrides.privateReceiptSha256 || 'f'.repeat(64)),
+    keyPair: macControlTestKeyPair,
+    attestationOverrides: (overrides.attestationOverrides as Record<string, unknown> | undefined) || {},
+    envelopeOverrides: (overrides.envelopeOverrides as Record<string, unknown> | undefined) || {},
+  });
   fs.writeFileSync(
     path.join(proofDir, 'mac-control-session-provisioning.json'),
     `${JSON.stringify(
@@ -823,36 +882,57 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
       2
     )}\n`
   );
+  fs.writeFileSync(path.join(proofDir, 'mac-control-runtime.json'), `${JSON.stringify(signed.envelope, null, 2)}\n`);
   fs.writeFileSync(
-    path.join(proofDir, 'mac-control-runtime.json'),
+    path.join(proofDir, 'mac-control-runtime-negative.json'),
     `${JSON.stringify(
       {
-        schema: 'evaos-mac-control-live-canary/v1',
-        ok: true,
-        runtime: 'openclaw',
-        launchMode: 'mac_control_tools',
-        reason: 'ready',
-        httpStatus: 302,
+        schema: 'evaos.mac_control.deployed_negative_probe.v1',
+        proofMode: 'deployed-staging',
+        sourceRunId: '12345',
+        candidate,
+        classifications: {
+          forgedSignature: {
+            rejected: true,
+            httpStatus: 401,
+            code: 'execution_context_signature_invalid',
+          },
+          expiredContext: {
+            rejected: true,
+            httpStatus: 401,
+            code: 'execution_context_expired',
+          },
+          replay: {
+            firstAccepted: true,
+            secondRejected: true,
+            httpStatus: 409,
+            code: 'execution_context_replayed',
+          },
+        },
+        connectorActionAttempted: false,
+        sensitiveOutputAbsent: true,
+      },
+      null,
+      2
+    )}\n`
+  );
+  fs.writeFileSync(
+    path.join(proofDir, 'mac-control-deployed-route.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos.mac_control.deployed_route_probe.v1',
         sourceHeadSha: fixtureReleaseCommit,
         sourceRunId: '12345',
+        checkedAt: executedAtText,
         assertions: {
-          attached: true,
-          toolsReady: true,
-          activeGrant: true,
-          requiredCapabilityGroups: true,
-          bindingIdPresent: true,
-          bindingIdMatched: true,
-          bindingVersionPresent: true,
-          bindingVersionMatched: true,
-          bindingExpiryPresent: true,
-          bindingExpiryMatched: true,
-          bindingExpiryValid: true,
-          expectedLaunchTarget: true,
-          callbackAccepted: true,
-          proxySessionAccepted: true,
+          gatewayAuthRequired: true,
+          postOnly: true,
+          exactMatch: true,
+          strictBody: true,
+          callerAuthorityBodyRejected: true,
+          sensitiveOutputAbsent: true,
         },
-        secretScan: 'passed',
-        ...overrides,
+        ...(overrides.deployedRoute as Record<string, unknown> | undefined),
       },
       null,
       2
@@ -870,6 +950,7 @@ function writeMacControlLiveCanaryProof(proofDir: string, overrides: Record<stri
       2
     )}\n`
   );
+  return signed;
 }
 
 function writeProofReleaseAssetsReference(
@@ -1338,6 +1419,7 @@ printf '%s\\n' ok
     const helperDir = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin');
     const peekabooPath = path.join(helperDir, 'peekaboo');
     const connectorHelperPath = path.join(helperDir, 'evaos-connector-helper');
+    const verifierPath = path.join(helperDir, 'evaos-ed25519-verify');
     const pythonPath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'python', 'bin', 'python3.12');
     const pythonDylibPath = path.join(
       appPath,
@@ -1364,6 +1446,7 @@ printf '%s\\n' ok
     try {
       writeMachOFixture(peekabooPath);
       writeMachOFixture(connectorHelperPath);
+      writeMachOFixture(verifierPath);
       writeMachOFixture(pythonPath);
       fs.mkdirSync(path.dirname(pythonDylibPath), { recursive: true });
       fs.writeFileSync(pythonDylibPath, Buffer.from('cffaedfe0c000001', 'hex'));
@@ -2311,6 +2394,7 @@ printf '%s\\n' ok
 
     expect(workflow).toContain('/bin/bash scripts/evaosValidateLiveCanaryProofRun.sh');
     expect(verifier).toContain('mac-control-runtime.json');
+    expect(verifier).toContain('mac-control-deployed-route.json');
     expect(verifier).toContain('Run Mac-control canary: true');
     expect(verifier).toContain('requires-mac-control-proof');
     expect(verifier).toContain('EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF="$MAC_CONTROL_PROOF_REQUIRED"');
@@ -2319,6 +2403,11 @@ printf '%s\\n' ok
     );
     expect(workflow).toContain(
       'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: ${{ github.event.inputs.live_canary_proof_run_id }}'
+    );
+    expect(workflow).toContain('EVAOS_LIVE_CANARY_CONTEXT_KEY_ID: ${{ vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID }}');
+    expect(workflow).toContain('EVAOS_LIVE_CANARY_RECEIPT_KEY_ID: ${{ vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID }}');
+    expect(workflow).toContain(
+      'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY: ${{ vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY }}'
     );
   });
 
@@ -2346,6 +2435,7 @@ printf '%s\\n' ok
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-proof-'));
     const releaseEnv = {
       ...liveCanaryProofEnv,
+      ...macControlProofTrustEnv,
       EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF: 'true',
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
@@ -2365,6 +2455,7 @@ printf '%s\\n' ok
   it('requires sanitized proof that the temporary Mac-control session was revoked', () => {
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-cleanup-proof-'));
     const releaseEnv = {
+      ...macControlProofTrustEnv,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
     };
@@ -2391,6 +2482,7 @@ printf '%s\\n' ok
   it('requires sanitized proof of the database-backed staging marker', () => {
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-staging-marker-'));
     const releaseEnv = {
+      ...macControlProofTrustEnv,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
     };
@@ -2405,27 +2497,27 @@ printf '%s\\n' ok
     }
   });
 
-  it('rejects failed, incomplete, unsafe, or wrong-head Mac-control release proof', () => {
+  it('rejects failed, incomplete, unsafe, tampered, or wrong-head Mac-control release proof', () => {
     const releaseEnv = {
+      ...macControlProofTrustEnv,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
       EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
     };
-    const cases: Array<{ name: string; mutate: (proof: Record<string, unknown>) => void; error: RegExp }> = [
+    const cases: Array<{
+      name: string;
+      options?: Record<string, unknown>;
+      mutate?: (proof: Record<string, unknown>) => void;
+      error: RegExp;
+    }> = [
       {
         name: 'failed',
-        mutate: (proof) => {
-          proof.ok = false;
-          proof.reason = 'binding_missing';
-        },
-        error: /successful ready proof/,
+        options: { attestationOverrides: { outcome: 'failed' } },
+        error: /successful signed direct-control attestation/i,
       },
       {
         name: 'incomplete',
-        mutate: (proof) => {
-          const assertions = proof.assertions as Record<string, unknown>;
-          assertions.bindingExpiryValid = false;
-        },
-        error: /bindingExpiryValid/,
+        options: { runRef: 'not-a-run-reference' },
+        error: /proof run/i,
       },
       {
         name: 'unsafe',
@@ -2435,23 +2527,286 @@ printf '%s\\n' ok
         error: /forbidden field|secret material/,
       },
       {
-        name: 'wrong-head',
+        name: 'tampered-signature',
         mutate: (proof) => {
-          proof.sourceHeadSha = 'b'.repeat(40);
+          proof.signature = String(proof.signature).replace('A', 'B');
         },
-        error: /source head/i,
+        error: /signature is invalid/i,
+      },
+      {
+        name: 'wrong-head',
+        options: { candidate: { sourceCommit: 'b'.repeat(40) } },
+        error: /candidate.*release commit/i,
       },
     ];
 
     for (const testCase of cases) {
       const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-${testCase.name}-`));
       try {
-        writeMacControlLiveCanaryProof(proofDir);
+        writeMacControlLiveCanaryProof(proofDir, testCase.options);
         const proofPath = path.join(proofDir, 'mac-control-runtime.json');
         const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
-        testCase.mutate(proof);
-        fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+        if (testCase.mutate) {
+          testCase.mutate(proof);
+          fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+        }
         expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(testCase.error);
+      } finally {
+        fs.rmSync(proofDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('rejects legacy unsigned evidence, artifact-supplied trust, and the wrong external receipt key', () => {
+    const releaseEnv = {
+      ...macControlProofTrustEnv,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-trust-boundary-'));
+    try {
+      writeMacControlLiveCanaryProof(proofDir);
+      const proofPath = path.join(proofDir, 'mac-control-runtime.json');
+      const envelope = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+
+      fs.writeFileSync(
+        proofPath,
+        `${JSON.stringify({
+          schema: 'evaos.mac_control.runtime_proof.v2',
+          ok: true,
+          outcome: 'succeeded',
+          candidate: { sourceCommit: fixtureReleaseCommit },
+        })}\n`
+      );
+      expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(
+        /forbidden field|signed-attestation fields/i
+      );
+
+      fs.writeFileSync(
+        proofPath,
+        `${JSON.stringify({ ...envelope, publicKey: macControlProofTrustEnv.EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY })}\n`
+      );
+      expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(/forbidden field/i);
+
+      fs.writeFileSync(proofPath, `${JSON.stringify(envelope)}\n`);
+      const wrongKeyPair = generateKeyPairSync('ed25519');
+      const wrongKeyEnv = {
+        ...releaseEnv,
+        EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY: wrongKeyPair.publicKey
+          .export({ format: 'der', type: 'spki' })
+          .subarray(-32)
+          .toString('base64url'),
+      };
+      expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, wrongKeyEnv)).toThrow(/signature is invalid/i);
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires a fresh, canonical, bounded historical runtime receipt', () => {
+    const verificationNow = Date.parse('2026-07-15T12:00:00.000Z');
+    const releaseEnv = {
+      ...macControlProofTrustEnv,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+      EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+    };
+    const validExecutedAt = verificationNow - 60 * 60 * 1000;
+    const validDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-historical-'));
+    try {
+      writeMacControlLiveCanaryProof(validDir, {
+        executedAt: new Date(validExecutedAt).toISOString(),
+        expiresAt: Math.floor(validExecutedAt / 1000) + 60,
+      });
+      expect(
+        releaseGate.verifyMacControlLiveCanaryProof(validDir, releaseEnv, {
+          now: new Date(verificationNow),
+          maxAgeHours: 24,
+        })
+      ).toBe(true);
+    } finally {
+      fs.rmSync(validDir, { recursive: true, force: true });
+    }
+
+    const cases = [
+      {
+        name: 'future',
+        executedAt: verificationNow + 5_001,
+        expiresAt: Math.floor((verificationNow + 5_001) / 1000) + 60,
+      },
+      {
+        name: 'stale',
+        executedAt: verificationNow - 25 * 60 * 60 * 1000,
+        expiresAt: Math.floor((verificationNow - 25 * 60 * 60 * 1000) / 1000) + 60,
+      },
+      {
+        name: 'overlong',
+        executedAt: verificationNow - 1_000,
+        expiresAt: Math.floor((verificationNow - 1_000) / 1000) + 67,
+      },
+    ];
+    for (const testCase of cases) {
+      const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-${testCase.name}-`));
+      try {
+        writeMacControlLiveCanaryProof(proofDir, {
+          executedAt: new Date(testCase.executedAt).toISOString(),
+          expiresAt: testCase.expiresAt,
+        });
+        expect(() =>
+          releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv, {
+            now: new Date(verificationNow),
+            maxAgeHours: 24,
+          })
+        ).toThrow(/signed attestation fields/i);
+      } finally {
+        fs.rmSync(proofDir, { recursive: true, force: true });
+      }
+    }
+
+    const noncanonicalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-live-mac-control-noncanonical-'));
+    try {
+      writeMacControlLiveCanaryProof(noncanonicalDir, {
+        executedAt: '2026-07-15 11:59:59Z',
+        expiresAt: Math.floor(verificationNow / 1000) + 59,
+      });
+      expect(() =>
+        releaseGate.verifyMacControlLiveCanaryProof(noncanonicalDir, releaseEnv, {
+          now: new Date(verificationNow),
+          maxAgeHours: 24,
+        })
+      ).toThrow(/signed attestation fields/i);
+    } finally {
+      fs.rmSync(noncanonicalDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects missing, false, mismatched, or extended runtime-receipt negative proof', () => {
+    const releaseEnv = {
+      ...macControlProofTrustEnv,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+    };
+    const cases: Array<{
+      name: string;
+      mutate: (proofDir: string, proof: Record<string, unknown>) => void;
+    }> = [
+      {
+        name: 'missing',
+        mutate: (proofDir) => fs.rmSync(path.join(proofDir, 'mac-control-runtime-negative.json')),
+      },
+      {
+        name: 'false-assertion',
+        mutate: (_proofDir, proof) => {
+          const classifications = proof.classifications as Record<string, Record<string, unknown>>;
+          classifications.replay.secondRejected = false;
+        },
+      },
+      {
+        name: 'wrong-head',
+        mutate: (_proofDir, proof) => {
+          (proof.candidate as Record<string, unknown>).sourceCommit = 'e'.repeat(40);
+        },
+      },
+      {
+        name: 'wrong-run',
+        mutate: (_proofDir, proof) => {
+          proof.sourceRunId = '99999';
+        },
+      },
+      {
+        name: 'extra-field',
+        mutate: (_proofDir, proof) => {
+          proof.note = 'must not be accepted';
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-negative-${testCase.name}-`));
+      try {
+        writeMacControlLiveCanaryProof(proofDir);
+        const proofPath = path.join(proofDir, 'mac-control-runtime-negative.json');
+        const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+        testCase.mutate(proofDir, proof);
+        if (fs.existsSync(proofPath)) fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+        expect(() => releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv)).toThrow(
+          /negative proof|negative candidate|negative classifications/i
+        );
+      } finally {
+        fs.rmSync(proofDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('rejects missing, false, mismatched, stale, or extended deployed-route proof', () => {
+    const verificationNow = new Date('2026-07-15T12:00:00.000Z');
+    const releaseEnv = {
+      ...macControlProofTrustEnv,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: fixtureReleaseCommit,
+      EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '12345',
+      EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS: '24',
+    };
+    const cases: Array<{
+      name: string;
+      mutate: (proofDir: string, proof: Record<string, unknown>) => void;
+      error: RegExp;
+    }> = [
+      {
+        name: 'missing',
+        mutate: (proofDir) => fs.rmSync(path.join(proofDir, 'mac-control-deployed-route.json')),
+        error: /deployed route probe/i,
+      },
+      {
+        name: 'false-assertion',
+        mutate: (_proofDir, proof) => {
+          (proof.assertions as Record<string, unknown>).strictBody = false;
+        },
+        error: /deployed route assertions/i,
+      },
+      {
+        name: 'wrong-head',
+        mutate: (_proofDir, proof) => {
+          proof.sourceHeadSha = 'e'.repeat(40);
+        },
+        error: /exact release run/i,
+      },
+      {
+        name: 'wrong-run',
+        mutate: (_proofDir, proof) => {
+          proof.sourceRunId = '99999';
+        },
+        error: /exact release run/i,
+      },
+      {
+        name: 'stale',
+        mutate: (_proofDir, proof) => {
+          proof.checkedAt = '2026-07-13T11:59:59.000Z';
+        },
+        error: /stale/i,
+      },
+      {
+        name: 'extra-field',
+        mutate: (_proofDir, proof) => {
+          proof.note = 'must not be accepted';
+        },
+        error: /exact release run/i,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), `evaos-live-mac-control-route-${testCase.name}-`));
+      try {
+        writeMacControlLiveCanaryProof(proofDir, {
+          executedAt: '2026-07-15T11:59:00.000Z',
+          authorityExpiresAt: Date.parse('2026-07-15T12:00:00.000Z') / 1000,
+        });
+        const proofPath = path.join(proofDir, 'mac-control-deployed-route.json');
+        const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
+        testCase.mutate(proofDir, proof);
+        if (fs.existsSync(proofPath)) fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+        expect(() =>
+          releaseGate.verifyMacControlLiveCanaryProof(proofDir, releaseEnv, { now: verificationNow, maxAgeHours: 24 })
+        ).toThrow(testCase.error);
       } finally {
         fs.rmSync(proofDir, { recursive: true, force: true });
       }
@@ -2947,7 +3302,7 @@ printf '%s\\n' ok
         options: { wrongBundleVersion: true },
         expected: /tag-bound bundle version/,
       },
-      ...(['bridge', 'peekaboo', 'helper', 'python'] as const).map((payload) => ({
+      ...(['bridge', 'peekaboo', 'helper', 'verifier', 'python'] as const).map((payload) => ({
         name: `non-executable ${payload}`,
         options: { nonExecutablePayload: payload },
         expected: /executable ZIP mode/,
@@ -3375,7 +3730,7 @@ printf '%s\\n' ok
       connectorProof.results = connectorProof.results.filter(
         (result: { id?: string }) => result.id !== 'control_start.ask_permission'
       );
-      connectorProof.summary = { total: 4, passed: 4, failed: 0, skipped: 0 };
+      connectorProof.summary = { total: 5, passed: 5, failed: 0, skipped: 0 };
       fs.writeFileSync(connectorProofPath, `${JSON.stringify(connectorProof, null, 2)}\n`);
       expect(() =>
         releaseGate.verifyRcProof(proofDir, tag, {

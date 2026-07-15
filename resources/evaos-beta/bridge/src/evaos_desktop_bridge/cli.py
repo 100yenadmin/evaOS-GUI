@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
@@ -1788,6 +1789,14 @@ CONNECTOR_AUTHENTICATED_DIAGNOSTICS_TIMEOUT_SECONDS = 5.0
 CONNECTOR_HTTP_RESPONSE_LIMIT_BYTES = 65536
 CONNECTOR_SYSTEM_PLIST = Path(f"/Library/LaunchAgents/{CONNECTOR_LABEL}.plist")
 CONNECTOR_USER_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{CONNECTOR_LABEL}.plist"
+CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY = "EVAOS_MAC_CONTROL_CANARY_MODE"
+CONNECTOR_MAC_CONTROL_CANARY_MODE = "staging"
+CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS = (
+    "EVAOS_MAC_CONTROL_CONTEXT_KEY_ID",
+    "EVAOS_MAC_CONTROL_CONTEXT_PUBLIC_KEY",
+    "EVAOS_MAC_CONTROL_RECEIPT_KEY_ID",
+    "EVAOS_MAC_CONTROL_RECEIPT_PRIVATE_KEY_PATH",
+)
 PEEKABOO_BIN_CANDIDATES = (
     "peekaboo",
     "evaos-connector-helper",
@@ -3275,10 +3284,11 @@ def _connector_plist_path() -> Path | None:
     return None
 
 
-def _ensure_connector_user_plist() -> Path:
-    host = os.environ.get("EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST") or _tailscale_ip() or "127.0.0.1"
+def _ensure_connector_user_plist(*, env: Mapping[str, str] | None = None) -> Path:
+    source_env = env if env is not None else os.environ
+    host = source_env.get("EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST") or _tailscale_ip() or "127.0.0.1"
     program = _connector_program_path()
-    payload = _connector_plist_payload(program=program, host=host)
+    payload = _connector_plist_payload(program=program, host=host, env=source_env)
     CONNECTOR_USER_PLIST.parent.mkdir(parents=True, exist_ok=True)
     current: dict[str, object] | None = None
     if CONNECTOR_USER_PLIST.exists():
@@ -3310,7 +3320,26 @@ def _connector_program_path() -> str:
     return "evaos-desktop-bridge"
 
 
-def _connector_plist_payload(*, program: str, host: str) -> dict[str, object]:
+def _connector_mac_control_canary_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    source_env = env if env is not None else os.environ
+    mode = str(source_env.get(CONNECTOR_MAC_CONTROL_CANARY_MODE_ENV_KEY) or "").strip()
+    if mode != CONNECTOR_MAC_CONTROL_CANARY_MODE:
+        return {}
+    configured = {key: str(source_env.get(key) or "").strip() for key in CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS}
+    present = {key: value for key, value in configured.items() if value}
+    if present and len(present) != len(CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS):
+        missing = sorted(key for key, value in configured.items() if not value)
+        raise RuntimeError("Mac-control canary configuration is incomplete; missing " + ", ".join(missing))
+    return present
+
+
+def _connector_plist_payload(
+    *, program: str, host: str, env: Mapping[str, str] | None = None
+) -> dict[str, object]:
+    environment_variables = {
+        "EVAOS_DESKTOP_BRIDGE_MODE": "customer-mac-connector",
+        **_connector_mac_control_canary_environment(env),
+    }
     return {
         "Label": CONNECTOR_LABEL,
         "ProgramArguments": [
@@ -3323,9 +3352,7 @@ def _connector_plist_payload(*, program: str, host: str) -> dict[str, object]:
         ],
         "RunAtLoad": True,
         "KeepAlive": True,
-        "EnvironmentVariables": {
-            "EVAOS_DESKTOP_BRIDGE_MODE": "customer-mac-connector",
-        },
+        "EnvironmentVariables": environment_variables,
     }
 
 

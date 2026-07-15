@@ -70,9 +70,16 @@ const EVAOS_EXPECTED_WORKBENCH_BUILD_ARG =
 const EVAOS_EXPECTED_SOURCE_COMMIT_ARG =
   '"${EVAOS_WORKBENCH_EXPECTED_SOURCE_COMMIT:?Set EVAOS_WORKBENCH_EXPECTED_SOURCE_COMMIT to the exact 40-character evaOS-GUI commit}"';
 const EVAOS_SELECTED_BINDING_PROOF_ARG =
-  '"${EVAOS_MAC_CONTROL_LIVE_CANARY_PROOF:?Set EVAOS_MAC_CONTROL_LIVE_CANARY_PROOF to the sanitized selected-binding callback proof}"';
+  '"${EVAOS_MAC_CONTROL_LIVE_CANARY_PROOF:?Set EVAOS_MAC_CONTROL_LIVE_CANARY_PROOF to the sanitized selected-binding runtime-receipt proof}"';
 const EVAOS_SELECTED_BINDING_PROOF_RUN_ID_ARG =
   '"${EVAOS_MAC_CONTROL_LIVE_CANARY_RUN_ID:?Set EVAOS_MAC_CONTROL_LIVE_CANARY_RUN_ID to the exact proof workflow run id}"';
+const EVAOS_LIVE_CANARY_RECEIPT_KEY_ID_ENV =
+  'EVAOS_LIVE_CANARY_RECEIPT_KEY_ID="${EVAOS_LIVE_CANARY_RECEIPT_KEY_ID:?Set EVAOS_LIVE_CANARY_RECEIPT_KEY_ID to the pinned receipt verifier key id}"';
+const EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY_ENV =
+  'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY="${EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY:?Set EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY to the pinned receipt verifier public key}"';
+const EVAOS_LIVE_CANARY_CONTEXT_KEY_ID_ENV =
+  'EVAOS_LIVE_CANARY_CONTEXT_KEY_ID="${EVAOS_LIVE_CANARY_CONTEXT_KEY_ID:?Set EVAOS_LIVE_CANARY_CONTEXT_KEY_ID to the pinned execution-context key id}"';
+const EVAOS_SELECTED_BINDING_TRUST_ENV = `${EVAOS_LIVE_CANARY_RECEIPT_KEY_ID_ENV} ${EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY_ENV} ${EVAOS_LIVE_CANARY_CONTEXT_KEY_ID_ENV}`;
 
 export const EVAOS_NATIVE_COMPANION_CANARIES = [
   {
@@ -83,13 +90,13 @@ export const EVAOS_NATIVE_COMPANION_CANARIES = [
   },
   {
     id: 'connector-all',
-    command: `${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary --connector-url ${EVAOS_CONNECTOR_URL_ARG} --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG} --version-under-test ${EVAOS_EXPECTED_WORKBENCH_VERSION_ARG} --build-under-test ${EVAOS_EXPECTED_WORKBENCH_BUILD_ARG} --source-commit-under-test ${EVAOS_EXPECTED_SOURCE_COMMIT_ARG} --selected-binding-proof ${EVAOS_SELECTED_BINDING_PROOF_ARG} --selected-binding-proof-run-id ${EVAOS_SELECTED_BINDING_PROOF_RUN_ID_ARG} --surface connector --suite all --operator-ack-live-control`,
+    command: `${EVAOS_SELECTED_BINDING_TRUST_ENV} ${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary --connector-url ${EVAOS_CONNECTOR_URL_ARG} --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG} --version-under-test ${EVAOS_EXPECTED_WORKBENCH_VERSION_ARG} --build-under-test ${EVAOS_EXPECTED_WORKBENCH_BUILD_ARG} --source-commit-under-test ${EVAOS_EXPECTED_SOURCE_COMMIT_ARG} --selected-binding-proof ${EVAOS_SELECTED_BINDING_PROOF_ARG} --selected-binding-proof-run-id ${EVAOS_SELECTED_BINDING_PROOF_RUN_ID_ARG} --surface connector --suite all --operator-ack-live-control`,
     requiredArtifact: 'qa-report.json',
     forbidsSkips: true,
   },
   {
     id: 'connector-kill-switch',
-    command: `${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary --connector-url ${EVAOS_CONNECTOR_URL_ARG} --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG} --version-under-test ${EVAOS_EXPECTED_WORKBENCH_VERSION_ARG} --build-under-test ${EVAOS_EXPECTED_WORKBENCH_BUILD_ARG} --source-commit-under-test ${EVAOS_EXPECTED_SOURCE_COMMIT_ARG} --selected-binding-proof ${EVAOS_SELECTED_BINDING_PROOF_ARG} --selected-binding-proof-run-id ${EVAOS_SELECTED_BINDING_PROOF_RUN_ID_ARG} --surface connector --suite kill_switch --operator-ack-live-control`,
+    command: `${EVAOS_SELECTED_BINDING_TRUST_ENV} ${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary --connector-url ${EVAOS_CONNECTOR_URL_ARG} --artifact-dir ${EVAOS_CANARY_ARTIFACT_DIR_ARG} --version-under-test ${EVAOS_EXPECTED_WORKBENCH_VERSION_ARG} --build-under-test ${EVAOS_EXPECTED_WORKBENCH_BUILD_ARG} --source-commit-under-test ${EVAOS_EXPECTED_SOURCE_COMMIT_ARG} --selected-binding-proof ${EVAOS_SELECTED_BINDING_PROOF_ARG} --selected-binding-proof-run-id ${EVAOS_SELECTED_BINDING_PROOF_RUN_ID_ARG} --surface connector --suite kill_switch --operator-ack-live-control`,
     requiredArtifact: 'qa-report.json',
     forbidsSkips: true,
   },

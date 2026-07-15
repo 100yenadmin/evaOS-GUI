@@ -66,7 +66,8 @@ NODE
     "$tmp_dir/committed-source/resources/evaos-beta/bridge/SOURCE.json" \
     "$MOCK_SOURCE_COMMIT" \
     "$VERSION" \
-    "$PRODUCT_NAME" <<'PY'
+    "$PRODUCT_NAME" \
+    "$tmp_dir/committed-source/resources/evaos-beta/bridge/native/EvaOSEd25519Verify.swift" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -83,6 +84,7 @@ source_provenance_path = pathlib.Path(sys.argv[5])
 source_commit = sys.argv[6]
 app_version = sys.argv[7]
 product_name = sys.argv[8]
+ed25519_verifier_source_path = pathlib.Path(sys.argv[9])
 with (bridge.parents[1] / "Info.plist").open("wb") as info_stream:
     plistlib.dump(
         {
@@ -118,8 +120,10 @@ source_provenance = json.loads(source_provenance_path.read_text(encoding="utf-8"
 source_provenance["sourceSha256"] = bridge_source_sha256
 (bridge / "bin" / "peekaboo").write_bytes(macho)
 (bridge / "bin" / "evaos-connector-helper").write_bytes(macho)
+(bridge / "bin" / "evaos-ed25519-verify").write_bytes(python_header)
 (bridge / "bin" / "peekaboo").chmod(0o755)
 (bridge / "bin" / "evaos-connector-helper").chmod(0o755)
+(bridge / "bin" / "evaos-ed25519-verify").chmod(0o755)
 (bridge / "licenses" / "Peekaboo-LICENSE.txt").write_bytes(license_bytes)
 (bridge / "licenses" / "CPython-LICENSE.txt").write_bytes(python_license_bytes)
 python_bin = bridge / "python" / "bin"
@@ -196,6 +200,13 @@ manifest = {
     "sourceBranch": "mock-release-fixture",
     "sourceProvenance": source_provenance,
     "bundledTools": {
+        "ed25519Verifier": {
+            "schema": "evaos-workbench-ed25519-verifier/v1",
+            "path": "bin/evaos-ed25519-verify",
+            "architecture": architecture,
+            "minimumMacOS": "15.0",
+            "sourceSha256": hashlib.sha256(ed25519_verifier_source_path.read_bytes()).hexdigest(),
+        },
         "peekaboo": {
             "version": "3.8.0",
             "sourceSha256": "4a5c7e28c263c84e406aa1853ef62cad3042b13f40a7a9e044ec74ec42933383",

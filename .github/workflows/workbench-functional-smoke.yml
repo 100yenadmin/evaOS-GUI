@@ -199,6 +199,7 @@ jobs:
           BRIDGE="$APP_PATH/Contents/Resources/Bridge/evaos-desktop-bridge"
           BRIDGE_PEEKABOO="$APP_PATH/Contents/Resources/Bridge/bin/peekaboo"
           BRIDGE_HELPER="$APP_PATH/Contents/Resources/Bridge/bin/evaos-connector-helper"
+          BRIDGE_RECEIPT_VERIFIER="$APP_PATH/Contents/Resources/Bridge/bin/evaos-ed25519-verify"
           BRIDGE_PEEKABOO_LICENSE="$APP_PATH/Contents/Resources/Bridge/licenses/Peekaboo-LICENSE.txt"
           BRIDGE_MANIFEST="$APP_PATH/Contents/Resources/Bridge/manifest.json"
           BRIDGE_PYTHON="$APP_PATH/Contents/Resources/Bridge/python/bin/python3"
@@ -209,6 +210,7 @@ jobs:
           test -x "$BRIDGE"
           test -x "$BRIDGE_PEEKABOO"
           test -x "$BRIDGE_HELPER"
+          test -x "$BRIDGE_RECEIPT_VERIFIER"
           test -f "$BRIDGE_PEEKABOO_LICENSE"
           test -f "$BRIDGE_MANIFEST"
           test -x "$BRIDGE_PYTHON"
@@ -245,6 +247,8 @@ jobs:
               ;;
           esac
           codesign --verify --strict "$BRIDGE_PEEKABOO"
+          codesign --verify --strict "$BRIDGE_RECEIPT_VERIFIER"
+          test "$(lipo -archs "$BRIDGE_RECEIPT_VERIFIER")" = arm64
           if [ "$BUNDLED_PEEKABOO_SOURCE_SHA256" != "$PEEKABOO_BINARY_SHA256" ]; then
             echo "::error::Bundled Peekaboo source digest does not match the pinned release binary."
             exit 1

@@ -1,0 +1,78 @@
+# evaOS Desktop Bridge Hermes Adapter
+
+Hermes uses the same customer Mac connector contract as OpenClaw. This adapter
+is intentionally tiny: it does not create a second control backend, and it does
+not expose generic shell, hidden AppleScript, public Mac ports, or app-server
+mutation.
+
+## Runtime contract
+
+Set these on the customer VM after the Mac is paired. When the variables are not
+already present, the wrapper parses only the two expected assignments from
+`/root/.openclaw/evaos-desktop-bridge.env`; it never executes the file as shell
+code. OpenClaw, Hermes, and direct support smokes therefore use the same
+connector contract.
+
+```bash
+export EVAOS_DESKTOP_BRIDGE_URL="http://<mac-headscale-ip>:8765"
+export EVAOS_DESKTOP_BRIDGE_TOKEN="<connector-token>"
+```
+
+Connector material must come from the selected Workbench runtime launch. The
+adapter exposes no legacy pairing-code or connector-claim command.
+
+Hermes tools should call `bin/evaos-desktop-bridge-command` with one of the
+fixed connector command names supported by `/v1/commands`, for example:
+
+```bash
+hermes-adapter/bin/evaos-desktop-bridge-command customerMacStatus
+hermes-adapter/bin/evaos-desktop-bridge-command desktopSee
+printf '%s' '{"target_label":"Continue","dry_run":false}' | hermes-adapter/bin/evaos-desktop-bridge-command desktopClick -
+hermes-adapter/bin/evaos-desktop-bridge-command customerMacIphoneMirroringStatus
+printf '%s' '{"direction":"up","dry_run":false}' | hermes-adapter/bin/evaos-desktop-bridge-command iphoneSwipe -
+hermes-adapter/bin/evaos-desktop-bridge-command evaosProviderProfiles
+printf '%s' '{"identity":"admin@100yen.org"}' | hermes-adapter/bin/evaos-desktop-bridge-command evaosProviderCompleteAuth -
+hermes-adapter/bin/evaos-desktop-bridge-command evaosSharedBrowserGuidance
+```
+
+The wrapper rejects JSON in process arguments. Non-empty parameter objects must
+be supplied on standard input with the literal `-` marker so message text,
+URLs, and other customer data do not appear in process listings or shell
+history.
+
+Provider/Auth Hub and Shared Browser guidance commands read optional
+`EVAOS_PROVIDER_PROFILES_JSON`, `EVAOS_PROVIDER_GRANTS_JSON`,
+`EVAOS_ACTIVE_PROVIDER_KEY`, `EVAOS_SHARED_BROWSER_STATUS_JSON`, and
+`EVAOS_CUSTOMER_ID` environment values. They return metadata and opaque grant
+handles only, never raw provider credentials.
+
+`EVAOS_SHARED_BROWSER_STATUS_JSON` should use the same
+`evaos.browser_status.v1` shape as Workbench and OpenClaw, including
+`customer_id`, `room_id`, optional `session_id`, sanitized `current_url`,
+auth/CAPTCHA flags, allowed `actions`, `source_pointer`, and `audit_id`.
+
+Provider auth completion uses the dashboard broker endpoint from
+`EVAOS_PROVIDER_DISCOVERY_URL` or `EVAOS_DESKTOP_RUNTIME_SESSION_URL`, signs
+metadata proof with `EVAOS_PROVIDER_AUTH_PROOF_SECRET`, and sends only identity,
+scopes, expiry, and `EVAOS_PROVIDER_SERVER_SECRET_REF`. When the broker mints a
+Hermes grant, the wrapper caches that opaque handle in
+`EVAOS_PROVIDER_GRANT_CACHE_FILE` or `~/.openclaw/evaos-provider-grants.json`
+so later provider discovery works without pasting raw provider secrets.
+
+Full Access mode allows live desktop/iPhone commands without per-action
+approval. Ask Permission mode gates risky clicks, taps, hotkeys, typing,
+sends, and other high-impact actions with
+`{"dry_run":false,"approval_audit_id":"..."}`. The kill switch blocks future
+live connector commands immediately.
+
+The wrapper returns connector JSON on stdout even for structured denials such as
+blocked sensitive apps or missing approval ids. Network failures and malformed
+responses still fail as hard command errors.
+
+## Boundary
+
+- OpenClaw remains the first native plugin path.
+- Hermes uses this command wrapper or an MCP/tool config that shells to it.
+- The command wrapper only posts fixed JSON to the paired connector URL.
+- Customer-facing Mac/iPhone control uses the same Full Access / Ask Permission
+  session contract as OpenClaw.

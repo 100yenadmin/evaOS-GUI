@@ -540,6 +540,22 @@ function collectRelativeFiles(directory, rootPath, matches) {
 }
 
 function inspectInstalledAppTrustState(appPath = DEFAULT_APP_PATH, execFileSyncImpl = execFileSync) {
+  const receiptVerifierPath = path.join(appPath, 'Contents', 'Resources', 'Bridge', 'bin', 'evaos-ed25519-verify');
+  let receiptVerifierPresent = false;
+  let receiptVerifierNative = false;
+  try {
+    const metadata = fs.lstatSync(receiptVerifierPath);
+    const header = fs.readFileSync(receiptVerifierPath).subarray(0, 4).toString('hex');
+    receiptVerifierPresent = metadata.isFile() && !metadata.isSymbolicLink() && Boolean(metadata.mode & 0o111);
+    receiptVerifierNative =
+      receiptVerifierPresent &&
+      new Set(['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'bebafeca', 'cafebabf', 'bfbafeca']).has(
+        header
+      );
+  } catch {
+    receiptVerifierPresent = false;
+    receiptVerifierNative = false;
+  }
   return {
     codesign: runTrustCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], execFileSyncImpl),
     spctl: runTrustCommand(
@@ -548,6 +564,17 @@ function inspectInstalledAppTrustState(appPath = DEFAULT_APP_PATH, execFileSyncI
       execFileSyncImpl
     ),
     pythonCacheFiles: findPythonCacheFiles(path.join(appPath, 'Contents', 'Resources', 'Bridge')),
+    receiptVerifier: {
+      path: receiptVerifierPath,
+      present: receiptVerifierPresent,
+      native: receiptVerifierNative,
+      codesign: receiptVerifierPresent
+        ? runTrustCommand('/usr/bin/codesign', ['--verify', '--strict', receiptVerifierPath], execFileSyncImpl)
+        : { ok: false },
+      architecture: receiptVerifierPresent
+        ? runTrustCommand('/usr/bin/lipo', ['-archs', receiptVerifierPath], execFileSyncImpl)
+        : { ok: false },
+    },
   };
 }
 
@@ -567,6 +594,20 @@ function assertInstalledAppTrustStateClean(state) {
   if (!state.spctl?.ok) {
     throw new Error(
       `Installed app Gatekeeper assessment failed. ${state.spctl?.stderr || state.spctl?.error || ''}`.trim()
+    );
+  }
+  const expectedArchitecture = process.arch === 'x64' ? 'x86_64' : process.arch;
+  if (
+    state.receiptVerifier?.present !== true ||
+    state.receiptVerifier?.native !== true ||
+    state.receiptVerifier?.codesign?.ok !== true ||
+    state.receiptVerifier?.architecture?.ok !== true ||
+    state.receiptVerifier?.architecture?.output !== expectedArchitecture
+  ) {
+    throw new Error(
+      `Installed app receipt verifier is missing, non-native, unsigned, or built for the wrong architecture: ${
+        state.receiptVerifier?.path || 'unknown path'
+      }.`
     );
   }
 }

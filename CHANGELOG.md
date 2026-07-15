@@ -26,6 +26,19 @@
   bounded deadline so a healthy Mac is not misreported as unauthenticated.
 - Binds the packaged bridge source digest and ownership provenance to the exact
   evaOS-GUI release commit before signing.
+- Treats Tailscale `NeedsLogin` as an installed, running client that still
+  needs enrollment, immediately shows progress for the single allowed
+  `Connect this Mac` action, keeps the renderer IPC alive for the bounded
+  enrollment window, and surfaces a strictly sanitized rejection instead of
+  leaving the button apparently inert. Duplicate enrollment clicks remain
+  disabled while the first action is in flight.
+- Verifies genuine Mac App Store Tailscale with Apple's App Store signing
+  requirement while retaining the exact Tailscale team and bundle-identifier
+  checks; standalone Tailscale remains pinned to its Apple-anchored Developer
+  ID team requirement.
+- Makes the Hermes adapter parse only the two connector assignments instead of
+  executing an environment file, carries JSON parameters over standard input,
+  and rejects caller-selected local payload paths in the OpenClaw fallback.
 
 ### Selected-Binding Mac-control Canary
 
@@ -47,6 +60,22 @@
   compensates failed persistence by revoking the exact temporary session.
 - Requires matching normalized capability sets, a secure host-only browser
   session cookie, and a still-live selected binding after callback completion.
+- Cross-binds the connector's private SSHSIG receipt to a separately signed,
+  minimal public runtime attestation. OpenClaw verifies both signatures and
+  returns the public envelope unchanged; the live canary and distribution gate
+  independently verify it against protected external key configuration and
+  reject legacy unsigned, forged, replayed, stale, wrong-run, or wrong-head
+  evidence.
+- Carries connector receipt-signer settings into the LaunchAgent only for an
+  explicitly selected staging canary; ordinary customer starts ignore ambient
+  canary variables, while incomplete explicit staging configuration still
+  fails before writing or starting the service.
+- Adds deployed-route behavior probes for gateway authentication, POST-only
+  routing, exact path matching, strict body validation, and rejection of
+  caller-supplied authority before Mac-control proof can authorize publication.
+- Requires the installed-app QA binding check to consume the signed selected-
+  binding attestation within a bounded one-hour evidence window, while still
+  proving that its short-lived authority was valid at execution time.
 
 ### Release Authorization And Bundle Integrity
 

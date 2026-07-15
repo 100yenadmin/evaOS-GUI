@@ -127,6 +127,20 @@ const REQUIRED_MAC_CONTROL_SECRETS = [
     reason: 'exact staging ws-proxy callback host expected from the launch response',
   },
 ];
+const REQUIRED_MAC_CONTROL_VARIABLES = [
+  {
+    name: 'EVAOS_MAC_CONTROL_CONTEXT_KEY_ID',
+    reason: 'public identifier for the staging ws-proxy execution-context signer',
+  },
+  {
+    name: 'EVAOS_MAC_CONTROL_RECEIPT_KEY_ID',
+    reason: 'public identifier for the staging Workbench connector receipt signer',
+  },
+  {
+    name: 'EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY',
+    reason: 'public Ed25519 trust anchor used to verify portable Mac-control attestations',
+  },
+];
 
 function normalizeNames(values) {
   return new Set((values ?? []).map((value) => String(value ?? '').trim()).filter(Boolean));
@@ -189,6 +203,13 @@ function auditEnvironmentInventory(input, options = {}) {
   if (macControl) {
     for (const fixture of REQUIRED_MAC_CONTROL_SECRETS) {
       if (inventory.secrets.has(fixture.name)) {
+        satisfied.push(fixture.name);
+      } else {
+        missing.push(fixture.name);
+      }
+    }
+    for (const fixture of REQUIRED_MAC_CONTROL_VARIABLES) {
+      if (inventory.variables.has(fixture.name)) {
         satisfied.push(fixture.name);
       } else {
         missing.push(fixture.name);
@@ -343,6 +364,13 @@ function renderProvisioningTemplate(options = {}) {
     lines.push('');
   }
 
+  lines.push('', '## Optional Selected-Binding Mac-Control Canary Public Trust Variables', '');
+  for (const fixture of REQUIRED_MAC_CONTROL_VARIABLES) {
+    lines.push(`# ${fixture.reason}`);
+    lines.push(variableCommand(fixture.name, repo, environment));
+    lines.push('');
+  }
+
   lines.push(
     '',
     '## Verify Inventory',
@@ -447,6 +475,7 @@ if (require.main === module) {
 module.exports = {
   REQUIRED_ONE_OF_FIXTURES,
   REQUIRED_MAC_CONTROL_SECRETS,
+  REQUIRED_MAC_CONTROL_VARIABLES,
   REQUIRED_PROVISIONED_SECRET_GROUPS,
   REQUIRED_SINGLE_FIXTURES,
   auditEnvironmentInventory,

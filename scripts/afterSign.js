@@ -37,6 +37,7 @@ const MACHO_MAGICS = new Set([
 const MAC_CONTROL_HELPER_RELATIVE_PATHS = [
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'peekaboo'),
   path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-connector-helper'),
+  path.join('Contents', 'Resources', 'Bridge', 'bin', 'evaos-ed25519-verify'),
 ];
 
 function getAppleIdNotarizationOptions(env) {

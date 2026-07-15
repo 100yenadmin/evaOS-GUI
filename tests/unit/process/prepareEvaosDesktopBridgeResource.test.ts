@@ -8,8 +8,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -59,6 +59,12 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
   }) => Record<string, unknown>;
   bridgeWrapperMetadata: (filePath: string) => { schema: string; path: string; sourceSha256: string };
   bridgeWrapperScript: () => string;
+  buildEd25519Verifier: (options?: {
+    sourcePath?: string;
+    targetDir?: string;
+    architecture?: string;
+  }) => { path: string; architecture: string; minimumMacOS: string; sourceSha256: string } | undefined;
+  ed25519VerifierBuildArgs: (sourcePath: string, outputPath: string, architecture: string) => string[];
   installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
   writePythonRuntimeInventory: (resourceDir: string) => {
     inventoryPath: string;
@@ -90,6 +96,65 @@ const { copyDir } = require('builder-util/out/fs') as {
 };
 
 describe('prepareEvaosDesktopBridgeResource', () => {
+  it('pins the native verifier to the selected architecture and macOS 15', () => {
+    expect(bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'arm64')).toEqual([
+      'swiftc',
+      '-O',
+      '-whole-module-optimization',
+      '-target',
+      'arm64-apple-macos15.0',
+      '-o',
+      '/output',
+      '/source.swift',
+    ]);
+    expect(bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'x64')).toContain(
+      'x86_64-apple-macos15.0'
+    );
+    expect(() => bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'universal')).toThrow(
+      /Unsupported evaOS Ed25519 verifier architecture/
+    );
+  });
+
+  it.skipIf(process.platform !== 'darwin')(
+    'builds a native verifier that accepts valid Ed25519 vectors only',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'evaos-ed25519-verifier-'));
+      try {
+        const metadata = bridgeResource.buildEd25519Verifier({
+          targetDir: dir,
+          architecture: process.arch,
+        });
+        expect(metadata).toMatchObject({
+          path: 'bin/evaos-ed25519-verify',
+          architecture: process.arch,
+          minimumMacOS: '15.0',
+        });
+        const executable = join(dir, 'evaos-ed25519-verify');
+        const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+        const message = Buffer.from('evaos-native-ed25519-vector');
+        const signature = sign(null, message, privateKey);
+        const publicKeyRaw = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+        const request = (signatureBytes: Buffer) =>
+          Buffer.from(
+            JSON.stringify({
+              publicKey: publicKeyRaw.toString('base64'),
+              message: message.toString('base64'),
+              signature: signatureBytes.toString('base64'),
+            })
+          );
+
+        expect(spawnSync(executable, { input: request(signature) }).status).toBe(0);
+        const forged = Buffer.from(signature);
+        forged[0] ^= 1;
+        expect(spawnSync(executable, { input: request(forged) }).status).toBe(3);
+        expect(spawnSync(executable, { input: Buffer.from('{}') }).status).toBe(2);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    30_000
+  );
+
   it('isolates the packaged desktop bridge wrapper from ambient Python paths', () => {
     const wrapper = bridgeResource.bridgeWrapperScript();
 
@@ -170,15 +235,18 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       'connector-kill-switch',
     ]);
     for (const canary of EVAOS_NATIVE_COMPANION_CANARIES) {
-      expect(canary.command).toMatch(
-        /^"\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge" (pre-canary|qa-canary) /
-      );
       expect(canary.command).toContain('--artifact-dir "${EVAOS_CANARY_ARTIFACT_DIR:');
       expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_VERSION:');
       expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_SOURCE_COMMIT:');
       expect(canary.command).not.toContain('PYTHONPATH=');
       expect(canary.command).not.toMatch(/\bpython3\b/);
       if (canary.id !== 'pre-canary-bridge-peekaboo') {
+        expect(canary.command).toContain(`${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary `);
+        expect(canary.command).toContain('EVAOS_LIVE_CANARY_RECEIPT_KEY_ID="${EVAOS_LIVE_CANARY_RECEIPT_KEY_ID:');
+        expect(canary.command).toContain(
+          'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY="${EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY:'
+        );
+        expect(canary.command).toContain('EVAOS_LIVE_CANARY_CONTEXT_KEY_ID="${EVAOS_LIVE_CANARY_CONTEXT_KEY_ID:');
         expect(canary.command).toContain('--connector-url "${EVAOS_DESKTOP_BRIDGE_URL:');
         expect(canary.command).toContain('--version-under-test');
         expect(canary.command).toContain('--build-under-test');
@@ -187,6 +255,9 @@ describe('prepareEvaosDesktopBridgeResource', () => {
         expect(canary.command).toContain('--selected-binding-proof-run-id "${EVAOS_MAC_CONTROL_LIVE_CANARY_RUN_ID:');
         expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_BUILD:');
       } else {
+        expect(canary.command).toMatch(
+          /^"\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge" pre-canary /
+        );
         expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_BUILD:');
         expect(canary.command).toContain('--expected-source-commit');
       }
@@ -582,10 +653,13 @@ describe('prepareEvaosDesktopBridgeResource', () => {
   it('binds pre-canary and QA reports to the exact installed Workbench source manifest', () => {
     const sourceDir = join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src');
     const script = [
+      'import base64',
       'import json',
+      'import os',
+      'import subprocess',
       'from pathlib import Path',
       'from tempfile import TemporaryDirectory',
-      'from evaos_desktop_bridge import pre_canary, qa_canary',
+      'from evaos_desktop_bridge import pre_canary, qa_canary, receipt_canary',
       'from evaos_desktop_bridge.candidate_identity import source_tree_sha256',
       'commit = "0123456789abcdef0123456789abcdef01234567"',
       'with TemporaryDirectory() as root:',
@@ -634,11 +708,27 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       '    assert_connector_rejected(lambda payload: payload["connector"]["owner"].__setitem__("app_path", {"kind": "path", "value": "/Applications/evaOS Workbench.app/../Other.app"}))',
       '    assert_connector_rejected(lambda payload: payload["connector"]["owner"].__setitem__("manifest_path", {"kind": "path", "value": "/tmp/manifest.json"}))',
       '    selected_proof_path = Path(root) / "mac-control-runtime.json"',
-      '    selected_proof = {"schema": "evaos-mac-control-live-canary/v1", "ok": True, "runtime": "openclaw", "launchMode": "mac_control_tools", "reason": "ready", "httpStatus": 302, "sourceHeadSha": commit, "sourceRunId": "12345", "assertions": {name: True for name in qa_canary.SELECTED_BINDING_PROOF_ASSERTIONS}, "secretScan": "passed"}',
+      '    signer_dir = Path(root) / "signer"',
+      '    signer_dir.mkdir(mode=0o700)',
+      '    signer_path = signer_dir / "receipt_ed25519"',
+      '    subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(signer_path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)',
+      '    os.chmod(signer_path, 0o600)',
+      '    public_blob = base64.b64decode(signer_path.with_suffix(".pub").read_text(encoding="ascii").split()[1])',
+      '    receipt_key_id = "staging-connector-receipt-v1"',
+      '    context_key_id = "staging-ws-proxy-context-v1"',
+      '    signer_config = receipt_canary.CanaryConfig(context_key_id=context_key_id, context_public_key=b"p" * 32, receipt_key_id=receipt_key_id, receipt_private_key=signer_path)',
+      '    private_receipt = {"runRef": "gha:12345:" + "1" * 24, "executedAt": "2026-07-15T00:00:00Z", "contextIssuedAt": 1784073600, "contextExpiresAt": 1784073660, "contextKeyId": context_key_id, "candidate": {"sourceCommit": commit, "sourceSha256": source_sha256, "appVersion": "2.1.36", "appBuild": "2.1.36"}}',
+      '    public_attestation = receipt_canary.build_public_attestation(private_receipt, signer_config)',
+      '    selected_proof = receipt_canary.public_attestation_envelope(public_attestation, receipt_canary.sign_public_attestation(public_attestation, signer_config), signer_config)',
       '    selected_proof_path.write_text(json.dumps(selected_proof), encoding="utf-8")',
-      '    selected_binding = qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36")',
+      '    os.environ["EVAOS_LIVE_CANARY_CONTEXT_KEY_ID"] = context_key_id',
+      '    os.environ["EVAOS_LIVE_CANARY_RECEIPT_KEY_ID"] = receipt_key_id',
+      '    os.environ["EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY"] = base64.urlsafe_b64encode(public_blob[-32:]).decode("ascii").rstrip("=")',
+      '    selected_binding = qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784073630)',
       '    assert selected_binding["ok"] is True, selected_binding',
-      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="54321", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36")["ok"] is False',
+      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="54321", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784073630)["ok"] is False',
+      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784073660)["ok"] is True',
+      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784077201)["ok"] is False',
       'print("ok")',
     ].join('\n');
 

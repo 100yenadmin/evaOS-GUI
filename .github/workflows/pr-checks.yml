@@ -183,6 +183,39 @@ jobs:
       - name: Run extension system tests
         run: bunx vitest run
 
+  openclaw-plugin-contract:
+    name: OpenClaw Plugin Contract
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve PR context
+        uses: ./.github/actions/checkout-pr
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          github_token: ${{ github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: resources/evaos-beta/bridge/agent-tools/openclaw-plugin/package-lock.json
+
+      - name: Install locked plugin dependencies
+        working-directory: resources/evaos-beta/bridge/agent-tools/openclaw-plugin
+        run: npm ci --ignore-scripts --omit=peer --no-audit --no-fund
+
+      - name: Run complete plugin contract suite
+        working-directory: resources/evaos-beta/bridge/agent-tools/openclaw-plugin
+        run: npm test
+
+      - name: Reject generated plugin drift
+        run: git diff --exit-code -- resources/evaos-beta/bridge/agent-tools/openclaw-plugin/dist
+
   windows-unit-tests:
     name: Unit Tests (windows-2022)
     needs: pr-check-plan

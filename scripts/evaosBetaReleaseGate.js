@@ -6,14 +6,18 @@ const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 const { bridgeWrapperScript } = require('./prepareEvaosDesktopBridgeResource');
+const {
+  PUBLIC_ATTESTATION_ENVELOPE_FIELDS,
+  verifyMacControlPublicAttestation,
+} = require('./evaosMacControlSignedProof');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const WORKBENCH_BRIDGE_SOURCE_DIR = 'resources/evaos-beta/bridge/src/evaos_desktop_bridge';
 const committedBridgeSourceIdentityCache = new Map();
 
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
-const LIVE_CANARY_VERIFIER_SHA256 = '692d88c72217b44f7957d78228748991ff65a12afda253c03b365a30b63e6127';
-const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '427e7ad95cf5d10399620463f3b789d2ef62f7f30e0c49ae14d68c10de0663a6';
+const LIVE_CANARY_VERIFIER_SHA256 = '701828332e3c35497294359980944e7021064384a6a0304157af7885897462bd';
+const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '7d3bc23e52e3e342782b2903664572b15754782db4e67155cdb869c4c8d93d3b';
 
 const REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV = [
   {
@@ -92,6 +96,8 @@ const RC_PROOF_MANIFEST_NAME = 'evaos-beta-rc-proof.json';
 const BROKER_LIVE_CANARY_PROOF_NAME = 'broker-runtime-status.json';
 const BUSINESS_BROWSER_LIVE_CANARY_PROOF_NAME = 'business-browser.json';
 const MAC_CONTROL_LIVE_CANARY_PROOF_NAME = 'mac-control-runtime.json';
+const MAC_CONTROL_NEGATIVE_PROOF_NAME = 'mac-control-runtime-negative.json';
+const MAC_CONTROL_DEPLOYED_PROBE_NAME = 'mac-control-deployed-route.json';
 const MAC_CONTROL_PROVISION_PROOF_NAME = 'mac-control-session-provisioning.json';
 const MAC_CONTROL_CLEANUP_PROOF_NAME = 'mac-control-session-cleanup.json';
 const RELEASE_ASSET_EXTS = new Set(['.exe', '.msi', '.dmg', '.deb', '.zip', '.yml']);
@@ -209,6 +215,7 @@ const REQUIRED_RC_PROOF_CHECKS = [
       'control_start.ask_permission',
       'control_start.stop',
       'control_start.kill_switch',
+      'control_cleanup.local_kill_switch',
       '"source_commit_under_test"',
       '"candidate_binding"',
     ],
@@ -279,22 +286,7 @@ const LIVE_CANARY_SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._-]{8,}\b/i,
   /[?&#](?:access[_-]?token|refresh[_-]?token|desktop[_-]?session|provider[_-]?grant|grant[_-]?handle|api[_-]?key|service[_-]?role|token|secret|password|credential)=/i,
 ];
-const MAC_CONTROL_LIVE_CANARY_ASSERTIONS = Object.freeze([
-  'attached',
-  'toolsReady',
-  'activeGrant',
-  'requiredCapabilityGroups',
-  'bindingIdPresent',
-  'bindingIdMatched',
-  'bindingVersionPresent',
-  'bindingVersionMatched',
-  'bindingExpiryPresent',
-  'bindingExpiryMatched',
-  'bindingExpiryValid',
-  'expectedLaunchTarget',
-  'callbackAccepted',
-  'proxySessionAccepted',
-]);
+const MAC_CONTROL_RUNTIME_PROOF_FIELDS = PUBLIC_ATTESTATION_ENVELOPE_FIELDS;
 
 function normalizeBoolean(value) {
   return TRUTHY_VALUES.has(
@@ -888,6 +880,9 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
     'EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS',
     'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA',
     'EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID',
+    'EVAOS_LIVE_CANARY_CONTEXT_KEY_ID',
+    'EVAOS_LIVE_CANARY_RECEIPT_KEY_ID',
+    'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY',
   ];
   if (
     JSON.stringify(getWorkflowStepPropertyNames(steps[0])) !== JSON.stringify(['name', 'shell', 'env', 'run']) ||
@@ -909,6 +904,9 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
     ['EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS', '24'],
     ['EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA', '${{ steps.provenance.outputs.tag_commit }}'],
     ['EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID', '${{ github.event.inputs.live_canary_proof_run_id }}'],
+    ['EVAOS_LIVE_CANARY_CONTEXT_KEY_ID', '${{ vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID }}'],
+    ['EVAOS_LIVE_CANARY_RECEIPT_KEY_ID', '${{ vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID }}'],
+    ['EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY', '${{ vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY }}'],
   ]) {
     const values = getWorkflowStepEnvValues(steps[0], key);
     if (values.length !== 1 || values[0] !== expectedValue) {
@@ -1031,6 +1029,7 @@ function runLiveCanaryVerifierBehaviorProbe(verifierPath, mode, bashPath) {
       '  mkdir -p "$output_dir/packet"',
       '  : > "$output_dir/packet/broker-runtime-status.json"',
       '  : > "$output_dir/packet/mac-control-runtime.json"',
+      '  : > "$output_dir/packet/mac-control-deployed-route.json"',
       `  printf '%s\\n' 'Run live canaries: true' 'Run follow-up canaries: none' 'Run Mac-control canary: true' > "$output_dir/packet/proof-run.md"`,
       '  exit 0',
       'fi',
@@ -2503,6 +2502,13 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
 }
 
 function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity, expectedAppVersion) {
+  const expectedEd25519VerifierSourceSha256 = createHash('sha256')
+    .update(
+      fs.readFileSync(
+        path.join(PROJECT_ROOT, 'resources', 'evaos-beta', 'bridge', 'native', 'EvaOSEd25519Verify.swift')
+      )
+    )
+    .digest('hex');
   const script = [
     'import hashlib',
     'import json',
@@ -2528,6 +2534,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     `expected_bridge_source_sha256 = ${JSON.stringify(committedSourceIdentity.sourceSha256)}`,
     `expected_bridge_source_paths = ${JSON.stringify(committedSourceIdentity.sourcePaths)}`,
     `expected_app_version = ${JSON.stringify(String(expectedAppVersion || ''))}`,
+    `expected_ed25519_verifier_source_sha256 = ${JSON.stringify(expectedEd25519VerifierSourceSha256)}`,
     'macho_magics = {"feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "cafebabf", "bebafeca", "bfbafeca"}',
     'expected_cpu_types = {"arm64": 0x0100000c, "x64": 0x01000007}',
     'def thin_macho_cpu(data):',
@@ -2596,7 +2603,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '        return False',
     '    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(relative_path), target))',
     '    return resolved != ".." and not resolved.startswith("../")',
-    'result = {"zipLayoutValid": False, "singleAppRoot": False, "infoPlistValid": False, "bundleIdentifierValid": False, "productNameValid": False, "shortVersionValid": False, "bundleVersionValid": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceTreeExact": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
+    'result = {"zipLayoutValid": False, "singleAppRoot": False, "infoPlistValid": False, "bundleIdentifierValid": False, "productNameValid": False, "shortVersionValid": False, "bundleVersionValid": False, "hasBridgeExecutable": False, "hasBridgeManifest": False, "hasPeekaboo": False, "hasConnectorHelper": False, "hasEd25519Verifier": False, "hasPeekabooLicense": False, "executableModesValid": False, "bridgeWrapperValid": False, "bridgeSourceTreeExact": False, "bridgeSourceDigestValid": False, "bridgeCommitBindingValid": False, "peekabooMachO": False, "connectorHelperMachO": False, "ed25519VerifierMachO": False, "ed25519VerifierArchValid": False, "ed25519VerifierManifestValid": False, "manifestPlaceholderFalse": False, "manifestSourceDigestValid": False, "manifestLicenseMetadataValid": False, "licenseDigestValid": False, "licenseNoticeValid": False, "hasPythonRuntime": False, "hasPythonLauncher": False, "pythonLauncherValid": False, "pythonRuntimeMachO": False, "pythonRuntimeArchValid": False, "hasPythonLicense": False, "pythonManifestValid": False, "pythonLicenseDigestValid": False, "hasPythonControlModules": False, "pythonObjcArchValid": False, "pythonInventoryValid": False, "hasPythonStdlibSentinel": False, "hasPythonNativeSentinels": False, "pythonNativeSentinelsExecutable": False}',
     'with zipfile.ZipFile(path) as archive:',
     '    infos = archive.infolist()',
     '    names = [info.filename for info in infos]',
@@ -2631,11 +2638,12 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '    result["hasBridgeManifest"] = "manifest.json" in entries',
     '    result["hasPeekaboo"] = "bin/peekaboo" in entries',
     '    result["hasConnectorHelper"] = "bin/evaos-connector-helper" in entries',
+    '    result["hasEd25519Verifier"] = "bin/evaos-ed25519-verify" in entries',
     '    result["hasPeekabooLicense"] = expected_license_path in entries',
     '    result["hasPythonRuntime"] = "python/bin/python3.12" in entries',
     '    result["hasPythonLauncher"] = "python/bin/python3" in entries',
     '    result["hasPythonLicense"] = expected_python_license_path in entries',
-    '    executable_paths = ["evaos-desktop-bridge", "bin/peekaboo", "bin/evaos-connector-helper", "python/bin/python3.12"]',
+    '    executable_paths = ["evaos-desktop-bridge", "bin/peekaboo", "bin/evaos-connector-helper", "bin/evaos-ed25519-verify", "python/bin/python3.12"]',
     '    result["executableModesValid"] = all(name in entries and regular_executable(entries[name]) for name in executable_paths)',
     '    control_module_paths = {"python/lib/python3.12/site-packages/ApplicationServices/__init__.py", "python/lib/python3.12/site-packages/Cocoa/__init__.py", "python/lib/python3.12/site-packages/CoreText/__init__.py", "python/lib/python3.12/site-packages/Quartz/__init__.py", "python/lib/python3.12/site-packages/objc/__init__.py"}',
     '    result["hasPythonControlModules"] = control_module_paths.issubset(entries)',
@@ -2648,6 +2656,7 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '    peekaboo = manifest.get("bundledTools", {}).get("peekaboo", {}) if isinstance(manifest, dict) else {}',
     '    python_runtime = manifest.get("bundledTools", {}).get("python", {}) if isinstance(manifest, dict) else {}',
     '    bridge_wrapper = manifest.get("bundledTools", {}).get("bridgeWrapper", {}) if isinstance(manifest, dict) else {}',
+    '    ed25519_verifier = manifest.get("bundledTools", {}).get("ed25519Verifier", {}) if isinstance(manifest, dict) else {}',
     '    source_provenance = manifest.get("sourceProvenance", {}) if isinstance(manifest, dict) else {}',
     '    result["manifestPlaceholderFalse"] = manifest.get("placeholder") is False if isinstance(manifest, dict) else False',
     '    imported_commit = str(source_provenance.get("importedCommit", ""))',
@@ -2678,12 +2687,17 @@ function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSo
     '        packaged_bridge_source_sha256 = bridge_source_hash.hexdigest()',
     '        result["bridgeSourceDigestValid"] = source_provenance.get("sourceSha256") == packaged_bridge_source_sha256 == expected_bridge_source_sha256',
     '    result["manifestSourceDigestValid"] = peekaboo.get("version") == expected_version and peekaboo.get("sourceSha256") == expected_source_sha256',
+    '    result["ed25519VerifierManifestValid"] = ed25519_verifier.get("schema") == "evaos-workbench-ed25519-verifier/v1" and ed25519_verifier.get("path") == "bin/evaos-ed25519-verify" and ed25519_verifier.get("architecture") == expected_python_arch and ed25519_verifier.get("minimumMacOS") == "15.0" and ed25519_verifier.get("sourceSha256") == expected_ed25519_verifier_source_sha256',
     '    result["manifestLicenseMetadataValid"] = peekaboo.get("license") == "MIT" and peekaboo.get("licensePath") == expected_license_path',
     '    result["pythonManifestValid"] = python_runtime.get("version") == expected_python_version and python_runtime.get("architecture") == expected_python_arch and python_runtime.get("sourceSha256") == expected_python_source_sha256[expected_python_arch] and python_runtime.get("sourceUrl") == expected_python_source_url[expected_python_arch] and python_runtime.get("license") == "Python-2.0" and python_runtime.get("licensePath") == expected_python_license_path and python_runtime.get("licenseSha256") == expected_python_license_sha256 and python_runtime.get("packages") == expected_python_packages',
     '    if result["hasPeekaboo"]:',
     '        result["peekabooMachO"] = archive.read(entries["bin/peekaboo"])[:4].hex() in macho_magics',
     '    if result["hasConnectorHelper"]:',
     '        result["connectorHelperMachO"] = archive.read(entries["bin/evaos-connector-helper"])[:4].hex() in macho_magics',
+    '    if result["hasEd25519Verifier"]:',
+    '        ed25519_verifier_bytes = archive.read(entries["bin/evaos-ed25519-verify"])',
+    '        result["ed25519VerifierMachO"] = ed25519_verifier_bytes[:4].hex() in macho_magics',
+    '        result["ed25519VerifierArchValid"] = macho_has_arch(ed25519_verifier_bytes, expected_python_arch)',
     '    if result["hasPythonRuntime"]:',
     '        python_bytes = archive.read(entries["python/bin/python3.12"])',
     '        result["pythonRuntimeMachO"] = python_bytes[:4].hex() in macho_magics',
@@ -2839,6 +2853,10 @@ function assertMacosZipBridgePayload(outputDir, releaseTargetPlatforms, expected
     assertZipBridgeProbe(probe, 'hasConnectorHelper', zipName, 'connector helper');
     assertZipBridgeProbe(probe, 'executableModesValid', zipName, 'executable ZIP mode');
     assertZipBridgeProbe(probe, 'connectorHelperMachO', zipName, 'connector helper Mach-O shape');
+    assertZipBridgeProbe(probe, 'hasEd25519Verifier', zipName, 'Ed25519 verifier');
+    assertZipBridgeProbe(probe, 'ed25519VerifierMachO', zipName, 'Ed25519 verifier Mach-O shape');
+    assertZipBridgeProbe(probe, 'ed25519VerifierArchValid', zipName, 'Ed25519 verifier architecture');
+    assertZipBridgeProbe(probe, 'ed25519VerifierManifestValid', zipName, 'Ed25519 verifier manifest identity');
     assertZipBridgeProbe(probe, 'hasPeekabooLicense', zipName, 'Peekaboo license');
     assertZipBridgeProbe(probe, 'manifestPlaceholderFalse', zipName, 'non-placeholder manifest');
     assertZipBridgeProbe(probe, 'manifestSourceDigestValid', zipName, 'Peekaboo source digest');
@@ -2999,6 +3017,11 @@ function assertLiveCanaryPlainObject(value, label) {
     throw new Error(`Unexpected ${label} schema: not an object`);
   }
   return value;
+}
+
+function hasExactLiveCanaryFields(value, fields) {
+  const keys = Object.keys(value);
+  return keys.length === fields.length && keys.every((field) => fields.includes(field));
 }
 
 function optionalLiveCanarySafeText(value, label) {
@@ -3242,13 +3265,13 @@ function verifyBrokerLiveCanaryProof(proofDir, env = process.env) {
   }
 
   if (normalizeBoolean(env.EVAOS_REQUIRE_MAC_CONTROL_LIVE_CANARY_PROOF)) {
-    verifyMacControlLiveCanaryProof(proofDir, env);
+    verifyMacControlLiveCanaryProof(proofDir, env, options);
   }
 
   return true;
 }
 
-function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
+function verifyMacControlLiveCanaryProof(proofDir, env = process.env, verificationOptions = {}) {
   const proofPath = requireExistingRelativeFile(
     proofDir,
     MAC_CONTROL_LIVE_CANARY_PROOF_NAME,
@@ -3257,18 +3280,7 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   const proof = readManifestFile(proofPath);
   assertLiveCanaryPlainObject(proof, 'Mac-control live canary proof');
 
-  const allowedTopLevelFields = new Set([
-    'schema',
-    'ok',
-    'runtime',
-    'launchMode',
-    'reason',
-    'httpStatus',
-    'sourceHeadSha',
-    'sourceRunId',
-    'assertions',
-    'secretScan',
-  ]);
+  const allowedTopLevelFields = new Set(MAC_CONTROL_RUNTIME_PROOF_FIELDS);
   for (const field of Object.keys(proof)) {
     if (!allowedTopLevelFields.has(field)) {
       throw new Error(`Mac-control live canary proof contains forbidden field: ${field}.`);
@@ -3276,49 +3288,210 @@ function verifyMacControlLiveCanaryProof(proofDir, env = process.env) {
   }
   assertLiveCanaryNoSecretMaterial(proof, 'macControl');
 
-  if (proof.schema !== 'evaos-mac-control-live-canary/v1') {
-    throw new Error(`Unexpected Mac-control live canary proof schema: ${proof.schema}`);
-  }
-  if (
-    proof.ok !== true ||
-    proof.runtime !== 'openclaw' ||
-    proof.launchMode !== 'mac_control_tools' ||
-    proof.reason !== 'ready' ||
-    proof.httpStatus !== 302
-  ) {
-    throw new Error('Mac-control live canary release gate requires a successful ready proof.');
-  }
-  if (proof.secretScan !== 'passed') {
-    throw new Error('Mac-control live canary proof must pass secret scanning.');
+  if (Object.keys(proof).length !== allowedTopLevelFields.size) {
+    throw new Error('Mac-control live canary proof is missing required signed-attestation fields.');
   }
 
   const expectedHeadSha = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA || '').trim();
   const expectedRunId = String(env.EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID || '').trim();
+  const receiptKeyId = String(env.EVAOS_LIVE_CANARY_RECEIPT_KEY_ID || '').trim();
+  const receiptPublicKey = String(env.EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY || '').trim();
+  const expectedContextKeyId = String(env.EVAOS_LIVE_CANARY_CONTEXT_KEY_ID || '').trim();
   if (!/^[0-9a-f]{40}$/i.test(expectedHeadSha)) {
     throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA.');
   }
   if (!/^\d+$/.test(expectedRunId)) {
     throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID.');
   }
-  if (proof.sourceHeadSha !== expectedHeadSha) {
-    throw new Error('Mac-control live canary proof source head does not match the release commit.');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(expectedContextKeyId)) {
+    throw new Error('Mac-control live canary proof requires EVAOS_LIVE_CANARY_CONTEXT_KEY_ID.');
   }
-  if (String(proof.sourceRunId || '') !== expectedRunId) {
-    throw new Error('Mac-control live canary proof source run does not match the selected proof run.');
+  let attestation;
+  try {
+    attestation = verifyMacControlPublicAttestation(proof, {
+      keyId: receiptKeyId,
+      publicKey: receiptPublicKey,
+    });
+  } catch {
+    throw new Error('Mac-control live canary public attestation signature is invalid.');
+  }
+  assertLiveCanaryNoSecretMaterial(attestation, 'macControlAttestation');
+  if (
+    attestation.proofKind !== 'selected_binding_direct_mac_control' ||
+    attestation.runtime !== 'openclaw' ||
+    attestation.tool !== 'customer_mac.desktop_hotkey' ||
+    attestation.outcome !== 'succeeded' ||
+    attestation.controlState !== 'ready_unchanged' ||
+    attestation.auditRecorded !== true ||
+    attestation.contextKeyId !== expectedContextKeyId
+  ) {
+    throw new Error('Mac-control live canary release gate requires a successful signed direct-control attestation.');
+  }
+  if (!new RegExp(`^gha:${expectedRunId}:[0-9a-f]{24}$`).test(String(attestation.runRef || ''))) {
+    throw new Error('Mac-control live canary proof run does not match the selected proof run.');
   }
 
-  assertLiveCanaryPlainObject(proof.assertions, 'Mac-control live canary assertions');
-  const assertionKeys = Object.keys(proof.assertions);
+  const executedAtText = String(attestation.executedAt || '');
+  const executedAt = Date.parse(executedAtText);
+  const authorityIssuedAtMs = Number.isSafeInteger(attestation.authorityIssuedAt)
+    ? attestation.authorityIssuedAt * 1000
+    : Number.NaN;
+  const authorityExpiresAtMs = Number.isSafeInteger(attestation.authorityExpiresAt)
+    ? attestation.authorityExpiresAt * 1000
+    : Number.NaN;
+  const maxAgeRaw = String(env.EVAOS_LIVE_CANARY_MAX_PROOF_AGE_HOURS || '24').trim();
+  const configuredMaxAgeHours = Number.parseFloat(maxAgeRaw);
+  const maxAgeHours =
+    Number.isFinite(verificationOptions.maxAgeHours) && verificationOptions.maxAgeHours > 0
+      ? verificationOptions.maxAgeHours
+      : Number.isFinite(configuredMaxAgeHours) && configuredMaxAgeHours > 0
+        ? configuredMaxAgeHours
+        : 24;
+  const configuredVerificationNow =
+    verificationOptions.now instanceof Date ? verificationOptions.now.getTime() : Number.NaN;
+  const verificationNow = Number.isFinite(configuredVerificationNow) ? configuredVerificationNow : Date.now();
+  const receiptAgeMs = verificationNow - executedAt;
   if (
-    assertionKeys.length !== MAC_CONTROL_LIVE_CANARY_ASSERTIONS.length ||
-    assertionKeys.some((assertion) => !MAC_CONTROL_LIVE_CANARY_ASSERTIONS.includes(assertion))
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(executedAtText) ||
+    !Number.isFinite(executedAt) ||
+    !Number.isFinite(authorityIssuedAtMs) ||
+    !Number.isFinite(authorityExpiresAtMs) ||
+    receiptAgeMs < -5_000 ||
+    receiptAgeMs > maxAgeHours * 60 * 60 * 1000 ||
+    authorityExpiresAtMs <= authorityIssuedAtMs ||
+    authorityExpiresAtMs - authorityIssuedAtMs > 60_000 ||
+    executedAt < authorityIssuedAtMs - 5_000 ||
+    executedAt > authorityExpiresAtMs ||
+    !/^[0-9a-f]{64}$/.test(String(attestation.privateReceiptSha256 || ''))
   ) {
-    throw new Error('Mac-control live canary proof assertions do not match the required release contract.');
+    throw new Error('Mac-control live canary signed attestation fields are invalid.');
   }
-  for (const assertion of MAC_CONTROL_LIVE_CANARY_ASSERTIONS) {
-    if (proof.assertions[assertion] !== true) {
-      throw new Error(`Mac-control live canary proof assertion ${assertion} must be true.`);
-    }
+
+  assertLiveCanaryPlainObject(attestation.connectorCandidate, 'Mac-control live canary candidate');
+  const candidateFields = ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'];
+  if (
+    Object.keys(attestation.connectorCandidate).length !== candidateFields.length ||
+    Object.keys(attestation.connectorCandidate).some((field) => !candidateFields.includes(field))
+  ) {
+    throw new Error('Mac-control live canary candidate fields do not match the required release contract.');
+  }
+  const expectedSourceSha256 = committedBridgeSourceIdentity(expectedHeadSha).sourceSha256;
+  const expectedVersion = packageVersionAtCommit(expectedHeadSha);
+  if (
+    attestation.connectorCandidate.sourceCommit !== expectedHeadSha ||
+    attestation.connectorCandidate.sourceSha256 !== expectedSourceSha256 ||
+    attestation.connectorCandidate.appVersion !== expectedVersion ||
+    attestation.connectorCandidate.appBuild !== expectedVersion
+  ) {
+    throw new Error('Mac-control live canary candidate does not match the exact release commit.');
+  }
+
+  const negativePath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_NEGATIVE_PROOF_NAME,
+    'Mac-control runtime-receipt negative proof'
+  );
+  const negativeProof = readManifestFile(negativePath);
+  assertLiveCanaryPlainObject(negativeProof, 'Mac-control runtime-receipt negative proof');
+  assertLiveCanaryNoSecretMaterial(negativeProof, 'macControlNegative');
+  const negativeFields = [
+    'schema',
+    'proofMode',
+    'sourceRunId',
+    'candidate',
+    'classifications',
+    'connectorActionAttempted',
+    'sensitiveOutputAbsent',
+  ];
+  if (
+    !hasExactLiveCanaryFields(negativeProof, negativeFields) ||
+    negativeProof.schema !== 'evaos.mac_control.deployed_negative_probe.v1' ||
+    negativeProof.proofMode !== 'deployed-staging' ||
+    String(negativeProof.sourceRunId || '') !== expectedRunId ||
+    negativeProof.connectorActionAttempted !== false ||
+    negativeProof.sensitiveOutputAbsent !== true
+  ) {
+    throw new Error('Mac-control runtime-receipt negative proof does not match the exact release run.');
+  }
+  assertLiveCanaryPlainObject(negativeProof.candidate, 'Mac-control runtime-receipt negative candidate');
+  if (
+    !hasExactLiveCanaryFields(negativeProof.candidate, candidateFields) ||
+    negativeProof.candidate.sourceCommit !== expectedHeadSha ||
+    negativeProof.candidate.sourceSha256 !== expectedSourceSha256 ||
+    negativeProof.candidate.appVersion !== expectedVersion ||
+    negativeProof.candidate.appBuild !== expectedVersion
+  ) {
+    throw new Error('Mac-control runtime-receipt negative candidate does not match the exact release commit.');
+  }
+  assertLiveCanaryPlainObject(negativeProof.classifications, 'Mac-control runtime-receipt negative classifications');
+  const negativeClassifications = ['forgedSignature', 'expiredContext', 'replay'];
+  if (!hasExactLiveCanaryFields(negativeProof.classifications, negativeClassifications)) {
+    throw new Error('Mac-control runtime-receipt negative classifications are incomplete.');
+  }
+  const forgedSignature = assertLiveCanaryPlainObject(
+    negativeProof.classifications.forgedSignature,
+    'Mac-control forged-signature classification'
+  );
+  const expiredContext = assertLiveCanaryPlainObject(
+    negativeProof.classifications.expiredContext,
+    'Mac-control expired-context classification'
+  );
+  const replay = assertLiveCanaryPlainObject(negativeProof.classifications.replay, 'Mac-control replay classification');
+  if (
+    !hasExactLiveCanaryFields(forgedSignature, ['rejected', 'httpStatus', 'code']) ||
+    forgedSignature.rejected !== true ||
+    forgedSignature.httpStatus !== 401 ||
+    forgedSignature.code !== 'execution_context_signature_invalid' ||
+    !hasExactLiveCanaryFields(expiredContext, ['rejected', 'httpStatus', 'code']) ||
+    expiredContext.rejected !== true ||
+    expiredContext.httpStatus !== 401 ||
+    expiredContext.code !== 'execution_context_expired' ||
+    !hasExactLiveCanaryFields(replay, ['firstAccepted', 'secondRejected', 'httpStatus', 'code']) ||
+    replay.firstAccepted !== true ||
+    replay.secondRejected !== true ||
+    replay.httpStatus !== 409 ||
+    replay.code !== 'execution_context_replayed'
+  ) {
+    throw new Error('Mac-control runtime-receipt negative classifications are incomplete.');
+  }
+
+  const deployedProbePath = requireExistingRelativeFile(
+    proofDir,
+    MAC_CONTROL_DEPLOYED_PROBE_NAME,
+    'Mac-control deployed route probe'
+  );
+  const deployedProbe = readManifestFile(deployedProbePath);
+  assertLiveCanaryPlainObject(deployedProbe, 'Mac-control deployed route probe');
+  assertLiveCanaryNoSecretMaterial(deployedProbe, 'macControlDeployedRoute');
+  const deployedProbeFields = ['schema', 'sourceHeadSha', 'sourceRunId', 'checkedAt', 'assertions'];
+  if (
+    Object.keys(deployedProbe).length !== deployedProbeFields.length ||
+    Object.keys(deployedProbe).some((field) => !deployedProbeFields.includes(field)) ||
+    deployedProbe.schema !== 'evaos.mac_control.deployed_route_probe.v1' ||
+    deployedProbe.sourceHeadSha !== expectedHeadSha ||
+    String(deployedProbe.sourceRunId || '') !== expectedRunId
+  ) {
+    throw new Error('Mac-control deployed route probe does not match the exact release run.');
+  }
+  assertLiveCanaryFresh(deployedProbe.checkedAt, 'macControlDeployedRoute.checkedAt', {
+    now: new Date(verificationNow),
+    maxAgeHours,
+  });
+  assertLiveCanaryPlainObject(deployedProbe.assertions, 'Mac-control deployed route assertions');
+  const deployedAssertions = [
+    'gatewayAuthRequired',
+    'postOnly',
+    'exactMatch',
+    'strictBody',
+    'callerAuthorityBodyRejected',
+    'sensitiveOutputAbsent',
+  ];
+  if (
+    Object.keys(deployedProbe.assertions).length !== deployedAssertions.length ||
+    Object.keys(deployedProbe.assertions).some((field) => !deployedAssertions.includes(field)) ||
+    deployedAssertions.some((field) => deployedProbe.assertions[field] !== true)
+  ) {
+    throw new Error('Mac-control deployed route assertions are incomplete.');
   }
 
   const provisionPath = requireExistingRelativeFile(
@@ -3605,6 +3778,7 @@ function assertRcInstalledCandidateConnectorProof(proofPath, tag, releaseManifes
     { id: 'control_start.ask_permission', command: 'local_workbench_control_start', mode: 'ask-permission' },
     { id: 'control_start.stop', command: 'desktop_control_stop' },
     { id: 'control_start.kill_switch', command: 'desktop_kill_switch' },
+    { id: 'control_cleanup.local_kill_switch', command: 'desktop_kill_switch' },
   ];
   const requiredStatuses = expectedResults.map((expected) => ({
     expected,

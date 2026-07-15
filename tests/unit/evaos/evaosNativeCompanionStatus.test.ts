@@ -5067,6 +5067,26 @@ describe('evaosNativeCompanionStatus', () => {
     expect(openExternal).not.toHaveBeenCalled();
   });
 
+  it('records receipt of an enrollment action before bridge executable lookup', async () => {
+    const diagnosticEvents: string[] = [];
+
+    const result = await runNativeCompanionAction(
+      { action: 'secure_network_enroll', customerId: 'customer-selected-test' },
+      {
+        bridgePaths: ['/missing/evaos-desktop-bridge'],
+        existsSync: () => false,
+        recordDiagnosticEvent: (eventCode) => diagnosticEvents.push(eventCode),
+      }
+    );
+
+    expect(result).toMatchObject({
+      action: 'secure_network_enroll',
+      status: 'repair_required',
+      sourcePointer: 'native-companion:bridge-cli-missing',
+    });
+    expect(diagnosticEvents).toEqual(['secure_network_enrollment_provider_received']);
+  });
+
   it('enrolls an unenrolled signed Tailscale client with file-backed one-use material', async () => {
     const authKey = 'one-use-private-network-key-for-test';
     const createPrivateNetworkEnrollment = vi.fn(async () => ({
@@ -5108,9 +5128,10 @@ describe('evaosNativeCompanionStatus', () => {
         }
         if (file === '/usr/bin/codesign' && args[0] === '--verify') {
           expect(args.find((arg) => arg.startsWith('-R='))).toContain(
-            'anchor apple generic and certificate leaf[subject.OU] = "W5364U7YZB"'
+            'anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists'
           );
           expect(args.find((arg) => arg.startsWith('-R='))).toContain('identifier "io.tailscale.ipn.macos"');
+          expect(args.find((arg) => arg.startsWith('-R='))).not.toContain('certificate leaf[subject.OU]');
           return { stdout: '', stderr: '' };
         }
         if (file === '/usr/bin/codesign' && args[0] === '-dv') {
@@ -5310,6 +5331,10 @@ describe('evaosNativeCompanionStatus', () => {
         return { stdout: '', stderr: 'Identifier=io.tailscale.ipn.macsys\nTeamIdentifier=W5364U7YZB\n' };
       }
       if (file === '/usr/bin/codesign' && args[0] === '--verify') {
+        expect(args.find((arg) => arg.startsWith('-R='))).toContain(
+          'anchor apple generic and certificate leaf[subject.OU] = "W5364U7YZB"'
+        );
+        expect(args.find((arg) => arg.startsWith('-R='))).toContain('identifier "io.tailscale.ipn.macsys"');
         const candidate = args.at(-1);
         if (candidate === systemApp) throw new Error('metadata-only self-signed app');
         if (candidate === userApp) return { stdout: '', stderr: '' };
@@ -5451,6 +5476,7 @@ describe('evaosNativeCompanionStatus', () => {
     expect(JSON.stringify(result)).not.toContain('evaos-private-network-');
     expect(result.enrollmentDiagnostic?.message).toContain('control server rejected enrollment');
     expect(diagnosticEvents).toEqual([
+      'secure_network_enrollment_provider_received',
       'secure_network_enrollment_action_started',
       'secure_network_enrollment_broker_request_started',
       'secure_network_enrollment_cli_started',
@@ -5654,6 +5680,7 @@ describe('evaosNativeCompanionStatus', () => {
       sourcePointer: 'native-companion:secure-network-enrollment-cancel-unconfirmed',
     });
     expect(diagnosticEvents).toEqual([
+      'secure_network_enrollment_provider_received',
       'secure_network_enrollment_action_started',
       'secure_network_enrollment_broker_request_started',
       'secure_network_enrollment_cli_started',

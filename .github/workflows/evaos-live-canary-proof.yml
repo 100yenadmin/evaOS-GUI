@@ -108,6 +108,11 @@ jobs:
       AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_URL }}
       AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIONUI_EVAOS_MAC_CONTROL_CANARY_SUPABASE_SERVICE_ROLE_KEY }}
       AIONUI_EVAOS_MAC_CONTROL_CANARY_TTL_MINUTES: '10'
+      AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_PROBE_OUTPUT: live-canary-proof/mac-control-deployed-route.json
+      AIONUI_EVAOS_MAC_CONTROL_DEPLOYED_NEGATIVE_PROBE_OUTPUT: live-canary-proof/mac-control-runtime-negative.json
+      EVAOS_LIVE_CANARY_CONTEXT_KEY_ID: ${{ vars.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID }}
+      EVAOS_LIVE_CANARY_RECEIPT_KEY_ID: ${{ vars.EVAOS_MAC_CONTROL_RECEIPT_KEY_ID }}
+      EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY: ${{ vars.EVAOS_MAC_CONTROL_RECEIPT_PUBLIC_KEY }}
     steps:
       - name: Validate proof inputs
         env:
@@ -255,75 +260,19 @@ jobs:
           set -euo pipefail
           node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control > "$PROOF_DIR/mac-control-session-cleanup.stdout.json"
 
-      - name: Run Mac-control proof secret/redaction scan
-        id: mac-control-proof-scan
+      - name: Scan existing Mac-control proofs for safe diagnostic upload
+        id: mac-control-partial-proof-scan
         if: always() && github.event.inputs.run_mac_control_canary == 'true'
         run: |
           set -euo pipefail
-          node - "$PROOF_DIR" <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
+          node scripts/evaosScanMacControlProofs.js --allow-partial "$PROOF_DIR"
 
-          const proofDir = process.argv[2];
-          const proofNames = [
-            'mac-control-runtime.json',
-            'mac-control-session-provisioning.json',
-            'mac-control-session-provisioning.stdout.json',
-            'mac-control-session-cleanup.json',
-            'mac-control-session-cleanup.stdout.json',
-          ];
-          const forbiddenFields = new Set([
-            'accountEmail',
-            'bindingId',
-            'customerId',
-            'customer_id',
-            'desktopSession',
-            'endpoint',
-            'launchUrl',
-            'session',
-          ]);
-          const forbiddenValue = /\beds_[A-Za-z0-9_-]{8,}\b|\bBearer\s+|\beyJ[A-Za-z0-9_-]{8,}\.|https?:\/\/|[?&]session=|\S+@\S+/i;
-
-          function scan(value, location) {
-            if (typeof value === 'string' && forbiddenValue.test(value)) {
-              throw new Error(`Mac-control proof contains forbidden sensitive material at ${location}.`);
-            }
-            if (Array.isArray(value)) {
-              value.forEach((entry, index) => scan(entry, `${location}[${index}]`));
-              return;
-            }
-            if (!value || typeof value !== 'object') return;
-            for (const [key, entry] of Object.entries(value)) {
-              if (forbiddenFields.has(key)) {
-                throw new Error(`Mac-control proof contains forbidden field ${key}.`);
-              }
-              scan(entry, `${location}.${key}`);
-            }
-          }
-
-          let scanned = 0;
-          for (const proofName of proofNames) {
-            const proofPath = path.join(proofDir, proofName);
-            if (!fs.existsSync(proofPath)) continue;
-            scan(JSON.parse(fs.readFileSync(proofPath, 'utf8')), proofName);
-            scanned += 1;
-          }
-          if (scanned === 0) {
-            throw new Error('Mac-control secret/redaction scan found no proof artifacts.');
-          }
-          const cleanupPath = path.join(proofDir, 'mac-control-session-cleanup.json');
-          if (!fs.existsSync(cleanupPath)) {
-            throw new Error('Mac-control proof is missing sanitized cleanup evidence.');
-          }
-          const cleanupProof = JSON.parse(fs.readFileSync(cleanupPath, 'utf8'));
-          if (
-            cleanupProof.schema !== 'evaos-mac-control-canary-session-cleanup/v1' ||
-            cleanupProof.sessionRevoked !== true ||
-            cleanupProof.sensitiveOutput !== 'passed'
-          ) {
-            throw new Error('Mac-control proof did not prove temporary session revocation.');
-          }
-          NODE
+      - name: Require complete Mac-control proof set
+        id: mac-control-complete-proof-scan
+        if: success() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true' && github.event.inputs.provision_fixtures == 'true' && steps.mac-control-partial-proof-scan.outcome == 'success'
+        run: |
+          set -euo pipefail
+          node scripts/evaosScanMacControlProofs.js "$PROOF_DIR"
 
       - name: Write summary
         if: always()
@@ -346,7 +295,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload live canary proof packet
-        if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-proof-scan.outcome == 'success')
+        if: always() && (github.event.inputs.run_mac_control_canary != 'true' || steps.mac-control-partial-proof-scan.outcome == 'success')
         uses: actions/upload-artifact@v4
         with:
           name: evaos-live-canary-proof-${{ github.run_id }}
