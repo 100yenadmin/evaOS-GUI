@@ -258,7 +258,13 @@ jobs:
         if: always() && github.event.inputs.run_live_canaries == 'true' && github.event.inputs.run_mac_control_canary == 'true' && github.event.inputs.provision_fixtures == 'true'
         run: |
           set -euo pipefail
-          node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control > "$PROOF_DIR/mac-control-session-cleanup.stdout.json"
+          cleanup_output="$PROOF_DIR/mac-control-session-cleanup.stdout.json"
+          cleanup_temp="${cleanup_output}.tmp"
+          rm -f "$cleanup_output" "$cleanup_temp"
+          trap 'rm -f "$cleanup_temp"' EXIT
+          node scripts/evaosProvisionLiveCanaryFixtures.js cleanup-mac-control > "$cleanup_temp"
+          mv "$cleanup_temp" "$cleanup_output"
+          trap - EXIT
 
       - name: Scan existing Mac-control proofs for safe diagnostic upload
         id: mac-control-partial-proof-scan

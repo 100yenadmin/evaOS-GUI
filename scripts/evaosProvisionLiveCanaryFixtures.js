@@ -16,6 +16,7 @@ const FIXTURE_PROVIDER_METADATA_SOURCE = 'aionui_live_canary_fixture';
 const FIXTURE_VM_DISPLAY_NAME = 'AionUi Live Canary Support VM';
 const INTERNAL_BROKER_CANARY_CUSTOMER_IDS = new Set(['evaos-support', 'golden', 'internal', 'support', 'support-vm']);
 const MAC_CONTROL_CANARY_TARGET_SCHEMA = 'evaos.mac_control_canary_target.v2';
+const MAC_CONTROL_DEVICE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const EXPLICIT_CANARY_TARGET_ID = /(^|[-_])(staging|canary|synthetic)([-_]|$)/i;
 const SECRET_OUTPUT_PATTERNS = [
   /\beds_[A-Za-z0-9_-]{8,}\b/i,
@@ -915,11 +916,16 @@ function coreBrokerFixtureEnvFromProvision(state) {
   };
 }
 
-function macControlCanaryEnvFromProvision(state, desktopSession) {
+function macControlCanaryEnvFromProvision(state, desktopSession, deviceIdentifier, supabaseUrl) {
   return {
     AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: desktopSession,
     AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: state.customerId,
     AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: state.endpoint,
+    AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT: new URL(
+      '/functions/v1/customer-mac-control',
+      supabaseUrl
+    ).toString(),
+    AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: deviceIdentifier,
     AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: state.expectedCallbackHost,
   };
 }
@@ -956,6 +962,7 @@ function maskSecretsForGithub(env) {
     'AIONUI_EVAOS_COMPANY_BRAIN_DENIED_SESSION',
     'AIONUI_EVAOS_BUSINESS_BROWSER_DENIED_SESSION',
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER',
   ]) {
     const value = env[key];
     if (value) process.stdout.write(`::add-mask::${value}\n`);
@@ -1165,6 +1172,29 @@ function sanitizedMacControlCanaryProvisionReport() {
   return report;
 }
 
+async function loadUniqueMacControlCanaryDeviceIdentifier(admin, ownerId, customerId) {
+  const rows = await admin.select('customer_devices', {
+    customer_id: `eq.${customerId}`,
+    owner_id: `eq.${ownerId}`,
+    status: 'neq.revoked',
+    select: 'id,device_identifier,status',
+    limit: 3,
+  });
+  const current = Array.isArray(rows)
+    ? rows.filter(
+        (row) =>
+          safeText(row?.id, 160) &&
+          typeof row?.device_identifier === 'string' &&
+          MAC_CONTROL_DEVICE_IDENTIFIER_PATTERN.test(row.device_identifier) &&
+          ['pending', 'active', 'needs_attention'].includes(safeText(row?.status, 80))
+      )
+    : [];
+  if (current.length !== 1) {
+    throw new Error('Mac-control canary requires exactly one current staging Mac for the configured owner.');
+  }
+  return current[0].device_identifier;
+}
+
 async function provisionMacControlCanarySessionWithAdmin(admin, options) {
   const cleanupKey = safeText(options.cleanupKey, 160) ?? `local-${crypto.randomUUID()}`;
   const cleanupKeySource = ['explicit', 'github', 'generated'].includes(options.cleanupKeySource)
@@ -1174,6 +1204,7 @@ async function provisionMacControlCanarySessionWithAdmin(admin, options) {
   const customerAccount = await loadCustomerAccount(admin, options.customerId);
   assertDatabaseBackedMacControlCanaryTarget(customerAccount, options);
   const membership = await loadAdminMembership(admin, ownerProfile.id, customerAccount.id);
+  const deviceIdentifier = await loadUniqueMacControlCanaryDeviceIdentifier(admin, ownerProfile.id, options.customerId);
   const desktopSession = await createDesktopSession(admin, {
     userId: ownerProfile.id,
     email: ownerProfile.email,
@@ -1203,7 +1234,7 @@ async function provisionMacControlCanarySessionWithAdmin(admin, options) {
   };
   return {
     state,
-    env: macControlCanaryEnvFromProvision(state, desktopSession.raw),
+    env: macControlCanaryEnvFromProvision(state, desktopSession.raw, deviceIdentifier, options.supabaseUrl),
     report: sanitizedMacControlCanaryProvisionReport(),
   };
 }

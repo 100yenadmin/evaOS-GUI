@@ -149,6 +149,9 @@ describe('evaOS live canary readiness', () => {
       AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_session_for_test',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+        'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
     });
 

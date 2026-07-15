@@ -43,6 +43,66 @@ const MAC_CONTROL_RUNTIME_NEGATIVE_PROOF_CONTRACT = Object.freeze({
     },
   },
 });
+const MAC_CONTROL_FAILURE_PROOF_CONTRACT = Object.freeze({
+  schema: 'evaos.mac_control.live_canary_failure.v1',
+  fields: [
+    'schema',
+    'ok',
+    'runtime',
+    'launchMode',
+    'reason',
+    'phase',
+    'httpStatus',
+    'sourceHeadSha',
+    'sourceRunId',
+    'secretScan',
+  ],
+});
+const MAC_CONTROL_FAILURE_PHASES = new Set([
+  'configuration',
+  'network_readiness',
+  'launch_http',
+  'launch_contract',
+  'callback',
+  'runtime_receipt',
+  'route_probe',
+  'negative_probe',
+]);
+const MAC_CONTROL_FAILURE_REASONS = new Set([
+  'acl_stale',
+  'authority_stale',
+  'authority_unavailable',
+  'binding_ambiguous',
+  'binding_authority_unavailable',
+  'binding_expired',
+  'binding_missing',
+  'binding_replay_conflict',
+  'callback_rejected',
+  'connector_secret_missing',
+  'device_revoked',
+  'grant_revoked',
+  'grant_binding_mismatch',
+  'headscale_acl_stale',
+  'invalid_configuration',
+  'invalid_response',
+  'mac_connector_material_missing',
+  'mac_node_expired',
+  'mac_node_missing',
+  'mac_node_offline',
+  'mac_node_unpaired',
+  'missing_required_capability',
+  'multiple_active_customer_grants',
+  'no_active_customer_grant',
+  'policy_hash_mismatch',
+  'policy_unavailable',
+  'runtime_launch_blocked',
+  'runtime_receipt_rejected',
+  'selected_customer_scope_mismatch',
+  'selected_scope_not_ready',
+  'vm_node_expired',
+  'vm_node_missing',
+  'vm_node_offline',
+]);
 const MAC_CONTROL_PROOF_CONTRACTS = Object.freeze({
   'mac-control-runtime.json': {
     schema: 'evaos.mac_control.public_runtime_attestation_envelope.v1',
@@ -170,9 +230,11 @@ function assertMacControlProofSanitized(value, location = '$') {
       entry !== null &&
       typeof entry === 'object' &&
       !Array.isArray(entry);
+    const safeSecretScan = normalizedKey === 'secretscan' && entry === 'passed';
     if (
       FORBIDDEN_NORMALIZED_FIELDS.has(normalizedKey) ||
       (!safeClassificationLabel &&
+        !safeSecretScan &&
         FORBIDDEN_NORMALIZED_FIELD_FRAGMENTS.some((fragment) => normalizedKey.includes(fragment))) ||
       (normalizedKey.includes('key') && !ALLOWED_PUBLIC_KEY_IDENTIFIER_FIELDS.has(normalizedKey)) ||
       /private.*key/.test(normalizedKey)
@@ -279,6 +341,26 @@ function assertPublicAttestationEnvelopeSanitized(value, location) {
   }
 }
 
+function assertMacControlFailureProof(value, location) {
+  assertMacControlProofSanitized(value, location);
+  assertExactProofContract(value, MAC_CONTROL_FAILURE_PROOF_CONTRACT, location);
+  if (
+    value.schema !== MAC_CONTROL_FAILURE_PROOF_CONTRACT.schema ||
+    value.ok !== false ||
+    value.runtime !== 'openclaw' ||
+    value.launchMode !== 'mac_control_tools' ||
+    value.secretScan !== 'passed' ||
+    !MAC_CONTROL_FAILURE_REASONS.has(value.reason) ||
+    !MAC_CONTROL_FAILURE_PHASES.has(value.phase) ||
+    (value.httpStatus !== null &&
+      (!Number.isInteger(value.httpStatus) || value.httpStatus < 100 || value.httpStatus > 599)) ||
+    (value.sourceHeadSha !== null && !/^[0-9a-f]{40}$/i.test(value.sourceHeadSha)) ||
+    (value.sourceRunId !== null && !/^\d+$/.test(value.sourceRunId))
+  ) {
+    throw new Error(`Mac-control failure proof contract is invalid at ${location}.`);
+  }
+}
+
 function scanMacControlProofDirectory(proofDir, options = {}) {
   const resolvedProofDir = path.resolve(String(proofDir || ''));
   const allowPartial = options.allowPartial === true;
@@ -298,6 +380,15 @@ function scanMacControlProofDirectory(proofDir, options = {}) {
   for (const proofName of existing) {
     const proofPath = path.join(resolvedProofDir, proofName);
     const proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'));
+    if (proofName === 'mac-control-runtime.json' && proof.schema === MAC_CONTROL_FAILURE_PROOF_CONTRACT.schema) {
+      if (!allowPartial) {
+        throw new Error('Mac-control failure envelope cannot satisfy complete proof.');
+      }
+      assertMacControlFailureProof(proof, proofName);
+      parsedProofs.set(proofName, proof);
+      scanned += 1;
+      continue;
+    }
     const contract = MAC_CONTROL_PROOF_CONTRACTS[proofName];
     if (!contract || proof.schema !== contract.schema) {
       throw new Error(`Mac-control proof has an unexpected schema in ${proofName}.`);

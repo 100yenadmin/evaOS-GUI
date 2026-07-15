@@ -296,7 +296,14 @@ class FakeMacControlCanaryAdmin {
       supabase_origin: 'https://dashboard-staging.example.test',
       endpoint_origin: 'https://dashboard-staging.example.test',
       expected_callback_host: 'openclaw-staging.example.test',
-    }
+    },
+    private readonly deviceRows: ProviderRow[] = [
+      {
+        id: 'staging-device-id',
+        device_identifier: 'staging-device-for-test',
+        status: 'active',
+      },
+    ]
   ) {}
 
   async single(table: string, query: Record<string, unknown>) {
@@ -319,6 +326,12 @@ class FakeMacControlCanaryAdmin {
     this.inserts.push({ table, body, options });
     if (table !== 'desktop_app_sessions') throw new Error(`unexpected insert table ${table}`);
     return { id: 'temporary-session-id', expires_at: body.expires_at };
+  }
+
+  async select(table: string, query: Record<string, unknown>) {
+    this.reads.push({ table, query });
+    if (table === 'customer_devices') return this.deviceRows.map((row) => ({ ...row }));
+    throw new Error(`unexpected select table ${table}`);
   }
 
   async patch(table: string, query: Record<string, string>, body: ProviderRow, _options?: Record<string, unknown>) {
@@ -344,7 +357,8 @@ class NoEvidenceMacControlCanaryAdmin extends FakeMacControlCanaryAdmin {
     return [];
   }
 
-  async select() {
+  override async select(table: string, query: Record<string, unknown>) {
+    if (table === 'customer_devices') return super.select(table, query);
     return [];
   }
 }
@@ -727,7 +741,7 @@ describe('evaOS live canary fixture provisioner', () => {
     for (const admin of mismatchedAdmins) expect(admin.inserts).toHaveLength(0);
   });
 
-  it('mints only a fresh desktop session for an existing staging Mac owner and emits sanitized proof', async () => {
+  it('mints only a fresh desktop session for the unique current staging Mac and emits sanitized proof', async () => {
     const admin = new FakeMacControlCanaryAdmin();
     const { state, env, report } = await provisioner.provisionMacControlCanarySessionWithAdmin(admin, {
       supabaseUrl: 'https://dashboard-staging.example.test',
@@ -742,6 +756,7 @@ describe('evaOS live canary fixture provisioner', () => {
       'profiles',
       'customer_accounts',
       'customer_account_memberships',
+      'customer_devices',
     ]);
     expect(admin.inserts).toHaveLength(1);
     expect(admin.inserts[0]).toMatchObject({
@@ -758,6 +773,9 @@ describe('evaOS live canary fixture provisioner', () => {
     expect(env).toMatchObject({
       AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+        'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
     });
     expect(env.AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION).toMatch(/^eds_/);
@@ -788,6 +806,42 @@ describe('evaOS live canary fixture provisioner', () => {
         },
       },
     });
+  });
+
+  it('fails closed before session minting when the staging Mac target is missing or ambiguous', async () => {
+    const options = {
+      supabaseUrl: 'https://dashboard-staging.example.test',
+      accountEmail: 'owner@staging.invalid',
+      customerId: 'staging-mac-owner',
+      endpoint: 'https://dashboard-staging.example.test/runtime',
+      expectedCallbackHost: 'openclaw-staging.example.test',
+      ttlMinutes: 10,
+    };
+    const missing = new FakeMacControlCanaryAdmin(undefined, []);
+    const ambiguous = new FakeMacControlCanaryAdmin(undefined, [
+      { id: 'staging-device-id-1', device_identifier: 'staging-device-one', status: 'active' },
+      { id: 'staging-device-id-2', device_identifier: 'staging-device-two', status: 'needs_attention' },
+    ]);
+    const workflowCommand = new FakeMacControlCanaryAdmin(undefined, [
+      {
+        id: 'staging-device-id',
+        device_identifier: 'staging-device\n::warning::workflow-command',
+        status: 'active',
+      },
+    ]);
+
+    await expect(provisioner.provisionMacControlCanarySessionWithAdmin(missing, options)).rejects.toThrow(
+      /exactly one current staging Mac/i
+    );
+    await expect(provisioner.provisionMacControlCanarySessionWithAdmin(ambiguous, options)).rejects.toThrow(
+      /exactly one current staging Mac/i
+    );
+    await expect(provisioner.provisionMacControlCanarySessionWithAdmin(workflowCommand, options)).rejects.toThrow(
+      /exactly one current staging Mac/i
+    );
+    expect(missing.inserts).toHaveLength(0);
+    expect(ambiguous.inserts).toHaveLength(0);
+    expect(workflowCommand.inserts).toHaveLength(0);
   });
 
   it('generates a unique run-scoped cleanup key for each local canary session', async () => {
