@@ -260,10 +260,17 @@ def gather_inventory(
     bundle_id: str = DEFAULT_BUNDLE_ID,
     artifact_roots: Sequence[str] | None = None,
 ) -> WorkbenchInventory:
-    registered_paths = _unique_paths(
+    registered_paths = tuple(
         path
-        for candidate_bundle_id in (bundle_id, *sorted(LEGACY_BUNDLE_IDS))
-        for path in _mdfind_bundle_paths(candidate_bundle_id)
+        for path in _unique_paths(
+            path
+            for candidate_bundle_id in (bundle_id, *sorted(LEGACY_BUNDLE_IDS))
+            for path in _mdfind_bundle_paths(candidate_bundle_id)
+        )
+        # Spotlight can retain paths from updater/fallback extraction after the
+        # temporary app has been removed. Discard only definitively missing
+        # targets; existing or unverifiable paths remain fail-closed.
+        if _registered_path_exists_or_is_unverifiable(path)
     )
     artifact_paths = tuple(_artifact_workbench_bundle_paths(artifact_roots=artifact_roots))
     bundle_paths = _unique_paths((*registered_paths, *artifact_paths, canonical_path))
@@ -408,6 +415,18 @@ def _unique_paths(paths: Iterable[str]) -> tuple[str, ...]:
             seen.add(path)
             ordered.append(path)
     return tuple(ordered)
+
+
+def _registered_path_exists_or_is_unverifiable(path: str) -> bool:
+    try:
+        Path(path).stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        # Keep permission and other inspection failures fail-closed. Only a
+        # definitively removed Spotlight target is safe to ignore.
+        return True
+    return True
 
 
 def _run(command: Sequence[str]) -> str:
