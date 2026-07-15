@@ -116,7 +116,7 @@
       "path": "python/evaos_desktop_bridge/host/cli.py",
       "destination": "src/evaos_desktop_bridge/host/cli.py",
       "mode": 420,
-      "sha256": "fea3bc74224ec50d95b7be6cce728f6f90f14c915eab767b4f9aeb20ba366f69"
+      "sha256": "86868f91e910867dd09559e733bc02ebc608ef73f09e949487a2dc9abb1afd7f"
     },
     {
       "path": "python/evaos_desktop_bridge/host/connector_server.py",

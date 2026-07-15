@@ -2612,8 +2612,19 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
 }
 
 function inspectMacosZipBridgePayload(zipPath, expectedSourceCommit, committedSourceIdentity, expectedAppVersion) {
-  const expectedEd25519VerifierSourceSha256 =
-    committedSourceIdentity.fileSha256ByPath['native/EvaOSEd25519Verify.swift'];
+  const verifierSourcePaths = ['native/EvaOSEd25519Verify.swift', 'native/main.swift'];
+  const verifierSourceDigest = createHash('sha256');
+  for (const sourcePath of verifierSourcePaths) {
+    const sourceSha256 = committedSourceIdentity.fileSha256ByPath[sourcePath];
+    if (!sourceSha256) {
+      throw new Error(`Committed connector-core identity is missing verifier source ${sourcePath}.`);
+    }
+    verifierSourceDigest.update(sourcePath);
+    verifierSourceDigest.update('\0');
+    verifierSourceDigest.update(sourceSha256);
+    verifierSourceDigest.update('\0');
+  }
+  const expectedEd25519VerifierSourceSha256 = verifierSourceDigest.digest('hex');
   const expectedBridgeWrapperSha256 = committedSourceIdentity.fileSha256ByPath['native/evaos-desktop-bridge.sh'];
   if (!expectedEd25519VerifierSourceSha256 || !expectedBridgeWrapperSha256) {
     throw new Error('Committed connector-core identity is missing native verifier or wrapper source.');

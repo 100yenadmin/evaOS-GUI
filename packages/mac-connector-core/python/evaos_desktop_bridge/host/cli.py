@@ -3304,13 +3304,21 @@ def _ensure_connector_user_plist(*, env: Mapping[str, str] | None = None) -> Pat
 def _connector_program_path() -> str:
     argv0 = Path(sys.argv[0]).expanduser()
     if argv0.exists():
-        packaged_launcher = argv0.parent.parent.parent / "evaos-desktop-bridge"
+        packaged_launcher: Path | None = None
         if (
+            argv0.name == "cli.py"
+            and argv0.parent.name == "host"
+            and argv0.parent.parent.name == "evaos_desktop_bridge"
+            and argv0.parent.parent.parent.name == "src"
+        ):
+            packaged_launcher = argv0.parent.parent.parent.parent / "evaos-desktop-bridge"
+        elif (
             argv0.name == "cli.py"
             and argv0.parent.name == "evaos_desktop_bridge"
             and argv0.parent.parent.name == "src"
-            and packaged_launcher.exists()
         ):
+            packaged_launcher = argv0.parent.parent.parent / "evaos-desktop-bridge"
+        if packaged_launcher is not None and packaged_launcher.exists():
             return str(packaged_launcher.resolve())
         if argv0.name != "cli.py" or os.access(argv0, os.X_OK):
             return str(argv0.resolve())

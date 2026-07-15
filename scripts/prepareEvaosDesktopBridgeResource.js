@@ -462,8 +462,22 @@ function buildEd25519Verifier({
     path: `bin/${ED25519_VERIFIER_NAME}`,
     architecture,
     minimumMacOS: '15.0',
-    sourceSha256: sha256File(sourcePath),
+    sourceSha256: ed25519VerifierSourceSha256(sourcePaths),
   };
+}
+
+function ed25519VerifierSourceSha256(sourcePaths = [ED25519_VERIFIER_SOURCE, ED25519_VERIFIER_MAIN_SOURCE]) {
+  const digest = crypto.createHash('sha256');
+  for (const sourcePath of sourcePaths) {
+    const resolved = path.resolve(sourcePath);
+    const relative = path.relative(vendoredBridgeSourceDir, resolved).split(path.sep).join('/');
+    const identityPath = relative.startsWith('../') || path.isAbsolute(relative) ? path.basename(resolved) : relative;
+    digest.update(identityPath);
+    digest.update('\0');
+    digest.update(sha256File(resolved));
+    digest.update('\0');
+  }
+  return digest.digest('hex');
 }
 
 function writeConnectorHelperWrapper(targetDir) {
@@ -884,6 +898,7 @@ module.exports = {
   bridgeWrapperMetadata,
   bridgeWrapperScript,
   buildEd25519Verifier,
+  ed25519VerifierSourceSha256,
   ed25519VerifierBuildArgs,
   installPythonRuntime,
   installPeekabooLicense,

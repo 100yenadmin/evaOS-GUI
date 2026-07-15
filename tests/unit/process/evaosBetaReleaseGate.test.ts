@@ -62,6 +62,7 @@ const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
 const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResource.js') as {
   bridgeWrapperScript: () => string;
   directorySha256: (sourceDir: string) => string;
+  ed25519VerifierSourceSha256: (sourcePaths?: string[]) => string;
   vendoredBridgeSourceMetadata: () => {
     schema: string;
     owner: string;
@@ -425,11 +426,7 @@ function writeMacosBridgeZip(
 ) {
   const bridgeWrapperBase64 = Buffer.from(bridgeResource.bridgeWrapperScript()).toString('base64');
   const connectorCoreIdentity = releaseGate.committedBridgeSourceIdentity(fixtureReleaseCommit);
-  const ed25519VerifierSourceSha256 = createHash('sha256')
-    .update(
-      fs.readFileSync(path.join(process.cwd(), 'packages', 'mac-connector-core', 'native', 'EvaOSEd25519Verify.swift'))
-    )
-    .digest('hex');
+  const ed25519VerifierSourceSha256 = bridgeResource.ed25519VerifierSourceSha256();
   const script = [
     'import base64',
     'import hashlib',

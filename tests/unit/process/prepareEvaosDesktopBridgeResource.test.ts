@@ -64,6 +64,7 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     targetDir?: string;
     architecture?: string;
   }) => { path: string; architecture: string; minimumMacOS: string; sourceSha256: string } | undefined;
+  ed25519VerifierSourceSha256: (sourcePaths?: string[]) => string;
   ed25519VerifierBuildArgs: (sourcePath: string, outputPath: string, architecture: string) => string[];
   installPythonRuntime: (sourcePath?: string, resourceDir?: string) => PythonRuntimeMetadata | undefined;
   writePythonRuntimeInventory: (resourceDir: string) => {
@@ -125,6 +126,24 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(() => bridgeResource.ed25519VerifierBuildArgs('/source.swift', '/output', 'universal')).toThrow(
       /Unsupported evaOS Ed25519 verifier architecture/
     );
+  });
+
+  it('binds every Swift verifier source into one deterministic digest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-ed25519-source-set-'));
+    const verifier = join(dir, 'EvaOSEd25519Verify.swift');
+    const main = join(dir, 'main.swift');
+    try {
+      writeFileSync(verifier, 'enum Verifier {}\n');
+      writeFileSync(main, 'Verifier.main()\n');
+      const original = bridgeResource.ed25519VerifierSourceSha256([verifier, main]);
+      writeFileSync(main, 'Verifier.changed()\n');
+      expect(bridgeResource.ed25519VerifierSourceSha256([verifier, main])).not.toBe(original);
+      expect(bridgeResource.ed25519VerifierSourceSha256([verifier, main])).not.toBe(
+        createHash('sha256').update(readFileSync(verifier)).digest('hex')
+      );
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 
   it.skipIf(process.platform !== 'darwin')(
@@ -554,6 +573,35 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       'print("ok")',
     ].join('\n');
 
+    expect(
+      execFileSync('python3', ['-B', '-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: sourceDir },
+      }).trim()
+    ).toBe('ok');
+  });
+
+  it('resolves the packaged launcher from the relocated host CLI', () => {
+    const sourceDir = join(process.cwd(), 'packages', 'mac-connector-core', 'python');
+    const script = [
+      'import os',
+      'import sys',
+      'from pathlib import Path',
+      'from tempfile import TemporaryDirectory',
+      'from unittest.mock import patch',
+      'from evaos_desktop_bridge.host import cli',
+      'with TemporaryDirectory() as root:',
+      '    bridge = Path(root) / "Bridge"',
+      '    cli_path = bridge / "src" / "evaos_desktop_bridge" / "host" / "cli.py"',
+      '    cli_path.parent.mkdir(parents=True)',
+      '    cli_path.write_text("# packaged cli\\n")',
+      '    launcher = bridge / "evaos-desktop-bridge"',
+      '    launcher.write_text("#!/bin/sh\\n")',
+      '    launcher.chmod(0o755)',
+      '    with patch.object(sys, "argv", [str(cli_path)]):',
+      '        assert cli._connector_program_path() == str(launcher.resolve())',
+      'print("ok")',
+    ].join('\n');
     expect(
       execFileSync('python3', ['-B', '-c', script], {
         encoding: 'utf8',
