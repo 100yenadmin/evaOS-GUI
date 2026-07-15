@@ -926,7 +926,7 @@ function collectRcCanaryWorkflowIssues(workflow) {
   if (
     workflowText.includes("ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'") ||
     workflowText.includes(
-      "EXPECTED_SHA=$(node - release-assets/evaos-beta-release-manifest.json \"$ZIP_NAME\" <<'NODE'"
+      'EXPECTED_SHA=$(node - release-assets/evaos-beta-release-manifest.json "$ZIP_NAME" <<\'NODE\''
     )
   ) {
     issues.push(
