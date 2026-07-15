@@ -2528,7 +2528,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
       entry.path.split('/').some((part) => !part || part === '.' || part === '..') ||
       (previousPath !== undefined &&
         Buffer.compare(Buffer.from(previousPath, 'utf8'), Buffer.from(entry.path, 'utf8')) >= 0) ||
-      !Number.isInteger(entry.mode) ||
+      ![0o644, 0o755].includes(entry.mode) ||
       !/^[a-f0-9]{64}$/.test(String(entry.sha256 || ''))
     ) {
       throw new Error(`Commit ${commit} contains an invalid connector-core source manifest entry.`);
@@ -2539,7 +2539,7 @@ function committedBridgeSourceIdentity(expectedSourceCommit, runGit = execFileSy
     }
     listedPaths.add(entry.path);
     const committedTreeEntry = ownedTreeByPath.get(entry.path);
-    const expectedMode = entry.mode === 0o755 ? '100755' : entry.mode === 0o644 ? '100644' : undefined;
+    const expectedMode = entry.mode === 0o755 ? '100755' : '100644';
     if (!committedTreeEntry || committedTreeEntry.mode !== expectedMode) {
       throw new Error(`Committed connector-core tree does not match manifest entry ${entry.path}.`);
     }

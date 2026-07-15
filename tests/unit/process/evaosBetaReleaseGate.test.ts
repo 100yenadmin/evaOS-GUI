@@ -1147,6 +1147,20 @@ describe('evaOS beta release gate', () => {
       expect(identity.fileSha256ByPath['native/evaos-desktop-bridge.sh']).toBe(
         createHash('sha256').update('#!/bin/sh\n# commit-a-wrapper\n').digest('hex')
       );
+
+      const invalidModeManifest = {
+        ...manifest,
+        files: manifest.files.map((entry, index) => (index === 0 ? { ...entry, mode: 0o600 } : entry)),
+      };
+      const invalidModeRunGit = (command: string, args: string[]) => {
+        if (args[0] === 'show' && args[1].endsWith('core-source-files.v1.json')) {
+          return Buffer.from(JSON.stringify(invalidModeManifest));
+        }
+        return runGit(command, args);
+      };
+      expect(() => releaseGate.committedBridgeSourceIdentity(commit, invalidModeRunGit, repoRoot)).toThrow(
+        `Commit ${commit} contains an invalid connector-core source manifest entry.`
+      );
     } finally {
       fs.rmSync(sourceDir, { recursive: true, force: true });
     }
