@@ -11,6 +11,9 @@ const PUBLIC_ATTESTATION_SCHEMA = 'evaos.mac_control.public_runtime_attestation.
 const PUBLIC_ATTESTATION_ENVELOPE_SCHEMA = 'evaos.mac_control.public_runtime_attestation_envelope.v1';
 const PUBLIC_ATTESTATION_NAMESPACE = 'evaos-mac-control-public-attestation-v1';
 const PUBLIC_PROOF_KIND = 'selected_binding_direct_mac_control';
+const DEPLOYED_NEGATIVE_PROBE_SCHEMA = 'evaos.mac_control.deployed_negative_probe.v1';
+const DEPLOYED_NEGATIVE_PROBE_MODE = 'deployed-staging';
+const DEPLOYED_NEGATIVE_PROBE_ENV_MODE = 'staging';
 const CONTEXT_TTL_SECONDS = 60;
 const CLOCK_SKEW_SECONDS = 5;
 const DEFAULT_CONNECTOR_TIMEOUT_MS = 10_000;
@@ -110,6 +113,7 @@ const PUBLIC_ATTESTATION_FIELDS = [
   'connectorCandidate',
 ];
 const PUBLIC_CANDIDATE_FIELDS = ['sourceCommit', 'sourceSha256', 'appVersion', 'appBuild'];
+const DEPLOYED_NEGATIVE_PROBE_REQUEST_FIELDS = ['proofMode', 'expectedCandidate'];
 const HEADER = {
   context: 'x-evaos-mac-control-execution-context',
   contextSignature: 'x-evaos-mac-control-execution-context-signature',
@@ -146,9 +150,9 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
       sendError(response, 405, 'method_not_allowed');
       return true;
     }
-    const publicRequest = await readPublicRequest(request);
-    if (!publicRequest.ok) {
-      sendError(response, publicRequest.status, 'invalid_request');
+    const parsedRequest = await readRuntimeReceiptRequest(request);
+    if (!parsedRequest.ok) {
+      sendError(response, parsedRequest.status, 'invalid_request');
       return true;
     }
     const authority = verifyAuthority(request.headers, env, now());
@@ -156,30 +160,58 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
       sendError(response, authority.status, authority.code);
       return true;
     }
+    if (
+      parsedRequest.value.kind === 'deployed-negative-probe' &&
+      env.EVAOS_MAC_CONTROL_DEPLOYED_NEGATIVE_PROBE_MODE !== DEPLOYED_NEGATIVE_PROBE_ENV_MODE
+    ) {
+      sendError(response, 403, 'deployed_negative_probe_disabled');
+      return true;
+    }
     const receiptVerifier = loadReceiptVerifierConfig(env);
     if (!receiptVerifier.ok) {
       sendError(response, 503, 'receipt_verifier_unavailable');
       return true;
     }
+    const deadlineNow = now();
     const remainingAuthorityMs =
       Math.min(authority.value.context.expires_at * 1000, Date.parse(authority.value.bindingExpiresAt)) -
-      now() -
+      deadlineNow -
       AUTHORITY_DEADLINE_SAFETY_MS;
     if (remainingAuthorityMs <= 0) {
       sendError(response, 401, 'execution_context_expired');
       return true;
     }
-    const connectorTimeoutMs = Math.max(1, Math.min(configuredConnectorTimeoutMs, remainingAuthorityMs));
-    pruneReplayCache(replayCache, now());
-    if (replayCache.has(authority.value.context.context_id)) {
-      sendError(response, 409, 'execution_context_replayed');
+    if (parsedRequest.value.kind === 'deployed-negative-probe') {
+      if (!candidateMatchesVerifier(parsedRequest.value.value.expectedCandidate, receiptVerifier.value)) {
+        sendError(response, 409, 'deployed_negative_probe_candidate_mismatch');
+        return true;
+      }
+      const proof = createDeployedNegativeProbeProof(
+        request.headers,
+        authority.value,
+        receiptVerifier.value,
+        env,
+        replayCache,
+        deadlineNow
+      );
+      if (!proof) {
+        sendError(response, 500, 'deployed_negative_probe_failed');
+        return true;
+      }
+      sendJson(response, 200, proof);
       return true;
     }
-    replayCache.set(authority.value.context.context_id, authority.value.context.expires_at * 1000);
+    const publicRequest = parsedRequest.value.value;
+    const connectorTimeoutMs = Math.max(1, Math.min(configuredConnectorTimeoutMs, remainingAuthorityMs));
+    const claim = claimExecutionContext(replayCache, authority.value.context, now());
+    if (!claim.ok) {
+      sendError(response, claim.status, claim.code);
+      return true;
+    }
     const connectorBody = {
       schema: CONNECTOR_REQUEST_SCHEMA,
-      challenge: publicRequest.value.challenge,
-      runRef: publicRequest.value.runRef,
+      challenge: publicRequest.challenge,
+      runRef: publicRequest.runRef,
       executionContext: {
         payload: authority.value.contextPayload,
         signature: authority.value.contextSignature,
@@ -225,7 +257,7 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
     const sanitized = validateConnectorEnvelope(
       rawConnectorResponse,
       authority.value,
-      publicRequest.value,
+      publicRequest,
       receiptVerifier.value
     );
     if (!sanitized.ok) {
@@ -243,7 +275,7 @@ async function cancelConnectorResponseBody(response) {
     // Preserve the sanitized connector rejection even if stream cleanup fails.
   }
 }
-async function readPublicRequest(request) {
+async function readRuntimeReceiptRequest(request) {
   const chunks = [];
   let total = 0;
   try {
@@ -264,23 +296,115 @@ async function readPublicRequest(request) {
   } catch {
     return { ok: false, status: 400 };
   }
-  if (!isRecord(body) || !hasExactKeys(body, ['challenge', 'runRef'])) {
+  if (!isRecord(body)) {
     return { ok: false, status: 400 };
   }
+  if (hasExactKeys(body, ['challenge', 'runRef'])) {
+    if (
+      typeof body.challenge !== 'string' ||
+      !/^[A-Za-z0-9_-]{32,128}$/.test(body.challenge) ||
+      decodeBase64Url(body.challenge)?.byteLength === undefined ||
+      typeof body.runRef !== 'string' ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body.runRef)
+    ) {
+      return { ok: false, status: 400 };
+    }
+    const challengeBytes = decodeBase64Url(body.challenge);
+    if (!challengeBytes || challengeBytes.byteLength < 24 || challengeBytes.byteLength > 96) {
+      return { ok: false, status: 400 };
+    }
+    return { ok: true, value: { kind: 'receipt', value: { challenge: body.challenge, runRef: body.runRef } } };
+  }
+  if (!hasExactKeys(body, DEPLOYED_NEGATIVE_PROBE_REQUEST_FIELDS)) {
+    return { ok: false, status: 400 };
+  }
+  const expectedCandidate = body.expectedCandidate;
   if (
-    typeof body.challenge !== 'string' ||
-    !/^[A-Za-z0-9_-]{32,128}$/.test(body.challenge) ||
-    decodeBase64Url(body.challenge)?.byteLength === undefined ||
-    typeof body.runRef !== 'string' ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body.runRef)
+    body.proofMode !== DEPLOYED_NEGATIVE_PROBE_MODE ||
+    !isRecord(expectedCandidate) ||
+    !hasExactKeys(expectedCandidate, PUBLIC_CANDIDATE_FIELDS) ||
+    typeof expectedCandidate.sourceCommit !== 'string' ||
+    !/^[0-9a-f]{40}$/.test(expectedCandidate.sourceCommit) ||
+    typeof expectedCandidate.sourceSha256 !== 'string' ||
+    !validSha256(expectedCandidate.sourceSha256) ||
+    typeof expectedCandidate.appVersion !== 'string' ||
+    !validReleaseValue(expectedCandidate.appVersion) ||
+    typeof expectedCandidate.appBuild !== 'string' ||
+    !validReleaseValue(expectedCandidate.appBuild)
   ) {
     return { ok: false, status: 400 };
   }
-  const challengeBytes = decodeBase64Url(body.challenge);
-  if (!challengeBytes || challengeBytes.byteLength < 24 || challengeBytes.byteLength > 96) {
-    return { ok: false, status: 400 };
+  return {
+    ok: true,
+    value: {
+      kind: 'deployed-negative-probe',
+      value: { proofMode: DEPLOYED_NEGATIVE_PROBE_MODE, expectedCandidate: expectedCandidate },
+    },
+  };
+}
+function candidateMatchesVerifier(candidate, verifier) {
+  return (
+    candidate.sourceCommit === verifier.expectedSourceCommit &&
+    candidate.sourceSha256 === verifier.expectedSourceSha256 &&
+    candidate.appVersion === verifier.expectedAppVersion &&
+    candidate.appBuild === verifier.expectedAppBuild
+  );
+}
+function createDeployedNegativeProbeProof(headers, authority, verifier, env, replayCache, nowMs) {
+  const forgedSignature = Buffer.alloc(64).toString('base64url');
+  const forgedHeaders = {
+    ...headers,
+    [HEADER.contextSignature]: forgedSignature,
+    [canonicalHeaderName(HEADER.contextSignature)]: forgedSignature,
+  };
+  const forged = verifyAuthority(forgedHeaders, env, nowMs);
+  const expired = verifyAuthority(headers, env, authority.context.expires_at * 1000);
+  const firstClaim = claimExecutionContext(replayCache, authority.context, nowMs);
+  const replay = claimExecutionContext(replayCache, authority.context, nowMs);
+  if (
+    forged.ok ||
+    forged.status !== 401 ||
+    forged.code !== 'execution_context_signature_invalid' ||
+    expired.ok ||
+    expired.status !== 401 ||
+    expired.code !== 'execution_context_expired' ||
+    !firstClaim.ok ||
+    replay.ok ||
+    replay.status !== 409 ||
+    replay.code !== 'execution_context_replayed'
+  ) {
+    return undefined;
   }
-  return { ok: true, value: { challenge: body.challenge, runRef: body.runRef } };
+  return {
+    schema: DEPLOYED_NEGATIVE_PROBE_SCHEMA,
+    proofMode: DEPLOYED_NEGATIVE_PROBE_MODE,
+    candidate: {
+      sourceCommit: verifier.expectedSourceCommit,
+      sourceSha256: verifier.expectedSourceSha256,
+      appVersion: verifier.expectedAppVersion,
+      appBuild: verifier.expectedAppBuild,
+    },
+    classifications: {
+      forgedSignature: {
+        rejected: true,
+        httpStatus: forged.status,
+        code: forged.code,
+      },
+      expiredContext: {
+        rejected: true,
+        httpStatus: expired.status,
+        code: expired.code,
+      },
+      replay: {
+        firstAccepted: true,
+        secondRejected: true,
+        httpStatus: replay.status,
+        code: replay.code,
+      },
+    },
+    connectorActionAttempted: false,
+    sensitiveOutputAbsent: true,
+  };
 }
 function verifyAuthority(headers, env, nowMs) {
   const expectedKeyId = env.EVAOS_MAC_CONTROL_CONTEXT_KEY_ID;
@@ -1009,6 +1133,14 @@ function hasExactKeys(value, keys) {
 }
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function claimExecutionContext(cache, context, nowMs) {
+  pruneReplayCache(cache, nowMs);
+  if (cache.has(context.context_id)) {
+    return { ok: false, status: 409, code: 'execution_context_replayed' };
+  }
+  cache.set(context.context_id, context.expires_at * 1000);
+  return { ok: true };
 }
 function pruneReplayCache(cache, nowMs) {
   for (const [contextId, expiresAt] of cache) {

@@ -40,6 +40,12 @@ const env = {
   EVAOS_MAC_CONTROL_EXPECTED_APP_VERSION: '2.1.36',
   EVAOS_MAC_CONTROL_EXPECTED_APP_BUILD: '2.1.36',
 };
+const expectedCandidate = {
+  sourceCommit: EXPECTED_COMMIT,
+  sourceSha256: EXPECTED_SOURCE_SHA256,
+  appVersion: '2.1.36',
+  appBuild: '2.1.36',
+};
 
 test('registers one exact gateway-authenticated runtime receipt route', () => {
   const routes = [];
@@ -674,6 +680,107 @@ test('fails closed for missing, forged, unknown, malformed, expired, and cross-b
       assert.equal(response.body.includes(CONNECTOR_TOKEN), false);
     });
   }
+});
+
+test('classifies deployed staging negatives from the actual signed authority without connector access', async () => {
+  const authority = signedAuthority();
+  let connectorCalls = 0;
+  const handler = createMacControlRuntimeReceiptHandler({
+    env: { ...env, EVAOS_MAC_CONTROL_DEPLOYED_NEGATIVE_PROBE_MODE: 'staging' },
+    now: () => NOW_MS,
+    fetchImpl: async () => {
+      connectorCalls += 1;
+      return fetchResponse(500, {});
+    },
+  });
+  const response = await invoke(handler, { proofMode: 'deployed-staging', expectedCandidate }, authority.headers);
+
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(JSON.parse(response.body), {
+    schema: 'evaos.mac_control.deployed_negative_probe.v1',
+    proofMode: 'deployed-staging',
+    candidate: expectedCandidate,
+    classifications: {
+      forgedSignature: {
+        rejected: true,
+        httpStatus: 401,
+        code: 'execution_context_signature_invalid',
+      },
+      expiredContext: {
+        rejected: true,
+        httpStatus: 401,
+        code: 'execution_context_expired',
+      },
+      replay: {
+        firstAccepted: true,
+        secondRejected: true,
+        httpStatus: 409,
+        code: 'execution_context_replayed',
+      },
+    },
+    connectorActionAttempted: false,
+    sensitiveOutputAbsent: true,
+  });
+  assert.equal(connectorCalls, 0);
+  for (const forbidden of [
+    CONNECTOR_TOKEN,
+    authority.payload,
+    authority.signature,
+    authority.context.customer_id,
+    authority.context.customer_vm_id,
+    authority.context.binding_id,
+    authority.headers['x-evaos-desktop-bridge-url'],
+  ]) {
+    assert.equal(response.body.includes(forbidden), false);
+  }
+});
+
+test('rejects the deployed negative probe outside exact staging mode after validating authority', async () => {
+  let connectorCalls = 0;
+  const handler = createMacControlRuntimeReceiptHandler({
+    env,
+    now: () => NOW_MS,
+    fetchImpl: async () => {
+      connectorCalls += 1;
+      return fetchResponse(500, {});
+    },
+  });
+  const authority = signedAuthority();
+  const body = { proofMode: 'deployed-staging', expectedCandidate };
+  const disabled = await invoke(handler, body, authority.headers);
+  assert.equal(disabled.statusCode, 403);
+  assert.equal(JSON.parse(disabled.body).error.code, 'deployed_negative_probe_disabled');
+
+  const forged = await invoke(handler, body, {
+    ...authority.headers,
+    'x-evaos-mac-control-execution-context-signature': Buffer.alloc(64, 9).toString('base64url'),
+  });
+  assert.equal(forged.statusCode, 401);
+  assert.equal(JSON.parse(forged.body).error.code, 'execution_context_signature_invalid');
+  assert.equal(connectorCalls, 0);
+});
+
+test('requires the caller candidate to match the verifier environment before the deployed probe runs', async () => {
+  let connectorCalls = 0;
+  const handler = createMacControlRuntimeReceiptHandler({
+    env: { ...env, EVAOS_MAC_CONTROL_DEPLOYED_NEGATIVE_PROBE_MODE: 'staging' },
+    now: () => NOW_MS,
+    fetchImpl: async () => {
+      connectorCalls += 1;
+      return fetchResponse(500, {});
+    },
+  });
+  const response = await invoke(
+    handler,
+    {
+      proofMode: 'deployed-staging',
+      expectedCandidate: { ...expectedCandidate, sourceCommit: 'd'.repeat(40) },
+    },
+    signedAuthority().headers
+  );
+  assert.equal(response.statusCode, 409);
+  assert.equal(JSON.parse(response.body).error.code, 'deployed_negative_probe_candidate_mismatch');
+  assert.equal(connectorCalls, 0);
 });
 
 test('burns a verified execution context before connector IO and rejects replay', async () => {

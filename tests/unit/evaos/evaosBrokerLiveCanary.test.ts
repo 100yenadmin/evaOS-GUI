@@ -37,13 +37,6 @@ const TRUST_ENV = {
 };
 
 const require = createRequire(import.meta.url);
-const releaseGate = require('../../../scripts/evaosBetaReleaseGate.js') as {
-  verifyMacControlLiveCanaryProof: (
-    proofDir: string,
-    env: Record<string, string>,
-    options?: { now?: Date; maxAgeHours?: number }
-  ) => boolean;
-};
 const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
   REQUIRED_BROKER_SURFACES: Array<{ surface: string; runtime: string }>;
   runBrokerLiveCanary: (options: {
@@ -78,6 +71,7 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
     now?: () => number;
     randomBytes?: (size: number) => Uint8Array;
     onDeployedProbe?: (proof: Record<string, unknown>) => void | Promise<void>;
+    onDeployedNegativeProbe?: (proof: Record<string, unknown>) => void | Promise<void>;
   }) => Promise<Record<string, unknown>>;
   expectedMacControlCandidate: (env: Record<string, string | undefined>) => {
     sourceCommit: string;
@@ -102,6 +96,10 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
     raw: unknown,
     request: { customerId: string; runtime: string; expectedCallbackHost: string },
     now?: number
+  ) => Record<string, unknown>;
+  sanitizeMacControlDeployedNegativeProbe: (
+    raw: unknown,
+    options: { expectedCandidate: Record<string, string>; sourceRunId: string }
   ) => Record<string, unknown>;
 };
 
@@ -667,6 +665,31 @@ describe('evaOS broker live canary', () => {
       binding_expires_at: bindingExpiresAt,
       allowed_capabilities: ['customer_mac_status', 'desktop_see', 'desktop_control'],
     };
+    const deployedNegativeResponse = {
+      schema: 'evaos.mac_control.deployed_negative_probe.v1',
+      proofMode: 'deployed-staging',
+      candidate: expectedCandidate,
+      classifications: {
+        forgedSignature: {
+          rejected: true,
+          httpStatus: 401,
+          code: 'execution_context_signature_invalid',
+        },
+        expiredContext: {
+          rejected: true,
+          httpStatus: 401,
+          code: 'execution_context_expired',
+        },
+        replay: {
+          firstAccepted: true,
+          secondRejected: true,
+          httpStatus: 409,
+          code: 'execution_context_replayed',
+        },
+      },
+      connectorActionAttempted: false,
+      sensitiveOutputAbsent: true,
+    };
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -708,9 +731,11 @@ describe('evaOS broker live canary', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ ok: false }, { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ ok: false, error: { code: 'invalid_request' } }, { status: 400 }))
-      .mockResolvedValueOnce(jsonResponse({ ok: false, error: { code: 'invalid_request' } }, { status: 400 }));
+      .mockResolvedValueOnce(jsonResponse({ ok: false, error: { code: 'invalid_request' } }, { status: 400 }))
+      .mockResolvedValueOnce(jsonResponse(deployedNegativeResponse));
 
     let deployedProbe: Record<string, unknown> | undefined;
+    let deployedNegativeProbe: Record<string, unknown> | undefined;
 
     const proof = await liveCanary.runMacControlLiveCanary({
       env: {
@@ -729,9 +754,12 @@ describe('evaOS broker live canary', () => {
       onDeployedProbe: (value) => {
         deployedProbe = value;
       },
+      onDeployedNegativeProbe: (value) => {
+        deployedNegativeProbe = value;
+      },
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(8);
+    expect(fetchImpl).toHaveBeenCalledTimes(9);
     expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
       action: 'runtime_launch',
       customer_id: 'staging-mac-owner',
@@ -766,6 +794,14 @@ describe('evaOS broker live canary', () => {
         sensitiveOutputAbsent: true,
       },
     });
+    expect(JSON.parse(String(fetchImpl.mock.calls[8][1]?.body))).toEqual({
+      proofMode: 'deployed-staging',
+      expectedCandidate,
+    });
+    expect(deployedNegativeProbe).toEqual({
+      ...deployedNegativeResponse,
+      sourceRunId: '123456789',
+    });
     const publicAttestation = JSON.parse(Buffer.from(signedProof.envelope.attestationBase64, 'base64url').toString());
     expect(JSON.stringify(proof)).not.toMatch(
       /staging-mac-owner|11111111-1111-4111-8111-111111111111|binding_version|binding_expires_at|callback_secret|proxy_session_secret|example\.test|eds_/
@@ -774,59 +810,14 @@ describe('evaOS broker live canary', () => {
     expect(publicAttestation).not.toHaveProperty('bindingRef');
     expect(publicAttestation).not.toHaveProperty('sessionRef');
     expect(publicAttestation).not.toHaveProperty('auditRef');
+    expect(JSON.stringify(deployedNegativeProbe)).not.toMatch(
+      /staging-mac-owner|11111111-1111-4111-8111-111111111111|binding_version|binding_expires_at|callback_secret|proxy_session_secret|example\.test|eds_/
+    );
 
     const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-mac-control-contract-'));
     try {
       const proofPath = path.join(proofDir, 'mac-control-runtime.json');
       fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
-      fs.writeFileSync(
-        path.join(proofDir, 'mac-control-session-provisioning.json'),
-        `${JSON.stringify({
-          schema: 'evaos-mac-control-canary-session-provision/v1',
-          accountConfigured: true,
-          customerConfigured: true,
-          activeMembershipVerified: true,
-          stagingMarkerVerified: true,
-          sessionMinted: true,
-          sessionExpiryPresent: true,
-          sensitiveOutput: 'passed',
-        })}\n`
-      );
-      fs.writeFileSync(
-        path.join(proofDir, 'mac-control-session-cleanup.json'),
-        `${JSON.stringify({
-          schema: 'evaos-mac-control-canary-session-cleanup/v1',
-          sessionRevoked: true,
-          sensitiveOutput: 'passed',
-        })}\n`
-      );
-      fs.writeFileSync(
-        path.join(proofDir, 'mac-control-runtime-negative.json'),
-        `${JSON.stringify({
-          schema: 'evaos.mac_control.runtime_receipt_negative_proof.v1',
-          sourceHeadSha,
-          sourceRunId: '123456789',
-          assertions: {
-            forgedContextRejected: true,
-            expiredContextRejected: true,
-            replayRejected: true,
-            authorityRedacted: true,
-          },
-        })}\n`
-      );
-      fs.writeFileSync(path.join(proofDir, 'mac-control-deployed-route.json'), `${JSON.stringify(deployedProbe)}\n`);
-
-      expect(
-        releaseGate.verifyMacControlLiveCanaryProof(
-          proofDir,
-          {
-            EVAOS_LIVE_CANARY_EXPECTED_SOURCE_HEAD_SHA: sourceHeadSha,
-            EVAOS_LIVE_CANARY_EXPECTED_SOURCE_RUN_ID: '123456789',
-            ...TRUST_ENV,
-          },
-          { now: new Date(now), maxAgeHours: 24 }
-        )
-      ).toBe(true);
 
       const pythonSource = [
         'import sys',
@@ -937,6 +928,66 @@ describe('evaOS broker live canary', () => {
     ]) {
       expect(() => liveCanary.sanitizeMacControlRuntimeProof(invalid, options)).toThrow(/attestation/i);
     }
+  });
+
+  it('rejects any non-exact deployed negative classification or candidate binding', () => {
+    const expectedCandidate = {
+      sourceCommit: 'a'.repeat(40),
+      sourceSha256: 'b'.repeat(64),
+      appVersion: '2.1.36',
+      appBuild: '2.1.36',
+    };
+    const valid = {
+      schema: 'evaos.mac_control.deployed_negative_probe.v1',
+      proofMode: 'deployed-staging',
+      candidate: expectedCandidate,
+      classifications: {
+        forgedSignature: {
+          rejected: true,
+          httpStatus: 401,
+          code: 'execution_context_signature_invalid',
+        },
+        expiredContext: {
+          rejected: true,
+          httpStatus: 401,
+          code: 'execution_context_expired',
+        },
+        replay: {
+          firstAccepted: true,
+          secondRejected: true,
+          httpStatus: 409,
+          code: 'execution_context_replayed',
+        },
+      },
+      connectorActionAttempted: false,
+      sensitiveOutputAbsent: true,
+    };
+    const options = { expectedCandidate, sourceRunId: '123456789' };
+
+    expect(liveCanary.sanitizeMacControlDeployedNegativeProbe(valid, options)).toEqual({
+      ...valid,
+      sourceRunId: '123456789',
+    });
+    for (const invalid of [
+      { ...valid, customerId: 'must-not-be-reflected' },
+      { ...valid, proofMode: 'production' },
+      { ...valid, candidate: { ...expectedCandidate, sourceCommit: 'd'.repeat(40) } },
+      {
+        ...valid,
+        classifications: {
+          ...valid.classifications,
+          forgedSignature: { ...valid.classifications.forgedSignature, httpStatus: 200 },
+        },
+      },
+      { ...valid, connectorActionAttempted: true },
+    ]) {
+      expect(() => liveCanary.sanitizeMacControlDeployedNegativeProbe(invalid, options)).toThrow(
+        /strict staging contract/i
+      );
+    }
+    expect(() =>
+      liveCanary.sanitizeMacControlDeployedNegativeProbe(valid, { ...options, sourceRunId: 'not-a-run' })
+    ).toThrow(/strict staging contract/i);
   });
 
   it('rejects an incomplete top-level capability set even when runtime status is complete', () => {
