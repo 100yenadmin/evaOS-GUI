@@ -119,7 +119,8 @@ core_hash = hashlib.sha256()
 for entry in source_manifest["files"]:
     source_file = core_root / entry["path"]
     contents = source_file.read_bytes()
-    assert hashlib.sha256(contents).hexdigest() == entry["sha256"]
+    if hashlib.sha256(contents).hexdigest() != entry["sha256"]:
+        raise ValueError(f'Connector-core source digest mismatch for {entry["path"]}.')
     core_hash.update(entry["path"].encode("utf-8"))
     core_hash.update(b"\0")
     core_hash.update(contents)

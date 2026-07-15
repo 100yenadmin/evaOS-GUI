@@ -1040,6 +1040,15 @@ function writeProofReleaseAssetsReference(
 }
 
 describe('evaOS beta release gate', () => {
+  it('keeps mock release source-integrity checks active under optimized Python', () => {
+    const mockArtifactScript = fs.readFileSync(
+      path.join(repoRoot, 'scripts', 'create-mock-release-artifacts.sh'),
+      'utf8'
+    );
+    expect(mockArtifactScript).toContain("raise ValueError(f'Connector-core source digest mismatch");
+    expect(mockArtifactScript).not.toContain('assert hashlib.sha256(contents).hexdigest()');
+  });
+
   it('derives the Workbench bridge digest from the exact committed GUI tree', () => {
     const identity = releaseGate.committedBridgeSourceIdentity(fixtureReleaseCommit);
     expect(identity.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
