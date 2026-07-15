@@ -460,6 +460,18 @@ describe('evaOS Mac Access v1 contracts', () => {
     }
   });
 
+  it('keeps configured and effective access off while the kill switch is active', () => {
+    const state = cloneJson(accessStateSchema.parse(readJson(path.join(validRoot, 'state/access-state.json'))));
+    state.kill_switch = true;
+    state.effective_mode = 'off';
+
+    const parsed = accessStateSchema.safeParse(state);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'configured_mode')).toBe(true);
+    }
+  });
+
   it('rejects dispatch when the host epoch differs from the signed broker envelope', () => {
     const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
     const parsed = coreHostRequestSchema.safeParse({
@@ -769,6 +781,18 @@ describe('evaOS Mac Access v1 contracts', () => {
     pairedRevoked.result.requested_target_mode = 'off';
     pairedRevoked.result.transport_state = 'revoked';
     expect(coreHostResponseSchema.safeParse(pairedRevoked).success).toBe(false);
+
+    const unsafeKillReceipt = readLifecycleResponseFixture();
+    unsafeKillReceipt.operation = 'activate_kill_switch';
+    unsafeKillReceipt.result.configured_mode = 'full_access';
+    unsafeKillReceipt.result.effective_mode = 'off';
+    unsafeKillReceipt.result.requested_target_mode = null;
+    unsafeKillReceipt.result.transport_state = 'blocked';
+    const killReceipt = coreHostResponseSchema.safeParse(unsafeKillReceipt);
+    expect(killReceipt.success).toBe(false);
+    if (!killReceipt.success) {
+      expect(killReceipt.error.issues.some((issue) => issue.path.join('/') === 'result/configured_mode')).toBe(true);
+    }
   });
 
   it('binds policy-changing lifecycle receipts to one exact epoch advance', () => {
@@ -830,6 +854,38 @@ describe('evaOS Mac Access v1 contracts', () => {
       expect(coreHostExchangeSchema.safeParse({ request, response }).success, testCase.operation).toBe(true);
       response.policy_epoch = 999;
       expect(coreHostExchangeSchema.safeParse({ request, response }).success, testCase.operation).toBe(false);
+    }
+  });
+
+  it('binds non-advancing lifecycle receipts to the exact expected epoch', () => {
+    for (const [index, operation] of ['disconnect', 'shutdown'].entries()) {
+      const request = {
+        schema_version: 'evaos.mac_connector_core.host_request.v1',
+        request_id: `non-advancing-lifecycle-${index}`,
+        host_session_id: 'host-session-01',
+        sequence: index + 1,
+        operation,
+        expected_policy_epoch: 7,
+      };
+      const response = readLifecycleResponseFixture();
+      response.request_id = request.request_id;
+      response.sequence = request.sequence;
+      response.operation = request.operation;
+      response.policy_epoch = request.expected_policy_epoch;
+      response.result.effective_mode = 'off';
+      response.result.requested_target_mode = null;
+      response.result.transport_state = 'disconnected';
+      expect(coreHostExchangeSchema.safeParse({ request, response }).success, operation).toBe(true);
+
+      for (const policyEpoch of [request.expected_policy_epoch - 1, request.expected_policy_epoch + 1]) {
+        const mismatched = cloneJson(response);
+        mismatched.policy_epoch = policyEpoch;
+        const parsed = coreHostExchangeSchema.safeParse({ request, response: mismatched });
+        expect(parsed.success, `${operation}:${policyEpoch}`).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'response/policy_epoch')).toBe(true);
+        }
+      }
     }
   });
 
@@ -1011,6 +1067,123 @@ describe('evaOS Mac Access v1 contracts', () => {
     resumeMutation.to.configured_mode = 'ask_every_time';
     resumeMutation.to.local_confirmation_required = false;
     expect(accessTransitionSchema.safeParse(resumeMutation).success).toBe(false);
+  });
+
+  it('keeps an active kill switch effective off across restart', () => {
+    const restart = cloneJson(
+      accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')))
+    );
+    restart.event = 'restart';
+    restart.from.configured_mode = 'off';
+    restart.from.effective_mode = 'off';
+    restart.from.kill_switch = true;
+    restart.from.local_confirmation_required = false;
+    restart.from.confirmed_runtime_instance_id = null;
+    restart.from.confirmed_policy_epoch = null;
+    restart.from.confirmed_binding_fingerprint_sha256 = null;
+    restart.to.runtime_instance_id = 'runtime-instance-02';
+    restart.to.configured_mode = 'off';
+    restart.to.kill_switch = true;
+    restart.to.local_confirmation_required = false;
+    restart.to.reason_code = 'runtime_restart';
+    expect(accessTransitionSchema.safeParse(restart).success).toBe(true);
+  });
+
+  it('keeps configured full access effective off when restart preserves pause', () => {
+    const restart = cloneJson(
+      accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')))
+    );
+    restart.event = 'restart';
+    restart.from.effective_mode = 'off';
+    restart.from.paused = true;
+    restart.from.local_confirmation_required = true;
+    restart.from.confirmed_runtime_instance_id = null;
+    restart.from.confirmed_policy_epoch = null;
+    restart.from.confirmed_binding_fingerprint_sha256 = null;
+    restart.to.runtime_instance_id = 'runtime-instance-02';
+    restart.to.paused = true;
+    restart.to.reason_code = 'runtime_restart';
+    expect(accessTransitionSchema.safeParse(restart).success).toBe(true);
+  });
+
+  it('keeps an active kill switch effective off when clearing pause', () => {
+    const resume = cloneJson(
+      accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')))
+    );
+    resume.event = 'resume';
+    resume.invalidated_pending_authority = false;
+    resume.safe_cancellation_requested = false;
+    resume.from.configured_mode = 'off';
+    resume.from.effective_mode = 'off';
+    resume.from.paused = true;
+    resume.from.kill_switch = true;
+    resume.from.local_confirmation_required = false;
+    resume.from.confirmed_runtime_instance_id = null;
+    resume.from.confirmed_policy_epoch = null;
+    resume.from.confirmed_binding_fingerprint_sha256 = null;
+    resume.to.configured_mode = 'off';
+    resume.to.paused = false;
+    resume.to.kill_switch = true;
+    resume.to.local_confirmation_required = false;
+    resume.to.reason_code = 'local_resume';
+    expect(accessTransitionSchema.safeParse(resume).success).toBe(true);
+  });
+
+  it('preserves the pause barrier across unrelated mode transitions', () => {
+    const base = accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')));
+    const pausedModeChange = cloneJson(base);
+    pausedModeChange.event = 'set_mode';
+    pausedModeChange.target_mode = 'ask_every_time';
+    pausedModeChange.from.effective_mode = 'off';
+    pausedModeChange.from.paused = true;
+    pausedModeChange.from.local_confirmation_required = true;
+    pausedModeChange.from.confirmed_runtime_instance_id = null;
+    pausedModeChange.from.confirmed_policy_epoch = null;
+    pausedModeChange.from.confirmed_binding_fingerprint_sha256 = null;
+    pausedModeChange.to.configured_mode = 'ask_every_time';
+    pausedModeChange.to.paused = true;
+    pausedModeChange.to.local_confirmation_required = false;
+    pausedModeChange.to.reason_code = 'local_mode_changed';
+    expect(accessTransitionSchema.safeParse(pausedModeChange).success).toBe(true);
+
+    const clearedPause = cloneJson(pausedModeChange);
+    clearedPause.to.paused = false;
+    clearedPause.to.effective_mode = 'ask_every_time';
+    const pauseResult = accessTransitionSchema.safeParse(clearedPause);
+    expect(pauseResult.success).toBe(false);
+    if (!pauseResult.success) {
+      expect(pauseResult.error.issues.some((issue) => issue.path.join('/') === 'to/paused')).toBe(true);
+    }
+  });
+
+  it('preserves the kill-switch barrier across unrelated mode transitions', () => {
+    const base = accessTransitionSchema.parse(readJson(path.join(validRoot, 'state/access-transition-stop.json')));
+    const killedModeChange = cloneJson(base);
+    killedModeChange.event = 'set_mode';
+    killedModeChange.target_mode = 'off';
+    killedModeChange.from.configured_mode = 'off';
+    killedModeChange.from.effective_mode = 'off';
+    killedModeChange.from.kill_switch = true;
+    killedModeChange.from.local_confirmation_required = false;
+    killedModeChange.from.confirmed_runtime_instance_id = null;
+    killedModeChange.from.confirmed_policy_epoch = null;
+    killedModeChange.from.confirmed_binding_fingerprint_sha256 = null;
+    killedModeChange.to.configured_mode = 'off';
+    killedModeChange.to.kill_switch = true;
+    killedModeChange.to.local_confirmation_required = false;
+    killedModeChange.to.reason_code = 'local_mode_changed';
+    expect(accessTransitionSchema.safeParse(killedModeChange).success).toBe(true);
+
+    const clearedKillSwitch = cloneJson(killedModeChange);
+    clearedKillSwitch.target_mode = 'ask_every_time';
+    clearedKillSwitch.to.configured_mode = 'ask_every_time';
+    clearedKillSwitch.to.effective_mode = 'ask_every_time';
+    clearedKillSwitch.to.kill_switch = false;
+    const killResult = accessTransitionSchema.safeParse(clearedKillSwitch);
+    expect(killResult.success).toBe(false);
+    if (!killResult.success) {
+      expect(killResult.error.issues.some((issue) => issue.path.join('/') === 'to/kill_switch')).toBe(true);
+    }
   });
 
   it('makes the kill switch a fail-closed configured-off transition', () => {
@@ -1203,6 +1376,36 @@ describe('evaOS Mac Access v1 contracts', () => {
     expect(coreHostExchangeSchema.safeParse({ request: reorderedCursorRequest, response: continuation }).success).toBe(
       true
     );
+
+    for (const policyEpoch of [
+      reorderedCursorRequest.expected_policy_epoch - 1,
+      reorderedCursorRequest.expected_policy_epoch + 1,
+    ]) {
+      const mismatchedAuditEpoch = cloneJson(continuation);
+      mismatchedAuditEpoch.policy_epoch = policyEpoch;
+      const epochResult = coreHostExchangeSchema.safeParse({
+        request: reorderedCursorRequest,
+        response: mismatchedAuditEpoch,
+      });
+      expect(epochResult.success, policyEpoch.toString()).toBe(false);
+      if (!epochResult.success) {
+        expect(epochResult.error.issues.some((issue) => issue.path.join('/') === 'response/policy_epoch')).toBe(true);
+      }
+    }
+
+    const fullPageRequest = {
+      ...reorderedCursorRequest,
+      after_cursor: null as { record_sha256: string; sequence: number } | null,
+      limit: 2,
+    };
+    expect(coreHostExchangeSchema.safeParse({ request: fullPageRequest, response }).success).toBe(true);
+    const undersizedPageRequest = { ...fullPageRequest, limit: 1 };
+    const oversizedPage = coreHostExchangeSchema.safeParse({ request: undersizedPageRequest, response });
+    expect(oversizedPage.success).toBe(false);
+    if (!oversizedPage.success) {
+      expect(oversizedPage.error.issues.some((issue) => issue.path.join('/') === 'response/result/events')).toBe(true);
+    }
+
     for (const afterCursor of [
       null,
       {

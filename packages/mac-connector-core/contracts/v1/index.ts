@@ -514,6 +514,13 @@ export const accessStateSchema = z
         path: ['effective_mode'],
       });
     }
+    if (state.kill_switch && state.configured_mode !== 'off') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'kill switch must clear configured user access until a future local recovery contract',
+        path: ['configured_mode'],
+      });
+    }
     if (state.pairing_state === 'paired' && state.binding === null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -911,6 +918,21 @@ export const accessTransitionSchema = z
         path: ['to', 'configured_mode'],
       });
     }
+    if (!['pause', 'resume'].includes(transition.event) && from.paused !== to.paused) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pause barrier may change only through explicit pause or resume',
+        path: ['to', 'paused'],
+      });
+    }
+    if (transition.event !== 'kill_switch' && from.kill_switch !== to.kill_switch) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'only activation may change the v1 kill-switch barrier; clearing requires a future local recovery contract',
+        path: ['to', 'kill_switch'],
+      });
+    }
     if (transition.event !== 'restart' && from.runtime_instance_id !== to.runtime_instance_id) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -984,11 +1006,12 @@ export const accessTransitionSchema = z
         to.confirmed_policy_epoch === null &&
         to.confirmed_binding_fingerprint_sha256 === null &&
         (to.configured_mode !== 'full_access' ||
-          (to.effective_mode === 'ask_every_time' && to.local_confirmation_required));
+          (to.effective_mode === (to.paused || to.kill_switch ? 'off' : 'ask_every_time') &&
+            to.local_confirmation_required));
       if (!validRestart) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'restart must clear confirmation and downgrade configured full access to ask every time',
+          message: 'restart must clear confirmation and keep configured full access non-effective until reconfirmed',
           path: ['event'],
         });
       }
@@ -1036,7 +1059,7 @@ export const accessTransitionSchema = z
         !to.paused &&
         to.configured_mode === from.configured_mode &&
         (to.configured_mode !== 'full_access' ||
-          (to.effective_mode === 'ask_every_time' && to.local_confirmation_required));
+          (to.effective_mode === (to.kill_switch ? 'off' : 'ask_every_time') && to.local_confirmation_required));
       if (!validResume) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -2073,6 +2096,13 @@ export const coreHostResponseSchema = z
         path: ['result', 'transport_state'],
       });
     }
+    if (response.operation === 'activate_kill_switch' && response.result.configured_mode !== 'off') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'kill-switch response must clear configured access',
+        path: ['result', 'configured_mode'],
+      });
+    }
     if (response.operation === 'activate_kill_switch' && response.result.transport_state !== 'blocked') {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -2143,6 +2173,18 @@ export const coreHostExchangeSchema = z
       });
     }
     if (
+      ['disconnect', 'audit_summary', 'shutdown'].includes(request.operation) &&
+      typeof request.expected_policy_epoch === 'number' &&
+      response.ok &&
+      response.policy_epoch !== request.expected_policy_epoch
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'non-advancing host response must match the exact expected policy epoch',
+        path: ['response', 'policy_epoch'],
+      });
+    }
+    if (
       request.operation === 'dispatch_action' &&
       response.ok &&
       response.result?.kind === 'action' &&
@@ -2171,16 +2213,17 @@ export const coreHostExchangeSchema = z
       request.operation === 'audit_summary' &&
       response.ok &&
       response.result?.kind === 'audit_summary' &&
-      (response.result.page_anchor === null
+      ((response.result.page_anchor === null
         ? request.after_cursor !== null
         : request.after_cursor === null ||
           response.result.page_anchor.sequence !== request.after_cursor.sequence ||
-          response.result.page_anchor.record_sha256 !== request.after_cursor.record_sha256)
+          response.result.page_anchor.record_sha256 !== request.after_cursor.record_sha256) ||
+        response.result.events.length > request.limit)
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'audit summary must echo the exact requested cursor',
-        path: ['response', 'result', 'page_anchor'],
+        message: 'audit summary must echo the exact requested cursor and respect the requested page limit',
+        path: ['response', 'result', response.result.events.length > request.limit ? 'events' : 'page_anchor'],
       });
     }
   });
