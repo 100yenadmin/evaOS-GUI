@@ -6,6 +6,82 @@ const repoRoot = process.cwd();
 const bridgeSource = join(repoRoot, 'resources', 'evaos-beta', 'bridge', 'src');
 
 describe('evaOS signed Mac-control receipt connector', () => {
+  it('carries only a complete signer configuration through the normal LaunchAgent start path', () => {
+    const script = String.raw`
+import os
+import plistlib
+import tempfile
+from pathlib import Path
+
+from evaos_desktop_bridge import cli
+
+root = Path(tempfile.mkdtemp(prefix="evaos-connector-plist-"))
+cli.CONNECTOR_USER_PLIST = root / "connector.plist"
+cli._connector_program_path = lambda: "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge"
+cli._tailscale_ip = lambda: "127.0.0.1"
+launchctl_calls = []
+cli._run_launchctl = lambda args: launchctl_calls.append(list(args)) or {"returncode": 0}
+
+signer_env = {
+    "EVAOS_MAC_CONTROL_CONTEXT_KEY_ID": "context-key-v1",
+    "EVAOS_MAC_CONTROL_CONTEXT_PUBLIC_KEY": "cHVibGljLWtleQ",
+    "EVAOS_MAC_CONTROL_RECEIPT_KEY_ID": "receipt-key-v1",
+    "EVAOS_MAC_CONTROL_RECEIPT_PRIVATE_KEY_PATH": str(root / "receipt-key"),
+}
+managed_keys = (*cli.CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS, "EVAOS_DESKTOP_BRIDGE_CONNECTOR_HOST")
+previous = {key: os.environ.get(key) for key in managed_keys}
+try:
+    for key in managed_keys:
+        os.environ.pop(key, None)
+    os.environ.update(signer_env)
+    cli._launchctl_start()
+
+    payload = plistlib.loads(cli.CONNECTOR_USER_PLIST.read_bytes())
+    assert payload["EnvironmentVariables"] == {
+        "EVAOS_DESKTOP_BRIDGE_MODE": "customer-mac-connector",
+        **signer_env,
+    }
+    assert len(launchctl_calls) == 3
+    assert cli._connector_plist_payload(program="bridge", host="127.0.0.1", env={})[
+        "EnvironmentVariables"
+    ] == {"EVAOS_DESKTOP_BRIDGE_MODE": "customer-mac-connector"}
+
+    launchctl_calls.clear()
+    cli.CONNECTOR_USER_PLIST = root / "partial.plist"
+    for key in cli.CONNECTOR_MAC_CONTROL_CANARY_ENV_KEYS:
+        os.environ.pop(key, None)
+    os.environ["EVAOS_MAC_CONTROL_CONTEXT_KEY_ID"] = "context-key-v1"
+    try:
+        cli._launchctl_start()
+    except RuntimeError as error:
+        assert "configuration is incomplete" in str(error)
+        assert "context-key-v1" not in str(error)
+    else:
+        raise AssertionError("partial signer configuration was accepted")
+    assert not cli.CONNECTOR_USER_PLIST.exists()
+    assert launchctl_calls == []
+finally:
+    for key in managed_keys:
+        os.environ.pop(key, None)
+    for key, value in previous.items():
+        if value is not None:
+            os.environ[key] = value
+`;
+
+    expect(() =>
+      execFileSync('python3', ['-c', script], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          PYTHONPATH: bridgeSource,
+          PYTHONDONTWRITEBYTECODE: '1',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 10_000,
+      })
+    ).not.toThrow();
+  });
+
   it('fails closed around the fixed authenticated canary route and emits a verifiable sanitized receipt', () => {
     const script = String.raw`
 import base64
