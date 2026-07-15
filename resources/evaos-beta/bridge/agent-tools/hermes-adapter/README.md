@@ -7,9 +7,10 @@ mutation.
 
 ## Runtime contract
 
-Set these on the customer VM after the Mac is paired. The wrapper automatically
-sources `/root/.openclaw/evaos-desktop-bridge.env` when the variables are not
-already present, so OpenClaw, Hermes, and direct support smokes all use the same
+Set these on the customer VM after the Mac is paired. When the variables are not
+already present, the wrapper parses only the two expected assignments from
+`/root/.openclaw/evaos-desktop-bridge.env`; it never executes the file as shell
+code. OpenClaw, Hermes, and direct support smokes therefore use the same
 connector contract.
 
 ```bash
@@ -24,15 +25,20 @@ Hermes tools should call `bin/evaos-desktop-bridge-command` with one of the
 fixed connector command names supported by `/v1/commands`, for example:
 
 ```bash
-hermes-adapter/bin/evaos-desktop-bridge-command customerMacStatus '{}'
-hermes-adapter/bin/evaos-desktop-bridge-command desktopSee '{}'
-hermes-adapter/bin/evaos-desktop-bridge-command desktopClick '{"target_label":"Continue","dry_run":false}'
-hermes-adapter/bin/evaos-desktop-bridge-command customerMacIphoneMirroringStatus '{}'
-hermes-adapter/bin/evaos-desktop-bridge-command iphoneSwipe '{"direction":"up","dry_run":false}'
-hermes-adapter/bin/evaos-desktop-bridge-command evaosProviderProfiles '{}'
-hermes-adapter/bin/evaos-desktop-bridge-command evaosProviderCompleteAuth '{"identity":"admin@100yen.org"}'
-hermes-adapter/bin/evaos-desktop-bridge-command evaosSharedBrowserGuidance '{}'
+hermes-adapter/bin/evaos-desktop-bridge-command customerMacStatus
+hermes-adapter/bin/evaos-desktop-bridge-command desktopSee
+printf '%s' '{"target_label":"Continue","dry_run":false}' | hermes-adapter/bin/evaos-desktop-bridge-command desktopClick -
+hermes-adapter/bin/evaos-desktop-bridge-command customerMacIphoneMirroringStatus
+printf '%s' '{"direction":"up","dry_run":false}' | hermes-adapter/bin/evaos-desktop-bridge-command iphoneSwipe -
+hermes-adapter/bin/evaos-desktop-bridge-command evaosProviderProfiles
+printf '%s' '{"identity":"admin@100yen.org"}' | hermes-adapter/bin/evaos-desktop-bridge-command evaosProviderCompleteAuth -
+hermes-adapter/bin/evaos-desktop-bridge-command evaosSharedBrowserGuidance
 ```
+
+The wrapper rejects JSON in process arguments. Non-empty parameter objects must
+be supplied on standard input with the literal `-` marker so message text,
+URLs, and other customer data do not appear in process listings or shell
+history.
 
 Provider/Auth Hub and Shared Browser guidance commands read optional
 `EVAOS_PROVIDER_PROFILES_JSON`, `EVAOS_PROVIDER_GRANTS_JSON`,

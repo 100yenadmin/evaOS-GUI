@@ -847,6 +847,7 @@ def selected_binding_proof_binding(
     expected_source_sha256: str,
     expected_version: str,
     expected_build: str,
+    verification_time_seconds: float | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "ok": False,
@@ -976,6 +977,11 @@ def selected_binding_proof_binding(
         executed_at = None
     issued_at = attestation.get("authorityIssuedAt")
     expires_at = attestation.get("authorityExpiresAt")
+    verification_time = (
+        time.time()
+        if verification_time_seconds is None
+        else float(verification_time_seconds)
+    )
     result.update(
         {
             "schema": proof.get("schema"),
@@ -1017,7 +1023,10 @@ def selected_binding_proof_binding(
         and type(issued_at) is int
         and type(expires_at) is int
         and issued_at < expires_at <= issued_at + 60
+        and issued_at <= verification_time + 5
+        and verification_time < expires_at
         and executed_at.timestamp() >= issued_at - 5
+        and executed_at.timestamp() <= verification_time + 5
         and int(executed_at.timestamp()) <= expires_at
         and set(candidate) == SELECTED_BINDING_CANDIDATE_FIELDS
         and candidate.get("sourceCommit") == expected_source_commit

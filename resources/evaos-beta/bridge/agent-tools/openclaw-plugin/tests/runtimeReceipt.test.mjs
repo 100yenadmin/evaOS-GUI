@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -61,8 +61,8 @@ test('does not expose or execute the removed legacy pairing-code surface', async
 
   const hermes = spawnSync(
     fileURLToPath(new URL('../../hermes-adapter/bin/evaos-desktop-bridge-command', import.meta.url)),
-    ['completeEnrollment', '{"enrollment_code":"must-not-be-used"}'],
-    { encoding: 'utf8', env: { PATH: process.env.PATH } }
+    ['completeEnrollment', '-'],
+    { encoding: 'utf8', env: { PATH: process.env.PATH }, input: '{"enrollment_code":"must-not-be-used"}' }
   );
   assert.equal(hermes.status, 0);
   assert.equal(JSON.parse(hermes.stdout).errors[0].code, 'legacy_pairing_removed');
@@ -80,11 +80,61 @@ test('does not advertise or execute remote Mac-control start', async () => {
 
   const hermes = spawnSync(
     fileURLToPath(new URL('../../hermes-adapter/bin/evaos-desktop-bridge-command', import.meta.url)),
-    ['customerMacControlStart', '{"mode":"full-access"}'],
-    { encoding: 'utf8', env: { PATH: process.env.PATH } }
+    ['customerMacControlStart', '-'],
+    { encoding: 'utf8', env: { PATH: process.env.PATH }, input: '{"mode":"full-access"}' }
   );
   assert.equal(hermes.status, 0);
   assert.equal(JSON.parse(hermes.stdout).errors[0].code, 'control_start_local_only');
+});
+
+test('Hermes reads params from stdin and never executes connector env files', () => {
+  const wrapper = fileURLToPath(new URL('../../hermes-adapter/bin/evaos-desktop-bridge-command', import.meta.url));
+  const argvPayload = spawnSync(wrapper, ['customerMacStatus', '{}'], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(argvPayload.status, 2);
+  assert.match(argvPayload.stderr, /standard input|Pass JSON parameters/);
+
+  const directory = mkdtempSync(join(tmpdir(), 'evaos-hermes-env-'));
+  const envFile = join(directory, 'connector.env');
+  const marker = join(directory, 'must-not-exist');
+  try {
+    writeFileSync(
+      envFile,
+      `EVAOS_DESKTOP_BRIDGE_URL=$(touch ${marker})\nEVAOS_DESKTOP_BRIDGE_TOKEN=test-token-value-at-least-24\n`,
+      { encoding: 'utf8', mode: 0o600 }
+    );
+    chmodSync(envFile, 0o600);
+    const result = spawnSync(wrapper, ['customerMacStatus'], {
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH,
+        EVAOS_DESKTOP_BRIDGE_ENV_FILE: envFile,
+      },
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('rejects caller-supplied local payload file paths', async () => {
+  const message = await runBridge('codexSendVisibleMessage', {
+    thread_id: 'thread-1',
+    message_file: '/etc/passwd',
+  });
+  assert.equal(message.ok, false);
+  assert.equal(message.errors[0].code, 'payload_file_reserved');
+
+  const value = await runBridge('desktopSetValue', {
+    snapshot_id: 'snapshot-1',
+    element_id: 'element-1',
+    value_file: '/etc/passwd',
+  });
+  assert.equal(value.ok, false);
+  assert.equal(value.errors[0].code, 'payload_file_reserved');
 });
 
 test('verifies server authority and forwards only the fixed connector canary contract', async () => {

@@ -639,6 +639,22 @@ export async function runBridge(command, params = {}) {
       ],
     };
   }
+  if (
+    Object.prototype.hasOwnProperty.call(params, 'message_file') ||
+    Object.prototype.hasOwnProperty.call(params, 'value_file')
+  ) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: 'payload_file_reserved',
+          message: 'Payload file paths are reserved for evaOS Desktop Bridge internals.',
+          guidance:
+            'Provide message or value content directly; evaOS will materialize it in a protected temporary file.',
+        },
+      ],
+    };
+  }
   if (command === 'evaosProviderProfiles') {
     return await providerProfilesPayload();
   }

@@ -718,9 +718,10 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       '    os.environ["EVAOS_LIVE_CANARY_CONTEXT_KEY_ID"] = context_key_id',
       '    os.environ["EVAOS_LIVE_CANARY_RECEIPT_KEY_ID"] = receipt_key_id',
       '    os.environ["EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY"] = base64.urlsafe_b64encode(public_blob[-32:]).decode("ascii").rstrip("=")',
-      '    selected_binding = qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36")',
+      '    selected_binding = qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784073630)',
       '    assert selected_binding["ok"] is True, selected_binding',
-      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="54321", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36")["ok"] is False',
+      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="54321", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784073630)["ok"] is False',
+      '    assert qa_canary.selected_binding_proof_binding(selected_proof_path, expected_source_commit=commit, expected_source_run_id="12345", expected_source_sha256=source_sha256, expected_version="2.1.36", expected_build="2.1.36", verification_time_seconds=1784073660)["ok"] is False',
       'print("ok")',
     ].join('\n');
 

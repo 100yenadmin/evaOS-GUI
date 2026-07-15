@@ -839,6 +839,7 @@ describe('evaOS broker live canary', () => {
         `    expected_source_sha256=${JSON.stringify(expectedCandidate.sourceSha256)},`,
         '    expected_version="2.1.36",',
         '    expected_build="2.1.36",',
+        `    verification_time_seconds=${now / 1000},`,
         ')',
         'assert result["ok"] is True, result',
         'print("ok")',
