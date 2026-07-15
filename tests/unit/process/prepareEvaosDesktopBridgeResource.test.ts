@@ -235,15 +235,18 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       'connector-kill-switch',
     ]);
     for (const canary of EVAOS_NATIVE_COMPANION_CANARIES) {
-      expect(canary.command).toMatch(
-        /^"\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge" (pre-canary|qa-canary) /
-      );
       expect(canary.command).toContain('--artifact-dir "${EVAOS_CANARY_ARTIFACT_DIR:');
       expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_VERSION:');
       expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_SOURCE_COMMIT:');
       expect(canary.command).not.toContain('PYTHONPATH=');
       expect(canary.command).not.toMatch(/\bpython3\b/);
       if (canary.id !== 'pre-canary-bridge-peekaboo') {
+        expect(canary.command).toContain(`${EVAOS_PACKAGED_BRIDGE_COMMAND} qa-canary `);
+        expect(canary.command).toContain('EVAOS_LIVE_CANARY_RECEIPT_KEY_ID="${EVAOS_LIVE_CANARY_RECEIPT_KEY_ID:');
+        expect(canary.command).toContain(
+          'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY="${EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY:'
+        );
+        expect(canary.command).toContain('EVAOS_LIVE_CANARY_CONTEXT_KEY_ID="${EVAOS_LIVE_CANARY_CONTEXT_KEY_ID:');
         expect(canary.command).toContain('--connector-url "${EVAOS_DESKTOP_BRIDGE_URL:');
         expect(canary.command).toContain('--version-under-test');
         expect(canary.command).toContain('--build-under-test');
@@ -252,6 +255,9 @@ describe('prepareEvaosDesktopBridgeResource', () => {
         expect(canary.command).toContain('--selected-binding-proof-run-id "${EVAOS_MAC_CONTROL_LIVE_CANARY_RUN_ID:');
         expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_BUILD:');
       } else {
+        expect(canary.command).toMatch(
+          /^"\/Applications\/evaOS Workbench\.app\/Contents\/Resources\/Bridge\/evaos-desktop-bridge" pre-canary /
+        );
         expect(canary.command).toContain('${EVAOS_WORKBENCH_EXPECTED_BUILD:');
         expect(canary.command).toContain('--expected-source-commit');
       }

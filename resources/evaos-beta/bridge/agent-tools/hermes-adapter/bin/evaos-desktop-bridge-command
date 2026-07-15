@@ -26,6 +26,9 @@ read_connector_env_file() {
       return 2
     }
     key="${line%%=*}"
+    if [[ "$key" == "export "* ]]; then
+      key="${key#export }"
+    fi
     value="${line#*=}"
     decoded_value="$(printf '%s' "$value" | python3 -c 'import shlex, sys
 raw = sys.stdin.read()
@@ -43,8 +46,10 @@ sys.stdout.write(parts[0])')" || {
           return 2
         }
         seen_url=1
-        EVAOS_DESKTOP_BRIDGE_URL="$decoded_value"
-        export EVAOS_DESKTOP_BRIDGE_URL
+        if [[ -z "${EVAOS_DESKTOP_BRIDGE_URL:-}" ]]; then
+          EVAOS_DESKTOP_BRIDGE_URL="$decoded_value"
+          export EVAOS_DESKTOP_BRIDGE_URL
+        fi
         ;;
       EVAOS_DESKTOP_BRIDGE_TOKEN)
         [[ "$seen_token" == 0 ]] || {
@@ -52,8 +57,10 @@ sys.stdout.write(parts[0])')" || {
           return 2
         }
         seen_token=1
-        EVAOS_DESKTOP_BRIDGE_TOKEN="$decoded_value"
-        export EVAOS_DESKTOP_BRIDGE_TOKEN
+        if [[ -z "${EVAOS_DESKTOP_BRIDGE_TOKEN:-}" ]]; then
+          EVAOS_DESKTOP_BRIDGE_TOKEN="$decoded_value"
+          export EVAOS_DESKTOP_BRIDGE_TOKEN
+        fi
         ;;
       *)
         echo "invalid connector environment key" >&2

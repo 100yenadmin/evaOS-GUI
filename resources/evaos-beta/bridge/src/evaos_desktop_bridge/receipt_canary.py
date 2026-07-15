@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import hashlib
 import json
 import os
@@ -288,35 +289,36 @@ def burn_replay_token(
     replay_path = root / REPLAY_FILE
     digest = replay_digest(raw_context, signature)
     context_id_digest = hashlib.sha256(context_id.encode("utf-8")).hexdigest()
-    if replay_path.exists():
-        metadata = replay_path.lstat()
-        if replay_path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
-            raise CanaryError("canary_replay_store_unavailable", status=503)
-        try:
-            if metadata.st_size > 4 * 1024 * 1024:
-                raise CanaryError("canary_replay_store_unavailable", status=503)
-            for line in replay_path.read_text(encoding="utf-8").splitlines():
-                record = json.loads(line)
-                if isinstance(record, dict) and (
-                    record.get("digest") == digest
-                    or record.get("contextIdDigest") == context_id_digest
-                ):
-                    raise CanaryError("execution_context_replayed", status=409)
-        except CanaryError:
-            raise
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise CanaryError("canary_replay_store_unavailable", status=503) from exc
     flags = (
-        os.O_APPEND
-        | os.O_CREAT
-        | os.O_WRONLY
+        os.O_CREAT
+        | os.O_RDWR
         | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_NOFOLLOW", 0)
     )
     try:
         descriptor = os.open(replay_path, flags, 0o600)
         os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "r+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            metadata = os.fstat(handle.fileno())
+            path_metadata = replay_path.lstat()
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or not stat.S_ISREG(path_metadata.st_mode)
+                or (metadata.st_dev, metadata.st_ino)
+                != (path_metadata.st_dev, path_metadata.st_ino)
+                or metadata.st_size > 4 * 1024 * 1024
+            ):
+                raise CanaryError("canary_replay_store_unavailable", status=503)
+            handle.seek(0)
+            for line in handle:
+                record = json.loads(line)
+                if isinstance(record, dict) and (
+                    record.get("digest") == digest
+                    or record.get("contextIdDigest") == context_id_digest
+                ):
+                    raise CanaryError("execution_context_replayed", status=409)
+            handle.seek(0, os.SEEK_END)
             handle.write(
                 json.dumps(
                     {"contextIdDigest": context_id_digest, "digest": digest},
@@ -327,7 +329,9 @@ def burn_replay_token(
             )
             handle.flush()
             os.fsync(handle.fileno())
-    except OSError as exc:
+    except CanaryError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise CanaryError("canary_replay_store_unavailable", status=503) from exc
 
 

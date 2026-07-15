@@ -148,7 +148,7 @@ type ResponseLike = {
 type FetchResponseLike = {
   ok: boolean;
   status: number;
-  body?: AsyncIterable<unknown> | null;
+  body?: (AsyncIterable<unknown> & { cancel?: () => Promise<void> | void }) | null;
   text(): Promise<string>;
 };
 
@@ -337,6 +337,7 @@ export function createMacControlRuntimeReceiptHandler(options: RuntimeReceiptOpt
         signal: controller.signal,
       });
       if (!connectorResponse.ok) {
+        await cancelConnectorResponseBody(connectorResponse);
         sendError(
           response,
           connectorResponse.status >= 400 && connectorResponse.status < 500 ? 409 : 502,
@@ -365,6 +366,14 @@ export function createMacControlRuntimeReceiptHandler(options: RuntimeReceiptOpt
     sendJson(response, 200, sanitized.value);
     return true;
   };
+}
+
+async function cancelConnectorResponseBody(response: FetchResponseLike): Promise<void> {
+  try {
+    await response.body?.cancel?.();
+  } catch {
+    // Preserve the sanitized connector rejection even if stream cleanup fails.
+  }
 }
 
 async function readPublicRequest(

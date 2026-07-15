@@ -207,6 +207,7 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
         signal: controller.signal,
       });
       if (!connectorResponse.ok) {
+        await cancelConnectorResponseBody(connectorResponse);
         sendError(
           response,
           connectorResponse.status >= 400 && connectorResponse.status < 500 ? 409 : 502,
@@ -234,6 +235,13 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
     sendJson(response, 200, sanitized.value);
     return true;
   };
+}
+async function cancelConnectorResponseBody(response) {
+  try {
+    await response.body?.cancel?.();
+  } catch {
+    // Preserve the sanitized connector rejection even if stream cleanup fails.
+  }
 }
 async function readPublicRequest(request) {
   const chunks = [];

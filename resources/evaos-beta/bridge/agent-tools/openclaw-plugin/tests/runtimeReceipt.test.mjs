@@ -163,6 +163,65 @@ test('Hermes decodes inert shell-quoted connector values exactly', async () => {
   }
 });
 
+test('Hermes accepts export-form env files without overriding explicit connector credentials', async () => {
+  const wrapper = fileURLToPath(new URL('../../hermes-adapter/bin/evaos-desktop-bridge-command', import.meta.url));
+  const directory = mkdtempSync(join(tmpdir(), 'evaos-hermes-export-env-'));
+  const envFile = join(directory, 'connector.env');
+  const fileToken = 'file connector token at least 24';
+  const explicitToken = 'explicit connector token at least 24';
+  const authorizations = [];
+  const server = createServer((request, response) => {
+    authorizations.push(String(request.headers.authorization || ''));
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end('{"ok":true,"schema":"evaos.desktop_bridge.response.v1"}');
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    assert.equal(typeof address, 'object');
+    const explicitUrl = `http://127.0.0.1:${address.port}`;
+
+    writeFileSync(
+      envFile,
+      `export EVAOS_DESKTOP_BRIDGE_URL='http://127.0.0.1:1'\nexport EVAOS_DESKTOP_BRIDGE_TOKEN='${fileToken}'\n`,
+      { encoding: 'utf8', mode: 0o600 }
+    );
+    const urlPreserved = await execFileAsync(wrapper, ['customerMacStatus'], {
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH,
+        EVAOS_DESKTOP_BRIDGE_ENV_FILE: envFile,
+        EVAOS_DESKTOP_BRIDGE_URL: explicitUrl,
+      },
+      timeout: 5_000,
+    });
+    assert.equal(JSON.parse(urlPreserved.stdout).ok, true);
+
+    writeFileSync(
+      envFile,
+      `export EVAOS_DESKTOP_BRIDGE_URL='${explicitUrl}'\nexport EVAOS_DESKTOP_BRIDGE_TOKEN='${fileToken}'\n`,
+      { encoding: 'utf8', mode: 0o600 }
+    );
+    const tokenPreserved = await execFileAsync(wrapper, ['customerMacStatus'], {
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH,
+        EVAOS_DESKTOP_BRIDGE_ENV_FILE: envFile,
+        EVAOS_DESKTOP_BRIDGE_TOKEN: explicitToken,
+      },
+      timeout: 5_000,
+    });
+    assert.equal(JSON.parse(tokenPreserved.stdout).ok, true);
+    assert.deepEqual(authorizations, [`Bearer ${fileToken}`, `Bearer ${explicitToken}`]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('rejects caller-supplied local payload file paths', async () => {
   const message = await runBridge('codexSendVisibleMessage', {
     thread_id: 'thread-1',
@@ -364,6 +423,42 @@ test('keeps the connector deadline active through response body consumption', as
   assert.equal(JSON.parse(outcome.body).error.code, 'connector_response_invalid');
   assert.equal(outcome.body.includes('body deadline elapsed'), false);
   assert.equal(connectorCalls, 1);
+});
+
+test('cancels a rejected streaming connector response before returning', async () => {
+  const authority = signedAuthority();
+  let canceled = false;
+  let textCalled = false;
+  const handler = createMacControlRuntimeReceiptHandler({
+    env,
+    now: () => NOW_MS,
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      body: {
+        async *[Symbol.asyncIterator]() {
+          throw new Error('rejected body must not be consumed');
+        },
+        async cancel() {
+          canceled = true;
+        },
+      },
+      text: async () => {
+        textCalled = true;
+        return 'must not be read';
+      },
+    }),
+  });
+  const response = await invoke(
+    handler,
+    { challenge: Buffer.alloc(32, 15).toString('base64url'), runRef: 'connector-rejected-stream' },
+    authority.headers
+  );
+  assert.equal(response.statusCode, 502);
+  assert.equal(JSON.parse(response.body).error.code, 'connector_rejected_canary');
+  assert.equal(canceled, true);
+  assert.equal(textCalled, false);
+  assert.equal(response.body.includes('must not'), false);
 });
 
 test('rejects an oversized streaming connector body before reading beyond the cap', async () => {

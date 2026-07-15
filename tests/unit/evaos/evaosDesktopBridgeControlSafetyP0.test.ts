@@ -423,6 +423,49 @@ print("ok")
     expect(output).toBe('ok');
   });
 
+  it('burns one execution context atomically across concurrent connector requests', () => {
+    const output = runPython(`
+import concurrent.futures
+import json
+import threading
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from evaos_desktop_bridge.receipt_canary import CanaryError, REPLAY_FILE, burn_replay_token
+
+worker_count = 8
+barrier = threading.Barrier(worker_count)
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+
+    def attempt_burn(_index):
+        barrier.wait(timeout=5)
+        try:
+            burn_replay_token(
+                b"signed-context-payload",
+                b"signed-context-signature",
+                "context-concurrency-proof",
+                state_dir=root,
+            )
+            return "burned"
+        except CanaryError as exc:
+            return exc.code
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        outcomes = list(executor.map(attempt_burn, range(worker_count)))
+
+    assert outcomes.count("burned") == 1, outcomes
+    assert outcomes.count("execution_context_replayed") == worker_count - 1, outcomes
+    records = [json.loads(line) for line in (root / REPLAY_FILE).read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1, records
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
+
   it('replays Ask Permission dry runs when direct clients omit materialized defaults', () => {
     const output = runPython(`
 import hashlib
