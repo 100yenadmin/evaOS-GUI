@@ -268,7 +268,7 @@ describe('prepareEvaosDesktopBridgeResource', () => {
 
   it('captures pre-canary failures as sanitized check summaries before preserving the exit code', () => {
     const workflow = readFileSync(join(process.cwd(), '.github', 'workflows', 'evaos-beta-rc-canary.yml'), 'utf8');
-    const sanitizerCommand = 'node - "$PROOF_DIR/installed-candidate-pre-canary.json" <<\'NODE\'';
+    const sanitizerCommand = 'node - "$PRE_CANARY_REPORT" <<\'NODE\'';
     const sanitizerStart = workflow.indexOf(sanitizerCommand);
     const sanitizerBodyStart = workflow.indexOf('\n', sanitizerStart) + 1;
     const sanitizerBodyEnd = workflow.indexOf('\n          NODE', sanitizerBodyStart);
@@ -287,6 +287,9 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(failureBlock).toContain('Pre-canary exit code: $PRE_CANARY_EXIT');
     expect(failureBlock).toContain('Pre-canary sanitized check: ${JSON.stringify(check)}');
     expect(failureBlock).toContain('exit "$PRE_CANARY_EXIT"');
+    expect(failureBlock.indexOf('exit "$PRE_CANARY_EXIT"')).toBeLessThan(
+      failureBlock.indexOf('cp "$PRE_CANARY_REPORT" "$PROOF_DIR/installed-candidate-pre-canary.json"')
+    );
     expect(failureBlock).not.toMatch(/\.evidence|\.inventory/);
     expect(sanitizerStart).toBeGreaterThan(-1);
     expect(sanitizerBodyEnd).toBeGreaterThan(sanitizerBodyStart);

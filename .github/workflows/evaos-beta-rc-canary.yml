@@ -669,14 +669,12 @@ jobs:
             2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"
           PRE_CANARY_EXIT=$?
           set -e
-          if [ -f "$PRE_CANARY_DIR/qa-report.json" ]; then
-            cp "$PRE_CANARY_DIR/qa-report.json" "$PROOF_DIR/installed-candidate-pre-canary.json"
-          fi
+          PRE_CANARY_REPORT="$PRE_CANARY_DIR/qa-report.json"
           if [ "$PRE_CANARY_EXIT" -ne 0 ]; then
             echo "Pre-canary exit code: $PRE_CANARY_EXIT"
-            if [ -f "$PROOF_DIR/installed-candidate-pre-canary.json" ]; then
+            if [ -f "$PRE_CANARY_REPORT" ]; then
               set +e
-              node - "$PROOF_DIR/installed-candidate-pre-canary.json" <<'NODE'
+              node - "$PRE_CANARY_REPORT" <<'NODE'
           const fs = require('fs');
           const reportPath = process.argv[2];
           try {
@@ -717,6 +715,7 @@ jobs:
             echo "::error::Installed candidate pre-canary failed; see the sanitized check summary above."
             exit "$PRE_CANARY_EXIT"
           fi
+          cp "$PRE_CANARY_REPORT" "$PROOF_DIR/installed-candidate-pre-canary.json"
 
           TOKEN_FILE="$HOME/Library/Application Support/evaos-desktop-bridge/connector.token"
           for _attempt in $(seq 1 30); do
