@@ -291,6 +291,7 @@ function commandLooksLikeBridgeServer(command, expectedBridgePath) {
   return (
     text.includes(expectedBridgePath) ||
     /(?:^|\s)-m\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
+    /(?:^|\s)-c\s+.+\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
     /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
   );
 }

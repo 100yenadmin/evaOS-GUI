@@ -956,7 +956,7 @@ describe('evaOS installed app product proof', () => {
       if (command === '/bin/ps') {
         if (argsEqual(args, ['-axo', 'pid=,command='])) return '';
         if (argsEqual(args, ['-p', '44784', '-o', 'command='])) {
-          return '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.host.cli serve --host 100.64.0.4 --port 8765\n';
+          return '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3 -I -B -c import runpy, sys; source_root = sys.argv.pop(1); module = sys.argv.pop(1); sys.path.insert(0, source_root); runpy.run_module(module, run_name="__main__", alter_sys=True) /Applications/evaOS Workbench.app/Contents/Resources/Bridge/src evaos_desktop_bridge.host.cli serve --host 100.64.0.4 --port 8765\n';
         }
         if (argsEqual(args, ['-p', '44784', '-o', 'ppid='])) return '85316\n';
         if (argsEqual(args, ['-p', '85316', '-o', 'command='])) {
@@ -983,7 +983,7 @@ describe('evaOS installed app product proof', () => {
       expect.objectContaining({
         pid: '44784',
         command:
-          '/opt/homebrew/bin/python3 -S -m evaos_desktop_bridge.host.cli serve --host [redacted-host] --port [redacted-port]',
+          '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3 -I -B -c import runpy, sys; source_root = sys.argv.pop(1); module = sys.argv.pop(1); sys.path.insert(0, source_root); runpy.run_module(module, run_name="__main__", alter_sys=True) /Applications/evaOS Workbench.app/Contents/Resources/Bridge/src evaos_desktop_bridge.host.cli serve --host [redacted-host] --port [redacted-port]',
         cwd: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge',
         parentPid: '85316',
         parentCommand: '/Applications/evaOS Workbench.app/Contents/MacOS/evaOS Workbench',
