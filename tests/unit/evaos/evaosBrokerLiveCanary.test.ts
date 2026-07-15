@@ -855,6 +855,27 @@ describe('evaOS broker live canary', () => {
           },
         }).trim()
       ).toBe('ok');
+
+      const nonAsciiProofPath = path.join(proofDir, 'mac-control-runtime-non-ascii-signature.json');
+      fs.writeFileSync(
+        nonAsciiProofPath,
+        `${JSON.stringify({ ...proof, signature: `${proof.signature}\u2603` }, null, 2)}\n`
+      );
+      const malformedPythonSource = pythonSource.replace(
+        'assert result["ok"] is True, result',
+        'assert result["ok"] is False and result["reason"] == "selected_binding_proof_signature_invalid", result'
+      );
+      expect(
+        execFileSync('python3', ['-B', '-c', malformedPythonSource, nonAsciiProofPath], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PYTHONDONTWRITEBYTECODE: '1',
+            PYTHONPATH: path.join(process.cwd(), 'resources', 'evaos-beta', 'bridge', 'src'),
+            ...TRUST_ENV,
+          },
+        }).trim()
+      ).toBe('ok');
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
     }

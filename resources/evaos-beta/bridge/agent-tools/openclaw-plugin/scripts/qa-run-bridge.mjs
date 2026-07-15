@@ -23,7 +23,24 @@ try {
   process.exit(2);
 }
 
-const toolMap = await loadRegisteredToolMap();
+let toolMap;
+try {
+  toolMap = await loadRegisteredToolMap();
+} catch {
+  console.log(
+    JSON.stringify({
+      ok: false,
+      errors: [
+        {
+          code: 'qa_openclaw_tool_registry_invalid',
+          message: 'The built OpenClaw plugin tool registry does not match its package contract.',
+          guidance: 'Rebuild the OpenClaw plugin and verify its exact registered tool contract.',
+        },
+      ],
+    })
+  );
+  process.exit(0);
+}
 const bridgeCommand = toolMap.get(command) || command;
 const firewallDecision = desktopBridgeFirewall({
   toolName: command,
@@ -108,12 +125,31 @@ async function readStdin() {
 async function loadRegisteredToolMap() {
   const scriptDir = dirname(fileURLToPath(import.meta.url));
   const distIndex = join(scriptDir, '../dist/index.js');
+  const packageManifestPath = join(scriptDir, '../package.json');
   const source = await readFile(distIndex, 'utf8');
+  const packageManifest = JSON.parse(await readFile(packageManifestPath, 'utf8'));
+  const expectedTools = packageManifest?.openclaw?.contracts?.tools;
+  if (
+    !Array.isArray(expectedTools) ||
+    expectedTools.length === 0 ||
+    new Set(expectedTools).size !== expectedTools.length
+  ) {
+    throw new Error('invalid package tool contract');
+  }
   const map = new Map();
-  const toolCallPattern = /tool\(\s*"([^"]+)"[\s\S]*?,\s*"([A-Za-z0-9]+)"(?:\s*,|\s*\))/g;
+  const toolCallPattern = /tool\(\s*(['"])([^'"]+)\1\s*,[\s\S]*?,\s*(['"])([A-Za-z0-9]+)\3(?:\s*,|\s*\))/g;
   let match;
+  let matchCount = 0;
   while ((match = toolCallPattern.exec(source)) !== null) {
-    map.set(match[1], match[2]);
+    matchCount += 1;
+    map.set(match[2], match[4]);
+  }
+  if (
+    matchCount !== expectedTools.length ||
+    map.size !== expectedTools.length ||
+    expectedTools.some((name) => typeof name !== 'string' || !map.has(name))
+  ) {
+    throw new Error('built tool registry mismatch');
   }
   return map;
 }

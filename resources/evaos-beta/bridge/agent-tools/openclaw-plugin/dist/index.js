@@ -2,6 +2,7 @@ import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import { runBridge } from './src/bridge.js';
 import { desktopBridgeFirewall } from './src/firewall.js';
 import { registerMacControlRuntimeReceiptRoute } from './src/runtimeReceipt.js';
+import { applyToolParameterDefaults } from './src/toolParameters.js';
 const approvalAuditIdProperty = {
   type: 'string',
   minLength: 1,
@@ -731,11 +732,13 @@ function tool(
   command,
   parameters = { type: 'object', additionalProperties: false, properties: {}, required: [] }
 ) {
+  const normalizedParameters = normalizeToolParameters(parameters);
   return {
     name,
     description,
-    parameters: normalizeToolParameters(parameters),
-    execute: async (_toolCallId, params = {}) => toToolResult(await runBridge(command, params)),
+    parameters: normalizedParameters,
+    execute: async (_toolCallId, params = {}) =>
+      toToolResult(await runBridge(command, applyToolParameterDefaults(normalizedParameters, params))),
   };
 }
 function toToolResult(payload) {

@@ -919,11 +919,15 @@ def selected_binding_proof_binding(
     )
     signature = str(proof.get("signature") or "")
     signature_verified = False
-    if (
+    if not (
         signature.startswith("-----BEGIN SSH SIGNATURE-----\n")
         and signature.endswith("-----END SSH SIGNATURE-----\n")
         and len(signature) <= 8192
+        and signature.isascii()
     ):
+        result["reason"] = "selected_binding_proof_signature_invalid"
+        return result
+    if signature:
         algorithm = b"ssh-ed25519"
         public_blob = (
             struct.pack(">I", len(algorithm))

@@ -115,20 +115,20 @@ export function desktopBridgeFirewall(event) {
     params: firewallPayload(toolName, event.params),
     parameters: firewallPayload(toolName, event.parameters),
   }).toLowerCase();
-  const matchedPattern = FORBIDDEN_ARGUMENT_PATTERNS.find((pattern) => haystack.includes(pattern.toLowerCase()));
+  const matchedPatterns = FORBIDDEN_ARGUMENT_PATTERNS.filter((pattern) => haystack.includes(pattern.toLowerCase()));
   if (SAFE_TOOL_PREFIXES.some((prefix) => toolName.startsWith(prefix))) {
-    const allowedFullAccessMatch =
-      matchedPattern !== undefined &&
-      FULL_ACCESS_TOOL_PREFIXES.some((prefix) => toolName.startsWith(prefix)) &&
-      FULL_ACCESS_ALLOWED_MATCHES.has(matchedPattern);
-    const allowedSupportCanaryMatch =
-      matchedPattern !== undefined &&
-      IPHONE_GESTURE_TOOL_NAMES.has(toolName) &&
-      IPHONE_GESTURE_ALLOWED_MATCHES.has(matchedPattern);
-    if (matchedPattern && !allowedSupportCanaryMatch && !allowedFullAccessMatch) {
+    const disallowedPattern = matchedPatterns.find((matchedPattern) => {
+      const allowedFullAccessMatch =
+        FULL_ACCESS_TOOL_PREFIXES.some((prefix) => toolName.startsWith(prefix)) &&
+        FULL_ACCESS_ALLOWED_MATCHES.has(matchedPattern);
+      const allowedSupportCanaryMatch =
+        IPHONE_GESTURE_TOOL_NAMES.has(toolName) && IPHONE_GESTURE_ALLOWED_MATCHES.has(matchedPattern);
+      return !allowedSupportCanaryMatch && !allowedFullAccessMatch;
+    });
+    if (disallowedPattern) {
       return {
         block: true,
-        blockReason: `desktop-bridge firewall blocked ${toolName}: ${matchedPattern} must go through the connector's audited control contract.`,
+        blockReason: `desktop-bridge firewall blocked ${toolName}: ${disallowedPattern} must go through the connector's audited control contract.`,
       };
     }
     if (APPROVAL_GATED_TOOL_PREFIXES.some((prefix) => toolName.startsWith(prefix))) {
@@ -149,10 +149,10 @@ export function desktopBridgeFirewall(event) {
     return undefined;
   }
   const suspiciousTool = DANGEROUS_TOOL_NAMES.some((name) => toolName.toLowerCase().includes(name));
-  if (suspiciousTool && matchedPattern) {
+  if (suspiciousTool && matchedPatterns.length > 0) {
     return {
       block: true,
-      blockReason: `desktop-bridge firewall blocked ${toolName}: ${matchedPattern} is outside the read-only passive observer boundary.`,
+      blockReason: `desktop-bridge firewall blocked ${toolName}: ${matchedPatterns[0]} is outside the read-only passive observer boundary.`,
     };
   }
   return undefined;
