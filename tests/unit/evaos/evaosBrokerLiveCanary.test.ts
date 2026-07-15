@@ -60,6 +60,8 @@ const liveCanary = require('../../../scripts/evaosBrokerLiveCanary.js') as {
     desktopSession: string;
     customerId: string;
     endpoint: string;
+    networkEndpoint: string;
+    deviceIdentifier: string;
     expectedCallbackHost: string;
     receiptKeyId: string;
     receiptPublicKey: string;
@@ -608,6 +610,9 @@ describe('evaOS broker live canary', () => {
       AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
       AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+        'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+      AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
     };
 
     expect(
@@ -616,6 +621,14 @@ describe('evaOS broker live canary', () => {
         AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'OPENCLAW-STAGING.EXAMPLE.TEST:443',
       }).expectedCallbackHost
     ).toBe('openclaw-staging.example.test');
+
+    expect(() =>
+      liveCanary.resolveMacControlCanaryConfig({
+        ...env,
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime?mode=unexpected',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+      })
+    ).toThrow(/same-origin absolute HTTPS URLs/i);
 
     for (const callbackHost of [
       '.openclaw-staging.example.test',
@@ -694,6 +707,23 @@ describe('evaOS broker live canary', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
         jsonResponse({
+          ok: true,
+          customer_id: 'staging-mac-owner',
+          device_id: '22222222-2222-4222-8222-222222222222',
+          device_identifier: 'staging-device-for-test',
+          enrollment_id: '33333333-3333-4333-8333-333333333333',
+          grant_id: '44444444-4444-4444-8444-444444444444',
+          correct_control_plane: true,
+          acl_allowed: true,
+          online: true,
+          reason: 'ready',
+          observed_at: new Date(now - 1_000).toISOString(),
+          expires_at: new Date(now + 20_000).toISOString(),
+          audit_id: '55555555-5555-4555-8555-555555555555',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
           status: 'attached',
           customer_id: 'staging-mac-owner',
           runtime: 'openclaw',
@@ -743,6 +773,9 @@ describe('evaOS broker live canary', () => {
         AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+          'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+        AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
         AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
         ...TRUST_ENV,
         GITHUB_SHA: sourceHeadSha,
@@ -759,18 +792,24 @@ describe('evaOS broker live canary', () => {
       },
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(9);
+    expect(fetchImpl).toHaveBeenCalledTimes(10);
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://dashboard-staging.example.test/functions/v1/customer-mac-control');
     expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
+      action: 'get_private_network_readiness',
+      customer_id: 'staging-mac-owner',
+      device_identifier: 'staging-device-for-test',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[1][1]?.body))).toEqual({
       action: 'runtime_launch',
       customer_id: 'staging-mac-owner',
       runtime: 'openclaw',
       launch_mode: 'mac_control_tools',
     });
-    expect(fetchImpl.mock.calls[1][1]).toMatchObject({ method: 'GET', redirect: 'manual' });
-    expect(fetchImpl.mock.calls[2][0]).toBe(
+    expect(fetchImpl.mock.calls[2][1]).toMatchObject({ method: 'GET', redirect: 'manual' });
+    expect(fetchImpl.mock.calls[3][0]).toBe(
       'https://openclaw-staging.example.test/api/v1/evaos/mac-control/runtime-receipt'
     );
-    expect(fetchImpl.mock.calls[2][1]).toMatchObject({
+    expect(fetchImpl.mock.calls[3][1]).toMatchObject({
       method: 'POST',
       redirect: 'manual',
       headers: {
@@ -779,7 +818,7 @@ describe('evaOS broker live canary', () => {
         'Content-Type': 'application/json',
       },
     });
-    expect(JSON.parse(String(fetchImpl.mock.calls[2][1]?.body))).toEqual({ challenge, runRef });
+    expect(JSON.parse(String(fetchImpl.mock.calls[3][1]?.body))).toEqual({ challenge, runRef });
     expect(proof).toEqual(signedProof.envelope);
     expect(deployedProbe).toMatchObject({
       schema: 'evaos.mac_control.deployed_route_probe.v1',
@@ -794,7 +833,7 @@ describe('evaOS broker live canary', () => {
         sensitiveOutputAbsent: true,
       },
     });
-    expect(JSON.parse(String(fetchImpl.mock.calls[8][1]?.body))).toEqual({
+    expect(JSON.parse(String(fetchImpl.mock.calls[9][1]?.body))).toEqual({
       proofMode: 'deployed-staging',
       expectedCandidate,
     });
@@ -1304,6 +1343,211 @@ describe('evaOS broker live canary', () => {
     ).toThrow(/omitted selected-binding readiness/i);
   });
 
+  it('refreshes live private-network authority and preserves its safe blocker and phase', async () => {
+    const now = Date.parse('2026-07-14T05:00:00.000Z');
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'staging-mac-owner',
+        device_id: '22222222-2222-4222-8222-222222222222',
+        device_identifier: 'staging-device-for-test',
+        enrollment_id: '33333333-3333-4333-8333-333333333333',
+        grant_id: '44444444-4444-4444-8444-444444444444',
+        correct_control_plane: false,
+        acl_allowed: false,
+        online: false,
+        reason: 'mac_node_missing',
+        observed_at: new Date(now - 1_000).toISOString(),
+        expires_at: new Date(now + 20_000).toISOString(),
+        audit_id: '55555555-5555-4555-8555-555555555555',
+      })
+    );
+
+    await expect(
+      liveCanary.runMacControlLiveCanary({
+        env: {
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+            'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+          ...TRUST_ENV,
+          GITHUB_SHA: 'a'.repeat(40),
+          GITHUB_RUN_ID: '123456789',
+        },
+        fetchImpl,
+        now: () => now,
+      })
+    ).rejects.toMatchObject({
+      proof: {
+        schema: 'evaos.mac_control.live_canary_failure.v1',
+        ok: false,
+        runtime: 'openclaw',
+        launchMode: 'mac_control_tools',
+        reason: 'mac_node_missing',
+        phase: 'network_readiness',
+        httpStatus: 200,
+        sourceHeadSha: 'a'.repeat(40),
+        sourceRunId: '123456789',
+        secretScan: 'passed',
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects ready private-network authority without canonical lineage identifiers', async () => {
+    const now = Date.parse('2026-07-14T05:00:00.000Z');
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'staging-mac-owner',
+        device_id: null,
+        device_identifier: 'staging-device-for-test',
+        enrollment_id: '33333333-3333-4333-8333-333333333333',
+        grant_id: '44444444-4444-4444-8444-444444444444',
+        correct_control_plane: true,
+        acl_allowed: true,
+        online: true,
+        reason: 'ready',
+        observed_at: new Date(now - 1_000).toISOString(),
+        expires_at: new Date(now + 20_000).toISOString(),
+        audit_id: '55555555-5555-4555-8555-555555555555',
+      })
+    );
+
+    await expect(
+      liveCanary.runMacControlLiveCanary({
+        env: {
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+            'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+          ...TRUST_ENV,
+        },
+        fetchImpl,
+        now: () => now,
+      })
+    ).rejects.toMatchObject({
+      proof: expect.objectContaining({
+        reason: 'invalid_response',
+        phase: 'network_readiness',
+        httpStatus: 200,
+      }),
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: 'expired', observedOffset: -120_000, expiresOffset: -90_000 },
+    { label: 'future-dated', observedOffset: 6_000, expiresOffset: 30_000 },
+  ])('rejects $label private-network authority before runtime launch', async ({ observedOffset, expiresOffset }) => {
+    const now = Date.parse('2026-07-14T05:00:00.000Z');
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        customer_id: 'staging-mac-owner',
+        device_id: '22222222-2222-4222-8222-222222222222',
+        device_identifier: 'staging-device-for-test',
+        enrollment_id: '33333333-3333-4333-8333-333333333333',
+        grant_id: '44444444-4444-4444-8444-444444444444',
+        correct_control_plane: true,
+        acl_allowed: true,
+        online: true,
+        reason: 'ready',
+        observed_at: new Date(now + observedOffset).toISOString(),
+        expires_at: new Date(now + expiresOffset).toISOString(),
+        audit_id: '55555555-5555-4555-8555-555555555555',
+      })
+    );
+
+    await expect(
+      liveCanary.runMacControlLiveCanary({
+        env: {
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+            'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+          ...TRUST_ENV,
+        },
+        fetchImpl,
+        now: () => now,
+      })
+    ).rejects.toMatchObject({
+      proof: expect.objectContaining({
+        reason: 'invalid_response',
+        phase: 'network_readiness',
+        httpStatus: 200,
+      }),
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['no_active_customer_grant', 'multiple_active_customer_grants'])(
+    'preserves broker blocker %s at the launch HTTP phase',
+    async (blocker) => {
+      const now = Date.parse('2026-07-14T05:00:00.000Z');
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ok: true,
+            customer_id: 'staging-mac-owner',
+            device_id: '22222222-2222-4222-8222-222222222222',
+            device_identifier: 'staging-device-for-test',
+            enrollment_id: '33333333-3333-4333-8333-333333333333',
+            grant_id: '44444444-4444-4444-8444-444444444444',
+            correct_control_plane: true,
+            acl_allowed: true,
+            online: true,
+            reason: 'ready',
+            observed_at: new Date(now - 1_000).toISOString(),
+            expires_at: new Date(now + 20_000).toISOString(),
+            audit_id: '55555555-5555-4555-8555-555555555555',
+          })
+        )
+        .mockResolvedValueOnce(jsonResponse({ reason: blocker }, { status: 409 }));
+
+      await expect(
+        liveCanary.runMacControlLiveCanary({
+          env: {
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_ACK: 'evaos-mac-control-canary',
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+              'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
+            AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
+            ...TRUST_ENV,
+            GITHUB_SHA: 'a'.repeat(40),
+            GITHUB_RUN_ID: '123456789',
+          },
+          fetchImpl,
+          now: () => now,
+        })
+      ).rejects.toMatchObject({
+        proof: expect.objectContaining({
+          schema: 'evaos.mac_control.live_canary_failure.v1',
+          reason: blocker,
+          phase: 'launch_http',
+          httpStatus: 409,
+        }),
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    }
+  );
+
   it('fails closed when the selected binding is expired or the callback exchange is rejected', async () => {
     const now = Date.parse('2026-07-14T05:00:00.000Z');
     const binding = {
@@ -1318,20 +1562,39 @@ describe('evaOS broker live canary', () => {
       binding_expires_at: new Date(now - 1_000).toISOString(),
       allowed_capabilities: ['customer_mac_status', 'desktop_see', 'desktop_control'],
     };
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
-      jsonResponse({
-        status: 'attached',
-        customer_id: 'staging-mac-owner',
-        runtime: 'openclaw',
-        launch_mode: 'mac_control_tools',
-        launch_url:
-          'https://openclaw-staging.example.test/auth/callback?customer_id=staging-mac-owner&session=callback_secret_for_test',
-        source_pointer: 'broker:runtime_launch:openclaw',
-        audit_id: 'broker:runtime_launch:staging-mac-owner:openclaw',
-        mac_control: binding,
-        runtime_status: { tools_ready: true, mac_control: { ...binding } },
-      })
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          customer_id: 'staging-mac-owner',
+          device_id: '22222222-2222-4222-8222-222222222222',
+          device_identifier: 'staging-device-for-test',
+          enrollment_id: '33333333-3333-4333-8333-333333333333',
+          grant_id: '44444444-4444-4444-8444-444444444444',
+          correct_control_plane: true,
+          acl_allowed: true,
+          online: true,
+          reason: 'ready',
+          observed_at: new Date(now - 1_000).toISOString(),
+          expires_at: new Date(now + 20_000).toISOString(),
+          audit_id: '55555555-5555-4555-8555-555555555555',
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: 'attached',
+          customer_id: 'staging-mac-owner',
+          runtime: 'openclaw',
+          launch_mode: 'mac_control_tools',
+          launch_url:
+            'https://openclaw-staging.example.test/auth/callback?customer_id=staging-mac-owner&session=callback_secret_for_test',
+          source_pointer: 'broker:runtime_launch:openclaw',
+          audit_id: 'broker:runtime_launch:staging-mac-owner:openclaw',
+          mac_control: binding,
+          runtime_status: { tools_ready: true, mac_control: { ...binding } },
+        })
+      );
 
     await expect(
       liveCanary.runMacControlLiveCanary({
@@ -1340,6 +1603,9 @@ describe('evaOS broker live canary', () => {
           AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+            'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
           ...TRUST_ENV,
         },
@@ -1348,13 +1614,13 @@ describe('evaOS broker live canary', () => {
       })
     ).rejects.toMatchObject({
       proof: expect.objectContaining({
-        schema: 'evaos-mac-control-live-canary/v1',
+        schema: 'evaos.mac_control.live_canary_failure.v1',
         ok: false,
         reason: 'binding_expired',
         secretScan: 'passed',
       }),
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('fails when the selected binding expires while the callback exchange is in flight', async () => {
@@ -1374,6 +1640,23 @@ describe('evaOS broker live canary', () => {
     };
     const fetchImpl = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          customer_id: 'staging-mac-owner',
+          device_id: '22222222-2222-4222-8222-222222222222',
+          device_identifier: 'staging-device-for-test',
+          enrollment_id: '33333333-3333-4333-8333-333333333333',
+          grant_id: '44444444-4444-4444-8444-444444444444',
+          correct_control_plane: true,
+          acl_allowed: true,
+          online: true,
+          reason: 'ready',
+          observed_at: new Date(launchNow - 1_000).toISOString(),
+          expires_at: new Date(launchNow + 20_000).toISOString(),
+          audit_id: '55555555-5555-4555-8555-555555555555',
+        })
+      )
       .mockResolvedValueOnce(
         jsonResponse({
           status: 'attached',
@@ -1397,7 +1680,7 @@ describe('evaOS broker live canary', () => {
           },
         })
       );
-    const times = [launchNow, callbackNow];
+    const times = [launchNow, launchNow, callbackNow];
 
     await expect(
       liveCanary.runMacControlLiveCanary({
@@ -1406,6 +1689,9 @@ describe('evaOS broker live canary', () => {
           AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+            'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+          AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
           AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
           ...TRUST_ENV,
         },
@@ -1415,7 +1701,7 @@ describe('evaOS broker live canary', () => {
     ).rejects.toMatchObject({
       proof: expect.objectContaining({ ok: false, reason: 'binding_expired' }),
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it('rejects unusable or non-host-only proxy session cookies', async () => {
@@ -1460,6 +1746,23 @@ describe('evaOS broker live canary', () => {
       invalidCookies.map((setCookie) => {
         const fetchImpl = vi
           .fn<typeof fetch>()
+          .mockResolvedValueOnce(
+            jsonResponse({
+              ok: true,
+              customer_id: 'staging-mac-owner',
+              device_id: '22222222-2222-4222-8222-222222222222',
+              device_identifier: 'staging-device-for-test',
+              enrollment_id: '33333333-3333-4333-8333-333333333333',
+              grant_id: '44444444-4444-4444-8444-444444444444',
+              correct_control_plane: true,
+              acl_allowed: true,
+              online: true,
+              reason: 'ready',
+              observed_at: new Date(now - 1_000).toISOString(),
+              expires_at: new Date(now + 20_000).toISOString(),
+              audit_id: '55555555-5555-4555-8555-555555555555',
+            })
+          )
           .mockResolvedValueOnce(jsonResponse(launchResponse))
           .mockResolvedValueOnce(
             new Response(null, {
@@ -1475,6 +1778,9 @@ describe('evaOS broker live canary', () => {
               AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION: 'eds_mac_canary_session_for_test',
               AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID: 'staging-mac-owner',
               AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT: 'https://dashboard-staging.example.test/runtime',
+              AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT:
+                'https://dashboard-staging.example.test/functions/v1/customer-mac-control',
+              AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER: 'staging-device-for-test',
               AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST: 'openclaw-staging.example.test',
               ...TRUST_ENV,
             },

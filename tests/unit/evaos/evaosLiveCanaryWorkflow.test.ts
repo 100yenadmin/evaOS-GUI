@@ -34,6 +34,21 @@ function validMacControlRuntimeProof(): Record<string, unknown> {
   }).envelope;
 }
 
+function validMacControlFailureProof(): Record<string, unknown> {
+  return {
+    schema: 'evaos.mac_control.live_canary_failure.v1',
+    ok: false,
+    runtime: 'openclaw',
+    launchMode: 'mac_control_tools',
+    reason: 'authority_stale',
+    phase: 'network_readiness',
+    httpStatus: 200,
+    sourceHeadSha: 'd'.repeat(40),
+    sourceRunId: '12345',
+    secretScan: 'passed',
+  };
+}
+
 function writeCompleteMacControlProofSet(proofDir: string): void {
   const provision = {
     schema: 'evaos-mac-control-canary-session-provision/v1',
@@ -263,9 +278,17 @@ describe('evaOS live canary proof workflow', () => {
     expect(summaryStart).toBeGreaterThan(strictStart);
 
     const producerBlock = workflow.slice(producerStart, partialStart);
+    const cleanupStart = workflow.indexOf('- name: Cleanup Mac-control canary session');
+    const cleanupBlock = workflow.slice(cleanupStart, partialStart);
     const partialStep = workflow.slice(partialStart, strictStart);
     const strictStep = workflow.slice(strictStart, summaryStart);
     expect(producerBlock).not.toContain('continue-on-error');
+    expect(cleanupStart).toBeGreaterThan(producerStart);
+    expect(cleanupBlock).toContain('cleanup_temp="${cleanup_output}.tmp"');
+    expect(cleanupBlock).toContain('trap \'rm -f "$cleanup_temp"\' EXIT');
+    expect(cleanupBlock).toContain('cleanup-mac-control > "$cleanup_temp"');
+    expect(cleanupBlock).toContain('mv "$cleanup_temp" "$cleanup_output"');
+    expect(cleanupBlock).not.toContain('cleanup-mac-control > "$PROOF_DIR/mac-control-session-cleanup.stdout.json"');
     expect(partialStep).toContain('id: mac-control-partial-proof-scan');
     expect(partialStep).toContain("if: always() && github.event.inputs.run_mac_control_canary == 'true'");
     expect(partialStep).toContain('node scripts/evaosScanMacControlProofs.js --allow-partial "$PROOF_DIR"');
@@ -332,6 +355,47 @@ describe('evaOS live canary proof workflow', () => {
           'mac-control-session-cleanup.stdout.json',
         ],
       });
+    } finally {
+      fs.rmSync(proofDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uploads a strictly shaped failure envelope in partial mode but rejects it as complete proof', () => {
+    const proofDir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-proof-partial-failure-'));
+    try {
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-runtime.json'),
+        `${JSON.stringify(validMacControlFailureProof())}\n`
+      );
+
+      expect(proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toMatchObject({
+        ok: true,
+        scanned: 1,
+      });
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir)).toThrow(/failure envelope.*complete proof/i);
+
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-runtime.json'),
+        `${JSON.stringify({ ...validMacControlFailureProof(), reason: 'multiple_active_customer_grants' })}\n`
+      );
+      expect(proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toMatchObject({
+        ok: true,
+        scanned: 1,
+      });
+
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-runtime.json'),
+        `${JSON.stringify({ ...validMacControlFailureProof(), connectorUrl: 'https://unsafe.example.test' })}\n`
+      );
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toThrow(/forbidden/i);
+
+      fs.writeFileSync(
+        path.join(proofDir, 'mac-control-runtime.json'),
+        `${JSON.stringify({ ...validMacControlFailureProof(), reason: 'invented_safe_looking_reason' })}\n`
+      );
+      expect(() => proofScanner.scanMacControlProofDirectory(proofDir, { allowPartial: true })).toThrow(
+        /failure proof contract/i
+      );
     } finally {
       fs.rmSync(proofDir, { recursive: true, force: true });
     }

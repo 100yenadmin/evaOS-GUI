@@ -20,7 +20,18 @@ const MAC_CONTROL_RUNTIME = 'openclaw';
 const MAC_CONTROL_RUNTIME_RECEIPT_PATH = '/api/v1/evaos/mac-control/runtime-receipt';
 const MAC_CONTROL_DEPLOYED_NEGATIVE_PROBE_SCHEMA = 'evaos.mac_control.deployed_negative_probe.v1';
 const MAC_CONTROL_DEPLOYED_NEGATIVE_PROOF_MODE = 'deployed-staging';
+const MAC_CONTROL_FAILURE_PROOF_SCHEMA = 'evaos.mac_control.live_canary_failure.v1';
 const MAC_CONTROL_LAUNCH_PRIVATE = Symbol('mac-control-launch-private');
+const MAC_CONTROL_FAILURE_PHASES = new Set([
+  'configuration',
+  'network_readiness',
+  'launch_http',
+  'launch_contract',
+  'callback',
+  'runtime_receipt',
+  'route_probe',
+  'negative_probe',
+]);
 const MAC_CONTROL_REQUIRED_CAPABILITY_GROUPS = Object.freeze([
   Object.freeze(['customer_mac_status']),
   Object.freeze(['customer_mac_snapshot', 'desktop_see']),
@@ -28,6 +39,8 @@ const MAC_CONTROL_REQUIRED_CAPABILITY_GROUPS = Object.freeze([
 ]);
 const MAC_CONTROL_SAFE_REASON_CODES = new Set([
   'acl_stale',
+  'authority_stale',
+  'authority_unavailable',
   'binding_ambiguous',
   'binding_authority_unavailable',
   'binding_expired',
@@ -37,18 +50,29 @@ const MAC_CONTROL_SAFE_REASON_CODES = new Set([
   'connector_secret_missing',
   'device_revoked',
   'grant_revoked',
+  'grant_binding_mismatch',
   'headscale_acl_stale',
   'invalid_configuration',
   'invalid_response',
   'mac_connector_material_missing',
   'mac_node_offline',
+  'mac_node_expired',
+  'mac_node_missing',
   'mac_node_unpaired',
   'missing_required_capability',
+  'multiple_active_customer_grants',
+  'no_active_customer_grant',
+  'policy_hash_mismatch',
+  'policy_unavailable',
   'runtime_launch_blocked',
   'runtime_receipt_rejected',
   'selected_customer_scope_mismatch',
   'selected_scope_not_ready',
+  'vm_node_expired',
+  'vm_node_missing',
+  'vm_node_offline',
 ]);
+const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 const DENIED_RUNTIME_PATTERN =
   /(denied|blocked|forbidden|unauthorized|expired|revoked|permission|mac_connector_material_missing|internal server error|internal_server_error|server_error)/i;
@@ -167,6 +191,8 @@ function resolveMacControlCanaryConfig(env) {
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION',
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID',
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT',
+    'AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER',
     'AIONUI_EVAOS_MAC_CONTROL_CANARY_EXPECTED_CALLBACK_HOST',
     'EVAOS_LIVE_CANARY_RECEIPT_KEY_ID',
     'EVAOS_LIVE_CANARY_RECEIPT_PUBLIC_KEY',
@@ -180,14 +206,34 @@ function resolveMacControlCanaryConfig(env) {
   const customerId = envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_CUSTOMER_ID');
   assertAllowedBrokerCanaryCustomerId(customerId);
   const endpoint = envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_ENDPOINT');
+  const networkEndpoint = envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_NETWORK_ENDPOINT');
+  const deviceIdentifier = envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_DEVICE_IDENTIFIER');
   let endpointUrl;
+  let networkEndpointUrl;
   try {
     endpointUrl = new URL(endpoint);
+    networkEndpointUrl = new URL(networkEndpoint);
   } catch {
-    throw new Error('Dedicated Mac-control canary endpoint must be an absolute HTTPS URL.');
+    throw new Error('Dedicated Mac-control canary endpoints must be absolute HTTPS URLs.');
   }
-  if (endpointUrl.protocol !== 'https:') {
-    throw new Error('Dedicated Mac-control canary endpoint must be an absolute HTTPS URL.');
+  if (
+    endpointUrl.protocol !== 'https:' ||
+    networkEndpointUrl.protocol !== 'https:' ||
+    endpointUrl.username ||
+    endpointUrl.password ||
+    endpointUrl.search ||
+    endpointUrl.hash ||
+    networkEndpointUrl.username ||
+    networkEndpointUrl.password ||
+    networkEndpointUrl.search ||
+    networkEndpointUrl.hash ||
+    networkEndpointUrl.origin !== endpointUrl.origin ||
+    networkEndpointUrl.pathname !== '/functions/v1/customer-mac-control'
+  ) {
+    throw new Error('Dedicated Mac-control canary endpoints must be same-origin absolute HTTPS URLs.');
+  }
+  if (!/^[^\s]{1,256}$/u.test(deviceIdentifier)) {
+    throw new Error('Dedicated Mac-control canary device identity is invalid.');
   }
 
   const expectedCallbackHostInput = envText(
@@ -229,6 +275,8 @@ function resolveMacControlCanaryConfig(env) {
     desktopSession: envText(env, 'AIONUI_EVAOS_MAC_CONTROL_CANARY_DESKTOP_SESSION'),
     customerId,
     endpoint: endpointUrl.toString(),
+    networkEndpoint: networkEndpointUrl.toString(),
+    deviceIdentifier,
     expectedCallbackHost,
     receiptKeyId,
     receiptPublicKey,
@@ -991,16 +1039,118 @@ function sanitizeMacControlRuntimeProof(
 }
 
 function failedMacControlProof(env, reason, extras = {}) {
+  const source = macControlProofSource(env);
+  const phase = MAC_CONTROL_FAILURE_PHASES.has(extras.phase) ? extras.phase : 'configuration';
   return {
-    schema: 'evaos-mac-control-live-canary/v1',
+    schema: MAC_CONTROL_FAILURE_PROOF_SCHEMA,
     ok: false,
     runtime: MAC_CONTROL_RUNTIME,
     launchMode: 'mac_control_tools',
     reason: macControlReason(reason, 'invalid_response'),
-    ...macControlProofSource(env),
-    ...(Number.isInteger(extras.httpStatus) ? { httpStatus: extras.httpStatus } : {}),
+    phase,
+    httpStatus: Number.isInteger(extras.httpStatus) ? extras.httpStatus : null,
+    sourceHeadSha: source.sourceHeadSha ?? null,
+    sourceRunId: source.sourceRunId ?? null,
     secretScan: 'passed',
   };
+}
+
+async function refreshMacControlPrivateNetworkReadiness(fetchImpl, config, now) {
+  const response = await fetchImpl(config.networkEndpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.desktopSession}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'get_private_network_readiness',
+      customer_id: config.customerId,
+      device_identifier: config.deviceIdentifier,
+    }),
+  });
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw macControlFailure('invalid_response', 'Mac-control private-network readiness was unreadable.', {
+      httpStatus: response.status,
+    });
+  }
+  const record = asPlainRecord(body);
+  if (!response.ok) {
+    throw macControlFailure(
+      record?.code ?? record?.error_code ?? record?.reason ?? record?.error,
+      'Mac-control private-network readiness refresh was blocked.',
+      { httpStatus: response.status }
+    );
+  }
+  try {
+    assertNoSecretMaterial(record);
+  } catch {
+    throw macControlFailure('invalid_response', 'Mac-control private-network readiness exposed unsafe material.', {
+      httpStatus: response.status,
+    });
+  }
+  const fields = [
+    'ok',
+    'customer_id',
+    'device_id',
+    'device_identifier',
+    'enrollment_id',
+    'grant_id',
+    'correct_control_plane',
+    'acl_allowed',
+    'online',
+    'reason',
+    'observed_at',
+    'expires_at',
+    'audit_id',
+  ];
+  const observedAt = Date.parse(record?.observed_at);
+  const expiresAt = Date.parse(record?.expires_at);
+  const nowMs = now();
+  if (
+    !hasExactRecordKeys(record, fields) ||
+    record.ok !== true ||
+    record.customer_id !== config.customerId ||
+    record.device_identifier !== config.deviceIdentifier ||
+    typeof record.correct_control_plane !== 'boolean' ||
+    typeof record.acl_allowed !== 'boolean' ||
+    typeof record.online !== 'boolean' ||
+    typeof record.reason !== 'string' ||
+    !Number.isFinite(observedAt) ||
+    !Number.isFinite(expiresAt) ||
+    observedAt > nowMs + 5_000 ||
+    observedAt < nowMs - 60_000 ||
+    expiresAt <= nowMs ||
+    expiresAt - nowMs > 60_000 ||
+    expiresAt <= observedAt ||
+    expiresAt > observedAt + 31_000
+  ) {
+    throw macControlFailure('invalid_response', 'Mac-control private-network readiness contract was invalid.', {
+      httpStatus: response.status,
+    });
+  }
+  if (
+    record.reason !== 'ready' ||
+    record.correct_control_plane !== true ||
+    record.acl_allowed !== true ||
+    record.online !== true
+  ) {
+    throw macControlFailure(record.reason, 'Mac-control private-network authority is not ready.', {
+      httpStatus: response.status,
+    });
+  }
+  if (
+    !UUID_PATTERN.test(record.device_id) ||
+    !UUID_PATTERN.test(record.enrollment_id) ||
+    !UUID_PATTERN.test(record.grant_id) ||
+    !UUID_PATTERN.test(record.audit_id)
+  ) {
+    throw macControlFailure('invalid_response', 'Mac-control ready authority omitted canonical lineage.', {
+      httpStatus: response.status,
+    });
+  }
 }
 
 async function postMacControlRuntimeLaunch(fetchImpl, config) {
@@ -1276,9 +1426,14 @@ async function runMacControlLiveCanary(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = typeof options.now === 'function' ? options.now : Date.now;
   let config;
+  let phase = 'configuration';
   try {
     config = resolveMacControlCanaryConfig(env);
+    phase = 'network_readiness';
+    await refreshMacControlPrivateNetworkReadiness(fetchImpl, config, now);
+    phase = 'launch_http';
     const raw = await postMacControlRuntimeLaunch(fetchImpl, config);
+    phase = 'launch_contract';
     const launch = sanitizeMacControlRuntimeLaunchCanaryResponse(
       raw,
       {
@@ -1289,6 +1444,7 @@ async function runMacControlLiveCanary(options = {}) {
       now()
     );
     const launchPrivate = launch[MAC_CONTROL_LAUNCH_PRIVATE];
+    phase = 'callback';
     const callback = await fetchImpl(launchPrivate.launchUrl, { method: 'GET', redirect: 'manual' });
     const postCallbackNow = now();
     const callbackAccepted = callback.status === 302 && callback.headers.get('location') === '/ui/';
@@ -1305,6 +1461,7 @@ async function runMacControlLiveCanary(options = {}) {
       });
     }
 
+    phase = 'runtime_receipt';
     const expectedCandidate = expectedMacControlCandidate(env);
     const randomBytesImpl = typeof options.randomBytes === 'function' ? options.randomBytes : randomBytes;
     const challengeBytes = randomBytesImpl(32);
@@ -1353,6 +1510,7 @@ async function runMacControlLiveCanary(options = {}) {
       contextKeyId: config.contextKeyId,
     });
 
+    phase = 'route_probe';
     const deployedProbe = await runMacControlDeployedRouteProbes({
       fetchImpl,
       launchUrl: launchPrivate.launchUrl,
@@ -1364,6 +1522,7 @@ async function runMacControlLiveCanary(options = {}) {
       await options.onDeployedProbe(deployedProbe);
     }
 
+    phase = 'negative_probe';
     const deployedNegativeProbe = await runMacControlDeployedNegativeProbe({
       fetchImpl,
       launchUrl: launchPrivate.launchUrl,
@@ -1377,11 +1536,10 @@ async function runMacControlLiveCanary(options = {}) {
 
     return runtimeProof;
   } catch (error) {
-    if (error instanceof MacControlCanaryError) throw error;
     const reason = macControlReason(error?.reason, config ? 'invalid_response' : 'invalid_configuration');
     throw new MacControlCanaryError(
       'Mac-control live canary failed.',
-      failedMacControlProof(env, reason, { httpStatus: error?.httpStatus }),
+      failedMacControlProof(env, reason, { httpStatus: error?.httpStatus, phase }),
       reason
     );
   }
