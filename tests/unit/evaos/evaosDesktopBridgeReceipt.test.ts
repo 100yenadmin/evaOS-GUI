@@ -85,7 +85,7 @@ owner = {
     "classification": "workbench_bundle",
     "bundle_id": "com.evaos.workbench",
     "source_commit": "a" * 40,
-    "program_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge"},
+    "program_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py"},
     "app_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app"},
     "manifest_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json"},
     "plist_path": {"kind": "path", "value": "~/Library/LaunchAgents/com.electricsheep.evaos-desktop-bridge.plist"},
@@ -94,6 +94,20 @@ process = {
     "executable": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3.12",
     "argv0": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py",
 }
+receipt_canary.candidate_snapshot(candidate, owner=owner, process=process)
+wrong_owner = {
+    **owner,
+    "program_path": {
+        "kind": "path",
+        "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge",
+    },
+}
+try:
+    receipt_canary.candidate_snapshot(candidate, owner=wrong_owner, process=process)
+except receipt_canary.CanaryError as error:
+    assert error.code == "canary_candidate_identity_invalid"
+else:
+    raise AssertionError("launcher wrapper was accepted as the active packaged connector program")
 action_calls = []
 tamper_audit = {"enabled": False}
 def runner(argv):

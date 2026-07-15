@@ -328,6 +328,81 @@ test('bounds connector IO by a sanitized deadline before signed authority expire
   assert.equal(connectorCalls, 1);
 });
 
+test('keeps the connector deadline active through response body consumption', async () => {
+  const authority = signedAuthority();
+  let connectorCalls = 0;
+  const handler = createMacControlRuntimeReceiptHandler({
+    env,
+    now: () => NOW_MS,
+    connectorTimeoutMs: 20,
+    fetchImpl: async (_url, init) => {
+      connectorCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          await new Promise((_resolve, reject) => {
+            if (init.signal.aborted) {
+              reject(new Error('body deadline elapsed'));
+              return;
+            }
+            init.signal.addEventListener('abort', () => reject(new Error('body deadline elapsed')), { once: true });
+          }),
+      };
+    },
+  });
+  const outcome = await Promise.race([
+    invoke(
+      handler,
+      { challenge: Buffer.alloc(32, 13).toString('base64url'), runRef: 'connector-body-timeout' },
+      authority.headers
+    ),
+    new Promise((resolve) => setTimeout(() => resolve('handler_did_not_settle'), 250)),
+  ]);
+  assert.notEqual(outcome, 'handler_did_not_settle');
+  assert.equal(outcome.statusCode, 502);
+  assert.equal(JSON.parse(outcome.body).error.code, 'connector_response_invalid');
+  assert.equal(outcome.body.includes('body deadline elapsed'), false);
+  assert.equal(connectorCalls, 1);
+});
+
+test('rejects an oversized streaming connector body before reading beyond the cap', async () => {
+  const authority = signedAuthority();
+  let textCalled = false;
+  let chunksRead = 0;
+  const handler = createMacControlRuntimeReceiptHandler({
+    env,
+    now: () => NOW_MS,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      body: {
+        async *[Symbol.asyncIterator]() {
+          chunksRead += 1;
+          yield Buffer.alloc(40_000, 0x61);
+          chunksRead += 1;
+          yield Buffer.alloc(30_000, 0x62);
+          throw new Error('must stop before a third chunk');
+        },
+      },
+      text: async () => {
+        textCalled = true;
+        return '';
+      },
+    }),
+  });
+  const response = await invoke(
+    handler,
+    { challenge: Buffer.alloc(32, 14).toString('base64url'), runRef: 'connector-body-oversized' },
+    authority.headers
+  );
+  assert.equal(response.statusCode, 502);
+  assert.equal(JSON.parse(response.body).error.code, 'connector_response_invalid');
+  assert.equal(response.body.includes('third chunk'), false);
+  assert.equal(chunksRead, 2);
+  assert.equal(textCalled, false);
+});
+
 test('rejects forged signatures and re-signed wrong release claims', async (t) => {
   const challenge = Buffer.alloc(32, 9).toString('base64url');
   const runRef = 'receipt-tamper';
@@ -348,6 +423,23 @@ test('rejects forged signatures and re-signed wrong release claims', async (t) =
         signedConnectorEnvelope({
           ...valid,
           candidate: { ...valid.candidate, sourceCommit: 'd'.repeat(40) },
+        }),
+    ],
+    [
+      'launcher wrapper substituted for the active packaged connector program',
+      () =>
+        signedConnectorEnvelope({
+          ...valid,
+          candidate: {
+            ...valid.candidate,
+            owner: {
+              ...valid.candidate.owner,
+              programPath: {
+                kind: 'path',
+                value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+              },
+            },
+          },
         }),
     ],
     [
@@ -655,7 +747,7 @@ function validReceipt(authority, challenge, runRef, overrides = {}) {
         sourceCommit: EXPECTED_COMMIT,
         programPath: {
           kind: 'path',
-          value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge',
+          value: '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py',
         },
         appPath: { kind: 'path', value: '/Applications/evaOS Workbench.app' },
         manifestPath: {

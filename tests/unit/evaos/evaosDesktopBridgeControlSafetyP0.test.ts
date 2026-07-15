@@ -422,4 +422,103 @@ print("ok")
 
     expect(output).toBe('ok');
   });
+
+  it('replays Ask Permission dry runs when direct clients omit materialized defaults', () => {
+    const output = runPython(`
+import hashlib
+import json
+import threading
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from evaos_desktop_bridge.audit import append_audit
+from evaos_desktop_bridge.connector_server import _approval_field_value, _make_handler
+from evaos_desktop_bridge.state import start_control_session, write_control_session
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+    session = start_control_session(mode="ask_permission", state_dir=root)
+    session["takeover_warning_started_at"] = None
+    session["takeover_warning_until"] = None
+    session = write_control_session(session, state_dir=root)
+    value = "approved replacement"
+    approval_id = append_audit(
+        command="customer_mac.desktop_set_value",
+        target="customer_mac",
+        args={
+            "snapshot_id": "snapshot-1",
+            "element_id": "element-1",
+            "attribute": "value",
+            "value_hash": hashlib.sha256(value.encode("utf-8")).hexdigest()[:16],
+            "dry_run": True,
+        },
+        ok=True,
+        warnings=[],
+        errors=[],
+        state_dir=root,
+    )
+    captured = []
+
+    def runner(argv):
+        captured.append(list(argv))
+        value_file_index = argv.index("--value-file") + 1
+        assert Path(argv[value_file_index]).read_text(encoding="utf-8") == value
+        assert argv[argv.index("--attribute") + 1] == "value"
+        return 0, json.dumps({
+            "schema_version": "2026-05-02.mvp1",
+            "command": "customer_mac.desktop_set_value",
+            "target": "customer_mac",
+            "timestamp": "2026-07-15T00:00:00Z",
+            "ok": True,
+            "data": {"set": True},
+            "warnings": [],
+            "errors": [],
+            "audit_id": "audit-runner",
+        })
+
+    handler = _make_handler(token="connector-test-token", command_runner=runner, state_dir=root)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    endpoint = f"http://127.0.0.1:{server.server_address[1]}/v1/commands"
+    request = urllib.request.Request(
+        endpoint,
+        method="POST",
+        data=json.dumps({
+            "command": "desktopSetValue",
+            "params": {
+                "snapshot_id": "snapshot-1",
+                "element_id": "element-1",
+                "value": value,
+                "dry_run": False,
+                "approval_audit_id": approval_id,
+            },
+        }).encode("utf-8"),
+        headers={"Authorization": "Bearer connector-test-token", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=8) as response:
+        assert response.status == 200, response.read()
+
+    assert len(captured) == 1, captured
+    assert captured[0][:3] == [
+        "customer-mac",
+        "--remote-control-generation",
+        str(session["generation"]),
+    ]
+    assert _approval_field_value("desktopSetValue", {}, "attribute") == "value"
+    assert _approval_field_value("desktopScroll", {}, "direction") == "down"
+    assert _approval_field_value("desktopScroll", {}, "amount") == 600
+    assert _approval_field_value("customerMacIphoneMirroringScroll", {}, "direction") == "down"
+
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
 });

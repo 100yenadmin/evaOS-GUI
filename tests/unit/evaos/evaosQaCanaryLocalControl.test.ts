@@ -59,7 +59,7 @@ from evaos_desktop_bridge.qa_canary import (
     _suite_requires_selected_binding_proof,
     build_scenarios,
 )
-from evaos_desktop_bridge.state import read_control_session
+from evaos_desktop_bridge.state import kill_control_session, read_control_session
 
 os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
 
@@ -118,6 +118,7 @@ with TemporaryDirectory() as temporary_root:
         operator_ack_live_control=True,
         local_runner=local_runner,
         session_reader=lambda: read_control_session(root),
+        local_kill_switch=lambda: kill_control_session(root),
     )
     full = surface.run(
         LOCAL_WORKBENCH_CONTROL_START,
@@ -153,11 +154,170 @@ with TemporaryDirectory() as temporary_root:
         ("desktop_control_status", {}),
         ("desktop_control_status", {}),
     ]
+    assert surface.teardown_local_control() is True
+    final_state = read_control_session(root)
+    assert final_state["active"] is False and final_state["kill_switch"] is True
+    assert surface.teardown_local_control() is None
 
 print(json.dumps({"ok": True, "local_calls": len(local_argv), "remote_calls": len(remote.calls)}))
 `);
 
     expect(JSON.parse(output)).toEqual({ ok: true, local_calls: 2, remote_calls: 3 });
+  });
+
+  it('activates the local kill switch when an all-suite action is interrupted', () => {
+    const output = runPython(`
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from evaos_desktop_bridge.cli import _run_bridge_argv
+from evaos_desktop_bridge.qa_canary import (
+    CanaryStep,
+    LOCAL_WORKBENCH_CONTROL_START,
+    OperatorAcknowledgedLocalControlSurface,
+    SurfaceResponse,
+    run_steps_with_local_control_cleanup,
+)
+from evaos_desktop_bridge.state import kill_control_session, read_control_session
+
+os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
+
+class InterruptingSurface:
+    def __init__(self, state_reader):
+        self.state_reader = state_reader
+
+    def run(self, command, params):
+        if command == "desktop_control_status":
+            return SurfaceResponse.from_payload({
+                "ok": True,
+                "data": {"session": self.state_reader()},
+                "warnings": [],
+                "errors": [],
+                "audit_id": "audit-status",
+            })
+        raise KeyboardInterrupt("simulated operator cancellation")
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+    cleanup_calls = []
+
+    def cleanup():
+        cleanup_calls.append(True)
+        return kill_control_session(root)
+
+    surface = OperatorAcknowledgedLocalControlSurface(
+        InterruptingSurface(lambda: read_control_session(root)),
+        operator_ack_live_control=True,
+        local_runner=lambda executable, argv, timeout_seconds: _run_bridge_argv(argv, state_dir=root),
+        session_reader=lambda: read_control_session(root),
+        local_kill_switch=cleanup,
+    )
+    steps = [
+        CanaryStep(
+            id="all.start",
+            suite="all",
+            command=LOCAL_WORKBENCH_CONTROL_START,
+            params={"mode": "ask-permission", "agent_label": "evaOS QA Canary"},
+        ),
+        CanaryStep(
+            id="all.interrupted_action",
+            suite="all",
+            command="desktop_hotkey",
+            params={"keys": "escape", "dry_run": False},
+        ),
+    ]
+    try:
+        run_steps_with_local_control_cleanup(steps, surface, suite="all")
+    except KeyboardInterrupt:
+        pass
+    else:
+        raise AssertionError("simulated operator cancellation did not propagate")
+
+    final = read_control_session(root)
+    assert final["active"] is False and final["kill_switch"] is True
+    assert cleanup_calls == [True]
+    assert surface.local_control_cleanup_required is False
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
+  });
+
+  it('converts SIGTERM job cancellation into local kill-switch cleanup', () => {
+    const output = runPython(`
+import os
+import signal
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from evaos_desktop_bridge.cli import _run_bridge_argv
+from evaos_desktop_bridge.qa_canary import (
+    CanaryStep,
+    LOCAL_WORKBENCH_CONTROL_START,
+    OperatorAcknowledgedLocalControlSurface,
+    SurfaceResponse,
+    run_steps_with_local_control_cleanup,
+)
+from evaos_desktop_bridge.state import kill_control_session, read_control_session
+
+os.environ["EVAOS_DESKTOP_BRIDGE_DISABLE_TAKEOVER_WARNING_UI"] = "1"
+
+class TerminatingSurface:
+    def __init__(self, state_reader):
+        self.state_reader = state_reader
+
+    def run(self, command, params):
+        if command == "desktop_control_status":
+            return SurfaceResponse.from_payload({
+                "ok": True,
+                "data": {"session": self.state_reader()},
+                "warnings": [],
+                "errors": [],
+                "audit_id": "audit-status",
+            })
+        os.kill(os.getpid(), signal.SIGTERM)
+        raise AssertionError("SIGTERM did not stop the active canary step")
+
+with TemporaryDirectory() as temporary_root:
+    root = Path(temporary_root)
+    surface = OperatorAcknowledgedLocalControlSurface(
+        TerminatingSurface(lambda: read_control_session(root)),
+        operator_ack_live_control=True,
+        local_runner=lambda executable, argv, timeout_seconds: _run_bridge_argv(argv, state_dir=root),
+        session_reader=lambda: read_control_session(root),
+        local_kill_switch=lambda: kill_control_session(root),
+    )
+    steps = [
+        CanaryStep(
+            id="all.start",
+            suite="all",
+            command=LOCAL_WORKBENCH_CONTROL_START,
+            params={"mode": "full-access", "agent_label": "evaOS QA Canary"},
+        ),
+        CanaryStep(
+            id="all.cancelled_action",
+            suite="all",
+            command="desktop_hotkey",
+            params={"keys": "escape", "dry_run": False},
+        ),
+    ]
+    try:
+        run_steps_with_local_control_cleanup(steps, surface, suite="all")
+    except SystemExit as error:
+        assert error.code == 128 + signal.SIGTERM
+    else:
+        raise AssertionError("SIGTERM was not converted into an orderly canary exit")
+
+    final = read_control_session(root)
+    assert final["active"] is False and final["kill_switch"] is True
+    assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+
+print("ok")
+`);
+
+    expect(output).toBe('ok');
   });
 
   it('fails closed without operator acknowledgement or with an inconsistent local CLI response', () => {

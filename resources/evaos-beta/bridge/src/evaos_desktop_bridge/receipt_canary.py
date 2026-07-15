@@ -693,7 +693,7 @@ def candidate_snapshot(
         or owner_program
         != {
             "kind": "path",
-            "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge",
+            "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py",
         }
         or owner_app != {"kind": "path", "value": "/Applications/evaOS Workbench.app"}
         or owner_manifest

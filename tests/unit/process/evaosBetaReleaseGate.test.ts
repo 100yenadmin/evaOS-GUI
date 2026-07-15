@@ -298,7 +298,7 @@ function writeArm64TrustEvidence(proofDir: string) {
           },
           selected_binding: { ok: null, reason: 'selected_binding_proof_not_required_for_suite' },
         },
-        summary: { total: 5, passed: 5, failed: 0, skipped: 0 },
+        summary: { total: 6, passed: 6, failed: 0, skipped: 0 },
         results: [
           {
             id: 'control_start.bridge_status',
@@ -330,6 +330,13 @@ function writeArm64TrustEvidence(proofDir: string) {
           },
           {
             id: 'control_start.kill_switch',
+            command: 'desktop_kill_switch',
+            ok: true,
+            status: 'passed',
+            params_redacted: {},
+          },
+          {
+            id: 'control_cleanup.local_kill_switch',
             command: 'desktop_kill_switch',
             ok: true,
             status: 'passed',
@@ -3707,7 +3714,7 @@ printf '%s\\n' ok
       connectorProof.results = connectorProof.results.filter(
         (result: { id?: string }) => result.id !== 'control_start.ask_permission'
       );
-      connectorProof.summary = { total: 4, passed: 4, failed: 0, skipped: 0 };
+      connectorProof.summary = { total: 5, passed: 5, failed: 0, skipped: 0 };
       fs.writeFileSync(connectorProofPath, `${JSON.stringify(connectorProof, null, 2)}\n`);
       expect(() =>
         releaseGate.verifyRcProof(proofDir, tag, {

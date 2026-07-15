@@ -6,6 +6,7 @@ import json
 import os
 import posixpath
 import re
+import signal
 import struct
 import subprocess
 import sys
@@ -362,6 +363,7 @@ class OperatorAcknowledgedLocalControlSurface:
         self.session_reader = session_reader or read_control_session
         self.local_kill_switch = local_kill_switch or kill_control_session
         self.control_start_failed = False
+        self.local_control_cleanup_required = False
 
     def run(self, command: str, params: dict[str, Any]) -> SurfaceResponse:
         if command == LOCAL_WORKBENCH_CONTROL_START:
@@ -445,6 +447,7 @@ class OperatorAcknowledgedLocalControlSurface:
             str(generation),
         ]
         argv.extend(["--agent-label", bound_agent_label])
+        self.local_control_cleanup_required = True
         try:
             exit_code, output = self.local_runner(
                 INSTALLED_WORKBENCH_BRIDGE_CLI,
@@ -620,16 +623,24 @@ class OperatorAcknowledgedLocalControlSurface:
                 )
         return payload
 
+    def teardown_local_control(self) -> bool | None:
+        if not self.local_control_cleanup_required:
+            return None
+        return self._activate_local_kill_switch()
+
     def _activate_local_kill_switch(self) -> bool:
         try:
             session = self.local_kill_switch()
         except Exception:  # noqa: BLE001 - cleanup is reported only as a boolean.
             return False
-        return (
+        confirmed = (
             isinstance(session, dict)
             and session.get("active") is False
             and session.get("kill_switch") is True
         )
+        if confirmed:
+            self.local_control_cleanup_required = False
+        return confirmed
 
 
 def _run_local_workbench_cli(
@@ -1238,6 +1249,32 @@ def run_steps(steps: list[CanaryStep], surface: CanarySurface) -> list[CanaryRes
     return results
 
 
+def run_steps_with_local_control_cleanup(
+    steps: list[CanaryStep],
+    surface: OperatorAcknowledgedLocalControlSurface,
+    *,
+    suite: str,
+) -> list[CanaryResult]:
+    results: list[CanaryResult] = []
+    cleanup_confirmed: bool | None = None
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def orderly_sigterm(signum: int, _frame: Any) -> None:
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, orderly_sigterm)
+    try:
+        results = run_steps(steps, surface)
+    finally:
+        try:
+            cleanup_confirmed = surface.teardown_local_control()
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
+    if cleanup_confirmed is not None:
+        results.append(_local_control_cleanup_result(suite, cleanup_confirmed))
+    return results
+
+
 def classify_status(
     payload: dict[str, Any],
     *,
@@ -1675,7 +1712,9 @@ def main(argv: list[str] | None = None) -> int:
     steps = build_scenarios(
         args.suite, allow_real_world_actions=args.allow_real_world_actions
     )
-    results = run_steps(steps, surface)
+    results = run_steps_with_local_control_cleanup(
+        steps, surface, suite=args.suite
+    )
     report_paths = write_reports(
         artifact_dir=artifact_dir,
         run_id=run_id,
@@ -2791,6 +2830,37 @@ def _failed_result(
         ],
         warnings=[],
         payload={},
+    )
+
+
+def _local_control_cleanup_result(suite: str, confirmed: bool) -> CanaryResult:
+    errors = (
+        []
+        if confirmed
+        else [
+            {
+                "code": "local_control_teardown_unconfirmed",
+                "message": "The QA canary could not confirm its final local kill-switch cleanup.",
+                "guidance": "Use the installed Workbench to activate the kill switch before continuing release proof.",
+            }
+        ]
+    )
+    return CanaryResult(
+        id="control_cleanup.local_kill_switch",
+        suite=suite,
+        lane="safety",
+        command="desktop_kill_switch",
+        params_redacted={},
+        ok=confirmed,
+        status="passed" if confirmed else "failed",
+        audit_id=None,
+        engine=None,
+        snapshot_id=None,
+        artifact_path=None,
+        duration_ms=0,
+        errors=errors,
+        warnings=[],
+        payload={"ok": confirmed, "errors": errors},
     )
 
 

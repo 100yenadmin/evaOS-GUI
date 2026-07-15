@@ -192,6 +192,7 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
       },
     };
     let connectorResponse;
+    let rawConnectorResponse;
     const controller = new AbortController();
     const connectorTimeout = setTimeout(() => controller.abort(), connectorTimeoutMs);
     try {
@@ -205,26 +206,20 @@ export function createMacControlRuntimeReceiptHandler(options = {}) {
         body: JSON.stringify(connectorBody),
         signal: controller.signal,
       });
+      if (!connectorResponse.ok) {
+        sendError(
+          response,
+          connectorResponse.status >= 400 && connectorResponse.status < 500 ? 409 : 502,
+          'connector_rejected_canary'
+        );
+        return true;
+      }
+      rawConnectorResponse = await readBoundedConnectorResponse(connectorResponse);
     } catch {
-      sendError(response, 502, 'connector_unavailable');
+      sendError(response, 502, connectorResponse ? 'connector_response_invalid' : 'connector_unavailable');
       return true;
     } finally {
       clearTimeout(connectorTimeout);
-    }
-    if (!connectorResponse.ok) {
-      sendError(
-        response,
-        connectorResponse.status >= 400 && connectorResponse.status < 500 ? 409 : 502,
-        'connector_rejected_canary'
-      );
-      return true;
-    }
-    let rawConnectorResponse;
-    try {
-      rawConnectorResponse = await connectorResponse.text();
-    } catch {
-      sendError(response, 502, 'connector_response_invalid');
-      return true;
     }
     const sanitized = validateConnectorEnvelope(
       rawConnectorResponse,
@@ -498,6 +493,26 @@ function validateConnectorEnvelope(raw, authority, request, verifier) {
   }
   return validatePublicAttestationEnvelope(publicAttestation, expectedAttestation.value, authority, verifier);
 }
+async function readBoundedConnectorResponse(response) {
+  if (response.body) {
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of response.body) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(typeof chunk === 'string' ? chunk : chunk);
+      total += buffer.byteLength;
+      if (total > MAX_CONNECTOR_RESPONSE_BYTES) {
+        throw new Error('connector response exceeds the bounded receipt envelope size');
+      }
+      chunks.push(buffer);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+  const raw = await response.text();
+  if (Buffer.from(raw).byteLength > MAX_CONNECTOR_RESPONSE_BYTES) {
+    throw new Error('connector response exceeds the bounded receipt envelope size');
+  }
+  return raw;
+}
 function validateReceipt(receiptBytes, authority, request, verifier) {
   let parsed;
   try {
@@ -706,7 +721,7 @@ function validCandidate(value, verifier) {
     owner.sourceCommit === verifier.expectedSourceCommit &&
     validPathClaim(
       owner.programPath,
-      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge'
+      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/cli.py'
     ) &&
     validPathClaim(owner.appPath, '/Applications/evaOS Workbench.app') &&
     validPathClaim(owner.manifestPath, '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json') &&

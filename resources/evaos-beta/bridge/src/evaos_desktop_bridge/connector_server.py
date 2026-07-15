@@ -1987,8 +1987,15 @@ def _approval_field_value(command: str, params: dict[str, Any], field: str) -> A
             return None
         normalized = str(value).strip() if source_field == "message" else str(value)
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+    if command == "desktopSetValue" and field == "attribute":
+        return str(params.get("attribute") or "value")
+    if command == "desktopScroll":
+        if field == "direction":
+            return str(params.get("direction") or "down")
+        if field == "amount":
+            return _clamp_int(params.get("amount"), 600, 1, 5000)
     if field == "direction" and command == "customerMacIphoneMirroringScroll":
-        return params.get("direction") or "down"
+        return str(params.get("direction") or "down")
     return params.get(field)
 
 

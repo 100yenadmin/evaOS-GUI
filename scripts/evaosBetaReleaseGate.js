@@ -215,6 +215,7 @@ const REQUIRED_RC_PROOF_CHECKS = [
       'control_start.ask_permission',
       'control_start.stop',
       'control_start.kill_switch',
+      'control_cleanup.local_kill_switch',
       '"source_commit_under_test"',
       '"candidate_binding"',
     ],
@@ -3731,6 +3732,7 @@ function assertRcInstalledCandidateConnectorProof(proofPath, tag, releaseManifes
     { id: 'control_start.ask_permission', command: 'local_workbench_control_start', mode: 'ask-permission' },
     { id: 'control_start.stop', command: 'desktop_control_stop' },
     { id: 'control_start.kill_switch', command: 'desktop_kill_switch' },
+    { id: 'control_cleanup.local_kill_switch', command: 'desktop_kill_switch' },
   ];
   const requiredStatuses = expectedResults.map((expected) => ({
     expected,
