@@ -290,7 +290,7 @@ function commandLooksLikeBridgeServer(command, expectedBridgePath) {
   const text = String(command || '');
   return (
     text.includes(expectedBridgePath) ||
-    /(?:^|\s)-m\s+evaos_desktop_bridge\.cli\s+serve(?:\s|$)/.test(text) ||
+    /(?:^|\s)-m\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
     /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
   );
 }
