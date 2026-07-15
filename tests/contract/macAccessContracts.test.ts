@@ -220,15 +220,15 @@ const expectedIssuePathByError: Record<string, string> = {
 
 describe('evaOS Mac Access v1 contracts', () => {
   const validFixtures = [
-    ['access_state', 'access-state.json'],
-    ['access_state', 'full-access-state.json'],
-    ['access_transition', 'access-transition.json'],
-    ['access_transition', 'access-transition-stop.json'],
-    ['access_transition', 'access-transition-grant-expired.json'],
-    ['local_status', 'local-status.json'],
-    ['authenticated_local_action', 'local-action.json'],
-    ['broker_control', 'broker-control.json'],
-    ['audit_event', 'audit-event.json'],
+    ['access_state', 'state/access-state.json'],
+    ['access_state', 'state/full-access-state.json'],
+    ['access_transition', 'state/access-transition.json'],
+    ['access_transition', 'state/access-transition-stop.json'],
+    ['access_transition', 'state/access-transition-grant-expired.json'],
+    ['local_status', 'state/local-status.json'],
+    ['authenticated_local_action', 'authority/local-action.json'],
+    ['broker_control', 'authority/broker-control.json'],
+    ['audit_event', 'audit/audit-event.json'],
     ['core_host_request', '../host/host-request.json'],
     ['core_host_response', '../host/host-response.json'],
   ] as const;
@@ -255,7 +255,7 @@ describe('evaOS Mac Access v1 contracts', () => {
       'shutdown',
     ]);
 
-    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'broker-control.json')));
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
     const identity = {
       schema_version: 'evaos.mac_connector_core.host_request.v1',
       host_session_id: 'host-session-01',
@@ -304,7 +304,7 @@ describe('evaOS Mac Access v1 contracts', () => {
 
   it('rejects unsafe integers in every nested security counter exposed by the host DTOs', () => {
     const unsafeInteger = Number.MAX_SAFE_INTEGER + 1;
-    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'broker-control.json')));
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
     const dispatchRequest = {
       schema_version: 'evaos.mac_connector_core.host_request.v1',
       request_id: 'host-dispatch-unsafe',
@@ -333,7 +333,7 @@ describe('evaOS Mac Access v1 contracts', () => {
       operation: 'status',
       ok: true,
       policy_epoch: 7,
-      result: { kind: 'status', status: cloneJson(readJson(path.join(validRoot, 'local-status.json'))) },
+      result: { kind: 'status', status: cloneJson(readJson(path.join(validRoot, 'state/local-status.json'))) },
       error: null,
     };
     applyMutation(statusResponse, {
@@ -359,7 +359,7 @@ describe('evaOS Mac Access v1 contracts', () => {
       policy_epoch: 7,
       result: {
         kind: 'audit_summary',
-        events: [cloneJson(readJson(path.join(validRoot, 'audit-event.json')))],
+        events: [cloneJson(readJson(path.join(validRoot, 'audit/audit-event.json')))],
         next_sequence: null,
       },
       error: null,
@@ -373,6 +373,116 @@ describe('evaOS Mac Access v1 contracts', () => {
     expect(auditResult.success).toBe(false);
     if (!auditResult.success) {
       expect(auditResult.error.issues.some((issue) => issue.path.join('/') === 'result/events/0/sequence')).toBe(true);
+    }
+  });
+
+  it('rejects connected transport after access is unpaired or revoked', () => {
+    const status = cloneJson(readJson(path.join(validRoot, 'state/local-status.json'))) as {
+      access: {
+        pairing_state: string;
+        configured_mode: string;
+        effective_mode: string;
+        binding: unknown;
+      };
+    };
+    status.access.pairing_state = 'revoked';
+    status.access.configured_mode = 'off';
+    status.access.effective_mode = 'off';
+    status.access.binding = null;
+
+    const parsed = localStatusSchema.safeParse(status);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'transport/state')).toBe(true);
+    }
+  });
+
+  it('rejects dispatch when the host epoch differs from the signed broker envelope', () => {
+    const envelope = brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')));
+    const parsed = coreHostRequestSchema.safeParse({
+      schema_version: 'evaos.mac_connector_core.host_request.v1',
+      request_id: 'host-dispatch-stale',
+      host_session_id: 'host-session-01',
+      sequence: 1,
+      operation: 'dispatch_action',
+      expected_policy_epoch: envelope.policy_epoch - 1,
+      envelope,
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'expected_policy_epoch')).toBe(true);
+    }
+  });
+
+  it('rejects silent binding replacement outside an explicit binding transition', () => {
+    const transition = cloneJson(readJson(path.join(validRoot, 'state/access-transition-stop.json'))) as {
+      to: {
+        binding: {
+          device_id: string;
+          binding_fingerprint_sha256: string;
+        };
+      };
+    };
+    transition.to.binding.device_id = 'mac-02';
+    transition.to.binding.binding_fingerprint_sha256 = '2'.repeat(64);
+
+    const parsed = accessTransitionSchema.safeParse(transition);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'to/binding')).toBe(true);
+    }
+  });
+
+  it('rejects lifecycle barrier responses that report unsafe operation-specific state', () => {
+    const base = cloneJson(readJson(path.join(contractRoot, 'fixtures/host/host-response.json'))) as {
+      operation: string;
+      result: {
+        effective_mode: string;
+        pairing_state: string;
+        transport_state: string;
+      };
+    };
+    const cases = [
+      {
+        operation: 'stop',
+        effective_mode: 'full_access',
+        pairing_state: 'paired',
+        transport_state: 'connected',
+        expectedPaths: ['result/effective_mode', 'result/transport_state'],
+      },
+      {
+        operation: 'revoke',
+        effective_mode: 'off',
+        pairing_state: 'paired',
+        transport_state: 'connected',
+        expectedPaths: ['result/pairing_state'],
+      },
+      {
+        operation: 'activate_kill_switch',
+        effective_mode: 'off',
+        pairing_state: 'paired',
+        transport_state: 'connected',
+        expectedPaths: ['result/transport_state'],
+      },
+    ];
+
+    for (const testCase of cases) {
+      const response = cloneJson(base);
+      response.operation = testCase.operation;
+      response.result.effective_mode = testCase.effective_mode;
+      response.result.pairing_state = testCase.pairing_state;
+      response.result.transport_state = testCase.transport_state;
+      const parsed = coreHostResponseSchema.safeParse(response);
+      expect(parsed.success, testCase.operation).toBe(false);
+      if (!parsed.success) {
+        for (const expectedPath of testCase.expectedPaths) {
+          expect(
+            parsed.error.issues.some((issue) => issue.path.join('/') === expectedPath),
+            `${testCase.operation} must reject at ${expectedPath}`
+          ).toBe(true);
+        }
+      }
     }
   });
 

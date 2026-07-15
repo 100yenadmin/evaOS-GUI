@@ -98,7 +98,7 @@ packages/mac-connector-core/                 # at most 6 direct children
 │       ├── host/                           # host API, CLI, compatibility dispatcher, tooling
 │       ├── persistence/                    # audit, queue, and state compatibility
 │       └── policy/                         # policy compatibility before native retirement
-├── swift/                                  # native ports: Keychain, IPC, TCC/CUA, transport
+├── native/                                 # SwiftPM native ports: verification, Keychain, IPC, TCC/CUA, transport
 ├── tests/                                  # cross-language behavior and negative fixtures
 ├── scripts/                                # generation and parity checks
 └── README.md
@@ -332,7 +332,7 @@ Versioned contracts and fixtures live at `packages/mac-connector-core/contracts/
 The negative manifests distinguish:
 
 - `schema`: invalid data must be rejected by every decoder;
-- `runtime`: structurally valid data requires stateful cryptographic, replay, enrollment, or local-policy rejection in downstream implementation. Each appears as an explicit `todo` in #699's focused suite and may not be reported green until its named downstream handler exists.
+- `runtime`: structurally valid data requires stateful cryptographic, replay, enrollment, or local-policy rejection in downstream implementation. #699 freezes the exact fixture/error ledger without claiming execution; each case may be reported green only after its named #700-#704 handler executes the rejection.
 
 Downstream issues may claim completion only with the following evidence:
 

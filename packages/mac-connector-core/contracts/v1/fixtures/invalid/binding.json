@@ -3,7 +3,7 @@
     "id": "wrong-customer",
     "threat": "wrong_customer",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [
       {
         "operation": "set",
@@ -19,7 +19,7 @@
     "id": "stale-binding-version",
     "threat": "stale_binding",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [
       {
         "operation": "set",
@@ -35,7 +35,7 @@
     "id": "wrong-device",
     "threat": "wrong_device",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [
       {
         "operation": "set",
@@ -51,7 +51,7 @@
     "id": "revoked-grant",
     "threat": "revoked_grant",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [],
     "expected_stage": "runtime",
     "expected_error": "grant_revoked",
@@ -61,7 +61,7 @@
     "id": "wrong-grant",
     "threat": "wrong_grant",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [{ "operation": "set", "pointer": "/binding/grant_id", "value": "grant-02" }],
     "expected_stage": "schema",
     "expected_error": "selected_grant_mismatch",
@@ -71,7 +71,7 @@
     "id": "wrong-runtime",
     "threat": "wrong_runtime",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [{ "operation": "set", "pointer": "/binding/runtime", "value": "hermes" }],
     "expected_stage": "schema",
     "expected_error": "selected_runtime_mismatch",
@@ -81,7 +81,7 @@
     "id": "wrong-installation",
     "threat": "wrong_installation",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [{ "operation": "set", "pointer": "/binding/connector_installation_id", "value": "install-02" }],
     "expected_stage": "schema",
     "expected_error": "connector_installation_mismatch",
@@ -91,7 +91,7 @@
     "id": "wrong-connector-key",
     "threat": "wrong_connector_key",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [{ "operation": "set", "pointer": "/binding/connector_key_id", "value": "mac-key-02" }],
     "expected_stage": "schema",
     "expected_error": "connector_key_mismatch",
@@ -101,7 +101,7 @@
     "id": "signed-payload-tampered-grant",
     "threat": "command_authority_tampering",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [
       { "operation": "set", "pointer": "/binding/grant_id", "value": "grant-02" },
       {

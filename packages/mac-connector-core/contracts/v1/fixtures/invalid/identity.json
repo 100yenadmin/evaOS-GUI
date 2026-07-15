@@ -33,7 +33,7 @@
     "id": "unsafe-broker-envelope-sequence",
     "threat": "host_replay",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [{ "operation": "set", "pointer": "/sequence", "value": 9007199254740992 }],
     "expected_stage": "schema",
     "expected_error": "broker_sequence_not_safe_integer",
@@ -43,7 +43,7 @@
     "id": "unsafe-command-authority-sequence",
     "threat": "host_replay",
     "contract": "broker_control",
-    "base_fixture": "../valid/broker-control.json",
+    "base_fixture": "../valid/authority/broker-control.json",
     "mutations": [
       {
         "operation": "set",
@@ -59,7 +59,7 @@
     "id": "unsafe-status-policy-epoch",
     "threat": "host_replay",
     "contract": "local_status",
-    "base_fixture": "../valid/local-status.json",
+    "base_fixture": "../valid/state/local-status.json",
     "mutations": [{ "operation": "set", "pointer": "/access/policy_epoch", "value": 9007199254740992 }],
     "expected_stage": "schema",
     "expected_error": "status_policy_epoch_not_safe_integer",
@@ -69,7 +69,7 @@
     "id": "unsafe-audit-sequence",
     "threat": "host_replay",
     "contract": "audit_event",
-    "base_fixture": "../valid/audit-event.json",
+    "base_fixture": "../valid/audit/audit-event.json",
     "mutations": [{ "operation": "set", "pointer": "/sequence", "value": 9007199254740992 }],
     "expected_stage": "schema",
     "expected_error": "audit_sequence_not_safe_integer",
@@ -129,7 +129,7 @@
     "id": "wrong-team-local-client",
     "threat": "local_untrusted_client",
     "contract": "authenticated_local_action",
-    "base_fixture": "../valid/local-action.json",
+    "base_fixture": "../valid/authority/local-action.json",
     "mutations": [
       {
         "operation": "set",
@@ -145,7 +145,7 @@
     "id": "forged-local-client-requirement",
     "threat": "local_untrusted_client",
     "contract": "authenticated_local_action",
-    "base_fixture": "../valid/local-action.json",
+    "base_fixture": "../valid/authority/local-action.json",
     "mutations": [
       {
         "operation": "set",
@@ -161,7 +161,7 @@
     "id": "untrusted-local-client",
     "threat": "local_untrusted_client",
     "contract": "authenticated_local_action",
-    "base_fixture": "../valid/local-action.json",
+    "base_fixture": "../valid/authority/local-action.json",
     "mutations": [
       {
         "operation": "set",
@@ -177,7 +177,7 @@
     "id": "duplicate-leader",
     "threat": "duplicate_process",
     "contract": "local_status",
-    "base_fixture": "../valid/local-status.json",
+    "base_fixture": "../valid/state/local-status.json",
     "mutations": [
       {
         "operation": "set",
@@ -193,7 +193,7 @@
     "id": "helper-replacement",
     "threat": "helper_replacement",
     "contract": "local_status",
-    "base_fixture": "../valid/local-status.json",
+    "base_fixture": "../valid/state/local-status.json",
     "mutations": [
       {
         "operation": "set",
@@ -209,7 +209,7 @@
     "id": "forged-app-requirement",
     "threat": "helper_replacement",
     "contract": "local_status",
-    "base_fixture": "../valid/local-status.json",
+    "base_fixture": "../valid/state/local-status.json",
     "mutations": [
       {
         "operation": "set",
@@ -225,7 +225,7 @@
     "id": "forged-helper-requirement",
     "threat": "helper_replacement",
     "contract": "local_status",
-    "base_fixture": "../valid/local-status.json",
+    "base_fixture": "../valid/state/local-status.json",
     "mutations": [
       {
         "operation": "set",
@@ -241,7 +241,7 @@
     "id": "forged-connector-requirement",
     "threat": "helper_replacement",
     "contract": "local_status",
-    "base_fixture": "../valid/local-status.json",
+    "base_fixture": "../valid/state/local-status.json",
     "mutations": [
       {
         "operation": "set",

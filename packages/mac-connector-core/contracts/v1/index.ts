@@ -568,6 +568,13 @@ export const localStatusSchema = z
         path: ['transport', 'state'],
       });
     }
+    if (connected && (status.access.pairing_state !== 'paired' || status.access.binding === null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'connected transport requires an actively paired selected binding',
+        path: ['transport', 'state'],
+      });
+    }
   });
 
 export const accessTransitionSchema = z
@@ -598,6 +605,17 @@ export const accessTransitionSchema = z
   .strict()
   .superRefine((transition, context) => {
     const { from, to } = transition;
+    const bindingUnchanged =
+      (from.binding === null && to.binding === null) ||
+      (from.binding !== null && to.binding !== null && selectedBindingsEqual(from.binding, to.binding));
+    const bindingMutationEvents = new Set(['pair_confirmed', 'binding_changed', 'revoke', 'grant_expired']);
+    if (!bindingUnchanged && !bindingMutationEvents.has(transition.event)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'selected binding may change only through an explicit binding authority transition',
+        path: ['to', 'binding'],
+      });
+    }
     if (to.policy_epoch !== from.policy_epoch + 1) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -760,7 +778,9 @@ export const accessTransitionSchema = z
     }
     if (
       transition.event === 'binding_changed' &&
-      (from.binding?.binding_fingerprint_sha256 === to.binding?.binding_fingerprint_sha256 ||
+      (from.binding === null ||
+        to.binding === null ||
+        selectedBindingsEqual(from.binding, to.binding) ||
         to.confirmed_binding_fingerprint_sha256 !== null)
     ) {
       context.addIssue({
@@ -1008,65 +1028,75 @@ const coreHostLifecycleRequest = (
     })
     .strict();
 
-export const coreHostRequestSchema = z.discriminatedUnion('operation', [
-  z
-    .object({
-      ...coreHostRequestIdentity,
-      operation: z.literal('status'),
-      expected_policy_epoch: z.null(),
-    })
-    .strict(),
-  z
-    .object({
-      ...coreHostRequestIdentity,
-      operation: z.literal('pair'),
-      expected_policy_epoch: safeNonnegativeCounter,
-      pairing_code: z.string().regex(/^[A-Z0-9]{6,12}$/),
-      local_installation_nonce: base64Url,
-    })
-    .strict(),
-  coreHostLifecycleRequest('unpair'),
-  z
-    .object({
-      ...coreHostRequestIdentity,
-      operation: z.literal('connect'),
-      expected_policy_epoch: safeNonnegativeCounter,
-      binding: selectedBindingSchema,
-    })
-    .strict(),
-  coreHostLifecycleRequest('disconnect'),
-  z
-    .object({
-      ...coreHostRequestIdentity,
-      operation: z.literal('set_access_mode'),
-      expected_policy_epoch: safeNonnegativeCounter,
-      target_mode: z.enum(['off', 'ask_every_time', 'full_access']),
-    })
-    .strict(),
-  z
-    .object({
-      ...coreHostRequestIdentity,
-      operation: z.literal('dispatch_action'),
-      expected_policy_epoch: safeNonnegativeCounter,
-      envelope: brokerControlEnvelopeSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...coreHostRequestIdentity,
-      operation: z.literal('audit_summary'),
-      expected_policy_epoch: safeNonnegativeCounter,
-      after_sequence: safeNonnegativeCounter.nullable(),
-      limit: z.number().int().min(1).max(100),
-    })
-    .strict(),
-  coreHostLifecycleRequest('pause'),
-  coreHostLifecycleRequest('resume'),
-  coreHostLifecycleRequest('stop'),
-  coreHostLifecycleRequest('revoke'),
-  coreHostLifecycleRequest('activate_kill_switch'),
-  coreHostLifecycleRequest('shutdown'),
-]);
+export const coreHostRequestSchema = z
+  .discriminatedUnion('operation', [
+    z
+      .object({
+        ...coreHostRequestIdentity,
+        operation: z.literal('status'),
+        expected_policy_epoch: z.null(),
+      })
+      .strict(),
+    z
+      .object({
+        ...coreHostRequestIdentity,
+        operation: z.literal('pair'),
+        expected_policy_epoch: safeNonnegativeCounter,
+        pairing_code: z.string().regex(/^[A-Z0-9]{6,12}$/),
+        local_installation_nonce: base64Url,
+      })
+      .strict(),
+    coreHostLifecycleRequest('unpair'),
+    z
+      .object({
+        ...coreHostRequestIdentity,
+        operation: z.literal('connect'),
+        expected_policy_epoch: safeNonnegativeCounter,
+        binding: selectedBindingSchema,
+      })
+      .strict(),
+    coreHostLifecycleRequest('disconnect'),
+    z
+      .object({
+        ...coreHostRequestIdentity,
+        operation: z.literal('set_access_mode'),
+        expected_policy_epoch: safeNonnegativeCounter,
+        target_mode: z.enum(['off', 'ask_every_time', 'full_access']),
+      })
+      .strict(),
+    z
+      .object({
+        ...coreHostRequestIdentity,
+        operation: z.literal('dispatch_action'),
+        expected_policy_epoch: safeNonnegativeCounter,
+        envelope: brokerControlEnvelopeSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...coreHostRequestIdentity,
+        operation: z.literal('audit_summary'),
+        expected_policy_epoch: safeNonnegativeCounter,
+        after_sequence: safeNonnegativeCounter.nullable(),
+        limit: z.number().int().min(1).max(100),
+      })
+      .strict(),
+    coreHostLifecycleRequest('pause'),
+    coreHostLifecycleRequest('resume'),
+    coreHostLifecycleRequest('stop'),
+    coreHostLifecycleRequest('revoke'),
+    coreHostLifecycleRequest('activate_kill_switch'),
+    coreHostLifecycleRequest('shutdown'),
+  ])
+  .superRefine((request, context) => {
+    if (request.operation === 'dispatch_action' && request.expected_policy_epoch !== request.envelope.policy_epoch) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'dispatch host epoch must exactly match the signed broker envelope epoch',
+        path: ['expected_policy_epoch'],
+      });
+    }
+  });
 
 const safeEvidenceIdentifier = identifier.refine(
   (value) => !/(?:authorization|bearer|cookie|password|secret|token|eyJ[A-Za-z0-9_-]{8})/i.test(value),
@@ -1240,6 +1270,45 @@ export const coreHostResponseSchema = z
         code: z.ZodIssueCode.custom,
         message: 'host response result kind must match the requested operation',
         path: ['result', 'kind'],
+      });
+    }
+    if (response.result.kind !== 'lifecycle') return;
+
+    if (
+      ['pause', 'stop', 'revoke', 'activate_kill_switch', 'shutdown'].includes(response.operation) &&
+      response.result.effective_mode !== 'off'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'destructive lifecycle responses must report effective access off',
+        path: ['result', 'effective_mode'],
+      });
+    }
+    if (
+      response.operation === 'revoke' &&
+      (response.result.pairing_state !== 'revoked' || response.result.transport_state !== 'revoked')
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'revoke response must report revoked pairing and transport',
+        path: ['result', 'pairing_state'],
+      });
+    }
+    if (
+      ['stop', 'shutdown'].includes(response.operation) &&
+      ['connecting', 'connected'].includes(response.result.transport_state)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'stop and shutdown responses cannot retain an active transport',
+        path: ['result', 'transport_state'],
+      });
+    }
+    if (response.operation === 'activate_kill_switch' && response.result.transport_state !== 'blocked') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'kill-switch response must report blocked transport',
+        path: ['result', 'transport_state'],
       });
     }
   });

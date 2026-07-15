@@ -74,7 +74,9 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('verifies the cross-language command authorization golden vector', () => {
-    const vector = commandAuthorityGoldenSchema.parse(readJson(path.join(validRoot, 'command-authority-golden.json')));
+    const vector = commandAuthorityGoldenSchema.parse(
+      readJson(path.join(validRoot, 'authority/command-authority-golden.json'))
+    );
     const canonical = canonicalizeJcs(vector.payload);
     expect(canonical).toBe(vector.canonical_payload_utf8);
     expect(createHash('sha256').update(canonical).digest('hex')).toBe(vector.payload_sha256);
@@ -89,7 +91,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('verifies the two-record audit-chain golden vector', () => {
-    expect(verifiesAuditChainGolden(readJson(path.join(validRoot, 'audit-chain-golden.json')))).toBe(true);
+    expect(verifiesAuditChainGolden(readJson(path.join(validRoot, 'audit/audit-chain-golden.json')))).toBe(true);
   });
 
   it('verifies the exact-target rollback authorization golden vector', () => {
@@ -113,7 +115,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
       public_key_spki_base64url: _publicKey,
       ...signedVector
     } = vector;
-    const localStatus = localStatusSchema.parse(readJson(path.join(validRoot, 'local-status.json')));
+    const localStatus = localStatusSchema.parse(readJson(path.join(validRoot, 'state/local-status.json')));
     expect(localStatus.relay_authorization.rollback_authorization).toEqual(signedVector);
   });
 
@@ -141,7 +143,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     expect(verify(null, Buffer.from(vector.canonical_payload_utf8), publicKey, tamperedSignature)).toBe(false);
 
     const commandVector = commandAuthorityGoldenSchema.parse(
-      readJson(path.join(validRoot, 'command-authority-golden.json'))
+      readJson(path.join(validRoot, 'authority/command-authority-golden.json'))
     );
     const wrongKey = createPublicKey({
       key: Buffer.from(commandVector.public_key_spki_base64url, 'base64url'),
@@ -159,7 +161,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('rejects an edited audit payload whose record digest is unchanged', () => {
-    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
       records: Array<{ payload: { reason_code: string } }>;
     };
     vector.records[0].payload.reason_code = 'tampered_reason';
@@ -167,7 +169,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('rejects deletion of an audit record from a persisted chain', () => {
-    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
       records: unknown[];
     };
     vector.records.splice(0, 1);
@@ -175,7 +177,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('rejects reordered audit records', () => {
-    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
       records: unknown[];
     };
     vector.records.reverse();
@@ -183,7 +185,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('rejects a previous-record digest mismatch', () => {
-    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
       records: Array<{ payload: { previous_record_sha256: string | null } }>;
     };
     vector.records[1].payload.previous_record_sha256 = '0'.repeat(64);
