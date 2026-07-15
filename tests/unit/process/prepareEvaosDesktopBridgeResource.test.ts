@@ -301,7 +301,9 @@ describe('prepareEvaosDesktopBridgeResource', () => {
             {
               code: 'unsafe/code',
               status: 'fail',
-              message: 'token fixture-secret https://private.invalid /tmp/private 10.0.0.1',
+              message:
+                'Authorization: Bearer fixture-secret eyJhbGciOiJIUzI1NiJ9.fixture.signature 2001:db8::1 /tmp/private path\n' +
+                'x'.repeat(300),
               evidence: 'raw-evidence',
             },
           ],
@@ -314,8 +316,10 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       });
       expect(sanitized.status).toBe(0);
       expect(sanitized.stderr).toContain('invalid_check_code');
-      expect(sanitized.stderr).toContain('token=[redacted]');
-      expect(sanitized.stderr).not.toMatch(/fixture-secret|private\.invalid|\/tmp\/private|10\.0\.0\.1|raw-evidence/);
+      expect(sanitized.stderr).toContain('Installed candidate did not satisfy this pre-canary check.');
+      expect(sanitized.stderr).not.toMatch(
+        /fixture-secret|eyJhbGciOiJIUzI1NiJ9|2001:db8::1|\/tmp\/private|raw-evidence|x{20}/
+      );
 
       writeFileSync(reportPath, '{"checks":[{"message":"token malformed-secret"}');
       const malformed = spawnSync(process.execPath, ['-', reportPath], {
