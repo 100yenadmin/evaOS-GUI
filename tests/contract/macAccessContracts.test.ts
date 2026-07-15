@@ -89,6 +89,85 @@ const negativeFixtures = fs
     return cases.map((rawCase) => ({ manifestPath, fixture: negativeFixtureCaseSchema.parse(rawCase) }));
   });
 
+const EXPECTED_NEGATIVE_FIXTURE_IDS = [
+  'audit-chain-gap',
+  'audit-clipboard-field',
+  'audit-screenshot-field',
+  'audit-secret-bearing-value',
+  'audit-write-failure',
+  'authority-outlives-context',
+  'begin-pairing-without-epoch',
+  'configured-off-effective-ask',
+  'connected-without-channel',
+  'crash-restores-full-access',
+  'duplicate-leader',
+  'execution-context-payload-tampered',
+  'expired-command',
+  'expired-grant-remains-active',
+  'expired-rollback-authorization',
+  'failed-core-host-response-with-result',
+  'failed-core-host-response-without-error',
+  'forged-app-requirement',
+  'forged-connector-requirement',
+  'forged-helper-requirement',
+  'forged-local-client-requirement',
+  'full-access-stale-binding-confirmation',
+  'full-access-stale-policy-confirmation',
+  'grant-expiry-with-pending-authority',
+  'helper-replacement',
+  'kill-switch-with-pending-authority',
+  'offline-broker-actuation',
+  'pairing-directly-enables-full-access',
+  'pause-with-pending-authority',
+  'raw-secret-audit',
+  'replayed-command',
+  'replayed-core-host-sequence',
+  'request-digest-mismatch',
+  'revoke-with-pending-authority',
+  'revoked-grant',
+  'rollback-wrong-source',
+  'rollback-wrong-target',
+  'signed-downgrade-below-security-floor',
+  'signed-payload-tampered-grant',
+  'stale-binding-version',
+  'stale-command-policy-epoch',
+  'stale-core-host-session',
+  'stale-rollback-authorization-id',
+  'stolen-pairing-code',
+  'stop-with-pending-authority',
+  'tcc-denied-with-effective-access',
+  'unknown-core-host-operation',
+  'unsafe-audit-sequence',
+  'unsafe-broker-envelope-sequence',
+  'unsafe-command-authority-sequence',
+  'unsafe-core-host-policy-epoch',
+  'unsafe-core-host-sequence',
+  'unsafe-status-policy-epoch',
+  'unsupported-downgrade-schema',
+  'untrusted-local-client',
+  'wrong-channel-generation',
+  'wrong-connector-key',
+  'wrong-customer',
+  'wrong-device',
+  'wrong-grant',
+  'wrong-installation',
+  'wrong-runtime',
+  'wrong-team-local-client',
+] as const;
+
+const EXPECTED_RUNTIME_PROOF_LEDGER = [
+  ['execution-context-payload-tampered', 'execution_context_digest_or_signature_mismatch'],
+  ['offline-broker-actuation', 'broker_authority_offline'],
+  ['replayed-command', 'command_replayed'],
+  ['replayed-core-host-sequence', 'host_sequence_replayed'],
+  ['request-digest-mismatch', 'request_digest_mismatch'],
+  ['revoked-grant', 'grant_revoked'],
+  ['signed-payload-tampered-grant', 'command_authorization_digest_or_signature_mismatch'],
+  ['stale-command-policy-epoch', 'command_policy_epoch_stale'],
+  ['stale-core-host-session', 'host_session_mismatch'],
+  ['stolen-pairing-code', 'pairing_code_reused_or_claimed'],
+] as const;
+
 const expectedIssuePathByError: Record<string, string> = {
   execution_context_binding_mismatch: 'execution_context/claims',
   selected_device_mismatch: 'authorization/payload',
@@ -344,11 +423,18 @@ describe('evaOS Mac Access v1 contracts', () => {
     }
 
     expect([...requiredThreats]).toEqual([]);
+    expect([...seen].toSorted()).toEqual(EXPECTED_NEGATIVE_FIXTURE_IDS);
   });
 
-  for (const { fixture: runtimeFixture } of negativeFixtures.filter(
-    (entry) => entry.fixture.expected_stage === 'runtime'
-  )) {
-    it.todo(`runtime rejection ${runtimeFixture.id} must return ${runtimeFixture.expected_error}`);
-  }
+  it('freezes the downstream runtime-rejection proof ledger without claiming A0 execution', () => {
+    const runtimeProofLedger = negativeFixtures
+      .filter((entry) => entry.fixture.expected_stage === 'runtime')
+      .map(({ fixture }) => {
+        expect(fixture.required_runtime_rejection, fixture.id).toBeTruthy();
+        return [fixture.id, fixture.expected_error] as const;
+      })
+      .toSorted(([left], [right]) => left.localeCompare(right));
+
+    expect(runtimeProofLedger).toEqual(EXPECTED_RUNTIME_PROOF_LEDGER);
+  });
 });

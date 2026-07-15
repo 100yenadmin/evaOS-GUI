@@ -34,6 +34,22 @@ function canonicalizeJcs(value: unknown): string {
     .join(',')}}`;
 }
 
+function verifiesAuditChainGolden(value: unknown): boolean {
+  const parsed = auditChainGoldenSchema.safeParse(value);
+  if (!parsed.success) return false;
+
+  let previousDigest: string | null = null;
+  for (const [index, record] of parsed.data.records.entries()) {
+    const canonical = canonicalizeJcs(record.payload);
+    if (record.payload.sequence !== index + 1) return false;
+    if (record.payload.previous_record_sha256 !== previousDigest) return false;
+    if (canonical !== record.canonical_payload_utf8) return false;
+    if (createHash('sha256').update(canonical).digest('hex') !== record.record_sha256) return false;
+    previousDigest = record.record_sha256;
+  }
+  return true;
+}
+
 describe('evaOS Mac Access canonical cryptographic contracts', () => {
   it('freezes designated-requirement bytes and digests', () => {
     const pairs = [
@@ -73,17 +89,7 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
   });
 
   it('verifies the two-record audit-chain golden vector', () => {
-    const vector = auditChainGoldenSchema.parse(readJson(path.join(validRoot, 'audit-chain-golden.json')));
-    let previousDigest: string | null = null;
-
-    for (const [index, record] of vector.records.entries()) {
-      const canonical = canonicalizeJcs(record.payload);
-      expect(record.payload.sequence).toBe(index + 1);
-      expect(record.payload.previous_record_sha256).toBe(previousDigest);
-      expect(canonical).toBe(record.canonical_payload_utf8);
-      expect(createHash('sha256').update(canonical).digest('hex')).toBe(record.record_sha256);
-      previousDigest = record.record_sha256;
-    }
+    expect(verifiesAuditChainGolden(readJson(path.join(validRoot, 'audit-chain-golden.json')))).toBe(true);
   });
 
   it('verifies the exact-target rollback authorization golden vector', () => {
@@ -152,8 +158,35 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     ).toBe(false);
   });
 
-  it.todo('rejects an edited audit payload whose record digest is unchanged');
-  it.todo('rejects deletion of an audit record from a persisted chain');
-  it.todo('rejects reordered audit records');
-  it.todo('rejects a previous-record digest mismatch');
+  it('rejects an edited audit payload whose record digest is unchanged', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+      records: Array<{ payload: { reason_code: string } }>;
+    };
+    vector.records[0].payload.reason_code = 'tampered_reason';
+    expect(verifiesAuditChainGolden(vector)).toBe(false);
+  });
+
+  it('rejects deletion of an audit record from a persisted chain', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+      records: unknown[];
+    };
+    vector.records.splice(0, 1);
+    expect(verifiesAuditChainGolden(vector)).toBe(false);
+  });
+
+  it('rejects reordered audit records', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+      records: unknown[];
+    };
+    vector.records.reverse();
+    expect(verifiesAuditChainGolden(vector)).toBe(false);
+  });
+
+  it('rejects a previous-record digest mismatch', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit-chain-golden.json'))) as {
+      records: Array<{ payload: { previous_record_sha256: string | null } }>;
+    };
+    vector.records[1].payload.previous_record_sha256 = '0'.repeat(64);
+    expect(verifiesAuditChainGolden(vector)).toBe(false);
+  });
 });
