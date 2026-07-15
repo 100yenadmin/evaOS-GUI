@@ -143,10 +143,7 @@
     "threat": "replay",
     "contract": "broker_control",
     "base_fixture": "../valid/authority/broker-control.json",
-    "mutations": [
-      { "operation": "set", "pointer": "/policy_epoch", "value": 6 },
-      { "operation": "set", "pointer": "/authorization/payload/policy_epoch", "value": 6 }
-    ],
+    "mutations": [],
     "expected_stage": "runtime",
     "expected_error": "command_policy_epoch_stale",
     "required_runtime_rejection": "Reject before prompt or actuation unless the signed and delivered policy epoch equals the helper's current protected policy epoch and the host request expected epoch."

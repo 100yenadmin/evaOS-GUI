@@ -9,7 +9,8 @@ const base64Url = z
   .string()
   .min(1)
   .max(16_384)
-  .regex(/^[A-Za-z0-9_-]+$/);
+  .regex(/^[A-Za-z0-9_-]+$/)
+  .refine((value) => value.length % 4 !== 1, 'unpadded base64url length cannot have remainder one');
 const installationNonce = z
   .string()
   .length(43)
@@ -1341,6 +1342,13 @@ export const brokerControlEnvelopeSchema = z
       });
     }
     const authority = envelope.authorization.payload;
+    if (canonicalJsonSha256(authority) !== envelope.authorization.payload_sha256) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'command authority payload digest must match its RFC 8785 canonical payload',
+        path: ['authorization', 'payload_sha256'],
+      });
+    }
     const authorityMatches =
       authority.session_id === envelope.session_id &&
       authority.channel_generation_id === envelope.channel_generation_id &&
@@ -1671,6 +1679,7 @@ export const auditChainGoldenSchema = z
     const [decision, result] = golden.records.map((record) => record.payload);
     if (
       decision.event_type !== 'command_decision' ||
+      decision.outcome !== 'allowed' ||
       result.event_type !== 'command_result' ||
       result.causation_audit_id !== decision.audit_id ||
       result.command_id !== decision.command_id ||
@@ -1710,6 +1719,13 @@ const auditSummaryResultSchema = z
       }
     }
     if (summary.events.length === 0) {
+      if (summary.causal_decisions.length !== 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'empty audit summary cannot carry off-page causal decision records',
+          path: ['causal_decisions'],
+        });
+      }
       if (summary.next_cursor !== null) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -1795,6 +1811,7 @@ const auditSummaryResultSchema = z
       const decision = event.causation_audit_id === null ? undefined : decisions.get(event.causation_audit_id);
       if (
         decision === undefined ||
+        decision.outcome !== 'allowed' ||
         decision.sequence >= event.sequence ||
         decision.command_id !== event.command_id ||
         decision.request_digest_sha256 !== event.request_digest_sha256 ||

@@ -110,8 +110,8 @@
         "value": "grant-02"
       }
     ],
-    "expected_stage": "runtime",
+    "expected_stage": "schema",
     "expected_error": "command_authorization_digest_or_signature_mismatch",
-    "required_runtime_rejection": "RFC 8785 canonicalize the complete command-authority payload, recompute its SHA-256, verify the Ed25519 signature, and compare the selected grant with local enrollment before policy evaluation."
+    "required_runtime_rejection": null
   }
 ]

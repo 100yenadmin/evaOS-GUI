@@ -15,6 +15,7 @@ import {
   auditEventSchema,
   authenticatedLocalActionSchema,
   brokerControlEnvelopeSchema,
+  commandAuthorityPayloadSchema,
   coreHostExchangeSchema,
   coreHostRequestSchema,
   coreHostResponseSchema,
@@ -215,13 +216,13 @@ const EXPECTED_RUNTIME_PROOF_LEDGER = [
   ['replayed-core-host-sequence', 'host_sequence_replayed'],
   ['request-digest-mismatch', 'request_digest_mismatch'],
   ['revoked-grant', 'grant_revoked'],
-  ['signed-payload-tampered-grant', 'command_authorization_digest_or_signature_mismatch'],
   ['stale-command-policy-epoch', 'command_policy_epoch_stale'],
   ['stale-core-host-session', 'host_session_mismatch'],
   ['stolen-pairing-code', 'pairing_code_reused_or_claimed'],
 ] as const;
 
 const expectedIssuePathByError: Record<string, string> = {
+  command_authorization_digest_or_signature_mismatch: 'authorization/payload_sha256',
   execution_context_binding_mismatch: 'execution_context/claims',
   selected_device_mismatch: 'authorization/payload',
   selected_grant_mismatch: 'authorization/payload',
@@ -501,6 +502,29 @@ describe('evaOS Mac Access v1 contracts', () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'binding/grant_expires_at')).toBe(true);
+    }
+  });
+
+  it('rejects malformed base64url and stale command-authority payload digests', () => {
+    const envelope = cloneJson(
+      brokerControlEnvelopeSchema.parse(readJson(path.join(validRoot, 'authority/broker-control.json')))
+    );
+
+    const malformedPayload = cloneJson(envelope.authorization.payload);
+    malformedPayload.nonce = 'A';
+    const malformedNonce = commandAuthorityPayloadSchema.safeParse(malformedPayload);
+    expect(malformedNonce.success).toBe(false);
+    if (!malformedNonce.success) {
+      expect(malformedNonce.error.issues.some((issue) => issue.path.join('/') === 'nonce')).toBe(true);
+    }
+
+    const staleDigest = cloneJson(envelope);
+    staleDigest.sequence += 1;
+    staleDigest.authorization.payload.sequence = staleDigest.sequence;
+    const parsed = brokerControlEnvelopeSchema.safeParse(staleDigest);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.join('/') === 'authorization/payload_sha256')).toBe(true);
     }
   });
 
@@ -1359,6 +1383,20 @@ describe('evaOS Mac Access v1 contracts', () => {
     continuation.result.events = [events[1]];
     continuation.result.causal_decisions = [events[0]];
     expect(coreHostResponseSchema.safeParse(continuation).success).toBe(true);
+
+    const deniedDecision = cloneJson(continuation);
+    deniedDecision.result.causal_decisions[0].outcome = 'denied';
+    deniedDecision.result.causal_decisions[0] = rehashAuditEvent(deniedDecision.result.causal_decisions[0]);
+    deniedDecision.result.page_anchor.record_sha256 = deniedDecision.result.causal_decisions[0].record_sha256;
+    deniedDecision.result.events[0].previous_record_sha256 = deniedDecision.result.causal_decisions[0].record_sha256;
+    deniedDecision.result.events[0] = rehashAuditEvent(deniedDecision.result.events[0]);
+    deniedDecision.result.next_cursor.record_sha256 = deniedDecision.result.events[0].record_sha256;
+    expect(coreHostResponseSchema.safeParse(deniedDecision).success).toBe(false);
+
+    const emptyWithCausalDecision = cloneJson(continuation);
+    emptyWithCausalDecision.result.events = [];
+    emptyWithCausalDecision.result.next_cursor = null;
+    expect(coreHostResponseSchema.safeParse(emptyWithCausalDecision).success).toBe(false);
 
     const reorderedCursorRequest = {
       schema_version: 'evaos.mac_connector_core.host_request.v1',

@@ -265,6 +265,26 @@ describe('evaOS Mac Access canonical cryptographic contracts', () => {
     expect(verifiesAuditChainGolden(vector)).toBe(false);
   });
 
+  it('rejects a fully rehashed execution result whose causal decision was denied', () => {
+    const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
+      records: AuditGoldenRecord[];
+    };
+    vector.records[0].payload.outcome = 'denied';
+    vector.records[0].payload.reason_code = 'denied_access_off';
+    vector.records[0].canonical_payload_utf8 = canonicalizeJcs(vector.records[0].payload);
+    vector.records[0].record_sha256 = createHash('sha256')
+      .update(vector.records[0].canonical_payload_utf8)
+      .digest('hex');
+    vector.records[1].payload.previous_record_sha256 = vector.records[0].record_sha256;
+    vector.records[1].canonical_payload_utf8 = canonicalizeJcs(vector.records[1].payload);
+    vector.records[1].record_sha256 = createHash('sha256')
+      .update(vector.records[1].canonical_payload_utf8)
+      .digest('hex');
+
+    expect(verifiesAnchoredAuditRecords(vector.records, null)).toBe(true);
+    expect(auditChainGoldenSchema.safeParse(vector).success).toBe(false);
+  });
+
   it('rejects deletion of an audit record from a persisted chain', () => {
     const vector = structuredClone(readJson(path.join(validRoot, 'audit/audit-chain-golden.json'))) as {
       records: unknown[];
