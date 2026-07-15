@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { runBridge } from '../dist/src/bridge.js';
@@ -16,6 +18,7 @@ import {
 } from '../dist/src/runtimeReceipt.js';
 
 const NOW_MS = Date.parse('2026-07-15T00:00:00Z');
+const execFileAsync = promisify(execFile);
 const KEY_ID = 'mac-context-test-2026-07';
 const RECEIPT_KEY_ID = 'connector-receipt-test-2026-07';
 const RECEIPT_NAMESPACE = 'evaos-mac-control-receipt-v1';
@@ -116,6 +119,46 @@ test('Hermes reads params from stdin and never executes connector env files', ()
     assert.notEqual(result.status, 0);
     assert.equal(existsSync(marker), false);
   } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Hermes decodes inert shell-quoted connector values exactly', async () => {
+  const wrapper = fileURLToPath(new URL('../../hermes-adapter/bin/evaos-desktop-bridge-command', import.meta.url));
+  const directory = mkdtempSync(join(tmpdir(), 'evaos-hermes-quoted-env-'));
+  const envFile = join(directory, 'connector.env');
+  const token = 'quoted connector token at least 24';
+  let authorization = '';
+  const server = createServer((request, response) => {
+    authorization = String(request.headers.authorization || '');
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end('{"ok":true,"schema":"evaos.desktop_bridge.response.v1"}');
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    assert.equal(typeof address, 'object');
+    writeFileSync(
+      envFile,
+      `EVAOS_DESKTOP_BRIDGE_URL='http://127.0.0.1:${address.port}'\nEVAOS_DESKTOP_BRIDGE_TOKEN='${token}'\n`,
+      { encoding: 'utf8', mode: 0o600 }
+    );
+    chmodSync(envFile, 0o600);
+    const completed = await execFileAsync(wrapper, ['customerMacStatus'], {
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH,
+        EVAOS_DESKTOP_BRIDGE_ENV_FILE: envFile,
+      },
+      timeout: 5_000,
+    });
+    assert.equal(JSON.parse(completed.stdout).ok, true);
+    assert.equal(authorization, `Bearer ${token}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
     rmSync(directory, { recursive: true, force: true });
   }
 });

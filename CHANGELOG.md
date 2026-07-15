@@ -66,7 +66,8 @@
   routing, exact path matching, strict body validation, and rejection of
   caller-supplied authority before Mac-control proof can authorize publication.
 - Requires the installed-app QA binding check to consume the signed selected-
-  binding attestation before its short-lived execution authority expires.
+  binding attestation within a bounded one-hour evidence window, while still
+  proving that its short-lived authority was valid at execution time.
 
 ### Release Authorization And Bundle Integrity
 

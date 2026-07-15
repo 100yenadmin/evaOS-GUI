@@ -15,7 +15,9 @@ fi
 
 read_connector_env_file() {
   local env_file="$1"
-  local line key value
+  local line key value decoded_value
+  local seen_url=0
+  local seen_token=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
@@ -25,13 +27,32 @@ read_connector_env_file() {
     }
     key="${line%%=*}"
     value="${line#*=}"
+    decoded_value="$(printf '%s' "$value" | python3 -c 'import shlex, sys
+raw = sys.stdin.read()
+parts = shlex.split(raw, comments=False, posix=True)
+if len(parts) != 1:
+    raise SystemExit(2)
+sys.stdout.write(parts[0])')" || {
+      echo "invalid connector environment value" >&2
+      return 2
+    }
     case "$key" in
       EVAOS_DESKTOP_BRIDGE_URL)
-        EVAOS_DESKTOP_BRIDGE_URL="$value"
+        [[ "$seen_url" == 0 ]] || {
+          echo "duplicate connector environment key" >&2
+          return 2
+        }
+        seen_url=1
+        EVAOS_DESKTOP_BRIDGE_URL="$decoded_value"
         export EVAOS_DESKTOP_BRIDGE_URL
         ;;
       EVAOS_DESKTOP_BRIDGE_TOKEN)
-        EVAOS_DESKTOP_BRIDGE_TOKEN="$value"
+        [[ "$seen_token" == 0 ]] || {
+          echo "duplicate connector environment key" >&2
+          return 2
+        }
+        seen_token=1
+        EVAOS_DESKTOP_BRIDGE_TOKEN="$decoded_value"
         export EVAOS_DESKTOP_BRIDGE_TOKEN
         ;;
       *)

@@ -112,6 +112,7 @@ SELECTED_BINDING_ATTESTATION_FIELDS = {
     "privateReceiptSha256",
     "connectorCandidate",
 }
+SELECTED_BINDING_PROOF_MAX_AGE_SECONDS = 60 * 60
 LOCAL_WORKBENCH_CONTROL_START = "local_workbench_control_start"
 INSTALLED_WORKBENCH_BRIDGE_CLI = Path(
     "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge"
@@ -1024,9 +1025,10 @@ def selected_binding_proof_binding(
         and type(expires_at) is int
         and issued_at < expires_at <= issued_at + 60
         and issued_at <= verification_time + 5
-        and verification_time < expires_at
         and executed_at.timestamp() >= issued_at - 5
         and executed_at.timestamp() <= verification_time + 5
+        and verification_time - executed_at.timestamp()
+        <= SELECTED_BINDING_PROOF_MAX_AGE_SECONDS
         and int(executed_at.timestamp()) <= expires_at
         and set(candidate) == SELECTED_BINDING_CANDIDATE_FIELDS
         and candidate.get("sourceCommit") == expected_source_commit

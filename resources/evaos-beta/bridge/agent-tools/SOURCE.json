@@ -9,7 +9,7 @@
   "canonicalizedAt": "2026-07-15",
   "sourceDigests": {
     "hermes-adapter/README.md": "sha256:1bbef6050a512f42151dc5dc895474b2258ebf887192fe23796583e0b14b6a78",
-    "hermes-adapter/bin/evaos-desktop-bridge-command": "sha256:cf21cce6738b02047a506cb8809f70b9573a19877692ac466a03b57c4a3167ce",
+    "hermes-adapter/bin/evaos-desktop-bridge-command": "sha256:d5985f9289b53a278c905278d31a7130392cf6e7b56a21b5e61210d43b19d49a",
     "openclaw-plugin/README.md": "sha256:ce371b7ed539092b7cad9245883f8fb5e91c0c8f56ff094164a0635716128737",
     "openclaw-plugin/dist/index.js": "sha256:5634b0a23dfc08ba8640343cd4b3bf9a2fa77e496884924d39069fc97138ab91",
     "openclaw-plugin/dist/src/bridge.js": "sha256:625b964db6c16a3e7e574d4c86c757a1a11861af01daa6c4abb5c7cdcb947abf",
@@ -25,7 +25,7 @@
     "openclaw-plugin/src/firewall.ts": "sha256:85e638930cd5a412fc059e4cd2e2c8db41d29102319fe047bfc88601c7911668",
     "openclaw-plugin/src/runtimeReceipt.ts": "sha256:e88ba64b2113d0f63897ff8c599d5dc9dafe28a631c24a454039395967a2ecf3",
     "openclaw-plugin/src/types.d.ts": "sha256:6144e747e97c133ddaefe37af986865d6b87d842b922026a2af14b010c946bfc",
-    "openclaw-plugin/tests/runtimeReceipt.test.mjs": "sha256:c2f6f475e7d5cb14a6c721d70cebb59bd35ee993845ac19b9c56ce9ef9b7441a",
+    "openclaw-plugin/tests/runtimeReceipt.test.mjs": "sha256:86e4574a958690fb102e36b2f6d46644ef7a1ec1286f9be08fbde83583db7d18",
     "openclaw-plugin/tsconfig.json": "sha256:d5ceeadf205f97973f4d2a1e13ef20f9af854c1fbc01823af60b02eed5d5b34b"
   }
 }
