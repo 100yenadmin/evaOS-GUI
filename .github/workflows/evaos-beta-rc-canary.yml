@@ -305,9 +305,10 @@ jobs:
           TAG_COMMIT: ${{ steps.provenance.outputs.tag_commit }}
         run: |
           set -euo pipefail
-          ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'
+          ZIP_NAME_PATH="$RUNNER_TEMP/evaos-updater-zip-name.txt"
+          node - release-assets/latest-arm64-mac.yml "$ZIP_NAME_PATH" <<'NODE'
           const fs = require('fs');
-          const metadataPath = process.argv[2];
+          const [metadataPath, outputPath] = process.argv.slice(2);
           const text = fs.readFileSync(metadataPath, 'utf8');
           const refs = [];
           for (const line of text.split(/\r?\n/)) {
@@ -321,25 +322,26 @@ jobs:
           if (unique.length !== 1 || !/arm64/i.test(unique[0])) {
             throw new Error('latest-arm64-mac.yml must identify exactly one arm64 updater ZIP.');
           }
-          process.stdout.write(unique[0]);
+          fs.writeFileSync(outputPath, unique[0], 'utf8');
           NODE
-          )
+          ZIP_NAME=$(cat "$ZIP_NAME_PATH")
           UPDATER_ZIP="release-assets/$ZIP_NAME"
           if [ ! -f "$UPDATER_ZIP" ]; then
             echo "::error::Updater metadata references missing arm64 ZIP: $ZIP_NAME"
             exit 1
           fi
-          EXPECTED_SHA=$(node - release-assets/evaos-beta-release-manifest.json "$ZIP_NAME" <<'NODE'
+          EXPECTED_SHA_PATH="$RUNNER_TEMP/evaos-updater-zip-expected-sha.txt"
+          node - release-assets/evaos-beta-release-manifest.json "$ZIP_NAME" "$EXPECTED_SHA_PATH" <<'NODE'
           const fs = require('fs');
-          const [manifestPath, assetName] = process.argv.slice(2);
+          const [manifestPath, assetName, outputPath] = process.argv.slice(2);
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
           const asset = (manifest.assets || []).find((candidate) => candidate.name === assetName);
           if (!asset || !/^[0-9a-f]{64}$/i.test(String(asset.sha256 || ''))) {
             throw new Error(`Trusted manifest does not bind updater ZIP ${assetName}.`);
           }
-          process.stdout.write(asset.sha256);
+          fs.writeFileSync(outputPath, asset.sha256, 'utf8');
           NODE
-          )
+          EXPECTED_SHA=$(cat "$EXPECTED_SHA_PATH")
           ACTUAL_SHA=$(shasum -a 256 "$UPDATER_ZIP" | awk '{print $1}')
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "::error::Updater ZIP checksum does not match the trusted release manifest."

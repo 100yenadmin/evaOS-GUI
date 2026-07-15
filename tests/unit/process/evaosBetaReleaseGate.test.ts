@@ -1136,12 +1136,19 @@ describe('evaOS beta release gate', () => {
   it('keeps RC DMG installation and installed local-control proof fail closed', () => {
     if (process.platform === 'win32') return;
     const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const commandSubstitutionHeredocIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: macOS Bash 3.2 must not wrap updater ZIP Node heredocs in command substitution';
     const expectedIssue =
       '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset';
     const controlStartIssue =
       '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite';
 
     expect(releaseGate.collectRcCanaryWorkflowIssues(workflow)).toEqual([]);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        `${workflow}\n          ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'\n          NODE\n          )\n`
+      )
+    ).toContain(commandSubstitutionHeredocIssue);
     const drifted = workflow.replace(
       '            hdiutil detach "$mount_dir" -quiet',
       '            rm -rf "$extract_dir"\n            hdiutil detach "$mount_dir" -quiet'

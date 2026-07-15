@@ -922,6 +922,17 @@ function collectReleaseDistributeWorkflowIssues(workflow) {
 
 function collectRcCanaryWorkflowIssues(workflow) {
   const issues = [];
+  const workflowText = String(workflow || '');
+  if (
+    workflowText.includes("ZIP_NAME=$(node - release-assets/latest-arm64-mac.yml <<'NODE'") ||
+    workflowText.includes(
+      "EXPECTED_SHA=$(node - release-assets/evaos-beta-release-manifest.json \"$ZIP_NAME\" <<'NODE'"
+    )
+  ) {
+    issues.push(
+      '.github/workflows/evaos-beta-rc-canary.yml: macOS Bash 3.2 must not wrap updater ZIP Node heredocs in command substitution'
+    );
+  }
   const installerBlocks = Array.from(
     String(workflow || '').matchAll(/^ {10}install_app_from_dmg\(\) \{\n([\s\S]*?)^ {10}\}$/gm),
     (match) => match[1]
