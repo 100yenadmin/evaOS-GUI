@@ -436,11 +436,12 @@ class StdioRunner:
             runtime_instance_id=runtime_instance_id,
         )
         self._requests_lock = threading.Lock()
-        self._active_request_ids: set[str] = set()
+        self._active_requests: dict[str, dict[str, Any]] = {}
         self._recent_request_ids: set[str] = set()
         self._recent_request_order: deque[str] = deque()
         self._workers: set[threading.Thread] = set()
         self._terminal = threading.Event()
+        self._response_lock = threading.Lock()
 
     def serve(self) -> int:
         try:
@@ -468,7 +469,10 @@ class StdioRunner:
                 else:
                     raise ProtocolError("unknown_message_type")
         except ProtocolError as error:
-            self._write_protocol_error(error.code)
+            with self._response_lock:
+                self._terminal.set()
+                self._write_terminal_failures()
+                self._write_protocol_error(error.code)
             return 2
         finally:
             self._terminal.set()
@@ -486,11 +490,11 @@ class StdioRunner:
             raise ProtocolError("invalid_host_request")
         request_id = str(request["request_id"])
         with self._requests_lock:
-            if request_id in self._active_request_ids or request_id in self._recent_request_ids:
+            if request_id in self._active_requests or request_id in self._recent_request_ids:
                 raise ProtocolError("duplicate_host_request")
-            if len(self._active_request_ids) >= MAX_IN_FLIGHT_REQUESTS:
+            if len(self._active_requests) >= MAX_IN_FLIGHT_REQUESTS:
                 raise ProtocolError("too_many_in_flight_requests")
-            self._active_request_ids.add(request_id)
+            self._active_requests[request_id] = dict(request)
             worker = threading.Thread(
                 target=self._run_request,
                 args=(dict(request), request_id),
@@ -503,25 +507,42 @@ class StdioRunner:
     def _run_request(self, request: Mapping[str, Any], request_id: str) -> None:
         try:
             response = self._host.handle(request)
-            self._channel.write(
-                {
-                    "schema_version": STDIO_SCHEMA,
-                    "message_type": "host_response",
-                    "response": response,
-                }
-            )
-        except (ProtocolError, RemotePortError):
-            self._write_worker_failure(request)
+            self._mark_request_complete(request_id)
+            with self._response_lock:
+                if self._terminal.is_set():
+                    return
+                self._channel.write(
+                    {
+                        "schema_version": STDIO_SCHEMA,
+                        "message_type": "host_response",
+                        "response": response,
+                    }
+                )
+        except Exception:
+            self._mark_request_complete(request_id)
+            with self._response_lock:
+                if not self._terminal.is_set():
+                    self._write_worker_failure(request)
         finally:
             with self._requests_lock:
-                self._active_request_ids.discard(request_id)
-                if request_id not in self._recent_request_ids:
-                    if len(self._recent_request_order) >= RECENT_REQUEST_IDS:
-                        expired = self._recent_request_order.popleft()
-                        self._recent_request_ids.discard(expired)
-                    self._recent_request_order.append(request_id)
-                    self._recent_request_ids.add(request_id)
                 self._workers.discard(threading.current_thread())
+
+    def _mark_request_complete(self, request_id: str) -> None:
+        with self._requests_lock:
+            self._active_requests.pop(request_id, None)
+            if request_id not in self._recent_request_ids:
+                if len(self._recent_request_order) >= RECENT_REQUEST_IDS:
+                    expired = self._recent_request_order.popleft()
+                    self._recent_request_ids.discard(expired)
+                self._recent_request_order.append(request_id)
+                self._recent_request_ids.add(request_id)
+
+    def _write_terminal_failures(self) -> None:
+        with self._requests_lock:
+            active = list(self._active_requests.values())
+            self._active_requests.clear()
+        for request in active:
+            self._write_worker_failure(request)
 
     def _write_worker_failure(self, request: Mapping[str, Any]) -> None:
         operation = request.get("operation")

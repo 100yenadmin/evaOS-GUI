@@ -5,6 +5,8 @@ import Foundation
 public final class MacAccessController: ObservableObject {
     @Published public private(set) var state: MacAccessState
     @Published public private(set) var lastResult: MacAccessActionResult?
+    @Published public private(set) var pendingApproval: MacAccessXPCPendingApproval?
+    @Published public private(set) var recentAuditEvents: [MacAccessXPCAuditEvent] = []
 
     public let availability: MacAccessActionAvailability
     private let client: any ConnectorCoreClient
@@ -65,7 +67,30 @@ public final class MacAccessController: ObservableObject {
         guard generation == actionGeneration else {
             return invalidatedResult(for: generation)
         }
-        return apply(result, for: action)
+        let applied = apply(result, for: action)
+        await refreshFromHelper()
+        return applied
+    }
+
+    public func refreshFromHelper() async {
+        guard let client = client as? any MacAccessStatusProjectingClient,
+              let reply = await client.fetchStatus(),
+              reply.status.policyProvider == "mac_connector_core"
+        else { return }
+        applyAuthoritativeStatus(reply.status)
+    }
+
+    public func resolvePendingApproval(allow: Bool) async {
+        guard let pendingApproval,
+              let client = client as? any MacAccessStatusProjectingClient,
+              let reply = await client.resolvePendingApproval(
+                  pendingApproval.approval, allow: allow
+              ), reply.code == .ok
+        else {
+            await refreshFromHelper()
+            return
+        }
+        applyAuthoritativeStatus(reply.status)
     }
 
     public func emergencyStop() {
@@ -203,5 +228,78 @@ public final class MacAccessController: ObservableObject {
 
     private func requestEmergencyStopCleanup() async {
         _ = await client.perform(.activateKillSwitch)
+        await refreshFromHelper()
+    }
+
+    private func applyAuthoritativeStatus(_ status: MacAccessXPCSafeStatus) {
+        guard let configured = Self.mode(status.configuredMode),
+              let effective = Self.mode(status.effectiveMode),
+              let paused = status.paused,
+              let killSwitch = status.killSwitch,
+              status.policyEpoch != nil
+        else { return }
+        let isPaired = status.pairing == "paired"
+        let connection: MacAccessConnectionState
+        let blocker: MacAccessBlocker?
+        if killSwitch {
+            connection = .blocked
+            blocker = .emergencyStopActive
+        } else if status.pendingApproval != nil {
+            connection = .approvalNeeded
+            blocker = nil
+        } else if paused {
+            connection = .paused
+            blocker = nil
+        } else {
+            switch status.transport {
+            case "connected": connection = .connected; blocker = nil
+            case "connecting": connection = .connecting; blocker = nil
+            case "disconnected" where isPaired, "stopped" where isPaired:
+                connection = .disconnected; blocker = nil
+            case "blocked":
+                connection = .blocked
+                blocker = Self.blocker(status.lastErrorCode) ?? .connectorCoreUnavailable
+            default:
+                connection = .blocked
+                blocker = Self.blocker(status.lastErrorCode) ?? (isPaired ? .connectorCoreUnavailable : .notPaired)
+            }
+        }
+        let projected = MacAccessState(
+            connection: connection,
+            configuredMode: configured,
+            effectiveMode: effective,
+            isPaired: isPaired,
+            blocker: blocker,
+            lastActivityAt: status.recentAuditEvents?.first?.occurredAt,
+            emergencyStopCount: state.emergencyStopCount,
+            quitCleanupRequested: state.quitCleanupRequested
+        )
+        machine = MacAccessStateMachine(state: projected)
+        state = projected
+        pendingApproval = status.pendingApproval
+        recentAuditEvents = status.recentAuditEvents ?? []
+    }
+
+    private static func mode(_ value: String?) -> MacAccessMode? {
+        switch value {
+        case "off": .off
+        case "ask_every_time": .askEveryTime
+        case "full_access": .fullAccess
+        default: nil
+        }
+    }
+
+    private static func blocker(_ code: String?) -> MacAccessBlocker? {
+        switch code {
+        case "invalid_pairing_code": .invalidPairingCode
+        case "pairing_rejected": .pairingRejected
+        case "credential_unavailable": .credentialUnavailable
+        case "policy_unavailable": .policyUnavailable
+        case "configuration_unavailable": .dashboardPairingUnavailable
+        case "relay_unavailable": .relayUnavailable
+        case "revoked": .revokedGrant
+        case "stopped": nil
+        default: nil
+        }
     }
 }

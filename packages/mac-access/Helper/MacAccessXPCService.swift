@@ -100,21 +100,17 @@ actor MacAccessPolicyRuntime {
                 _ = try await client.perform(operation: "resume")
             case .activateKillSwitch:
                 await native.cancelAll()
-                do {
-                    _ = try await client.perform(operation: "activate_kill_switch")
-                } catch {
-                    _ = try await custody.activateEmergencyKill()
-                }
+                _ = try await custody.activateEmergencyKill()
+                _ = try? await client.perform(operation: "activate_kill_switch")
             case .approveAction:
                 guard let approval = request.approval else { return .invalidRequest }
-                try await custody.recordApproval(
-                    commandID: approval.commandID,
-                    capability: approval.capability,
-                    requestDigestSHA256: approval.requestDigestSHA256,
-                    bindingFingerprintSHA256: approval.bindingFingerprintSHA256,
-                    policyEpoch: approval.policyEpoch,
-                    ttl: TimeInterval(approval.ttlSeconds)
-                )
+                guard await custody.resolvePendingApproval(approval, allow: true) else {
+                    return .invalidRequest
+                }
+            case .denyAction:
+                guard let approval = request.approval,
+                      await custody.resolvePendingApproval(approval, allow: false)
+                else { return .invalidRequest }
             case .auditSummary:
                 guard request.auditLimit.map({ (1...100).contains($0) }) ?? true else {
                     return .invalidRequest
@@ -144,7 +140,9 @@ actor MacAccessPolicyRuntime {
             killSwitch: projection.killSwitch,
             policyEpoch: projection.policyEpoch,
             policyProvider: "mac_connector_core",
-            auditEventCount: await audit.eventCount()
+            auditEventCount: await audit.eventCount(),
+            pendingApproval: await custody.currentPendingApproval(),
+            recentAuditEvents: await audit.recentSafeEvents()
         )
     }
 }
@@ -153,19 +151,22 @@ private struct MacAccessPolicyComposition {
     let runtime: MacAccessPolicyRuntime
     let executor: CoreHostBackedMacAccessExecutor
 
-    static func production(vault: any MacAccessCredentialVault, bundle: Bundle = .main) throws -> Self {
+    static func production(
+        vault: any MacAccessCredentialVault,
+        pinnedKeys: MacAccessPinnedKeys,
+        bundle: Bundle = .main
+    ) throws -> Self {
         let hostSessionID = "host-\(UUID().uuidString.lowercased())"
-        let runtimeInstanceID = "runtime-\(UUID().uuidString.lowercased())"
         let paths = try MacAccessPolicyPaths.production()
         let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: hostSessionID)
-        let audit = try MacAccessAuditCustody(paths: paths)
+        let audit = try MacAccessAuditCustody.production(paths: paths)
         let native = MacAccessNativeClickPort()
         let dispatcher = MacAccessCoreHostPortDispatcher(
-            custody: custody, audit: audit, native: native, vault: vault
+            custody: custody, audit: audit, native: native, vault: vault, pinnedKeys: pinnedKeys
         )
         let transport = MacAccessStdioCoreHostTransport(
             launcher: MacAccessStdioCoreHostTransport.productionLauncher(
-                hostSessionID: hostSessionID, runtimeInstanceID: runtimeInstanceID, bundle: bundle
+                hostSessionID: hostSessionID, bundle: bundle
             ),
             dispatcher: dispatcher
         )
@@ -228,7 +229,11 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         bundle: Bundle = .main
     ) {
         self.vault = vault
-        let policy = enablePolicyRuntime ? try? MacAccessPolicyComposition.production(vault: vault, bundle: bundle) : nil
+        let policy = enablePolicyRuntime ? configuration.flatMap {
+            try? MacAccessPolicyComposition.production(
+                vault: vault, pinnedKeys: $0.pinnedKeys, bundle: bundle
+            )
+        } : nil
         policyRuntime = policy?.runtime
         guard let configuration else {
             runtime = nil
@@ -254,8 +259,16 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         guard let runtime else { return await unavailableReply() }
         do {
             let status = try await runtime.pair(code: code)
-            guard let policyRuntime else { throw MacAccessPublicError.policyUnavailable }
-            try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
+            guard let policyRuntime else {
+                _ = try? await runtime.revokeLocally()
+                throw MacAccessPublicError.policyUnavailable
+            }
+            do {
+                try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
+            } catch {
+                _ = try? await runtime.revokeLocally()
+                throw MacAccessPublicError.policyUnavailable
+            }
             return await reply(code: .ok, status: status)
         } catch {
             return await reply(code: map(error), status: await runtime.status)
@@ -270,7 +283,12 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 _ = try? await runtime.stop()
                 throw MacAccessPublicError.policyUnavailable
             }
-            try await policyRuntime.synchronizeConnection(binding: binding)
+            do {
+                try await policyRuntime.synchronizeConnection(binding: binding)
+            } catch {
+                _ = try? await runtime.stop()
+                throw MacAccessPublicError.policyUnavailable
+            }
             Task {
                 await runtime.processCommands()
             }

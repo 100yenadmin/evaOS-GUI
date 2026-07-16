@@ -46,6 +46,13 @@ public protocol ConnectorCoreClient: Sendable {
     func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult
 }
 
+public protocol MacAccessStatusProjectingClient: ConnectorCoreClient {
+    func fetchStatus() async -> MacAccessXPCReply?
+    func resolvePendingApproval(
+        _ approval: MacAccessXPCApproval, allow: Bool
+    ) async -> MacAccessXPCReply?
+}
+
 public struct LocalOnlyConnectorCoreClient: ConnectorCoreClient {
     public init() {}
 
@@ -88,6 +95,14 @@ public struct MacAccessActionAvailability: Equatable, Sendable {
         pairing: true,
         transport: true,
         elevatedAccessModes: false,
+        revoke: true,
+        update: false
+    )
+
+    public static let standalonePolicy = MacAccessActionAvailability(
+        pairing: true,
+        transport: true,
+        elevatedAccessModes: true,
         revoke: true,
         update: false
     )

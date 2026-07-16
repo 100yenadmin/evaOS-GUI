@@ -9,6 +9,7 @@ public enum MacAccessXPCPolicyOperation: String, Codable, Equatable, Sendable {
     case pause, resume
     case activateKillSwitch = "activate_kill_switch"
     case approveAction = "approve_action"
+    case denyAction = "deny_action"
     case auditSummary = "audit_summary"
 }
 
@@ -18,18 +19,45 @@ public struct MacAccessXPCApproval: Codable, Equatable, Sendable {
     public let requestDigestSHA256: String
     public let bindingFingerprintSHA256: String
     public let policyEpoch: Int64
+    public let envelopeDigestSHA256: String
     public let ttlSeconds: Int
 
     public init(
         commandID: String, capability: String, requestDigestSHA256: String,
-        bindingFingerprintSHA256: String, policyEpoch: Int64, ttlSeconds: Int
+        bindingFingerprintSHA256: String, policyEpoch: Int64,
+        envelopeDigestSHA256: String, ttlSeconds: Int
     ) {
         self.commandID = commandID
         self.capability = capability
         self.requestDigestSHA256 = requestDigestSHA256
         self.bindingFingerprintSHA256 = bindingFingerprintSHA256
         self.policyEpoch = policyEpoch
+        self.envelopeDigestSHA256 = envelopeDigestSHA256
         self.ttlSeconds = ttlSeconds
+    }
+}
+
+public struct MacAccessXPCPendingApproval: Codable, Equatable, Sendable {
+    public let approval: MacAccessXPCApproval
+    public let expiresAt: Date
+
+    public init(approval: MacAccessXPCApproval, expiresAt: Date) {
+        self.approval = approval
+        self.expiresAt = expiresAt
+    }
+}
+
+public struct MacAccessXPCAuditEvent: Codable, Equatable, Sendable {
+    public let occurredAt: Date
+    public let capability: String
+    public let outcome: String
+    public let reasonCode: String
+
+    public init(occurredAt: Date, capability: String, outcome: String, reasonCode: String) {
+        self.occurredAt = occurredAt
+        self.capability = capability
+        self.outcome = outcome
+        self.reasonCode = reasonCode
     }
 }
 
@@ -81,12 +109,16 @@ public struct MacAccessXPCSafeStatus: Codable, Equatable, Sendable {
     public let policyEpoch: Int64?
     public let policyProvider: String?
     public let auditEventCount: Int?
+    public let pendingApproval: MacAccessXPCPendingApproval?
+    public let recentAuditEvents: [MacAccessXPCAuditEvent]?
 
     public init(
         pairing: String, transport: String, lastErrorCode: String?, lastAuditID: String?,
         configuredMode: String? = nil, effectiveMode: String? = nil,
         paused: Bool? = nil, killSwitch: Bool? = nil, policyEpoch: Int64? = nil,
-        policyProvider: String? = nil, auditEventCount: Int? = nil
+        policyProvider: String? = nil, auditEventCount: Int? = nil,
+        pendingApproval: MacAccessXPCPendingApproval? = nil,
+        recentAuditEvents: [MacAccessXPCAuditEvent]? = nil
     ) {
         self.pairing = pairing
         self.transport = transport
@@ -99,6 +131,8 @@ public struct MacAccessXPCSafeStatus: Codable, Equatable, Sendable {
         self.policyEpoch = policyEpoch
         self.policyProvider = policyProvider
         self.auditEventCount = auditEventCount
+        self.pendingApproval = pendingApproval
+        self.recentAuditEvents = recentAuditEvents
     }
 }
 
@@ -231,7 +265,7 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     }
 }
 
-public actor MacAccessXPCConnectorCoreClient: ConnectorCoreClient {
+public actor MacAccessXPCConnectorCoreClient: MacAccessStatusProjectingClient {
     private let transport: any MacAccessXPCTransport
 
     public init() {
@@ -281,6 +315,17 @@ public actor MacAccessXPCConnectorCoreClient: ConnectorCoreClient {
 
     public func fetchStatus() async -> MacAccessXPCReply? {
         guard let data = try? await transport.request(.status, code: nil),
+              data.count <= ProductionMacAccessXPCTransport.maximumReplyBytes
+        else { return nil }
+        return try? JSONDecoder().decode(MacAccessXPCReply.self, from: data)
+    }
+
+    public func resolvePendingApproval(_ approval: MacAccessXPCApproval, allow: Bool) async -> MacAccessXPCReply? {
+        let request = MacAccessXPCPolicyRequest(
+            operation: allow ? .approveAction : .denyAction,
+            approval: approval
+        )
+        guard let data = try? await transport.policy(request),
               data.count <= ProductionMacAccessXPCTransport.maximumReplyBytes
         else { return nil }
         return try? JSONDecoder().decode(MacAccessXPCReply.self, from: data)

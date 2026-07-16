@@ -6,7 +6,7 @@ import SwiftUI
 struct MacAccessApp: App {
     @StateObject private var controller = MacAccessController(
         client: MacAccessXPCConnectorCoreClient(),
-        availability: .pairingTransport
+        availability: .standalonePolicy
     )
     @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
 

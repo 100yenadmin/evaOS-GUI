@@ -24,6 +24,12 @@ private actor PolicyClickCounter {
     func increment() { count += 1 }
 }
 
+private actor MemoryAuditAnchorStore: MacAccessAuditAnchorStore {
+    private var anchor: MacAccessAuditAnchor?
+    func load() -> MacAccessAuditAnchor? { anchor }
+    func save(_ anchor: MacAccessAuditAnchor) { self.anchor = anchor }
+}
+
 private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
     private var queued: [Data] = []
     private var receivers: [CheckedContinuation<Data, Error>] = []
@@ -150,6 +156,37 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertEqual(wrongApproval, "approval_denied")
     }
 
+    func testPendingAskApprovalIsVisibleExactAndKillCancelsWaiter() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-pending"
+        )
+        let envelope = actionEnvelope(commandID: "command-pending")
+        let waiter = Task { try await custody.awaitApproval(envelope: envelope) }
+        var pending: MacAccessXPCPendingApproval?
+        while pending == nil {
+            pending = await custody.currentPendingApproval()
+            await Task.yield()
+        }
+        var wrong = pending!.approval
+        wrong = MacAccessXPCApproval(
+            commandID: wrong.commandID,
+            capability: wrong.capability,
+            requestDigestSHA256: wrong.requestDigestSHA256,
+            bindingFingerprintSHA256: wrong.bindingFingerprintSHA256,
+            policyEpoch: wrong.policyEpoch,
+            envelopeDigestSHA256: String(repeating: "a", count: 64),
+            ttlSeconds: wrong.ttlSeconds
+        )
+        let wrongResolution = await custody.resolvePendingApproval(wrong, allow: true)
+        XCTAssertFalse(wrongResolution)
+        _ = try await custody.activateEmergencyKill()
+        let rejection = try await waiter.value
+        XCTAssertEqual(rejection, "approval_denied")
+        let pendingAfterKill = await custody.currentPendingApproval()
+        XCTAssertNil(pendingAfterKill)
+    }
+
     func testReplayTombstoneSurvivesRestart() async throws {
         let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
         let envelope = actionEnvelope(commandID: "command-replay")
@@ -182,6 +219,24 @@ final class PolicyBridgeTests: XCTestCase {
         try handle.close()
         let healthyAfterCorruption = await audit.anchorHealthy()
         XCTAssertFalse(healthyAfterCorruption)
+    }
+
+    func testIndependentAuditAnchorRejectsDeletedJournal() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let anchorStore = MemoryAuditAnchorStore()
+        let audit = try MacAccessAuditCustody(paths: paths, anchorStore: anchorStore)
+        _ = try await audit.append(
+            envelope: actionEnvelope(commandID: "command-anchored"),
+            accessMode: "ask_every_time", allowed: true,
+            reasonCode: "approved_exact_scope", detailCode: nil
+        )
+        let healthyBeforeDeletion = await audit.anchorHealthy()
+        XCTAssertTrue(healthyBeforeDeletion)
+
+        try FileManager.default.removeItem(at: paths.audit)
+
+        let healthyAfterDeletion = await audit.anchorHealthy()
+        XCTAssertFalse(healthyAfterDeletion)
     }
 
     func testAuditRotatesWithinBoundAndPreservesChain() async throws {
@@ -222,6 +277,21 @@ final class PolicyBridgeTests: XCTestCase {
         let clickCount = await counter.count
         XCTAssertEqual(clickResult["outcome"]?.string, "executed")
         XCTAssertEqual(clickCount, 1)
+    }
+
+    func testEmergencyCancellationWaitsForNativeTaskToQuiesce() async throws {
+        let native = MacAccessNativeClickPort(
+            performer: { _, _ in
+                try? await Task.sleep(for: .seconds(30))
+                return true
+            },
+            isAccessibilityTrusted: { true }
+        )
+        let actionID = try await native.begin(envelope: actionEnvelope(commandID: "command-cancel"))
+        let waiter = Task { await native.wait(actionID: actionID) }
+        await native.cancelAll()
+        let result = await waiter.value
+        XCTAssertEqual(result["outcome"]?.string, "stopped")
     }
 
     func testMissingRunnerFailsClosedAndEmergencyKillPersists() async throws {
@@ -281,14 +351,11 @@ final class PolicyBridgeTests: XCTestCase {
 
         try await runtime.synchronizePairing(code: "ABCDEF12")
         try await runtime.synchronizeConnection(binding: command.binding)
-        try await custody.recordApproval(
-            commandID: command.commandID,
-            capability: command.command.capability,
-            requestDigestSHA256: command.command.requestDigestSHA256,
-            bindingFingerprintSHA256: command.binding.bindingFingerprintSHA256,
-            policyEpoch: command.policyEpoch,
-            ttl: 60
-        )
+        let encodedCommand = try JSONEncoder().encode(command)
+        guard case .object(let commandEnvelope) = try JSONDecoder().decode(
+            JSONValue.self, from: encodedCommand
+        ) else { return XCTFail("command did not encode as an object") }
+        try await custody.authorizeNative(envelope: commandEnvelope)
         let result = await CoreHostBackedMacAccessExecutor(client: client).execute(command: command)
 
         XCTAssertEqual(result.outcome, .executed)
@@ -343,8 +410,15 @@ final class PolicyBridgeTests: XCTestCase {
             capability: envelope["command"]!.object!["capability"]!.string!,
             requestDigestSHA256: envelope["command"]!.object!["request_digest_sha256"]!.string!,
             bindingFingerprintSHA256: envelope["binding"]!.object!["binding_fingerprint_sha256"]!.string!,
-            policyEpoch: envelope["policy_epoch"]!.integer!, ttl: ttl
+            policyEpoch: envelope["policy_epoch"]!.integer!,
+            envelopeDigestSHA256: try envelopeDigest(envelope), ttl: ttl
         )
+    }
+
+    private func envelopeDigest(_ envelope: [String: JSONValue]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return MacAccessWire.sha256Hex(try encoder.encode(JSONValue.object(envelope)))
     }
 
     private func digest(_ event: [String: JSONValue]) throws -> String {

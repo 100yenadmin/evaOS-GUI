@@ -1,5 +1,7 @@
 import CryptoKit
 import Foundation
+import MacAccessShared
+import Security
 
 enum MacAccessPolicyCustodyError: String, Error, Sendable {
     case invalidRequest = "invalid_request"
@@ -30,6 +32,7 @@ private struct MacAccessStoredApproval: Codable, Equatable, Sendable {
     let requestDigestSHA256: String
     let bindingFingerprintSHA256: String
     let policyEpoch: Int64
+    let envelopeDigestSHA256: String
     let expiresAt: Date
 }
 
@@ -48,6 +51,9 @@ actor MacAccessPolicyCustody {
     private let fileManager: FileManager
     private let now: @Sendable () -> Date
     private var document: MacAccessCustodyDocument
+    private var pendingApproval: MacAccessXPCPendingApproval?
+    private var pendingContinuation: CheckedContinuation<Bool, Never>?
+    private var nativeAuthorizationDigestSHA256: String?
 
     init(
         paths: MacAccessPolicyPaths,
@@ -79,10 +85,12 @@ actor MacAccessPolicyCustody {
 
     func compareAndSwap(expectedRevision: Int64, state: [String: JSONValue]) throws -> Bool {
         guard document.state["revision"]?.integer == expectedRevision else { return false }
+        let previous = document
         var replacement = state
         replacement["revision"] = .integer(expectedRevision + 1)
         document.state = replacement
-        try persist()
+        do { try persist() }
+        catch { document = previous; throw error }
         return true
     }
 
@@ -137,15 +145,18 @@ actor MacAccessPolicyCustody {
         requestDigestSHA256: String,
         bindingFingerprintSHA256: String,
         policyEpoch: Int64,
+        envelopeDigestSHA256: String,
         ttl: TimeInterval
     ) throws {
         guard MacAccessWire.isIdentifier(commandID),
               capability == "customer_mac.desktop_click",
               MacAccessWire.isSHA256(requestDigestSHA256),
               MacAccessWire.isSHA256(bindingFingerprintSHA256),
+              MacAccessWire.isSHA256(envelopeDigestSHA256),
               policyEpoch >= 0, ttl > 0, ttl <= 60
         else { throw MacAccessPolicyCustodyError.invalidRequest }
         pruneExpiredApprovals()
+        let previous = document
         document.approvals.removeAll { $0.commandID == commandID }
         document.approvals.append(MacAccessStoredApproval(
             commandID: commandID,
@@ -153,23 +164,26 @@ actor MacAccessPolicyCustody {
             requestDigestSHA256: requestDigestSHA256,
             bindingFingerprintSHA256: bindingFingerprintSHA256,
             policyEpoch: policyEpoch,
+            envelopeDigestSHA256: envelopeDigestSHA256,
             expiresAt: now().addingTimeInterval(ttl)
         ))
         if document.approvals.count > Self.maximumApprovals {
             document.approvals.removeFirst(document.approvals.count - Self.maximumApprovals)
         }
-        try persist()
+        do { try persist() }
+        catch { document = previous; throw error }
     }
 
     func consumeApproval(envelope: [String: JSONValue]) throws -> String? {
         pruneExpiredApprovals()
-        guard let scope = Self.actionScope(envelope) else { return "approval_denied" }
+        guard let scope = try? Self.actionScope(envelope) else { return "approval_denied" }
         guard let index = document.approvals.firstIndex(where: {
             $0.commandID == scope.commandID
                 && $0.capability == scope.capability
                 && $0.requestDigestSHA256 == scope.requestDigest
                 && $0.bindingFingerprintSHA256 == scope.bindingFingerprint
                 && $0.policyEpoch == scope.policyEpoch
+                && $0.envelopeDigestSHA256 == scope.envelopeDigest
                 && $0.expiresAt > now()
         }) else {
             try persist()
@@ -180,10 +194,69 @@ actor MacAccessPolicyCustody {
         return nil
     }
 
+    func awaitApproval(envelope: [String: JSONValue], ttl: TimeInterval = 60) async throws -> String? {
+        guard pendingApproval == nil, pendingContinuation == nil,
+              ttl > 0, ttl <= 60, let scope = try? Self.actionScope(envelope)
+        else { return "approval_denied" }
+        let approval = MacAccessXPCApproval(
+            commandID: scope.commandID,
+            capability: scope.capability,
+            requestDigestSHA256: scope.requestDigest,
+            bindingFingerprintSHA256: scope.bindingFingerprint,
+            policyEpoch: scope.policyEpoch,
+            envelopeDigestSHA256: scope.envelopeDigest,
+            ttlSeconds: Int(ttl)
+        )
+        pendingApproval = MacAccessXPCPendingApproval(
+            approval: approval, expiresAt: now().addingTimeInterval(ttl)
+        )
+        let allowed = await withCheckedContinuation { continuation in
+            pendingContinuation = continuation
+            Task { [commandID = scope.commandID] in
+                try? await Task.sleep(for: .seconds(ttl))
+                self.expirePendingApproval(commandID: commandID)
+            }
+        }
+        return allowed ? nil : "approval_denied"
+    }
+
+    func currentPendingApproval() -> MacAccessXPCPendingApproval? {
+        guard let pendingApproval, pendingApproval.expiresAt > now() else {
+            cancelPendingApproval()
+            return nil
+        }
+        return pendingApproval
+    }
+
+    func resolvePendingApproval(_ approval: MacAccessXPCApproval, allow: Bool) -> Bool {
+        guard let pending = pendingApproval, pending.expiresAt > now(),
+              pending.approval == approval
+        else { return false }
+        pendingApproval = nil
+        let continuation = pendingContinuation
+        pendingContinuation = nil
+        continuation?.resume(returning: allow)
+        return true
+    }
+
+    func authorizeNative(envelope: [String: JSONValue]) throws {
+        nativeAuthorizationDigestSHA256 = try Self.actionScope(envelope).envelopeDigest
+    }
+
+    func consumeNativeAuthorization(envelope: [String: JSONValue]) -> Bool {
+        guard let digest = try? Self.actionScope(envelope).envelopeDigest,
+              digest == nativeAuthorizationDigestSHA256
+        else { return false }
+        nativeAuthorizationDigestSHA256 = nil
+        return true
+    }
+
     func confirmFullAccess(policyEpoch: Int64) throws {
         guard policyEpoch >= 0 else { throw MacAccessPolicyCustodyError.invalidRequest }
+        let previous = document
         document.fullAccessConfirmationEpoch = policyEpoch
-        try persist()
+        do { try persist() }
+        catch { document = previous; throw error }
     }
 
     func hasFullAccessConfirmation(state: [String: JSONValue]) -> Bool {
@@ -192,30 +265,36 @@ actor MacAccessPolicyCustody {
     }
 
     func burnReplay(envelope: [String: JSONValue]) throws -> Bool {
-        guard let scope = Self.actionScope(envelope),
+        guard let scope = try? Self.actionScope(envelope),
               let nonce = envelope["nonce"]?.string,
               nonce.utf8.count <= 16_384
         else { return false }
         let tombstone = "\(scope.commandID):\(nonce):\(scope.requestDigest)"
         guard !document.replayTombstones.contains(tombstone) else { return false }
+        let previous = document
         document.replayTombstones.append(tombstone)
         if document.replayTombstones.count > Self.maximumReplayTombstones {
             document.replayTombstones.removeFirst(
                 document.replayTombstones.count - Self.maximumReplayTombstones
             )
         }
-        try persist()
+        do { try persist() }
+        catch { document = previous; throw error }
         return true
     }
 
     func invalidateAuthorityAndPersist() throws {
+        let previous = document
         invalidateAuthority()
-        try persist()
+        do { try persist() }
+        catch { document = previous; throw error }
     }
 
     private func invalidateAuthority() {
         document.approvals.removeAll()
         document.fullAccessConfirmationEpoch = nil
+        nativeAuthorizationDigestSHA256 = nil
+        cancelPendingApproval()
     }
 
     private func pruneExpiredApprovals() {
@@ -279,10 +358,24 @@ actor MacAccessPolicyCustody {
         ]
     }
 
-    private static func actionScope(_ envelope: [String: JSONValue]) -> (
+    private func expirePendingApproval(commandID: String) {
+        guard pendingApproval?.approval.commandID == commandID,
+              pendingApproval?.expiresAt ?? .distantFuture <= now()
+        else { return }
+        cancelPendingApproval()
+    }
+
+    private func cancelPendingApproval() {
+        pendingApproval = nil
+        let continuation = pendingContinuation
+        pendingContinuation = nil
+        continuation?.resume(returning: false)
+    }
+
+    private static func actionScope(_ envelope: [String: JSONValue]) throws -> (
         commandID: String, capability: String, requestDigest: String,
-        bindingFingerprint: String, policyEpoch: Int64
-    )? {
+        bindingFingerprint: String, policyEpoch: Int64, envelopeDigest: String
+    ) {
         guard let commandID = envelope["command_id"]?.string,
               let policyEpoch = envelope["policy_epoch"]?.integer,
               let command = envelope["command"]?.object,
@@ -290,8 +383,11 @@ actor MacAccessPolicyCustody {
               let requestDigest = command["request_digest_sha256"]?.string,
               let binding = envelope["binding"]?.object,
               let bindingFingerprint = binding["binding_fingerprint_sha256"]?.string
-        else { return nil }
-        return (commandID, capability, requestDigest, bindingFingerprint, policyEpoch)
+        else { throw MacAccessPolicyCustodyError.invalidRequest }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let digest = MacAccessWire.sha256Hex(try encoder.encode(JSONValue.object(envelope)))
+        return (commandID, capability, requestDigest, bindingFingerprint, policyEpoch, digest)
     }
 }
 
@@ -305,6 +401,61 @@ struct MacAccessPolicyProjection: Equatable, Sendable {
     let transport: String
 }
 
+struct MacAccessAuditAnchor: Codable, Equatable, Sendable {
+    let sequence: Int64
+    let recordSHA256: String
+}
+
+protocol MacAccessAuditAnchorStore: Sendable {
+    func load() async throws -> MacAccessAuditAnchor?
+    func save(_ anchor: MacAccessAuditAnchor) async throws
+}
+
+private actor SecurityMacAccessAuditAnchorStore: MacAccessAuditAnchorStore {
+    private let policy = MacAccessKeychainPolicy.currentBuildEpochOne
+    private let service = "com.evaos.mac-access.audit-anchor"
+    private let account = "audit-chain-v1"
+
+    func load() throws -> MacAccessAuditAnchor? {
+        var query = baseQuery
+        query[kSecReturnData as String] = kCFBooleanTrue
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data,
+              let anchor = try? JSONDecoder().decode(MacAccessAuditAnchor.self, from: data)
+        else { throw MacAccessPolicyCustodyError.auditCorrupt }
+        return anchor
+    }
+
+    func save(_ anchor: MacAccessAuditAnchor) throws {
+        let data = try JSONEncoder().encode(anchor)
+        let update = [kSecValueData as String: data]
+        let status = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else {
+            throw MacAccessPolicyCustodyError.persistenceUnavailable
+        }
+        var item = baseQuery
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+            throw MacAccessPolicyCustodyError.persistenceUnavailable
+        }
+    }
+
+    private var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccessGroup as String: policy.accessGroup,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+        ]
+    }
+}
+
 actor MacAccessAuditCustody {
     private static let maximumFileBytes = 128 * 1_024
     private static let maximumArchives = 2
@@ -312,29 +463,61 @@ actor MacAccessAuditCustody {
     private let paths: MacAccessPolicyPaths
     private let fileManager: FileManager
     private let now: @Sendable () -> Date
+    private let anchorStore: (any MacAccessAuditAnchorStore)?
 
     init(
         paths: MacAccessPolicyPaths,
         fileManager: FileManager = .default,
+        anchorStore: (any MacAccessAuditAnchorStore)? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) throws {
         self.paths = paths
         self.fileManager = fileManager
+        self.anchorStore = anchorStore
         self.now = now
         try fileManager.createDirectory(at: paths.directory, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: paths.directory.path)
     }
 
-    func anchorHealthy() -> Bool { (try? readEvents()) != nil }
+    static func production(paths: MacAccessPolicyPaths) throws -> MacAccessAuditCustody {
+        try MacAccessAuditCustody(
+            paths: paths, anchorStore: SecurityMacAccessAuditAnchorStore()
+        )
+    }
 
-    func committedCursor() -> [String: JSONValue]? {
-        guard let event = try? readEvents().last,
+    func anchorHealthy() async -> Bool {
+        guard let events = try? readEvents() else { return false }
+        return await anchorMatches(events)
+    }
+
+    func committedCursor() async -> [String: JSONValue]? {
+        guard let events = try? readEvents(), await anchorMatches(events),
+              let event = events.last,
               let sequence = event["sequence"], let digest = event["record_sha256"]
         else { return nil }
         return ["sequence": sequence, "record_sha256": digest]
     }
 
-    func eventCount() -> Int { (try? readEvents().count) ?? 0 }
+    func eventCount() async -> Int {
+        guard let events = try? readEvents(), await anchorMatches(events) else { return 0 }
+        return events.count
+    }
+
+    func recentSafeEvents(limit: Int = 5) async -> [MacAccessXPCAuditEvent] {
+        guard (1...10).contains(limit), let events = try? readEvents(),
+              await anchorMatches(events)
+        else { return [] }
+        return Array(events.suffix(limit).compactMap { event in
+            guard let occurred = event["occurred_at"]?.string.flatMap(Self.date),
+                  let outcome = event["outcome"]?.string,
+                  let reason = event["reason_code"]?.string,
+                  let capability = event["evidence"]?.object?["capability"]?.string
+            else { return nil }
+            return MacAccessXPCAuditEvent(
+                occurredAt: occurred, capability: capability, outcome: outcome, reasonCode: reason
+            )
+        }.reversed())
+    }
 
     func append(
         envelope: [String: JSONValue],
@@ -344,8 +527,9 @@ actor MacAccessAuditCustody {
         outcome: String? = nil,
         reasonCode: String,
         detailCode: String?
-    ) throws -> [String: JSONValue] {
+    ) async throws -> [String: JSONValue] {
         let existing = try readEvents()
+        guard await anchorMatches(existing) else { throw MacAccessPolicyCustodyError.auditCorrupt }
         let previous = existing.last
         let sequence = (previous?["sequence"]?.integer ?? 0) + 1
         let command = envelope["command"]?.object ?? [:]
@@ -386,14 +570,21 @@ actor MacAccessAuditCustody {
         let handle = try FileHandle(forWritingTo: paths.audit)
         try handle.seekToEnd()
         try handle.write(contentsOf: line)
+        try handle.synchronize()
         try handle.close()
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: paths.audit.path)
+        if let sequence = event["sequence"]?.integer,
+           let digest = event["record_sha256"]?.string,
+           let anchorStore {
+            try await anchorStore.save(MacAccessAuditAnchor(sequence: sequence, recordSHA256: digest))
+        }
         return event
     }
 
-    func summary(after cursor: [String: JSONValue]?, limit: Int) throws -> [String: JSONValue] {
+    func summary(after cursor: [String: JSONValue]?, limit: Int) async throws -> [String: JSONValue] {
         guard (1...100).contains(limit) else { throw MacAccessPolicyCustodyError.invalidRequest }
         let events = try readEvents()
+        guard await anchorMatches(events) else { throw MacAccessPolicyCustodyError.auditCorrupt }
         let afterSequence = cursor?["sequence"]?.integer ?? 0
         let page = Array(events.filter { ($0["sequence"]?.integer ?? 0) > afterSequence }.prefix(limit))
         let next = page.last.map { event in
@@ -436,6 +627,18 @@ actor MacAccessAuditCustody {
         return events
     }
 
+    private func anchorMatches(_ events: [[String: JSONValue]]) async -> Bool {
+        guard let anchorStore else { return true }
+        do {
+            guard let anchor = try await anchorStore.load() else { return events.isEmpty }
+            guard let last = events.last else { return false }
+            return last["sequence"]?.integer == anchor.sequence
+                && last["record_sha256"]?.string == anchor.recordSHA256
+        } catch {
+            return false
+        }
+    }
+
     private func rotateIfNeeded(adding bytes: Int) throws {
         let current = (try? fileManager.attributesOfItem(atPath: paths.audit.path)[.size] as? Int) ?? 0
         guard current + bytes > Self.maximumFileBytes, current > 0 else { return }
@@ -472,6 +675,12 @@ actor MacAccessAuditCustody {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: date)
+    }
+
+    private static func date(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }
 

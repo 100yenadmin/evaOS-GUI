@@ -319,7 +319,16 @@ class StdioRunnerTests(unittest.TestCase):
         }
         harness.send(duplicate)
         harness.send(duplicate)
-        messages = [harness.receive(), harness.receive()]
+        messages = []
+        while {message["message_type"] for message in messages} != {
+            "host_response",
+            "protocol_error",
+        }:
+            message = harness.receive()
+            if message["message_type"] == "port_call":
+                harness.service_call(message)
+            else:
+                messages.append(message)
         error = next(message for message in messages if message["message_type"] == "protocol_error")
         self.assertEqual(error["error"]["code"], "duplicate_host_request")
 

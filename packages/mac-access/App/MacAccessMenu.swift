@@ -9,6 +9,12 @@ struct MacAccessMenu: View {
     var body: some View {
         Text(controller.state.connection.localizationKey)
             .font(.headline)
+            .task {
+                while !Task.isCancelled {
+                    await controller.refreshFromHelper()
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
         Text(blockerKey)
             .font(.caption)
         HStack {
@@ -17,6 +23,26 @@ struct MacAccessMenu: View {
             Text(controller.state.effectiveMode.localizationKey)
         }
         .accessibilityElement(children: .combine)
+
+        if let pending = controller.pendingApproval {
+            Divider()
+            Text("status.approvalNeeded")
+                .font(.headline)
+            Text(verbatim: pending.approval.capability)
+                .font(.caption)
+            HStack {
+                Button {
+                    Task { await controller.resolvePendingApproval(allow: true) }
+                } label: {
+                    Text(verbatim: "Allow once")
+                }
+                Button(role: .destructive) {
+                    Task { await controller.resolvePendingApproval(allow: false) }
+                } label: {
+                    Text(verbatim: "Deny")
+                }
+            }
+        }
 
         Divider()
 
@@ -58,10 +84,16 @@ struct MacAccessMenu: View {
         }
 
         Menu("action.lastActivity") {
-            if let date = controller.state.lastActivityAt {
-                Text(date, style: .relative)
-            } else {
+            if controller.recentAuditEvents.isEmpty {
                 Text("activity.none")
+            } else {
+                ForEach(Array(controller.recentAuditEvents.enumerated()), id: \.offset) { _, event in
+                    VStack(alignment: .leading) {
+                        Text(verbatim: "\(event.capability): \(event.outcome)")
+                        Text(event.occurredAt, style: .relative)
+                            .font(.caption)
+                    }
+                }
             }
         }
 

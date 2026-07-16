@@ -67,8 +67,54 @@ final actor SuspendedConnectorClient: ConnectorCoreClient {
     }
 }
 
+final actor ProjectingConnectorClient: MacAccessStatusProjectingClient {
+    var reply: MacAccessXPCReply
+
+    init(reply: MacAccessXPCReply) { self.reply = reply }
+
+    func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+        .completed(.localStop)
+    }
+
+    func fetchStatus() async -> MacAccessXPCReply? { reply }
+
+    func resolvePendingApproval(
+        _ approval: MacAccessXPCApproval, allow: Bool
+    ) async -> MacAccessXPCReply? {
+        reply
+    }
+}
+
 @MainActor
 final class ControllerTests: XCTestCase {
+    func testAuthoritativeHelperProjectionHydratesFullAccessAndAudit() async {
+        let event = MacAccessXPCAuditEvent(
+            occurredAt: Date(timeIntervalSince1970: 1_700_000_000),
+            capability: "customer_mac.desktop_click",
+            outcome: "executed",
+            reasonCode: "approved_exact_scope"
+        )
+        let client = ProjectingConnectorClient(reply: MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: "connected", lastErrorCode: nil,
+                lastAuditID: "audit-01", configuredMode: "full_access",
+                effectiveMode: "full_access", paused: false, killSwitch: false,
+                policyEpoch: 7, policyProvider: "mac_connector_core", auditEventCount: 1,
+                recentAuditEvents: [event]
+            )
+        ))
+        let controller = MacAccessController(client: client, availability: .standalonePolicy)
+
+        await controller.refreshFromHelper()
+
+        XCTAssertTrue(controller.state.isPaired)
+        XCTAssertEqual(controller.state.connection, .connected)
+        XCTAssertEqual(controller.state.configuredMode, .fullAccess)
+        XCTAssertEqual(controller.state.effectiveMode, .fullAccess)
+        XCTAssertEqual(controller.recentAuditEvents, [event])
+    }
+
     func testLocalOnlyClientBlocksPairingAndTransport() async {
         let client = LocalOnlyConnectorCoreClient()
 

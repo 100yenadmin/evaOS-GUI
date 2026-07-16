@@ -115,14 +115,18 @@ actor MacAccessNativeClickPort {
     }
 
     func wait(actionID: String) async -> [String: JSONValue] {
-        guard let task = actions.removeValue(forKey: actionID) else {
+        guard let task = actions[actionID] else {
             return ["outcome": .string("failed")]
         }
-        return await task.value
+        let value = await task.value
+        actions.removeValue(forKey: actionID)
+        return value
     }
 
-    func cancelAll() {
-        for task in actions.values { task.cancel() }
+    func cancelAll() async {
+        let tasks = Array(actions.values)
+        for task in tasks { task.cancel() }
+        for task in tasks { _ = await task.value }
         actions.removeAll()
     }
 
@@ -137,9 +141,8 @@ actor MacAccessNativeClickPort {
                                mouseCursorPosition: point, mouseButton: .left)
         else { return false }
         down.post(tap: .cghidEventTap)
-        guard !Task.isCancelled else { return false }
         up.post(tap: .cghidEventTap)
-        return true
+        return !Task.isCancelled
     }
 }
 
@@ -149,18 +152,21 @@ actor MacAccessCoreHostPortDispatcher {
     private let native: MacAccessNativeClickPort
     private let vault: any MacAccessCredentialVault
     private let now: @Sendable () -> Date
+    private let verifier: MacAccessCommandVerifier?
 
     init(
         custody: MacAccessPolicyCustody,
         audit: MacAccessAuditCustody,
         native: MacAccessNativeClickPort,
         vault: any MacAccessCredentialVault,
+        pinnedKeys: MacAccessPinnedKeys? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.custody = custody
         self.audit = audit
         self.native = native
         self.vault = vault
+        verifier = pinnedKeys.map(MacAccessCommandVerifier.init(keys:))
         self.now = now
     }
 
@@ -221,10 +227,19 @@ actor MacAccessCoreHostPortDispatcher {
             return await native.validationError(for: envelope).map(JSONValue.string) ?? .null
         case ("authority", "approve_action"):
             guard let envelope = arguments["envelope"]?.object,
-                  let state = arguments["state"]?.object
+                  arguments["state"]?.object != nil
             else { throw MacAccessPolicyCustodyError.invalidRequest }
-            if state["effective_mode"]?.string == "full_access" { return .null }
-            return try await custody.consumeApproval(envelope: envelope).map(JSONValue.string) ?? .null
+            let projection = await custody.projectStatus()
+            guard !projection.paused, !projection.killSwitch,
+                  envelope["policy_epoch"]?.integer == projection.policyEpoch
+            else { return .string("approval_denied") }
+            if projection.effectiveMode == "full_access" {
+                try await custody.authorizeNative(envelope: envelope)
+                return .null
+            }
+            let rejection = try await custody.awaitApproval(envelope: envelope)
+            if rejection == nil { try await custody.authorizeNative(envelope: envelope) }
+            return rejection.map(JSONValue.string) ?? .null
         case ("replay", "burn"):
             guard let envelope = arguments["envelope"]?.object else {
                 throw MacAccessPolicyCustodyError.invalidRequest
@@ -269,6 +284,23 @@ actor MacAccessCoreHostPortDispatcher {
         case ("native", "begin"):
             guard let envelope = arguments["envelope"]?.object else {
                 throw MacAccessPolicyCustodyError.invalidRequest
+            }
+            guard await custody.consumeNativeAuthorization(envelope: envelope) else {
+                throw MacAccessCoreHostError.policyDenied
+            }
+            if let verifier {
+                let data = try JSONEncoder().encode(JSONValue.object(envelope))
+                let command = try JSONDecoder().decode(MacAccessBrokerCommand.self, from: data)
+                guard let binding = try await vault.load()?.binding else {
+                    throw MacAccessCoreHostError.policyDenied
+                }
+                try verifier.verify(
+                    command,
+                    expectedBinding: binding,
+                    expectedSessionID: command.sessionID,
+                    expectedChannelGenerationID: command.channelGenerationID,
+                    now: now()
+                )
             }
             return .object(["action_id": .string(try await native.begin(envelope: envelope))])
         case ("native", "wait"):
@@ -315,6 +347,8 @@ actor MacAccessStdioCoreHostTransport {
     private var channel: (any MacAccessCoreHostChannel)?
     private var readerTask: Task<Void, Never>?
     private var pending: [String: CheckedContinuation<[String: JSONValue], Error>] = [:]
+    private var portTasks: [String: Task<Void, Never>] = [:]
+    private var channelGeneration: UInt64 = 0
 
     init(launcher: @escaping Launcher, dispatcher: MacAccessCoreHostPortDispatcher) {
         self.launcher = launcher
@@ -342,8 +376,11 @@ actor MacAccessStdioCoreHostTransport {
     }
 
     func shutdown() async {
+        channelGeneration &+= 1
         readerTask?.cancel()
         readerTask = nil
+        for task in portTasks.values { task.cancel() }
+        portTasks.removeAll()
         await channel?.terminate()
         channel = nil
         failAll(MacAccessCoreHostError.runnerExited)
@@ -352,12 +389,14 @@ actor MacAccessStdioCoreHostTransport {
     private func ensureChannel() throws -> any MacAccessCoreHostChannel {
         if let channel { return channel }
         let opened = try launcher()
+        channelGeneration &+= 1
+        let generation = channelGeneration
         channel = opened
-        readerTask = Task { [weak self] in await self?.readLoop(opened) }
+        readerTask = Task { [weak self] in await self?.readLoop(opened, generation: generation) }
         return opened
     }
 
-    private func readLoop(_ channel: any MacAccessCoreHostChannel) async {
+    private func readLoop(_ channel: any MacAccessCoreHostChannel, generation: UInt64) async {
         do {
             while !Task.isCancelled {
                 let data = try await channel.receiveLine()
@@ -367,8 +406,10 @@ actor MacAccessStdioCoreHostTransport {
                 try await accept(data, channel: channel)
             }
         } catch {
-            self.channel = nil
-            failAll(error)
+            if generation == channelGeneration {
+                self.channel = nil
+                failAll(error)
+            }
             await channel.terminate()
         }
     }
@@ -391,36 +432,61 @@ actor MacAccessStdioCoreHostTransport {
                   let callID = frame["call_id"]?.string,
                   let port = frame["port"]?.string, let method = frame["method"]?.string,
                   let arguments = frame["arguments"]?.object,
-                  MacAccessWire.isIdentifier(callID)
+                  MacAccessWire.isIdentifier(callID), portTasks[callID] == nil
             else { throw MacAccessCoreHostError.protocolViolation }
-            let result: JSONValue
-            let errorCode: String?
-            do {
-                result = try await dispatcher.handle(port: port, method: method, arguments: arguments)
-                errorCode = nil
-            } catch let error as MacAccessCoreHostError {
-                result = .null
-                errorCode = error.rawValue
-            } catch let error as MacAccessPolicyCustodyError {
-                result = .null
-                errorCode = error.rawValue
-            } catch {
-                result = .null
-                errorCode = "port_unavailable"
+            portTasks[callID] = Task { [weak self, generation = channelGeneration] in
+                await self?.handlePortCall(
+                    callID: callID, port: port, method: method,
+                    arguments: arguments, channel: channel,
+                    generation: generation
+                )
             }
-            let response = JSONValue.object([
-                "schema_version": .string(Self.schema),
-                "message_type": .string("port_result"),
-                "call_id": .string(callID),
-                "ok": .boolean(errorCode == nil),
-                "result": result,
-                "error": errorCode.map { .object(["code": .string($0)]) } ?? .null,
-            ])
-            try await channel.send(Self.line(response))
         case "protocol_error":
             throw MacAccessCoreHostError.protocolViolation
         default:
             throw MacAccessCoreHostError.protocolViolation
+        }
+    }
+
+    private func handlePortCall(
+        callID: String,
+        port: String,
+        method: String,
+        arguments: [String: JSONValue],
+        channel: any MacAccessCoreHostChannel,
+        generation: UInt64
+    ) async {
+        defer { portTasks[callID] = nil }
+        let result: JSONValue
+        let errorCode: String?
+        do {
+            result = try await dispatcher.handle(port: port, method: method, arguments: arguments)
+            errorCode = nil
+        } catch let error as MacAccessCoreHostError {
+            result = .null
+            errorCode = error.rawValue
+        } catch let error as MacAccessPolicyCustodyError {
+            result = .null
+            errorCode = error.rawValue
+        } catch {
+            result = .null
+            errorCode = "port_unavailable"
+        }
+        let response = JSONValue.object([
+            "schema_version": .string(Self.schema),
+            "message_type": .string("port_result"),
+            "call_id": .string(callID),
+            "ok": .boolean(errorCode == nil),
+            "result": result,
+            "error": errorCode.map { .object(["code": .string($0)]) } ?? .null,
+        ])
+        do { try await channel.send(Self.line(response)) }
+        catch {
+            if generation == channelGeneration {
+                self.channel = nil
+                failAll(error)
+            }
+            await channel.terminate()
         }
     }
 
@@ -443,10 +509,9 @@ actor MacAccessStdioCoreHostTransport {
 
     static func productionLauncher(
         hostSessionID: String,
-        runtimeInstanceID: String,
         bundle: Bundle = .main
     ) -> Launcher {
-        { [bundle, hostSessionID, runtimeInstanceID] in
+        { [bundle, hostSessionID] in
             guard let resources = bundle.resourceURL else {
                 throw MacAccessCoreHostError.runtimeUnavailable
             }
@@ -460,7 +525,7 @@ actor MacAccessStdioCoreHostTransport {
                 executable: python,
                 arguments: productionArguments(
                     source: source, hostSessionID: hostSessionID,
-                    runtimeInstanceID: runtimeInstanceID
+                    runtimeInstanceID: "runtime-\(UUID().uuidString.lowercased())"
                 )
             )
         }
@@ -486,6 +551,8 @@ actor MacAccessCoreHostClient {
     private let hostSessionID: String
     private var sequence: Int64 = 0
     private var policyEpoch: Int64?
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         transport: MacAccessStdioCoreHostTransport,
@@ -499,7 +566,9 @@ actor MacAccessCoreHostClient {
     }
 
     func perform(operation: String, extras: [String: JSONValue] = [:]) async throws -> [String: JSONValue] {
-        try await perform(operation: operation, extras: extras, allowsRestartRetry: true)
+        await acquire()
+        defer { release() }
+        return try await perform(operation: operation, extras: extras, allowsRestartRetry: true)
     }
 
     private func perform(
@@ -523,6 +592,8 @@ actor MacAccessCoreHostClient {
         let response = try await transport.request(request)
         guard response["schema_version"]?.string == "evaos.mac_connector_core.host_response.v1",
               response["request_id"]?.string == request["request_id"]?.string,
+              response["host_session_id"]?.string == hostSessionID,
+              response["sequence"]?.integer == sequence,
               response["operation"]?.string == operation,
               let nextEpoch = response["policy_epoch"]?.integer
         else { throw MacAccessCoreHostError.protocolViolation }
@@ -537,6 +608,19 @@ actor MacAccessCoreHostClient {
             throw MacAccessCoreHostError.policyDenied
         }
         return result
+    }
+
+    private func acquire() async {
+        if !busy {
+            busy = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func release() {
+        if waiters.isEmpty { busy = false }
+        else { waiters.removeFirst().resume() }
     }
 }
 
@@ -554,6 +638,9 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
                 operation: "dispatch_action",
                 extras: ["envelope": .object(envelope)]
             )
+            guard result["kind"]?.string == "action" else {
+                throw MacAccessCoreHostError.protocolViolation
+            }
             let outcome: MacAccessReceiptOutcome
             switch result["outcome"]?.string {
             case "executed": outcome = .executed
@@ -561,9 +648,10 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
             case "stopped": outcome = .cancelled
             default: outcome = .failed
             }
-            let auditID = result["result_audit_id"]?.string
-                ?? result["decision_audit_id"]?.string
-                ?? "audit-unavailable"
+            guard let auditID = result["result_audit_id"]?.string
+                ?? result["decision_audit_id"]?.string,
+                MacAccessWire.isIdentifier(auditID)
+            else { throw MacAccessCoreHostError.protocolViolation }
             return MacAccessExecutionResult(
                 localAuditID: auditID,
                 outcome: outcome,
