@@ -84,6 +84,7 @@ describe('Mac Access private-RC workflow contract', () => {
 
   it('signs inside-out and verifies identity, runtime, SBOM, notarization, stapling, and Gatekeeper', () => {
     expect(workflow).toContain('scripts/release/sign-bundle.js sign');
+    expect(workflow).toContain('scripts/release/sign-bundle.js record');
     expect(workflow).toContain('scripts/release/sign-bundle.js verify');
     expect(workflow).toContain('mac-access-artifact.json');
     expect(workflow).toContain('mac-access-sbom.spdx.json');

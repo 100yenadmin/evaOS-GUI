@@ -69,6 +69,23 @@ function signReleaseBundle(appPath, options = {}) {
   return { leafPaths, roles: ['connector', 'helper', 'app'] };
 }
 
+function recordReleaseBundle(appPath, options = {}) {
+  const manifest = createManifest(appPath, {
+    coreIdentity: options.coreIdentity,
+    createdAt: options.createdAt,
+    runner: options.runner,
+    sourceSHA: options.sourceSHA,
+  });
+  const sbom = createSBOM(appPath, manifest);
+  writeJSON(options.manifest, manifest);
+  writeJSON(options.sbom, sbom);
+  verifyManifest(appPath, manifest, sbom, {
+    coreIdentity: options.coreIdentity,
+    runner: options.runner,
+  });
+  return { manifest, sbom };
+}
+
 function parseOptions(arguments_) {
   const options = {};
   for (let index = 0; index < arguments_.length; index += 2) {
@@ -83,19 +100,26 @@ function parseOptions(arguments_) {
 function main() {
   const [operation, ...arguments_] = process.argv.slice(2);
   const options = parseOptions(arguments_);
-  if (!['sign', 'verify'].includes(operation) || !options.app || !options.manifest || !options.sbom) {
+  if (!['sign', 'record', 'verify'].includes(operation) || !options.app || !options.manifest || !options.sbom) {
     throw new Error(
-      'usage: sign-bundle.js sign|verify --app <App.app> --manifest <manifest.json> --sbom <sbom.spdx.json> [--identity <Developer ID>] [--keychain <path>] [--source-sha <sha>]'
+      'usage: sign-bundle.js sign|record|verify --app <App.app> --manifest <manifest.json> --sbom <sbom.spdx.json> [--identity <Developer ID>] [--keychain <path>] [--source-sha <sha>]'
     );
   }
   if (operation === 'sign') {
     signReleaseBundle(options.app, { identity: options.identity, keychain: options.keychain });
-    const manifest = createManifest(options.app, { sourceSHA: options['source-sha'] });
-    const sbom = createSBOM(options.app, manifest);
-    writeJSON(options.manifest, manifest);
-    writeJSON(options.sbom, sbom);
-    verifyManifest(options.app, manifest, sbom);
+    recordReleaseBundle(options.app, {
+      manifest: options.manifest,
+      sbom: options.sbom,
+      sourceSHA: options['source-sha'],
+    });
     console.log(`Signed and verified Mac Access with exact Developer ID manifest: ${options.manifest}`);
+  } else if (operation === 'record') {
+    recordReleaseBundle(options.app, {
+      manifest: options.manifest,
+      sbom: options.sbom,
+      sourceSHA: options['source-sha'],
+    });
+    console.log(`Recorded exact post-staple Mac Access manifest: ${options.manifest}`);
   } else {
     const fs = require('fs');
     const manifest = JSON.parse(fs.readFileSync(options.manifest, 'utf8'));
@@ -107,4 +131,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { signArguments, signReleaseBundle };
+module.exports = { recordReleaseBundle, signArguments, signReleaseBundle };

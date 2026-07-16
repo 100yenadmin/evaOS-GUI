@@ -18,7 +18,7 @@ const {
   normalizeRequirement,
   verifyManifest,
 } = require('../scripts/release/manifest');
-const { signArguments, signReleaseBundle } = require('../scripts/release/sign-bundle');
+const { recordReleaseBundle, signArguments, signReleaseBundle } = require('../scripts/release/sign-bundle');
 
 const SOURCE_SHA = '1234567890abcdef1234567890abcdef12345678';
 const CORE_SHA = '1'.repeat(64);
@@ -227,6 +227,40 @@ test('creates an exact identity-continuity manifest and SPDX dependency inventor
   assert.ok(sbom.packages.some((entry) => entry.name === 'CPython' && entry.licenseDeclared === 'Python-2.0'));
   assert.ok(sbom.packages.some((entry) => entry.name === 'pyobjc-core' && entry.licenseDeclared === 'MIT'));
   assert.doesNotThrow(() => verifyManifest(fixture.app, manifest, sbom, { runner, coreIdentity: CORE_IDENTITY }));
+});
+
+test('records the exact post-staple bundle without signing it again', (t) => {
+  const fixture = makeFixture();
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  const runner = fakeRunner(fixture.app);
+  const before = createManifest(fixture.app, {
+    coreIdentity: CORE_IDENTITY,
+    runner,
+    sourceSHA: SOURCE_SHA,
+    createdAt: '2026-07-16T14:00:00Z',
+  });
+  fs.writeFileSync(path.join(fixture.app, 'Contents', 'CodeResources'), 'stapled ticket fixture\n');
+  const manifestPath = path.join(fixture.root, 'mac-access-artifact.json');
+  const sbomPath = path.join(fixture.root, 'mac-access-sbom.spdx.json');
+
+  const recorded = recordReleaseBundle(fixture.app, {
+    coreIdentity: CORE_IDENTITY,
+    createdAt: '2026-07-16T14:00:00Z',
+    manifest: manifestPath,
+    runner,
+    sbom: sbomPath,
+    sourceSHA: SOURCE_SHA,
+  });
+
+  assert.notEqual(recorded.manifest.artifact.bundleTree.sha256, before.artifact.bundleTree.sha256);
+  assert.deepEqual(JSON.parse(fs.readFileSync(manifestPath, 'utf8')), recorded.manifest);
+  assert.deepEqual(JSON.parse(fs.readFileSync(sbomPath, 'utf8')), recorded.sbom);
+  assert.doesNotThrow(() =>
+    verifyManifest(fixture.app, recorded.manifest, recorded.sbom, {
+      coreIdentity: CORE_IDENTITY,
+      runner,
+    })
+  );
 });
 
 test('rejects every frozen artifact continuity field when the evidence drifts', (t) => {

@@ -350,6 +350,11 @@ jobs:
             > "$MAC_ACCESS_EVIDENCE_DIR/codesign-verify.txt" 2>&1
           spctl --assess --type execute --verbose=4 "$MAC_ACCESS_APP_PATH" \
             > "$MAC_ACCESS_EVIDENCE_DIR/gatekeeper-assess.txt" 2>&1
+          packages/mac-access/scripts/release/sign-bundle.js record \
+            --app "$MAC_ACCESS_APP_PATH" \
+            --manifest "$MAC_ACCESS_ARTIFACT_MANIFEST" \
+            --sbom "$MAC_ACCESS_SBOM" \
+            --source-sha "$GITHUB_SHA"
           packages/mac-access/scripts/release/sign-bundle.js verify \
             --app "$MAC_ACCESS_APP_PATH" \
             --manifest "$MAC_ACCESS_ARTIFACT_MANIFEST" \
