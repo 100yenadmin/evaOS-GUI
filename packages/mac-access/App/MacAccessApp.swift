@@ -4,16 +4,26 @@ import SwiftUI
 
 @main
 struct MacAccessApp: App {
-    @StateObject private var controller = MacAccessController(
-        client: MacAccessXPCConnectorCoreClient(),
-        availability: .standalonePolicy
-    )
+    @NSApplicationDelegateAdaptor(MacAccessAppDelegate.self) private var appDelegate
+    @StateObject private var controller: MacAccessController
+    @StateObject private var updater: MacAccessUpdater
     @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
+
+    init() {
+        let controller = MacAccessController(
+            client: MacAccessXPCConnectorCoreClient(),
+            availability: .standalonePolicy
+        )
+        _controller = StateObject(wrappedValue: controller)
+        _updater = StateObject(wrappedValue: MacAccessUpdater(controller: controller))
+        appDelegate.controller = controller
+    }
 
     var body: some Scene {
         MenuBarExtra {
             MacAccessMenu(
                 controller: controller,
+                updater: updater,
                 showOnboarding: { onboardingWindow.show(controller: controller) }
             )
         } label: {

@@ -28,5 +28,45 @@
 	<string>Copyright © 2026 Electric Sheep</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>$(MAC_ACCESS_UPDATE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(MAC_ACCESS_UPDATE_PUBLIC_ED_KEY)</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>MacAccessAppRequirementSHA256</key>
+	<string>$(MAC_ACCESS_APP_REQUIREMENT_SHA256)</string>
+	<key>MacAccessHelperRequirementSHA256</key>
+	<string>$(MAC_ACCESS_HELPER_REQUIREMENT_SHA256)</string>
+	<key>MacAccessConnectorRequirementSHA256</key>
+	<string>$(MAC_ACCESS_CONNECTOR_REQUIREMENT_SHA256)</string>
+	<key>MacAccessHelperEntitlementsSHA256</key>
+	<string>$(MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256)</string>
+	<key>MacAccessHelperRelationSHA256</key>
+	<string>$(MAC_ACCESS_HELPER_RELATION_SHA256)</string>
+	<key>MacAccessSourceCommit</key>
+	<string>$(MAC_ACCESS_SOURCE_COMMIT)</string>
+	<key>MacAccessSecurityEpoch</key>
+	<string>$(MAC_ACCESS_SECURITY_EPOCH)</string>
+	<key>MacAccessCredentialSecurityEpoch</key>
+	<string>$(MAC_ACCESS_CREDENTIAL_SECURITY_EPOCH)</string>
+	<key>MacAccessSchemaReaderVersion</key>
+	<string>$(MAC_ACCESS_SCHEMA_READER_VERSION)</string>
+	<key>MacAccessSchemaWriterVersion</key>
+	<string>$(MAC_ACCESS_SCHEMA_WRITER_VERSION)</string>
+	<key>MacAccessRollbackKeyID</key>
+	<string>$(MAC_ACCESS_ROLLBACK_KEY_ID)</string>
+	<key>MacAccessRollbackPublicKeyBase64URL</key>
+	<string>$(MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL)</string>
 </dict>
 </plist>

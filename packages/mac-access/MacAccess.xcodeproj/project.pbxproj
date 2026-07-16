@@ -46,6 +46,12 @@
 		010000000000000000000026 /* MacAccessPolicyCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000019 /* MacAccessPolicyCustody.swift */; };
 		010000000000000000000027 /* MacAccessCoreHostBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001A /* MacAccessCoreHostBridge.swift */; };
 		010000000000000000000028 /* PolicyBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001B /* PolicyBridgeTests.swift */; };
+		110000000000000000000001 /* MacAccessUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000001 /* MacAccessUpdater.swift */; };
+		110000000000000000000002 /* MacAccessUpdatePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000002 /* MacAccessUpdatePolicy.swift */; };
+		110000000000000000000003 /* UpdatePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000003 /* UpdatePolicyTests.swift */; };
+		110000000000000000000004 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 150000000000000000000001 /* Sparkle */; };
+		110000000000000000000005 /* MacAccessAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000004 /* MacAccessAppDelegate.swift */; };
+		110000000000000000000006 /* MacAccessRollbackAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000005 /* MacAccessRollbackAuthorization.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -105,6 +111,11 @@
 		020000000000000000000019 /* MacAccessPolicyCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessPolicyCustody.swift; sourceTree = "<group>"; };
 		02000000000000000000001A /* MacAccessCoreHostBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessCoreHostBridge.swift; sourceTree = "<group>"; };
 		02000000000000000000001B /* PolicyBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolicyBridgeTests.swift; sourceTree = "<group>"; };
+		120000000000000000000001 /* MacAccessUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessUpdater.swift; sourceTree = "<group>"; };
+		120000000000000000000002 /* MacAccessUpdatePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessUpdatePolicy.swift; sourceTree = "<group>"; };
+		120000000000000000000003 /* UpdatePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatePolicyTests.swift; sourceTree = "<group>"; };
+		120000000000000000000004 /* MacAccessAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessAppDelegate.swift; sourceTree = "<group>"; };
+		120000000000000000000005 /* MacAccessRollbackAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessRollbackAuthorization.swift; sourceTree = "<group>"; };
 		030000000000000000000001 /* evaOS Mac Access.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "evaOS Mac Access.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		030000000000000000000002 /* evaOS Mac Access Helper.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = "evaOS Mac Access Helper.xpc"; sourceTree = BUILT_PRODUCTS_DIR; };
 		030000000000000000000003 /* evaOS Mac Access Connector.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "evaOS Mac Access Connector.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -113,7 +124,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		060000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (01000000000000000000000E /* libMacAccessShared.a in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
+		060000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (110000000000000000000004 /* Sparkle in Frameworks */, 01000000000000000000000E /* libMacAccessShared.a in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
 		060000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000022 /* libMacAccessShared.a in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
 		060000000000000000000003 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		060000000000000000000004 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
@@ -134,11 +145,11 @@
 			);
 			sourceTree = "<group>";
 		};
-		070000000000000000000002 /* App */ = {isa = PBXGroup; children = (020000000000000000000001, 020000000000000000000002, 020000000000000000000003, ); path = App; sourceTree = "<group>"; };
+		070000000000000000000002 /* App */ = {isa = PBXGroup; children = (020000000000000000000001, 020000000000000000000002, 020000000000000000000003, 120000000000000000000001, 120000000000000000000004, ); path = App; sourceTree = "<group>"; };
 		070000000000000000000003 /* Helper */ = {isa = PBXGroup; children = (020000000000000000000004, 020000000000000000000005, 02000000000000000000000F, 020000000000000000000010, 020000000000000000000011, 020000000000000000000012, 020000000000000000000013, 020000000000000000000017, 020000000000000000000019, 02000000000000000000001A, ); path = Helper; sourceTree = "<group>"; };
-		070000000000000000000004 /* Shared */ = {isa = PBXGroup; children = (020000000000000000000006, 020000000000000000000007, 020000000000000000000008, 020000000000000000000009, 020000000000000000000016, ); path = Shared; sourceTree = "<group>"; };
+		070000000000000000000004 /* Shared */ = {isa = PBXGroup; children = (020000000000000000000006, 020000000000000000000007, 020000000000000000000008, 020000000000000000000009, 020000000000000000000016, 120000000000000000000002, 120000000000000000000005, ); path = Shared; sourceTree = "<group>"; };
 		070000000000000000000005 /* Resources */ = {isa = PBXGroup; children = (02000000000000000000000D, ); path = Resources; sourceTree = "<group>"; };
-		070000000000000000000006 /* Tests */ = {isa = PBXGroup; children = (02000000000000000000000A, 02000000000000000000000B, 02000000000000000000000C, 020000000000000000000014, 020000000000000000000015, 020000000000000000000018, 02000000000000000000001B, ); path = Tests; sourceTree = "<group>"; };
+		070000000000000000000006 /* Tests */ = {isa = PBXGroup; children = (02000000000000000000000A, 02000000000000000000000B, 02000000000000000000000C, 020000000000000000000014, 020000000000000000000015, 020000000000000000000018, 02000000000000000000001B, 120000000000000000000003, ); path = Tests; sourceTree = "<group>"; };
 		070000000000000000000007 /* Frameworks */ = {isa = PBXGroup; children = (02000000000000000000000E, ); name = Frameworks; sourceTree = "<group>"; };
 		070000000000000000000008 /* Products */ = {isa = PBXGroup; children = (030000000000000000000001, 030000000000000000000002, 030000000000000000000003, 030000000000000000000004, 030000000000000000000005, ); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
@@ -151,6 +162,7 @@
 			buildRules = ();
 			dependencies = (0C0000000000000000000001, 0C0000000000000000000002, 0C0000000000000000000003, );
 			name = MacAccessApp;
+			packageProductDependencies = (150000000000000000000001 /* Sparkle */, );
 			productName = "evaOS Mac Access";
 			productReference = 030000000000000000000001;
 			productType = "com.apple.product-type.application";
@@ -211,6 +223,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = ("zh-CN", "en-US", "ja-JP", "zh-TW", "ko-KR", "tr-TR", "ru-RU", "uk-UA", "pt-BR", "es-ES", "fr-FR", "fa-IR", Base, );
 			mainGroup = 070000000000000000000001;
+			packageReferences = (140000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */, );
 			productRefGroup = 070000000000000000000008;
 			projectDirPath = "";
 			projectRoot = "";
@@ -238,11 +251,11 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		090000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000001, 010000000000000000000002, 010000000000000000000003, ); runOnlyForDeploymentPostprocessing = 0; };
+		090000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000001, 010000000000000000000002, 010000000000000000000003, 110000000000000000000001, 110000000000000000000005, ); runOnlyForDeploymentPostprocessing = 0; };
 		090000000000000000000002 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000004, 010000000000000000000013, 010000000000000000000014, 010000000000000000000015, 010000000000000000000016, 010000000000000000000017, 010000000000000000000020, 010000000000000000000024, 010000000000000000000025, ); runOnlyForDeploymentPostprocessing = 0; };
 		090000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000005, ); runOnlyForDeploymentPostprocessing = 0; };
-		090000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000006, 010000000000000000000007, 010000000000000000000008, 010000000000000000000009, 01000000000000000000001F, ); runOnlyForDeploymentPostprocessing = 0; };
-		090000000000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (01000000000000000000000A, 01000000000000000000000B, 01000000000000000000000C, 010000000000000000000018, 010000000000000000000019, 01000000000000000000001A, 01000000000000000000001B, 01000000000000000000001C, 01000000000000000000001D, 01000000000000000000001E, 010000000000000000000021, 010000000000000000000023, 010000000000000000000026, 010000000000000000000027, 010000000000000000000028, ); runOnlyForDeploymentPostprocessing = 0; };
+		090000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (010000000000000000000006, 010000000000000000000007, 010000000000000000000008, 010000000000000000000009, 01000000000000000000001F, 110000000000000000000002, 110000000000000000000006, ); runOnlyForDeploymentPostprocessing = 0; };
+		090000000000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (01000000000000000000000A, 01000000000000000000000B, 01000000000000000000000C, 010000000000000000000018, 010000000000000000000019, 01000000000000000000001A, 01000000000000000000001B, 01000000000000000000001C, 01000000000000000000001D, 01000000000000000000001E, 010000000000000000000021, 010000000000000000000023, 010000000000000000000026, 010000000000000000000027, 010000000000000000000028, 110000000000000000000003, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -256,8 +269,8 @@
 /* Begin XCBuildConfiguration section */
 		0E0000000000000000000001 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; ENABLE_TESTABILITY = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_VERSION = 6.0; }; name = Debug; };
 		0E0000000000000000000002 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; MACOSX_DEPLOYMENT_TARGET = 15.0; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 6.0; }; name = Release; };
-		0E0000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; COMBINE_HIDPI_IMAGES = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/App-Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access; PRODUCT_NAME = "evaOS Mac Access"; SWIFT_EMIT_LOC_STRINGS = YES; }; name = Debug; };
-		0E0000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; COMBINE_HIDPI_IMAGES = YES; COPY_PHASE_STRIP = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/App-Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access; PRODUCT_NAME = "evaOS Mac Access"; SWIFT_EMIT_LOC_STRINGS = YES; }; name = Release; };
+		0E0000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; COMBINE_HIDPI_IMAGES = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/App-Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MAC_ACCESS_APP_REQUIREMENT_SHA256 = da635352f249b4213aa1a96c41d7979d8b25d86b056b9f0929c1b414e35896fb; MAC_ACCESS_CONNECTOR_REQUIREMENT_SHA256 = 0c3de778270de5b4a1992d0e13d4f27e41929c7ace94ae143bcba92a555be422; MAC_ACCESS_CREDENTIAL_SECURITY_EPOCH = ""; MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256 = ""; MAC_ACCESS_HELPER_RELATION_SHA256 = ""; MAC_ACCESS_HELPER_REQUIREMENT_SHA256 = 222107bb855cfc463805777c76ca8cfdac0d1145957c5f190c234e52bfd277aa; MAC_ACCESS_ROLLBACK_KEY_ID = ""; MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL = ""; MAC_ACCESS_SCHEMA_READER_VERSION = ""; MAC_ACCESS_SCHEMA_WRITER_VERSION = ""; MAC_ACCESS_SECURITY_EPOCH = ""; MAC_ACCESS_SOURCE_COMMIT = ""; MAC_ACCESS_UPDATE_FEED_URL = ""; MAC_ACCESS_UPDATE_PUBLIC_ED_KEY = ""; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access; PRODUCT_NAME = "evaOS Mac Access"; SWIFT_EMIT_LOC_STRINGS = YES; }; name = Debug; };
+		0E0000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; COMBINE_HIDPI_IMAGES = YES; COPY_PHASE_STRIP = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/App-Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MAC_ACCESS_APP_REQUIREMENT_SHA256 = da635352f249b4213aa1a96c41d7979d8b25d86b056b9f0929c1b414e35896fb; MAC_ACCESS_CONNECTOR_REQUIREMENT_SHA256 = 0c3de778270de5b4a1992d0e13d4f27e41929c7ace94ae143bcba92a555be422; MAC_ACCESS_CREDENTIAL_SECURITY_EPOCH = ""; MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256 = ""; MAC_ACCESS_HELPER_RELATION_SHA256 = ""; MAC_ACCESS_HELPER_REQUIREMENT_SHA256 = 222107bb855cfc463805777c76ca8cfdac0d1145957c5f190c234e52bfd277aa; MAC_ACCESS_ROLLBACK_KEY_ID = ""; MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL = ""; MAC_ACCESS_SCHEMA_READER_VERSION = ""; MAC_ACCESS_SCHEMA_WRITER_VERSION = ""; MAC_ACCESS_SECURITY_EPOCH = ""; MAC_ACCESS_SOURCE_COMMIT = ""; MAC_ACCESS_UPDATE_FEED_URL = ""; MAC_ACCESS_UPDATE_PUBLIC_ED_KEY = ""; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access; PRODUCT_NAME = "evaOS Mac Access"; SWIFT_EMIT_LOC_STRINGS = YES; }; name = Release; };
 		0E0000000000000000000021 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_ENTITLEMENTS = "Resources/Entitlements/Helper-Debug.entitlements"; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/Helper-Info.plist; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access.helper; PRODUCT_NAME = "evaOS Mac Access Helper"; SKIP_INSTALL = YES; }; name = Debug; };
 		0E0000000000000000000022 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_ENTITLEMENTS = "Resources/Entitlements/Helper-Release.entitlements"; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/Helper-Info.plist; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access.helper; PRODUCT_NAME = "evaOS Mac Access Helper"; SKIP_INSTALL = YES; }; name = Release; };
 		0E0000000000000000000031 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Resources/Plists/Connector-Info.plist; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access.connector; PRODUCT_NAME = "evaOS Mac Access Connector"; SKIP_INSTALL = YES; }; name = Debug; };
@@ -267,6 +280,14 @@
 		0E0000000000000000000051 = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @loader_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access.tests; PRODUCT_NAME = MacAccessTests; TEST_HOST = ""; }; name = Debug; };
 		0E0000000000000000000052 = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = ""; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @loader_path/../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.evaos.mac-access.tests; PRODUCT_NAME = MacAccessTests; TEST_HOST = ""; }; name = Release; };
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		140000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/sparkle-project/Sparkle"; requirement = {kind = exactVersion; version = 2.9.4; }; };
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		150000000000000000000001 /* Sparkle */ = {isa = XCSwiftPackageProductDependency; package = 140000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */; productName = Sparkle; };
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		0D0000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (0E0000000000000000000001, 0E0000000000000000000002, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };

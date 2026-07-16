@@ -108,6 +108,6 @@ public struct MacAccessActionAvailability: Equatable, Sendable {
         transport: true,
         elevatedAccessModes: true,
         revoke: true,
-        update: false
+        update: true
     )
 }

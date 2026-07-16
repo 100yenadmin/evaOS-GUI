@@ -4,6 +4,7 @@ import SwiftUI
 
 struct MacAccessMenu: View {
     @ObservedObject var controller: MacAccessController
+    @ObservedObject var updater: MacAccessUpdater
     let showOnboarding: () -> Void
 
     var body: some View {
@@ -132,18 +133,15 @@ struct MacAccessMenu: View {
             .disabled(true)
             .help("blocker.coreUnavailable")
 
-        Button("action.update") {}
-            .disabled(!controller.availability.update)
+        Button("action.update") {
+            updater.checkForUpdates()
+        }
+        .disabled(!controller.availability.update || !updater.canCheckForUpdates)
 
         Divider()
 
         Button("action.quit") {
-            Task {
-                let result = await controller.prepareToQuit()
-                if result == .completed(.localStop) {
-                    NSApplication.shared.terminate(nil)
-                }
-            }
+            NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
     }
