@@ -239,20 +239,30 @@ private actor MemoryCredentialVault: MacAccessCredentialVault {
         if failErase { throw CocoaError(.fileWriteNoPermission) }
         record = nil
     }
+
+    func waitUntilErased() async {
+        while record != nil { await Task.yield() }
+    }
 }
 
 private actor QueuedRelaySocket: MacAccessRelaySocket {
     private var received: [Data]
+    private var receivers: [CheckedContinuation<Data, any Error>] = []
     private(set) var sent: [Data] = []
     private(set) var isClosed = false
 
     init(received: [Data]) { self.received = received }
     func send(_ data: Data) { sent.append(data) }
-    func receive() throws -> Data {
-        guard !received.isEmpty else { throw MacAccessPublicError.relayUnavailable }
-        return received.removeFirst()
+    func receive() async throws -> Data {
+        if !received.isEmpty { return received.removeFirst() }
+        return try await withCheckedThrowingContinuation { receivers.append($0) }
     }
-    func close() { isClosed = true }
+    func close() {
+        isClosed = true
+        let pending = receivers
+        receivers.removeAll()
+        for receiver in pending { receiver.resume(throwing: MacAccessPublicError.stopped) }
+    }
 }
 
 private struct FixtureSocketFactory: MacAccessRelaySocketFactory {
@@ -294,6 +304,10 @@ private actor ControlledRelaySocket: MacAccessRelaySocket {
 
     func waitUntilReceiving() async {
         while receivers.isEmpty { await Task.yield() }
+    }
+
+    func waitUntilSentCount(_ expectedCount: Int) async {
+        while sent.count < expectedCount { await Task.yield() }
     }
 
     func waitUntilClosing() async {
@@ -338,10 +352,54 @@ private actor CountingExecutor: MacAccessCommandExecutor {
     }
 }
 
+private actor SuspendedExecutor: MacAccessCommandExecutor {
+    private var continuation: CheckedContinuation<MacAccessExecutionResult, Never>?
+    private var started = false
+
+    func execute(command _: MacAccessBrokerCommand) async -> MacAccessExecutionResult {
+        started = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilExecuting() async {
+        while !started { await Task.yield() }
+    }
+
+    func release() {
+        continuation?.resume(
+            returning: MacAccessExecutionResult(
+                localAuditID: "suspended-audit-01", outcome: .executed
+            )
+        )
+        continuation = nil
+    }
+}
+
 private actor RecordingTransportSafetySink: MacAccessTransportSafetySink {
     private(set) var events: [MacAccessTransportSafetyEvent] = []
     func preemptTransportSafety(_ event: MacAccessTransportSafetyEvent) {
         events.append(event)
+    }
+
+    func waitUntilEventCount(_ expectedCount: Int) async {
+        while events.count < expectedCount { await Task.yield() }
+    }
+}
+
+private actor ControlledExpirySleeper {
+    private var continuations: [CheckedContinuation<Void, any Error>] = []
+
+    func sleep(for _: TimeInterval) async throws {
+        try await withCheckedThrowingContinuation { continuations.append($0) }
+    }
+
+    func waitUntilSleeping() async {
+        while continuations.isEmpty { await Task.yield() }
+    }
+
+    func release() {
+        guard !continuations.isEmpty else { return }
+        continuations.removeFirst().resume()
     }
 }
 
@@ -661,34 +719,33 @@ final class TransportContractTests: XCTestCase {
             let first = ControlledRelaySocket(received: [
                 try MacAccessWire.canonicalData(registrationAck()),
                 fixture.wire,
-                try MacAccessWire.canonicalData(revoke),
             ])
             let second = ControlledRelaySocket(received: [
                 try MacAccessWire.canonicalData(registrationAck()), fixture.wire,
             ])
             let vault = MemoryCredentialVault(credentialRecord(for: fixture))
             let executor = CountingExecutor()
+            let safetySink = RecordingTransportSafetySink()
             let runtime = MacAccessHelperRuntime(
                 vault: vault, redeemer: UnusedRedeemer(),
                 socketFactory: SequencedSocketFactory([first, second]), executor: executor,
-                pinnedKeys: fixture.keys, relayURL: try relayURL(), now: { fixture.now }
+                safetySink: safetySink, pinnedKeys: fixture.keys,
+                relayURL: try relayURL(), now: { fixture.now }
             )
 
             _ = try await runtime.connect()
             _ = try await runtime.processOneCommand()
-            do {
-                _ = try await runtime.processOneCommand()
-                XCTFail("expected terminal revoke reason \(reason)")
-            } catch {
-                XCTAssertEqual(
-                    error as? MacAccessPublicError,
-                    reason == "grant_revoked" ? .revoked
-                        : (reason == "local_stop" ? .stopped : .relayUnavailable)
-                )
-            }
+            await first.deliver(try MacAccessWire.canonicalData(revoke))
+            await safetySink.waitUntilEventCount(1)
 
             let terminalStatus = await runtime.status
+            if reason == "grant_revoked" { await vault.waitUntilErased() }
             let record = await vault.load()
+            let safetyEvents = await safetySink.events
+            XCTAssertEqual(
+                safetyEvents,
+                [reason == "grant_revoked" ? .grantRevoked : .channelClosed]
+            )
             if reason == "grant_revoked" {
                 XCTAssertEqual(terminalStatus.pairing, .revoked)
                 XCTAssertNil(record)
@@ -963,7 +1020,7 @@ final class TransportContractTests: XCTestCase {
         )
         _ = try await runtime.connect()
         let receiveLoop = Task { await runtime.processCommands() }
-        await socket.waitUntilReceiving()
+        await socket.waitUntilSentCount(3)
 
         let sentBeforeStop = await socket.sent
         let executionCountBeforeStop = await executor.executionCount
@@ -1240,6 +1297,7 @@ final class TransportContractTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? MacAccessPublicError, .revoked)
         }
+        await revokeVault.waitUntilErased()
         let revokeEvents = await revokeSink.events
         let recordAfterRevoke = await revokeVault.load()
         XCTAssertEqual(revokeEvents, [.grantRevoked])
@@ -1270,6 +1328,7 @@ final class TransportContractTests: XCTestCase {
             XCTAssertEqual(error as? MacAccessPublicError, .revoked)
         }
         let expiryEvents = await expirySink.events
+        await expiryVault.waitUntilErased()
         let recordAfterExpiry = await expiryVault.load()
         let expirySocketCloseCount = await expirySocket.closeCount
         let expiredExecutionCount = await expiryExecutor.executionCount
@@ -1298,6 +1357,156 @@ final class TransportContractTests: XCTestCase {
         XCTAssertEqual(expiredConnectEvents, [.grantExpired])
         XCTAssertNil(expiredConnectRecord)
         XCTAssertEqual(expiredConnectOpenCount, 0)
+    }
+
+    func testBrokerRevokePreemptsCommandWhileExecutorIsSuspended() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let socket = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let vault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let executor = SuspendedExecutor()
+        let safetySink = RecordingTransportSafetySink()
+        let runtime = MacAccessHelperRuntime(
+            vault: vault,
+            redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([socket]),
+            executor: executor,
+            safetySink: safetySink,
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: { fixture.now }
+        )
+        _ = try await runtime.connect()
+        let commandTask = Task { try await runtime.processOneCommand() }
+        await socket.deliver(fixture.wire)
+        await executor.waitUntilExecuting()
+
+        let revoke = MacAccessRelayRevoke(
+            schemaVersion: "evaos.mac_access.relay_revoke.v1",
+            messageType: "revoke",
+            sessionID: "session-01",
+            channelGenerationID: "channel-generation-01",
+            binding: fixture.binding,
+            reasonCode: "grant_revoked",
+            sequence: 43
+        )
+        await socket.deliver(try MacAccessWire.canonicalData(revoke))
+        await safetySink.waitUntilEventCount(1)
+        await vault.waitUntilErased()
+
+        let safetyEvents = await safetySink.events
+        let erasedRecord = await vault.load()
+        XCTAssertEqual(safetyEvents, [.grantRevoked])
+        XCTAssertNil(erasedRecord)
+
+        await executor.release()
+        do {
+            _ = try await commandTask.value
+            XCTFail("expected in-flight command to lose authority")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .revoked)
+        }
+        let sent = await socket.sent
+        XCTAssertEqual(sent.count, 1)
+    }
+
+    func testTerminalChannelLossPreemptsInFlightCommandWithoutErasingPairing() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let socket = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let vault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let executor = SuspendedExecutor()
+        let safetySink = RecordingTransportSafetySink()
+        let runtime = MacAccessHelperRuntime(
+            vault: vault,
+            redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([socket]),
+            executor: executor,
+            safetySink: safetySink,
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: { fixture.now }
+        )
+        _ = try await runtime.connect()
+        let commandTask = Task { try await runtime.processOneCommand() }
+        await socket.deliver(fixture.wire)
+        await executor.waitUntilExecuting()
+
+        let terminal = MacAccessRelayError(
+            schemaVersion: "evaos.mac_access.relay_error.v1",
+            messageType: "error",
+            code: "relay_unavailable",
+            terminal: true
+        )
+        await socket.deliver(try MacAccessWire.canonicalData(terminal))
+        await safetySink.waitUntilEventCount(1)
+
+        let safetyEvents = await safetySink.events
+        let preservedRecord = await vault.load()
+        let blockedStatus = await runtime.status
+        XCTAssertEqual(safetyEvents, [.channelClosed])
+        XCTAssertNotNil(preservedRecord)
+        XCTAssertEqual(blockedStatus.transport, .blocked)
+
+        await executor.release()
+        do {
+            _ = try await commandTask.value
+            XCTFail("expected in-flight command to lose channel authority")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .stopped)
+        }
+        let sent = await socket.sent
+        XCTAssertEqual(sent.count, 1)
+    }
+
+    func testGrantExpiryDeadlinePreemptsCommandWhileExecutorIsSuspended() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let clock = TransportTestClock(fixture.now)
+        let sleeper = ControlledExpirySleeper()
+        let socket = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let vault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let executor = SuspendedExecutor()
+        let safetySink = RecordingTransportSafetySink()
+        let runtime = MacAccessHelperRuntime(
+            vault: vault,
+            redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([socket]),
+            executor: executor,
+            safetySink: safetySink,
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: clock.now,
+            sleepFor: { interval in try await sleeper.sleep(for: interval) }
+        )
+        _ = try await runtime.connect()
+        await sleeper.waitUntilSleeping()
+        let commandTask = Task { try await runtime.processOneCommand() }
+        await socket.deliver(fixture.wire)
+        await executor.waitUntilExecuting()
+
+        clock.advance(3_600)
+        await sleeper.release()
+        await safetySink.waitUntilEventCount(1)
+        await vault.waitUntilErased()
+
+        let safetyEvents = await safetySink.events
+        let erasedRecord = await vault.load()
+        XCTAssertEqual(safetyEvents, [.grantExpired])
+        XCTAssertNil(erasedRecord)
+
+        await executor.release()
+        do {
+            _ = try await commandTask.value
+            XCTFail("expected expired grant to preempt in-flight command")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .revoked)
+        }
+        let sent = await socket.sent
+        XCTAssertEqual(sent.count, 1)
     }
 
     func testProductionExecutorFailsClosedUntilPolicySlice() async {

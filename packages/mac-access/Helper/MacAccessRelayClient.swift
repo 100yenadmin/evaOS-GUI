@@ -85,6 +85,7 @@ protocol MacAccessCommandExecutor: Sendable {
 enum MacAccessTransportSafetyEvent: Equatable, Sendable {
     case grantRevoked
     case grantExpired
+    case channelClosed
 }
 
 protocol MacAccessTransportSafetySink: Sendable {
@@ -141,6 +142,7 @@ actor MacAccessHelperRuntime {
     private let verifier: MacAccessCommandVerifier
     private let relayURL: URL
     private let now: @Sendable () -> Date
+    private let sleepFor: @Sendable (TimeInterval) async throws -> Void
 
     private var channelGeneration: UInt64 = 0
     private var channel: Channel?
@@ -149,6 +151,10 @@ actor MacAccessHelperRuntime {
     private var pairingBeforeOperation: MacAccessHelperPairingState?
     private var revocationLatched = false
     private var receiveLoopGeneration: UInt64?
+    private var receivePumpTask: Task<Void, Never>?
+    private var grantExpiryTask: Task<Void, Never>?
+    private var inboundCommandFrames: [Data] = []
+    private var inboundCommandWaiter: CheckedContinuation<Data, any Error>?
     private var replayWindow = MacAccessReplayWindow()
     private(set) var status: MacAccessHelperSafeStatus = .initial
 
@@ -160,7 +166,12 @@ actor MacAccessHelperRuntime {
         safetySink: (any MacAccessTransportSafetySink)? = nil,
         pinnedKeys: MacAccessPinnedKeys,
         relayURL: URL,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        sleepFor: @escaping @Sendable (TimeInterval) async throws -> Void = { interval in
+            let maximumInterval = TimeInterval(UInt64.max) / 1_000_000_000
+            let nanoseconds = UInt64(min(max(0, interval), maximumInterval) * 1_000_000_000)
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
     ) {
         self.vault = vault
         self.redeemer = redeemer
@@ -170,6 +181,7 @@ actor MacAccessHelperRuntime {
         verifier = MacAccessCommandVerifier(keys: pinnedKeys)
         self.relayURL = relayURL
         self.now = now
+        self.sleepFor = sleepFor
     }
 
     @discardableResult
@@ -303,6 +315,12 @@ actor MacAccessHelperRuntime {
             channel?.ack = ack
             status.pairing = .paired
             status.transport = .connected
+            startChannelTasks(
+                generation: generation,
+                socket: opened,
+                binding: binding,
+                ack: ack
+            )
             return status
         } catch let error as MacAccessPublicError {
             if await closeChannel(ownedBy: generation) {
@@ -321,7 +339,8 @@ actor MacAccessHelperRuntime {
 
     func processOneCommand() async throws -> MacAccessRelayReceipt {
         guard let owned = channel, let ack = owned.ack else {
-            throw MacAccessPublicError.relayUnavailable
+            if revocationLatched { throw MacAccessPublicError.revoked }
+            throw status.lastError ?? MacAccessPublicError.relayUnavailable
         }
         let generation = owned.generation
         do {
@@ -331,7 +350,10 @@ actor MacAccessHelperRuntime {
                 try await latchGrantInvalidation(.grantExpired, transport: .stopped)
                 throw MacAccessPublicError.revoked
             }
-            let frame = try await owned.socket.receive()
+            let frame = try await nextInboundCommandFrame(
+                generation: generation,
+                binding: owned.binding
+            )
             try requireOwnedChannel(generation, binding: owned.binding)
             if try MacAccessWire.parseInstant(
                 owned.binding.grantExpiresAt, allowingMilliseconds: true
@@ -339,22 +361,6 @@ actor MacAccessHelperRuntime {
                 try await latchGrantInvalidation(.grantExpired, transport: .stopped)
                 throw MacAccessPublicError.revoked
             }
-            let root = try MacAccessWire.strictJSONObject(from: frame)
-            guard let messageType = root["message_type"] as? String else {
-                throw MacAccessPublicError.invalidWireMessage
-            }
-            if messageType == "revoke" {
-                let terminalError = try await acceptRevoke(
-                    frame, expectedBinding: owned.binding, ack: ack, generation: generation
-                )
-                throw terminalError
-            }
-            if messageType == "error" {
-                try await acceptTerminalError(frame, generation: generation)
-                throw status.lastError ?? MacAccessPublicError.relayUnavailable
-            }
-            guard messageType == "command" else { throw MacAccessPublicError.invalidWireMessage }
-
             let command = try verifier.decodeAndVerify(
                 frame,
                 expectedBinding: owned.binding,
@@ -365,6 +371,7 @@ actor MacAccessHelperRuntime {
             try requireOwnedChannel(generation, binding: owned.binding)
             try replayWindow.accept(command)
             let execution = await executor.execute(command: command)
+            if revocationLatched { throw MacAccessPublicError.revoked }
             guard MacAccessWire.isIdentifier(execution.localAuditID),
                   execution.errorCode == nil || MacAccessWire.isIdentifier(execution.errorCode!)
             else { throw MacAccessPublicError.invalidWireMessage }
@@ -503,6 +510,18 @@ actor MacAccessHelperRuntime {
             return .revoked
         }
 
+        status.pairing = .paired
+        status.transport = revoke.reasonCode == "local_stop" ? .disconnected : .blocked
+        status.lastError = revoke.reasonCode == "local_stop" ? .stopped : .relayUnavailable
+        do {
+            try await safetySink?.preemptTransportSafety(.channelClosed)
+        } catch {
+            // Local native work was already blocked before persistence was attempted.
+        }
+        try requireOwnedChannel(generation, binding: expectedBinding)
+        let terminalError: MacAccessPublicError = revoke.reasonCode == "local_stop"
+            ? .stopped : .relayUnavailable
+        failInboundCommands(terminalError)
         let invalidationGeneration = await invalidateChannel()
         guard invalidationGeneration == channelGeneration else { return .stopped }
         status.pairing = .paired
@@ -523,6 +542,15 @@ actor MacAccessHelperRuntime {
             try await latchGrantInvalidation(.grantRevoked, transport: .blocked)
             return
         }
+        status.transport = .blocked
+        status.lastError = .relayUnavailable
+        do {
+            try await safetySink?.preemptTransportSafety(.channelClosed)
+        } catch {
+            // Keep transport closure authoritative when custody persistence fails.
+        }
+        try requireOwnedChannel(generation)
+        failInboundCommands(.relayUnavailable)
         let invalidationGeneration = await invalidateChannel()
         guard invalidationGeneration == channelGeneration else { return }
         status.transport = .blocked
@@ -533,6 +561,7 @@ actor MacAccessHelperRuntime {
         _ event: MacAccessTransportSafetyEvent,
         transport: MacAccessHelperTransportState
     ) async throws {
+        guard !revocationLatched else { throw MacAccessPublicError.revoked }
         credentialMutationInProgress = true
         revocationLatched = true
         status = MacAccessHelperSafeStatus(
@@ -558,6 +587,156 @@ actor MacAccessHelperRuntime {
         )
     }
 
+    private func startChannelTasks(
+        generation: UInt64,
+        socket: any MacAccessRelaySocket,
+        binding: MacAccessSelectedBinding,
+        ack: MacAccessRelayRegistrationAck
+    ) {
+        receivePumpTask?.cancel()
+        grantExpiryTask?.cancel()
+        inboundCommandFrames.removeAll(keepingCapacity: true)
+        receivePumpTask = Task {
+            await self.runReceivePump(
+                generation: generation,
+                socket: socket,
+                binding: binding,
+                ack: ack
+            )
+        }
+        grantExpiryTask = Task {
+            await self.runGrantExpiryDeadline(generation: generation, binding: binding)
+        }
+    }
+
+    private func runReceivePump(
+        generation: UInt64,
+        socket: any MacAccessRelaySocket,
+        binding: MacAccessSelectedBinding,
+        ack: MacAccessRelayRegistrationAck
+    ) async {
+        while !Task.isCancelled {
+            do {
+                let frame = try await socket.receive()
+                try Task.checkCancellation()
+                try requireOwnedChannel(generation, binding: binding)
+                if try MacAccessWire.parseInstant(
+                    binding.grantExpiresAt, allowingMilliseconds: true
+                ) <= now() {
+                    try await latchGrantInvalidation(.grantExpired, transport: .stopped)
+                    return
+                }
+                let root = try MacAccessWire.strictJSONObject(from: frame)
+                guard let messageType = root["message_type"] as? String else {
+                    throw MacAccessPublicError.invalidWireMessage
+                }
+                switch messageType {
+                case "command":
+                    deliverInboundCommand(frame)
+                case "revoke":
+                    _ = try await acceptRevoke(
+                        frame,
+                        expectedBinding: binding,
+                        ack: ack,
+                        generation: generation
+                    )
+                    return
+                case "error":
+                    try await acceptTerminalError(frame, generation: generation)
+                    return
+                default:
+                    throw MacAccessPublicError.invalidWireMessage
+                }
+            } catch is CancellationError {
+                return
+            } catch let error as MacAccessPublicError {
+                if error != .revoked, error != .stopped {
+                    await preemptChannelLoss(generation: generation, error: error)
+                }
+                return
+            } catch {
+                await preemptChannelLoss(generation: generation, error: .relayUnavailable)
+                return
+            }
+        }
+    }
+
+    private func runGrantExpiryDeadline(
+        generation: UInt64,
+        binding: MacAccessSelectedBinding
+    ) async {
+        do {
+            let deadline = try MacAccessWire.parseInstant(
+                binding.grantExpiresAt, allowingMilliseconds: true
+            )
+            while !Task.isCancelled {
+                let remaining = deadline.timeIntervalSince(now())
+                if remaining <= 0 {
+                    try requireOwnedChannel(generation, binding: binding)
+                    try await latchGrantInvalidation(.grantExpired, transport: .stopped)
+                    return
+                }
+                try await sleepFor(remaining)
+            }
+        } catch {
+            return
+        }
+    }
+
+    private func nextInboundCommandFrame(
+        generation: UInt64,
+        binding: MacAccessSelectedBinding
+    ) async throws -> Data {
+        try requireOwnedChannel(generation, binding: binding)
+        if !inboundCommandFrames.isEmpty {
+            return inboundCommandFrames.removeFirst()
+        }
+        guard inboundCommandWaiter == nil else {
+            throw MacAccessPublicError.relayUnavailable
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            inboundCommandWaiter = continuation
+        }
+    }
+
+    private func deliverInboundCommand(_ frame: Data) {
+        if let waiter = inboundCommandWaiter {
+            inboundCommandWaiter = nil
+            waiter.resume(returning: frame)
+        } else {
+            inboundCommandFrames.append(frame)
+        }
+    }
+
+    private func failInboundCommands(_ error: MacAccessPublicError) {
+        inboundCommandFrames.removeAll(keepingCapacity: true)
+        if let waiter = inboundCommandWaiter {
+            inboundCommandWaiter = nil
+            waiter.resume(throwing: error)
+        }
+    }
+
+    private func preemptChannelLoss(
+        generation: UInt64,
+        error: MacAccessPublicError
+    ) async {
+        guard generation == channelGeneration, channel?.generation == generation else { return }
+        status.pairing = .paired
+        status.transport = .blocked
+        status.lastError = error
+        do {
+            try await safetySink?.preemptTransportSafety(.channelClosed)
+        } catch {
+            // Closing the authenticated channel remains authoritative.
+        }
+        guard generation == channelGeneration, channel?.generation == generation else { return }
+        failInboundCommands(error)
+        _ = await invalidateChannel()
+        status.pairing = .paired
+        status.transport = .blocked
+        status.lastError = error
+    }
+
     private func nextChannelGeneration() -> UInt64 {
         channelGeneration &+= 1
         return channelGeneration
@@ -581,6 +760,11 @@ actor MacAccessHelperRuntime {
         guard generation == channelGeneration, let active = channel,
               active.generation == generation
         else { return false }
+        receivePumpTask?.cancel()
+        receivePumpTask = nil
+        grantExpiryTask?.cancel()
+        grantExpiryTask = nil
+        failInboundCommands(revocationLatched ? .revoked : .stopped)
         channel = nil
         await active.socket.close()
         return generation == channelGeneration
@@ -590,6 +774,11 @@ actor MacAccessHelperRuntime {
     private func invalidateChannel() async -> UInt64 {
         let generation = nextChannelGeneration()
         let active = channel
+        receivePumpTask?.cancel()
+        receivePumpTask = nil
+        grantExpiryTask?.cancel()
+        grantExpiryTask = nil
+        failInboundCommands(revocationLatched ? .revoked : .stopped)
         channel = nil
         await active?.socket.close()
         return generation

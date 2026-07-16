@@ -79,7 +79,12 @@ actor MacAccessPolicyRuntime: MacAccessTransportSafetySink {
     }
 
     func preemptTransportSafety(_ event: MacAccessTransportSafetyEvent) async throws {
-        try await preemptSafety("revoke")
+        switch event {
+        case .grantRevoked, .grantExpired:
+            try await preemptSafety("revoke")
+        case .channelClosed:
+            try await preemptSafety("disconnect")
+        }
     }
 
     func prepareForPairing() async throws {
