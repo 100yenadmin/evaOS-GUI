@@ -89,8 +89,10 @@ public final class MacAccessController: ObservableObject {
         projectionGeneration &+= 1
         let generation = projectionGeneration
         guard let pendingApproval,
-              let client = client as? any MacAccessStatusProjectingClient,
-              let reply = await client.resolvePendingApproval(
+              let client = client as? any MacAccessStatusProjectingClient
+        else { return }
+        self.pendingApproval = nil
+        guard let reply = await client.resolvePendingApproval(
                   pendingApproval.approval, allow: allow
               ), reply.code == .ok,
               generation == projectionGeneration
