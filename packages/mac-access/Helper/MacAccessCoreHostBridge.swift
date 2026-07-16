@@ -451,6 +451,7 @@ actor MacAccessCoreHostPortDispatcher {
               let binding = envelope["binding"]?.object,
               let grantExpires = binding["grant_expires_at"]?.string.flatMap(Self.date)
         else { return "expired_authority" }
+        guard now < grantExpires else { return "grant_expired" }
         guard issued <= now.addingTimeInterval(5), now < expires, expires < grantExpires,
               expires.timeIntervalSince(issued) <= 60
         else { return "expired_authority" }
@@ -858,14 +859,21 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
             case "stopped": outcome = .cancelled
             default: outcome = .failed
             }
+            let decisionAuditID = result["decision_audit_id"]?.string
             let resultAuditID = result["result_audit_id"]?.string
-            let auditID = resultAuditID ?? result["decision_audit_id"]?.string
-            guard let auditID,
-                MacAccessWire.isIdentifier(auditID)
+            guard let decisionAuditID, MacAccessWire.isIdentifier(decisionAuditID)
             else { throw MacAccessCoreHostError.protocolViolation }
+            let auditID: String
+            if outcome == .denied {
+                guard resultAuditID == nil else { throw MacAccessCoreHostError.protocolViolation }
+                auditID = decisionAuditID
+            } else {
+                guard let resultAuditID, MacAccessWire.isIdentifier(resultAuditID)
+                else { throw MacAccessCoreHostError.protocolViolation }
+                auditID = resultAuditID
+            }
             if let audit {
-                guard let resultAuditID, MacAccessWire.isIdentifier(resultAuditID),
-                      await audit.containsCommittedAuditID(resultAuditID)
+                guard await audit.containsCommittedAuditID(auditID)
                 else { throw MacAccessCoreHostError.protocolViolation }
             }
             return MacAccessExecutionResult(

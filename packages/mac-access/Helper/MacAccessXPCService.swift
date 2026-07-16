@@ -35,7 +35,7 @@ extension MacAccessXPCServiceCore {
     }
 }
 
-actor MacAccessPolicyRuntime {
+actor MacAccessPolicyRuntime: MacAccessTransportSafetySink {
     let client: MacAccessCoreHostClient
     private let custody: MacAccessPolicyCustody
     private let audit: MacAccessAuditCustody
@@ -73,15 +73,17 @@ actor MacAccessPolicyRuntime {
     }
 
     func preemptSafety(_ operation: String) async throws {
-        do {
-            _ = try await custody.forceLocalSafety(operation)
-        } catch {
-            await native.blockAndCancelAll()
-            await client.resetPolicyEpoch()
-            throw error
-        }
         await native.blockAndCancelAll()
         await client.resetPolicyEpoch()
+        _ = try await custody.forceLocalSafety(operation)
+    }
+
+    func preemptTransportSafety(_ event: MacAccessTransportSafetyEvent) async throws {
+        try await preemptSafety("revoke")
+    }
+
+    func prepareForPairing() async throws {
+        try await preemptSafety("revoke")
     }
 
     func enableNativeIfAllowed() async {
@@ -312,6 +314,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             redeemer: URLSessionMacAccessPairingRedeemer(endpoint: configuration.pairingEndpoint),
             socketFactory: URLSessionMacAccessRelaySocketFactory(),
             executor: policy?.executor ?? PolicyUnavailableMacAccessExecutor(),
+            safetySink: policy?.runtime,
             pinnedKeys: configuration.pinnedKeys,
             relayURL: configuration.relayURL
         )
@@ -328,12 +331,17 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     func pair(code: String) async -> MacAccessXPCReply {
         guard code.utf8.count <= 64 else { return await reply(code: .invalidPairingCode) }
         guard let runtime else { return await unavailableReply() }
+        guard let policyRuntime else {
+            return await reply(code: .policyUnavailable, status: await runtime.status)
+        }
+        do {
+            try await policyRuntime.prepareForPairing()
+        } catch {
+            await policyRuntime.latchEmergencyKill()
+            return await reply(code: .policyUnavailable, status: await runtime.status)
+        }
         do {
             let status = try await runtime.pair(code: code)
-            guard let policyRuntime else {
-                try await rollbackPairing(runtime: runtime, policyRuntime: nil)
-                throw MacAccessPublicError.policyUnavailable
-            }
             do {
                 try await policyRuntime.prepareForFreshPairingIfRevoked()
                 try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
@@ -467,6 +475,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         runtime: MacAccessHelperRuntime,
         policyRuntime: MacAccessPolicyRuntime?
     ) async throws {
+        try? await policyRuntime?.preemptSafety("revoke")
         do {
             _ = try await runtime.revokeLocally()
         } catch {

@@ -31,10 +31,15 @@ private actor MemoryAuditAnchorStore: MacAccessAuditAnchorStore {
 }
 
 private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
+    private let approvalAllowed: Bool
     private var queued: [Data] = []
     private var receivers: [CheckedContinuation<Data, Error>] = []
     private var dispatchRequest: [String: JSONValue]?
     private var decisionEvent: [String: JSONValue]?
+
+    init(approvalAllowed: Bool = true) {
+        self.approvalAllowed = approvalAllowed
+    }
 
     func send(_ data: Data) throws {
         guard case .object(let frame) = try JSONDecoder().decode(JSONValue.self, from: data),
@@ -70,8 +75,10 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
                     callID: "call-audit-decision", port: "audit",
                     method: "command_decision", arguments: [
                         "envelope": request["envelope"] ?? .null,
-                        "allowed": .boolean(true),
-                        "reason_code": .string("approved_exact_scope"),
+                        "allowed": .boolean(approvalAllowed),
+                        "reason_code": .string(
+                            approvalAllowed ? "approved_exact_scope" : "denied_approval"
+                        ),
                         "detail_code": .null,
                     ]
                 ))
@@ -80,6 +87,18 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
                     throw MacAccessCoreHostError.protocolViolation
                 }
                 decisionEvent = decision
+                if !approvalAllowed {
+                    guard let decisionAuditID = decision["audit_id"] else {
+                        throw MacAccessCoreHostError.protocolViolation
+                    }
+                    try enqueue(hostResponse(request: request, epoch: 2, result: [
+                        "kind": .string("action"),
+                        "outcome": .string("denied"),
+                        "decision_audit_id": decisionAuditID,
+                        "result_audit_id": .null,
+                    ]))
+                    return
+                }
                 try enqueue(portCall(
                     callID: "call-native-begin", port: "native", method: "begin",
                     arguments: ["envelope": request["envelope"] ?? .null]
@@ -702,6 +721,121 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertEqual(result.outcome, .executed)
         let clickCount = await counter.count
         XCTAssertEqual(clickCount, 1)
+    }
+
+    func testDeniedApprovalReturnsCommittedDecisionReceiptWithoutLatchingKill() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let command = brokerCommand()
+        let vault = PolicyTestVault(credentialRecord(binding: command.binding))
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-denied")
+        let audit = try MacAccessAuditCustody(paths: paths)
+        let native = MacAccessNativeClickPort(isAccessibilityTrusted: { true })
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody, audit: audit, native: native, vault: vault
+        )
+        let channel = ScriptedCoreHostChannel(approvalAllowed: false)
+        let transport = MacAccessStdioCoreHostTransport(launcher: { channel }, dispatcher: dispatcher)
+        let client = MacAccessCoreHostClient(
+            transport: transport, hostSessionID: "host-denied", custody: custody
+        )
+        let runtime = MacAccessPolicyRuntime(
+            client: client, custody: custody, audit: audit, native: native
+        )
+
+        try await runtime.synchronizePairing(code: "ABCDEF12")
+        try await runtime.synchronizeConnection(binding: command.binding)
+        var connected = await custody.loadState()
+        let revision = try XCTUnwrap(connected["revision"]?.integer)
+        connected["pairing_state"] = .string("paired")
+        connected["transport_state"] = .string("connected")
+        connected["configured_mode"] = .string("ask_every_time")
+        connected["effective_mode"] = .string("ask_every_time")
+        connected["paused"] = .boolean(false)
+        connected["kill_switch"] = .boolean(false)
+        connected["policy_epoch"] = .integer(2)
+        let stateUpdated = try await custody.compareAndSwap(
+            expectedRevision: revision, state: connected
+        )
+        XCTAssertTrue(stateUpdated)
+        try await custody.authorizeLocalMode("ask_every_time")
+        await runtime.enableNativeIfAllowed()
+
+        let execution = Task {
+            await CoreHostBackedMacAccessExecutor(
+                client: client, audit: audit, custody: custody
+            ).execute(command: command)
+        }
+        while await custody.currentPendingApproval() == nil { await Task.yield() }
+        let currentPending = await custody.currentPendingApproval()
+        let pending = try XCTUnwrap(currentPending)
+        let denied = await custody.resolvePendingApproval(pending.approval, allow: false)
+        XCTAssertTrue(denied)
+        let result = await execution.value
+        let projection = await custody.projectStatus()
+
+        XCTAssertEqual(result.outcome, .denied)
+        XCTAssertEqual(result.errorCode, "policy_denied")
+        let decisionCommitted = await audit.containsCommittedAuditID(result.localAuditID)
+        XCTAssertTrue(decisionCommitted)
+        XCTAssertFalse(projection.killSwitch)
+    }
+
+    func testPairingPreemptionCancelsPendingApprovalBeforeBrokerWork() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-repair-preempt")
+        let audit = try MacAccessAuditCustody(paths: paths)
+        let native = MacAccessNativeClickPort(isAccessibilityTrusted: { true })
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody, audit: audit, native: native, vault: PolicyTestVault()
+        )
+        let transport = MacAccessStdioCoreHostTransport(
+            launcher: { StalledCoreHostChannel() }, dispatcher: dispatcher
+        )
+        let client = MacAccessCoreHostClient(
+            transport: transport, hostSessionID: "host-repair-preempt", custody: custody
+        )
+        let runtime = MacAccessPolicyRuntime(
+            client: client, custody: custody, audit: audit, native: native
+        )
+        let oldEnvelope = actionEnvelope(commandID: "command-old-pending")
+        let waiter = Task { try await custody.awaitApproval(envelope: oldEnvelope) }
+        while await custody.currentPendingApproval() == nil { await Task.yield() }
+
+        try await runtime.prepareForPairing()
+        _ = try? await waiter.value
+        let projection = await custody.projectStatus()
+        let pendingAfterPreemption = await custody.currentPendingApproval()
+
+        XCTAssertNil(pendingAfterPreemption)
+        XCTAssertEqual(projection.pairing, "revoked")
+        XCTAssertEqual(projection.effectiveMode, "off")
+        XCTAssertTrue(projection.paused)
+        XCTAssertFalse(projection.killSwitch)
+    }
+
+    func testClockPortDistinguishesGrantExpiryFromCommandWindowExpiry() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let command = brokerCommand()
+        let expiry = try MacAccessWire.parseInstant(
+            command.binding.grantExpiresAt, allowingMilliseconds: true
+        )
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-expiry"),
+            audit: try MacAccessAuditCustody(paths: paths),
+            native: MacAccessNativeClickPort(isAccessibilityTrusted: { true }),
+            vault: PolicyTestVault(), now: { expiry }
+        )
+        let data = try JSONEncoder().encode(command)
+        guard case .object(let envelope) = try JSONDecoder().decode(JSONValue.self, from: data) else {
+            return XCTFail("expected command object")
+        }
+
+        let result = try await dispatcher.handle(
+            port: "clock", method: "validate_authority_window",
+            arguments: ["envelope": .object(envelope)]
+        )
+
+        XCTAssertEqual(result.string, "grant_expired")
     }
 
     func testHelperRejectsFabricatedTerminalAuditAndKeepsAnchorBlockedUntilExactResult() async throws {

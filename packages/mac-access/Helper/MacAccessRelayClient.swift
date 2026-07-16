@@ -82,6 +82,15 @@ protocol MacAccessCommandExecutor: Sendable {
     func execute(command: MacAccessBrokerCommand) async -> MacAccessExecutionResult
 }
 
+enum MacAccessTransportSafetyEvent: Equatable, Sendable {
+    case grantRevoked
+    case grantExpired
+}
+
+protocol MacAccessTransportSafetySink: Sendable {
+    func preemptTransportSafety(_ event: MacAccessTransportSafetyEvent) async throws
+}
+
 struct PolicyUnavailableMacAccessExecutor: MacAccessCommandExecutor {
     func execute(command _: MacAccessBrokerCommand) async -> MacAccessExecutionResult { Self.result() }
 
@@ -128,6 +137,7 @@ actor MacAccessHelperRuntime {
     private let redeemer: any MacAccessPairingRedeemer
     private let socketFactory: any MacAccessRelaySocketFactory
     private let executor: any MacAccessCommandExecutor
+    private let safetySink: (any MacAccessTransportSafetySink)?
     private let verifier: MacAccessCommandVerifier
     private let relayURL: URL
     private let now: @Sendable () -> Date
@@ -147,6 +157,7 @@ actor MacAccessHelperRuntime {
         redeemer: any MacAccessPairingRedeemer,
         socketFactory: any MacAccessRelaySocketFactory,
         executor: any MacAccessCommandExecutor = PolicyUnavailableMacAccessExecutor(),
+        safetySink: (any MacAccessTransportSafetySink)? = nil,
         pinnedKeys: MacAccessPinnedKeys,
         relayURL: URL,
         now: @escaping @Sendable () -> Date = Date.init
@@ -155,6 +166,7 @@ actor MacAccessHelperRuntime {
         self.redeemer = redeemer
         self.socketFactory = socketFactory
         self.executor = executor
+        self.safetySink = safetySink
         verifier = MacAccessCommandVerifier(keys: pinnedKeys)
         self.relayURL = relayURL
         self.now = now
@@ -246,10 +258,19 @@ actor MacAccessHelperRuntime {
             guard let record = try await vault.load(), record.isPaired,
                   let binding = record.binding,
                   let credential = record.relayCredential,
-                  let credentialExpiry = record.relayCredentialExpiresAt,
-                  try MacAccessWire.parseInstant(credentialExpiry, allowingMilliseconds: true) > now()
+                  let credentialExpiry = record.relayCredentialExpiresAt
             else { throw MacAccessPublicError.credentialUnavailable }
-            try binding.validate(now: now())
+            let observedNow = now()
+            if try MacAccessWire.parseInstant(
+                binding.grantExpiresAt, allowingMilliseconds: true
+            ) <= observedNow {
+                try await latchGrantInvalidation(.grantExpired, transport: .stopped)
+                throw MacAccessPublicError.revoked
+            }
+            guard try MacAccessWire.parseInstant(
+                credentialExpiry, allowingMilliseconds: true
+            ) > observedNow else { throw MacAccessPublicError.credentialUnavailable }
+            try binding.validate(now: observedNow)
             status.transport = .connecting
             status.lastError = nil
             let opened = try await socketFactory.open(url: relayURL)
@@ -304,8 +325,20 @@ actor MacAccessHelperRuntime {
         }
         let generation = owned.generation
         do {
+            if try MacAccessWire.parseInstant(
+                owned.binding.grantExpiresAt, allowingMilliseconds: true
+            ) <= now() {
+                try await latchGrantInvalidation(.grantExpired, transport: .stopped)
+                throw MacAccessPublicError.revoked
+            }
             let frame = try await owned.socket.receive()
             try requireOwnedChannel(generation, binding: owned.binding)
+            if try MacAccessWire.parseInstant(
+                owned.binding.grantExpiresAt, allowingMilliseconds: true
+            ) <= now() {
+                try await latchGrantInvalidation(.grantExpired, transport: .stopped)
+                throw MacAccessPublicError.revoked
+            }
             let root = try MacAccessWire.strictJSONObject(from: frame)
             guard let messageType = root["message_type"] as? String else {
                 throw MacAccessPublicError.invalidWireMessage
@@ -466,26 +499,7 @@ actor MacAccessHelperRuntime {
         else { throw MacAccessPublicError.wrongBinding }
         try requireOwnedChannel(generation, binding: expectedBinding)
         if revoke.reasonCode == "grant_revoked" {
-            credentialMutationInProgress = true
-            revocationLatched = true
-            status.pairing = .revoked
-            status.transport = .stopped
-            status.lastError = .revoked
-            _ = await invalidateChannel()
-            do {
-                try await vault.erase()
-            } catch {
-                credentialMutationInProgress = false
-                throw error
-            }
-            replayWindow.reset()
-            credentialMutationInProgress = false
-            status = MacAccessHelperSafeStatus(
-                pairing: .revoked,
-                transport: .stopped,
-                lastError: .revoked,
-                lastAuditID: nil
-            )
+            try await latchGrantInvalidation(.grantRevoked, transport: .stopped)
             return .revoked
         }
 
@@ -506,27 +520,42 @@ actor MacAccessHelperRuntime {
         else { throw MacAccessPublicError.invalidWireMessage }
         try requireOwnedChannel(generation)
         if relayError.code == "grant_revoked" {
-            credentialMutationInProgress = true
-            revocationLatched = true
-            status.pairing = .revoked
-            status.transport = .blocked
-            status.lastError = .revoked
+            try await latchGrantInvalidation(.grantRevoked, transport: .blocked)
+            return
         }
         let invalidationGeneration = await invalidateChannel()
-        if relayError.code == "grant_revoked" {
-            do {
-                try await vault.erase()
-            } catch {
-                credentialMutationInProgress = false
-                throw error
-            }
-            replayWindow.reset()
-            status.pairing = .revoked
-            credentialMutationInProgress = false
-        }
         guard invalidationGeneration == channelGeneration else { return }
         status.transport = .blocked
-        status.lastError = relayError.code == "grant_revoked" ? .revoked : .relayUnavailable
+        status.lastError = .relayUnavailable
+    }
+
+    private func latchGrantInvalidation(
+        _ event: MacAccessTransportSafetyEvent,
+        transport: MacAccessHelperTransportState
+    ) async throws {
+        credentialMutationInProgress = true
+        revocationLatched = true
+        status = MacAccessHelperSafeStatus(
+            pairing: .revoked, transport: transport, lastError: .revoked, lastAuditID: nil
+        )
+        do {
+            try await safetySink?.preemptTransportSafety(event)
+        } catch {
+            // The policy sink blocks native work even when custody persistence fails.
+            // Keep the transport latch authoritative and still erase relay credentials.
+        }
+        _ = await invalidateChannel()
+        do {
+            try await vault.erase()
+        } catch {
+            credentialMutationInProgress = false
+            throw error
+        }
+        replayWindow.reset()
+        credentialMutationInProgress = false
+        status = MacAccessHelperSafeStatus(
+            pairing: .revoked, transport: transport, lastError: .revoked, lastAuditID: nil
+        )
     }
 
     private func nextChannelGeneration() -> UInt64 {

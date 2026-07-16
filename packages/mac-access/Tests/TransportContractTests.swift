@@ -338,6 +338,21 @@ private actor CountingExecutor: MacAccessCommandExecutor {
     }
 }
 
+private actor RecordingTransportSafetySink: MacAccessTransportSafetySink {
+    private(set) var events: [MacAccessTransportSafetyEvent] = []
+    func preemptTransportSafety(_ event: MacAccessTransportSafetyEvent) {
+        events.append(event)
+    }
+}
+
+private final class TransportTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ value: Date) { self.value = value }
+    func now() -> Date { lock.withLock { value } }
+    func advance(_ interval: TimeInterval) { lock.withLock { value.addTimeInterval(interval) } }
+}
+
 private actor FixturePairingRedeemer: MacAccessPairingRedeemer {
     private let bindingID: String
     private let mismatchIdentity: Bool
@@ -829,14 +844,18 @@ final class TransportContractTests: XCTestCase {
             try MacAccessWire.canonicalData(remoteRevoke),
         ])
         let remoteFactory = SequencedSocketFactory([remoteSocket])
+        let remoteSink = RecordingTransportSafetySink()
         let remoteRuntime = MacAccessHelperRuntime(
             vault: MemoryCredentialVault(credentialRecord(for: fixture), failErase: true),
             redeemer: UnusedRedeemer(), socketFactory: remoteFactory,
+            safetySink: remoteSink,
             pinnedKeys: fixture.keys, relayURL: try relayURL(), now: { fixture.now }
         )
         _ = try await remoteRuntime.connect()
         _ = try? await remoteRuntime.processOneCommand()
         await assertRevocationLatch(remoteRuntime, factory: remoteFactory, priorOpenCount: 1)
+        let remoteEvents = await remoteSink.events
+        XCTAssertEqual(remoteEvents, [.grantRevoked])
 
         let terminal = MacAccessRelayError(
             schemaVersion: "evaos.mac_access.relay_error.v1", messageType: "error",
@@ -847,14 +866,18 @@ final class TransportContractTests: XCTestCase {
             try MacAccessWire.canonicalData(terminal),
         ])
         let terminalFactory = SequencedSocketFactory([terminalSocket])
+        let terminalSink = RecordingTransportSafetySink()
         let terminalRuntime = MacAccessHelperRuntime(
             vault: MemoryCredentialVault(credentialRecord(for: fixture), failErase: true),
             redeemer: UnusedRedeemer(), socketFactory: terminalFactory,
+            safetySink: terminalSink,
             pinnedKeys: fixture.keys, relayURL: try relayURL(), now: { fixture.now }
         )
         _ = try await terminalRuntime.connect()
         _ = try? await terminalRuntime.processOneCommand()
         await assertRevocationLatch(terminalRuntime, factory: terminalFactory, priorOpenCount: 1)
+        let terminalEvents = await terminalSink.events
+        XCTAssertEqual(terminalEvents, [.grantRevoked])
     }
 
     func testValidPairingClearsRevocationLatchAfterCredentialEraseFailure() async throws {
@@ -1189,6 +1212,92 @@ final class TransportContractTests: XCTestCase {
         let localRecord = await localVault.load()
         XCTAssertEqual(locallyRevoked.pairing, .revoked)
         XCTAssertNil(localRecord)
+    }
+
+    func testGrantRevokeAndExpiryPreemptSafetySinkAndEraseCredentials() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let revoke = MacAccessRelayRevoke(
+            schemaVersion: "evaos.mac_access.relay_revoke.v1", messageType: "revoke",
+            sessionID: "session-01", channelGenerationID: "channel-generation-01",
+            binding: fixture.binding, reasonCode: "grant_revoked", sequence: 43
+        )
+        let revokeSocket = QueuedRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+            try MacAccessWire.canonicalData(revoke),
+        ])
+        let revokeVault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let revokeSink = RecordingTransportSafetySink()
+        let revokeRuntime = MacAccessHelperRuntime(
+            vault: revokeVault, redeemer: UnusedRedeemer(),
+            socketFactory: FixtureSocketFactory(socket: revokeSocket),
+            safetySink: revokeSink, pinnedKeys: fixture.keys,
+            relayURL: try relayURL(), now: { fixture.now }
+        )
+        _ = try await revokeRuntime.connect()
+        do {
+            _ = try await revokeRuntime.processOneCommand()
+            XCTFail("expected remote revoke")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .revoked)
+        }
+        let revokeEvents = await revokeSink.events
+        let recordAfterRevoke = await revokeVault.load()
+        XCTAssertEqual(revokeEvents, [.grantRevoked])
+        XCTAssertNil(recordAfterRevoke)
+
+        let clock = TransportTestClock(fixture.now)
+        let expirySocket = ControlledRelaySocket(
+            received: [try MacAccessWire.canonicalData(registrationAck())]
+        )
+        let expiryVault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let expirySink = RecordingTransportSafetySink()
+        let expiryExecutor = CountingExecutor()
+        let expiryRuntime = MacAccessHelperRuntime(
+            vault: expiryVault, redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([expirySocket]),
+            executor: expiryExecutor, safetySink: expirySink, pinnedKeys: fixture.keys,
+            relayURL: try relayURL(), now: clock.now
+        )
+        _ = try await expiryRuntime.connect()
+        let waitingCommand = Task { try await expiryRuntime.processOneCommand() }
+        await expirySocket.waitUntilReceiving()
+        clock.advance(3_600)
+        await expirySocket.deliver(fixture.wire)
+        do {
+            _ = try await waitingCommand.value
+            XCTFail("expected grant expiry")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .revoked)
+        }
+        let expiryEvents = await expirySink.events
+        let recordAfterExpiry = await expiryVault.load()
+        let expirySocketCloseCount = await expirySocket.closeCount
+        let expiredExecutionCount = await expiryExecutor.executionCount
+        XCTAssertEqual(expiryEvents, [.grantExpired])
+        XCTAssertNil(recordAfterExpiry)
+        XCTAssertEqual(expirySocketCloseCount, 1)
+        XCTAssertEqual(expiredExecutionCount, 0)
+
+        let expiredConnectVault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let expiredConnectSink = RecordingTransportSafetySink()
+        let expiredConnectFactory = SequencedSocketFactory([])
+        let expiredConnectRuntime = MacAccessHelperRuntime(
+            vault: expiredConnectVault, redeemer: UnusedRedeemer(),
+            socketFactory: expiredConnectFactory, safetySink: expiredConnectSink,
+            pinnedKeys: fixture.keys, relayURL: try relayURL(), now: clock.now
+        )
+        do {
+            _ = try await expiredConnectRuntime.connect()
+            XCTFail("expected stored grant expiry")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .revoked)
+        }
+        let expiredConnectEvents = await expiredConnectSink.events
+        let expiredConnectRecord = await expiredConnectVault.load()
+        let expiredConnectOpenCount = await expiredConnectFactory.openCount
+        XCTAssertEqual(expiredConnectEvents, [.grantExpired])
+        XCTAssertNil(expiredConnectRecord)
+        XCTAssertEqual(expiredConnectOpenCount, 0)
     }
 
     func testProductionExecutorFailsClosedUntilPolicySlice() async {
