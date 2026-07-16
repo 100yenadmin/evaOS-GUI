@@ -1049,6 +1049,10 @@ describe('evaOS beta release gate', () => {
     expect(mockArtifactScript).toContain(
       'raise ValueError("Connector-core source manifest entries must be strictly UTF-8 sorted.")'
     );
+    expect(mockArtifactScript).toContain('$tmp_dir/committed-source/packages/mac-connector-core/native/main.swift');
+    expect(mockArtifactScript).toContain('("native/EvaOSEd25519Verify.swift", ed25519_verifier_source_path)');
+    expect(mockArtifactScript).toContain('("native/main.swift", ed25519_verifier_main_source_path)');
+    expect(mockArtifactScript).toContain('verifier_source_digest.update(b"\\0")');
     expect(mockArtifactScript).not.toContain('assert hashlib.sha256(contents).hexdigest()');
   });
 

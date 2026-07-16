@@ -63,7 +63,8 @@ create_mock_macos_zip() {
     "$MOCK_SOURCE_COMMIT" \
     "$VERSION" \
     "$PRODUCT_NAME" \
-    "$tmp_dir/committed-source/packages/mac-connector-core/native/EvaOSEd25519Verify.swift" <<'PY'
+    "$tmp_dir/committed-source/packages/mac-connector-core/native/EvaOSEd25519Verify.swift" \
+    "$tmp_dir/committed-source/packages/mac-connector-core/native/main.swift" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -81,6 +82,7 @@ source_commit = sys.argv[6]
 app_version = sys.argv[7]
 product_name = sys.argv[8]
 ed25519_verifier_source_path = pathlib.Path(sys.argv[9])
+ed25519_verifier_main_source_path = pathlib.Path(sys.argv[10])
 with (bridge.parents[1] / "Info.plist").open("wb") as info_stream:
     plistlib.dump(
         {
@@ -214,6 +216,15 @@ python_packages = [
     {"name":"pyobjc-framework-ApplicationServices","version":"12.2.1","sha256":"f519ced13888d03410cd7da1f08fc56ee2944099e607216cef7ca26ecfdef61b"},
     {"name":"pyobjc-framework-CoreText","version":"12.2.1","sha256":"ac2ead13dfa4379a1566129d0e8a8ea778a2bcac9ac360a583360fd4f1ba39c6"},
 ]
+verifier_source_digest = hashlib.sha256()
+for verifier_source_relative_path, verifier_source_path in (
+    ("native/EvaOSEd25519Verify.swift", ed25519_verifier_source_path),
+    ("native/main.swift", ed25519_verifier_main_source_path),
+):
+    verifier_source_digest.update(verifier_source_relative_path.encode())
+    verifier_source_digest.update(b"\0")
+    verifier_source_digest.update(hashlib.sha256(verifier_source_path.read_bytes()).hexdigest().encode())
+    verifier_source_digest.update(b"\0")
 manifest = {
     "schema": "evaos-desktop-bridge-resource/v1",
     "placeholder": False,
@@ -229,7 +240,7 @@ manifest = {
             "path": "bin/evaos-ed25519-verify",
             "architecture": architecture,
             "minimumMacOS": "15.0",
-            "sourceSha256": hashlib.sha256(ed25519_verifier_source_path.read_bytes()).hexdigest(),
+            "sourceSha256": verifier_source_digest.hexdigest(),
         },
         "peekaboo": {
             "version": "3.8.0",
