@@ -262,6 +262,7 @@ jobs:
             -s \
             -k "$KEYCHAIN_PASSWORD" \
             "$KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
           rm -f "$CERTIFICATE_PATH"
 
           SIGNING_IDENTITY="$(
@@ -272,6 +273,18 @@ jobs:
             echo '::error::The repository certificate does not contain the approved Mac Access Developer ID identity.'
             exit 1
           fi
+
+          PREFLIGHT_TARGET="$RUNNER_TEMP/mac-access-codesign-preflight"
+          cp /usr/bin/true "$PREFLIGHT_TARGET"
+          /usr/bin/codesign \
+            --force \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
+            --options runtime \
+            --keychain "$KEYCHAIN_PATH" \
+            "$PREFLIGHT_TARGET"
+          /usr/bin/codesign --verify --strict "$PREFLIGHT_TARGET"
+          rm -f "$PREFLIGHT_TARGET"
 
           echo "MAC_ACCESS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
 

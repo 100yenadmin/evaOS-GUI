@@ -76,6 +76,9 @@ describe('Mac Access private-RC workflow contract', () => {
     ]) {
       expect(workflow).toContain(`secrets.${secret}`);
     }
+    expect(workflow).toContain('security list-keychains -d user -s "$KEYCHAIN_PATH"');
+    expect(workflow).toContain('mac-access-codesign-preflight');
+    expect(workflow).toContain('/usr/bin/codesign --verify --strict "$PREFLIGHT_TARGET"');
     expect(workflow).not.toContain('continue-on-error: true');
   });
 
