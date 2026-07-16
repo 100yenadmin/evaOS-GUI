@@ -79,11 +79,13 @@ struct MacAccessExecutionResult: Equatable, Sendable {
 }
 
 protocol MacAccessCommandExecutor: Sendable {
-    func execute(capability: String, request: [String: JSONValue]) async -> MacAccessExecutionResult
+    func execute(command: MacAccessBrokerCommand) async -> MacAccessExecutionResult
 }
 
 struct PolicyUnavailableMacAccessExecutor: MacAccessCommandExecutor {
-    func execute(capability _: String, request _: [String: JSONValue]) async -> MacAccessExecutionResult {
+    func execute(command _: MacAccessBrokerCommand) async -> MacAccessExecutionResult { Self.result() }
+
+    static func result() -> MacAccessExecutionResult {
         MacAccessExecutionResult(
             localAuditID: "policy-unavailable-\(UUID().uuidString.lowercased())",
             outcome: .denied,
@@ -329,10 +331,7 @@ actor MacAccessHelperRuntime {
             )
             try requireOwnedChannel(generation, binding: owned.binding)
             try replayWindow.accept(command)
-            let execution = await executor.execute(
-                capability: command.command.capability,
-                request: command.command.request
-            )
+            let execution = await executor.execute(command: command)
             guard MacAccessWire.isIdentifier(execution.localAuditID),
                   execution.errorCode == nil || MacAccessWire.isIdentifier(execution.errorCode!)
             else { throw MacAccessPublicError.invalidWireMessage }

@@ -22,6 +22,163 @@ protocol MacAccessXPCServiceCore: Sendable {
     func disconnect() async -> MacAccessXPCReply
     func stop() async -> MacAccessXPCReply
     func revoke() async -> MacAccessXPCReply
+    func policy(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReply
+}
+
+extension MacAccessXPCServiceCore {
+    func policy(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReply {
+        MacAccessXPCReply(
+            code: .policyUnavailable,
+            status: MacAccessXPCSafeStatus(
+                pairing: "unpaired", transport: "blocked",
+                lastErrorCode: "policy_unavailable", lastAuditID: nil
+            )
+        )
+    }
+}
+
+actor MacAccessPolicyRuntime {
+    let client: MacAccessCoreHostClient
+    private let custody: MacAccessPolicyCustody
+    private let audit: MacAccessAuditCustody
+    private let native: MacAccessNativeClickPort
+
+    init(
+        client: MacAccessCoreHostClient,
+        custody: MacAccessPolicyCustody,
+        audit: MacAccessAuditCustody,
+        native: MacAccessNativeClickPort
+    ) {
+        self.client = client
+        self.custody = custody
+        self.audit = audit
+        self.native = native
+    }
+
+    func synchronizePairing(code: String) async throws {
+        _ = try await client.perform(operation: "pair", extras: [
+            "pairing_code": .string(code),
+            "local_installation_nonce": .string(MacAccessWire.base64URL(try MacAccessWire.randomBytes(count: 32))),
+        ])
+    }
+
+    func synchronizeConnection(binding: MacAccessSelectedBinding) async throws {
+        let data = try JSONEncoder().encode(binding)
+        guard case .object(let object) = try JSONDecoder().decode(JSONValue.self, from: data) else {
+            throw MacAccessCoreHostError.protocolViolation
+        }
+        _ = try await client.perform(operation: "connect", extras: ["binding": .object(object)])
+    }
+
+    func synchronize(_ operation: String) async throws {
+        _ = try await client.perform(operation: operation)
+    }
+
+    func perform(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReplyCode {
+        do {
+            switch request.operation {
+            case .setAccessMode:
+                guard let mode = request.mode,
+                      ["off", "ask_every_time", "full_access"].contains(mode)
+                else { return .invalidRequest }
+                if mode == "full_access" {
+                    let current = await custody.projectStatus().policyEpoch
+                    guard current < 9_007_199_254_740_991 else { return .policyUnavailable }
+                    try await custody.confirmFullAccess(policyEpoch: current + 1)
+                }
+                do {
+                    _ = try await client.perform(
+                        operation: "set_access_mode", extras: ["target_mode": .string(mode)]
+                    )
+                } catch {
+                    try? await custody.invalidateAuthorityAndPersist()
+                    throw error
+                }
+            case .pause:
+                _ = try await client.perform(operation: "pause")
+            case .resume:
+                _ = try await client.perform(operation: "resume")
+            case .activateKillSwitch:
+                await native.cancelAll()
+                do {
+                    _ = try await client.perform(operation: "activate_kill_switch")
+                } catch {
+                    _ = try await custody.activateEmergencyKill()
+                }
+            case .approveAction:
+                guard let approval = request.approval else { return .invalidRequest }
+                try await custody.recordApproval(
+                    commandID: approval.commandID,
+                    capability: approval.capability,
+                    requestDigestSHA256: approval.requestDigestSHA256,
+                    bindingFingerprintSHA256: approval.bindingFingerprintSHA256,
+                    policyEpoch: approval.policyEpoch,
+                    ttl: TimeInterval(approval.ttlSeconds)
+                )
+            case .auditSummary:
+                guard request.auditLimit.map({ (1...100).contains($0) }) ?? true else {
+                    return .invalidRequest
+                }
+            }
+            return .ok
+        } catch {
+            return .policyUnavailable
+        }
+    }
+
+    func safeStatus(
+        pairing: String,
+        transport: String,
+        lastErrorCode: String?,
+        lastAuditID: String?
+    ) async -> MacAccessXPCSafeStatus {
+        let projection = await custody.projectStatus()
+        return MacAccessXPCSafeStatus(
+            pairing: pairing,
+            transport: transport,
+            lastErrorCode: lastErrorCode,
+            lastAuditID: lastAuditID,
+            configuredMode: projection.configuredMode,
+            effectiveMode: projection.effectiveMode,
+            paused: projection.paused,
+            killSwitch: projection.killSwitch,
+            policyEpoch: projection.policyEpoch,
+            policyProvider: "mac_connector_core",
+            auditEventCount: await audit.eventCount()
+        )
+    }
+}
+
+private struct MacAccessPolicyComposition {
+    let runtime: MacAccessPolicyRuntime
+    let executor: CoreHostBackedMacAccessExecutor
+
+    static func production(vault: any MacAccessCredentialVault, bundle: Bundle = .main) throws -> Self {
+        let hostSessionID = "host-\(UUID().uuidString.lowercased())"
+        let runtimeInstanceID = "runtime-\(UUID().uuidString.lowercased())"
+        let paths = try MacAccessPolicyPaths.production()
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: hostSessionID)
+        let audit = try MacAccessAuditCustody(paths: paths)
+        let native = MacAccessNativeClickPort()
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody, audit: audit, native: native, vault: vault
+        )
+        let transport = MacAccessStdioCoreHostTransport(
+            launcher: MacAccessStdioCoreHostTransport.productionLauncher(
+                hostSessionID: hostSessionID, runtimeInstanceID: runtimeInstanceID, bundle: bundle
+            ),
+            dispatcher: dispatcher
+        )
+        let client = MacAccessCoreHostClient(
+            transport: transport, hostSessionID: hostSessionID, custody: custody
+        )
+        return Self(
+            runtime: MacAccessPolicyRuntime(
+                client: client, custody: custody, audit: audit, native: native
+            ),
+            executor: CoreHostBackedMacAccessExecutor(client: client)
+        )
+    }
 }
 
 struct MacAccessHelperDeploymentConfiguration: Equatable, Sendable {
@@ -62,12 +219,17 @@ struct MacAccessHelperDeploymentConfiguration: Equatable, Sendable {
 actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     private let vault: any MacAccessCredentialVault
     private let runtime: MacAccessHelperRuntime?
+    private let policyRuntime: MacAccessPolicyRuntime?
 
     init(
         configuration: MacAccessHelperDeploymentConfiguration?,
-        vault: any MacAccessCredentialVault = SecurityMacAccessCredentialVault()
+        vault: any MacAccessCredentialVault = SecurityMacAccessCredentialVault(),
+        enablePolicyRuntime: Bool = false,
+        bundle: Bundle = .main
     ) {
         self.vault = vault
+        let policy = enablePolicyRuntime ? try? MacAccessPolicyComposition.production(vault: vault, bundle: bundle) : nil
+        policyRuntime = policy?.runtime
         guard let configuration else {
             runtime = nil
             return
@@ -76,50 +238,66 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             vault: vault,
             redeemer: URLSessionMacAccessPairingRedeemer(endpoint: configuration.pairingEndpoint),
             socketFactory: URLSessionMacAccessRelaySocketFactory(),
+            executor: policy?.executor ?? PolicyUnavailableMacAccessExecutor(),
             pinnedKeys: configuration.pinnedKeys,
             relayURL: configuration.relayURL
         )
     }
 
     func status() async -> MacAccessXPCReply {
-        guard let runtime else { return unavailableReply() }
-        return reply(code: .ok, status: await runtime.status)
+        guard let runtime else { return await unavailableReply() }
+        return await reply(code: .ok, status: await runtime.status)
     }
 
     func pair(code: String) async -> MacAccessXPCReply {
-        guard code.utf8.count <= 64 else { return reply(code: .invalidPairingCode) }
-        guard let runtime else { return unavailableReply() }
+        guard code.utf8.count <= 64 else { return await reply(code: .invalidPairingCode) }
+        guard let runtime else { return await unavailableReply() }
         do {
-            return reply(code: .ok, status: try await runtime.pair(code: code))
+            let status = try await runtime.pair(code: code)
+            guard let policyRuntime else { throw MacAccessPublicError.policyUnavailable }
+            try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
+            return await reply(code: .ok, status: status)
         } catch {
-            return reply(code: map(error), status: await runtime.status)
+            return await reply(code: map(error), status: await runtime.status)
         }
     }
 
     func connect() async -> MacAccessXPCReply {
-        guard let runtime else { return unavailableReply() }
+        guard let runtime else { return await unavailableReply() }
         do {
             let status = try await runtime.connect()
+            guard let binding = try await vault.load()?.binding, let policyRuntime else {
+                _ = try? await runtime.stop()
+                throw MacAccessPublicError.policyUnavailable
+            }
+            try await policyRuntime.synchronizeConnection(binding: binding)
             Task {
                 await runtime.processCommands()
             }
-            return reply(code: .ok, status: status)
+            return await reply(code: .ok, status: status)
         } catch {
-            return reply(code: map(error), status: await runtime.status)
+            return await reply(code: map(error), status: await runtime.status)
         }
     }
 
     func disconnect() async -> MacAccessXPCReply {
-        guard let runtime else { return unavailableReply() }
-        return reply(code: .ok, status: await runtime.disconnect())
+        guard let runtime else { return await unavailableReply() }
+        let status = await runtime.disconnect()
+        guard let policyRuntime else { return await reply(code: .policyUnavailable, status: status) }
+        do { try await policyRuntime.synchronize("disconnect") }
+        catch { return await reply(code: .policyUnavailable, status: status) }
+        return await reply(code: .ok, status: status)
     }
 
     func stop() async -> MacAccessXPCReply {
-        guard let runtime else { return unavailableReply() }
+        guard let runtime else { return await unavailableReply() }
         do {
-            return reply(code: .ok, status: try await runtime.stop())
+            let status = try await runtime.stop()
+            guard let policyRuntime else { return await reply(code: .policyUnavailable, status: status) }
+            try await policyRuntime.synchronize("stop")
+            return await reply(code: .ok, status: status)
         } catch {
-            return reply(code: map(error), status: await runtime.status)
+            return await reply(code: map(error), status: await runtime.status)
         }
     }
 
@@ -137,19 +315,38 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             } catch {
                 return MacAccessXPCReply(
                     code: .credentialUnavailable,
-                    status: unavailableReply().status
+                    status: (await unavailableReply()).status
                 )
             }
         }
         do {
-            return reply(code: .ok, status: try await runtime.revokeLocally())
+            let status = try await runtime.revokeLocally()
+            guard let policyRuntime else { return await reply(code: .policyUnavailable, status: status) }
+            try await policyRuntime.synchronize("revoke")
+            return await reply(code: .ok, status: status)
         } catch {
-            return reply(code: map(error), status: await runtime.status)
+            return await reply(code: map(error), status: await runtime.status)
         }
     }
 
-    private func unavailableReply() -> MacAccessXPCReply {
-        MacAccessXPCReply(
+    func policy(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReply {
+        if request.operation == .activateKillSwitch { _ = try? await runtime?.stop() }
+        guard let policyRuntime else { return await unavailableReply() }
+        let code = await policyRuntime.perform(request)
+        return await reply(code: code, status: await runtime?.status ?? .initial)
+    }
+
+    private func unavailableReply() async -> MacAccessXPCReply {
+        if let policyRuntime {
+            return MacAccessXPCReply(
+                code: .configurationUnavailable,
+                status: await policyRuntime.safeStatus(
+                    pairing: "unpaired", transport: "blocked",
+                    lastErrorCode: "configuration_unavailable", lastAuditID: nil
+                )
+            )
+        }
+        return MacAccessXPCReply(
             code: .configurationUnavailable,
             status: MacAccessXPCSafeStatus(
                 pairing: "unpaired", transport: "blocked",
@@ -158,8 +355,22 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         )
     }
 
-    private func reply(code: MacAccessXPCReplyCode, status: MacAccessHelperSafeStatus = .initial) -> MacAccessXPCReply {
-        MacAccessXPCReply(
+    private func reply(
+        code: MacAccessXPCReplyCode,
+        status: MacAccessHelperSafeStatus = .initial
+    ) async -> MacAccessXPCReply {
+        if let policyRuntime {
+            return MacAccessXPCReply(
+                code: code,
+                status: await policyRuntime.safeStatus(
+                    pairing: status.pairing.rawValue,
+                    transport: status.transport.rawValue,
+                    lastErrorCode: status.lastError?.rawValue,
+                    lastAuditID: status.lastAuditID
+                )
+            )
+        }
+        return MacAccessXPCReply(
             code: code,
             status: MacAccessXPCSafeStatus(
                 pairing: status.pairing.rawValue,
@@ -231,6 +442,24 @@ final class MacAccessXPCService: NSObject, MacAccessXPCServiceProtocol, @uncheck
         respond(reply) { await self.core.revoke() }
     }
 
+    func policy(request: Data, withReply reply: @escaping @Sendable (Data) -> Void) {
+        guard request.count <= Self.maximumReplyBytes,
+              let decoded = try? JSONDecoder().decode(MacAccessXPCPolicyRequest.self, from: request)
+        else {
+            respond(reply) {
+                MacAccessXPCReply(
+                    code: .invalidRequest,
+                    status: MacAccessXPCSafeStatus(
+                        pairing: "unpaired", transport: "blocked",
+                        lastErrorCode: "invalid_request", lastAuditID: nil
+                    )
+                )
+            }
+            return
+        }
+        respond(reply) { await self.core.policy(decoded) }
+    }
+
     private func respond(
         _ callback: @escaping @Sendable (Data) -> Void,
         operation: @escaping @Sendable () async -> MacAccessXPCReply
@@ -247,7 +476,7 @@ final class MacAccessXPCListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service: MacAccessXPCService
 
     init(core: any MacAccessXPCServiceCore = MacAccessRuntimeXPCServiceCore(
-        configuration: MacAccessHelperDeploymentConfiguration.load()
+        configuration: MacAccessHelperDeploymentConfiguration.load(), enablePolicyRuntime: true
     )) {
         service = MacAccessXPCService(core: core)
     }

@@ -156,6 +156,19 @@ public struct MacAccessStateMachine: Sendable {
         state.blocker = nil
     }
 
+    public mutating func setAccessMode(_ mode: MacAccessMode) {
+        guard state.isPaired, state.blocker == nil else {
+            block(state.blocker ?? .notPaired)
+            return
+        }
+        state.configuredMode = mode
+        if mode == .off || state.connection != .connected {
+            state.effectiveMode = .off
+        } else {
+            state.effectiveMode = mode == .fullAccess ? .askEveryTime : mode
+        }
+    }
+
     public mutating func pause() {
         guard state.blocker == nil else {
             state.connection = .blocked

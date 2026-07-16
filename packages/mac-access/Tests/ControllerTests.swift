@@ -215,8 +215,8 @@ final class ControllerTests: XCTestCase {
         let action = Task { await controller.perform(.pause) }
         await client.waitUntilSuspended(.pause)
         controller.emergencyStop()
-        await client.waitUntilSuspended(.stop)
-        await client.release(.stop, with: .blocked(.connectorCoreUnavailable))
+        await client.waitUntilSuspended(.activateKillSwitch)
+        await client.release(.activateKillSwitch, with: .blocked(.connectorCoreUnavailable))
         await client.release(.pause, with: .completed(.localPause))
         let actionResult = await action.value
 
@@ -246,7 +246,7 @@ final class ControllerTests: XCTestCase {
         await Task.yield()
         let actions = await client.recordedActions()
 
-        XCTAssertEqual(actions, [.stop])
+        XCTAssertEqual(actions, [.activateKillSwitch])
         XCTAssertEqual(controller.lastResult, .completed(.localEmergencyStop))
         XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
     }
@@ -521,7 +521,7 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.connection, .blocked)
         XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
         XCTAssertEqual(controller.state.effectiveMode, .off)
-        XCTAssertEqual(actions, [.stop])
+        XCTAssertEqual(actions, [.activateKillSwitch])
     }
 
     func testBlockedDependencyForcesControllerOff() async {

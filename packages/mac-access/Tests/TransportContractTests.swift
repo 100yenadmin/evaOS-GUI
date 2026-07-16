@@ -332,7 +332,7 @@ private actor SequencedSocketFactory: MacAccessRelaySocketFactory {
 private actor CountingExecutor: MacAccessCommandExecutor {
     private(set) var executionCount = 0
 
-    func execute(capability: String, request: [String: JSONValue]) -> MacAccessExecutionResult {
+    func execute(command _: MacAccessBrokerCommand) -> MacAccessExecutionResult {
         executionCount += 1
         return MacAccessExecutionResult(localAuditID: "counting-audit-\(executionCount)", outcome: .executed)
     }
@@ -416,7 +416,7 @@ private struct UnusedRedeemer: MacAccessPairingRedeemer {
 }
 
 private struct FixtureExecutor: MacAccessCommandExecutor {
-    func execute(capability: String, request: [String: JSONValue]) async -> MacAccessExecutionResult {
+    func execute(command _: MacAccessBrokerCommand) async -> MacAccessExecutionResult {
         MacAccessExecutionResult(localAuditID: "fixture-audit-01", outcome: .executed)
     }
 }
@@ -1192,7 +1192,7 @@ final class TransportContractTests: XCTestCase {
     }
 
     func testProductionExecutorFailsClosedUntilPolicySlice() async {
-        let result = await PolicyUnavailableMacAccessExecutor().execute(capability: "customer_mac.desktop_click", request: [:])
+        let result = PolicyUnavailableMacAccessExecutor.result()
         XCTAssertEqual(result.outcome, .denied)
         XCTAssertEqual(result.errorCode, MacAccessPublicError.policyUnavailable.rawValue)
     }
