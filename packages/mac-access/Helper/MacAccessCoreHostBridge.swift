@@ -419,6 +419,36 @@ actor MacAccessCoreHostPortDispatcher {
         await native.blockAndCancelAll()
     }
 
+    func recoverUnauditedTerminalOutcomesForEmergencyReset() async throws {
+        let projection = await custody.projectStatus()
+        guard projection.killSwitch else {
+            throw MacAccessPolicyCustodyError.invalidRequest
+        }
+        await native.blockAndCancelAll()
+        guard resultAuditsInFlight.isEmpty else {
+            throw MacAccessCoreHostError.protocolViolation
+        }
+        for envelopeDigest in unauditedTerminalOutcomes.keys.sorted() {
+            guard let terminal = unauditedTerminalOutcomes[envelopeDigest],
+                  let decision = committedAllowedDecisions[envelopeDigest],
+                  let accessMode = decision["access_mode"]?.string
+            else { throw MacAccessCoreHostError.protocolViolation }
+            _ = try await audit.append(
+                envelope: terminal.envelope,
+                accessMode: accessMode,
+                decision: decision,
+                outcome: terminal.outcome,
+                reasonCode: terminal.reasonCode,
+                detailCode: terminal.detailCode
+            )
+            unauditedTerminalOutcomes.removeValue(forKey: envelopeDigest)
+            committedAllowedDecisions.removeValue(forKey: envelopeDigest)
+        }
+        nativeActionBindings.removeAll(keepingCapacity: true)
+        committedAllowedDecisions.removeAll(keepingCapacity: true)
+        allowedDecisionAuditsInFlight.removeAll(keepingCapacity: true)
+    }
+
     private func verifyEnvelope(_ envelope: [String: JSONValue]) async throws {
         guard let verifier else { return }
         let data = try JSONEncoder().encode(JSONValue.object(envelope))
@@ -538,6 +568,10 @@ actor MacAccessStdioCoreHostTransport {
         await channel?.terminate()
         channel = nil
         failAll(MacAccessCoreHostError.runnerExited)
+    }
+
+    func recoverUnauditedTerminalOutcomesForEmergencyReset() async throws {
+        try await dispatcher.recoverUnauditedTerminalOutcomesForEmergencyReset()
     }
 
     private func ensureChannel() throws -> any MacAccessCoreHostChannel {
@@ -772,6 +806,10 @@ actor MacAccessCoreHostClient {
     func shutdown() async {
         policyEpoch = nil
         await transport.shutdown()
+    }
+
+    func recoverUnauditedTerminalOutcomesForEmergencyReset() async throws {
+        try await transport.recoverUnauditedTerminalOutcomesForEmergencyReset()
     }
 
     private func perform(

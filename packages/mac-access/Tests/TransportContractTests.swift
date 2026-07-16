@@ -1484,6 +1484,51 @@ final class TransportContractTests: XCTestCase {
         XCTAssertEqual(sent.count, 1)
     }
 
+    func testInboundCommandQueueOverflowFailsClosedAndClosesChannel() async throws {
+        let first = try makeSignedCommandFixture()
+        let second = try makeNextSignedCommandFixture(after: first)
+        let third = try makeNextSignedCommandFixture(after: second)
+        let socket = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let executor = SuspendedExecutor()
+        let safetySink = RecordingTransportSafetySink()
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: first)),
+            redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([socket]),
+            executor: executor,
+            safetySink: safetySink,
+            pinnedKeys: first.keys,
+            relayURL: try relayURL(),
+            now: { first.now }
+        )
+        _ = try await runtime.connect()
+        let commandTask = Task { try await runtime.processOneCommand() }
+        await socket.deliver(first.wire)
+        await executor.waitUntilExecuting()
+
+        await socket.deliver(second.wire)
+        await socket.deliver(third.wire)
+        await safetySink.waitUntilEventCount(1)
+        await socket.waitUntilCloseCount(1)
+
+        let safetyEvents = await safetySink.events
+        XCTAssertEqual(safetyEvents, [.channelClosed])
+        let blocked = await runtime.status
+        XCTAssertEqual(blocked.transport, .blocked)
+        XCTAssertEqual(blocked.lastError, .invalidWireMessage)
+        await executor.release()
+        do {
+            _ = try await commandTask.value
+            XCTFail("expected in-flight command to lose channel authority")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .stopped)
+        }
+        let sent = await socket.sent
+        XCTAssertEqual(sent.count, 1)
+    }
+
     func testTerminalChannelLossPreemptsInFlightCommandWithoutErasingPairing() async throws {
         let fixture = try makeSignedCommandFixture()
         let socket = ControlledRelaySocket(received: [

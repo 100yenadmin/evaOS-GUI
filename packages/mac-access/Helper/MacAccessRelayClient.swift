@@ -127,6 +127,8 @@ struct MacAccessHelperSafeStatus: Equatable, Sendable {
 }
 
 actor MacAccessHelperRuntime {
+    private static let maximumQueuedCommandFrames = 1
+
     private struct Channel: Sendable {
         let generation: UInt64
         let socket: any MacAccessRelaySocket
@@ -494,6 +496,11 @@ actor MacAccessHelperRuntime {
         return status
     }
 
+    func completeEmergencyReset() -> MacAccessHelperSafeStatus {
+        status = .initial
+        return status
+    }
+
     private func acceptRevoke(
         _ data: Data,
         expectedBinding: MacAccessSelectedBinding,
@@ -650,7 +657,7 @@ actor MacAccessHelperRuntime {
                 }
                 switch messageType {
                 case "command":
-                    deliverInboundCommand(frame)
+                    try deliverInboundCommand(frame)
                 case "revoke":
                     _ = try await acceptRevoke(
                         frame,
@@ -717,11 +724,14 @@ actor MacAccessHelperRuntime {
         }
     }
 
-    private func deliverInboundCommand(_ frame: Data) {
+    private func deliverInboundCommand(_ frame: Data) throws {
         if let waiter = inboundCommandWaiter {
             inboundCommandWaiter = nil
             waiter.resume(returning: frame)
         } else {
+            guard inboundCommandFrames.count < Self.maximumQueuedCommandFrames else {
+                throw MacAccessPublicError.invalidWireMessage
+            }
             inboundCommandFrames.append(frame)
         }
     }

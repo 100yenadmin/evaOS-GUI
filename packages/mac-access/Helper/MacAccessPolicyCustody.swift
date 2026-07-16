@@ -157,6 +157,7 @@ actor MacAccessPolicyCustody {
         else {
             throw MacAccessPolicyCustodyError.invalidRequest
         }
+        let previous = document
         let nextEpoch = min(9_007_199_254_740_991, (document.state["policy_epoch"]?.integer ?? 0) + 1)
         document.state["policy_epoch"] = .integer(nextEpoch)
         document.state["pairing_state"] = .string("unpaired")
@@ -171,7 +172,8 @@ actor MacAccessPolicyCustody {
         invalidateAuthority()
         locallyAuthorizedMode = nil
         advanceRevision()
-        try persist()
+        do { try persist() }
+        catch { document = previous; throw error }
         return projectStatus()
     }
 

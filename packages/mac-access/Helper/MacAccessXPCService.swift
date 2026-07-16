@@ -102,6 +102,7 @@ actor MacAccessPolicyRuntime: MacAccessTransportSafetySink {
     func clearEmergencyKill(expectedPolicyEpoch: Int64) async throws {
         await native.blockAndCancelAll()
         await client.shutdown()
+        try await client.recoverUnauditedTerminalOutcomesForEmergencyReset()
         _ = try await custody.clearEmergencyKill(expectedPolicyEpoch: expectedPolicyEpoch)
         await client.resetPolicyEpoch()
     }
@@ -464,7 +465,8 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 if let runtime { _ = try await runtime.revokeLocally() }
                 else { try await vault.erase() }
                 try await policyRuntime.clearEmergencyKill(expectedPolicyEpoch: killedEpoch)
-                return await reply(code: .ok, status: await runtime?.status ?? .initial)
+                let resetStatus = await runtime?.completeEmergencyReset() ?? .initial
+                return await reply(code: .ok, status: resetStatus)
             } catch {
                 return await reply(code: map(error), status: await runtime?.status ?? .initial)
             }
