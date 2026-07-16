@@ -287,6 +287,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     private let vault: any MacAccessCredentialVault
     private let runtime: MacAccessHelperRuntime?
     private let policyRuntime: MacAccessPolicyRuntime?
+    private let policyRequired: Bool
 
     init(
         configuration: MacAccessHelperDeploymentConfiguration?,
@@ -295,6 +296,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         bundle: Bundle = .main
     ) {
         self.vault = vault
+        policyRequired = enablePolicyRuntime
         let policy = enablePolicyRuntime ? configuration.flatMap {
             try? MacAccessPolicyComposition.production(
                 vault: vault, pinnedKeys: $0.pinnedKeys, bundle: bundle
@@ -317,6 +319,9 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func status() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
+        guard !policyRequired || policyRuntime != nil else {
+            return await reply(code: .policyUnavailable, status: await runtime.status)
+        }
         return await reply(code: .ok, status: await runtime.status)
     }
 
