@@ -995,6 +995,21 @@ describe('evaOS installed app product proof', () => {
     expect(state.bridgeListener.staleOwners).toEqual([]);
   });
 
+  it('rejects a packaged Python command when the bridge invocation is only a later argument substring', () => {
+    const expectedBridgePath = '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/evaos-desktop-bridge';
+    const bootstrap =
+      'import runpy, sys; source_root = sys.argv.pop(1); module = sys.argv.pop(1); sys.path.insert(0, source_root); runpy.run_module(module, run_name="__main__", alter_sys=True)';
+    const misleadingCommand = [
+      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3',
+      '-I -B -c print(0)',
+      `-c ${bootstrap}`,
+      '/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src',
+      'evaos_desktop_bridge.host.cli serve',
+    ].join(' ');
+
+    expect(installedAppProof.commandLooksLikeBridgeServer(misleadingCommand, expectedBridgePath)).toBe(false);
+  });
+
   it('keeps a Workbench-mentioned wrapper parent stale when its executable is not the signed Workbench app', () => {
     const fakeExec = (command: string, args: string[]): string => {
       if (command === '/usr/bin/mdfind' && args.length === 1 && args[0].startsWith('kMDItemCFBundleIdentifier == ')) {

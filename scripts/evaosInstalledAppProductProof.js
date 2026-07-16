@@ -296,10 +296,12 @@ function commandLooksLikeBridgeServer(command, expectedBridgePath) {
     expectedBridgeRoot,
     'src'
   )} evaos_desktop_bridge.host.cli serve`;
+  const packagedBridgeCommandPrefix = `${packagedPythonPath} -I -B ${packagedBridgeInvocation}`;
   return (
     text.includes(expectedBridgePath) ||
     /(?:^|\s)-m\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
-    (text.startsWith(`${packagedPythonPath} `) && text.includes(packagedBridgeInvocation)) ||
+    text === packagedBridgeCommandPrefix ||
+    text.startsWith(`${packagedBridgeCommandPrefix} `) ||
     /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
   );
 }
@@ -1524,6 +1526,7 @@ module.exports = {
   buildInstalledProofPlan,
   buildInstalledProofPreflightPlan,
   captureInstalledAppProof,
+  commandLooksLikeBridgeServer,
   gitHead,
   installedExecutablePath,
   inspectDesktopProofState,
