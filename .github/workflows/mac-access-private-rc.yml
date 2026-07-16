@@ -359,7 +359,7 @@ jobs:
             --app "$MAC_ACCESS_APP_PATH" \
             --manifest "$MAC_ACCESS_ARTIFACT_MANIFEST" \
             --sbom "$MAC_ACCESS_SBOM"
-          packages/mac-access/scripts/verify-bundle-layout.sh "$MAC_ACCESS_APP_PATH"
+          packages/mac-access/scripts/verify-bundle-layout.sh --signed "$MAC_ACCESS_APP_PATH"
 
       - name: Create exact final ZIP, checksum, and private-RC manifest
         env:

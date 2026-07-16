@@ -1,8 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+VERIFY_OPERATION=verify
+if [ "$#" -eq 2 ] && [ "$1" = --signed ]; then
+  VERIFY_OPERATION=verify-signed
+  shift
+fi
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 /path/to/evaOS Mac Access.app" >&2
+  echo "usage: $0 [--signed] /path/to/evaOS Mac Access.app" >&2
   exit 64
 fi
 
@@ -16,7 +21,7 @@ SOURCE="$RESOURCE_ROOT/src"
 
 test -x "$PYTHON"
 test -f "$SOURCE/evaos_desktop_bridge/host/stdio_runner.py"
-node "$SCRIPT_DIR/prepare-private-runtime.js" verify "$RESOURCE_ROOT"
+node "$SCRIPT_DIR/prepare-private-runtime.js" "$VERIFY_OPERATION" "$RESOURCE_ROOT"
 
 for executable in \
   "$APP_PATH/Contents/MacOS/evaOS Mac Access" \

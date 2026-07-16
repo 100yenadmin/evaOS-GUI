@@ -331,7 +331,7 @@ function writePythonRuntimeInventory(resourceDir = bridgeResourceDir) {
   };
 }
 
-function verifyPythonRuntimeInventory(resourceDir, metadata) {
+function verifyPythonRuntimeInventory(resourceDir, metadata, options = {}) {
   if (
     metadata?.inventoryPath !== PYTHON_RUNTIME_INVENTORY_RELATIVE_PATH ||
     !/^[0-9a-f]{64}$/i.test(String(metadata?.inventorySha256 || '')) ||
@@ -365,7 +365,22 @@ function verifyPythonRuntimeInventory(resourceDir, metadata) {
   }
 
   const actualEntries = pythonRuntimeInventoryEntries(path.join(resourceDir, 'python'));
-  if (JSON.stringify(inventory.entries) !== JSON.stringify(actualEntries)) {
+  const entriesMatch = inventory.entries.every((declared, index) => {
+    const actual = actualEntries[index];
+    if (!options.allowSignedMachOMutation || declared?.signedMachO !== true) {
+      return JSON.stringify(declared) === JSON.stringify(actual);
+    }
+    return (
+      actual?.signedMachO === true &&
+      declared.path === actual.path &&
+      declared.type === actual.type &&
+      declared.mode === actual.mode &&
+      Number.isSafeInteger(declared.size) &&
+      declared.size >= 0 &&
+      /^[0-9a-f]{64}$/i.test(String(declared.sha256 || ''))
+    );
+  });
+  if (inventory.entries.length !== actualEntries.length || !entriesMatch) {
     throw new Error('Bundled Python runtime inventory content mismatch.');
   }
   return true;

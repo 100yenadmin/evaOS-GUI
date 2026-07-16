@@ -72,7 +72,11 @@ const bridgeResource = require('../../../scripts/prepareEvaosDesktopBridgeResour
     inventorySha256: string;
     inventoryEntryCount: number;
   };
-  verifyPythonRuntimeInventory: (resourceDir: string, metadata: PythonRuntimeMetadata) => boolean;
+  verifyPythonRuntimeInventory: (
+    resourceDir: string,
+    metadata: PythonRuntimeMetadata,
+    options?: { allowSignedMachOMutation?: boolean }
+  ) => boolean;
   isMachOExecutable: (filePath: string) => boolean;
   installPeekabooLicense: (
     sourcePath?: string,
@@ -483,6 +487,38 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       writeFileSync(join(resourceDir, 'python', 'lib', 'python3.12', 'LICENSE.txt'), 'tampered\n');
 
       expect(() => bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata!)).toThrow(/inventory.*mismatch/i);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('allows only declared Mach-O bytes to change during signed-bundle verification', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'evaos-python-runtime-signed-'));
+    const resourceDir = join(dir, 'Bridge');
+    const runtimeDir = join(resourceDir, 'python');
+    const executable = join(runtimeDir, 'bin', 'python3.12');
+    try {
+      mkdirSync(join(runtimeDir, 'bin'), { recursive: true });
+      mkdirSync(join(runtimeDir, 'lib'), { recursive: true });
+      writeFileSync(executable, Buffer.from('cffaedfe0c000001', 'hex'));
+      chmodSync(executable, 0o755);
+      writeFileSync(join(runtimeDir, 'lib', 'LICENSE.txt'), 'license\n');
+      const metadata = bridgeResource.writePythonRuntimeInventory(resourceDir) as PythonRuntimeMetadata;
+
+      writeFileSync(executable, Buffer.from('cffaedfe0c0000017369676e6564', 'hex'));
+      expect(() => bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata)).toThrow(/inventory.*mismatch/i);
+      expect(
+        bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata, {
+          allowSignedMachOMutation: true,
+        })
+      ).toBe(true);
+
+      writeFileSync(join(runtimeDir, 'lib', 'LICENSE.txt'), 'tampered\n');
+      expect(() =>
+        bridgeResource.verifyPythonRuntimeInventory(resourceDir, metadata, {
+          allowSignedMachOMutation: true,
+        })
+      ).toThrow(/inventory.*mismatch/i);
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }

@@ -1,8 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+PRIVATE_RUNTIME_SIGNED=0
+if [ "$#" -eq 2 ] && [ "$1" = --signed ]; then
+  PRIVATE_RUNTIME_SIGNED=1
+  shift
+fi
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 /path/to/evaOS Mac Access.app" >&2
+  echo "usage: $0 [--signed] /path/to/evaOS Mac Access.app" >&2
   exit 64
 fi
 
@@ -88,7 +93,11 @@ for executable in \
 done
 
 if [ "${MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME:-0}" = 1 ]; then
-  "$SCRIPT_DIR/verify-private-runtime.sh" "$APP_PATH"
+  if [ "$PRIVATE_RUNTIME_SIGNED" = 1 ]; then
+    "$SCRIPT_DIR/verify-private-runtime.sh" --signed "$APP_PATH"
+  else
+    "$SCRIPT_DIR/verify-private-runtime.sh" "$APP_PATH"
+  fi
 fi
 
 echo "Verified standalone Mac Access bundle layout and helper-only Keychain groups: $APP_PATH"

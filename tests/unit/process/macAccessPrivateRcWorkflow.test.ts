@@ -93,6 +93,7 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('stapler staple');
     expect(workflow).toContain('stapler validate');
     expect(workflow).toContain('spctl --assess --type execute');
+    expect(workflow).toContain('verify-bundle-layout.sh --signed "$MAC_ACCESS_APP_PATH"');
     expect(workflow).toContain('private-rc-final-manifest.json');
     expect(workflow).toContain('scripts/release/appcast.js inject');
     expect(workflow).toContain('generate_appcast');

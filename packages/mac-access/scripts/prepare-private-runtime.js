@@ -100,7 +100,7 @@ function prepare(outputRoot) {
   return manifest;
 }
 
-function verify(outputRoot) {
+function verify(outputRoot, options = {}) {
   const destination = path.resolve(outputRoot);
   const manifestPath = path.join(destination, 'SOURCE.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -117,7 +117,7 @@ function verify(outputRoot) {
     throw new Error('Mac Access private-runtime source manifest is invalid or drifted.');
   }
   verifyGeneratedCoreSource(coreRoot, destination);
-  verifyPythonRuntimeInventory(destination, manifest.runtime);
+  verifyPythonRuntimeInventory(destination, manifest.runtime, options);
   const pythonMinor = manifest.runtime.version.split('.').slice(0, 2).join('.');
   for (const forbiddenPath of [
     path.join(destination, 'python', 'lib', `python${pythonMinor}`, 'test'),
@@ -127,13 +127,7 @@ function verify(outputRoot) {
       throw new Error(`Mac Access private runtime contains development-only payload: ${forbiddenPath}`);
     }
   }
-  const expectedTopLevel = new Set([
-    'SOURCE.json',
-    'licenses',
-    'python',
-    'python-runtime-inventory.json',
-    'src',
-  ]);
+  const expectedTopLevel = new Set(['SOURCE.json', 'licenses', 'python', 'python-runtime-inventory.json', 'src']);
   const unexpected = fs.readdirSync(destination).filter((entry) => !expectedTopLevel.has(entry));
   if (unexpected.length > 0) {
     throw new Error(`Mac Access private runtime contains unexpected top-level entries: ${unexpected.join(', ')}`);
@@ -143,11 +137,12 @@ function verify(outputRoot) {
 
 function main() {
   const [operation, outputRoot] = process.argv.slice(2);
-  if (!['prepare', 'verify', 'clean'].includes(operation) || !outputRoot) {
-    throw new Error('usage: prepare-private-runtime.js prepare|verify|clean /absolute/output/path');
+  if (!['prepare', 'verify', 'verify-signed', 'clean'].includes(operation) || !outputRoot) {
+    throw new Error('usage: prepare-private-runtime.js prepare|verify|verify-signed|clean /absolute/output/path');
   }
   if (operation === 'prepare') prepare(outputRoot);
   else if (operation === 'verify') verify(outputRoot);
+  else if (operation === 'verify-signed') verify(outputRoot, { allowSignedMachOMutation: true });
   else clean(outputRoot);
 }
 
