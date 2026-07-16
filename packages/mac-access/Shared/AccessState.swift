@@ -1,0 +1,168 @@
+import Foundation
+
+public enum MacAccessConnectionState: String, CaseIterable, Sendable {
+    case disconnected
+    case connecting
+    case approvalNeeded
+    case connected
+    case paused
+    case blocked
+}
+
+public enum MacAccessMode: String, CaseIterable, Sendable {
+    case off
+    case askEveryTime
+    case fullAccess
+}
+
+public enum MacAccessBlocker: String, Equatable, Sendable {
+    case notPaired
+    case dashboardPairingUnavailable
+    case relayUnavailable
+    case connectorCoreUnavailable
+    case emergencyStopActive
+    case permissionProofPending
+    case permissionDenied
+    case stalePairing
+    case revokedGrant
+    case offlineBroker
+    case coreCrashed
+    case updateRequired
+    case conflictingWorkbenchOwner
+}
+
+public struct MacAccessState: Equatable, Sendable {
+    public var connection: MacAccessConnectionState
+    public var configuredMode: MacAccessMode
+    public var effectiveMode: MacAccessMode
+    public var isPaired: Bool
+    public var blocker: MacAccessBlocker?
+    public var lastActivityAt: Date?
+    public var emergencyStopCount: Int
+    public var quitCleanupRequested: Bool
+
+    public init(
+        connection: MacAccessConnectionState,
+        configuredMode: MacAccessMode,
+        effectiveMode: MacAccessMode,
+        isPaired: Bool,
+        blocker: MacAccessBlocker?,
+        lastActivityAt: Date? = nil,
+        emergencyStopCount: Int = 0,
+        quitCleanupRequested: Bool = false
+    ) {
+        self.connection = connection
+        self.configuredMode = configuredMode
+        self.effectiveMode = effectiveMode
+        self.isPaired = isPaired
+        self.blocker = blocker
+        self.lastActivityAt = lastActivityAt
+        self.emergencyStopCount = emergencyStopCount
+        self.quitCleanupRequested = quitCleanupRequested
+    }
+
+    public static let safeInitial = MacAccessState(
+        connection: .blocked,
+        configuredMode: .off,
+        effectiveMode: .off,
+        isPaired: false,
+        blocker: .dashboardPairingUnavailable
+    )
+}
+
+public struct MacAccessStateMachine: Sendable {
+    public private(set) var state: MacAccessState
+
+    public init(state: MacAccessState = .safeInitial) {
+        self.state = state
+    }
+
+    public mutating func beginConnecting() {
+        guard state.isPaired else {
+            block(.notPaired)
+            return
+        }
+        state.connection = .connecting
+        state.effectiveMode = .off
+        state.blocker = nil
+    }
+
+    public mutating func requireApproval() {
+        guard state.connection == .connecting else {
+            block(.connectorCoreUnavailable)
+            return
+        }
+        state.connection = .approvalNeeded
+        state.effectiveMode = .off
+    }
+
+    public mutating func markConnected(at date: Date) {
+        guard state.isPaired else {
+            block(.notPaired)
+            return
+        }
+        state.connection = .connected
+        state.effectiveMode = state.configuredMode == .fullAccess ? .askEveryTime : state.configuredMode
+        state.blocker = nil
+        state.lastActivityAt = date
+    }
+
+    public mutating func disconnect() {
+        state.connection = .disconnected
+        state.effectiveMode = .off
+        state.blocker = nil
+    }
+
+    public mutating func pause() {
+        state.connection = .paused
+        state.effectiveMode = .off
+        state.blocker = nil
+    }
+
+    public mutating func resume() {
+        state.effectiveMode = .off
+        if state.isPaired {
+            state.connection = .disconnected
+            state.blocker = nil
+        } else {
+            block(.notPaired)
+        }
+    }
+
+    public mutating func selectOff() {
+        state.configuredMode = .off
+        state.effectiveMode = .off
+    }
+
+    public mutating func block(_ blocker: MacAccessBlocker) {
+        state.connection = .blocked
+        state.effectiveMode = .off
+        state.blocker = blocker
+    }
+
+    public mutating func emergencyStop() {
+        state.configuredMode = .off
+        state.effectiveMode = .off
+        state.connection = .blocked
+        state.blocker = .emergencyStopActive
+        if state.emergencyStopCount == 0 {
+            state.emergencyStopCount = 1
+        }
+    }
+
+    public mutating func requestQuitCleanup() {
+        state.quitCleanupRequested = true
+        state.configuredMode = .off
+        state.effectiveMode = .off
+    }
+
+    public mutating func restoreAfterRestart() {
+        if state.configuredMode == .fullAccess {
+            state.configuredMode = state.isPaired ? .askEveryTime : .off
+        }
+        state.effectiveMode = .off
+        state.connection = state.isPaired ? .disconnected : .blocked
+        state.blocker = state.isPaired ? nil : .dashboardPairingUnavailable
+        state.quitCleanupRequested = false
+    }
+}
