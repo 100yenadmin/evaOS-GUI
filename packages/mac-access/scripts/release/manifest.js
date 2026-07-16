@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { verifyGeneratedCoreSource } = require('../../../mac-connector-core/scripts/coreManifest');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '../..');
 const REPOSITORY_ROOT = path.resolve(PACKAGE_ROOT, '../..');
@@ -417,6 +418,15 @@ function createManifest(appPath, options = {}) {
   if (!/^[a-f0-9]{40}$/.test(commit) || runtime.source.repositoryCommit !== commit) {
     throw new Error('Artifact source SHA does not match the embedded private-runtime source SHA.');
   }
+  const coreIdentity =
+    options.coreIdentity ||
+    verifyGeneratedCoreSource(path.join(REPOSITORY_ROOT, 'packages', 'mac-connector-core'), runtime.coreRoot);
+  if (
+    runtime.source.connectorCore.coreSourceSha256 !== coreIdentity.coreSourceSha256 ||
+    runtime.source.connectorCore.sourceManifestSha256 !== coreIdentity.sourceManifestSha256
+  ) {
+    throw new Error('Packaged connector core does not match the exact checkout source manifest and digest.');
+  }
   const appPlist = readPlist(path.join(app, 'Contents', 'Info.plist'), runner);
   const roles = Object.fromEntries(
     Object.keys(ROLE_CONTRACTS).map((role) => [role, assertRoleContract(app, role, runner)])
@@ -567,6 +577,7 @@ function verifyManifest(appPath, manifest, sbom, options = {}) {
   if (!manifest || manifest.schema !== MANIFEST_SCHEMA) throw new Error('Artifact manifest schema drifted.');
   const actual = createManifest(appPath, {
     runner: options.runner,
+    coreIdentity: options.coreIdentity,
     sourceSHA: manifest.source?.commit,
     createdAt: manifest.createdAt,
   });

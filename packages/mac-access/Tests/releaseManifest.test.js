@@ -23,6 +23,7 @@ const SOURCE_SHA = '1234567890abcdef1234567890abcdef12345678';
 const CORE_SHA = '1'.repeat(64);
 const SOURCE_MANIFEST_SHA = '2'.repeat(64);
 const RUNTIME_SOURCE_SHA = '3'.repeat(64);
+const CORE_IDENTITY = Object.freeze({ coreSourceSha256: CORE_SHA, sourceManifestSha256: SOURCE_MANIFEST_SHA });
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -177,6 +178,7 @@ test('creates an exact identity-continuity manifest and SPDX dependency inventor
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const runner = fakeRunner(fixture.app);
   const manifest = createManifest(fixture.app, {
+    coreIdentity: CORE_IDENTITY,
     runner,
     sourceSHA: SOURCE_SHA,
     createdAt: '2026-07-16T14:00:00Z',
@@ -199,7 +201,7 @@ test('creates an exact identity-continuity manifest and SPDX dependency inventor
   assert.equal(sbom.spdxVersion, 'SPDX-2.3');
   assert.ok(sbom.packages.some((entry) => entry.name === 'CPython' && entry.licenseDeclared === 'Python-2.0'));
   assert.ok(sbom.packages.some((entry) => entry.name === 'pyobjc-core' && entry.licenseDeclared === 'MIT'));
-  assert.doesNotThrow(() => verifyManifest(fixture.app, manifest, sbom, { runner }));
+  assert.doesNotThrow(() => verifyManifest(fixture.app, manifest, sbom, { runner, coreIdentity: CORE_IDENTITY }));
 });
 
 test('rejects every frozen artifact continuity field when the evidence drifts', (t) => {
@@ -207,6 +209,7 @@ test('rejects every frozen artifact continuity field when the evidence drifts', 
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const runner = fakeRunner(fixture.app);
   const manifest = createManifest(fixture.app, {
+    coreIdentity: CORE_IDENTITY,
     runner,
     sourceSHA: SOURCE_SHA,
     createdAt: '2026-07-16T14:00:00Z',
@@ -226,7 +229,7 @@ test('rejects every frozen artifact continuity field when the evidence drifts', 
     const changed = clone(manifest);
     mutate(changed);
     assert.throws(
-      () => verifyManifest(fixture.app, changed, sbom, { runner }),
+      () => verifyManifest(fixture.app, changed, sbom, { runner, coreIdentity: CORE_IDENTITY }),
       /manifest drifted|source SHA|schema drifted/
     );
   }
@@ -244,6 +247,7 @@ test('rejects live Team ID, requirement, entitlement, ad-hoc, and checksum drift
     assert.throws(
       () =>
         createManifest(fixture.app, {
+          coreIdentity: CORE_IDENTITY,
           runner: fakeRunner(fixture.app, state),
           sourceSHA: SOURCE_SHA,
           createdAt: '2026-07-16T14:00:00Z',
@@ -254,13 +258,17 @@ test('rejects live Team ID, requirement, entitlement, ad-hoc, and checksum drift
 
   const runner = fakeRunner(fixture.app);
   const manifest = createManifest(fixture.app, {
+    coreIdentity: CORE_IDENTITY,
     runner,
     sourceSHA: SOURCE_SHA,
     createdAt: '2026-07-16T14:00:00Z',
   });
   const sbom = createSBOM(fixture.app, manifest);
   fs.appendFileSync(path.join(fixture.app, 'Contents', 'Resources', 'fixture.txt'), 'tamper\n');
-  assert.throws(() => verifyManifest(fixture.app, manifest, sbom, { runner }), /manifest drifted/);
+  assert.throws(
+    () => verifyManifest(fixture.app, manifest, sbom, { runner, coreIdentity: CORE_IDENTITY }),
+    /manifest drifted/
+  );
 });
 
 test('signs the complete Mach-O closure inside-out with helper-only entitlements', (t) => {
