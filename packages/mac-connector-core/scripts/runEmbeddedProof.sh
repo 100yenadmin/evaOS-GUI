@@ -41,16 +41,20 @@ DYLD_LIBRARY_PATH=/poison/dyld-library \
 DYLD_FRAMEWORK_PATH=/poison/dyld-framework \
 "$resource_dir/python/bin/python3" -I -B -c '
 import pathlib
-import runpy
 import sys
+import unittest
 resource = pathlib.Path(sys.argv.pop(1)).resolve()
 repo = pathlib.Path(sys.argv.pop(1)).resolve()
 assert pathlib.Path(sys.executable).resolve().is_relative_to(resource / "python")
 assert sys.flags.isolated == 1
 assert sys.dont_write_bytecode
 sys.path.insert(0, str(resource / "src"))
-sys.path.insert(0, str(repo / "packages/mac-connector-core/tests/python"))
-runpy.run_module("test_host_api", run_name="__main__", alter_sys=True)
+tests = repo / "packages/mac-connector-core/tests/python"
+sys.path.insert(0, str(tests))
+suite = unittest.defaultTestLoader.discover(str(tests), pattern="test_*.py")
+result = unittest.TextTestRunner(verbosity=2).run(suite)
+if not result.wasSuccessful():
+    raise SystemExit(1)
 ' "$resource_dir" "$repo_root"
 
 test ! -e "$poison_marker"

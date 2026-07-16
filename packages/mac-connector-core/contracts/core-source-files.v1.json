@@ -131,6 +131,12 @@
       "sha256": "afa8685bcb5a6c84a6eb1c5d1bf54368e60b2a11da467f8f2273c71d50b7c172"
     },
     {
+      "path": "python/evaos_desktop_bridge/host/stdio_runner.py",
+      "destination": "src/evaos_desktop_bridge/host/stdio_runner.py",
+      "mode": 420,
+      "sha256": "41cda32d3a6e91cf9072bd56463c97170b7b57a48812143659da920ccaac5b58"
+    },
+    {
       "path": "python/evaos_desktop_bridge/persistence/__init__.py",
       "destination": "src/evaos_desktop_bridge/persistence/__init__.py",
       "mode": 420,
