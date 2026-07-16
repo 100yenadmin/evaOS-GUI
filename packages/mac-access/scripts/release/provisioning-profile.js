@@ -37,12 +37,16 @@ function decodeProfile(profilePath, runner = defaultRunner) {
   if (!Number.isSafeInteger(certificateCount) || certificateCount < 1) {
     throw new Error('Mac Access helper provisioning profile has no Developer ID certificate.');
   }
+  const teamIdentifierCount = Number(extract('TeamIdentifier'));
+  if (!Number.isSafeInteger(teamIdentifierCount) || teamIdentifierCount < 1) {
+    throw new Error('Mac Access helper provisioning profile has no Team identifier.');
+  }
   return {
     Name: extract('Name'),
     UUID: extract('UUID'),
     CreationDate: extract('CreationDate'),
     ExpirationDate: extract('ExpirationDate'),
-    TeamIdentifier: JSON.parse(extract('TeamIdentifier', 'json')),
+    TeamIdentifier: Array.from({ length: teamIdentifierCount }, (_, index) => extract(`TeamIdentifier.${index}`)),
     DeveloperCertificates: Array.from({ length: certificateCount }, (_, index) =>
       extract(`DeveloperCertificates.${index}`)
     ),
