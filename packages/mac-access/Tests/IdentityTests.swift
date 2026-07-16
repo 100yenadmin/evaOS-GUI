@@ -1,4 +1,5 @@
 import CryptoKit
+import Foundation
 import XCTest
 @testable import MacAccessShared
 
@@ -27,7 +28,38 @@ final class IdentityTests: XCTestCase {
         XCTAssertNotEqual(sha256(wrongRequirement), MacAccessIdentity.appDesignatedRequirementSHA256)
     }
 
+    func testLocalOnlyMenuCopyDoesNotClaimUnavailableAuthority() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let menu = try String(
+            contentsOf: packageRoot.appendingPathComponent("App/MacAccessMenu.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(menu.contains("Button(\"onboarding.title\")"))
+        XCTAssertFalse(menu.contains("Button(\"action.pair\") {\n            openWindow"))
+        XCTAssertTrue(menu.contains("Button(\"permission.accessibility\") {}\n                .disabled(true)"))
+        XCTAssertTrue(menu.contains("Button(\"permission.screenRecording\") {}\n                .disabled(true)"))
+
+        let catalogData = try Data(contentsOf: packageRoot.appendingPathComponent("Resources/Localizable.xcstrings"))
+        let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+        let helperValues = try localizedValues(for: "onboarding.helperInvoker", in: strings)
+        XCTAssertEqual(helperValues.count, 12)
+        XCTAssertEqual(Set(helperValues.values), ["Expected future permission helper identity:"])
+    }
+
     private func sha256(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func localizedValues(for key: String, in strings: [String: Any]) throws -> [String: String] {
+        let entry = try XCTUnwrap(strings[key] as? [String: Any])
+        let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any])
+        return try localizations.mapValues { localization in
+            let localization = try XCTUnwrap(localization as? [String: Any])
+            let unit = try XCTUnwrap(localization["stringUnit"] as? [String: Any])
+            return try XCTUnwrap(unit["value"] as? String)
+        }
     }
 }

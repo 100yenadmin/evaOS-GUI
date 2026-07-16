@@ -4,12 +4,21 @@ import Foundation
 @MainActor
 public final class MacAccessController: ObservableObject {
     @Published public private(set) var state: MacAccessState
-    @Published public private(set) var lastResult: ConnectorCoreResult?
+    @Published public private(set) var lastResult: MacAccessActionResult?
 
     public let availability: MacAccessActionAvailability
     private let client: any ConnectorCoreClient
     private var machine: MacAccessStateMachine
     private var actionGeneration = 0
+    private var inFlightCounts: [Int: Int] = [:]
+    private var invalidationReasons: [Int: ActionInvalidationReason] = [:]
+    private var quitCleanupInFlight = false
+
+    private enum ActionInvalidationReason {
+        case emergencyStop
+        case quitCleanup
+        case localPrecondition(MacAccessBlocker)
+    }
 
     public init(
         client: any ConnectorCoreClient = LocalOnlyConnectorCoreClient(),
@@ -23,37 +32,55 @@ public final class MacAccessController: ObservableObject {
     }
 
     @discardableResult
-    public func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+    public func perform(_ action: ConnectorCoreAction) async -> MacAccessActionResult {
+        await perform(action, ownsQuitCleanup: false)
+    }
+
+    private func perform(
+        _ action: ConnectorCoreAction,
+        ownsQuitCleanup: Bool
+    ) async -> MacAccessActionResult {
+        if state.quitCleanupRequested, !ownsQuitCleanup {
+            return .invalidated(.quitCleanup)
+        }
         if let blocker = localPreconditionBlocker(for: action) {
-            let result = ConnectorCoreResult.blocked(blocker)
-            lastResult = result
-            return result
+            invalidateCurrentGeneration(because: .localPrecondition(blocker))
+            return apply(.blocked(blocker), for: action)
+        }
+        if inFlightCounts[actionGeneration, default: 0] > 0 {
+            let blocker = state.blocker ?? .connectorCoreUnavailable
+            invalidateCurrentGeneration(because: .localPrecondition(blocker))
+            return apply(.blocked(blocker), for: action)
         }
 
         let generation = actionGeneration
+        inFlightCounts[generation, default: 0] += 1
         let result = await client.perform(action)
+        defer { finishAction(in: generation) }
         guard generation == actionGeneration else {
-            let stopped = ConnectorCoreResult.blocked(.emergencyStopActive)
-            lastResult = stopped
-            return stopped
+            return invalidatedResult(for: generation)
         }
-        apply(result, for: action)
-        return result
+        return apply(result, for: action)
     }
 
     public func emergencyStop() {
-        actionGeneration &+= 1
+        invalidateCurrentGeneration(because: .emergencyStop)
         machine.emergencyStop()
         state = machine.state
         lastResult = .completed(.localEmergencyStop)
     }
 
     @discardableResult
-    public func prepareToQuit() async -> ConnectorCoreResult {
-        actionGeneration &+= 1
+    public func prepareToQuit() async -> MacAccessActionResult {
+        guard !quitCleanupInFlight else {
+            return .invalidated(.quitCleanup)
+        }
+        invalidateCurrentGeneration(because: .quitCleanup)
         machine.requestQuitCleanup()
         state = machine.state
-        return await perform(.stop)
+        quitCleanupInFlight = true
+        defer { quitCleanupInFlight = false }
+        return await perform(.stop, ownsQuitCleanup: true)
     }
 
     public func restoreAfterRestart() {
@@ -61,11 +88,25 @@ public final class MacAccessController: ObservableObject {
         state = machine.state
     }
 
-    private func apply(_ result: ConnectorCoreResult, for action: ConnectorCoreAction) {
-        lastResult = result
+    @discardableResult
+    private func apply(_ result: ConnectorCoreResult, for action: ConnectorCoreAction) -> MacAccessActionResult {
+        let actionResult: MacAccessActionResult
         switch result {
         case .blocked(let blocker):
-            machine.block(blocker)
+            actionResult = .blocked(blocker)
+        case .completed(let completion):
+            actionResult = .completed(completion)
+        }
+        let preserveEmergencyEvidence =
+            state.blocker == .emergencyStopActive && (action == .stop || action == .setAccessMode(.off))
+        if !preserveEmergencyEvidence {
+            lastResult = actionResult
+        }
+        switch result {
+        case .blocked(let blocker):
+            if !preserveEmergencyEvidence {
+                machine.block(blocker)
+            }
         case .completed:
             switch action {
             case .setAccessMode(.off), .stop:
@@ -79,15 +120,46 @@ public final class MacAccessController: ObservableObject {
             }
         }
         state = machine.state
+        return actionResult
+    }
+
+    private func invalidateCurrentGeneration(because reason: ActionInvalidationReason) {
+        if inFlightCounts[actionGeneration, default: 0] > 0 {
+            invalidationReasons[actionGeneration] = reason
+        }
+        actionGeneration &+= 1
+    }
+
+    private func invalidatedResult(for generation: Int) -> MacAccessActionResult {
+        switch invalidationReasons[generation] {
+        case .emergencyStop:
+            return .blocked(.emergencyStopActive)
+        case .quitCleanup:
+            return .invalidated(.quitCleanup)
+        case .localPrecondition(let blocker):
+            return .invalidated(.localPrecondition(blocker))
+        case nil:
+            return .blocked(.connectorCoreUnavailable)
+        }
+    }
+
+    private func finishAction(in generation: Int) {
+        let remaining = inFlightCounts[generation, default: 1] - 1
+        if remaining > 0 {
+            inFlightCounts[generation] = remaining
+        } else {
+            inFlightCounts[generation] = nil
+            invalidationReasons[generation] = nil
+        }
     }
 
     private func localPreconditionBlocker(for action: ConnectorCoreAction) -> MacAccessBlocker? {
-        if state.blocker == .emergencyStopActive {
+        if let blocker = state.blocker {
             switch action {
             case .stop, .setAccessMode(.off):
                 break
             default:
-                return .emergencyStopActive
+                return blocker
             }
         }
 
