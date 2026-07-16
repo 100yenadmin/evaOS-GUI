@@ -24,7 +24,7 @@
     "openclaw-plugin/scripts/runtime-receipt-negative-proof.mjs": "sha256:6a91ee0fc8ba7269ee5ff8ca3a79d7bfadb9139ed1eb629642c9c2a688130062",
     "openclaw-plugin/src/bridge.ts": "sha256:d0e0da280bd83dc71734579d12bbb8c37a50c5e8d746fb4ac967e7b69862a1f1",
     "openclaw-plugin/src/firewall.ts": "sha256:e8ef55500e577f828cb9a1422d0496bec9e5b9f0bb5ac65e06c527220aa4cf22",
-    "openclaw-plugin/src/runtimeReceipt.ts": "sha256:3812e04cf3c78db9e0e329fa27b3897cf97905f6a9289b0667d351923f83ccc1",
+    "openclaw-plugin/src/runtimeReceipt.ts": "sha256:922c4d923bac2acacfdfdfba362a65dded88a462d06b9786b208f5569f3a8727",
     "openclaw-plugin/src/toolParameters.ts": "sha256:dcca4a1615f7c138a03b2ff0da5e7739b2d0f29bf25fd3ffa3c9bc85b8c61b7c",
     "openclaw-plugin/src/types.d.ts": "sha256:6144e747e97c133ddaefe37af986865d6b87d842b922026a2af14b010c946bfc",
     "openclaw-plugin/tests/pluginContract.test.mjs": "sha256:33679173a252fdd97e7f9e43747fd65bce7d5a713b7f8dd7a904774d4a45a7ba",
