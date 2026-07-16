@@ -69,6 +69,11 @@ jobs:
             build
           echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
 
+      - name: Launch unsigned menu-bar app smoke
+        run: |
+          packages/mac-access/scripts/verify-launch-smoke.sh \
+            "$RUNNER_TEMP/MacAccessDerivedData/Build/Products/Debug/evaOS Mac Access.app"
+
       - name: Run hostless Swift tests
         run: |
           DERIVED_DATA_PATH="$RUNNER_TEMP/MacAccessDerivedData"

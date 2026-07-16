@@ -54,7 +54,11 @@ final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
     private var terminationReplyPending = false
     private var terminationAuthorized = false
 
-    init(loginItemService: any MacAccessLoginItemServicing = SystemMacAccessLoginItemService()) {
+    override convenience init() {
+        self.init(loginItemService: SystemMacAccessLoginItemService())
+    }
+
+    init(loginItemService: any MacAccessLoginItemServicing) {
         self.loginItemService = loginItemService
         loginItemState = loginItemService.state
         super.init()
