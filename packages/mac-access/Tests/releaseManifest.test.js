@@ -270,6 +270,7 @@ test('rejects missing or mismatched signed update identity inputs', (t) => {
     ['MacAccessSourceCommit', 'f'.repeat(40)],
     ['MacAccessSecurityEpoch', '2'],
     ['MacAccessRollbackPublicKeyBase64URL', 'invalid'],
+    ['MacAccessRollbackKeyID', ' broker-rollback-v1'],
     ['SUFeedURL', 'https://updates.evaos.com/workbench/appcast.xml'],
   ]) {
     writeJSON(plistPath, { ...original, [key]: value });

@@ -24,8 +24,8 @@ final class MacAccessUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
             canCheckObservation = standardController.updater.observe(
                 \.canCheckForUpdates,
                 options: [.initial, .new]
-            ) { [weak self] updater, change in
-                let canCheckForUpdates = change.newValue ?? updater.canCheckForUpdates
+            ) { [weak self] _, change in
+                guard let canCheckForUpdates = change.newValue else { return }
                 Task { @MainActor [weak self] in
                     self?.canCheckForUpdates = canCheckForUpdates
                 }
@@ -95,10 +95,11 @@ final class MacAccessUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     private static func loadIdentity(from bundle: Bundle) -> MacAccessUpdateIdentity? {
         func string(_ key: String) -> String? {
-            guard let value = bundle.object(forInfoDictionaryKey: key) as? String,
-                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            guard let value = bundle.object(forInfoDictionaryKey: key) as? String else { return nil }
+            let canonical = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !canonical.isEmpty, value == canonical
             else { return nil }
-            return value
+            return canonical
         }
         func integer(_ key: String, allowZero: Bool = false) -> Int? {
             let value: Int?

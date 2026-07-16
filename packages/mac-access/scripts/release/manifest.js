@@ -412,8 +412,10 @@ function creationTime(commit, runner = defaultRunner) {
 
 function readUpdateIdentity(appPlist, commit) {
   const text = (key) => {
-    const value = String(appPlist[key] || '').trim();
+    const raw = String(appPlist[key] || '');
+    const value = raw.trim();
     if (!value) throw new Error(`Mac Access update identity is missing ${key}.`);
+    if (raw !== value) throw new Error(`Mac Access update identity has a noncanonical ${key}.`);
     return value;
   };
   const integer = (key, allowZero = false) => {

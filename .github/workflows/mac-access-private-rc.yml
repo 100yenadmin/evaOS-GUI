@@ -7,14 +7,6 @@ on:
         description: 'Type mac-access-private-rc to acknowledge that this creates a private Actions artifact only.'
         required: true
         type: string
-      sparkle_feed_url:
-        description: 'Dedicated HTTPS Mac Access appcast URL. The workflow validates and embeds it but never publishes it.'
-        required: true
-        type: string
-      sparkle_public_ed_key:
-        description: 'Dedicated Mac Access Sparkle Ed25519 public key (base64, 32 decoded bytes).'
-        required: true
-        type: string
       rollback_key_id:
         description: 'Broker rollback-verification key ID embedded in this private candidate.'
         required: true
@@ -51,8 +43,8 @@ jobs:
 
     env:
       MAC_ACCESS_EXPECTED_TEAM_ID: TC6MS3T6NN
-      MAC_ACCESS_SPARKLE_FEED_URL: ${{ inputs.sparkle_feed_url }}
-      MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY: ${{ inputs.sparkle_public_ed_key }}
+      MAC_ACCESS_SPARKLE_FEED_URL: ${{ vars.MAC_ACCESS_SPARKLE_FEED_URL }}
+      MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY }}
       MAC_ACCESS_ROLLBACK_KEY_ID: ${{ inputs.rollback_key_id }}
       MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL: ${{ inputs.rollback_public_key_base64url }}
       MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME: '1'
@@ -82,6 +74,16 @@ jobs:
           public_key = os.environ.get('MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY', '').strip()
           rollback_key_id = os.environ.get('MAC_ACCESS_ROLLBACK_KEY_ID', '').strip()
           rollback_public_key = os.environ.get('MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL', '').strip()
+          if any(
+              canonical != os.environ.get(name, '')
+              for name, canonical in (
+                  ('MAC_ACCESS_SPARKLE_FEED_URL', feed),
+                  ('MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY', public_key),
+                  ('MAC_ACCESS_ROLLBACK_KEY_ID', rollback_key_id),
+                  ('MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL', rollback_public_key),
+              )
+          ):
+              raise SystemExit('Mac Access private-RC update inputs must already be canonical and whitespace-free.')
           parsed = urllib.parse.urlsplit(feed)
           if (
               parsed.scheme != 'https'
@@ -147,6 +149,7 @@ jobs:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          MAC_ACCESS_SPARKLE_PRIVATE_KEY: ${{ secrets.MAC_ACCESS_SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           missing=()
@@ -155,7 +158,8 @@ jobs:
             P12_PASSWORD \
             APPLE_API_KEY_BASE64 \
             APPLE_API_KEY_ID \
-            APPLE_API_ISSUER; do
+            APPLE_API_ISSUER \
+            MAC_ACCESS_SPARKLE_PRIVATE_KEY; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
@@ -195,6 +199,7 @@ jobs:
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/evaOS Mac Access.app"
           test -d "$APP_PATH"
           echo "MAC_ACCESS_APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "MAC_ACCESS_SPARKLE_BIN_DIR=$DERIVED_DATA_PATH/SourcePackages/artifacts/sparkle/Sparkle/bin" >> "$GITHUB_ENV"
           packages/mac-access/scripts/verify-bundle-layout.sh "$APP_PATH"
           packages/mac-connector-core/scripts/runEmbeddedProof.sh \
             "$GITHUB_WORKSPACE" \
@@ -312,6 +317,8 @@ jobs:
           packages/mac-access/scripts/verify-bundle-layout.sh "$MAC_ACCESS_APP_PATH"
 
       - name: Create exact final ZIP, checksum, and private-RC manifest
+        env:
+          MAC_ACCESS_SPARKLE_PRIVATE_KEY: ${{ secrets.MAC_ACCESS_SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$MAC_ACCESS_APP_PATH/Contents/Info.plist")"
@@ -322,6 +329,41 @@ jobs:
           FINAL_ZIP_SIZE="$(stat -f '%z' "$FINAL_ZIP")"
           printf '%s  %s\n' "$FINAL_ZIP_SHA256" "$(basename "$FINAL_ZIP")" \
             > "$MAC_ACCESS_EVIDENCE_DIR/CHECKSUMS.txt"
+
+          test -x "$MAC_ACCESS_SPARKLE_BIN_DIR/generate_appcast"
+          test -x "$MAC_ACCESS_SPARKLE_BIN_DIR/sign_update"
+          APPCAST_ARCHIVE_DIR="$RUNNER_TEMP/mac-access-private-appcast-${{ matrix.artifact_arch }}"
+          rm -rf "$APPCAST_ARCHIVE_DIR"
+          mkdir -p "$APPCAST_ARCHIVE_DIR"
+          cp "$FINAL_ZIP" "$APPCAST_ARCHIVE_DIR/$(basename "$FINAL_ZIP")"
+          cp packages/mac-access/Resources/ReleaseNotes/private-rc.md \
+            "$APPCAST_ARCHIVE_DIR/$(basename "$FINAL_ZIP" .zip).md"
+          DOWNLOAD_URL_PREFIX="${MAC_ACCESS_SPARKLE_FEED_URL%/*}/"
+          printf '%s' "$MAC_ACCESS_SPARKLE_PRIVATE_KEY" | \
+            "$MAC_ACCESS_SPARKLE_BIN_DIR/generate_appcast" \
+              --ed-key-file - \
+              --download-url-prefix "$DOWNLOAD_URL_PREFIX" \
+              --channel mac-access-private-rc \
+              --maximum-deltas 0 \
+              --embed-release-notes \
+              -o "$MAC_ACCESS_EVIDENCE_DIR/appcast.xml" \
+              "$APPCAST_ARCHIVE_DIR"
+          packages/mac-access/scripts/release/appcast.js inject \
+            --appcast "$MAC_ACCESS_EVIDENCE_DIR/appcast.xml" \
+            --manifest "$MAC_ACCESS_ARTIFACT_MANIFEST" \
+            --archive "$FINAL_ZIP" \
+            --source-sha "$GITHUB_SHA"
+          printf '%s' "$MAC_ACCESS_SPARKLE_PRIVATE_KEY" | \
+            "$MAC_ACCESS_SPARKLE_BIN_DIR/sign_update" \
+              --ed-key-file - \
+              --disable-signing-warning \
+              "$MAC_ACCESS_EVIDENCE_DIR/appcast.xml" >/dev/null
+          printf '%s' "$MAC_ACCESS_SPARKLE_PRIVATE_KEY" | \
+            "$MAC_ACCESS_SPARKLE_BIN_DIR/sign_update" \
+              --verify \
+              --ed-key-file - \
+              "$MAC_ACCESS_EVIDENCE_DIR/appcast.xml"
+          rm -rf "$APPCAST_ARCHIVE_DIR"
 
           export VERSION FINAL_ZIP FINAL_ZIP_SHA256 FINAL_ZIP_SIZE
           node <<'NODE'
@@ -371,6 +413,9 @@ jobs:
               channel: 'mac-access-private-rc',
               feedURL: process.env.MAC_ACCESS_SPARKLE_FEED_URL,
               publicEdKeySHA256: publicKeySHA256,
+              privateAppcastSHA256: sha256(path.join(process.env.MAC_ACCESS_EVIDENCE_DIR, 'appcast.xml')),
+              signedAppcast: true,
+              exactArchiveBound: true,
               appcastPublished: false,
             },
             notarization: {
@@ -391,6 +436,7 @@ jobs:
               stapleValidation: evidenceFile('stapler-validate.txt'),
               gatekeeperAssessment: evidenceFile('gatekeeper-assess.txt'),
               checksums: evidenceFile('CHECKSUMS.txt'),
+              privateAppcast: evidenceFile('appcast.xml'),
             },
             finalArtifact: {
               file: path.basename(process.env.FINAL_ZIP),
@@ -431,6 +477,7 @@ jobs:
           const manifest = JSON.parse(fs.readFileSync(path.join(evidence, 'private-rc-final-manifest.json'), 'utf8'));
           const finalZip = path.join(evidence, manifest.finalArtifact.file);
           const actual = crypto.createHash('sha256').update(fs.readFileSync(finalZip)).digest('hex');
+          const appcast = fs.readFileSync(path.join(evidence, 'appcast.xml'), 'utf8');
           const evidenceFilesMatch = Object.values(manifest.evidenceFiles).every((entry) => {
             const bytes = fs.readFileSync(path.join(evidence, entry.file));
             return crypto.createHash('sha256').update(bytes).digest('hex') === entry.sha256;
@@ -440,6 +487,11 @@ jobs:
             manifest.source.commit !== process.env.GITHUB_SHA ||
             manifest.notarization.status !== 'Accepted' ||
             manifest.finalArtifact.sha256 !== actual ||
+            !manifest.updateConfiguration.signedAppcast ||
+            !manifest.updateConfiguration.exactArchiveBound ||
+            !appcast.includes(`</evaos:artifact_sha256>`) ||
+            !appcast.includes(`<evaos:artifact_sha256>${actual}</evaos:artifact_sha256>`) ||
+            !appcast.includes('sparkle:edSignature=') ||
             !evidenceFilesMatch ||
             !manifest.publication.actionsArtifactOnly ||
             manifest.publication.githubReleaseCreated ||

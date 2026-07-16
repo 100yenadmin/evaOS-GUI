@@ -28,16 +28,18 @@ describe('Mac Access private-RC workflow contract', () => {
 
   it('fails closed on dedicated Sparkle config and release credentials', () => {
     expect(workflow).toContain('private_rc_ack:');
-    expect(workflow).toContain('sparkle_feed_url:');
-    expect(workflow).toContain('sparkle_public_ed_key:');
     expect(workflow).toContain('rollback_key_id:');
     expect(workflow).toContain('rollback_public_key_base64url:');
+    expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_FEED_URL');
+    expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY');
+    expect(workflow).toContain('secrets.MAC_ACCESS_SPARKLE_PRIVATE_KEY');
     expect(workflow).toContain('test "$PRIVATE_RC_ACK" = \'mac-access-private-rc\'');
     expect(workflow).toContain("'mac-access' not in parsed.path.lower()");
     expect(workflow).toContain("'workbench' in feed.lower()");
     expect(workflow).toContain('len(decoded) != 32');
     expect(workflow).toContain("re.fullmatch(r'[A-Za-z0-9_-]{43}', rollback_public_key)");
     expect(workflow).toContain('len(decoded_rollback_key) != 32');
+    expect(workflow).toContain('update inputs must already be canonical and whitespace-free');
     for (const buildSetting of [
       'MAC_ACCESS_UPDATE_FEED_URL=',
       'MAC_ACCESS_UPDATE_PUBLIC_ED_KEY=',
@@ -76,6 +78,12 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('stapler validate');
     expect(workflow).toContain('spctl --assess --type execute');
     expect(workflow).toContain('private-rc-final-manifest.json');
+    expect(workflow).toContain('scripts/release/appcast.js inject');
+    expect(workflow).toContain('generate_appcast');
+    expect(workflow).toContain('sign_update');
+    expect(workflow).toContain('--verify');
+    expect(workflow).toContain('signedAppcast: true');
+    expect(workflow).toContain('exactArchiveBound: true');
     expect(workflow).toContain('evidenceFiles:');
     expect(workflow).toContain('CHECKSUMS.txt');
   });

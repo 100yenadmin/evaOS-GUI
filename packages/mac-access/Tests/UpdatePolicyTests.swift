@@ -180,7 +180,7 @@ final class UpdatePolicyTests: XCTestCase {
             "helper_entitlements_sha256": hashA,
             "helper_relation_sha256": hashA,
             "tcc_executable_owner": "com.evaos.mac-access.helper",
-            "artifact_manifest_schema": "evaos-mac-access-release-manifest/v1",
+            "artifact_manifest_schema": "evaos.mac_access.artifact_manifest.v1",
             "core_manifest_schema": "evaos-mac-connector-core-source/v1",
             "artifact_sha256": hashA,
             "core_source_sha256": hashA,

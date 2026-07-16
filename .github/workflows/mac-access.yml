@@ -38,6 +38,7 @@ jobs:
           packages/mac-access/scripts/verify-contract-identities.sh
           packages/mac-access/scripts/verify-localizations.sh
           swift packages/mac-connector-core/tests/FixtureSmoke.swift
+          node --test packages/mac-access/Tests/*.test.js
 
       - name: Cold unsigned build
         id: cold

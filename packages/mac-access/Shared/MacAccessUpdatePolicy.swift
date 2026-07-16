@@ -34,7 +34,7 @@ public struct MacAccessUpdateIdentity: Equatable, Sendable {
         helperEntitlementsSHA256: String,
         helperRelationSHA256: String,
         tccExecutableOwner: String = "com.evaos.mac-access.helper",
-        artifactManifestSchema: String = "evaos-mac-access-release-manifest/v1",
+        artifactManifestSchema: String = "evaos.mac_access.artifact_manifest.v1",
         coreManifestSchema: String = "evaos-mac-connector-core-source/v1",
         securityEpoch: Int,
         credentialSecurityEpoch: Int,
