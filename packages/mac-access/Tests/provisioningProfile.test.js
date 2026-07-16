@@ -38,12 +38,7 @@ function runnerFor(overrides = {}) {
     if (path.basename(command) === 'security') {
       return { status: 0, stdout: profileXML(overrides), stderr: '' };
     }
-    if (
-      path.basename(command) === 'plutil' &&
-      args[0] === '-extract' &&
-      args[1] === 'TeamIdentifier' &&
-      args[2] === 'json'
-    ) {
+    if (path.basename(command) === 'plutil' && args[0] === '-extract' && args[2] === 'json') {
       return {
         status: 1,
         stdout: '',

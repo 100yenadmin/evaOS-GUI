@@ -29,6 +29,31 @@ function run(command, args, runner = defaultRunner, options = {}) {
   return stdout;
 }
 
+function decodeXMLText(value) {
+  return value.replace(/&#x([0-9a-f]+);|&#([0-9]+);|&(amp|lt|gt|quot|apos);/gi, (_, hex, decimal, named) => {
+    if (hex) return String.fromCodePoint(Number.parseInt(hex, 16));
+    if (decimal) return String.fromCodePoint(Number.parseInt(decimal, 10));
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[named.toLowerCase()];
+  });
+}
+
+function decodeEntitlementsXML(xml) {
+  const stringValue = (key) => {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = xml.match(new RegExp(`<key>${escapedKey}</key>\\s*<string>([\\s\\S]*?)</string>`));
+    return match ? decodeXMLText(match[1]) : null;
+  };
+  const groupsMatch = xml.match(/<key>keychain-access-groups<\/key>\s*<array>([\s\S]*?)<\/array>/);
+  const groups = groupsMatch
+    ? Array.from(groupsMatch[1].matchAll(/<string>([\s\S]*?)<\/string>/g), (match) => decodeXMLText(match[1]))
+    : [];
+  return {
+    'com.apple.application-identifier': stringValue('com.apple.application-identifier'),
+    'com.apple.developer.team-identifier': stringValue('com.apple.developer.team-identifier'),
+    'keychain-access-groups': groups,
+  };
+}
+
 function decodeProfile(profilePath, runner = defaultRunner) {
   const xml = run('/usr/bin/security', ['cms', '-D', '-i', profilePath], runner);
   const extract = (keyPath, format = 'raw') =>
@@ -50,7 +75,7 @@ function decodeProfile(profilePath, runner = defaultRunner) {
     DeveloperCertificates: Array.from({ length: certificateCount }, (_, index) =>
       extract(`DeveloperCertificates.${index}`)
     ),
-    Entitlements: JSON.parse(extract('Entitlements', 'json')),
+    Entitlements: decodeEntitlementsXML(extract('Entitlements', 'xml1')),
   };
 }
 
