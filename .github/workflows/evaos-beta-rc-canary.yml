@@ -695,8 +695,10 @@ jobs:
             local job_pid
             local job_snapshot
 
+            CONNECTOR_JOB_PROBE_FAILED=false
             if ! job_snapshot=$(jobs -p); then
-              return 0
+              CONNECTOR_JOB_PROBE_FAILED=true
+              return 1
             fi
             for job_pid in $job_snapshot; do
               if [ "$job_pid" = "$CONNECTOR_PID" ]; then
@@ -714,28 +716,48 @@ jobs:
               echo "RC_CONNECTOR_CLEANUP_ATTEMPTED=true" >> "$GITHUB_ENV"
               if connector_job_is_active; then
                 kill "$CONNECTOR_PID" >/dev/null 2>&1 || true
-              fi
-              for _cleanup_attempt in 1 2 3 4 5; do
-                if ! connector_job_is_active; then
-                  break
-                fi
-                sleep 1
-              done
-              if connector_job_is_active; then
-                kill -9 "$CONNECTOR_PID" >/dev/null 2>&1 || true
-              fi
-              for _cleanup_attempt in 1 2 3 4 5; do
-                if ! connector_job_is_active; then
-                  break
-                fi
-                sleep 1
-              done
-              if connector_job_is_active; then
+              elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
                 cleanup_failed=1
-              else
-                set +e
-                wait "$CONNECTOR_PID" >/dev/null 2>&1
-                set -e
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                for _cleanup_attempt in 1 2 3 4 5; do
+                  if ! connector_job_is_active; then
+                    if [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                      cleanup_failed=1
+                    fi
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                if connector_job_is_active; then
+                  kill -9 "$CONNECTOR_PID" >/dev/null 2>&1 || true
+                elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                  cleanup_failed=1
+                fi
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                for _cleanup_attempt in 1 2 3 4 5; do
+                  if ! connector_job_is_active; then
+                    if [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                      cleanup_failed=1
+                    fi
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+              if [ "$cleanup_failed" -eq 0 ]; then
+                if connector_job_is_active; then
+                  cleanup_failed=1
+                elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then
+                  cleanup_failed=1
+                else
+                  set +e
+                  wait "$CONNECTOR_PID" >/dev/null 2>&1
+                  set -e
+                fi
               fi
               if [ "$cleanup_failed" -eq 0 ]; then
                 echo "RC_CONNECTOR_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"

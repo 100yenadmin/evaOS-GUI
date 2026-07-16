@@ -73,7 +73,14 @@ function extractRcConnectorCleanupScript(workflow: string): string {
 function rcConnectorCleanupProbe(cleanupScript: string): string {
   return `set -euo pipefail
 jobs() {
-  if [ "$FAKE_JOB_PROBE_ERROR" = "true" ]; then
+  probe_count=0
+  if [ -f "$JOB_PROBE_COUNT_FILE" ]; then
+    probe_count=$(< "$JOB_PROBE_COUNT_FILE")
+  fi
+  probe_count=$((probe_count + 1))
+  printf '%s\\n' "$probe_count" > "$JOB_PROBE_COUNT_FILE"
+  if [ "$FAKE_JOB_PROBE_ERROR" = "true" ] || \
+    { [ "$FAKE_JOB_PROBE_ERROR_AT" -gt 0 ] && [ "$probe_count" -eq "$FAKE_JOB_PROBE_ERROR_AT" ]; }; then
     return 1
   fi
   if [ "$FAKE_JOB_ACTIVE" = "true" ]; then
@@ -98,7 +105,8 @@ function rcConnectorCleanupEnv(
   waitLog: string,
   signalLog: string,
   active: boolean,
-  probeError = false
+  probeError = false,
+  probeErrorAt = 0
 ): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -111,7 +119,9 @@ function rcConnectorCleanupEnv(
     CONNECTOR_STATE_DIR: path.join(dir, 'state'),
     FAKE_JOB_ACTIVE: active ? 'true' : 'false',
     FAKE_JOB_PROBE_ERROR: probeError ? 'true' : 'false',
+    FAKE_JOB_PROBE_ERROR_AT: String(probeErrorAt),
     GITHUB_ENV: githubEnv,
+    JOB_PROBE_COUNT_FILE: path.join(dir, 'job-probe-count'),
     PRE_CANARY_STDERR: path.join(dir, 'pre-canary.stderr'),
     PRE_CANARY_STDOUT: path.join(dir, 'pre-canary.stdout'),
     RUNNER_TEMP: dir,
@@ -1309,14 +1319,30 @@ describe('evaOS beta release gate', () => {
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
         workflow.replace(
-          '            if ! job_snapshot=$(jobs -p); then\n              return 0\n            fi\n',
-          '            job_snapshot=$(jobs -p)\n'
+          '            CONNECTOR_JOB_PROBE_FAILED=false\n' +
+            '            if ! job_snapshot=$(jobs -p); then\n' +
+            '              CONNECTOR_JOB_PROBE_FAILED=true\n' +
+            '              return 1\n' +
+            '            fi\n',
+          '            if ! job_snapshot=$(jobs -p); then\n              return 0\n            fi\n'
         )
       )
     ).toContain(harnessIssue);
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
         workflow.replace('                wait "$CONNECTOR_PID" >/dev/null 2>&1\n', '')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '                elif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then\n' +
+            '                  cleanup_failed=1\n' +
+            '                else\n' +
+            '                  set +e\n' +
+            '                  wait "$CONNECTOR_PID" >/dev/null 2>&1\n',
+          '                else\n                  set +e\n                  wait "$CONNECTOR_PID" >/dev/null 2>&1\n'
+        )
       )
     ).toContain(harnessIssue);
     expect(
@@ -1555,7 +1581,34 @@ printf '%s\\n' ok
 
       expect(result.status).toBe(1);
       expect(fs.readFileSync(waitLog, 'utf8')).toBe('');
-      expect(fs.readFileSync(signalLog, 'utf8')).toContain('-9 4242');
+      expect(fs.readFileSync(signalLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(githubEnv, 'utf8')).toContain('RC_CONNECTOR_CLEANUP_SUCCEEDED=false');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails connector cleanup without signaling or waiting when the final ownership probe errors', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const cleanupScript = extractRcConnectorCleanupScript(workflow);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evaos-connector-cleanup-final-probe-error-'));
+    const githubEnv = path.join(dir, 'github.env');
+    const waitLog = path.join(dir, 'wait.log');
+    const signalLog = path.join(dir, 'signal.log');
+    fs.mkdirSync(path.join(dir, 'state'));
+    fs.writeFileSync(githubEnv, '');
+    fs.writeFileSync(waitLog, '');
+    fs.writeFileSync(signalLog, '');
+    try {
+      const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorCleanupProbe(cleanupScript)], {
+        encoding: 'utf8',
+        env: rcConnectorCleanupEnv(dir, githubEnv, waitLog, signalLog, false, false, 5),
+      });
+
+      expect(result.status).toBe(1);
+      expect(fs.readFileSync(path.join(dir, 'job-probe-count'), 'utf8')).toBe('5\n');
+      expect(fs.readFileSync(waitLog, 'utf8')).toBe('');
+      expect(fs.readFileSync(signalLog, 'utf8')).toBe('');
       expect(fs.readFileSync(githubEnv, 'utf8')).toContain('RC_CONNECTOR_CLEANUP_SUCCEEDED=false');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

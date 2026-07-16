@@ -1023,8 +1023,15 @@ function collectRcCanaryWorkflowIssues(workflow) {
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \\') ||
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \\') ||
       !installedCandidateRun.includes('CONNECTOR_PID=$!') ||
-      !connectorCleanup.includes('if ! job_snapshot=$(jobs -p); then\nreturn 0\nfi') ||
-      !connectorCleanup.includes('if connector_job_is_active; then') ||
+      !connectorCleanup.includes(
+        'CONNECTOR_JOB_PROBE_FAILED=false\nif ! job_snapshot=$(jobs -p); then\nCONNECTOR_JOB_PROBE_FAILED=true\nreturn 1\nfi'
+      ) ||
+      !connectorCleanup.includes(
+        'if connector_job_is_active; then\nkill "$CONNECTOR_PID" >/dev/null 2>&1 || true\nelif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then\ncleanup_failed=1\nfi'
+      ) ||
+      !connectorCleanup.includes(
+        'if connector_job_is_active; then\ncleanup_failed=1\nelif [ "$CONNECTOR_JOB_PROBE_FAILED" = true ]; then\ncleanup_failed=1\nelse\nset +e\nwait "$CONNECTOR_PID" >/dev/null 2>&1\nset -e\nfi'
+      ) ||
       connectorKillIndex < 0 ||
       connectorWaitIndex <= connectorKillIndex ||
       connectorSuccessIndex <= connectorWaitIndex ||
