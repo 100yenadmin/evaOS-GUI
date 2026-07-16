@@ -691,27 +691,49 @@ jobs:
             rm -f "$process_snapshot" "$pid_output"
           }
 
+          connector_job_is_active() {
+            local job_pid
+            local job_snapshot="$CONNECTOR_STATE_DIR/connector.jobs"
+
+            jobs -p > "$job_snapshot"
+            while IFS= read -r job_pid; do
+              if [ "$job_pid" = "$CONNECTOR_PID" ]; then
+                return 0
+              fi
+            done < "$job_snapshot"
+            return 1
+          }
+
           cleanup_candidate_processes() {
             local exit_status="$1"
             local cleanup_failed=0
             trap - EXIT INT TERM
             if [ -n "${CONNECTOR_PID:-}" ]; then
               echo "RC_CONNECTOR_CLEANUP_ATTEMPTED=true" >> "$GITHUB_ENV"
-              kill "$CONNECTOR_PID" >/dev/null 2>&1 || true
+              if connector_job_is_active; then
+                kill "$CONNECTOR_PID" >/dev/null 2>&1 || true
+              fi
               for _cleanup_attempt in 1 2 3 4 5; do
-                if ! kill -0 "$CONNECTOR_PID" >/dev/null 2>&1; then
+                if ! connector_job_is_active; then
                   break
                 fi
                 sleep 1
               done
-              if kill -0 "$CONNECTOR_PID" >/dev/null 2>&1; then
+              if connector_job_is_active; then
                 kill -9 "$CONNECTOR_PID" >/dev/null 2>&1 || true
-                sleep 1
               fi
-              if kill -0 "$CONNECTOR_PID" >/dev/null 2>&1; then
+              for _cleanup_attempt in 1 2 3 4 5; do
+                if ! connector_job_is_active; then
+                  break
+                fi
+                sleep 1
+              done
+              if connector_job_is_active; then
                 cleanup_failed=1
               else
-                wait "$CONNECTOR_PID" >/dev/null 2>&1 || true
+                set +e
+                wait "$CONNECTOR_PID" >/dev/null 2>&1
+                set -e
               fi
               if [ "$cleanup_failed" -eq 0 ]; then
                 echo "RC_CONNECTOR_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"

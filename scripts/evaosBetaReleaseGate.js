@@ -982,6 +982,18 @@ function collectRcCanaryWorkflowIssues(workflow) {
       installedProcessHelperStart >= 0 && installedProcessHelperEnd > installedProcessHelperStart
         ? installedCandidateRun.slice(installedProcessHelperStart, installedProcessHelperEnd)
         : '';
+    const connectorCleanupStart = installedCandidateRun.indexOf('connector_job_is_active() {');
+    const connectorCleanupEnd = installedCandidateRun.indexOf(
+      "trap 'cleanup_candidate_processes $?' EXIT",
+      connectorCleanupStart
+    );
+    const connectorCleanup =
+      connectorCleanupStart >= 0 && connectorCleanupEnd > connectorCleanupStart
+        ? installedCandidateRun.slice(connectorCleanupStart, connectorCleanupEnd)
+        : '';
+    const connectorKillIndex = connectorCleanup.indexOf('kill -9 "$CONNECTOR_PID" >/dev/null 2>&1 || true');
+    const connectorWaitIndex = connectorCleanup.indexOf('wait "$CONNECTOR_PID" >/dev/null 2>&1');
+    const connectorSuccessIndex = connectorCleanup.indexOf('RC_CONNECTOR_CLEANUP_SUCCEEDED=true');
     const trapIndex = installedCandidateRun.indexOf("trap 'cleanup_candidate_processes $?' EXIT");
     const serveIndex = installedCandidateRun.indexOf('"$BRIDGE_COMMAND" serve \\');
     const deadlineIndex = installedCandidateRun.indexOf('CONNECTOR_DEADLINE=$((SECONDS + 45))');
@@ -1000,7 +1012,12 @@ function collectRcCanaryWorkflowIssues(workflow) {
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \\') ||
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \\') ||
       !installedCandidateRun.includes('CONNECTOR_PID=$!') ||
-      !installedCandidateRun.includes('kill "$CONNECTOR_PID" >/dev/null 2>&1 || true') ||
+      !connectorCleanup.includes('jobs -p > "$job_snapshot"') ||
+      !connectorCleanup.includes('if connector_job_is_active; then') ||
+      connectorKillIndex < 0 ||
+      connectorWaitIndex <= connectorKillIndex ||
+      connectorSuccessIndex <= connectorWaitIndex ||
+      !connectorCleanup.includes('set +e\nwait "$CONNECTOR_PID" >/dev/null 2>&1\nset -e') ||
       !installedCandidateRun.includes('stat -f \'%Lp\' "$TOKEN_FILE"') ||
       !installedCandidateRun.includes('const noFollow = fs.constants.O_NOFOLLOW;') ||
       !installedCandidateRun.includes('const before = fs.fstatSync(descriptor);') ||
