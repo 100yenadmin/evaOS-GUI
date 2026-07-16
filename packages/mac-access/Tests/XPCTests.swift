@@ -42,10 +42,21 @@ private actor RecordingXPCServiceCore: MacAccessXPCServiceCore {
 }
 
 private actor XPCMemoryVault: MacAccessCredentialVault {
+    enum Failure: Error { case erase }
+
+    private let eraseFails: Bool
     private(set) var eraseCount = 0
+
+    init(eraseFails: Bool = false) {
+        self.eraseFails = eraseFails
+    }
+
     func load() -> MacAccessCredentialRecord? { nil }
     func save(_ record: MacAccessCredentialRecord) {}
-    func erase() { eraseCount += 1 }
+    func erase() throws {
+        eraseCount += 1
+        if eraseFails { throw Failure.erase }
+    }
 }
 
 final class XPCTests: XCTestCase {
@@ -133,9 +144,19 @@ final class XPCTests: XCTestCase {
         XCTAssertNil(MacAccessHelperDeploymentConfiguration(dictionary: sameKey))
     }
 
-    func testMissingConfigurationStopPreservesVaultAndRevokeErases() async {
+    func testMissingConfigurationStopPreservesVaultAndRevokeErases() async throws {
         let vault = XPCMemoryVault()
-        let core = MacAccessRuntimeXPCServiceCore(configuration: nil, vault: vault)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-access-xpc-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let paths = MacAccessPolicyPaths(directory: directory)
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-before-uninstall")
+        let core = MacAccessRuntimeXPCServiceCore(
+            vault: vault,
+            runtime: nil,
+            policyRuntime: nil,
+            safetyCustody: custody
+        )
 
         let stopped = await core.stop()
         let revoked = await core.revoke()
@@ -143,6 +164,51 @@ final class XPCTests: XCTestCase {
         XCTAssertEqual(revoked.code, .ok)
         let eraseCount = await vault.eraseCount
         XCTAssertEqual(eraseCount, 1)
+
+        let reinstalled = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-after-reinstall")
+        let projection = await reinstalled.projectStatus()
+        XCTAssertEqual(projection.pairing, "revoked")
+        XCTAssertEqual(projection.effectiveMode, "off")
+        XCTAssertEqual(projection.transport, "revoked")
+    }
+
+    func testRevokeErasesCredentialButFailsClosedWhenTombstoneCannotPersist() async {
+        let vault = XPCMemoryVault()
+        let core = MacAccessRuntimeXPCServiceCore(
+            vault: vault,
+            runtime: nil,
+            policyRuntime: nil,
+            safetyCustody: nil
+        )
+
+        let revoked = await core.revoke()
+        let eraseCount = await vault.eraseCount
+        XCTAssertEqual(revoked.code, .policyUnavailable)
+        XCTAssertEqual(eraseCount, 1)
+    }
+
+    func testRevokePersistsTombstoneEvenWhenCredentialEraseFails() async throws {
+        let vault = XPCMemoryVault(eraseFails: true)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-access-xpc-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let paths = MacAccessPolicyPaths(directory: directory)
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-erase-failure")
+        let core = MacAccessRuntimeXPCServiceCore(
+            vault: vault,
+            runtime: nil,
+            policyRuntime: nil,
+            safetyCustody: custody
+        )
+
+        let revoked = await core.revoke()
+        XCTAssertEqual(revoked.code, .credentialUnavailable)
+        let eraseCount = await vault.eraseCount
+        XCTAssertEqual(eraseCount, 1)
+        let projection = await custody.projectStatus()
+        XCTAssertEqual(projection.pairing, "revoked")
+        XCTAssertEqual(projection.effectiveMode, "off")
+        XCTAssertEqual(projection.transport, "revoked")
     }
 
     private func reply(_ code: MacAccessXPCReplyCode) -> MacAccessXPCReply {

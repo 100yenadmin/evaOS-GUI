@@ -2691,6 +2691,22 @@
         }
       }
     },
+    "action.prepareUninstall": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Prepare to Uninstall…" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Prepare to Uninstall…" } }
+      }
+    },
     "action.quit": {
       "localizations": {
         "zh-CN": {

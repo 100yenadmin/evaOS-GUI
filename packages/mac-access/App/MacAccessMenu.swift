@@ -138,6 +138,15 @@ struct MacAccessMenu: View {
         }
         .disabled(!controller.availability.update || !updater.canCheckForUpdates)
 
+        Button("action.prepareUninstall", role: .destructive) {
+            Task { @MainActor in
+                guard let delegate = NSApplication.shared.delegate as? MacAccessAppDelegate,
+                      await delegate.prepareForUninstall()
+                else { return }
+                NSApplication.shared.terminate(nil)
+            }
+        }
+
         Divider()
 
         Button("action.quit") {

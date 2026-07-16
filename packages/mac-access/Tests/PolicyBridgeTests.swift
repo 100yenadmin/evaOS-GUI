@@ -275,6 +275,26 @@ private actor StalledCoreHostChannel: MacAccessCoreHostChannel {
 }
 
 final class PolicyBridgeTests: XCTestCase {
+    func testUninstallRevocationPersistsOffAndUnboundAcrossReinstall() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-before-uninstall")
+        _ = try await custody.forceLocalSafety("revoke")
+
+        let reinstalled = try MacAccessPolicyCustody(
+            paths: paths,
+            hostSessionID: "host-after-reinstall"
+        )
+        let projection = await reinstalled.projectStatus()
+        let state = await reinstalled.loadState()
+
+        XCTAssertEqual(projection.pairing, "revoked")
+        XCTAssertEqual(projection.configuredMode, "off")
+        XCTAssertEqual(projection.effectiveMode, "off")
+        XCTAssertEqual(projection.transport, "revoked")
+        XCTAssertNil(state["selected_binding"]?.object)
+        XCTAssertNil(state["requested_target_mode"]?.string)
+    }
+
     func testCorruptCustodyRecoversPersistentOfflineKillAcrossRestart() async throws {
         let directory = temporaryDirectory()
         let paths = MacAccessPolicyPaths(directory: directory)

@@ -32,13 +32,16 @@ fail closed at the application boundary:
   helper cleanup fails;
 - quit records cleanup intent and requests an orderly local stop before termination;
 - no application UI authority state is persisted, so relaunch cannot restore `Full Access`;
-- no Computer Use, updater, or TCC implementation is present.
+- no live Computer Use or TCC permission proof is present; the independent Sparkle updater remains
+  private-RC only.
 
 The source contract is pinned to dashboard #669 and evaos-ws-proxy #73. Production composition
 still requires deployment-owned values that those wire responses intentionally do not contain: the
 relay host URL, pinned command-authority public key, and pinned execution-context public keys. No
-direct-network, guessed endpoint/key, token, or Workbench fallback is provided. `MacAccessConnector`
-remains inert. Missing deployment inputs return a redacted typed blocker over XPC.
+direct-network, guessed endpoint/key, token, or Workbench fallback is provided. The registered nested
+`MacAccessConnector` only asks LaunchServices to reopen the containing frozen-identity menu app and
+then exits; it never opens XPC, owns credentials, or starts a second relay authority. Missing
+deployment inputs return a redacted typed blocker over XPC.
 
 Binding-scoped replay protection and the revocation fail-closed latch are currently helper-process
 memory only. Durable replay/authority persistence across a helper restart remains acceptance work
@@ -53,7 +56,7 @@ packages/mac-access/scripts/build-and-test.sh
 The script runs the frozen-identity contract check, an unsigned clean build, hostless pure Swift
 tests, and exact nested-bundle verification. `CODE_SIGNING_ALLOWED=NO` is deliberate. Passing this
 proves source/local build and bundle shape only. It does **not** prove Developer ID signing,
-designated-requirement enforcement, notarization, stapling, SMAppService registration, TCC
+designated-requirement enforcement, notarization, stapling, installed-app SMAppService behavior, TCC
 attribution, production pairing/relay reachability, live Computer Use, update, release, or customer
 readiness.
 
@@ -90,5 +93,11 @@ packages/mac-access/scripts/release/sign-bundle.js verify \
   --sbom '/absolute/path/mac-access-sbom.spdx.json'
 ```
 
+The app now registers only its exact nested login item in Release builds. **Prepare to Uninstall…**
+requires the helper revoke to persist revoked/Off state and erase the active credential before it
+unregisters that login item and permits termination. The signed bundle includes `Uninstall.md`; it
+preserves the non-secret policy tombstone and redacted audit chain so reinstall remains revoked/Off.
+
 These scripts do not submit to Apple, staple a ticket, publish an update feed, or prove Gatekeeper
-acceptance, pristine-Mac launch, live VM control, rollback, uninstall, or customer readiness.
+acceptance, pristine-Mac launch, live VM control, broker-authorized rollback, installed uninstall,
+or customer readiness.

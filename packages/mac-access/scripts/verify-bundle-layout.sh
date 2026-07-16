@@ -40,6 +40,7 @@ HELPER_PATH="$APP_PATH/Contents/XPCServices/evaOS Mac Access Helper.xpc"
 CONNECTOR_PATH="$APP_PATH/Contents/Library/LoginItems/evaOS Mac Access Connector.app"
 
 assert_file "$APP_PATH/Contents/MacOS/evaOS Mac Access"
+assert_file "$APP_PATH/Contents/Resources/Uninstall.md"
 assert_file "$HELPER_PATH/Contents/MacOS/evaOS Mac Access Helper"
 assert_file "$CONNECTOR_PATH/Contents/MacOS/evaOS Mac Access Connector"
 

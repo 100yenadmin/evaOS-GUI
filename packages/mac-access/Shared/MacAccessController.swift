@@ -220,7 +220,8 @@ public final class MacAccessController: ObservableObject {
     private func localPreconditionBlocker(for action: ConnectorCoreAction) -> MacAccessBlocker? {
         if let blocker = state.blocker {
             switch action {
-            case .stop, .activateKillSwitch, .setAccessMode(.off), .clearKillSwitch:
+            case .stop, .activateKillSwitch, .setAccessMode(.off), .clearKillSwitch,
+                 .revokeSelectedVM:
                 break
             case .pair where blocker == .dashboardPairingUnavailable || blocker == .notPaired
                 || blocker == .stalePairing || blocker == .revokedGrant:

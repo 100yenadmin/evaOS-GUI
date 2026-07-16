@@ -28,6 +28,29 @@ final class IdentityTests: XCTestCase {
         XCTAssertNotEqual(sha256(wrongRequirement), MacAccessIdentity.appDesignatedRequirementSHA256)
     }
 
+    func testConnectorAcceptsOnlyTheFrozenNestedAppPathAndBundleIdentity() throws {
+        let root = URL(fileURLWithPath: "/Applications/evaOS Mac Access.app")
+        let connector = root.appendingPathComponent(
+            "Contents/Library/LoginItems/evaOS Mac Access Connector.app"
+        )
+
+        XCTAssertEqual(
+            MacAccessConnectorPath.containingAppURL(
+                connectorURL: connector,
+                bundleIdentifierAt: { _ in MacAccessIdentity.appBundleID }
+            )?.path,
+            root.path
+        )
+        XCTAssertNil(MacAccessConnectorPath.containingAppURL(
+            connectorURL: connector,
+            bundleIdentifierAt: { _ in "com.example.wrong" }
+        ))
+        XCTAssertNil(MacAccessConnectorPath.containingAppURL(
+            connectorURL: URL(fileURLWithPath: "/tmp/evaOS Mac Access Connector.app"),
+            bundleIdentifierAt: { _ in MacAccessIdentity.appBundleID }
+        ))
+    }
+
     func testHelperBuildSettingsUseDisjointDebugAndReleaseKeychainGroups() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

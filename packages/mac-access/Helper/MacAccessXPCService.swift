@@ -295,6 +295,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     private let vault: any MacAccessCredentialVault
     private let runtime: MacAccessHelperRuntime?
     private let policyRuntime: MacAccessPolicyRuntime?
+    private let safetyCustody: MacAccessPolicyCustody?
     private let policyRequired: Bool
 
     init(
@@ -311,6 +312,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             )
         } : nil
         policyRuntime = policy?.runtime
+        safetyCustody = policy == nil ? Self.makeSafetyCustody() : nil
         guard let configuration else {
             runtime = nil
             return
@@ -330,11 +332,13 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         vault: any MacAccessCredentialVault,
         runtime: MacAccessHelperRuntime?,
         policyRuntime: MacAccessPolicyRuntime?,
+        safetyCustody: MacAccessPolicyCustody? = nil,
         policyRequired: Bool = true
     ) {
         self.vault = vault
         self.runtime = runtime
         self.policyRuntime = policyRuntime
+        self.safetyCustody = safetyCustody
         self.policyRequired = policyRequired
     }
 
@@ -428,6 +432,22 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func revoke() async -> MacAccessXPCReply {
         guard let runtime else {
+            guard let safetyCustody else {
+                try? await vault.erase()
+                return MacAccessXPCReply(
+                    code: .policyUnavailable,
+                    status: (await unavailableReply()).status
+                )
+            }
+            do {
+                _ = try await safetyCustody.forceLocalSafety("revoke")
+            } catch {
+                try? await vault.erase()
+                return MacAccessXPCReply(
+                    code: .policyUnavailable,
+                    status: (await unavailableReply()).status
+                )
+            }
             do {
                 try await vault.erase()
                 return MacAccessXPCReply(
@@ -444,7 +464,24 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 )
             }
         }
-        guard let policyRuntime else { return await reply(code: .policyUnavailable, status: await runtime.status) }
+        guard let policyRuntime else {
+            guard let safetyCustody else {
+                _ = try? await runtime.revokeLocally()
+                return await reply(code: .policyUnavailable, status: await runtime.status)
+            }
+            do {
+                _ = try await safetyCustody.forceLocalSafety("revoke")
+            } catch {
+                _ = try? await runtime.revokeLocally()
+                return await reply(code: .policyUnavailable, status: await runtime.status)
+            }
+            do {
+                let status = try await runtime.revokeLocally()
+                return await reply(code: .ok, status: status)
+            } catch {
+                return await reply(code: map(error), status: await runtime.status)
+            }
+        }
         do {
             try await policyRuntime.preemptSafety("revoke")
             let status = try await runtime.revokeLocally()
@@ -548,6 +585,14 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
              .digestMismatch, .signatureMismatch, .expiredAuthority, .replayRejected:
             return .commandRejected
         }
+    }
+
+    private static func makeSafetyCustody() -> MacAccessPolicyCustody? {
+        guard let paths = try? MacAccessPolicyPaths.production() else { return nil }
+        return try? MacAccessPolicyCustody(
+            paths: paths,
+            hostSessionID: "host-\(UUID().uuidString.lowercased())"
+        )
     }
 }
 

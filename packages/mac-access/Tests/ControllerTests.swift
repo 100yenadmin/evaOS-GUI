@@ -160,7 +160,119 @@ final actor SuspendedKillProjectingConnectorClient: MacAccessStatusProjectingCli
 }
 
 @MainActor
+private final class FakeMacAccessLoginItemService: MacAccessLoginItemServicing {
+    enum Failure: Error { case requested }
+
+    var state: MacAccessLoginItemState
+    var stateAfterRegister: MacAccessLoginItemState = .enabled
+    var stateAfterUnregister: MacAccessLoginItemState = .notRegistered
+    var registerFails = false
+    var unregisterFails = false
+    private(set) var registerCount = 0
+    private(set) var unregisterCount = 0
+
+    init(state: MacAccessLoginItemState) {
+        self.state = state
+    }
+
+    func register() throws {
+        registerCount += 1
+        if registerFails { throw Failure.requested }
+        state = stateAfterRegister
+    }
+
+    func unregister() async throws {
+        unregisterCount += 1
+        if unregisterFails { throw Failure.requested }
+        state = stateAfterUnregister
+    }
+}
+
+@MainActor
 final class ControllerTests: XCTestCase {
+    func testLoginItemRegistrationIsIdempotentAndSurfacesApproval() {
+        let service = FakeMacAccessLoginItemService(state: .notRegistered)
+        let delegate = MacAccessAppDelegate(loginItemService: service)
+
+        XCTAssertEqual(delegate.registerLoginItemIfNeeded(), .enabled)
+        XCTAssertEqual(delegate.registerLoginItemIfNeeded(), .enabled)
+        XCTAssertEqual(service.registerCount, 1)
+
+        let approvalService = FakeMacAccessLoginItemService(state: .requiresApproval)
+        let approvalDelegate = MacAccessAppDelegate(loginItemService: approvalService)
+        XCTAssertEqual(approvalDelegate.registerLoginItemIfNeeded(), .requiresApproval)
+        XCTAssertEqual(approvalService.registerCount, 0)
+    }
+
+    func testPrepareForUninstallRevokesBeforeUnregistering() async {
+        let client = RecordingConnectorClient(result: .completed(.revoked))
+        let controller = MacAccessController(
+            client: client,
+            initialState: MacAccessState(
+                connection: .connected, configuredMode: .fullAccess,
+                effectiveMode: .fullAccess, isPaired: true, blocker: nil
+            ),
+            availability: .standalonePolicy
+        )
+        let service = FakeMacAccessLoginItemService(state: .enabled)
+        let delegate = MacAccessAppDelegate(loginItemService: service)
+        delegate.controller = controller
+
+        let prepared = await delegate.prepareForUninstall()
+        let actions = await client.recordedActions()
+        XCTAssertTrue(prepared)
+        XCTAssertEqual(actions, [.revokeSelectedVM])
+        XCTAssertEqual(service.unregisterCount, 1)
+        XCTAssertEqual(delegate.loginItemState, .notRegistered)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+        XCTAssertEqual(controller.state.blocker, .revokedGrant)
+    }
+
+    func testPrepareForUninstallKeepsAppRegisteredWhenRevokeFails() async {
+        let client = RecordingConnectorClient(result: .blocked(.credentialUnavailable))
+        let controller = MacAccessController(client: client, availability: .standalonePolicy)
+        let service = FakeMacAccessLoginItemService(state: .enabled)
+        let delegate = MacAccessAppDelegate(loginItemService: service)
+        delegate.controller = controller
+
+        let prepared = await delegate.prepareForUninstall()
+        XCTAssertFalse(prepared)
+        XCTAssertEqual(service.unregisterCount, 0)
+        XCTAssertEqual(service.state, .enabled)
+    }
+
+    func testPrepareForUninstallLeavesRevokedAppRunningWhenUnregisterFails() async {
+        let client = RecordingConnectorClient(result: .completed(.revoked))
+        let controller = MacAccessController(client: client, availability: .standalonePolicy)
+        let service = FakeMacAccessLoginItemService(state: .enabled)
+        service.unregisterFails = true
+        let delegate = MacAccessAppDelegate(loginItemService: service)
+        delegate.controller = controller
+
+        let prepared = await delegate.prepareForUninstall()
+        XCTAssertFalse(prepared)
+        XCTAssertEqual(service.unregisterCount, 1)
+        XCTAssertEqual(delegate.loginItemState, .failed)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+        XCTAssertEqual(controller.state.blocker, .revokedGrant)
+    }
+
+    func testPrepareForUninstallDoesNotTreatMissingLoginItemAsUnregistered() async {
+        let client = RecordingConnectorClient(result: .completed(.revoked))
+        let controller = MacAccessController(client: client, availability: .standalonePolicy)
+        let service = FakeMacAccessLoginItemService(state: .notFound)
+        service.stateAfterUnregister = .notFound
+        let delegate = MacAccessAppDelegate(loginItemService: service)
+        delegate.controller = controller
+
+        let prepared = await delegate.prepareForUninstall()
+        XCTAssertFalse(prepared)
+        XCTAssertEqual(service.unregisterCount, 1)
+        XCTAssertEqual(delegate.loginItemState, .notFound)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+        XCTAssertEqual(controller.state.blocker, .revokedGrant)
+    }
+
     func testAuthoritativeHelperProjectionHydratesFullAccessAndAudit() async {
         let event = MacAccessXPCAuditEvent(
             occurredAt: Date(timeIntervalSince1970: 1_700_000_000),

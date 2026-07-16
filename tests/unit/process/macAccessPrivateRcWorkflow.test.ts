@@ -5,9 +5,14 @@ import { describe, expect, it } from 'vitest';
 const workflow = fs.readFileSync(path.resolve('.github/workflows/mac-access-private-rc.yml'), 'utf8');
 
 describe('Mac Access private-RC workflow contract', () => {
-  it('is manual, read-only, and uploads only a private Actions artifact', () => {
+  it('allows only manual dispatch or the exact temporary feature-branch push lane', () => {
     expect(workflow).toMatch(/^on:\n  workflow_dispatch:/m);
-    expect(workflow).not.toMatch(/^  (push|pull_request|schedule|release):/m);
+    expect(workflow).toContain('branches:\n      - codex/705-mac-access-package-92561ad');
+    expect(workflow).toContain("github.repository == '100yenadmin/evaOS-GUI'");
+    expect(workflow).toContain("github.actor == '100yenadmin'");
+    expect(workflow).toContain("github.ref == 'refs/heads/codex/705-mac-access-package-92561ad'");
+    expect(workflow).toContain("contains(github.event.head_commit.message, '[mac-access-private-rc]')");
+    expect(workflow).not.toMatch(/^  (pull_request|pull_request_target|schedule|release):/m);
     expect(workflow).toContain('permissions:\n  contents: read');
     expect(workflow).toContain('uses: actions/upload-artifact@v4');
     expect(workflow).toContain('actionsArtifactOnly: true');
@@ -33,6 +38,9 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('rollback_public_key_base64url:');
     expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_FEED_URL');
     expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY');
+    expect(workflow).toContain('vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_KEY_ID');
+    expect(workflow).toContain('vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_PUBLIC_KEY_BASE64URL');
+    expect(workflow).toContain('inputs.candidate_build || github.run_number');
     expect(workflow).toContain('secrets.MAC_ACCESS_SPARKLE_PRIVATE_KEY');
     expect(workflow).toContain('test "$PRIVATE_RC_ACK" = \'mac-access-private-rc\'');
     expect(workflow).toContain("'mac-access' not in parsed.path.lower()");
@@ -88,6 +96,9 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('--verify');
     expect(workflow).toContain('signedAppcast: true');
     expect(workflow).toContain('exactArchiveBound: true');
+    expect(workflow).toContain('authorizationAvailable: false');
+    expect(workflow).toContain('exercised: false');
+    expect(workflow).toContain('electricsheephq/evaos-ws-proxy/issues/76');
     expect(workflow).toContain('evidenceFiles:');
     expect(workflow).toContain('CHECKSUMS.txt');
   });

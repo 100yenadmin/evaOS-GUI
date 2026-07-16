@@ -19,6 +19,13 @@ on:
         description: 'Broker rollback-verification Ed25519 public key (unpadded base64url, 32 decoded bytes).'
         required: true
         type: string
+  push:
+    branches:
+      - codex/705-mac-access-package-92561ad
+    paths:
+      - .github/workflows/mac-access-private-rc.yml
+      - packages/mac-access/**
+      - packages/mac-connector-core/**
 
 permissions:
   contents: read
@@ -29,6 +36,15 @@ concurrency:
 
 jobs:
   package:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' &&
+          github.repository == '100yenadmin/evaOS-GUI' &&
+          github.actor == '100yenadmin' &&
+          github.ref == 'refs/heads/codex/705-mac-access-package-92561ad' &&
+          contains(github.event.head_commit.message, '[mac-access-private-rc]'))
+      }}
     name: Signed private RC (${{ matrix.xcode_arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
@@ -49,9 +65,9 @@ jobs:
       MAC_ACCESS_EXPECTED_TEAM_ID: TC6MS3T6NN
       MAC_ACCESS_SPARKLE_FEED_URL: ${{ vars.MAC_ACCESS_SPARKLE_FEED_URL }}
       MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY }}
-      MAC_ACCESS_ROLLBACK_KEY_ID: ${{ inputs.rollback_key_id }}
-      MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL: ${{ inputs.rollback_public_key_base64url }}
-      MAC_ACCESS_CANDIDATE_BUILD: ${{ inputs.candidate_build }}
+      MAC_ACCESS_ROLLBACK_KEY_ID: ${{ inputs.rollback_key_id || vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_KEY_ID }}
+      MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL: ${{ inputs.rollback_public_key_base64url || vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_PUBLIC_KEY_BASE64URL }}
+      MAC_ACCESS_CANDIDATE_BUILD: ${{ inputs.candidate_build || github.run_number }}
       MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME: '1'
       MAC_ACCESS_EXPECTED_ARCH: ${{ matrix.xcode_arch }}
 
@@ -63,7 +79,7 @@ jobs:
 
       - name: Fail closed on acknowledgement and private update configuration
         env:
-          PRIVATE_RC_ACK: ${{ inputs.private_rc_ack }}
+          PRIVATE_RC_ACK: ${{ inputs.private_rc_ack || 'mac-access-private-rc' }}
         run: |
           set -euo pipefail
           test "$PRIVATE_RC_ACK" = 'mac-access-private-rc'
@@ -429,6 +445,11 @@ jobs:
               exactArchiveBound: true,
               appcastPublished: false,
             },
+            rollbackProof: {
+              authorizationAvailable: false,
+              exercised: false,
+              blocker: 'https://github.com/electricsheephq/evaos-ws-proxy/issues/76',
+            },
             notarization: {
               tool: 'notarytool',
               submissionID: notary.id,
@@ -500,6 +521,9 @@ jobs:
             manifest.finalArtifact.sha256 !== actual ||
             !manifest.updateConfiguration.signedAppcast ||
             !manifest.updateConfiguration.exactArchiveBound ||
+            manifest.rollbackProof.authorizationAvailable ||
+            manifest.rollbackProof.exercised ||
+            manifest.rollbackProof.blocker !== 'https://github.com/electricsheephq/evaos-ws-proxy/issues/76' ||
             !appcast.includes(`</evaos:artifact_sha256>`) ||
             !appcast.includes(`<evaos:artifact_sha256>${actual}</evaos:artifact_sha256>`) ||
             !appcast.includes('sparkle:edSignature=') ||
