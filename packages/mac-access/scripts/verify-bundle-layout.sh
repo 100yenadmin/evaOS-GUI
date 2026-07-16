@@ -86,4 +86,8 @@ for executable in \
   fi
 done
 
+if [ "${MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME:-0}" = 1 ]; then
+  "$SCRIPT_DIR/verify-private-runtime.sh" "$APP_PATH"
+fi
+
 echo "Verified standalone Mac Access bundle layout and helper-only Keychain groups: $APP_PATH"

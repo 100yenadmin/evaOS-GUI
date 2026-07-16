@@ -744,8 +744,8 @@ actor MacAccessStdioCoreHostTransport {
                 throw MacAccessCoreHostError.runtimeUnavailable
             }
             let root = resources.appendingPathComponent("MacConnectorCore", isDirectory: true)
-            let python = root.appendingPathComponent("runtime/bin/python3")
-            let source = root.appendingPathComponent("python", isDirectory: true)
+            let python = root.appendingPathComponent("python/bin/python3")
+            let source = root.appendingPathComponent("src", isDirectory: true)
             guard FileManager.default.isExecutableFile(atPath: python.path),
                   FileManager.default.fileExists(atPath: source.path)
             else { throw MacAccessCoreHostError.runtimeUnavailable }

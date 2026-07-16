@@ -4,14 +4,18 @@ on:
   pull_request:
     paths:
       - 'packages/mac-access/**'
-      - 'packages/mac-connector-core/contracts/v1/**'
+      - 'packages/mac-connector-core/**'
+      - 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh'
+      - 'scripts/prepareEvaosDesktopBridgeResource.js'
       - '.github/workflows/mac-access.yml'
   push:
     branches:
       - main
     paths:
       - 'packages/mac-access/**'
-      - 'packages/mac-connector-core/contracts/v1/**'
+      - 'packages/mac-connector-core/**'
+      - 'scripts/prepareEvaosDesktopBridgePythonRuntime.sh'
+      - 'scripts/prepareEvaosDesktopBridgeResource.js'
       - '.github/workflows/mac-access.yml'
   workflow_dispatch:
 
@@ -94,3 +98,32 @@ jobs:
             echo ''
             echo 'These timings are source/local CI evidence, not signing, release, TCC, pairing, or live-runtime proof.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  embedded-runtime-proof:
+    name: Embedded private runtime proof
+    runs-on: macos-15
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare hash-pinned private Python
+        run: scripts/prepareEvaosDesktopBridgePythonRuntime.sh arm64 "$GITHUB_ENV"
+
+      - name: Build standalone Release bundle with private runtime
+        env:
+          MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME: '1'
+        run: |
+          xcodebuild \
+            -project packages/mac-access/MacAccess.xcodeproj \
+            -scheme MacAccess \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/MacAccessReleaseDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+          packages/mac-access/scripts/verify-bundle-layout.sh \
+            "$RUNNER_TEMP/MacAccessReleaseDerivedData/Build/Products/Release/evaOS Mac Access.app"
+          packages/mac-connector-core/scripts/runEmbeddedProof.sh \
+            "$GITHUB_WORKSPACE" \
+            "$EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR" \
+            "$RUNNER_TEMP/mac-access-core-proof"
