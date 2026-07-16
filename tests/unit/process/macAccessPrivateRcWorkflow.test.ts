@@ -28,6 +28,7 @@ describe('Mac Access private-RC workflow contract', () => {
 
   it('fails closed on dedicated Sparkle config and release credentials', () => {
     expect(workflow).toContain('private_rc_ack:');
+    expect(workflow).toContain('candidate_build:');
     expect(workflow).toContain('rollback_key_id:');
     expect(workflow).toContain('rollback_public_key_base64url:');
     expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_FEED_URL');
@@ -40,6 +41,9 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain("re.fullmatch(r'[A-Za-z0-9_-]{43}', rollback_public_key)");
     expect(workflow).toContain('len(decoded_rollback_key) != 32');
     expect(workflow).toContain('update inputs must already be canonical and whitespace-free');
+    expect(workflow).toContain("re.fullmatch(r'[1-9][0-9]{0,8}', candidate_build)");
+    expect(workflow).toContain('CURRENT_PROJECT_VERSION="$MAC_ACCESS_CANDIDATE_BUILD"');
+    expect(workflow).toContain('MARKETING_VERSION=0.1.0');
     for (const buildSetting of [
       'MAC_ACCESS_UPDATE_FEED_URL=',
       'MAC_ACCESS_UPDATE_PUBLIC_ED_KEY=',

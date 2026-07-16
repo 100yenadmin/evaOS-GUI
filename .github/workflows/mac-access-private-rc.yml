@@ -7,6 +7,10 @@ on:
         description: 'Type mac-access-private-rc to acknowledge that this creates a private Actions artifact only.'
         required: true
         type: string
+      candidate_build:
+        description: 'Monotonic positive CFBundleVersion for this private v0.1.0 candidate.'
+        required: true
+        type: string
       rollback_key_id:
         description: 'Broker rollback-verification key ID embedded in this private candidate.'
         required: true
@@ -47,6 +51,7 @@ jobs:
       MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY }}
       MAC_ACCESS_ROLLBACK_KEY_ID: ${{ inputs.rollback_key_id }}
       MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL: ${{ inputs.rollback_public_key_base64url }}
+      MAC_ACCESS_CANDIDATE_BUILD: ${{ inputs.candidate_build }}
       MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME: '1'
       MAC_ACCESS_EXPECTED_ARCH: ${{ matrix.xcode_arch }}
 
@@ -74,6 +79,7 @@ jobs:
           public_key = os.environ.get('MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY', '').strip()
           rollback_key_id = os.environ.get('MAC_ACCESS_ROLLBACK_KEY_ID', '').strip()
           rollback_public_key = os.environ.get('MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL', '').strip()
+          candidate_build = os.environ.get('MAC_ACCESS_CANDIDATE_BUILD', '').strip()
           if any(
               canonical != os.environ.get(name, '')
               for name, canonical in (
@@ -81,6 +87,7 @@ jobs:
                   ('MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY', public_key),
                   ('MAC_ACCESS_ROLLBACK_KEY_ID', rollback_key_id),
                   ('MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL', rollback_public_key),
+                  ('MAC_ACCESS_CANDIDATE_BUILD', candidate_build),
               )
           ):
               raise SystemExit('Mac Access private-RC update inputs must already be canonical and whitespace-free.')
@@ -112,6 +119,8 @@ jobs:
           decoded_rollback_key = base64.urlsafe_b64decode(rollback_public_key + '=')
           if len(decoded_rollback_key) != 32:
               raise SystemExit('rollback_public_key_base64url must decode to exactly 32 bytes.')
+          if not re.fullmatch(r'[1-9][0-9]{0,8}', candidate_build):
+              raise SystemExit('candidate_build must be a canonical positive decimal with at most nine digits.')
           PY
           {
             echo "MAC_ACCESS_SIGNING_KEYCHAIN=$RUNNER_TEMP/mac-access-private-rc-signing.keychain-db"
@@ -184,6 +193,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             ARCHS="${{ matrix.xcode_arch }}" \
             ONLY_ACTIVE_ARCH=YES \
+            MARKETING_VERSION=0.1.0 \
+            CURRENT_PROJECT_VERSION="$MAC_ACCESS_CANDIDATE_BUILD" \
             MAC_ACCESS_UPDATE_FEED_URL="$MAC_ACCESS_SPARKLE_FEED_URL" \
             MAC_ACCESS_UPDATE_PUBLIC_ED_KEY="$MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY" \
             MAC_ACCESS_SOURCE_COMMIT="$GITHUB_SHA" \
