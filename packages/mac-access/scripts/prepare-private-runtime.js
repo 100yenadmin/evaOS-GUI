@@ -12,6 +12,7 @@ const {
   assertVendoredBridgeSourceMatchesHead,
   installPythonRuntime,
   verifyPythonRuntimeInventory,
+  writePythonRuntimeInventory,
 } = require('../../../scripts/prepareEvaosDesktopBridgeResource');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
@@ -41,6 +42,33 @@ function withRequiredRuntime(callback) {
   }
 }
 
+function removeRuntimeDevelopmentArtifacts(destination, version) {
+  const pythonMinor = version.split('.').slice(0, 2).join('.');
+  const pythonLibrary = path.join(destination, 'python', 'lib', `python${pythonMinor}`);
+  for (const developmentOnlyPath of [
+    path.join(pythonLibrary, 'test'),
+    path.join(pythonLibrary, 'site-packages', 'PyObjCTest'),
+  ]) {
+    fs.rmSync(developmentOnlyPath, { recursive: true, force: true });
+  }
+
+  const pending = [path.join(destination, 'python')];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    if (!fs.existsSync(directory)) continue;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory() && (entry.name === '__pycache__' || entry.name.endsWith('.dSYM'))) {
+        fs.rmSync(entryPath, { recursive: true, force: true });
+      } else if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (entry.isFile() && entry.name.endsWith('.pyc')) {
+        fs.rmSync(entryPath, { force: true });
+      }
+    }
+  }
+}
+
 function prepare(outputRoot) {
   const destination = path.resolve(outputRoot);
   assertVendoredBridgeSourceMatchesHead();
@@ -52,6 +80,8 @@ function prepare(outputRoot) {
     installPythonRuntime(process.env.EVAOS_DESKTOP_BRIDGE_PYTHON_RUNTIME_DIR, destination)
   );
   if (!runtime) throw new Error('Mac Access requires an embedded private Python runtime.');
+  removeRuntimeDevelopmentArtifacts(destination, runtime.version);
+  Object.assign(runtime, writePythonRuntimeInventory(destination));
 
   const manifest = {
     schema,
@@ -88,6 +118,15 @@ function verify(outputRoot) {
   }
   verifyGeneratedCoreSource(coreRoot, destination);
   verifyPythonRuntimeInventory(destination, manifest.runtime);
+  const pythonMinor = manifest.runtime.version.split('.').slice(0, 2).join('.');
+  for (const forbiddenPath of [
+    path.join(destination, 'python', 'lib', `python${pythonMinor}`, 'test'),
+    path.join(destination, 'python', 'lib', `python${pythonMinor}`, 'site-packages', 'PyObjCTest'),
+  ]) {
+    if (fs.existsSync(forbiddenPath)) {
+      throw new Error(`Mac Access private runtime contains development-only payload: ${forbiddenPath}`);
+    }
+  }
   const expectedTopLevel = new Set([
     'SOURCE.json',
     'licenses',
@@ -114,4 +153,11 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { clean, prepare, repositoryCommit, schema, verify };
+module.exports = {
+  clean,
+  prepare,
+  removeRuntimeDevelopmentArtifacts,
+  repositoryCommit,
+  schema,
+  verify,
+};
