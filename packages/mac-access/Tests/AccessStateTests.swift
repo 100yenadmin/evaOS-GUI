@@ -236,6 +236,10 @@ final class AccessStateTests: XCTestCase {
 
     func testEveryRecoveryBlockerForcesBlockedOff() {
         let blockers: [MacAccessBlocker] = [
+            .invalidPairingCode,
+            .pairingRejected,
+            .credentialUnavailable,
+            .policyUnavailable,
             .permissionDenied,
             .stalePairing,
             .revokedGrant,

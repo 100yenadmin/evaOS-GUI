@@ -28,6 +28,32 @@ final class IdentityTests: XCTestCase {
         XCTAssertNotEqual(sha256(wrongRequirement), MacAccessIdentity.appDesignatedRequirementSHA256)
     }
 
+    func testHelperBuildSettingsUseDisjointDebugAndReleaseKeychainGroups() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let project = try String(
+            contentsOf: packageRoot.appendingPathComponent("MacAccess.xcodeproj/project.pbxproj"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(project.contains("CODE_SIGN_ENTITLEMENTS = \"Resources/Entitlements/Helper-Debug.entitlements\""))
+        XCTAssertTrue(project.contains("CODE_SIGN_ENTITLEMENTS = \"Resources/Entitlements/Helper-Release.entitlements\""))
+        XCTAssertTrue(project.contains("SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG"))
+
+        let debug = try String(
+            contentsOf: packageRoot.appendingPathComponent("Resources/Entitlements/Helper-Debug.entitlements"),
+            encoding: .utf8
+        )
+        let release = try String(
+            contentsOf: packageRoot.appendingPathComponent("Resources/Entitlements/Helper-Release.entitlements"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(debug.contains("TC6MS3T6NN.com.evaos.mac-access.development.credentials.epoch-1"))
+        XCTAssertFalse(debug.contains("<string>TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1</string>"))
+        XCTAssertTrue(release.contains("TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1"))
+        XCTAssertFalse(release.contains("development.credentials"))
+    }
+
     func testLocalOnlyMenuCopyDoesNotClaimUnavailableAuthority() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

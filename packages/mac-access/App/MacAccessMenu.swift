@@ -33,7 +33,7 @@ struct MacAccessMenu: View {
         Button("action.connect") {
             Task { await controller.perform(.connect) }
         }
-            .disabled(!controller.availability.transport)
+            .disabled(!controller.canConnect)
 
         Button("action.disconnect") {
             Task { await controller.perform(.disconnect) }
@@ -108,6 +108,10 @@ struct MacAccessMenu: View {
     private var blockerKey: LocalizedStringKey {
         switch controller.state.blocker {
         case .notPaired: "blocker.notPaired"
+        case .invalidPairingCode: "blocker.invalidPairingCode"
+        case .pairingRejected: "blocker.pairingRejected"
+        case .credentialUnavailable: "blocker.credentialUnavailable"
+        case .policyUnavailable: "blocker.policyUnavailable"
         case .dashboardPairingUnavailable: "blocker.dashboardUnavailable"
         case .relayUnavailable: "blocker.relayUnavailable"
         case .connectorCoreUnavailable: "blocker.coreUnavailable"

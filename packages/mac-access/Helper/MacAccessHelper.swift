@@ -1,9 +1,14 @@
-import Dispatch
+import Foundation
 
 @main
 enum MacAccessHelperMain {
     static func main() {
-        // A2 intentionally exposes no XPC authority until signed-client authentication exists.
-        dispatchMain()
+        let delegate = MacAccessXPCListenerDelegate()
+        let listener = NSXPCListener.service()
+        listener.delegate = delegate
+        listener.resume()
+        withExtendedLifetime(delegate) {
+            RunLoop.current.run()
+        }
     }
 }

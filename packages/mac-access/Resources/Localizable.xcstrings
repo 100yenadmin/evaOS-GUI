@@ -1141,6 +1141,70 @@
         }
       }
     },
+    "blocker.invalidPairingCode": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Pairing code is invalid" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Pairing code is invalid" } }
+      }
+    },
+    "blocker.pairingRejected": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Pairing was rejected" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Pairing was rejected" } }
+      }
+    },
+    "blocker.credentialUnavailable": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Mac Access credential is unavailable" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Mac Access credential is unavailable" } }
+      }
+    },
+    "blocker.policyUnavailable": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Local execution policy is unavailable" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Local execution policy is unavailable" } }
+      }
+    },
     "blocker.dashboardUnavailable": {
       "localizations": {
         "zh-CN": {
@@ -3269,78 +3333,94 @@
         }
       }
     },
+    "onboarding.pairingCode": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "12-character pairing code" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "12-character pairing code" } }
+      }
+    },
     "onboarding.backendBlocked": {
       "localizations": {
         "zh-CN": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "en-US": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "ja-JP": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "zh-TW": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "ko-KR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "tr-TR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "ru-RU": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "uk-UA": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "es-ES": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "fr-FR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         },
         "fa-IR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Pairing is not available in this source-only slice. No code, credential, or endpoint is accepted or stored."
+            "value": "Enter the one-use code from the dashboard. Pairing stays blocked if deployment configuration is unavailable."
           }
         }
       }

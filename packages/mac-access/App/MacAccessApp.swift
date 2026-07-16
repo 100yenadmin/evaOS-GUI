@@ -4,7 +4,10 @@ import SwiftUI
 
 @main
 struct MacAccessApp: App {
-    @StateObject private var controller = MacAccessController()
+    @StateObject private var controller = MacAccessController(
+        client: MacAccessXPCConnectorCoreClient(),
+        availability: .pairingTransport
+    )
     @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
 
     var body: some Scene {

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ConnectorCoreAction: Equatable, Sendable {
-    case pair
+    case pair(String)
     case unpair
     case connect
     case disconnect
@@ -13,6 +13,11 @@ public enum ConnectorCoreAction: Equatable, Sendable {
 }
 
 public enum ConnectorCoreCompletion: Equatable, Sendable {
+    case paired
+    case unpaired
+    case connected
+    case disconnected
+    case revoked
     case localStop
     case localPause
     case localResume
@@ -72,6 +77,14 @@ public struct MacAccessActionAvailability: Equatable, Sendable {
         transport: false,
         elevatedAccessModes: false,
         revoke: false,
+        update: false
+    )
+
+    public static let pairingTransport = MacAccessActionAvailability(
+        pairing: true,
+        transport: true,
+        elevatedAccessModes: false,
+        revoke: true,
         update: false
     )
 }

@@ -4,24 +4,45 @@
 [#701](https://github.com/100yenadmin/evaOS-GUI/issues/701). It builds and tests without
 `packages/desktop`, Workbench, backend access, Homebrew, or a customer-managed Python runtime.
 
-This first A2 slice is intentionally local-only and fail closed:
+The issue #702 helper-owned pairing and relay transport slice is now present in source and remains
+fail closed at the application boundary:
 
 - fresh launch is unpaired, `Off`, and `Blocked`;
-- the menu exposes truthful local setup/status, connection, access-mode, activity, pause, revoke,
-  emergency-stop, diagnostics, update, and quit surfaces; unavailable pairing and permission
-  authority controls remain disabled;
+- onboarding accepts the public 12-character pairing-code shape and carries it through the typed
+  controller action to the embedded helper over a fixed, bounded XPC protocol;
+- both XPC peers pin frozen designated requirements with `NSXPCConnection` code-signing checks;
+  only the signed app and connector requirements are accepted by the helper, and the app pins the
+  signed helper requirement;
+- the helper owns Ed25519 installation-key creation, exact dashboard redemption proof bytes,
+  device-only nonsynchronizable generic-password Keychain custody, the selected 11-field binding,
+  and the opaque relay credential;
+- the helper relay client permits only outbound `wss` at `/mac-access-relay/v1`, registers the
+  stored credential, verifies a command-authority signature and an independently pinned execution
+  context, enforces binding/digest/expiry and binding-scoped replay limits, canonicalizes signed
+  values with RFC 8785 JCS, invokes one injected
+  executor, and returns one structured receipt;
+- the production executor returns `policy_unavailable` until issue #703 supplies the policy and
+  execution slice; a fixture executor proves the single-command receipt path without granting
+  production authority;
+- local stop closes the channel, clears current work, and preserves the paired helper credential;
+  local revoke and an authenticated relay `grant_revoked` additionally erase that credential,
+  while other relay closure reasons preserve pairing for recovery;
 - unavailable authority actions are disabled or return a typed blocker;
-- emergency stop synchronously forces local `Off` and is idempotent;
+- emergency stop synchronously latches local `Off`, issues one helper stop, and remains latched if
+  helper cleanup fails;
 - quit records cleanup intent and requests an orderly local stop before termination;
-- no state persistence exists in this slice, so relaunch cannot restore `Full Access`;
-- no production entitlements, Keychain, network, Computer Use, updater, or TCC implementation is
-  present.
+- no application UI authority state is persisted, so relaunch cannot restore `Full Access`;
+- no Computer Use, updater, or TCC implementation is present.
 
-Public one-use code issue/redemption remains blocked on
-[dashboard #669](https://github.com/electricsheephq/electric-sheep-website-dashboard-6158a244/issues/669).
-The outbound selected-binding relay remains blocked on
-[evaos-ws-proxy #73](https://github.com/electricsheephq/evaos-ws-proxy/issues/73). There is no
-direct-network, endpoint/token, or Workbench fallback.
+The source contract is pinned to dashboard #669 and evaos-ws-proxy #73. Production composition
+still requires deployment-owned values that those wire responses intentionally do not contain: the
+relay host URL, pinned command-authority public key, and pinned execution-context public keys. No
+direct-network, guessed endpoint/key, token, or Workbench fallback is provided. `MacAccessConnector`
+remains inert. Missing deployment inputs return a redacted typed blocker over XPC.
+
+Binding-scoped replay protection and the revocation fail-closed latch are currently helper-process
+memory only. Durable replay/authority persistence across a helper restart remains acceptance work
+for issues #702/#703, so this draft does not close issue #702.
 
 ## Local proof
 
@@ -33,9 +54,9 @@ The script runs the frozen-identity contract check, an unsigned clean build, hos
 tests, and exact nested-bundle verification. `CODE_SIGNING_ALLOWED=NO` is deliberate. Passing this
 proves source/local build and bundle shape only. It does **not** prove Developer ID signing,
 designated-requirement enforcement, notarization, stapling, SMAppService registration, TCC
-attribution, Accessibility/Screen Recording, pairing, relay transport, live Computer Use, update,
-release, or customer readiness.
+attribution, production pairing/relay reachability, live Computer Use, update, release, or customer
+readiness.
 
-The native catalog owns all 50 current keys and reserves all 12 repository locales without `jq` or
-Homebrew. English is the only completed translation in this draft; the 550 non-English units are
-explicitly `needs_review` and cannot be reported as translated by the validation script.
+The native catalog reserves all 12 repository locales without `jq` or Homebrew. English is the only
+completed translation in this draft; non-English units are explicitly `needs_review` and cannot be
+reported as translated by the validation script.

@@ -2,6 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>MacAccessCommandKeyID</key>
+	<string>$(MAC_ACCESS_COMMAND_KEY_ID)</string>
+	<key>MacAccessCommandPublicKeyBase64URL</key>
+	<string>$(MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL)</string>
+	<key>MacAccessExecutionContextKeyID</key>
+	<string>$(MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID)</string>
+	<key>MacAccessExecutionContextPublicKeyBase64URL</key>
+	<string>$(MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL)</string>
+	<key>MacAccessPairingEndpoint</key>
+	<string>$(MAC_ACCESS_PAIRING_ENDPOINT)</string>
+	<key>MacAccessRelayURL</key>
+	<string>$(MAC_ACCESS_RELAY_URL)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
