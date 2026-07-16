@@ -30,10 +30,29 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('private_rc_ack:');
     expect(workflow).toContain('sparkle_feed_url:');
     expect(workflow).toContain('sparkle_public_ed_key:');
+    expect(workflow).toContain('rollback_key_id:');
+    expect(workflow).toContain('rollback_public_key_base64url:');
     expect(workflow).toContain('test "$PRIVATE_RC_ACK" = \'mac-access-private-rc\'');
     expect(workflow).toContain("'mac-access' not in parsed.path.lower()");
     expect(workflow).toContain("'workbench' in feed.lower()");
     expect(workflow).toContain('len(decoded) != 32');
+    expect(workflow).toContain("re.fullmatch(r'[A-Za-z0-9_-]{43}', rollback_public_key)");
+    expect(workflow).toContain('len(decoded_rollback_key) != 32');
+    for (const buildSetting of [
+      'MAC_ACCESS_UPDATE_FEED_URL=',
+      'MAC_ACCESS_UPDATE_PUBLIC_ED_KEY=',
+      'MAC_ACCESS_SOURCE_COMMIT=',
+      'MAC_ACCESS_SECURITY_EPOCH=',
+      'MAC_ACCESS_CREDENTIAL_SECURITY_EPOCH=',
+      'MAC_ACCESS_SCHEMA_READER_VERSION=',
+      'MAC_ACCESS_SCHEMA_WRITER_VERSION=',
+      'MAC_ACCESS_ROLLBACK_KEY_ID=',
+      'MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL=',
+      'MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256=',
+      'MAC_ACCESS_HELPER_RELATION_SHA256=',
+    ]) {
+      expect(workflow).toContain(buildSetting);
+    }
     for (const secret of [
       'BUILD_CERTIFICATE_BASE64',
       'P12_PASSWORD',

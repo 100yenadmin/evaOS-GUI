@@ -11,6 +11,7 @@ const {
   MANIFEST_SCHEMA,
   ROLE_CONTRACTS,
   TEAM_ID,
+  canonicalJSON,
   createManifest,
   createSBOM,
   defaultRunner,
@@ -23,6 +24,8 @@ const SOURCE_SHA = '1234567890abcdef1234567890abcdef12345678';
 const CORE_SHA = '1'.repeat(64);
 const SOURCE_MANIFEST_SHA = '2'.repeat(64);
 const RUNTIME_SOURCE_SHA = '3'.repeat(64);
+const SPARKLE_PUBLIC_KEY = Buffer.alloc(32, 7).toString('base64');
+const ROLLBACK_PUBLIC_KEY = Buffer.alloc(32, 9).toString('base64url');
 const CORE_IDENTITY = Object.freeze({ coreSourceSha256: CORE_SHA, sourceManifestSha256: SOURCE_MANIFEST_SHA });
 
 function sha256(value) {
@@ -51,12 +54,31 @@ function makeFixture() {
   const app = path.join(root, 'evaOS Mac Access.app');
   for (const [role, contract] of Object.entries(ROLE_CONTRACTS)) {
     const bundle = contract.bundlePath === '.' ? app : path.join(app, contract.bundlePath);
-    writeJSON(path.join(bundle, 'Contents', 'Info.plist'), {
+    const plist = {
       CFBundleIdentifier: contract.bundleID,
       CFBundleExecutable: path.basename(contract.executablePath),
       CFBundleShortVersionString: '0.1.0',
       CFBundleVersion: '1',
-    });
+    };
+    if (role === 'app') {
+      Object.assign(plist, {
+        SUFeedURL: 'https://updates.evaos.com/mac-access/appcast.xml',
+        SUPublicEDKey: SPARKLE_PUBLIC_KEY,
+        MacAccessAppRequirementSHA256: ROLE_CONTRACTS.app.designatedRequirementSHA256,
+        MacAccessHelperRequirementSHA256: ROLE_CONTRACTS.helper.designatedRequirementSHA256,
+        MacAccessConnectorRequirementSHA256: ROLE_CONTRACTS.connector.designatedRequirementSHA256,
+        MacAccessHelperEntitlementsSHA256: sha256(canonicalJSON(ROLE_CONTRACTS.helper.expectedEntitlements)),
+        MacAccessHelperRelationSHA256: sha256(canonicalJSON(ROLE_CONTRACTS.helper.relationship)),
+        MacAccessSourceCommit: SOURCE_SHA,
+        MacAccessSecurityEpoch: String(EXPECTED_COMPATIBILITY.securityEpoch),
+        MacAccessCredentialSecurityEpoch: String(EXPECTED_COMPATIBILITY.credentialEpoch),
+        MacAccessSchemaReaderVersion: String(EXPECTED_COMPATIBILITY.schemaReaderVersion),
+        MacAccessSchemaWriterVersion: String(EXPECTED_COMPATIBILITY.schemaWriterVersion),
+        MacAccessRollbackKeyID: 'broker-rollback-v1',
+        MacAccessRollbackPublicKeyBase64URL: ROLLBACK_PUBLIC_KEY,
+      });
+    }
+    writeJSON(path.join(bundle, 'Contents', 'Info.plist'), plist);
     writeMachO(path.join(app, contract.executablePath), role);
   }
 
@@ -188,6 +210,9 @@ test('creates an exact identity-continuity manifest and SPDX dependency inventor
   assert.equal(manifest.schema, MANIFEST_SCHEMA);
   assert.equal(manifest.source.commit, SOURCE_SHA);
   assert.equal(manifest.connectorCore.coreSourceSha256, CORE_SHA);
+  assert.equal(manifest.updatePolicy.sourceCommit, SOURCE_SHA);
+  assert.equal(manifest.updatePolicy.channel, 'mac-access');
+  assert.equal(manifest.updatePolicy.rollbackKeyID, 'broker-rollback-v1');
   assert.equal(manifest.signing.roles.helper.executableOwner, 'helper');
   assert.deepEqual(manifest.signing.roles.helper.relationship, {
     kind: 'xpc-service',
@@ -222,6 +247,7 @@ test('rejects every frozen artifact continuity field when the evidence drifts', 
     (value) => (value.signing.roles.helper.relationship.kind = 'login-item'),
     (value) => value.signing.roles.helper.entitlements['keychain-access-groups'].push('unexpected'),
     (value) => (value.compatibility.securityEpoch = 2),
+    (value) => (value.updatePolicy.rollbackPublicKeySHA256 = 'd'.repeat(64)),
     (value) => (value.connectorCore.coreSourceSha256 = 'f'.repeat(64)),
     (value) => (value.artifact.bundleTree.sha256 = 'e'.repeat(64)),
   ];
@@ -231,6 +257,31 @@ test('rejects every frozen artifact continuity field when the evidence drifts', 
     assert.throws(
       () => verifyManifest(fixture.app, changed, sbom, { runner, coreIdentity: CORE_IDENTITY }),
       /manifest drifted|source SHA|schema drifted/
+    );
+  }
+});
+
+test('rejects missing or mismatched signed update identity inputs', (t) => {
+  const fixture = makeFixture();
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  const plistPath = path.join(fixture.app, 'Contents', 'Info.plist');
+  const original = JSON.parse(fs.readFileSync(plistPath, 'utf8'));
+  for (const [key, value] of [
+    ['MacAccessSourceCommit', 'f'.repeat(40)],
+    ['MacAccessSecurityEpoch', '2'],
+    ['MacAccessRollbackPublicKeyBase64URL', 'invalid'],
+    ['SUFeedURL', 'https://updates.evaos.com/workbench/appcast.xml'],
+  ]) {
+    writeJSON(plistPath, { ...original, [key]: value });
+    assert.throws(
+      () =>
+        createManifest(fixture.app, {
+          coreIdentity: CORE_IDENTITY,
+          runner: fakeRunner(fixture.app),
+          sourceSHA: SOURCE_SHA,
+          createdAt: '2026-07-16T14:00:00Z',
+        }),
+      /update identity/
     );
   }
 });

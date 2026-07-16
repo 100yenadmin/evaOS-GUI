@@ -410,6 +410,95 @@ function creationTime(commit, runner = defaultRunner) {
   return new Date(Number(epoch) * 1000).toISOString().replace('.000Z', 'Z');
 }
 
+function readUpdateIdentity(appPlist, commit) {
+  const text = (key) => {
+    const value = String(appPlist[key] || '').trim();
+    if (!value) throw new Error(`Mac Access update identity is missing ${key}.`);
+    return value;
+  };
+  const integer = (key, allowZero = false) => {
+    const value = Number(text(key));
+    if (!Number.isSafeInteger(value) || (allowZero ? value < 0 : value < 1)) {
+      throw new Error(`Mac Access update identity has an invalid ${key}.`);
+    }
+    return value;
+  };
+  const feedURLText = text('SUFeedURL');
+  let feedURL;
+  try {
+    feedURL = new URL(feedURLText);
+  } catch {
+    throw new Error('Mac Access update identity has an invalid dedicated feed URL.');
+  }
+  if (
+    feedURL.protocol !== 'https:' ||
+    feedURL.username ||
+    feedURL.password ||
+    feedURL.search ||
+    feedURL.hash ||
+    !feedURL.pathname.toLowerCase().includes('mac-access') ||
+    feedURLText.toLowerCase().includes('workbench')
+  ) {
+    throw new Error('Mac Access update identity has an invalid dedicated feed URL.');
+  }
+  const sparklePublicKeyText = text('SUPublicEDKey');
+  const sparklePublicKey = Buffer.from(sparklePublicKeyText, 'base64');
+  if (sparklePublicKey.length !== 32 || sparklePublicKey.toString('base64') !== sparklePublicKeyText) {
+    throw new Error('Mac Access update identity has an invalid Sparkle public key.');
+  }
+  const rollbackPublicKeyText = text('MacAccessRollbackPublicKeyBase64URL');
+  const rollbackPublicKey = Buffer.from(rollbackPublicKeyText, 'base64url');
+  if (rollbackPublicKey.length !== 32 || rollbackPublicKey.toString('base64url') !== rollbackPublicKeyText) {
+    throw new Error('Mac Access update identity has an invalid rollback public key.');
+  }
+  const rollbackKeyID = text('MacAccessRollbackKeyID');
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(rollbackKeyID)) {
+    throw new Error('Mac Access update identity has an invalid rollback key ID.');
+  }
+  const expectedHelperEntitlementsSHA256 = sha256(canonicalJSON(ROLE_CONTRACTS.helper.expectedEntitlements));
+  const expectedHelperRelationSHA256 = sha256(canonicalJSON(ROLE_CONTRACTS.helper.relationship));
+  const expected = {
+    MacAccessAppRequirementSHA256: ROLE_CONTRACTS.app.designatedRequirementSHA256,
+    MacAccessHelperRequirementSHA256: ROLE_CONTRACTS.helper.designatedRequirementSHA256,
+    MacAccessConnectorRequirementSHA256: ROLE_CONTRACTS.connector.designatedRequirementSHA256,
+    MacAccessHelperEntitlementsSHA256: expectedHelperEntitlementsSHA256,
+    MacAccessHelperRelationSHA256: expectedHelperRelationSHA256,
+    MacAccessSourceCommit: commit,
+  };
+  if (Object.entries(expected).some(([key, value]) => text(key) !== value)) {
+    throw new Error('Mac Access update identity does not match the signed artifact identity.');
+  }
+  const compatibility = {
+    securityEpoch: integer('MacAccessSecurityEpoch', true),
+    credentialSecurityEpoch: integer('MacAccessCredentialSecurityEpoch'),
+    schemaReaderVersion: integer('MacAccessSchemaReaderVersion'),
+    schemaWriterVersion: integer('MacAccessSchemaWriterVersion'),
+  };
+  if (
+    compatibility.securityEpoch !== EXPECTED_COMPATIBILITY.securityEpoch ||
+    compatibility.credentialSecurityEpoch !== EXPECTED_COMPATIBILITY.credentialEpoch ||
+    compatibility.schemaReaderVersion !== EXPECTED_COMPATIBILITY.schemaReaderVersion ||
+    compatibility.schemaWriterVersion !== EXPECTED_COMPATIBILITY.schemaWriterVersion
+  ) {
+    throw new Error('Mac Access update identity does not match the connector compatibility epoch.');
+  }
+  return {
+    channel: 'mac-access',
+    feedURL: feedURLText,
+    archivePathPrefix: '/mac-access/',
+    sparklePublicKeySHA256: sha256(sparklePublicKey),
+    rollbackKeyID,
+    rollbackPublicKeySHA256: sha256(rollbackPublicKey),
+    sourceCommit: commit,
+    ...compatibility,
+    appRequirementSHA256: ROLE_CONTRACTS.app.designatedRequirementSHA256,
+    helperRequirementSHA256: ROLE_CONTRACTS.helper.designatedRequirementSHA256,
+    connectorRequirementSHA256: ROLE_CONTRACTS.connector.designatedRequirementSHA256,
+    helperEntitlementsSHA256: expectedHelperEntitlementsSHA256,
+    helperRelationSHA256: expectedHelperRelationSHA256,
+  };
+}
+
 function createManifest(appPath, options = {}) {
   const app = path.resolve(appPath);
   const runner = options.runner || defaultRunner;
@@ -453,6 +542,7 @@ function createManifest(appPath, options = {}) {
       bundleTree: bundleTreeIdentity(app),
     },
     compatibility: EXPECTED_COMPATIBILITY,
+    updatePolicy: readUpdateIdentity(appPlist, commit),
     connectorCore: {
       sourcePath: runtime.source.connectorCore.sourcePath,
       coreSourceSha256: runtime.source.connectorCore.coreSourceSha256,
@@ -650,6 +740,7 @@ module.exports = {
   normalizeRequirement,
   ownerForExecutable,
   parseSignatureDetails,
+  readUpdateIdentity,
   verifyManifest,
   writeJSON,
 };
