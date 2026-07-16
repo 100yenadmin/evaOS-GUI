@@ -20,7 +20,7 @@ struct MacAccessMenu: View {
 
         Divider()
 
-        Button("action.pair") {
+        Button("onboarding.title") {
             openWindow(id: "onboarding")
         }
         .keyboardShortcut("p")
@@ -49,12 +49,12 @@ struct MacAccessMenu: View {
         }
 
         Menu("action.permissions") {
-            Button("permission.accessibility") {
-                openWindow(id: "onboarding")
-            }
-            Button("permission.screenRecording") {
-                openWindow(id: "onboarding")
-            }
+            Button("permission.accessibility") {}
+                .disabled(true)
+                .help("blocker.permissionProofPending")
+            Button("permission.screenRecording") {}
+                .disabled(true)
+                .help("blocker.permissionProofPending")
         }
 
         Menu("action.lastActivity") {

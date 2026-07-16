@@ -19,9 +19,20 @@ public enum ConnectorCoreCompletion: Equatable, Sendable {
     case localEmergencyStop
 }
 
+public enum ConnectorCoreInvalidationReason: Equatable, Sendable {
+    case quitCleanup
+    case localPrecondition(MacAccessBlocker)
+}
+
 public enum ConnectorCoreResult: Equatable, Sendable {
     case completed(ConnectorCoreCompletion)
     case blocked(MacAccessBlocker)
+}
+
+public enum MacAccessActionResult: Equatable, Sendable {
+    case completed(ConnectorCoreCompletion)
+    case blocked(MacAccessBlocker)
+    case invalidated(ConnectorCoreInvalidationReason)
 }
 
 public protocol ConnectorCoreClient: Sendable {

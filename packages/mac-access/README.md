@@ -7,8 +7,9 @@
 This first A2 slice is intentionally local-only and fail closed:
 
 - fresh launch is unpaired, `Off`, and `Blocked`;
-- the menu exposes connection, pairing, access-mode, permission, activity, pause, revoke,
-  emergency-stop, diagnostics, update, and quit surfaces;
+- the menu exposes truthful local setup/status, connection, access-mode, activity, pause, revoke,
+  emergency-stop, diagnostics, update, and quit surfaces; unavailable pairing and permission
+  authority controls remain disabled;
 - unavailable authority actions are disabled or return a typed blocker;
 - emergency stop synchronously forces local `Off` and is idempotent;
 - quit records cleanup intent and requests an orderly local stop before termination;

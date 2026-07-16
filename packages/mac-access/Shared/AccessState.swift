@@ -78,6 +78,11 @@ public struct MacAccessStateMachine: Sendable {
     }
 
     public mutating func beginConnecting() {
+        guard state.blocker == nil else {
+            state.connection = .blocked
+            state.effectiveMode = .off
+            return
+        }
         guard state.isPaired else {
             block(.notPaired)
             return
@@ -88,6 +93,11 @@ public struct MacAccessStateMachine: Sendable {
     }
 
     public mutating func requireApproval() {
+        guard state.blocker == nil else {
+            state.connection = .blocked
+            state.effectiveMode = .off
+            return
+        }
         guard state.connection == .connecting else {
             block(.connectorCoreUnavailable)
             return
@@ -97,8 +107,17 @@ public struct MacAccessStateMachine: Sendable {
     }
 
     public mutating func markConnected(at date: Date) {
+        guard state.blocker == nil else {
+            state.connection = .blocked
+            state.effectiveMode = .off
+            return
+        }
         guard state.isPaired else {
             block(.notPaired)
+            return
+        }
+        guard state.connection == .connecting || state.connection == .approvalNeeded else {
+            block(.connectorCoreUnavailable)
             return
         }
         state.connection = .connected
@@ -114,19 +133,41 @@ public struct MacAccessStateMachine: Sendable {
     }
 
     public mutating func pause() {
+        guard state.blocker == nil else {
+            state.connection = .blocked
+            state.effectiveMode = .off
+            return
+        }
+        guard state.isPaired else {
+            block(.notPaired)
+            return
+        }
+        guard state.connection == .connected else {
+            block(.connectorCoreUnavailable)
+            return
+        }
         state.connection = .paused
         state.effectiveMode = .off
         state.blocker = nil
     }
 
     public mutating func resume() {
-        state.effectiveMode = .off
-        if state.isPaired {
-            state.connection = .disconnected
-            state.blocker = nil
-        } else {
-            block(.notPaired)
+        guard state.blocker == nil else {
+            state.connection = .blocked
+            state.effectiveMode = .off
+            return
         }
+        guard state.isPaired else {
+            block(.notPaired)
+            return
+        }
+        guard state.connection == .paused else {
+            block(.connectorCoreUnavailable)
+            return
+        }
+        state.effectiveMode = .off
+        state.connection = .disconnected
+        state.blocker = nil
     }
 
     public mutating func selectOff() {
