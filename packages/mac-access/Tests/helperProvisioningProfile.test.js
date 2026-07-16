@@ -162,6 +162,14 @@ test('re-queries and reuses an exact bundle after a concurrent create conflict',
   assert.equal(lists, 2);
 });
 
+test('reuses an exact universal App ID that Apple makes available to macOS', async () => {
+  const request = async (method) => {
+    assert.equal(method, 'GET');
+    return collection([bundle('universal-bundle', 'UNIVERSAL')]);
+  };
+  assert.equal((await ensureBundle(request)).id, 'universal-bundle');
+});
+
 test('re-queries and reuses an exact profile after a concurrent create conflict', async () => {
   let lists = 0;
   const request = async (method) => {

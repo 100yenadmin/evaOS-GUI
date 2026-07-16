@@ -9,6 +9,7 @@ const HELPER_BUNDLE_ID = 'com.evaos.mac-access.helper';
 const BUNDLE_NAME = 'evaOS Mac Access Helper';
 const DEFAULT_PROFILE_NAME = 'evaOS Mac Access Helper Developer ID';
 const PLATFORM = 'MAC_OS';
+const MAC_COMPATIBLE_BUNDLE_PLATFORMS = new Set([PLATFORM, 'UNIVERSAL']);
 const CERTIFICATE_TYPE = 'DEVELOPER_ID_APPLICATION';
 const PROFILE_TYPE = 'MAC_APP_DIRECT';
 
@@ -134,7 +135,7 @@ function validateBundle(resource) {
     resource?.type !== 'bundleIds' ||
     !resource.id ||
     resource.attributes?.identifier !== HELPER_BUNDLE_ID ||
-    resource.attributes?.platform !== PLATFORM
+    !MAC_COMPATIBLE_BUNDLE_PLATFORMS.has(resource.attributes?.platform)
   ) {
     throw new AppStoreConnectError('App Store Connect returned a wrong helper bundle identifier or platform.');
   }
