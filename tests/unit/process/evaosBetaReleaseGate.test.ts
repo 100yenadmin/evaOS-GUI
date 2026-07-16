@@ -115,6 +115,34 @@ function rcConnectorCleanupEnv(
     WORKBENCH_PROCESS_SNAPSHOT: path.join(dir, 'workbench-processes.txt'),
   };
 }
+
+function extractRcConnectorClassificationScript(workflow: string): string {
+  const start = workflow.indexOf(
+    '          read_connector_token_state\n          CONNECTOR_TOKEN=""\n          ATOMIC_TOKEN_EXIT=1'
+  );
+  const end = workflow.indexOf('\n          publish_connector_state', start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return workflow
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+}
+
+function rcConnectorClassificationProbe(classificationScript: string): string {
+  return `set -euo pipefail
+read_connector_token_state() { :; }
+read_connector_token_atomically() {
+  if [ "$FAKE_ATOMIC_TOKEN_VALID" != "true" ]; then
+    return 2
+  fi
+  printf '%s' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+}
+${classificationScript}
+printf '%s\\n' "$CONNECTOR_READINESS_CLASSIFICATION"
+`;
+}
 const afterSign = require('../../../scripts/afterSign.js') as {
   (context: unknown): Promise<void>;
   default: (context: unknown) => Promise<void>;
@@ -1284,6 +1312,18 @@ describe('evaOS beta release gate', () => {
       )
     ).toContain(harnessIssue);
     expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ]; then\n',
+          '            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ] && \\\n' +
+            '            [ "$CONNECTOR_HEALTH_REACHABLE" = true ]; then\n'
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            unset CONNECTOR_TOKEN\n', ''))
+    ).toContain(harnessIssue);
+    expect(
       releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            const buffer = Buffer.alloc(130);\n', ''))
     ).toContain(harnessIssue);
     expect(
@@ -1486,6 +1526,33 @@ printf '%s\\n' ok
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('distinguishes an unreachable connector health endpoint from an invalid token', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/evaos-beta-rc-canary.yml'), 'utf8');
+    const classificationScript = extractRcConnectorClassificationScript(workflow);
+    const runClassification = (atomicTokenValid: boolean) =>
+      spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', rcConnectorClassificationProbe(classificationScript)], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          CONNECTOR_HEALTH_REACHABLE: 'false',
+          FAKE_ATOMIC_TOKEN_VALID: atomicTokenValid ? 'true' : 'false',
+          TOKEN_EXISTS: 'true',
+          TOKEN_MODE_600: 'true',
+          TOKEN_NONEMPTY: 'true',
+          TOKEN_OWNER_MATCH: 'true',
+          TOKEN_REGULAR: 'true',
+        },
+      });
+
+    const validToken = runClassification(true);
+    expect(validToken.status).toBe(0);
+    expect(validToken.stdout.trim()).toBe('health_unreachable');
+
+    const invalidToken = runClassification(false);
+    expect(invalidToken.status).toBe(0);
+    expect(invalidToken.stdout.trim()).toBe('token_invalid');
   });
 
   it('recognizes little-endian fat Mach-O helpers during signing closure validation', () => {

@@ -1000,6 +1000,15 @@ function collectRcCanaryWorkflowIssues(workflow) {
     const tokenReadIndex = installedCandidateRun.indexOf(
       'CONNECTOR_TOKEN=$(read_connector_token_atomically 2>/dev/null)'
     );
+    const atomicTokenGateStart = installedCandidateRun.indexOf('ATOMIC_TOKEN_EXIT=1', deadlineIndex);
+    const connectorClassificationStart = installedCandidateRun.indexOf(
+      'if [ "$TOKEN_EXISTS" != true ]; then',
+      atomicTokenGateStart
+    );
+    const atomicTokenGate =
+      atomicTokenGateStart >= 0 && connectorClassificationStart > atomicTokenGateStart
+        ? installedCandidateRun.slice(atomicTokenGateStart, connectorClassificationStart)
+        : '';
     if (
       trapIndex < 0 ||
       serveIndex < 0 ||
@@ -1008,6 +1017,8 @@ function collectRcCanaryWorkflowIssues(workflow) {
       trapIndex > serveIndex ||
       serveIndex > deadlineIndex ||
       deadlineIndex > tokenReadIndex ||
+      tokenReadIndex > connectorClassificationStart ||
+      atomicTokenGate.includes('CONNECTOR_HEALTH_REACHABLE') ||
       !installedCandidateRun.includes('TOKEN_FILE="$CONNECTOR_STATE_DIR/connector.token"') ||
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \\') ||
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \\') ||
@@ -1035,6 +1046,8 @@ function collectRcCanaryWorkflowIssues(workflow) {
       !installedCandidateRun.includes("const canonicalApp = '/Applications/evaOS Workbench.app';") ||
       !installedCandidateRun.includes('if (match && match[1] !== canonicalApp) process.exit(2);') ||
       !installedCandidateRun.includes('if (canonicalMainCount === 0) process.exit(4);') ||
+      !installedCandidateRun.includes('CONNECTOR_READINESS_CLASSIFICATION=health_unreachable') ||
+      !installedCandidateRun.includes('CONNECTOR_TOKEN=""\nunset CONNECTOR_TOKEN') ||
       installedCandidateRun.includes('connector-service start')
     ) {
       issues.push(

@@ -1188,8 +1188,7 @@ jobs:
           CONNECTOR_TOKEN=""
           ATOMIC_TOKEN_EXIT=1
           if [ "$TOKEN_REGULAR" = true ] && [ "$TOKEN_OWNER_MATCH" = true ] && \
-            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ] && \
-            [ "$CONNECTOR_HEALTH_REACHABLE" = true ]; then
+            [ "$TOKEN_MODE_600" = true ] && [ "$TOKEN_NONEMPTY" = true ]; then
             set +e
             CONNECTOR_TOKEN=$(read_connector_token_atomically 2>/dev/null)
             ATOMIC_TOKEN_EXIT=$?
@@ -1213,6 +1212,8 @@ jobs:
             "$CONNECTOR_ATTEMPTS" "$TOKEN_EXISTS" "$TOKEN_REGULAR" "$TOKEN_OWNER_MATCH" \
             "$TOKEN_MODE_600" "$TOKEN_NONEMPTY" "$CONNECTOR_HEALTH_REACHABLE"
           if [ "$CONNECTOR_READINESS_CLASSIFICATION" != ready ]; then
+            CONNECTOR_TOKEN=""
+            unset CONNECTOR_TOKEN
             echo "::error::The harness-owned installed connector did not become safely ready."
             exit 1
           fi
