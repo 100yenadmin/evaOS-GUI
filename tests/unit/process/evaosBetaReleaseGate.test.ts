@@ -1459,8 +1459,26 @@ describe('evaOS beta release gate', () => {
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
         workflow.replace(
+          "        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}\n",
+          "        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}\n        continue-on-error: true\n"
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
           '          mkdir -p rc-failure-proof\n',
           '          mkdir -p rc-failure-proof\n          cp "$RUNNER_TEMP/raw.stderr" rc-failure-proof/raw.stderr\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          set -euo pipefail\n          rm -rf rc-failure-proof\n',
+          '          set -euo pipefail\n' +
+            '          # ${{ github.event.inputs.tag }}\n' +
+            '          rm -rf rc-failure-proof\n'
         )
       )
     ).toContain(failurePacketIssue);
@@ -1477,6 +1495,23 @@ describe('evaOS beta release gate', () => {
         workflow.replace(
           '            rollback: {\n',
           '            rollback: {\n              fallbackPid: process.env.FALLBACK_LAUNCH_PID,\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            rollback: {\n',
+          '            rollback: {\n              secret: process.env.GH_TOKEN,\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          INSTALL_MUTATION_STARTED: ${{ steps.install_apps.outputs.mutation_started }}\n',
+          '          INSTALL_MUTATION_STARTED: ${{ steps.install_apps.outputs.mutation_started }}\n' +
+            '          GH_TOKEN: ${{ secrets.GH_TOKEN }}\n'
         )
       )
     ).toContain(failurePacketIssue);

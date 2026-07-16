@@ -18,6 +18,7 @@ const committedBridgeSourceIdentityCache = new Map();
 const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'evaos-beta']);
 const LIVE_CANARY_VERIFIER_SHA256 = '701828332e3c35497294359980944e7021064384a6a0304157af7885897462bd';
 const FUNCTIONAL_SMOKE_SHAPE_RUN_SHA256 = '7d3bc23e52e3e342782b2903664572b15754782db4e67155cdb869c4c8d93d3b';
+const RC_FAILURE_WRITER_RUN_SHA256 = '3bc736c433a70d49fbcceb08c2b9ce714cf2fabb350719eb481ba08a9b81c31f';
 
 const REQUIRED_PUBLIC_BETA_CODE_SIGNING_ENV = [
   {
@@ -1144,6 +1145,19 @@ function collectRcCanaryWorkflowIssues(workflow) {
   const failureUploadIfValues =
     failureUploadSteps.length === 1 ? getWorkflowStepScalarValues(failureUploadSteps[0], 'if') : [];
   const failureWriter = failureWriterSteps.length === 1 ? failureWriterSteps[0] : '';
+  const failureWriterRun = getWorkflowStepPropertyBlock(failureWriter, 'run', true).replace(/\r\n/g, '\n');
+  const failureWriterPropertyNames = getWorkflowStepPropertyNames(failureWriter).sort();
+  const expectedFailureWriterPropertyNames = ['env', 'if', 'name', 'run'].sort();
+  const expectedFailureWriterEnvKeys = ['INSTALL_MUTATION_STARTED', 'ROLLBACK_STEP_OUTCOME'].sort();
+  const failureWriterEnvKeys = getWorkflowStepEnvKeys(failureWriter).sort();
+  const exactFailureWriterContract =
+    JSON.stringify(failureWriterPropertyNames) === JSON.stringify(expectedFailureWriterPropertyNames) &&
+    JSON.stringify(failureWriterEnvKeys) === JSON.stringify(expectedFailureWriterEnvKeys) &&
+    getWorkflowStepEnvValues(failureWriter, 'INSTALL_MUTATION_STARTED').join('') ===
+      '${{ steps.install_apps.outputs.mutation_started }}' &&
+    getWorkflowStepEnvValues(failureWriter, 'ROLLBACK_STEP_OUTCOME').join('') ===
+      '${{ steps.rollback_candidate.outcome }}' &&
+    createHash('sha256').update(failureWriterRun).digest('hex') === RC_FAILURE_WRITER_RUN_SHA256;
   const unsafeFailureWriter =
     /\b(?:cp|mv|ditto|rsync|tar|zip|cat|tee|readFile|readFileSync|copyFile|copyFileSync|createReadStream|appendFile|appendFileSync)\b/.test(
       failureWriter
@@ -1160,6 +1174,7 @@ function collectRcCanaryWorkflowIssues(workflow) {
     !failureWriter.includes("schema: 'evaos-beta-rc-sanitized-failure/v1'") ||
     !failureWriter.includes("workbenchCleanupSucceeded: strictBoolean('RC_WORKBENCH_CLEANUP_SUCCEEDED')") ||
     !failureWriter.includes("fallbackLaunchVerified: strictBoolean('RC_FALLBACK_LAUNCH_VERIFIED')") ||
+    !exactFailureWriterContract ||
     unsafeFailureWriter ||
     !failureUploadSteps[0].includes('path: rc-failure-proof') ||
     failureUploadSteps[0].includes('path: rc-proof')
