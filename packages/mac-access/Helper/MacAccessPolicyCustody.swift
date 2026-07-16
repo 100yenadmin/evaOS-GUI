@@ -54,6 +54,7 @@ actor MacAccessPolicyCustody {
     private var pendingApproval: MacAccessXPCPendingApproval?
     private var pendingContinuation: CheckedContinuation<Bool, Never>?
     private var nativeAuthorizationDigestSHA256: String?
+    private var nativeDecisionAuditDigestSHA256: String?
     private var nativeBarrierOpen = false
     private var locallyAuthorizedMode: String?
 
@@ -87,6 +88,10 @@ actor MacAccessPolicyCustody {
 
     func compareAndSwap(expectedRevision: Int64, state: [String: JSONValue]) throws -> Bool {
         guard document.state["revision"]?.integer == expectedRevision else { return false }
+        if document.state["kill_switch"]?.boolean == true,
+           state["kill_switch"]?.boolean != true {
+            return false
+        }
         let previous = document
         var replacement = state
         replacement["revision"] = .integer(expectedRevision + 1)
@@ -139,12 +144,15 @@ actor MacAccessPolicyCustody {
         document.state["confirmed_binding_fingerprint_sha256"] = .null
         invalidateAuthority()
         locallyAuthorizedMode = nil
+        advanceRevision()
         try persist()
         return projectStatus()
     }
 
-    func clearEmergencyKill() throws -> MacAccessPolicyProjection {
-        guard document.state["kill_switch"]?.boolean == true else {
+    func clearEmergencyKill(expectedPolicyEpoch: Int64) throws -> MacAccessPolicyProjection {
+        guard document.state["kill_switch"]?.boolean == true,
+              document.state["policy_epoch"]?.integer == expectedPolicyEpoch
+        else {
             throw MacAccessPolicyCustodyError.invalidRequest
         }
         let nextEpoch = min(9_007_199_254_740_991, (document.state["policy_epoch"]?.integer ?? 0) + 1)
@@ -160,6 +168,7 @@ actor MacAccessPolicyCustody {
         document.state["local_confirmation_required"] = .boolean(false)
         invalidateAuthority()
         locallyAuthorizedMode = nil
+        advanceRevision()
         try persist()
         return projectStatus()
     }
@@ -190,6 +199,28 @@ actor MacAccessPolicyCustody {
         if operation == "off" || operation == "stop" || operation == "revoke" {
             locallyAuthorizedMode = nil
         }
+        advanceRevision()
+        try persist()
+        return projectStatus()
+    }
+
+    func prepareRevokedStateForFreshPairing() throws -> MacAccessPolicyProjection {
+        guard document.state["pairing_state"]?.string == "revoked",
+              document.state["kill_switch"]?.boolean == false
+        else { throw MacAccessPolicyCustodyError.invalidRequest }
+        let nextEpoch = min(9_007_199_254_740_991, (document.state["policy_epoch"]?.integer ?? 0) + 1)
+        document.state["policy_epoch"] = .integer(nextEpoch)
+        document.state["pairing_state"] = .string("unpaired")
+        document.state["selected_binding"] = .null
+        document.state["configured_mode"] = .string("off")
+        document.state["effective_mode"] = .string("off")
+        document.state["requested_target_mode"] = .null
+        document.state["paused"] = .boolean(false)
+        document.state["transport_state"] = .string("disconnected")
+        document.state["local_confirmation_required"] = .boolean(false)
+        invalidateAuthority()
+        locallyAuthorizedMode = nil
+        advanceRevision()
         try persist()
         return projectStatus()
     }
@@ -263,7 +294,11 @@ actor MacAccessPolicyCustody {
             ttlSeconds: Int(ttl)
         )
         pendingApproval = MacAccessXPCPendingApproval(
-            approval: approval, expiresAt: now().addingTimeInterval(ttl)
+            approval: approval,
+            expiresAt: now().addingTimeInterval(ttl),
+            targetX: envelope["command"]?.object?["request"]?.object?["x"]?.number ?? -1,
+            targetY: envelope["command"]?.object?["request"]?.object?["y"]?.number ?? -1,
+            deviceID: envelope["binding"]?.object?["device_id"]?.string ?? "unknown-device"
         )
         let allowed = await withCheckedContinuation { continuation in
             pendingContinuation = continuation
@@ -296,6 +331,15 @@ actor MacAccessPolicyCustody {
 
     func authorizeNative(envelope: [String: JSONValue]) throws {
         nativeAuthorizationDigestSHA256 = try Self.actionScope(envelope).envelopeDigest
+        nativeDecisionAuditDigestSHA256 = nil
+    }
+
+    func markAllowedDecisionCommitted(envelope: [String: JSONValue]) -> Bool {
+        guard let digest = try? Self.actionScope(envelope).envelopeDigest,
+              digest == nativeAuthorizationDigestSHA256
+        else { return false }
+        nativeDecisionAuditDigestSHA256 = digest
+        return true
     }
 
     func authorizeLocalMode(_ mode: String) throws {
@@ -312,13 +356,17 @@ actor MacAccessPolicyCustody {
             && !projection.paused
             && !projection.killSwitch
             && projection.effectiveMode != "off"
-            && locallyAuthorizedMode == projection.effectiveMode
+            && (locallyAuthorizedMode == projection.effectiveMode
+                || (locallyAuthorizedMode == "full_access"
+                    && projection.configuredMode == "full_access"
+                    && projection.effectiveMode == "ask_every_time"))
         return nativeBarrierOpen
     }
 
     func closeNativeBarrierAndInvalidatePending() {
         nativeBarrierOpen = false
         nativeAuthorizationDigestSHA256 = nil
+        nativeDecisionAuditDigestSHA256 = nil
         cancelPendingApproval()
     }
 
@@ -327,9 +375,11 @@ actor MacAccessPolicyCustody {
         guard nativeBarrierOpen, !projection.paused, !projection.killSwitch,
               projection.effectiveMode != "off",
               let digest = try? Self.actionScope(envelope).envelopeDigest,
-              digest == nativeAuthorizationDigestSHA256
+              digest == nativeAuthorizationDigestSHA256,
+              digest == nativeDecisionAuditDigestSHA256
         else { return false }
         nativeAuthorizationDigestSHA256 = nil
+        nativeDecisionAuditDigestSHA256 = nil
         return true
     }
 
@@ -376,6 +426,7 @@ actor MacAccessPolicyCustody {
         document.approvals.removeAll()
         document.fullAccessConfirmationEpoch = nil
         nativeAuthorizationDigestSHA256 = nil
+        nativeDecisionAuditDigestSHA256 = nil
         nativeBarrierOpen = false
         cancelPendingApproval()
     }
@@ -387,6 +438,11 @@ actor MacAccessPolicyCustody {
 
     private func persist() throws {
         try Self.persist(document, to: paths.custody, fileManager: fileManager)
+    }
+
+    private func advanceRevision() {
+        let revision = document.state["revision"]?.integer ?? 0
+        document.state["revision"] = .integer(min(9_007_199_254_740_991, revision + 1))
     }
 
     private static func prepareDirectory(_ url: URL, fileManager: FileManager) throws {
@@ -586,6 +642,13 @@ actor MacAccessAuditCustody {
     func eventCount() async -> Int {
         guard let events = try? readEvents(), await anchorMatches(events) else { return 0 }
         return events.count
+    }
+
+    func containsCommittedAuditID(_ auditID: String) async -> Bool {
+        guard MacAccessWire.isIdentifier(auditID),
+              let events = try? readEvents(), await anchorMatches(events)
+        else { return false }
+        return events.contains { $0["audit_id"]?.string == auditID }
     }
 
     func recentSafeEvents(limit: Int = 5) async -> [MacAccessXPCAuditEvent] {

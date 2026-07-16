@@ -100,18 +100,17 @@ final class XPCTests: XCTestCase {
         XCTAssertEqual(pairingCodesAfterOversized, ["ABCDEFGH2345"])
     }
 
-    func testCallerPolicyAllowsOnlyFrozenAppAndConnectorRequirements() {
+    func testCallerPolicyAllowsOnlyFrozenMainAppRequirement() {
         XCTAssertEqual(
             MacAccessXPCCallerPolicy.designatedRequirement(for: MacAccessIdentity.appBundleID),
             MacAccessIdentity.appDesignatedRequirement
         )
-        XCTAssertEqual(
-            MacAccessXPCCallerPolicy.designatedRequirement(for: MacAccessIdentity.connectorServiceID),
-            MacAccessIdentity.connectorDesignatedRequirement
+        XCTAssertNil(
+            MacAccessXPCCallerPolicy.designatedRequirement(for: MacAccessIdentity.connectorServiceID)
         )
         XCTAssertNil(MacAccessXPCCallerPolicy.designatedRequirement(for: "com.example.untrusted"))
         XCTAssertTrue(MacAccessXPCCallerPolicy.combinedRequirement.contains(MacAccessIdentity.appDesignatedRequirement))
-        XCTAssertTrue(MacAccessXPCCallerPolicy.combinedRequirement.contains(MacAccessIdentity.connectorDesignatedRequirement))
+        XCTAssertFalse(MacAccessXPCCallerPolicy.combinedRequirement.contains(MacAccessIdentity.connectorDesignatedRequirement))
         XCTAssertFalse(MacAccessXPCCallerPolicy.combinedRequirement.contains("workbench"))
     }
 

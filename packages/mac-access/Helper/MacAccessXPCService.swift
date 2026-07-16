@@ -2,14 +2,12 @@ import Foundation
 import MacAccessShared
 
 enum MacAccessXPCCallerPolicy {
-    static let allowedBundleIDs = [MacAccessIdentity.appBundleID, MacAccessIdentity.connectorServiceID]
-    static let combinedRequirement =
-        "(\(MacAccessIdentity.appDesignatedRequirement)) or (\(MacAccessIdentity.connectorDesignatedRequirement))"
+    static let allowedBundleIDs = [MacAccessIdentity.appBundleID]
+    static let combinedRequirement = MacAccessIdentity.appDesignatedRequirement
 
     static func designatedRequirement(for bundleID: String) -> String? {
         switch bundleID {
         case MacAccessIdentity.appBundleID: MacAccessIdentity.appDesignatedRequirement
-        case MacAccessIdentity.connectorServiceID: MacAccessIdentity.connectorDesignatedRequirement
         default: nil
         }
     }
@@ -94,10 +92,22 @@ actor MacAccessPolicyRuntime {
         }
     }
 
-    func clearEmergencyKill() async throws {
+    func clearEmergencyKill(expectedPolicyEpoch: Int64) async throws {
         await native.blockAndCancelAll()
         await client.shutdown()
-        _ = try await custody.clearEmergencyKill()
+        _ = try await custody.clearEmergencyKill(expectedPolicyEpoch: expectedPolicyEpoch)
+        await client.resetPolicyEpoch()
+    }
+
+    func emergencyKillEpoch() async -> Int64? {
+        let projection = await custody.projectStatus()
+        return projection.killSwitch ? projection.policyEpoch : nil
+    }
+
+    func prepareForFreshPairingIfRevoked() async throws {
+        let projection = await custody.projectStatus()
+        guard projection.pairing == "revoked" else { return }
+        _ = try await custody.prepareRevokedStateForFreshPairing()
         await client.resetPolicyEpoch()
     }
 
@@ -225,7 +235,9 @@ private struct MacAccessPolicyComposition {
             runtime: MacAccessPolicyRuntime(
                 client: client, custody: custody, audit: audit, native: native
             ),
-            executor: CoreHostBackedMacAccessExecutor(client: client)
+            executor: CoreHostBackedMacAccessExecutor(
+                client: client, audit: audit, custody: custody
+            )
         )
     }
 }
@@ -312,6 +324,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 throw MacAccessPublicError.policyUnavailable
             }
             do {
+                try await policyRuntime.prepareForFreshPairingIfRevoked()
                 try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
             } catch {
                 _ = try? await runtime.revokeLocally()
@@ -403,13 +416,13 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     func policy(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReply {
         guard let policyRuntime else { return await unavailableReply() }
         if request.operation == .clearKillSwitch {
-            guard await policyRuntime.isEmergencyKillActive() else {
+            guard let killedEpoch = await policyRuntime.emergencyKillEpoch() else {
                 return await reply(code: .invalidRequest, status: await runtime?.status ?? .initial)
             }
             do {
                 if let runtime { _ = try await runtime.revokeLocally() }
                 else { try await vault.erase() }
-                try await policyRuntime.clearEmergencyKill()
+                try await policyRuntime.clearEmergencyKill(expectedPolicyEpoch: killedEpoch)
                 return await reply(code: .ok, status: await runtime?.status ?? .initial)
             } catch {
                 return await reply(code: map(error), status: await runtime?.status ?? .initial)

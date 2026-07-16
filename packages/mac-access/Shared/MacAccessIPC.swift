@@ -41,10 +41,19 @@ public struct MacAccessXPCApproval: Codable, Equatable, Sendable {
 public struct MacAccessXPCPendingApproval: Codable, Equatable, Sendable {
     public let approval: MacAccessXPCApproval
     public let expiresAt: Date
+    public let targetX: Double
+    public let targetY: Double
+    public let deviceID: String
 
-    public init(approval: MacAccessXPCApproval, expiresAt: Date) {
+    public init(
+        approval: MacAccessXPCApproval, expiresAt: Date,
+        targetX: Double, targetY: Double, deviceID: String
+    ) {
         self.approval = approval
         self.expiresAt = expiresAt
+        self.targetX = targetX
+        self.targetY = targetY
+        self.deviceID = deviceID
     }
 }
 

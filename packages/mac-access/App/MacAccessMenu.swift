@@ -30,6 +30,11 @@ struct MacAccessMenu: View {
                 .font(.headline)
             Text(verbatim: pending.approval.capability)
                 .font(.caption)
+            Text(verbatim: String(
+                format: "Click x %.4f, y %.4f on %@",
+                pending.targetX, pending.targetY, pending.deviceID
+            ))
+                .font(.caption)
             HStack {
                 Button {
                     Task { await controller.resolvePendingApproval(allow: true) }

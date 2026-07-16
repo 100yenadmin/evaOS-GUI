@@ -159,12 +159,29 @@ actor MacAccessNativeClickPort {
 }
 
 actor MacAccessCoreHostPortDispatcher {
+    private struct NativeActionBinding: Sendable {
+        let envelope: [String: JSONValue]
+        let envelopeDigestSHA256: String
+    }
+
+    private struct TerminalOutcomeBinding: Sendable {
+        let envelope: [String: JSONValue]
+        let outcome: String
+        let reasonCode: String
+        let detailCode: String
+    }
+
     private let custody: MacAccessPolicyCustody
     private let audit: MacAccessAuditCustody
     private let native: MacAccessNativeClickPort
     private let vault: any MacAccessCredentialVault
     private let now: @Sendable () -> Date
     private let verifier: MacAccessCommandVerifier?
+    private var committedAllowedDecisions: [String: [String: JSONValue]] = [:]
+    private var allowedDecisionAuditsInFlight: Set<String> = []
+    private var nativeActionBindings: [String: NativeActionBinding] = [:]
+    private var unauditedTerminalOutcomes: [String: TerminalOutcomeBinding] = [:]
+    private var resultAuditsInFlight: Set<String> = []
 
     init(
         custody: MacAccessPolicyCustody,
@@ -241,6 +258,7 @@ actor MacAccessCoreHostPortDispatcher {
             guard let envelope = arguments["envelope"]?.object,
                   arguments["state"]?.object != nil
             else { throw MacAccessPolicyCustodyError.invalidRequest }
+            try await verifyEnvelope(envelope)
             let projection = await custody.projectStatus()
             guard !projection.paused, !projection.killSwitch,
                   envelope["policy_epoch"]?.integer == projection.policyEpoch
@@ -259,6 +277,7 @@ actor MacAccessCoreHostPortDispatcher {
             try await custody.invalidateAuthorityAndPersist()
             return .null
         case ("audit", "anchor_healthy"):
+            guard unauditedTerminalOutcomes.isEmpty else { return .boolean(false) }
             return .boolean(await audit.anchorHealthy())
         case ("audit", "committed_cursor"):
             return await audit.committedCursor().map(JSONValue.object) ?? .null
@@ -268,11 +287,34 @@ actor MacAccessCoreHostPortDispatcher {
                   let reason = arguments["reason_code"]?.string
             else { throw MacAccessPolicyCustodyError.invalidRequest }
             let detail = arguments["detail_code"]?.string
+            let envelopeDigest = try Self.envelopeDigest(envelope)
+            if allowed {
+                guard reason == "approved_exact_scope", detail == nil,
+                      committedAllowedDecisions[envelopeDigest] == nil,
+                      !allowedDecisionAuditsInFlight.contains(envelopeDigest),
+                      await custody.markAllowedDecisionCommitted(envelope: envelope)
+                else { throw MacAccessPolicyCustodyError.invalidRequest }
+                allowedDecisionAuditsInFlight.insert(envelopeDigest)
+            }
             let mode = await custody.projectStatus().effectiveMode
-            return .object(try await audit.append(
-                envelope: envelope, accessMode: mode, allowed: allowed,
-                reasonCode: reason, detailCode: detail
-            ))
+            let event: [String: JSONValue]
+            do {
+                event = try await audit.append(
+                    envelope: envelope, accessMode: mode, allowed: allowed,
+                    reasonCode: reason, detailCode: detail
+                )
+            } catch {
+                if allowed {
+                    allowedDecisionAuditsInFlight.remove(envelopeDigest)
+                    try? await custody.invalidateAuthorityAndPersist()
+                }
+                throw error
+            }
+            if allowed {
+                allowedDecisionAuditsInFlight.remove(envelopeDigest)
+                committedAllowedDecisions[envelopeDigest] = event
+            }
+            return .object(event)
         case ("audit", "command_result"):
             guard let envelope = arguments["envelope"]?.object,
                   let decision = arguments["decision"]?.object,
@@ -280,11 +322,35 @@ actor MacAccessCoreHostPortDispatcher {
                   let reason = arguments["reason_code"]?.string,
                   let detail = arguments["detail_code"]?.string
             else { throw MacAccessPolicyCustodyError.invalidRequest }
-            let mode = await custody.projectStatus().effectiveMode
-            return .object(try await audit.append(
-                envelope: envelope, accessMode: mode, decision: decision, outcome: outcome,
-                reasonCode: reason, detailCode: detail
-            ))
+            let envelopeDigest = try Self.envelopeDigest(envelope)
+            guard let terminal = unauditedTerminalOutcomes[envelopeDigest],
+                  terminal.envelope == envelope,
+                  terminal.outcome == outcome,
+                  terminal.reasonCode == reason,
+                  terminal.detailCode == detail,
+                  let committedDecision = committedAllowedDecisions[envelopeDigest],
+                  !resultAuditsInFlight.contains(envelopeDigest),
+                  let decisionAuditID = decision["audit_id"]?.string,
+                  MacAccessWire.isIdentifier(decisionAuditID),
+                  committedDecision["audit_id"]?.string == decisionAuditID,
+                  committedDecision == decision
+            else { throw MacAccessPolicyCustodyError.invalidRequest }
+            resultAuditsInFlight.insert(envelopeDigest)
+            let event: [String: JSONValue]
+            do {
+                let mode = await custody.projectStatus().effectiveMode
+                event = try await audit.append(
+                    envelope: envelope, accessMode: mode, decision: decision, outcome: outcome,
+                    reasonCode: reason, detailCode: detail
+                )
+            } catch {
+                resultAuditsInFlight.remove(envelopeDigest)
+                throw error
+            }
+            resultAuditsInFlight.remove(envelopeDigest)
+            unauditedTerminalOutcomes.removeValue(forKey: envelopeDigest)
+            committedAllowedDecisions.removeValue(forKey: envelopeDigest)
+            return .object(event)
         case ("audit", "summary"):
             let cursor = arguments["after_cursor"]?.object
             guard let limit = arguments["limit"]?.integer, (1...100).contains(limit) else {
@@ -298,26 +364,40 @@ actor MacAccessCoreHostPortDispatcher {
             guard await custody.consumeNativeAuthorization(envelope: envelope) else {
                 throw MacAccessCoreHostError.policyDenied
             }
-            if let verifier {
-                let data = try JSONEncoder().encode(JSONValue.object(envelope))
-                let command = try JSONDecoder().decode(MacAccessBrokerCommand.self, from: data)
-                guard let binding = try await vault.load()?.binding else {
-                    throw MacAccessCoreHostError.policyDenied
-                }
-                try verifier.verify(
-                    command,
-                    expectedBinding: binding,
-                    expectedSessionID: command.sessionID,
-                    expectedChannelGenerationID: command.channelGenerationID,
-                    now: now()
-                )
+            try await verifyEnvelope(envelope)
+            let envelopeDigest = try Self.envelopeDigest(envelope)
+            guard committedAllowedDecisions[envelopeDigest] != nil,
+                  unauditedTerminalOutcomes[envelopeDigest] == nil
+            else { throw MacAccessCoreHostError.policyDenied }
+            let actionID = try await native.begin(envelope: envelope)
+            guard nativeActionBindings[actionID] == nil else {
+                await native.blockAndCancelAll()
+                throw MacAccessCoreHostError.protocolViolation
             }
-            return .object(["action_id": .string(try await native.begin(envelope: envelope))])
+            nativeActionBindings[actionID] = NativeActionBinding(
+                envelope: envelope, envelopeDigestSHA256: envelopeDigest
+            )
+            return .object(["action_id": .string(actionID)])
         case ("native", "wait"):
-            guard let actionID = arguments["action_id"]?.string else {
+            guard let actionID = arguments["action_id"]?.string,
+                  let binding = nativeActionBindings.removeValue(forKey: actionID)
+            else {
                 throw MacAccessPolicyCustodyError.invalidRequest
             }
-            return .object(await native.wait(actionID: actionID))
+            let result = await native.wait(actionID: actionID)
+            guard let outcome = result["outcome"]?.string,
+                  let detail = Self.terminalDetail(for: outcome),
+                  unauditedTerminalOutcomes[binding.envelopeDigestSHA256] == nil
+            else {
+                throw MacAccessCoreHostError.protocolViolation
+            }
+            unauditedTerminalOutcomes[binding.envelopeDigestSHA256] = TerminalOutcomeBinding(
+                envelope: binding.envelope,
+                outcome: outcome,
+                reasonCode: "approved_exact_scope",
+                detailCode: detail
+            )
+            return .object(result)
         case ("native", "cancel_all"):
             await native.blockAndCancelAll()
             return .null
@@ -331,6 +411,37 @@ actor MacAccessCoreHostPortDispatcher {
     func failClosedOnChannelLoss() async {
         _ = try? await custody.activateEmergencyKill()
         await native.blockAndCancelAll()
+    }
+
+    private func verifyEnvelope(_ envelope: [String: JSONValue]) async throws {
+        guard let verifier else { return }
+        let data = try JSONEncoder().encode(JSONValue.object(envelope))
+        let command = try JSONDecoder().decode(MacAccessBrokerCommand.self, from: data)
+        guard let binding = try await vault.load()?.binding else {
+            throw MacAccessCoreHostError.policyDenied
+        }
+        try verifier.verify(
+            command,
+            expectedBinding: binding,
+            expectedSessionID: command.sessionID,
+            expectedChannelGenerationID: command.channelGenerationID,
+            now: now()
+        )
+    }
+
+    private static func envelopeDigest(_ envelope: [String: JSONValue]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return MacAccessWire.sha256Hex(try encoder.encode(JSONValue.object(envelope)))
+    }
+
+    private static func terminalDetail(for outcome: String) -> String? {
+        switch outcome {
+        case "executed": "actuation_succeeded"
+        case "failed": "actuation_failed"
+        case "stopped": "actuation_cancelled"
+        default: nil
+        }
     }
 
     private static func validateWindow(_ envelope: [String: JSONValue], now: Date) -> String? {
@@ -672,9 +783,21 @@ actor MacAccessCoreHostClient {
 
 struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
     let client: MacAccessCoreHostClient?
+    let audit: MacAccessAuditCustody?
+    let custody: MacAccessPolicyCustody?
+
+    init(
+        client: MacAccessCoreHostClient?,
+        audit: MacAccessAuditCustody? = nil,
+        custody: MacAccessPolicyCustody? = nil
+    ) {
+        self.client = client
+        self.audit = audit
+        self.custody = custody
+    }
 
     func execute(command: MacAccessBrokerCommand) async -> MacAccessExecutionResult {
-        guard let client else { return PolicyUnavailableMacAccessExecutor.result() }
+        guard let client else { return await failClosedResult() }
         do {
             let encoded = try JSONEncoder().encode(command)
             guard case .object(let envelope) = try JSONDecoder().decode(JSONValue.self, from: encoded) else {
@@ -694,17 +817,29 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
             case "stopped": outcome = .cancelled
             default: outcome = .failed
             }
-            guard let auditID = result["result_audit_id"]?.string
-                ?? result["decision_audit_id"]?.string,
+            let resultAuditID = result["result_audit_id"]?.string
+            let auditID = resultAuditID ?? result["decision_audit_id"]?.string
+            guard let auditID,
                 MacAccessWire.isIdentifier(auditID)
             else { throw MacAccessCoreHostError.protocolViolation }
+            if let audit {
+                guard let resultAuditID, MacAccessWire.isIdentifier(resultAuditID),
+                      await audit.containsCommittedAuditID(resultAuditID)
+                else { throw MacAccessCoreHostError.protocolViolation }
+            }
             return MacAccessExecutionResult(
                 localAuditID: auditID,
                 outcome: outcome,
                 errorCode: outcome == .executed ? nil : "policy_denied"
             )
         } catch {
-            return PolicyUnavailableMacAccessExecutor.result()
+            return await failClosedResult()
         }
     }
+
+    private func failClosedResult() async -> MacAccessExecutionResult {
+        if let custody { _ = try? await custody.activateEmergencyKill() }
+        return PolicyUnavailableMacAccessExecutor.result()
+    }
+
 }

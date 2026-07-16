@@ -34,6 +34,7 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
     private var queued: [Data] = []
     private var receivers: [CheckedContinuation<Data, Error>] = []
     private var dispatchRequest: [String: JSONValue]?
+    private var decisionEvent: [String: JSONValue]?
 
     func send(_ data: Data) throws {
         guard case .object(let frame) = try JSONDecoder().decode(JSONValue.self, from: data),
@@ -48,10 +49,15 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
                 enqueue(.object([
                     "schema_version": .string(MacAccessStdioCoreHostTransport.schema),
                     "message_type": .string("port_call"),
-                    "call_id": .string("call-native-begin"),
-                    "port": .string("native"),
-                    "method": .string("begin"),
-                    "arguments": .object(["envelope": request["envelope"] ?? .null]),
+                    "call_id": .string("call-audit-decision"),
+                    "port": .string("audit"),
+                    "method": .string("command_decision"),
+                    "arguments": .object([
+                        "envelope": request["envelope"] ?? .null,
+                        "allowed": .boolean(true),
+                        "reason_code": .string("approved_exact_scope"),
+                        "detail_code": .null,
+                    ]),
                 ]))
                 return
             }
@@ -60,16 +66,56 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
                 "kind": .string(operation == "pair" ? "pairing" : "lifecycle"),
             ]))
         } else if type == "port_result" {
-            guard frame["call_id"]?.string == "call-native-begin",
-                  frame["ok"]?.boolean == true,
+            guard frame["ok"]?.boolean == true,
+                  let callID = frame["call_id"]?.string,
                   let request = dispatchRequest
             else { throw MacAccessCoreHostError.protocolViolation }
-            enqueue(hostResponse(request: request, epoch: 2, result: [
-                "kind": .string("action"),
-                "outcome": .string("executed"),
-                "decision_audit_id": .string("audit-decision-01"),
-                "result_audit_id": .string("audit-result-01"),
-            ]))
+            switch callID {
+            case "call-audit-decision":
+                guard let decision = frame["result"]?.object else {
+                    throw MacAccessCoreHostError.protocolViolation
+                }
+                decisionEvent = decision
+                enqueue(portCall(
+                    callID: "call-native-begin", port: "native", method: "begin",
+                    arguments: ["envelope": request["envelope"] ?? .null]
+                ))
+            case "call-native-begin":
+                guard let actionID = frame["result"]?.object?["action_id"] else {
+                    throw MacAccessCoreHostError.protocolViolation
+                }
+                enqueue(portCall(
+                    callID: "call-native-wait", port: "native", method: "wait",
+                    arguments: ["action_id": actionID]
+                ))
+            case "call-native-wait":
+                guard let outcome = frame["result"]?.object?["outcome"],
+                      let decisionEvent
+                else { throw MacAccessCoreHostError.protocolViolation }
+                enqueue(portCall(
+                    callID: "call-audit-result", port: "audit", method: "command_result",
+                    arguments: [
+                        "envelope": request["envelope"] ?? .null,
+                        "decision": .object(decisionEvent),
+                        "outcome": outcome,
+                        "reason_code": .string("approved_exact_scope"),
+                        "detail_code": .string("actuation_succeeded"),
+                    ]
+                ))
+            case "call-audit-result":
+                guard let resultEvent = frame["result"]?.object,
+                      let decisionAuditID = decisionEvent?["audit_id"],
+                      let resultAuditID = resultEvent["audit_id"]
+                else { throw MacAccessCoreHostError.protocolViolation }
+                enqueue(hostResponse(request: request, epoch: 2, result: [
+                    "kind": .string("action"),
+                    "outcome": .string("executed"),
+                    "decision_audit_id": decisionAuditID,
+                    "result_audit_id": resultAuditID,
+                ]))
+            default:
+                throw MacAccessCoreHostError.protocolViolation
+            }
         } else {
             throw MacAccessCoreHostError.protocolViolation
         }
@@ -89,6 +135,19 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
         let data = try! JSONEncoder().encode(value)
         if receivers.isEmpty { queued.append(data) }
         else { receivers.removeFirst().resume(returning: data) }
+    }
+
+    private func portCall(
+        callID: String, port: String, method: String, arguments: [String: JSONValue]
+    ) -> JSONValue {
+        .object([
+            "schema_version": .string(MacAccessStdioCoreHostTransport.schema),
+            "message_type": .string("port_call"),
+            "call_id": .string(callID),
+            "port": .string(port),
+            "method": .string(method),
+            "arguments": .object(arguments),
+        ])
     }
 
     private func hostResponse(
@@ -168,6 +227,9 @@ final class PolicyBridgeTests: XCTestCase {
             pending = await custody.currentPendingApproval()
             await Task.yield()
         }
+        XCTAssertEqual(pending?.targetX, 0.5)
+        XCTAssertEqual(pending?.targetY, 0.5)
+        XCTAssertEqual(pending?.deviceID, "mac-01")
         var wrong = pending!.approval
         wrong = MacAccessXPCApproval(
             commandID: wrong.commandID,
@@ -210,8 +272,8 @@ final class PolicyBridgeTests: XCTestCase {
             paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
             hostSessionID: "host-emergency-reset"
         )
-        _ = try await custody.activateEmergencyKill()
-        let reset = try await custody.clearEmergencyKill()
+        let killed = try await custody.activateEmergencyKill()
+        let reset = try await custody.clearEmergencyKill(expectedPolicyEpoch: killed.policyEpoch)
 
         XCTAssertEqual(reset.pairing, "unpaired")
         XCTAssertEqual(reset.configuredMode, "off")
@@ -252,8 +314,72 @@ final class PolicyBridgeTests: XCTestCase {
         let openedAfterLocalAction = await custody.openNativeBarrierIfAllowed()
         XCTAssertTrue(openedAfterLocalAction)
         try await custody.authorizeNative(envelope: envelope)
+        let committed = await custody.markAllowedDecisionCommitted(envelope: envelope)
+        XCTAssertTrue(committed)
         let consumedAfterLocalAction = await custody.consumeNativeAuthorization(envelope: envelope)
         XCTAssertTrue(consumedAfterLocalAction)
+    }
+
+    func testStaleChildCASCannotClearKillAndResetCannotClearNewerKill() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-kill-cas"
+        )
+        let staleState = await custody.loadState()
+        let staleRevision = try XCTUnwrap(staleState["revision"]?.integer)
+        let firstKill = try await custody.activateEmergencyKill()
+
+        let staleCAS = try await custody.compareAndSwap(
+            expectedRevision: staleRevision, state: staleState
+        )
+        XCTAssertFalse(staleCAS)
+
+        let secondKill = try await custody.activateEmergencyKill()
+        await XCTAssertThrowsErrorAsync {
+            _ = try await custody.clearEmergencyKill(expectedPolicyEpoch: firstKill.policyEpoch)
+        }
+        let projection = await custody.projectStatus()
+        XCTAssertTrue(projection.killSwitch)
+        XCTAssertEqual(projection.policyEpoch, secondKill.policyEpoch)
+    }
+
+    func testFreshPairingPreparationRecoversRevokedStateWithoutClearingReplayHistory() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-repair-revoked"
+        )
+        let envelope = actionEnvelope(commandID: "command-retained-replay")
+        let burned = try await custody.burnReplay(envelope: envelope)
+        XCTAssertTrue(burned)
+        _ = try await custody.forceLocalSafety("revoke")
+
+        let repaired = try await custody.prepareRevokedStateForFreshPairing()
+
+        XCTAssertEqual(repaired.pairing, "unpaired")
+        XCTAssertEqual(repaired.configuredMode, "off")
+        XCTAssertEqual(repaired.transport, "disconnected")
+        let burnedAgain = try await custody.burnReplay(envelope: envelope)
+        XCTAssertFalse(burnedAgain)
+    }
+
+    func testFullAccessResumeFallbackOpensOnlyAskBarrier() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-full-fallback"
+        )
+        var state = await custody.loadState()
+        let revision = try XCTUnwrap(state["revision"]?.integer)
+        state["pairing_state"] = .string("paired")
+        state["transport_state"] = .string("connected")
+        state["configured_mode"] = .string("full_access")
+        state["effective_mode"] = .string("ask_every_time")
+        state["paused"] = .boolean(false)
+        state["kill_switch"] = .boolean(false)
+        let updated = try await custody.compareAndSwap(expectedRevision: revision, state: state)
+        XCTAssertTrue(updated)
+        try await custody.authorizeLocalMode("full_access")
+        let opened = await custody.openNativeBarrierIfAllowed()
+        XCTAssertTrue(opened)
     }
 
     func testReplayTombstoneSurvivesRestart() async throws {
@@ -488,11 +614,83 @@ final class PolicyBridgeTests: XCTestCase {
             JSONValue.self, from: encodedCommand
         ) else { return XCTFail("command did not encode as an object") }
         try await custody.authorizeNative(envelope: commandEnvelope)
-        let result = await CoreHostBackedMacAccessExecutor(client: client).execute(command: command)
+        let result = await CoreHostBackedMacAccessExecutor(
+            client: client, audit: audit, custody: custody
+        ).execute(command: command)
 
         XCTAssertEqual(result.outcome, .executed)
         let clickCount = await counter.count
         XCTAssertEqual(clickCount, 1)
+    }
+
+    func testHelperRejectsFabricatedTerminalAuditAndKeepsAnchorBlockedUntilExactResult() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-audit-binding")
+        let audit = try MacAccessAuditCustody(paths: paths)
+        let native = MacAccessNativeClickPort(
+            performer: { _, _ in true }, isAccessibilityTrusted: { true }
+        )
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody, audit: audit, native: native, vault: PolicyTestVault()
+        )
+        let envelope = actionEnvelope(commandID: "command-audit-binding")
+        var state = await custody.loadState()
+        let revision = try XCTUnwrap(state["revision"]?.integer)
+        state["pairing_state"] = .string("paired")
+        state["transport_state"] = .string("connected")
+        state["configured_mode"] = .string("ask_every_time")
+        state["effective_mode"] = .string("ask_every_time")
+        state["paused"] = .boolean(false)
+        state["kill_switch"] = .boolean(false)
+        state["policy_epoch"] = .integer(2)
+        let updated = try await custody.compareAndSwap(expectedRevision: revision, state: state)
+        XCTAssertTrue(updated)
+        try await custody.authorizeLocalMode("ask_every_time")
+        let barrierOpened = await custody.openNativeBarrierIfAllowed()
+        XCTAssertTrue(barrierOpened)
+        try await custody.authorizeNative(envelope: envelope)
+
+        let decisionValue = try await dispatcher.handle(
+            port: "audit", method: "command_decision", arguments: [
+                "envelope": .object(envelope), "allowed": .boolean(true),
+                "reason_code": .string("approved_exact_scope"), "detail_code": .null,
+            ]
+        )
+        let begin = try await dispatcher.handle(
+            port: "native", method: "begin", arguments: ["envelope": .object(envelope)]
+        )
+        let actionID = try XCTUnwrap(begin.object?["action_id"]?.string)
+        _ = try await dispatcher.handle(
+            port: "native", method: "wait", arguments: ["action_id": .string(actionID)]
+        )
+        let decision = try XCTUnwrap(decisionValue.object)
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await dispatcher.handle(
+                port: "audit", method: "command_result", arguments: [
+                    "envelope": .object(envelope), "decision": .object(decision),
+                    "outcome": .string("failed"),
+                    "reason_code": .string("approved_exact_scope"),
+                    "detail_code": .string("actuation_failed"),
+                ]
+            )
+        }
+        let blocked = try await dispatcher.handle(
+            port: "audit", method: "anchor_healthy", arguments: [:]
+        )
+        XCTAssertEqual(blocked.boolean, false)
+
+        let terminalValue = try await dispatcher.handle(
+            port: "audit", method: "command_result", arguments: [
+                "envelope": .object(envelope), "decision": .object(decision),
+                "outcome": .string("executed"),
+                "reason_code": .string("approved_exact_scope"),
+                "detail_code": .string("actuation_succeeded"),
+            ]
+        )
+        let resultAuditID = try XCTUnwrap(terminalValue.object?["audit_id"]?.string)
+        let resultCommitted = await audit.containsCommittedAuditID(resultAuditID)
+        XCTAssertTrue(resultCommitted)
     }
 
     func testProductionRunnerArgumentsPinPrivateRuntimeAndIdentity() {
@@ -523,7 +721,10 @@ final class PolicyBridgeTests: XCTestCase {
             "command_id": .string(commandID),
             "policy_epoch": .integer(2),
             "nonce": .string("bm9uY2UtMDE"),
-            "binding": .object(["binding_fingerprint_sha256": .string(String(repeating: "b", count: 64))]),
+            "binding": .object([
+                "binding_fingerprint_sha256": .string(String(repeating: "b", count: 64)),
+                "device_id": .string("mac-01"),
+            ]),
             "command": .object([
                 "capability": .string("customer_mac.desktop_click"),
                 "request": .object(["x": .number(0.5), "y": .number(0.5)]),
