@@ -273,6 +273,32 @@ function writeArm64TrustEvidence(proofDir: string) {
     )}\n`
   );
   fs.writeFileSync(
+    path.join(proofDir, 'installed-candidate-connector-start.json'),
+    `${JSON.stringify(
+      {
+        schema: 'evaos-installed-connector-harness-start/v1',
+        ok: true,
+        classification: 'ready',
+        mode: 'harness-owned-loopback',
+        startInvoked: true,
+        processRunning: true,
+        processExitCode: null,
+        attempts: 1,
+        token: {
+          atomicRead: true,
+          exists: true,
+          regularFile: true,
+          ownerMatchesRunner: true,
+          mode0600: true,
+          nonempty: true,
+        },
+        health: { reachable: true },
+      },
+      null,
+      2
+    )}\n`
+  );
+  fs.writeFileSync(
     path.join(proofDir, 'installed-candidate-connector.json'),
     `${JSON.stringify(
       {
@@ -1074,8 +1100,12 @@ describe('evaOS beta release gate', () => {
       'utf8'
     );
 
-    expect(workflow).toContain('2> "$PROOF_DIR/installed-candidate-pre-canary.stderr.txt"');
-    expect(workflow).toContain('2> "$PROOF_DIR/installed-candidate-connector.stderr.txt"');
+    expect(workflow).toContain('PRE_CANARY_STDERR="$RUNNER_TEMP/evaos-installed-candidate-pre-canary.stderr.txt"');
+    expect(workflow).toContain('CONNECTOR_CANARY_STDERR="$RUNNER_TEMP/evaos-installed-candidate-connector.stderr.txt"');
+    expect(workflow).toContain('2> "$PRE_CANARY_STDERR"');
+    expect(workflow).toContain('2> "$CONNECTOR_CANARY_STDERR"');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-pre-canary.stderr');
+    expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-connector.stderr');
     expect(workflow).toContain('LC_ALL=C grep -R -F -- "$CONNECTOR_TOKEN" "$PROOF_DIR"');
     expect(workflow).toMatch(/QA_CANARY_EXIT=\$\?[\s\S]*unset CONNECTOR_TOKEN[\s\S]*QA_CANARY_EXIT/);
     expect(workflow).toContain('EVAOS_BETA_RC_RELEASE_ASSETS_DIR: release-assets');
@@ -1142,6 +1172,12 @@ describe('evaOS beta release gate', () => {
       '.github/workflows/evaos-beta-rc-canary.yml: install_app_from_dmg must not reference the ZIP-only extract_dir variable under nounset';
     const controlStartIssue =
       '.github/workflows/evaos-beta-rc-canary.yml: installed candidate must run the operator-acknowledged local control_start suite';
+    const harnessIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: installed connector proof must start the packaged bridge in an isolated harness before token polling and terminate only its captured child';
+    const rollbackIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: rollback must run after every post-install outcome';
+    const failurePacketIssue =
+      '.github/workflows/evaos-beta-rc-canary.yml: failures must upload only the allowlisted sanitized RC failure packet';
 
     expect(releaseGate.collectRcCanaryWorkflowIssues(workflow)).toEqual([]);
     expect(workflow).toContain("fs.writeFileSync(outputPath, String(asset.sha256).toLowerCase(), 'utf8');");
@@ -1176,6 +1212,122 @@ describe('evaOS beta release gate', () => {
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            --operator-ack-live-control \\\n', ''))
     ).toContain(controlStartIssue);
+    expect(releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('          CONNECTOR_PID=$!\n', ''))).toContain(
+      harnessIssue
+    );
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('            const buffer = Buffer.alloc(130);\n', ''))
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, 0);\n',
+          "            const raw = fs.readFileSync(descriptor, 'utf8');\n"
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('/bin/ps -ww -axo pid=,comm=', 'ps -axo pid=,command=')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n',
+          '            node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n'
+        )
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('              if (match && match[1] !== canonicalApp) process.exit(2);\n', '')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "        if: ${{ always() && steps.install_apps.outputs.mutation_started == 'true' }}\n",
+          "        if: ${{ success() && steps.install_apps.outputs.mutation_started == 'true' }}\n"
+        )
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('          echo "mutation_started=true" >> "$GITHUB_OUTPUT"\n', '')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('[ "$INSTALL_STEP_OUTCOME" != "success" ]', '[ "$INSTALL_STEP_OUTCOME" = "success" ]')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('          echo "RC_FALLBACK_LAUNCH_VERIFIED=true" >> "$GITHUB_ENV"\n', '')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(workflow.replace('          FALLBACK_LAUNCH_DWELL_SECONDS=8\n', ''))
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('/usr/bin/grep -Fx "$FALLBACK_LAUNCH_PID" "$FALLBACK_MAIN_PIDS"', '/usr/bin/true')
+      )
+    ).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          echo "RC_WORKBENCH_CLEANUP_SUCCEEDED=true" >> "$GITHUB_ENV"\n\n          rm -rf "$BETA_APP"',
+          '          pkill -f "evaOS Workbench" || true\n\n          rm -rf "$BETA_APP"'
+        )
+      )
+    ).toContain(rollbackIssue);
+    const rollbackStepIndex = workflow.indexOf('      - name: Roll back beta and verify fallback');
+    const rollbackParserMutation = `${workflow.slice(0, rollbackStepIndex)}${workflow
+      .slice(rollbackStepIndex)
+      .replace(
+        '            if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n',
+        '            node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n'
+      )}`;
+    expect(releaseGate.collectRcCanaryWorkflowIssues(rollbackParserMutation)).toContain(rollbackIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('          path: rc-failure-proof\n', '          path: rc-proof\n')
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "        if: ${{ failure() && steps.prepare_proof.outcome == 'success' }}\n",
+          '        if: ${{ success() }}\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '          mkdir -p rc-failure-proof\n',
+          '          mkdir -p rc-failure-proof\n          cp "$RUNNER_TEMP/raw.stderr" rc-failure-proof/raw.stderr\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          "              workbenchCleanupSucceeded: strictBoolean('RC_WORKBENCH_CLEANUP_SUCCEEDED'),\n",
+          ''
+        )
+      )
+    ).toContain(failurePacketIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace(
+          '            rollback: {\n',
+          '            rollback: {\n              fallbackPid: process.env.FALLBACK_LAUNCH_PID,\n'
+        )
+      )
+    ).toContain(failurePacketIssue);
 
     const installers = Array.from(
       workflow.matchAll(/^ {10}install_app_from_dmg\(\) \{\n[\s\S]*?^ {10}\}$/gm),
@@ -3701,7 +3853,12 @@ printf '%s\\n' ok
       );
       fs.writeFileSync(
         path.join(proofDir, 'rollback-smoke.md'),
-        'PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state evaos-workbench / com.evaos.workbench inspected; broker login/session state remained usable.\n'
+        [
+          'PASS: candidate app rolled back; released fallback app launched; data/cache disposition recorded; protocol handler state evaos-workbench / com.evaos.workbench inspected; broker login/session state remained usable.',
+          'Fallback exact bundle identity verified: true',
+          'Fallback exact main-process path verified: true',
+          'Fallback exact main-process dwell seconds: 8',
+        ].join('\n') + '\n'
       );
       fs.writeFileSync(
         path.join(proofDir, 'support-notes.md'),
@@ -3717,6 +3874,54 @@ printf '%s\\n' ok
           EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
         })
       ).toBe(true);
+
+      const rollbackProofPath = path.join(proofDir, 'rollback-smoke.md');
+      const rollbackProof = fs.readFileSync(rollbackProofPath, 'utf8');
+      for (const requiredMarker of [
+        'Fallback exact bundle identity verified: true',
+        'Fallback exact main-process path verified: true',
+        'Fallback exact main-process dwell seconds: 8',
+      ]) {
+        fs.writeFileSync(rollbackProofPath, rollbackProof.replace(`${requiredMarker}\n`, ''));
+        expect(() =>
+          releaseGate.verifyRcProof(proofDir, tag, {
+            GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+            EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+            EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+            EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+            EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+          })
+        ).toThrow(/rollback-smoke/i);
+      }
+      fs.writeFileSync(rollbackProofPath, rollbackProof);
+
+      const connectorStartProofPath = path.join(proofDir, 'installed-candidate-connector-start.json');
+      const connectorStartProof = JSON.parse(fs.readFileSync(connectorStartProofPath, 'utf8'));
+      connectorStartProof.token.mode0600 = false;
+      fs.writeFileSync(connectorStartProofPath, `${JSON.stringify(connectorStartProof, null, 2)}\n`);
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+        })
+      ).toThrow(/mode0600|strict successful harness summary/);
+      connectorStartProof.token.mode0600 = true;
+      connectorStartProof.rawMessage = 'Bearer secret https://private.example /Users/private/connector.token';
+      fs.writeFileSync(connectorStartProofPath, `${JSON.stringify(connectorStartProof, null, 2)}\n`);
+      expect(() =>
+        releaseGate.verifyRcProof(proofDir, tag, {
+          GITHUB_REPOSITORY: '100yenadmin/evaOS-GUI',
+          EXPECTED_RELEASE_COMMIT: fixtureReleaseCommit,
+          EVAOS_BETA_SKIP_GITHUB_RUN_VERIFY: '1',
+          EVAOS_RELEASE_TARGET_PLATFORMS: 'macos-arm64',
+          EVAOS_BETA_RC_RELEASE_ASSETS_DIR: releaseAssetBytesDir,
+        })
+      ).toThrow(/strict successful harness summary/);
+      delete connectorStartProof.rawMessage;
+      fs.writeFileSync(connectorStartProofPath, `${JSON.stringify(connectorStartProof, null, 2)}\n`);
 
       const updaterMetadataPath = path.join(proofDir, 'release-assets', 'latest-arm64-mac.yml');
       const updaterMetadata = fs.readFileSync(updaterMetadataPath, 'utf8');
