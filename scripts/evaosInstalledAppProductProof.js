@@ -290,14 +290,16 @@ function redactProcessCommand(command) {
 
 function commandLooksLikeBridgeServer(command, expectedBridgePath) {
   const text = String(command || '');
+  const expectedBridgeRoot = path.dirname(expectedBridgePath);
+  const packagedPythonPath = path.join(expectedBridgeRoot, 'python', 'bin', 'python3');
   const packagedBridgeInvocation = `-c ${PACKAGED_BRIDGE_BOOTSTRAP} ${path.join(
-    path.dirname(expectedBridgePath),
+    expectedBridgeRoot,
     'src'
   )} evaos_desktop_bridge.host.cli serve`;
   return (
     text.includes(expectedBridgePath) ||
     /(?:^|\s)-m\s+evaos_desktop_bridge\.host\.cli\s+serve(?:\s|$)/.test(text) ||
-    text.includes(packagedBridgeInvocation) ||
+    (text.startsWith(`${packagedPythonPath} `) && text.includes(packagedBridgeInvocation)) ||
     /(?:^|\s)evaos-desktop-bridge(?:\s+serve(?:\s|$)|$)/.test(text)
   );
 }

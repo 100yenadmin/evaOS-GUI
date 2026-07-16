@@ -118,6 +118,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -127,7 +128,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from evaos_desktop_bridge.host import connector_server
+from evaos_desktop_bridge.host import cli, connector_server
 from evaos_desktop_bridge.proof import receipt_canary
 from evaos_desktop_bridge.persistence.audit import append_audit
 
@@ -186,20 +187,25 @@ candidate = {
     "app_bundle_id": "com.evaos.workbench",
     "app_name": "evaOS Workbench",
 }
-owner = {
-    "label": "com.electricsheep.evaos-desktop-bridge",
-    "classification": "workbench_bundle",
-    "bundle_id": "com.evaos.workbench",
-    "source_commit": "a" * 40,
-    "program_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py"},
-    "app_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app"},
-    "manifest_path": {"kind": "path", "value": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json"},
-    "plist_path": {"kind": "path", "value": "~/Library/LaunchAgents/com.electricsheep.evaos-desktop-bridge.plist"},
-}
-process = {
-    "executable": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3.12",
-    "argv0": "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py",
-}
+packaged_cli = Path(
+    "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/src/evaos_desktop_bridge/host/cli.py"
+)
+packaged_manifest = Path("/Applications/evaOS Workbench.app/Contents/Resources/Bridge/manifest.json")
+cli._connector_plist_path = lambda: Path(
+    "/Users/test/Library/LaunchAgents/com.electricsheep.evaos-desktop-bridge.plist"
+)
+cli._process_program_path = lambda pid: None
+cli._owner_manifest_path = lambda program_path, app_path: packaged_manifest
+cli._read_owner_manifest = lambda manifest_path: {"sourceCommit": "a" * 40}
+cli._owner_bundle_id = lambda app_path: "com.evaos.workbench"
+
+original_executable = sys.executable
+original_argv = list(sys.argv)
+sys.executable = "/Applications/evaOS Workbench.app/Contents/Resources/Bridge/python/bin/python3.12"
+sys.argv[0] = str(packaged_cli)
+owner = cli._connector_http_owner_summary()
+process = receipt_canary.default_process_identity()
+assert owner["program_path"] == {"kind": "path", "value": str(packaged_cli)}
 receipt_canary.candidate_snapshot(candidate, owner=owner, process=process)
 wrong_owner = {
     **owner,
@@ -242,9 +248,9 @@ handler = connector_server._make_handler(
     token="connector-test-token",
     command_runner=runner,
     state_dir=root,
-    owner_provider=lambda: owner,
+    owner_provider=cli._connector_http_owner_summary,
     candidate_provider=lambda: candidate,
-    process_provider=lambda: process,
+    process_provider=receipt_canary.default_process_identity,
 )
 server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
 thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -435,6 +441,8 @@ finally:
     server.shutdown()
     server.server_close()
     thread.join(timeout=5)
+    sys.executable = original_executable
+    sys.argv[:] = original_argv
 `;
 
     expect(() =>
