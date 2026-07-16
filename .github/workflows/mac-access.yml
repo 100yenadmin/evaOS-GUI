@@ -100,19 +100,28 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   embedded-runtime-proof:
-    name: Embedded private runtime proof
+    name: Embedded private runtime proof (${{ matrix.runtime_arch }})
     runs-on: macos-15
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime_arch: arm64
+            xcode_arch: arm64
+          - runtime_arch: x64
+            xcode_arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Prepare hash-pinned private Python
-        run: scripts/prepareEvaosDesktopBridgePythonRuntime.sh arm64 "$GITHUB_ENV"
+        run: scripts/prepareEvaosDesktopBridgePythonRuntime.sh "${{ matrix.runtime_arch }}" "$GITHUB_ENV"
 
       - name: Build standalone Release bundle with private runtime
         env:
           MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME: '1'
+          MAC_ACCESS_EXPECTED_ARCH: ${{ matrix.xcode_arch }}
         run: |
           xcodebuild \
             -project packages/mac-access/MacAccess.xcodeproj \
@@ -120,6 +129,8 @@ jobs:
             -configuration Release \
             -derivedDataPath "$RUNNER_TEMP/MacAccessReleaseDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
+            ARCHS="${{ matrix.xcode_arch }}" \
+            ONLY_ACTIVE_ARCH=YES \
             clean build
           packages/mac-access/scripts/verify-bundle-layout.sh \
             "$RUNNER_TEMP/MacAccessReleaseDerivedData/Build/Products/Release/evaOS Mac Access.app"

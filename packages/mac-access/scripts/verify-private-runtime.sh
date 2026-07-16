@@ -12,10 +12,23 @@ HELPER_PATH="$APP_PATH/Contents/XPCServices/evaOS Mac Access Helper.xpc"
 RESOURCE_ROOT="$HELPER_PATH/Contents/Resources/MacConnectorCore"
 PYTHON="$RESOURCE_ROOT/python/bin/python3"
 SOURCE="$RESOURCE_ROOT/src"
+: "${MAC_ACCESS_EXPECTED_ARCH:?MAC_ACCESS_EXPECTED_ARCH is required}"
 
 test -x "$PYTHON"
 test -f "$SOURCE/evaos_desktop_bridge/host/stdio_runner.py"
 node "$SCRIPT_DIR/prepare-private-runtime.js" verify "$RESOURCE_ROOT"
+
+for executable in \
+  "$APP_PATH/Contents/MacOS/evaOS Mac Access" \
+  "$HELPER_PATH/Contents/MacOS/evaOS Mac Access Helper" \
+  "$APP_PATH/Contents/Library/LoginItems/evaOS Mac Access Connector.app/Contents/MacOS/evaOS Mac Access Connector" \
+  "$PYTHON"; do
+  actual_arch=$(lipo -archs "$executable")
+  if [ "$actual_arch" != "$MAC_ACCESS_EXPECTED_ARCH" ]; then
+    echo "Mac Access architecture mismatch: $executable is $actual_arch, expected $MAC_ACCESS_EXPECTED_ARCH." >&2
+    exit 1
+  fi
+done
 
 PROOF_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/evaos-mac-access-runtime.XXXXXX")
 trap 'rm -rf "$PROOF_ROOT"' EXIT
