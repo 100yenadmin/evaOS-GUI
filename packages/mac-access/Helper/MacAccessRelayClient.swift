@@ -150,6 +150,7 @@ actor MacAccessHelperRuntime {
     private var channelTransitionInProgress = false
     private var pairingBeforeOperation: MacAccessHelperPairingState?
     private var revocationLatched = false
+    private var safetyTransitionGeneration: UInt64?
     private var receiveLoopGeneration: UInt64?
     private var receivePumpTask: Task<Void, Never>?
     private var grantExpiryTask: Task<Void, Never>?
@@ -187,7 +188,7 @@ actor MacAccessHelperRuntime {
     @discardableResult
     func pair(code: String) async throws -> MacAccessHelperSafeStatus {
         guard status.pairing != .pairing, !credentialMutationInProgress,
-              !channelTransitionInProgress
+              !channelTransitionInProgress, safetyTransitionGeneration == nil
         else {
             throw MacAccessPublicError.pairingRejected
         }
@@ -257,14 +258,13 @@ actor MacAccessHelperRuntime {
     func connect() async throws -> MacAccessHelperSafeStatus {
         guard !revocationLatched else { throw MacAccessPublicError.revoked }
         guard status.pairing != .pairing, !credentialMutationInProgress,
-              !channelTransitionInProgress
+              !channelTransitionInProgress, safetyTransitionGeneration == nil
         else {
             throw MacAccessPublicError.credentialUnavailable
         }
         let generation = nextChannelGeneration()
         do {
-            let previous = channel?.socket
-            channel = nil
+            let previous = detachActiveChannel(failing: .stopped)
             await previous?.close()
             try requireCurrentGeneration(generation)
             guard let record = try await vault.load(), record.isPaired,
@@ -510,24 +510,24 @@ actor MacAccessHelperRuntime {
             return .revoked
         }
 
+        let terminalError: MacAccessPublicError = revoke.reasonCode == "local_stop"
+            ? .stopped : .relayUnavailable
         status.pairing = .paired
         status.transport = revoke.reasonCode == "local_stop" ? .disconnected : .blocked
-        status.lastError = revoke.reasonCode == "local_stop" ? .stopped : .relayUnavailable
+        status.lastError = terminalError
+        let transitionGeneration = nextChannelGeneration()
+        safetyTransitionGeneration = transitionGeneration
+        let activeSocket = detachActiveChannel(failing: terminalError)
         do {
             try await safetySink?.preemptTransportSafety(.channelClosed)
         } catch {
             // Local native work was already blocked before persistence was attempted.
         }
-        try requireOwnedChannel(generation, binding: expectedBinding)
-        let terminalError: MacAccessPublicError = revoke.reasonCode == "local_stop"
-            ? .stopped : .relayUnavailable
-        failInboundCommands(terminalError)
-        let invalidationGeneration = await invalidateChannel()
-        guard invalidationGeneration == channelGeneration else { return .stopped }
-        status.pairing = .paired
-        status.transport = revoke.reasonCode == "local_stop" ? .disconnected : .blocked
-        status.lastError = revoke.reasonCode == "local_stop" ? .stopped : .relayUnavailable
-        return status.lastError!
+        await activeSocket?.close()
+        if safetyTransitionGeneration == transitionGeneration {
+            safetyTransitionGeneration = nil
+        }
+        return terminalError
     }
 
     private func acceptTerminalError(_ data: Data, generation: UInt64) async throws {
@@ -544,17 +544,18 @@ actor MacAccessHelperRuntime {
         }
         status.transport = .blocked
         status.lastError = .relayUnavailable
+        let transitionGeneration = nextChannelGeneration()
+        safetyTransitionGeneration = transitionGeneration
+        let activeSocket = detachActiveChannel(failing: .relayUnavailable)
         do {
             try await safetySink?.preemptTransportSafety(.channelClosed)
         } catch {
             // Keep transport closure authoritative when custody persistence fails.
         }
-        try requireOwnedChannel(generation)
-        failInboundCommands(.relayUnavailable)
-        let invalidationGeneration = await invalidateChannel()
-        guard invalidationGeneration == channelGeneration else { return }
-        status.transport = .blocked
-        status.lastError = .relayUnavailable
+        await activeSocket?.close()
+        if safetyTransitionGeneration == transitionGeneration {
+            safetyTransitionGeneration = nil
+        }
     }
 
     private func latchGrantInvalidation(
@@ -567,13 +568,15 @@ actor MacAccessHelperRuntime {
         status = MacAccessHelperSafeStatus(
             pairing: .revoked, transport: transport, lastError: .revoked, lastAuditID: nil
         )
+        _ = nextChannelGeneration()
+        let activeSocket = detachActiveChannel(failing: .revoked)
         do {
             try await safetySink?.preemptTransportSafety(event)
         } catch {
             // The policy sink blocks native work even when custody persistence fails.
             // Keep the transport latch authoritative and still erase relay credentials.
         }
-        _ = await invalidateChannel()
+        await activeSocket?.close()
         do {
             try await vault.erase()
         } catch {
@@ -595,6 +598,7 @@ actor MacAccessHelperRuntime {
     ) {
         receivePumpTask?.cancel()
         grantExpiryTask?.cancel()
+        failInboundCommands(.stopped)
         inboundCommandFrames.removeAll(keepingCapacity: true)
         receivePumpTask = Task {
             await self.runReceivePump(
@@ -724,17 +728,18 @@ actor MacAccessHelperRuntime {
         status.pairing = .paired
         status.transport = .blocked
         status.lastError = error
+        let transitionGeneration = nextChannelGeneration()
+        safetyTransitionGeneration = transitionGeneration
+        let activeSocket = detachActiveChannel(failing: error)
         do {
             try await safetySink?.preemptTransportSafety(.channelClosed)
         } catch {
             // Closing the authenticated channel remains authoritative.
         }
-        guard generation == channelGeneration, channel?.generation == generation else { return }
-        failInboundCommands(error)
-        _ = await invalidateChannel()
-        status.pairing = .paired
-        status.transport = .blocked
-        status.lastError = error
+        await activeSocket?.close()
+        if safetyTransitionGeneration == transitionGeneration {
+            safetyTransitionGeneration = nil
+        }
     }
 
     private func nextChannelGeneration() -> UInt64 {
@@ -760,27 +765,29 @@ actor MacAccessHelperRuntime {
         guard generation == channelGeneration, let active = channel,
               active.generation == generation
         else { return false }
-        receivePumpTask?.cancel()
-        receivePumpTask = nil
-        grantExpiryTask?.cancel()
-        grantExpiryTask = nil
-        failInboundCommands(revocationLatched ? .revoked : .stopped)
-        channel = nil
+        _ = detachActiveChannel(failing: revocationLatched ? .revoked : .stopped)
         await active.socket.close()
         return generation == channelGeneration
     }
 
-    @discardableResult
-    private func invalidateChannel() async -> UInt64 {
-        let generation = nextChannelGeneration()
+    private func detachActiveChannel(
+        failing error: MacAccessPublicError
+    ) -> (any MacAccessRelaySocket)? {
         let active = channel
         receivePumpTask?.cancel()
         receivePumpTask = nil
         grantExpiryTask?.cancel()
         grantExpiryTask = nil
-        failInboundCommands(revocationLatched ? .revoked : .stopped)
+        failInboundCommands(error)
         channel = nil
-        await active?.socket.close()
+        return active?.socket
+    }
+
+    @discardableResult
+    private func invalidateChannel() async -> UInt64 {
+        let generation = nextChannelGeneration()
+        let activeSocket = detachActiveChannel(failing: revocationLatched ? .revoked : .stopped)
+        await activeSocket?.close()
         return generation
     }
 }

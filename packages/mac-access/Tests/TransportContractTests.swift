@@ -314,6 +314,10 @@ private actor ControlledRelaySocket: MacAccessRelaySocket {
         while closeContinuations.isEmpty { await Task.yield() }
     }
 
+    func waitUntilCloseCount(_ expectedCount: Int) async {
+        while closeCount < expectedCount { await Task.yield() }
+    }
+
     func releaseClose() {
         guard !closeContinuations.isEmpty else { return }
         closeContinuations.removeFirst().resume()
@@ -383,6 +387,25 @@ private actor RecordingTransportSafetySink: MacAccessTransportSafetySink {
 
     func waitUntilEventCount(_ expectedCount: Int) async {
         while events.count < expectedCount { await Task.yield() }
+    }
+}
+
+private actor SuspendedTransportSafetySink: MacAccessTransportSafetySink {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var events: [MacAccessTransportSafetyEvent] = []
+
+    func preemptTransportSafety(_ event: MacAccessTransportSafetyEvent) async {
+        events.append(event)
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilSuspended() async {
+        while continuation == nil { await Task.yield() }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -809,6 +832,42 @@ final class TransportContractTests: XCTestCase {
         XCTAssertNotNil(record)
     }
 
+    func testDirectReconnectFailsOldCommandWaiterBeforeNewGenerationStarts() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let first = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let second = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()), fixture.wire,
+        ])
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: fixture)),
+            redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([first, second]),
+            executor: FixtureExecutor(),
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: { fixture.now }
+        )
+
+        _ = try await runtime.connect()
+        let oldWaiter = Task { try await runtime.processOneCommand() }
+        for _ in 0..<10 { await Task.yield() }
+
+        _ = try await runtime.connect()
+        do {
+            _ = try await oldWaiter.value
+            XCTFail("expected old-generation waiter to be failed")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .stopped)
+        }
+
+        let receipt = try await runtime.processOneCommand()
+        let secondSent = await second.sent
+        XCTAssertEqual(receipt.commandID, "command-01")
+        XCTAssertEqual(secondSent.count, 2)
+    }
+
     func testSuspendedOldCloseCannotOverwriteNewConnectedChannel() async throws {
         let fixture = try makeSignedCommandFixture()
         let first = ControlledRelaySocket(
@@ -828,8 +887,15 @@ final class TransportContractTests: XCTestCase {
         _ = try await runtime.connect()
         let oldCompletion = Task { try await runtime.processOneCommand() }
         await first.waitUntilClosing()
-        _ = try await runtime.connect()
+        do {
+            _ = try await runtime.connect()
+            XCTFail("expected reconnect to wait for old channel safety closure")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .credentialUnavailable)
+        }
         await first.releaseClose()
+        for _ in 0..<20 { await Task.yield() }
+        _ = try await runtime.connect()
         do {
             _ = try await oldCompletion.value
             XCTFail("expected old receiver failure")
@@ -866,8 +932,15 @@ final class TransportContractTests: XCTestCase {
         _ = try await runtime.connect()
         let oldCompletion = Task { try await runtime.processOneCommand() }
         await first.waitUntilClosing()
-        _ = try await runtime.connect()
+        do {
+            _ = try await runtime.connect()
+            XCTFail("expected reconnect to wait for terminal safety closure")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .credentialUnavailable)
+        }
         await first.releaseClose()
+        for _ in 0..<20 { await Task.yield() }
+        _ = try await runtime.connect()
         _ = try? await oldCompletion.value
 
         let status = await runtime.status
@@ -1459,6 +1532,64 @@ final class TransportContractTests: XCTestCase {
         }
         let sent = await socket.sent
         XCTAssertEqual(sent.count, 1)
+    }
+
+    func testChannelDetachesBeforeSuspendedSafetySinkAndBlocksReconnect() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let first = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let second = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let vault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let executor = SuspendedExecutor()
+        let safetySink = SuspendedTransportSafetySink()
+        let runtime = MacAccessHelperRuntime(
+            vault: vault,
+            redeemer: UnusedRedeemer(),
+            socketFactory: SequencedSocketFactory([first, second]),
+            executor: executor,
+            safetySink: safetySink,
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: { fixture.now }
+        )
+        _ = try await runtime.connect()
+        let commandTask = Task { try await runtime.processOneCommand() }
+        await first.deliver(fixture.wire)
+        await executor.waitUntilExecuting()
+
+        let terminal = MacAccessRelayError(
+            schemaVersion: "evaos.mac_access.relay_error.v1",
+            messageType: "error",
+            code: "relay_unavailable",
+            terminal: true
+        )
+        await first.deliver(try MacAccessWire.canonicalData(terminal))
+        await safetySink.waitUntilSuspended()
+
+        do {
+            _ = try await runtime.connect()
+            XCTFail("expected reconnect to wait for safety preemption")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .credentialUnavailable)
+        }
+
+        await executor.release()
+        do {
+            _ = try await commandTask.value
+            XCTFail("expected detached channel to reject the completed command")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .stopped)
+        }
+        let sentWhileSafetySuspended = await first.sent
+        XCTAssertEqual(sentWhileSafetySuspended.count, 1)
+
+        await safetySink.release()
+        await first.waitUntilCloseCount(1)
+        let preservedRecord = await vault.load()
+        XCTAssertNotNil(preservedRecord)
     }
 
     func testGrantExpiryDeadlinePreemptsCommandWhileExecutorIsSuspended() async throws {
