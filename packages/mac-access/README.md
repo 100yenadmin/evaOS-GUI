@@ -60,3 +60,35 @@ readiness.
 The native catalog reserves all 12 repository locales without `jq` or Homebrew. English is the only
 completed translation in this draft; non-English units are explicitly `needs_review` and cannot be
 reported as translated by the validation script.
+
+## Developer ID artifact identity
+
+Issue #705's release scripts sign the complete embedded Mach-O closure before signing the connector,
+helper, and outer app inside-out. They require a secure timestamp and hardened runtime everywhere,
+apply the release Keychain entitlement only to the helper, and freeze the three designated
+requirements instead of accepting bundle-ID equality.
+
+```bash
+packages/mac-access/scripts/release/sign-bundle.js sign \
+  --app '/absolute/path/evaOS Mac Access.app' \
+  --identity 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)' \
+  --keychain '/absolute/path/evaos-release-signing.keychain-db' \
+  --manifest '/absolute/path/mac-access-artifact.json' \
+  --sbom '/absolute/path/mac-access-sbom.spdx.json' \
+  --source-sha "$(git rev-parse HEAD)"
+```
+
+The verifier recomputes the signed bundle-tree checksum, embedded core/source/runtime inventory,
+SPDX dependency and license inventory, role/executable ownership, helper relationship, Team ID,
+designated requirements, entitlements, hardened runtime, timestamp, architecture, and schema,
+security, and credential epochs. Any drift fails closed:
+
+```bash
+packages/mac-access/scripts/release/sign-bundle.js verify \
+  --app '/absolute/path/evaOS Mac Access.app' \
+  --manifest '/absolute/path/mac-access-artifact.json' \
+  --sbom '/absolute/path/mac-access-sbom.spdx.json'
+```
+
+These scripts do not submit to Apple, staple a ticket, publish an update feed, or prove Gatekeeper
+acceptance, pristine-Mac launch, live VM control, rollback, uninstall, or customer readiness.
