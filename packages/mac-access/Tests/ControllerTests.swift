@@ -202,6 +202,11 @@ final class ControllerTests: XCTestCase {
         let approvalDelegate = MacAccessAppDelegate(loginItemService: approvalService)
         XCTAssertEqual(approvalDelegate.registerLoginItemIfNeeded(), .requiresApproval)
         XCTAssertEqual(approvalService.registerCount, 0)
+
+        let missingRecordService = FakeMacAccessLoginItemService(state: .notFound)
+        let missingRecordDelegate = MacAccessAppDelegate(loginItemService: missingRecordService)
+        XCTAssertEqual(missingRecordDelegate.registerLoginItemIfNeeded(), .enabled)
+        XCTAssertEqual(missingRecordService.registerCount, 1)
     }
 
     func testPrepareForUninstallRevokesBeforeUnregistering() async {

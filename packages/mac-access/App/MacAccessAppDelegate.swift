@@ -73,7 +73,9 @@ final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     func registerLoginItemIfNeeded() -> MacAccessLoginItemState {
         switch loginItemService.state {
-        case .notRegistered:
+        case .notRegistered, .notFound:
+            // A pristine BTM database can report notFound before the first record exists.
+            // register() remains authoritative and throws if the embedded service is invalid.
             do {
                 try loginItemService.register()
                 loginItemState = loginItemService.state
