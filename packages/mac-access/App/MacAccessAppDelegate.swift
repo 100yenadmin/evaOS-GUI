@@ -20,7 +20,11 @@ protocol MacAccessLoginItemServicing: AnyObject {
 
 @MainActor
 final class SystemMacAccessLoginItemService: MacAccessLoginItemServicing {
-    private let service = SMAppService.loginItem(identifier: MacAccessIdentity.connectorServiceID)
+    // The macOS 15 SDK does not annotate SMAppService as Sendable even though
+    // its async unregister API is the supported wait-for-termination path.
+    nonisolated(unsafe) private let service = SMAppService.loginItem(
+        identifier: MacAccessIdentity.connectorServiceID
+    )
 
     var state: MacAccessLoginItemState {
         switch service.status {
