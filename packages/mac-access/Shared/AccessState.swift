@@ -127,6 +127,11 @@ public struct MacAccessStateMachine: Sendable {
     }
 
     public mutating func disconnect() {
+        guard state.blocker == nil else {
+            state.connection = .blocked
+            state.effectiveMode = .off
+            return
+        }
         state.connection = .disconnected
         state.effectiveMode = .off
         state.blocker = nil

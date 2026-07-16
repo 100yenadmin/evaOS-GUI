@@ -28,6 +28,14 @@ assert_bundle_value() {
   [ "$actual" = "$expected" ] || fail "$bundle $key was '$actual', expected '$expected'"
 }
 
+assert_bundle_missing() {
+  bundle=$1
+  key=$2
+  if $PLIST_BUDDY -c "Print :$key" "$bundle/Contents/Info.plist" >/dev/null 2>&1; then
+    fail "$bundle unexpectedly declares $key"
+  fi
+}
+
 HELPER_PATH="$APP_PATH/Contents/XPCServices/evaOS Mac Access Helper.xpc"
 CONNECTOR_PATH="$APP_PATH/Contents/Library/LoginItems/evaOS Mac Access Connector.app"
 
@@ -39,7 +47,8 @@ assert_bundle_value "$APP_PATH" CFBundleIdentifier com.evaos.mac-access
 assert_bundle_value "$APP_PATH" LSUIElement true
 assert_bundle_value "$HELPER_PATH" CFBundleIdentifier com.evaos.mac-access.helper
 assert_bundle_value "$CONNECTOR_PATH" CFBundleIdentifier com.evaos.mac-access.connector
-assert_bundle_value "$CONNECTOR_PATH" LSUIElement true
+assert_bundle_value "$CONNECTOR_PATH" LSBackgroundOnly true
+assert_bundle_missing "$CONNECTOR_PATH" LSUIElement
 
 if grep -Fq 'CODE_SIGN_ENTITLEMENTS' "$PACKAGE_ROOT/MacAccess.xcodeproj/project.pbxproj"; then
   fail 'production entitlements are forbidden in the A2 local-only project'

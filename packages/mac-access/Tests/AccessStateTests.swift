@@ -143,6 +143,28 @@ final class AccessStateTests: XCTestCase {
         }
     }
 
+    func testDisconnectCannotClearAnExistingRecoveryBlocker() {
+        let blockers: [MacAccessBlocker] = [.permissionDenied, .coreCrashed, .emergencyStopActive]
+
+        for blocker in blockers {
+            let state = MacAccessState(
+                connection: .blocked,
+                configuredMode: .askEveryTime,
+                effectiveMode: .off,
+                isPaired: true,
+                blocker: blocker
+            )
+            var machine = MacAccessStateMachine(state: state)
+
+            machine.disconnect()
+            machine.beginConnecting()
+
+            XCTAssertEqual(machine.state.connection, .blocked)
+            XCTAssertEqual(machine.state.blocker, blocker)
+            XCTAssertEqual(machine.state.effectiveMode, .off)
+        }
+    }
+
     func testConnectedConfirmationRequiresAnActiveConnectionTransition() {
         let state = MacAccessState(
             connection: .disconnected,
