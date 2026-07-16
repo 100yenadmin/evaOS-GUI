@@ -16,6 +16,7 @@ public final class MacAccessController: ObservableObject {
     private var invalidationReasons: [Int: ActionInvalidationReason] = [:]
     private var quitCleanupInFlight = false
     private var emergencyStopCleanupIssued = false
+    private var emergencyStopRecoveryPending = false
     private var projectionGeneration = 0
 
     private enum ActionInvalidationReason {
@@ -82,6 +83,7 @@ public final class MacAccessController: ObservableObject {
               reply.status.policyProvider == "mac_connector_core",
               generation == projectionGeneration
         else { return }
+        guard !emergencyStopRecoveryPending || reply.status.killSwitch == true else { return }
         applyAuthoritativeStatus(reply.status)
     }
 
@@ -109,6 +111,7 @@ public final class MacAccessController: ObservableObject {
         machine.emergencyStop()
         state = machine.state
         lastResult = .completed(.localEmergencyStop)
+        emergencyStopRecoveryPending = true
         guard !emergencyStopCleanupIssued else { return }
         emergencyStopCleanupIssued = true
         Task { await requestEmergencyStopCleanup() }
@@ -168,6 +171,7 @@ public final class MacAccessController: ObservableObject {
                 if !preserveEmergencyEvidence { machine.stop() }
             case .clearKillSwitch:
                 emergencyStopCleanupIssued = false
+                emergencyStopRecoveryPending = false
                 machine.markUnpaired(.notPaired)
             case .setAccessMode(let mode):
                 machine.setAccessMode(mode)
@@ -271,7 +275,7 @@ public final class MacAccessController: ObservableObject {
         } else if status.pendingApproval != nil {
             connection = .approvalNeeded
             blocker = nil
-        } else if paused {
+        } else if paused && status.transport == "connected" {
             connection = .paused
             blocker = nil
         } else {
@@ -300,7 +304,10 @@ public final class MacAccessController: ObservableObject {
         )
         machine = MacAccessStateMachine(state: projected)
         state = projected
-        if killSwitch { emergencyStopCleanupIssued = true }
+        if killSwitch {
+            emergencyStopCleanupIssued = true
+            emergencyStopRecoveryPending = false
+        }
         pendingApproval = status.pendingApproval
         recentAuditEvents = status.recentAuditEvents ?? []
     }

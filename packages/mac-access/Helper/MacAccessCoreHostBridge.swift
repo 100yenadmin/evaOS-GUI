@@ -11,6 +11,11 @@ enum MacAccessCoreHostError: String, Error, Sendable {
     case requestTimedOut = "request_timed_out"
 }
 
+struct MacAccessCoreHostResponseError: Error, Sendable {
+    let code: String
+    let auditID: String?
+}
+
 protocol MacAccessCoreHostChannel: Sendable {
     func send(_ data: Data) async throws
     func receiveLine() async throws -> Data
@@ -797,13 +802,18 @@ actor MacAccessCoreHostClient {
         else { throw MacAccessCoreHostError.protocolViolation }
         policyEpoch = nextEpoch
         guard response["ok"]?.boolean == true, let result = response["result"]?.object else {
-            if allowsRestartRetry,
-               response["error"]?.object?["code"]?.string == "runtime_restarted" {
+            guard let error = response["error"]?.object,
+                  let code = error["code"]?.string,
+                  MacAccessWire.isIdentifier(code),
+                  error["audit_id"] == .null
+                    || error["audit_id"]?.string.map(MacAccessWire.isIdentifier) == true
+            else { throw MacAccessCoreHostError.protocolViolation }
+            if allowsRestartRetry, code == "runtime_restarted" {
                 return try await perform(
                     operation: operation, extras: extras, allowsRestartRetry: false
                 )
             }
-            throw MacAccessCoreHostError.policyDenied
+            throw MacAccessCoreHostResponseError(code: code, auditID: error["audit_id"]?.string)
         }
         return result
     }
@@ -839,11 +849,17 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
 
     func execute(command: MacAccessBrokerCommand) async -> MacAccessExecutionResult {
         guard let client else { return await failClosedResult() }
+        let envelope: [String: JSONValue]
         do {
             let encoded = try JSONEncoder().encode(command)
-            guard case .object(let envelope) = try JSONDecoder().decode(JSONValue.self, from: encoded) else {
+            guard case .object(let decoded) = try JSONDecoder().decode(JSONValue.self, from: encoded) else {
                 throw MacAccessCoreHostError.protocolViolation
             }
+            envelope = decoded
+        } catch {
+            return await failClosedResult()
+        }
+        do {
             if let custody { try await custody.authorizeRelayAdmission(envelope: envelope) }
             let result = try await client.perform(
                 operation: "dispatch_action",
@@ -873,7 +889,13 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
                 auditID = resultAuditID
             }
             if let audit {
-                guard await audit.containsCommittedAuditID(auditID)
+                guard await auditMatchesCommand(
+                    audit: audit,
+                    envelope: envelope,
+                    decisionAuditID: decisionAuditID,
+                    resultAuditID: resultAuditID,
+                    outcome: outcome
+                )
                 else { throw MacAccessCoreHostError.protocolViolation }
             }
             return MacAccessExecutionResult(
@@ -881,9 +903,73 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
                 outcome: outcome,
                 errorCode: outcome == .executed ? nil : "policy_denied"
             )
+        } catch let error as MacAccessCoreHostResponseError
+            where error.code == "stale_command_policy_epoch" && error.auditID == nil {
+            guard let audit, let custody else { return await failClosedResult() }
+            do {
+                let projection = await custody.projectStatus()
+                let decision = try await audit.append(
+                    envelope: envelope,
+                    accessMode: projection.effectiveMode,
+                    allowed: false,
+                    reasonCode: error.code,
+                    detailCode: nil
+                )
+                guard let auditID = decision["audit_id"]?.string,
+                      await auditMatchesCommand(
+                          audit: audit,
+                          envelope: envelope,
+                          decisionAuditID: auditID,
+                          resultAuditID: nil,
+                          outcome: .denied
+                      )
+                else { throw MacAccessCoreHostError.protocolViolation }
+                return MacAccessExecutionResult(
+                    localAuditID: auditID,
+                    outcome: .denied,
+                    errorCode: "policy_denied"
+                )
+            } catch {
+                return await failClosedResult()
+            }
         } catch {
             return await failClosedResult()
         }
+    }
+
+    private func auditMatchesCommand(
+        audit: MacAccessAuditCustody,
+        envelope: [String: JSONValue],
+        decisionAuditID: String,
+        resultAuditID: String?,
+        outcome: MacAccessReceiptOutcome
+    ) async -> Bool {
+        guard let command = envelope["command"]?.object,
+              let binding = envelope["binding"]?.object,
+              let decision = await audit.committedEvent(auditID: decisionAuditID),
+              decision["event_type"]?.string == "command_decision",
+              decision["command_id"] == envelope["command_id"],
+              decision["request_digest_sha256"] == command["request_digest_sha256"],
+              decision["binding_fingerprint_sha256"] == binding["binding_fingerprint_sha256"],
+              decision["outcome"]?.string == (outcome == .denied ? "denied" : "allowed")
+        else { return false }
+        guard outcome != .denied else { return resultAuditID == nil }
+        let expectedOutcome = switch outcome {
+        case .executed: "executed"
+        case .failed: "failed"
+        case .cancelled: "stopped"
+        case .denied: "denied"
+        }
+        guard let resultAuditID,
+              let result = await audit.committedEvent(auditID: resultAuditID),
+              result["event_type"]?.string == "command_result",
+              result["command_id"] == envelope["command_id"],
+              result["request_digest_sha256"] == command["request_digest_sha256"],
+              result["binding_fingerprint_sha256"] == binding["binding_fingerprint_sha256"],
+              result["causation_audit_id"]?.string == decisionAuditID,
+              result["outcome"]?.string == expectedOutcome
+        else { return false }
+        return true
     }
 
     private func failClosedResult() async -> MacAccessExecutionResult {

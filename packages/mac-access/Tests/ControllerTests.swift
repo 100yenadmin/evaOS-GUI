@@ -112,6 +112,53 @@ final actor SuspendedStatusConnectorClient: MacAccessStatusProjectingClient {
     }
 }
 
+final actor SuspendedKillProjectingConnectorClient: MacAccessStatusProjectingClient {
+    private var continuation: CheckedContinuation<ConnectorCoreResult, Never>?
+    private var killStarted = false
+    private var killConfirmed = false
+    private var fetchCount = 0
+
+    func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+        guard action == .activateKillSwitch else { return .blocked(.connectorCoreUnavailable) }
+        killStarted = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func fetchStatus() -> MacAccessXPCReply? {
+        fetchCount += 1
+        return MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: killConfirmed ? "blocked" : "connected",
+                lastErrorCode: nil, lastAuditID: nil,
+                configuredMode: killConfirmed ? "off" : "ask_every_time",
+                effectiveMode: killConfirmed ? "off" : "ask_every_time",
+                paused: killConfirmed, killSwitch: killConfirmed,
+                policyEpoch: killConfirmed ? 8 : 7,
+                policyProvider: "mac_connector_core"
+            )
+        )
+    }
+
+    func resolvePendingApproval(
+        _ approval: MacAccessXPCApproval, allow: Bool
+    ) async -> MacAccessXPCReply? { nil }
+
+    func waitUntilKillStarts() async {
+        while !killStarted { await Task.yield() }
+    }
+
+    func confirmKill() {
+        killConfirmed = true
+        continuation?.resume(returning: .completed(.localEmergencyStop))
+        continuation = nil
+    }
+
+    func waitForFetchCount(_ expected: Int) async {
+        while fetchCount < expected { await Task.yield() }
+    }
+}
+
 @MainActor
 final class ControllerTests: XCTestCase {
     func testAuthoritativeHelperProjectionHydratesFullAccessAndAudit() async {
@@ -169,6 +216,47 @@ final class ControllerTests: XCTestCase {
 
         XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
         XCTAssertEqual(controller.state.effectiveMode, .off)
+    }
+
+    func testPostStopPollCannotOverwriteEmergencyLatchBeforeHelperConfirmsKill() async {
+        let client = SuspendedKillProjectingConnectorClient()
+        let controller = MacAccessController(
+            client: client,
+            initialState: MacAccessState(
+                connection: .connected, configuredMode: .askEveryTime,
+                effectiveMode: .askEveryTime, isPaired: true, blocker: nil
+            ),
+            availability: .standalonePolicy
+        )
+
+        controller.emergencyStop()
+        await client.waitUntilKillStarts()
+        await controller.refreshFromHelper()
+
+        XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+
+        await client.confirmKill()
+        await client.waitForFetchCount(2)
+        XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
+    }
+
+    func testDisconnectedProjectionDoesNotBecomePausedFromStaleFlag() async {
+        let client = ProjectingConnectorClient(reply: MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: "disconnected", lastErrorCode: "stopped",
+                lastAuditID: nil, configuredMode: "off", effectiveMode: "off",
+                paused: true, killSwitch: false, policyEpoch: 9,
+                policyProvider: "mac_connector_core"
+            )
+        ))
+        let controller = MacAccessController(client: client, availability: .standalonePolicy)
+
+        await controller.refreshFromHelper()
+
+        XCTAssertEqual(controller.state.connection, .disconnected)
+        XCTAssertTrue(controller.canConnect)
     }
 
     func testEmergencyStopRetriesAfterHelperDispatchFailure() async {

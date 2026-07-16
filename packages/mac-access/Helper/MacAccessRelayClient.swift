@@ -265,7 +265,18 @@ actor MacAccessHelperRuntime {
         let generation = nextChannelGeneration()
         do {
             let previous = detachActiveChannel(failing: .stopped)
+            if previous != nil {
+                safetyTransitionGeneration = generation
+                do {
+                    try await safetySink?.preemptTransportSafety(.channelClosed)
+                } catch {
+                    // Native work was blocked before persistence was attempted.
+                }
+            }
             await previous?.close()
+            if safetyTransitionGeneration == generation {
+                safetyTransitionGeneration = nil
+            }
             try requireCurrentGeneration(generation)
             guard let record = try await vault.load(), record.isPaired,
                   let binding = record.binding,
@@ -340,6 +351,9 @@ actor MacAccessHelperRuntime {
     func processOneCommand() async throws -> MacAccessRelayReceipt {
         guard let owned = channel, let ack = owned.ack else {
             if revocationLatched { throw MacAccessPublicError.revoked }
+            if status.transport == .disconnected || status.transport == .stopped {
+                throw MacAccessPublicError.stopped
+            }
             throw status.lastError ?? MacAccessPublicError.relayUnavailable
         }
         let generation = owned.generation

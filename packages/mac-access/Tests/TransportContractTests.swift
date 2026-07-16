@@ -1592,6 +1592,57 @@ final class TransportContractTests: XCTestCase {
         XCTAssertNotNil(preservedRecord)
     }
 
+    func testDirectReconnectPreemptsOldGenerationBeforeOpeningReplacement() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let first = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let second = ControlledRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+        ])
+        let factory = SequencedSocketFactory([first, second])
+        let executor = SuspendedExecutor()
+        let safetySink = SuspendedTransportSafetySink()
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: fixture)),
+            redeemer: UnusedRedeemer(),
+            socketFactory: factory,
+            executor: executor,
+            safetySink: safetySink,
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: { fixture.now }
+        )
+        _ = try await runtime.connect()
+        let oldCommand = Task { try await runtime.processOneCommand() }
+        await first.deliver(fixture.wire)
+        await executor.waitUntilExecuting()
+
+        let reconnect = Task { try await runtime.connect() }
+        await safetySink.waitUntilSuspended()
+
+        let openCountWhilePreempting = await factory.openCount
+        let safetyEvents = await safetySink.events
+        XCTAssertEqual(openCountWhilePreempting, 1)
+        XCTAssertEqual(safetyEvents, [.channelClosed])
+
+        await executor.release()
+        do {
+            _ = try await oldCommand.value
+            XCTFail("expected replaced generation to reject the old command")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .stopped)
+        }
+        let oldSent = await first.sent
+        XCTAssertEqual(oldSent.count, 1)
+
+        await safetySink.release()
+        let reconnected = try await reconnect.value
+        XCTAssertEqual(reconnected.transport, .connected)
+        let finalOpenCount = await factory.openCount
+        XCTAssertEqual(finalOpenCount, 2)
+    }
+
     func testGrantExpiryDeadlinePreemptsCommandWhileExecutorIsSuspended() async throws {
         let fixture = try makeSignedCommandFixture()
         let clock = TransportTestClock(fixture.now)

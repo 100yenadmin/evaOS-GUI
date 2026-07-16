@@ -24,6 +24,27 @@ private actor PolicyClickCounter {
     func increment() { count += 1 }
 }
 
+private actor PolicyCountingRedeemer: MacAccessPairingRedeemer {
+    private(set) var count = 0
+
+    func redeem(
+        _ request: MacAccessPairingRedemptionRequest,
+        now: Date
+    ) throws -> MacAccessPairingRedemptionResponse {
+        count += 1
+        throw MacAccessPublicError.pairingRejected
+    }
+}
+
+private actor PolicyCountingSocketFactory: MacAccessRelaySocketFactory {
+    private(set) var openCount = 0
+
+    func open(url: URL) throws -> any MacAccessRelaySocket {
+        openCount += 1
+        throw MacAccessPublicError.relayUnavailable
+    }
+}
+
 private actor MemoryAuditAnchorStore: MacAccessAuditAnchorStore {
     private var anchor: MacAccessAuditAnchor?
     func load() -> MacAccessAuditAnchor? { anchor }
@@ -32,13 +53,21 @@ private actor MemoryAuditAnchorStore: MacAccessAuditAnchorStore {
 
 private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
     private let approvalAllowed: Bool
+    private let reportedDecisionAuditID: String?
+    private let reportedResultAuditID: String?
     private var queued: [Data] = []
     private var receivers: [CheckedContinuation<Data, Error>] = []
     private var dispatchRequest: [String: JSONValue]?
     private var decisionEvent: [String: JSONValue]?
 
-    init(approvalAllowed: Bool = true) {
+    init(
+        approvalAllowed: Bool = true,
+        reportedDecisionAuditID: String? = nil,
+        reportedResultAuditID: String? = nil
+    ) {
         self.approvalAllowed = approvalAllowed
+        self.reportedDecisionAuditID = reportedDecisionAuditID
+        self.reportedResultAuditID = reportedResultAuditID
     }
 
     func send(_ data: Data) throws {
@@ -88,13 +117,14 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
                 }
                 decisionEvent = decision
                 if !approvalAllowed {
-                    guard let decisionAuditID = decision["audit_id"] else {
+                    guard let actualDecisionAuditID = decision["audit_id"] else {
                         throw MacAccessCoreHostError.protocolViolation
                     }
                     try enqueue(hostResponse(request: request, epoch: 2, result: [
                         "kind": .string("action"),
                         "outcome": .string("denied"),
-                        "decision_audit_id": decisionAuditID,
+                        "decision_audit_id": reportedDecisionAuditID.map(JSONValue.string)
+                            ?? actualDecisionAuditID,
                         "result_audit_id": .null,
                     ]))
                     return
@@ -127,14 +157,16 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
                 ))
             case "call-audit-result":
                 guard let resultEvent = frame["result"]?.object,
-                      let decisionAuditID = decisionEvent?["audit_id"],
-                      let resultAuditID = resultEvent["audit_id"]
+                      let actualDecisionAuditID = decisionEvent?["audit_id"],
+                      let actualResultAuditID = resultEvent["audit_id"]
                 else { throw MacAccessCoreHostError.protocolViolation }
                 try enqueue(hostResponse(request: request, epoch: 2, result: [
                     "kind": .string("action"),
                     "outcome": .string("executed"),
-                    "decision_audit_id": decisionAuditID,
-                    "result_audit_id": resultAuditID,
+                    "decision_audit_id": reportedDecisionAuditID.map(JSONValue.string)
+                        ?? actualDecisionAuditID,
+                    "result_audit_id": reportedResultAuditID.map(JSONValue.string)
+                        ?? actualResultAuditID,
                 ]))
             default:
                 throw MacAccessCoreHostError.protocolViolation
@@ -192,6 +224,43 @@ private actor ScriptedCoreHostChannel: MacAccessCoreHostChannel {
             ]),
         ])
     }
+}
+
+private actor StalePolicyCoreHostChannel: MacAccessCoreHostChannel {
+    private var queued: [Data] = []
+
+    func send(_ data: Data) throws {
+        guard case .object(let frame) = try JSONDecoder().decode(JSONValue.self, from: data),
+              frame["message_type"]?.string == "host_request",
+              let request = frame["request"]?.object
+        else { throw MacAccessCoreHostError.protocolViolation }
+        let response = JSONValue.object([
+            "schema_version": .string(MacAccessStdioCoreHostTransport.schema),
+            "message_type": .string("host_response"),
+            "response": .object([
+                "schema_version": .string("evaos.mac_connector_core.host_response.v1"),
+                "request_id": request["request_id"] ?? .null,
+                "host_session_id": request["host_session_id"] ?? .null,
+                "sequence": request["sequence"] ?? .integer(1),
+                "operation": request["operation"] ?? .string("dispatch_action"),
+                "ok": .boolean(false),
+                "policy_epoch": .integer(3),
+                "result": .null,
+                "error": .object([
+                    "code": .string("stale_command_policy_epoch"),
+                    "audit_id": .null,
+                ]),
+            ]),
+        ])
+        queued.append(try JSONEncoder().encode(response))
+    }
+
+    func receiveLine() async throws -> Data {
+        while queued.isEmpty { await Task.yield() }
+        return queued.removeFirst()
+    }
+
+    func terminate() {}
 }
 
 private actor StalledCoreHostChannel: MacAccessCoreHostChannel {
@@ -297,7 +366,7 @@ final class PolicyBridgeTests: XCTestCase {
         let pendingResult = try await waiter.value
         XCTAssertEqual(pendingResult, "approval_denied")
         XCTAssertEqual(stopped.effectiveMode, "off")
-        XCTAssertTrue(stopped.paused)
+        XCTAssertFalse(stopped.paused)
         XCTAssertEqual(stopped.transport, "disconnected")
     }
 
@@ -379,6 +448,36 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertEqual(projection.policyEpoch, secondKill.policyEpoch)
     }
 
+    func testMalformedOrMissingCurrentKillStateCannotBeClearedByCAS() async throws {
+        for malformedKill in [JSONValue.string("invalid"), nil] {
+            let custody = try MacAccessPolicyCustody(
+                paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+                hostSessionID: "host-malformed-kill"
+            )
+            var malformed = await custody.loadState()
+            let initialRevision = try XCTUnwrap(malformed["revision"]?.integer)
+            if let malformedKill { malformed["kill_switch"] = malformedKill }
+            else { malformed["kill_switch"] = nil }
+            let wroteMalformed = try await custody.compareAndSwap(
+                expectedRevision: initialRevision,
+                state: malformed
+            )
+            XCTAssertTrue(wroteMalformed)
+
+            var attemptedClear = await custody.loadState()
+            let malformedRevision = try XCTUnwrap(attemptedClear["revision"]?.integer)
+            attemptedClear["kill_switch"] = .boolean(false)
+            let cleared = try await custody.compareAndSwap(
+                expectedRevision: malformedRevision,
+                state: attemptedClear
+            )
+
+            XCTAssertFalse(cleared)
+            let projection = await custody.projectStatus()
+            XCTAssertTrue(projection.killSwitch)
+        }
+    }
+
     func testFreshPairingPreparationRecoversRevokedStateWithoutClearingReplayHistory() async throws {
         let custody = try MacAccessPolicyCustody(
             paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
@@ -389,6 +488,7 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertTrue(burned)
         let revoked = try await custody.forceLocalSafety("revoke")
         XCTAssertEqual(revoked.transport, "revoked")
+        XCTAssertFalse(revoked.paused)
 
         let repaired = try await custody.prepareRevokedStateForFreshPairing()
 
@@ -780,6 +880,92 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertFalse(projection.killSwitch)
     }
 
+    func testExecutorRejectsCommittedAuditIDsFromAnotherCommand() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let command = brokerCommand()
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-audit-substitution")
+        let audit = try MacAccessAuditCustody(paths: paths)
+        let unrelatedEnvelope = actionEnvelope(commandID: "command-unrelated")
+        let unrelatedDecision = try await audit.append(
+            envelope: unrelatedEnvelope,
+            accessMode: "ask_every_time",
+            allowed: true,
+            reasonCode: "approved_exact_scope",
+            detailCode: nil
+        )
+        let unrelatedResult = try await audit.append(
+            envelope: unrelatedEnvelope,
+            accessMode: "ask_every_time",
+            decision: unrelatedDecision,
+            outcome: "executed",
+            reasonCode: "approved_exact_scope",
+            detailCode: "actuation_succeeded"
+        )
+        let unrelatedDecisionID = try XCTUnwrap(unrelatedDecision["audit_id"]?.string)
+        let unrelatedResultID = try XCTUnwrap(unrelatedResult["audit_id"]?.string)
+        let native = MacAccessNativeClickPort(isAccessibilityTrusted: { true })
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody, audit: audit, native: native,
+            vault: PolicyTestVault(credentialRecord(binding: command.binding))
+        )
+        let channel = ScriptedCoreHostChannel(
+            reportedDecisionAuditID: unrelatedDecisionID,
+            reportedResultAuditID: unrelatedResultID
+        )
+        let transport = MacAccessStdioCoreHostTransport(launcher: { channel }, dispatcher: dispatcher)
+        let client = MacAccessCoreHostClient(
+            transport: transport, hostSessionID: "host-audit-substitution", custody: custody
+        )
+        try await prepareConnectedAskCustody(custody, command: command)
+
+        let execution = Task {
+            await CoreHostBackedMacAccessExecutor(
+                client: client, audit: audit, custody: custody
+            ).execute(command: command)
+        }
+        while await custody.currentPendingApproval() == nil { await Task.yield() }
+        let currentPending = await custody.currentPendingApproval()
+        let pending = try XCTUnwrap(currentPending)
+        let resolved = await custody.resolvePendingApproval(pending.approval, allow: true)
+        XCTAssertTrue(resolved)
+        let result = await execution.value
+
+        XCTAssertEqual(result.errorCode, MacAccessPublicError.policyUnavailable.rawValue)
+        let projection = await custody.projectStatus()
+        XCTAssertTrue(projection.killSwitch)
+    }
+
+    func testStalePolicyRaceReturnsAuditedDenialWithoutEmergencyKill() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let command = brokerCommand()
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-stale-policy")
+        let audit = try MacAccessAuditCustody(paths: paths)
+        try await prepareConnectedAskCustody(custody, command: command)
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody,
+            audit: audit,
+            native: MacAccessNativeClickPort(isAccessibilityTrusted: { true }),
+            vault: PolicyTestVault(credentialRecord(binding: command.binding))
+        )
+        let channel = StalePolicyCoreHostChannel()
+        let transport = MacAccessStdioCoreHostTransport(launcher: { channel }, dispatcher: dispatcher)
+        let client = MacAccessCoreHostClient(
+            transport: transport, hostSessionID: "host-stale-policy", custody: custody
+        )
+
+        let result = await CoreHostBackedMacAccessExecutor(
+            client: client, audit: audit, custody: custody
+        ).execute(command: command)
+
+        XCTAssertEqual(result.outcome, .denied)
+        XCTAssertEqual(result.errorCode, "policy_denied")
+        let event = await audit.committedEvent(auditID: result.localAuditID)
+        XCTAssertEqual(event?["command_id"]?.string, command.commandID)
+        XCTAssertEqual(event?["reason_code"]?.string, "stale_command_policy_epoch")
+        let projection = await custody.projectStatus()
+        XCTAssertFalse(projection.killSwitch)
+    }
+
     func testPairingPreemptionCancelsPendingApprovalBeforeBrokerWork() async throws {
         let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
         let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-repair-preempt")
@@ -809,8 +995,74 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertNil(pendingAfterPreemption)
         XCTAssertEqual(projection.pairing, "revoked")
         XCTAssertEqual(projection.effectiveMode, "off")
-        XCTAssertTrue(projection.paused)
+        XCTAssertFalse(projection.paused)
         XCTAssertFalse(projection.killSwitch)
+    }
+
+    func testInvalidPairingInputDoesNotPreemptCurrentPolicyAuthority() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let command = brokerCommand()
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-invalid-pair")
+        try await prepareConnectedAskCustody(custody, command: command)
+        let audit = try MacAccessAuditCustody(paths: paths)
+        let native = MacAccessNativeClickPort(isAccessibilityTrusted: { true })
+        let vault = PolicyTestVault(credentialRecord(binding: command.binding))
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody, audit: audit, native: native, vault: vault
+        )
+        let client = MacAccessCoreHostClient(
+            transport: MacAccessStdioCoreHostTransport(
+                launcher: { StalledCoreHostChannel() }, dispatcher: dispatcher
+            ),
+            hostSessionID: "host-invalid-pair",
+            custody: custody
+        )
+        let policyRuntime = MacAccessPolicyRuntime(
+            client: client, custody: custody, audit: audit, native: native
+        )
+        let redeemer = PolicyCountingRedeemer()
+        let runtime = MacAccessHelperRuntime(
+            vault: vault,
+            redeemer: redeemer,
+            socketFactory: PolicyCountingSocketFactory(),
+            pinnedKeys: pinnedKeys(),
+            relayURL: try XCTUnwrap(URL(string: "wss://relay.example.test/mac-access-relay/v1"))
+        )
+        let service = MacAccessRuntimeXPCServiceCore(
+            vault: vault, runtime: runtime, policyRuntime: policyRuntime
+        )
+        let before = await custody.projectStatus()
+
+        let reply = await service.pair(code: "not-a-code")
+
+        let after = await custody.projectStatus()
+        XCTAssertEqual(reply.code, .invalidPairingCode)
+        XCTAssertEqual(after.pairing, before.pairing)
+        XCTAssertEqual(after.policyEpoch, before.policyEpoch)
+        let redemptionCount = await redeemer.count
+        XCTAssertEqual(redemptionCount, 0)
+    }
+
+    func testMissingPolicyRuntimeRejectsConnectBeforeOpeningRelay() async throws {
+        let command = brokerCommand()
+        let vault = PolicyTestVault(credentialRecord(binding: command.binding))
+        let socketFactory = PolicyCountingSocketFactory()
+        let runtime = MacAccessHelperRuntime(
+            vault: vault,
+            redeemer: PolicyCountingRedeemer(),
+            socketFactory: socketFactory,
+            pinnedKeys: pinnedKeys(),
+            relayURL: try XCTUnwrap(URL(string: "wss://relay.example.test/mac-access-relay/v1"))
+        )
+        let service = MacAccessRuntimeXPCServiceCore(
+            vault: vault, runtime: runtime, policyRuntime: nil
+        )
+
+        let reply = await service.connect()
+
+        XCTAssertEqual(reply.code, .policyUnavailable)
+        let openCount = await socketFactory.openCount
+        XCTAssertEqual(openCount, 0)
     }
 
     func testClockPortDistinguishesGrantExpiryFromCommandWindowExpiry() async throws {
@@ -931,6 +1183,34 @@ final class PolicyBridgeTests: XCTestCase {
 
     private func permissions(_ url: URL) throws -> Int {
         (try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue ?? 0
+    }
+
+    private func pinnedKeys() -> MacAccessPinnedKeys {
+        MacAccessPinnedKeys(
+            commandKeyID: "command-key",
+            commandPublicKey: Data(repeating: 1, count: 32),
+            executionContextPublicKeys: ["context-key": Data(repeating: 2, count: 32)]
+        )
+    }
+
+    private func prepareConnectedAskCustody(
+        _ custody: MacAccessPolicyCustody,
+        command: MacAccessBrokerCommand
+    ) async throws {
+        var state = await custody.loadState()
+        let revision = try XCTUnwrap(state["revision"]?.integer)
+        state["pairing_state"] = .string("paired")
+        state["transport_state"] = .string("connected")
+        state["configured_mode"] = .string("ask_every_time")
+        state["effective_mode"] = .string("ask_every_time")
+        state["paused"] = .boolean(false)
+        state["kill_switch"] = .boolean(false)
+        state["policy_epoch"] = .integer(command.policyEpoch)
+        let updated = try await custody.compareAndSwap(expectedRevision: revision, state: state)
+        XCTAssertTrue(updated)
+        try await custody.authorizeLocalMode("ask_every_time")
+        let opened = await custody.openNativeBarrierIfAllowed()
+        XCTAssertTrue(opened)
     }
 
     private func actionEnvelope(commandID: String) -> [String: JSONValue] {

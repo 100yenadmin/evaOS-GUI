@@ -89,7 +89,8 @@ actor MacAccessPolicyCustody {
 
     func compareAndSwap(expectedRevision: Int64, state: [String: JSONValue]) throws -> Bool {
         guard document.state["revision"]?.integer == expectedRevision else { return false }
-        if document.state["kill_switch"]?.boolean == true,
+        let killIsLatched = document.state["kill_switch"]?.boolean ?? true
+        if killIsLatched,
            state["kill_switch"]?.boolean != true {
             return false
         }
@@ -185,8 +186,9 @@ actor MacAccessPolicyCustody {
         if operation == "off" || operation == "stop" || operation == "revoke" {
             document.state["configured_mode"] = .string("off")
         }
-        if operation == "pause" || operation == "stop" || operation == "revoke" {
-            document.state["paused"] = .boolean(true)
+        if operation == "pause" { document.state["paused"] = .boolean(true) }
+        if operation == "stop" || operation == "revoke" {
+            document.state["paused"] = .boolean(false)
         }
         if operation == "disconnect" { document.state["transport_state"] = .string("disconnected") }
         if operation == "stop" { document.state["transport_state"] = .string("disconnected") }
@@ -681,6 +683,13 @@ actor MacAccessAuditCustody {
               let events = try? readEvents(), await anchorMatches(events)
         else { return false }
         return events.contains { $0["audit_id"]?.string == auditID }
+    }
+
+    func committedEvent(auditID: String) async -> [String: JSONValue]? {
+        guard MacAccessWire.isIdentifier(auditID),
+              let events = try? readEvents(), await anchorMatches(events)
+        else { return nil }
+        return events.first { $0["audit_id"]?.string == auditID }
     }
 
     func recentSafeEvents(limit: Int = 5) async -> [MacAccessXPCAuditEvent] {

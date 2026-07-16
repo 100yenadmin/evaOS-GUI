@@ -325,6 +325,18 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         )
     }
 
+    init(
+        vault: any MacAccessCredentialVault,
+        runtime: MacAccessHelperRuntime?,
+        policyRuntime: MacAccessPolicyRuntime?,
+        policyRequired: Bool = true
+    ) {
+        self.vault = vault
+        self.runtime = runtime
+        self.policyRuntime = policyRuntime
+        self.policyRequired = policyRequired
+    }
+
     func status() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
         guard !policyRequired || policyRuntime != nil else {
@@ -335,6 +347,9 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func pair(code: String) async -> MacAccessXPCReply {
         guard code.utf8.count <= 64 else { return await reply(code: .invalidPairingCode) }
+        guard let normalizedCode = try? MacAccessPairingCode.normalize(code) else {
+            return await reply(code: .invalidPairingCode)
+        }
         guard let runtime else { return await unavailableReply() }
         guard let policyRuntime else {
             return await reply(code: .policyUnavailable, status: await runtime.status)
@@ -346,10 +361,10 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             return await reply(code: .policyUnavailable, status: await runtime.status)
         }
         do {
-            let status = try await runtime.pair(code: code)
+            let status = try await runtime.pair(code: normalizedCode)
             do {
                 try await policyRuntime.prepareForFreshPairingIfRevoked()
-                try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
+                try await policyRuntime.synchronizePairing(code: normalizedCode)
             } catch {
                 try await rollbackPairing(runtime: runtime, policyRuntime: policyRuntime)
                 throw MacAccessPublicError.policyUnavailable
@@ -362,12 +377,14 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func connect() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
+        guard let policyRuntime else {
+            return await reply(code: .policyUnavailable, status: await runtime.status)
+        }
+        guard let binding = try? await vault.load()?.binding else {
+            return await reply(code: .policyUnavailable, status: await runtime.status)
+        }
         do {
             let status = try await runtime.connect()
-            guard let binding = try await vault.load()?.binding, let policyRuntime else {
-                _ = try? await runtime.stop()
-                throw MacAccessPublicError.policyUnavailable
-            }
             do {
                 try await policyRuntime.synchronizeConnection(binding: binding)
                 await policyRuntime.enableNativeIfAllowed()
