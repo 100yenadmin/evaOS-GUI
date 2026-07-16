@@ -108,17 +108,19 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
         let connection = NSXPCConnection(serviceName: MacAccessIdentity.helperServiceID)
         connection.remoteObjectInterface = NSXPCInterface(with: MacAccessXPCServiceProtocol.self)
         connection.setCodeSigningRequirement(MacAccessIdentity.helperDesignatedRequirement)
-        connection.invalidationHandler = { [weak self] in
-            Task { await self?.clearConnection() }
+        connection.invalidationHandler = { [self] in
+            Task { await clearConnection() }
         }
-        connection.interruptionHandler = { [weak self] in
-            Task { await self?.clearConnection() }
+        connection.interruptionHandler = { [self] in
+            Task { await clearConnection() }
         }
         connection.resume()
         return connection
     }
 
     private func clearConnection() {
+        connection?.invalidationHandler = nil
+        connection?.interruptionHandler = nil
         connection = nil
     }
 }
