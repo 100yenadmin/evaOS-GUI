@@ -75,11 +75,14 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('security list-keychains -d user -s "$KEYCHAIN_PATH"');
     expect(workflow).toContain('mac-access-codesign-preflight');
     expect(workflow).toContain('/usr/bin/codesign --verify --strict "$PREFLIGHT_TARGET"');
+    expect(workflow).toContain('scripts/release/ensure-helper-profile.js');
+    expect(workflow).toContain('--certificate-serial "$CERTIFICATE_SERIAL"');
     expect(workflow).not.toContain('continue-on-error: true');
   });
 
   it('signs inside-out and verifies identity, runtime, SBOM, notarization, stapling, and Gatekeeper', () => {
     expect(workflow).toContain('scripts/release/sign-bundle.js sign');
+    expect(workflow).toContain('--helper-profile "$MAC_ACCESS_HELPER_PROFILE_PATH"');
     expect(workflow).toContain('scripts/release/sign-bundle.js record');
     expect(workflow).toContain('scripts/release/sign-bundle.js verify');
     expect(workflow).toContain('mac-access-artifact.json');
@@ -101,6 +104,7 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('exercised: false');
     expect(workflow).toContain('electricsheephq/evaos-ws-proxy/issues/76');
     expect(workflow).toContain('evidenceFiles:');
+    expect(workflow).toContain('helperProvisioningProfile: true');
     expect(workflow).toContain('CHECKSUMS.txt');
   });
 

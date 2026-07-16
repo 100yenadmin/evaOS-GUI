@@ -124,6 +124,7 @@ jobs:
           {
             echo "MAC_ACCESS_SIGNING_KEYCHAIN=$RUNNER_TEMP/mac-access-private-rc-signing.keychain-db"
             echo "MAC_ACCESS_NOTARY_API_KEY_PATH=$RUNNER_TEMP/mac-access-private-rc-notary-api-key.p8"
+            echo "MAC_ACCESS_HELPER_PROFILE_PATH=$RUNNER_TEMP/mac-access-helper-developer-id.provisionprofile"
             echo "MAC_ACCESS_EVIDENCE_DIR=$RUNNER_TEMP/mac-access-private-rc-${{ matrix.artifact_arch }}"
             echo "MAC_ACCESS_ARTIFACT_MANIFEST=$RUNNER_TEMP/mac-access-private-rc-${{ matrix.artifact_arch }}/mac-access-artifact.json"
             echo "MAC_ACCESS_SBOM=$RUNNER_TEMP/mac-access-private-rc-${{ matrix.artifact_arch }}/mac-access-sbom.spdx.json"
@@ -271,6 +272,31 @@ jobs:
 
           echo "MAC_ACCESS_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
+      - name: Obtain exact helper Developer ID provisioning profile
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_SERIAL="$(
+            security find-certificate \
+              -c 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)' \
+              -p \
+              "$MAC_ACCESS_SIGNING_KEYCHAIN" \
+              | openssl x509 -noout -serial \
+              | sed -E 's/^serial=//; s/[^A-Fa-f0-9]//g'
+          )"
+          printf '%s' "$CERTIFICATE_SERIAL" | grep -Eq '^[A-Fa-f0-9]+$'
+          node packages/mac-access/scripts/release/ensure-helper-profile.js \
+            --key "$MAC_ACCESS_NOTARY_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --certificate-serial "$CERTIFICATE_SERIAL" \
+            --output "$MAC_ACCESS_HELPER_PROFILE_PATH"
+          test -s "$MAC_ACCESS_HELPER_PROFILE_PATH"
+          test "$(stat -f '%Lp' "$MAC_ACCESS_HELPER_PROFILE_PATH")" = '600'
+          security cms -D -i "$MAC_ACCESS_HELPER_PROFILE_PATH" > /dev/null
+
       - name: Preflight Apple notarization credentials
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -293,6 +319,7 @@ jobs:
             --app "$MAC_ACCESS_APP_PATH" \
             --identity "$MAC_ACCESS_SIGNING_IDENTITY" \
             --keychain "$MAC_ACCESS_SIGNING_KEYCHAIN" \
+            --helper-profile "$MAC_ACCESS_HELPER_PROFILE_PATH" \
             --manifest "$MAC_ACCESS_ARTIFACT_MANIFEST" \
             --sbom "$MAC_ACCESS_SBOM" \
             --source-sha "$GITHUB_SHA"
@@ -436,6 +463,7 @@ jobs:
               artifactManifestSHA256: sha256(process.env.MAC_ACCESS_ARTIFACT_MANIFEST),
               sbomSHA256: sha256(process.env.MAC_ACCESS_SBOM),
               signedBundleTreeSHA256: artifactManifest.artifact.bundleTree.sha256,
+              helperProvisioningProfile: artifactManifest.signing.roles.helper.provisioningProfile,
             },
             updateConfiguration: {
               channel: 'mac-access-private-rc',
@@ -482,6 +510,7 @@ jobs:
               designatedRequirements: true,
               helperRelationship: true,
               entitlements: true,
+              helperProvisioningProfile: true,
               privateRuntime: true,
               coreSourceBinding: true,
               dependencyLicenseInventory: true,
@@ -555,4 +584,7 @@ jobs:
           if [ -n "${MAC_ACCESS_SIGNING_KEYCHAIN:-}" ]; then
             security delete-keychain "$MAC_ACCESS_SIGNING_KEYCHAIN" >/dev/null 2>&1
           fi
-          rm -f "${MAC_ACCESS_NOTARY_API_KEY_PATH:-}" "$RUNNER_TEMP/mac-access-private-rc-certificate.p12"
+          rm -f \
+            "${MAC_ACCESS_NOTARY_API_KEY_PATH:-}" \
+            "${MAC_ACCESS_HELPER_PROFILE_PATH:-}" \
+            "$RUNNER_TEMP/mac-access-private-rc-certificate.p12"

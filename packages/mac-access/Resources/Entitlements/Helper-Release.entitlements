@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>com.apple.application-identifier</key>
+    <string>TC6MS3T6NN.com.evaos.mac-access.helper</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>TC6MS3T6NN</string>
     <key>keychain-access-groups</key>
     <array>
         <string>TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1</string>

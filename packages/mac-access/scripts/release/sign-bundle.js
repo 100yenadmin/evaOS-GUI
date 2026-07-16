@@ -10,6 +10,7 @@ const {
   verifyManifest,
   writeJSON,
 } = require('./manifest');
+const { embedHelperProvisioningProfile } = require('./provisioning-profile');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '../..');
 
@@ -37,6 +38,13 @@ function signReleaseBundle(appPath, options = {}) {
   const app = path.resolve(appPath);
   const runner = options.runner || defaultRunner;
   const identity = options.identity;
+  if (!options.helperProfile) {
+    throw new Error('Mac Access release signing requires the helper Developer ID provisioning profile.');
+  }
+  const helperProfile = embedHelperProvisioningProfile(app, options.helperProfile, {
+    expectedCertificateSHA1: identity,
+    runner,
+  });
   const roleExecutablePaths = new Set(Object.values(ROLE_CONTRACTS).map((role) => role.executablePath));
   const leafPaths = discoverMachOFiles(app)
     .filter((relativePath) => !roleExecutablePaths.has(relativePath))
@@ -66,7 +74,7 @@ function signReleaseBundle(appPath, options = {}) {
       runner
     );
   }
-  return { leafPaths, roles: ['connector', 'helper', 'app'] };
+  return { helperProfile, leafPaths, roles: ['connector', 'helper', 'app'] };
 }
 
 function recordReleaseBundle(appPath, options = {}) {
@@ -102,11 +110,15 @@ function main() {
   const options = parseOptions(arguments_);
   if (!['sign', 'record', 'verify'].includes(operation) || !options.app || !options.manifest || !options.sbom) {
     throw new Error(
-      'usage: sign-bundle.js sign|record|verify --app <App.app> --manifest <manifest.json> --sbom <sbom.spdx.json> [--identity <Developer ID>] [--keychain <path>] [--source-sha <sha>]'
+      'usage: sign-bundle.js sign|record|verify --app <App.app> --manifest <manifest.json> --sbom <sbom.spdx.json> [--identity <Developer ID SHA-1>] [--keychain <path>] [--helper-profile <path>] [--source-sha <sha>]'
     );
   }
   if (operation === 'sign') {
-    signReleaseBundle(options.app, { identity: options.identity, keychain: options.keychain });
+    signReleaseBundle(options.app, {
+      helperProfile: options['helper-profile'],
+      identity: options.identity,
+      keychain: options.keychain,
+    });
     recordReleaseBundle(options.app, {
       manifest: options.manifest,
       sbom: options.sbom,

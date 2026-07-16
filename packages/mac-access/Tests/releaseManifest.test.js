@@ -27,6 +27,8 @@ const RUNTIME_SOURCE_SHA = '3'.repeat(64);
 const SPARKLE_PUBLIC_KEY = Buffer.alloc(32, 7).toString('base64');
 const ROLLBACK_PUBLIC_KEY = Buffer.alloc(32, 9).toString('base64url');
 const CORE_IDENTITY = Object.freeze({ coreSourceSha256: CORE_SHA, sourceManifestSha256: SOURCE_MANIFEST_SHA });
+const PROFILE_CERTIFICATE = Buffer.from('mac-access-developer-id-certificate-fixture');
+const PROFILE_CERTIFICATE_SHA1 = crypto.createHash('sha1').update(PROFILE_CERTIFICATE).digest('hex').toUpperCase();
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -46,7 +48,34 @@ function writeMachO(filePath, label) {
 function helperEntitlementsXML(group = EXPECTED_COMPATIBILITY.credentialAccessGroup) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>keychain-access-groups</key><array><string>${group}</string></array></dict></plist>`;
+<plist version="1.0"><dict>
+<key>com.apple.application-identifier</key><string>${TEAM_ID}.com.evaos.mac-access.helper</string>
+<key>com.apple.developer.team-identifier</key><string>${TEAM_ID}</string>
+<key>keychain-access-groups</key><array><string>${group}</string></array>
+</dict></plist>`;
+}
+
+function provisioningProfileXML(overrides = {}) {
+  const applicationIdentifier = overrides.applicationIdentifier || `${TEAM_ID}.com.evaos.mac-access.helper`;
+  const teamIdentifier = overrides.teamIdentifier || TEAM_ID;
+  const developerTeamIdentifier = overrides.developerTeamIdentifier || TEAM_ID;
+  const keychainGroup = overrides.keychainGroup || `${TEAM_ID}.*`;
+  const expirationDate = overrides.expirationDate || '2099-07-16T14:00:00Z';
+  const certificate = (overrides.certificate || PROFILE_CERTIFICATE).toString('base64');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Name</key><string>evaOS Mac Access Helper Developer ID</string>
+<key>UUID</key><string>00000000-0000-0000-0000-000000000705</string>
+<key>CreationDate</key><date>2026-07-16T14:00:00Z</date>
+<key>ExpirationDate</key><date>${expirationDate}</date>
+<key>TeamIdentifier</key><array><string>${teamIdentifier}</string></array>
+<key>DeveloperCertificates</key><array><data>${certificate}</data></array>
+<key>Entitlements</key><dict>
+<key>com.apple.application-identifier</key><string>${applicationIdentifier}</string>
+<key>com.apple.developer.team-identifier</key><string>${developerTeamIdentifier}</string>
+<key>keychain-access-groups</key><array><string>${keychainGroup}</string></array>
+</dict></dict></plist>`;
 }
 
 function makeFixture() {
@@ -132,7 +161,18 @@ function makeFixture() {
   const fixturePath = path.join(app, 'Contents', 'Resources', 'fixture.txt');
   fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
   fs.writeFileSync(fixturePath, 'signed artifact fixture\n');
-  return { app, root };
+  const helperProfile = path.join(root, 'helper.provisionprofile');
+  fs.writeFileSync(helperProfile, 'helper profile fixture\n');
+  const embeddedProfile = path.join(
+    app,
+    'Contents',
+    'XPCServices',
+    'evaOS Mac Access Helper.xpc',
+    'Contents',
+    'embedded.provisionprofile'
+  );
+  fs.writeFileSync(embeddedProfile, 'embedded helper profile fixture\n');
+  return { app, helperProfile, root };
 }
 
 function roleForTarget(target, app) {
@@ -146,6 +186,9 @@ function fakeRunner(app, state = {}) {
   return (command, args, options = {}) => {
     const tool = path.basename(command);
     if (tool === 'plutil') return defaultRunner(command, args, options);
+    if (tool === 'security') {
+      return { status: 0, stdout: provisioningProfileXML(state.profile || {}), stderr: '' };
+    }
     if (tool === 'lipo') return { status: 0, stdout: `${state.architecture || 'arm64'}\n`, stderr: '' };
     if (tool !== 'codesign') throw new Error(`Unexpected test command: ${command}`);
     state.calls?.push({ command, args: [...args] });
@@ -219,8 +262,15 @@ test('creates an exact identity-continuity manifest and SPDX dependency inventor
     parentBundleID: 'com.evaos.mac-access',
   });
   assert.deepEqual(manifest.signing.roles.helper.entitlements, {
+    'com.apple.application-identifier': `${TEAM_ID}.com.evaos.mac-access.helper`,
+    'com.apple.developer.team-identifier': TEAM_ID,
     'keychain-access-groups': [EXPECTED_COMPATIBILITY.credentialAccessGroup],
   });
+  assert.equal(
+    manifest.signing.roles.helper.provisioningProfile.applicationIdentifier,
+    `${TEAM_ID}.com.evaos.mac-access.helper`
+  );
+  assert.ok(manifest.signing.roles.helper.provisioningProfile.authorizedKeychainAccessGroups.includes(`${TEAM_ID}.*`));
   assert.deepEqual(manifest.artifact.architectures, ['arm64']);
   assert.equal(manifest.signing.machOClosure.length, 4);
   assert.equal(sbom.spdxVersion, 'SPDX-2.3');
@@ -361,8 +411,9 @@ test('signs the complete Mach-O closure inside-out with helper-only entitlements
   const fixture = makeFixture();
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const state = { calls: [] };
-  const identity = 'Developer ID Application: Andrew Ryan (TC6MS3T6NN)';
+  const identity = PROFILE_CERTIFICATE_SHA1;
   const result = signReleaseBundle(fixture.app, {
+    helperProfile: fixture.helperProfile,
     identity,
     keychain: '/tmp/release.keychain-db',
     runner: fakeRunner(fixture.app, state),
@@ -370,6 +421,7 @@ test('signs the complete Mach-O closure inside-out with helper-only entitlements
   const signingCalls = state.calls.filter((entry) => entry.args[0] === '--force');
 
   assert.equal(result.leafPaths.length, 1);
+  assert.equal(result.helperProfile.developerCertificateSHA1s[0], PROFILE_CERTIFICATE_SHA1);
   assert.equal(signingCalls.length, 4);
   assert.ok(signingCalls.every((entry) => entry.args.includes('--timestamp')));
   assert.ok(signingCalls.every((entry) => entry.args.includes('runtime')));

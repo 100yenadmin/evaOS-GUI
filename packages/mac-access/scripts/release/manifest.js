@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { verifyGeneratedCoreSource } = require('../../../mac-connector-core/scripts/coreManifest');
+const { HELPER_PROFILE_RELATIVE_PATH, inspectHelperProvisioningProfile } = require('./provisioning-profile');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '../..');
 const REPOSITORY_ROOT = path.resolve(PACKAGE_ROOT, '../..');
@@ -52,6 +53,8 @@ const ROLE_CONTRACTS = Object.freeze({
     designatedRequirementSHA256: '222107bb855cfc463805777c76ca8cfdac0d1145957c5f190c234e52bfd277aa',
     relationship: Object.freeze({ kind: 'xpc-service', parentBundleID: 'com.evaos.mac-access' }),
     expectedEntitlements: Object.freeze({
+      'com.apple.application-identifier': 'TC6MS3T6NN.com.evaos.mac-access.helper',
+      'com.apple.developer.team-identifier': 'TC6MS3T6NN',
       'keychain-access-groups': ['TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1'],
     }),
   }),
@@ -255,6 +258,10 @@ function assertRoleContract(appPath, role, runner = defaultRunner) {
     throw new Error(`${role} bundle identity or executable owner drifted.`);
   }
   const signature = inspectSignature(bundlePath, runner);
+  const provisioningProfile =
+    role === 'helper'
+      ? inspectHelperProvisioningProfile(path.join(appPath, HELPER_PROFILE_RELATIVE_PATH), { runner })
+      : undefined;
   if (
     signature.identifier !== contract.bundleID ||
     signature.teamID !== TEAM_ID ||
@@ -285,6 +292,7 @@ function assertRoleContract(appPath, role, runner = defaultRunner) {
     },
     entitlements: signature.entitlements,
     entitlementsSHA256: signature.entitlementsSHA256,
+    ...(provisioningProfile ? { provisioningProfile } : {}),
   };
 }
 

@@ -48,6 +48,9 @@ assert_file "$APP_PATH/Contents/MacOS/evaOS Mac Access"
 assert_file "$APP_PATH/Contents/Resources/Uninstall.md"
 assert_file "$HELPER_PATH/Contents/MacOS/evaOS Mac Access Helper"
 assert_file "$CONNECTOR_PATH/Contents/MacOS/evaOS Mac Access Connector"
+if [ "$PRIVATE_RUNTIME_SIGNED" = 1 ]; then
+  assert_file "$HELPER_PATH/Contents/embedded.provisionprofile"
+fi
 
 assert_bundle_value "$APP_PATH" CFBundleIdentifier com.evaos.mac-access
 assert_bundle_value "$APP_PATH" LSUIElement true
@@ -74,6 +77,16 @@ all_setting_count=$(grep -Fc 'CODE_SIGN_ENTITLEMENTS' "$PACKAGE_ROOT/MacAccess.x
 
 debug_group=$($PLIST_BUDDY -c 'Print :keychain-access-groups:0' "$DEBUG_ENTITLEMENTS")
 release_group=$($PLIST_BUDDY -c 'Print :keychain-access-groups:0' "$RELEASE_ENTITLEMENTS")
+debug_application_id=$($PLIST_BUDDY -c 'Print :com.apple.application-identifier' "$DEBUG_ENTITLEMENTS")
+release_application_id=$($PLIST_BUDDY -c 'Print :com.apple.application-identifier' "$RELEASE_ENTITLEMENTS")
+debug_team_id=$($PLIST_BUDDY -c 'Print :com.apple.developer.team-identifier' "$DEBUG_ENTITLEMENTS")
+release_team_id=$($PLIST_BUDDY -c 'Print :com.apple.developer.team-identifier' "$RELEASE_ENTITLEMENTS")
+[ "$debug_application_id" = 'TC6MS3T6NN.com.evaos.mac-access.helper' ] || \
+  fail "unexpected Debug application identifier $debug_application_id"
+[ "$release_application_id" = 'TC6MS3T6NN.com.evaos.mac-access.helper' ] || \
+  fail "unexpected Release application identifier $release_application_id"
+[ "$debug_team_id" = 'TC6MS3T6NN' ] || fail "unexpected Debug Team ID $debug_team_id"
+[ "$release_team_id" = 'TC6MS3T6NN' ] || fail "unexpected Release Team ID $release_team_id"
 [ "$debug_group" = 'TC6MS3T6NN.com.evaos.mac-access.development.credentials.epoch-1' ] || \
   fail "unexpected Debug Keychain group $debug_group"
 [ "$release_group" = 'TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1' ] || \
