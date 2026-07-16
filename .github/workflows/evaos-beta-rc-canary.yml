@@ -693,14 +693,16 @@ jobs:
 
           connector_job_is_active() {
             local job_pid
-            local job_snapshot="$CONNECTOR_STATE_DIR/connector.jobs"
+            local job_snapshot
 
-            jobs -p > "$job_snapshot"
-            while IFS= read -r job_pid; do
+            if ! job_snapshot=$(jobs -p); then
+              return 0
+            fi
+            for job_pid in $job_snapshot; do
               if [ "$job_pid" = "$CONNECTOR_PID" ]; then
                 return 0
               fi
-            done < "$job_snapshot"
+            done
             return 1
           }
 

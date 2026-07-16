@@ -1023,7 +1023,7 @@ function collectRcCanaryWorkflowIssues(workflow) {
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_STATE_DIR="$CONNECTOR_STATE_DIR" \\') ||
       !installedCandidateRun.includes('EVAOS_DESKTOP_BRIDGE_MANAGED_BY=workbench-session \\') ||
       !installedCandidateRun.includes('CONNECTOR_PID=$!') ||
-      !connectorCleanup.includes('jobs -p > "$job_snapshot"') ||
+      !connectorCleanup.includes('if ! job_snapshot=$(jobs -p); then\nreturn 0\nfi') ||
       !connectorCleanup.includes('if connector_job_is_active; then') ||
       connectorKillIndex < 0 ||
       connectorWaitIndex <= connectorKillIndex ||
