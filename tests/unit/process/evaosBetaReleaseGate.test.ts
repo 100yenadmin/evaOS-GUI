@@ -1301,6 +1301,11 @@ describe('evaOS beta release gate', () => {
     ).toContain(harnessIssue);
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('/bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"', 'ps -axo pid=,command=')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
         workflow.replace(
           '            if node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n',
           '            node - "$process_snapshot" "$app_path" "$pid_output" <<\'NODE\'\n'
@@ -1310,6 +1315,11 @@ describe('evaOS beta release gate', () => {
     expect(
       releaseGate.collectRcCanaryWorkflowIssues(
         workflow.replace('              if (match && match[1] !== canonicalApp) process.exit(2);\n', '')
+      )
+    ).toContain(harnessIssue);
+    expect(
+      releaseGate.collectRcCanaryWorkflowIssues(
+        workflow.replace('            if (canonicalMainCount === 0) process.exit(4);\n', '')
       )
     ).toContain(harnessIssue);
     expect(

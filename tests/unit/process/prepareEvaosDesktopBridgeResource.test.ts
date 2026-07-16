@@ -410,7 +410,9 @@ describe('prepareEvaosDesktopBridgeResource', () => {
     expect(workflow).toContain('terminate_exact_app_processes "$BETA_APP"');
     expect(workflow).toContain('RC_FALLBACK_LAUNCH_VERIFIED=true');
     expect(workflow).not.toContain('pkill -f "EvaOSWorkbench|evaOS Workbench"');
+    expect(workflow).not.toContain('pgrep -f "EvaOSWorkbench|evaOS Workbench"');
     expect(workflow).not.toContain('pgrep -f "${FALLBACK_APP_NAME%.app}"');
+    expect(workflow).toContain('/bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"');
     expect(workflow).not.toContain('connector-service start');
     expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-pre-canary.stdout');
     expect(workflow).not.toContain('$PROOF_DIR/installed-candidate-pre-canary.stderr');
@@ -439,6 +441,23 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       });
       expect(canonical.status).toBe(0);
 
+      writeFileSync(
+        snapshotPath,
+        '  102 /Applications/evaOS Workbench.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper\n'
+      );
+      const helperOnly = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(helperOnly.status).toBe(4);
+
+      writeFileSync(snapshotPath, '');
+      const empty = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(empty.status).toBe(4);
+
       writeFileSync(snapshotPath, '  202 /Volumes/LEXAR/Codex/evidence/stale.app/Contents/MacOS/evaOS Workbench\n');
       const stale = spawnSync(process.execPath, ['-', snapshotPath], {
         encoding: 'utf8',
@@ -447,6 +466,16 @@ describe('prepareEvaosDesktopBridgeResource', () => {
       expect(stale.status).toBe(2);
       expect(stale.stdout).toBe('');
       expect(stale.stderr).toBe('');
+
+      writeFileSync(
+        snapshotPath,
+        `  203 /Volumes/${'very-long-segment/'.repeat(40)}stale.app/Contents/MacOS/evaOS Workbench\n`
+      );
+      const longStale = spawnSync(process.execPath, ['-', snapshotPath], {
+        encoding: 'utf8',
+        input: processScript,
+      });
+      expect(longStale.status).toBe(2);
     } finally {
       rmSync(processDir, { recursive: true, force: true });
     }

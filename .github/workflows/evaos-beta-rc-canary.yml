@@ -860,11 +860,7 @@ jobs:
 
           open -n "$BETA_APP"
           sleep 8
-          if ! pgrep -f "EvaOSWorkbench|evaOS Workbench" > /dev/null; then
-            echo "::error::Beta app did not launch a detectable process."
-            exit 1
-          fi
-          ps -axo pid=,command= > "$WORKBENCH_PROCESS_SNAPSHOT"
+          /bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"
           set +e
           node - "$WORKBENCH_PROCESS_SNAPSHOT" <<'NODE'
           const fs = require('fs');
@@ -872,11 +868,14 @@ jobs:
           const canonicalApp = '/Applications/evaOS Workbench.app';
           try {
             const lines = fs.readFileSync(snapshotPath, 'utf8').split(/\r?\n/);
+            let canonicalMainCount = 0;
             for (const line of lines) {
               const command = line.replace(/^\s*\d+\s+/, '');
-              const match = command.match(/^(.+?\.app)\/Contents\/MacOS\/(?:evaOS Workbench|EvaOSWorkbench)(?:\s|$)/);
+              const match = command.match(/^(.+?\.app)\/Contents\/MacOS\/(?:evaOS Workbench|EvaOSWorkbench)$/);
               if (match && match[1] !== canonicalApp) process.exit(2);
+              if (match) canonicalMainCount += 1;
             }
+            if (canonicalMainCount === 0) process.exit(4);
           } catch {
             process.exit(3);
           }
@@ -884,7 +883,10 @@ jobs:
           WORKBENCH_PROCESS_AUDIT_EXIT=$?
           set -e
           rm -f "$WORKBENCH_PROCESS_SNAPSHOT"
-          if [ "$WORKBENCH_PROCESS_AUDIT_EXIT" -ne 0 ]; then
+          if [ "$WORKBENCH_PROCESS_AUDIT_EXIT" -eq 4 ]; then
+            echo "::error::Beta app did not launch its exact canonical main process."
+            exit 1
+          elif [ "$WORKBENCH_PROCESS_AUDIT_EXIT" -ne 0 ]; then
             echo "::error::A noncanonical Workbench app process is running during installed-candidate proof."
             exit 1
           fi

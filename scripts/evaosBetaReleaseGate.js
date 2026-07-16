@@ -1030,8 +1030,11 @@ function collectRcCanaryWorkflowIssues(workflow) {
       installedProcessHelper.split('return 1').length - 1 < 2 ||
       !installedCandidateRun.includes('terminate_exact_app_processes "$BETA_APP"') ||
       installedCandidateRun.includes('pkill -f "EvaOSWorkbench|evaOS Workbench"') ||
+      installedCandidateRun.includes('pgrep -f "EvaOSWorkbench|evaOS Workbench"') ||
+      !installedCandidateRun.includes('/bin/ps -ww -axo pid=,comm= > "$WORKBENCH_PROCESS_SNAPSHOT"') ||
       !installedCandidateRun.includes("const canonicalApp = '/Applications/evaOS Workbench.app';") ||
       !installedCandidateRun.includes('if (match && match[1] !== canonicalApp) process.exit(2);') ||
+      !installedCandidateRun.includes('if (canonicalMainCount === 0) process.exit(4);') ||
       installedCandidateRun.includes('connector-service start')
     ) {
       issues.push(
