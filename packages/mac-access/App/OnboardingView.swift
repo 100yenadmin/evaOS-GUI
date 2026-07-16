@@ -40,6 +40,7 @@ final class MacAccessOnboardingWindow: ObservableObject {
 struct OnboardingView: View {
     @ObservedObject var controller: MacAccessController
     let close: () -> Void
+    @State private var pairingCode = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -47,6 +48,12 @@ struct OnboardingView: View {
                 .font(.title2)
 
             Text("onboarding.backendBlocked")
+
+            TextField("onboarding.pairingCode", text: $pairingCode)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: pairingCode) { _, value in
+                    pairingCode = String(value.uppercased().prefix(12))
+                }
 
             GroupBox("onboarding.identityTitle") {
                 VStack(alignment: .leading, spacing: 6) {
@@ -79,9 +86,9 @@ struct OnboardingView: View {
 
             HStack {
                 Button("action.pair") {
-                    Task { await controller.perform(.pair) }
+                    Task { await controller.perform(.pair(pairingCode)) }
                 }
-                .disabled(!controller.availability.pairing)
+                .disabled(!controller.availability.pairing || pairingCode.count != 12)
                 .keyboardShortcut(.defaultAction)
                 Spacer()
                 Button("action.close") {

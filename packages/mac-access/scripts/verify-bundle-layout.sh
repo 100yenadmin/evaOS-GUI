@@ -50,12 +50,28 @@ assert_bundle_value "$CONNECTOR_PATH" CFBundleIdentifier com.evaos.mac-access.co
 assert_bundle_value "$CONNECTOR_PATH" LSBackgroundOnly true
 assert_bundle_missing "$CONNECTOR_PATH" LSUIElement
 
-if grep -Fq 'CODE_SIGN_ENTITLEMENTS' "$PACKAGE_ROOT/MacAccess.xcodeproj/project.pbxproj"; then
-  fail 'production entitlements are forbidden in the A2 local-only project'
-fi
-if find "$PACKAGE_ROOT" -type f -name '*.entitlements' -print -quit | grep -q .; then
-  fail 'an entitlements file exists in the A2 local-only package'
-fi
+DEBUG_ENTITLEMENTS="$PACKAGE_ROOT/Resources/Entitlements/Helper-Debug.entitlements"
+RELEASE_ENTITLEMENTS="$PACKAGE_ROOT/Resources/Entitlements/Helper-Release.entitlements"
+assert_file "$DEBUG_ENTITLEMENTS"
+assert_file "$RELEASE_ENTITLEMENTS"
+
+entitlements_count=$(find "$PACKAGE_ROOT" -type f -name '*.entitlements' | wc -l | tr -d ' ')
+[ "$entitlements_count" = 2 ] || fail "expected exactly two helper entitlement files, found $entitlements_count"
+debug_setting_count=$(grep -Fc 'CODE_SIGN_ENTITLEMENTS = "Resources/Entitlements/Helper-Debug.entitlements";' \
+  "$PACKAGE_ROOT/MacAccess.xcodeproj/project.pbxproj")
+release_setting_count=$(grep -Fc 'CODE_SIGN_ENTITLEMENTS = "Resources/Entitlements/Helper-Release.entitlements";' \
+  "$PACKAGE_ROOT/MacAccess.xcodeproj/project.pbxproj")
+[ "$debug_setting_count" = 1 ] || fail 'Debug must use only Helper-Debug.entitlements'
+[ "$release_setting_count" = 1 ] || fail 'Release must use only Helper-Release.entitlements'
+all_setting_count=$(grep -Fc 'CODE_SIGN_ENTITLEMENTS' "$PACKAGE_ROOT/MacAccess.xcodeproj/project.pbxproj")
+[ "$all_setting_count" = 2 ] || fail 'only the helper Debug and Release targets may declare entitlements'
+
+debug_group=$($PLIST_BUDDY -c 'Print :keychain-access-groups:0' "$DEBUG_ENTITLEMENTS")
+release_group=$($PLIST_BUDDY -c 'Print :keychain-access-groups:0' "$RELEASE_ENTITLEMENTS")
+[ "$debug_group" = 'TC6MS3T6NN.com.evaos.mac-access.development.credentials.epoch-1' ] || \
+  fail "unexpected Debug Keychain group $debug_group"
+[ "$release_group" = 'TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1' ] || \
+  fail "unexpected Release Keychain group $release_group"
 if grep -Eq 'packages/desktop|/usr/bin/python|/opt/homebrew|/usr/local/bin/python' \
   "$PACKAGE_ROOT/MacAccess.xcodeproj/project.pbxproj"; then
   fail 'project contains a Workbench or customer-managed Python build dependency'
@@ -70,4 +86,4 @@ for executable in \
   fi
 done
 
-echo "Verified standalone local-only bundle layout: $APP_PATH"
+echo "Verified standalone Mac Access bundle layout and helper-only Keychain groups: $APP_PATH"

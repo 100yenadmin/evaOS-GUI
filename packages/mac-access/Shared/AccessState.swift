@@ -17,6 +17,10 @@ public enum MacAccessMode: String, CaseIterable, Sendable {
 
 public enum MacAccessBlocker: String, Equatable, Sendable {
     case notPaired
+    case invalidPairingCode
+    case pairingRejected
+    case credentialUnavailable
+    case policyUnavailable
     case dashboardPairingUnavailable
     case relayUnavailable
     case connectorCoreUnavailable
@@ -90,6 +94,21 @@ public struct MacAccessStateMachine: Sendable {
         state.connection = .connecting
         state.effectiveMode = .off
         state.blocker = nil
+    }
+
+    public mutating func markPaired() {
+        state.isPaired = true
+        state.connection = .disconnected
+        state.effectiveMode = .off
+        state.blocker = nil
+    }
+
+    public mutating func markUnpaired(_ blocker: MacAccessBlocker = .notPaired) {
+        state.isPaired = false
+        state.configuredMode = .off
+        state.effectiveMode = .off
+        state.connection = .blocked
+        state.blocker = blocker
     }
 
     public mutating func requireApproval() {
@@ -178,6 +197,12 @@ public struct MacAccessStateMachine: Sendable {
     public mutating func selectOff() {
         state.configuredMode = .off
         state.effectiveMode = .off
+    }
+
+    public mutating func stop() {
+        state.configuredMode = .off
+        state.effectiveMode = .off
+        state.connection = state.isPaired && state.blocker == nil ? .disconnected : .blocked
     }
 
     public mutating func block(_ blocker: MacAccessBlocker) {

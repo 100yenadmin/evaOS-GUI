@@ -13,6 +13,7 @@ public final class MacAccessController: ObservableObject {
     private var inFlightCounts: [Int: Int] = [:]
     private var invalidationReasons: [Int: ActionInvalidationReason] = [:]
     private var quitCleanupInFlight = false
+    private var emergencyStopCleanupIssued = false
 
     private enum ActionInvalidationReason {
         case emergencyStop
@@ -29,6 +30,10 @@ public final class MacAccessController: ObservableObject {
         self.machine = MacAccessStateMachine(state: initialState)
         self.state = initialState
         self.availability = availability
+    }
+
+    public var canConnect: Bool {
+        availability.transport && state.isPaired && state.connection == .disconnected
     }
 
     @discardableResult
@@ -68,6 +73,9 @@ public final class MacAccessController: ObservableObject {
         machine.emergencyStop()
         state = machine.state
         lastResult = .completed(.localEmergencyStop)
+        guard !emergencyStopCleanupIssued else { return }
+        emergencyStopCleanupIssued = true
+        Task { await requestEmergencyStopCleanup() }
     }
 
     @discardableResult
@@ -109,8 +117,17 @@ public final class MacAccessController: ObservableObject {
             }
         case .completed:
             switch action {
+            case .pair:
+                machine.markPaired()
+            case .unpair, .revokeSelectedVM:
+                machine.markUnpaired(action == .unpair ? .notPaired : .revokedGrant)
+            case .connect:
+                machine.beginConnecting()
+                machine.markConnected(at: Date())
+            case .disconnect:
+                machine.disconnect()
             case .setAccessMode(.off), .stop:
-                machine.selectOff()
+                if !preserveEmergencyEvidence { machine.stop() }
             case .pause:
                 machine.pause()
             case .resume:
@@ -158,12 +175,18 @@ public final class MacAccessController: ObservableObject {
             switch action {
             case .stop, .setAccessMode(.off):
                 break
+            case .pair where blocker == .dashboardPairingUnavailable || blocker == .notPaired
+                || blocker == .stalePairing || blocker == .revokedGrant:
+                break
             default:
                 return blocker
             }
         }
 
         switch action {
+        case .connect:
+            if !state.isPaired { return .notPaired }
+            if state.connection != .disconnected { return .connectorCoreUnavailable }
         case .pause:
             if !state.isPaired { return .notPaired }
             if state.connection != .connected { return .connectorCoreUnavailable }
@@ -174,5 +197,9 @@ public final class MacAccessController: ObservableObject {
             break
         }
         return nil
+    }
+
+    private func requestEmergencyStopCleanup() async {
+        _ = await client.perform(.stop)
     }
 }

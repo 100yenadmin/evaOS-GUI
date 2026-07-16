@@ -17,6 +17,10 @@ final actor RecordingConnectorClient: ConnectorCoreClient {
     func recordedActions() -> [ConnectorCoreAction] {
         actions
     }
+
+    func waitForActionCount(_ count: Int) async {
+        while actions.count < count { await Task.yield() }
+    }
 }
 
 final actor SequencedConnectorClient: ConnectorCoreClient {
@@ -68,7 +72,7 @@ final class ControllerTests: XCTestCase {
     func testLocalOnlyClientBlocksPairingAndTransport() async {
         let client = LocalOnlyConnectorCoreClient()
 
-        let pairing = await client.perform(.pair)
+        let pairing = await client.perform(.pair("ABCDEFGH2345"))
         let transport = await client.perform(.connect)
 
         XCTAssertEqual(pairing, .blocked(.dashboardPairingUnavailable))
@@ -83,6 +87,48 @@ final class ControllerTests: XCTestCase {
         XCTAssertFalse(availability.elevatedAccessModes)
         XCTAssertFalse(availability.revoke)
         XCTAssertFalse(availability.update)
+    }
+
+    func testConnectAvailabilityRequiresPairedAndDisconnected() {
+        let connected = MacAccessState(
+            connection: .connected, configuredMode: .off, effectiveMode: .off,
+            isPaired: true, blocker: nil
+        )
+        let disconnected = MacAccessState(
+            connection: .disconnected, configuredMode: .off, effectiveMode: .off,
+            isPaired: true, blocker: nil
+        )
+
+        XCTAssertFalse(MacAccessController(
+            initialState: connected, availability: .pairingTransport
+        ).canConnect)
+        XCTAssertTrue(MacAccessController(
+            initialState: disconnected, availability: .pairingTransport
+        ).canConnect)
+        XCTAssertFalse(MacAccessController(
+            initialState: .safeInitial, availability: .pairingTransport
+        ).canConnect)
+    }
+
+    func testPairingCodeReachesInjectedClientAndClearsRecoverableInitialBlocker() async {
+        let client = RecordingConnectorClient(result: .completed(.paired))
+        let availability = MacAccessActionAvailability(
+            pairing: true,
+            transport: false,
+            elevatedAccessModes: false,
+            revoke: false,
+            update: false
+        )
+        let controller = MacAccessController(client: client, availability: availability)
+
+        let result = await controller.perform(.pair("ABCDEFGH2345"))
+        let actions = await client.recordedActions()
+
+        XCTAssertEqual(result, .completed(.paired))
+        XCTAssertEqual(actions, [.pair("ABCDEFGH2345")])
+        XCTAssertTrue(controller.state.isPaired)
+        XCTAssertEqual(controller.state.connection, .disconnected)
+        XCTAssertNil(controller.state.blocker)
     }
 
     func testQuitRecordsCleanupIntentBeforeRequestingStop() async {
@@ -169,6 +215,8 @@ final class ControllerTests: XCTestCase {
         let action = Task { await controller.perform(.pause) }
         await client.waitUntilSuspended(.pause)
         controller.emergencyStop()
+        await client.waitUntilSuspended(.stop)
+        await client.release(.stop, with: .blocked(.connectorCoreUnavailable))
         await client.release(.pause, with: .completed(.localPause))
         let actionResult = await action.value
 
@@ -177,6 +225,51 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.connection, .blocked)
         XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
         XCTAssertEqual(controller.state.effectiveMode, .off)
+    }
+
+    func testEmergencyStopSynchronouslyLatchesAndIssuesExactlyOneStop() async {
+        let client = RecordingConnectorClient(result: .blocked(.relayUnavailable))
+        let connected = MacAccessState(
+            connection: .connected,
+            configuredMode: .fullAccess,
+            effectiveMode: .askEveryTime,
+            isPaired: true,
+            blocker: nil
+        )
+        let controller = MacAccessController(client: client, initialState: connected)
+
+        controller.emergencyStop()
+        controller.emergencyStop()
+        XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+        await client.waitForActionCount(1)
+        await Task.yield()
+        let actions = await client.recordedActions()
+
+        XCTAssertEqual(actions, [.stop])
+        XCTAssertEqual(controller.lastResult, .completed(.localEmergencyStop))
+        XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
+    }
+
+    func testSuccessfulStopAndOffNoLongerClaimConnected() async {
+        let client = RecordingConnectorClient(result: .completed(.localStop))
+        let connected = MacAccessState(
+            connection: .connected,
+            configuredMode: .askEveryTime,
+            effectiveMode: .askEveryTime,
+            isPaired: true,
+            blocker: nil
+        )
+        let stopController = MacAccessController(client: client, initialState: connected)
+        let offController = MacAccessController(client: client, initialState: connected)
+
+        _ = await stopController.perform(.stop)
+        _ = await offController.perform(.setAccessMode(.off))
+
+        XCTAssertEqual(stopController.state.connection, .disconnected)
+        XCTAssertTrue(stopController.state.isPaired)
+        XCTAssertEqual(offController.state.connection, .disconnected)
+        XCTAssertTrue(offController.state.isPaired)
     }
 
     func testFreshUnpairedStateCannotManufacturePausedState() async {
@@ -421,13 +514,14 @@ final class ControllerTests: XCTestCase {
 
         controller.emergencyStop()
         let result = await controller.perform(.pause)
+        await client.waitForActionCount(1)
         let actions = await client.recordedActions()
 
         XCTAssertEqual(result, .blocked(.emergencyStopActive))
         XCTAssertEqual(controller.state.connection, .blocked)
         XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
         XCTAssertEqual(controller.state.effectiveMode, .off)
-        XCTAssertEqual(actions, [])
+        XCTAssertEqual(actions, [.stop])
     }
 
     func testBlockedDependencyForcesControllerOff() async {
