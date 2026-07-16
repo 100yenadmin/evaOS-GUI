@@ -5,14 +5,10 @@ import { describe, expect, it } from 'vitest';
 const workflow = fs.readFileSync(path.resolve('.github/workflows/mac-access-private-rc.yml'), 'utf8');
 
 describe('Mac Access private-RC workflow contract', () => {
-  it('allows only manual dispatch or the exact temporary feature-branch push lane', () => {
+  it('allows only explicit manual dispatch', () => {
     expect(workflow).toMatch(/^on:\n  workflow_dispatch:/m);
-    expect(workflow).toContain('branches:\n      - codex/705-mac-access-package-92561ad');
-    expect(workflow).toContain("github.repository == '100yenadmin/evaOS-GUI'");
-    expect(workflow).toContain("github.actor == '100yenadmin'");
-    expect(workflow).toContain("github.ref == 'refs/heads/codex/705-mac-access-package-92561ad'");
-    expect(workflow).toContain("contains(github.event.head_commit.message, '[mac-access-private-rc]')");
-    expect(workflow).not.toMatch(/^  (pull_request|pull_request_target|schedule|release):/m);
+    expect(workflow).not.toMatch(/^  (push|pull_request|pull_request_target|schedule|release):/m);
+    expect(workflow).not.toContain('[mac-access-private-rc]');
     expect(workflow).toContain('permissions:\n  contents: read');
     expect(workflow).toContain('uses: actions/upload-artifact@v4');
     expect(workflow).toContain('actionsArtifactOnly: true');

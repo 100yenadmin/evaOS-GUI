@@ -19,14 +19,6 @@ on:
         description: 'Broker rollback-verification Ed25519 public key (unpadded base64url, 32 decoded bytes).'
         required: true
         type: string
-  push:
-    branches:
-      - codex/705-mac-access-package-92561ad
-    paths:
-      - .github/workflows/mac-access-private-rc.yml
-      - packages/mac-access/**
-      - packages/mac-connector-core/**
-
 permissions:
   contents: read
 
@@ -36,15 +28,6 @@ concurrency:
 
 jobs:
   package:
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'push' &&
-          github.repository == '100yenadmin/evaOS-GUI' &&
-          github.actor == '100yenadmin' &&
-          github.ref == 'refs/heads/codex/705-mac-access-package-92561ad' &&
-          contains(github.event.head_commit.message, '[mac-access-private-rc]'))
-      }}
     name: Signed private RC (${{ matrix.xcode_arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
