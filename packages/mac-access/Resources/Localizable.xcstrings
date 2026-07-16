@@ -1,6 +1,48 @@
 {
   "sourceLanguage": "en-US",
   "strings": {
+    "action.allowOnce": {"localizations": {
+      "zh-CN": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "en-US": {"stringUnit": {"state": "translated", "value": "Allow once"}},
+      "ja-JP": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "zh-TW": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "ko-KR": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "tr-TR": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "ru-RU": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "uk-UA": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "pt-BR": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "es-ES": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "fr-FR": {"stringUnit": {"state": "needs_review", "value": "Allow once"}},
+      "fa-IR": {"stringUnit": {"state": "needs_review", "value": "Allow once"}}
+    }},
+    "action.deny": {"localizations": {
+      "zh-CN": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "en-US": {"stringUnit": {"state": "translated", "value": "Deny"}},
+      "ja-JP": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "zh-TW": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "ko-KR": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "tr-TR": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "ru-RU": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "uk-UA": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "pt-BR": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "es-ES": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "fr-FR": {"stringUnit": {"state": "needs_review", "value": "Deny"}},
+      "fa-IR": {"stringUnit": {"state": "needs_review", "value": "Deny"}}
+    }},
+    "action.resetAndRepair": {"localizations": {
+      "zh-CN": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "en-US": {"stringUnit": {"state": "translated", "value": "Reset and re-pair"}},
+      "ja-JP": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "zh-TW": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "ko-KR": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "tr-TR": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "ru-RU": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "uk-UA": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "pt-BR": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "es-ES": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "fr-FR": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}},
+      "fa-IR": {"stringUnit": {"state": "needs_review", "value": "Reset and re-pair"}}
+    }},
     "blocker.permissionDenied": {
       "localizations": {
         "zh-CN": {

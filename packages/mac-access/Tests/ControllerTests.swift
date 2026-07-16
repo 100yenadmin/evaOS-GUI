@@ -85,6 +85,33 @@ final actor ProjectingConnectorClient: MacAccessStatusProjectingClient {
     }
 }
 
+final actor SuspendedStatusConnectorClient: MacAccessStatusProjectingClient {
+    private var continuation: CheckedContinuation<MacAccessXPCReply?, Never>?
+    private var fetchStarted = false
+
+    func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+        .blocked(.connectorCoreUnavailable)
+    }
+
+    func fetchStatus() async -> MacAccessXPCReply? {
+        fetchStarted = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resolvePendingApproval(
+        _ approval: MacAccessXPCApproval, allow: Bool
+    ) async -> MacAccessXPCReply? { nil }
+
+    func waitUntilFetchStarts() async {
+        while !fetchStarted { await Task.yield() }
+    }
+
+    func releaseStatus(_ reply: MacAccessXPCReply) {
+        continuation?.resume(returning: reply)
+        continuation = nil
+    }
+}
+
 @MainActor
 final class ControllerTests: XCTestCase {
     func testAuthoritativeHelperProjectionHydratesFullAccessAndAudit() async {
@@ -113,6 +140,56 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.configuredMode, .fullAccess)
         XCTAssertEqual(controller.state.effectiveMode, .fullAccess)
         XCTAssertEqual(controller.recentAuditEvents, [event])
+    }
+
+    func testStaleStatusRefreshCannotOverwriteEmergencyStop() async {
+        let client = SuspendedStatusConnectorClient()
+        let controller = MacAccessController(
+            client: client,
+            initialState: MacAccessState(
+                connection: .connected, configuredMode: .askEveryTime,
+                effectiveMode: .askEveryTime, isPaired: true, blocker: nil
+            ),
+            availability: .standalonePolicy
+        )
+        let refresh = Task { await controller.refreshFromHelper() }
+        await client.waitUntilFetchStarts()
+
+        controller.emergencyStop()
+        await client.releaseStatus(MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: "connected", lastErrorCode: nil,
+                lastAuditID: nil, configuredMode: "ask_every_time",
+                effectiveMode: "ask_every_time", paused: false, killSwitch: false,
+                policyEpoch: 7, policyProvider: "mac_connector_core"
+            )
+        ))
+        await refresh.value
+
+        XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
+        XCTAssertEqual(controller.state.effectiveMode, .off)
+    }
+
+    func testEmergencyStopRetriesAfterHelperDispatchFailure() async {
+        let client = RecordingConnectorClient(result: .blocked(.connectorCoreUnavailable))
+        let controller = MacAccessController(
+            client: client,
+            initialState: MacAccessState(
+                connection: .connected, configuredMode: .askEveryTime,
+                effectiveMode: .askEveryTime, isPaired: true, blocker: nil
+            ),
+            availability: .standalonePolicy
+        )
+
+        controller.emergencyStop()
+        await client.waitForActionCount(1)
+        try? await Task.sleep(for: .milliseconds(10))
+        controller.emergencyStop()
+        await client.waitForActionCount(2)
+
+        let actions = await client.recordedActions()
+        XCTAssertEqual(actions, [.activateKillSwitch, .activateKillSwitch])
     }
 
     func testLocalOnlyClientBlocksPairingAndTransport() async {

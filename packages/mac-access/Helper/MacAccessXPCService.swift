@@ -104,6 +104,12 @@ actor MacAccessPolicyRuntime {
         return projection.killSwitch ? projection.policyEpoch : nil
     }
 
+    func latchEmergencyKill() async {
+        _ = try? await custody.activateEmergencyKill()
+        await native.blockAndCancelAll()
+        await client.resetPolicyEpoch()
+    }
+
     func prepareForFreshPairingIfRevoked() async throws {
         let projection = await custody.projectStatus()
         guard projection.pairing == "revoked" else { return }
@@ -320,14 +326,14 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         do {
             let status = try await runtime.pair(code: code)
             guard let policyRuntime else {
-                _ = try? await runtime.revokeLocally()
+                try await rollbackPairing(runtime: runtime, policyRuntime: nil)
                 throw MacAccessPublicError.policyUnavailable
             }
             do {
                 try await policyRuntime.prepareForFreshPairingIfRevoked()
                 try await policyRuntime.synchronizePairing(code: MacAccessPairingCode.normalize(code))
             } catch {
-                _ = try? await runtime.revokeLocally()
+                try await rollbackPairing(runtime: runtime, policyRuntime: policyRuntime)
                 throw MacAccessPublicError.policyUnavailable
             }
             return await reply(code: .ok, status: status)
@@ -450,6 +456,18 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 lastErrorCode: "configuration_unavailable", lastAuditID: nil
             )
         )
+    }
+
+    private func rollbackPairing(
+        runtime: MacAccessHelperRuntime,
+        policyRuntime: MacAccessPolicyRuntime?
+    ) async throws {
+        do {
+            _ = try await runtime.revokeLocally()
+        } catch {
+            await policyRuntime?.latchEmergencyKill()
+            throw MacAccessPublicError.credentialUnavailable
+        }
     }
 
     private func reply(

@@ -8,6 +8,7 @@ enum MacAccessCoreHostError: String, Error, Sendable {
     case runnerExited = "runner_exited"
     case policyDenied = "policy_denied"
     case unsupportedPort = "unsupported_port"
+    case requestTimedOut = "request_timed_out"
 }
 
 protocol MacAccessCoreHostChannel: Sendable {
@@ -450,7 +451,7 @@ actor MacAccessCoreHostPortDispatcher {
               let binding = envelope["binding"]?.object,
               let grantExpires = binding["grant_expires_at"]?.string.flatMap(Self.date)
         else { return "expired_authority" }
-        guard issued <= now, now < expires, expires < grantExpires,
+        guard issued <= now.addingTimeInterval(5), now < expires, expires < grantExpires,
               expires.timeIntervalSince(issued) <= 60
         else { return "expired_authority" }
         return nil
@@ -470,15 +471,22 @@ actor MacAccessStdioCoreHostTransport {
 
     private let launcher: Launcher
     private let dispatcher: MacAccessCoreHostPortDispatcher
+    private let requestTimeout: Duration
     private var channel: (any MacAccessCoreHostChannel)?
     private var readerTask: Task<Void, Never>?
     private var pending: [String: CheckedContinuation<[String: JSONValue], Error>] = [:]
+    private var requestTimeouts: [String: Task<Void, Never>] = [:]
     private var portTasks: [String: Task<Void, Never>] = [:]
     private var channelGeneration: UInt64 = 0
 
-    init(launcher: @escaping Launcher, dispatcher: MacAccessCoreHostPortDispatcher) {
+    init(
+        launcher: @escaping Launcher,
+        dispatcher: MacAccessCoreHostPortDispatcher,
+        requestTimeout: Duration = .seconds(75)
+    ) {
         self.launcher = launcher
         self.dispatcher = dispatcher
+        self.requestTimeout = requestTimeout
     }
 
     func request(_ request: [String: JSONValue]) async throws -> [String: JSONValue] {
@@ -493,8 +501,16 @@ actor MacAccessStdioCoreHostTransport {
             "request": .object(request),
         ])
         let data = try Self.line(frame)
+        let timeout = requestTimeout
         return try await withCheckedThrowingContinuation { continuation in
             pending[requestID] = continuation
+            requestTimeouts[requestID] = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                await self?.timeoutRequest(
+                    requestID: requestID, channel: channel, generation: generation
+                )
+            }
             Task {
                 do { try await channel.send(data) }
                 catch {
@@ -535,7 +551,7 @@ actor MacAccessStdioCoreHostTransport {
                 guard data.count <= Self.maximumFrameBytes else {
                     throw MacAccessCoreHostError.frameTooLarge
                 }
-                try await accept(data, channel: channel)
+                try await accept(data, channel: channel, generation: generation)
             }
         } catch {
             if generation == channelGeneration {
@@ -547,8 +563,11 @@ actor MacAccessStdioCoreHostTransport {
         }
     }
 
-    private func accept(_ data: Data, channel: any MacAccessCoreHostChannel) async throws {
-        guard case .object(let frame) = try JSONDecoder().decode(JSONValue.self, from: data),
+    private func accept(
+        _ data: Data, channel: any MacAccessCoreHostChannel, generation: UInt64
+    ) async throws {
+        guard generation == channelGeneration,
+              case .object(let frame) = try JSONDecoder().decode(JSONValue.self, from: data),
               frame["schema_version"]?.string == Self.schema,
               let type = frame["message_type"]?.string
         else { throw MacAccessCoreHostError.protocolViolation }
@@ -559,6 +578,7 @@ actor MacAccessStdioCoreHostTransport {
                   let requestID = response["request_id"]?.string,
                   let continuation = pending.removeValue(forKey: requestID)
             else { throw MacAccessCoreHostError.protocolViolation }
+            requestTimeouts.removeValue(forKey: requestID)?.cancel()
             continuation.resume(returning: response)
         case "port_call":
             guard Set(frame.keys) == Set(["schema_version", "message_type", "call_id", "port", "method", "arguments"]),
@@ -567,7 +587,7 @@ actor MacAccessStdioCoreHostTransport {
                   let arguments = frame["arguments"]?.object,
                   MacAccessWire.isIdentifier(callID), portTasks[callID] == nil
             else { throw MacAccessCoreHostError.protocolViolation }
-            portTasks[callID] = Task { [weak self, generation = channelGeneration] in
+            portTasks[callID] = Task { [weak self] in
                 await self?.handlePortCall(
                     callID: callID, port: port, method: method,
                     arguments: arguments, channel: channel,
@@ -590,6 +610,7 @@ actor MacAccessStdioCoreHostTransport {
         generation: UInt64
     ) async {
         defer { portTasks[callID] = nil }
+        guard generation == channelGeneration else { return }
         let result: JSONValue
         let errorCode: String?
         do {
@@ -605,6 +626,7 @@ actor MacAccessStdioCoreHostTransport {
             result = .null
             errorCode = "port_unavailable"
         }
+        guard generation == channelGeneration else { return }
         let response = JSONValue.object([
             "schema_version": .string(Self.schema),
             "message_type": .string("port_result"),
@@ -625,7 +647,23 @@ actor MacAccessStdioCoreHostTransport {
     }
 
     private func fail(requestID: String, error: Error) {
+        requestTimeouts.removeValue(forKey: requestID)?.cancel()
         pending.removeValue(forKey: requestID)?.resume(throwing: error)
+    }
+
+    private func timeoutRequest(
+        requestID: String,
+        channel timedOutChannel: any MacAccessCoreHostChannel,
+        generation: UInt64
+    ) async {
+        guard pending[requestID] != nil, generation == channelGeneration else { return }
+        channelGeneration &+= 1
+        readerTask?.cancel()
+        readerTask = nil
+        channel = nil
+        failAll(MacAccessCoreHostError.requestTimedOut)
+        await dispatcher.failClosedOnChannelLoss()
+        await timedOutChannel.terminate()
     }
 
     private func failChannel(
@@ -643,6 +681,8 @@ actor MacAccessStdioCoreHostTransport {
     }
 
     private func failAll(_ error: Error) {
+        for timeout in requestTimeouts.values { timeout.cancel() }
+        requestTimeouts.removeAll()
         let continuations = pending.values
         pending.removeAll()
         for continuation in continuations { continuation.resume(throwing: error) }
@@ -686,7 +726,7 @@ actor MacAccessStdioCoreHostTransport {
     ) -> [String] {
         let bootstrap = "import sys;sys.path.insert(0,sys.argv[1]);from evaos_desktop_bridge.host.stdio_runner import main;raise SystemExit(main(sys.argv[2:]))"
         return [
-            "-I", "-c", bootstrap, source.path,
+            "-I", "-B", "-c", bootstrap, source.path,
             "--host-session-id", hostSessionID,
             "--runtime-instance-id", runtimeInstanceID,
         ]
@@ -803,6 +843,7 @@ struct CoreHostBackedMacAccessExecutor: MacAccessCommandExecutor {
             guard case .object(let envelope) = try JSONDecoder().decode(JSONValue.self, from: encoded) else {
                 throw MacAccessCoreHostError.protocolViolation
             }
+            if let custody { try await custody.authorizeRelayAdmission(envelope: envelope) }
             let result = try await client.perform(
                 operation: "dispatch_action",
                 extras: ["envelope": .object(envelope)]

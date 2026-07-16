@@ -16,6 +16,7 @@ public final class MacAccessController: ObservableObject {
     private var invalidationReasons: [Int: ActionInvalidationReason] = [:]
     private var quitCleanupInFlight = false
     private var emergencyStopCleanupIssued = false
+    private var projectionGeneration = 0
 
     private enum ActionInvalidationReason {
         case emergencyStop
@@ -47,6 +48,7 @@ public final class MacAccessController: ObservableObject {
         _ action: ConnectorCoreAction,
         ownsQuitCleanup: Bool
     ) async -> MacAccessActionResult {
+        invalidateProjection()
         if state.quitCleanupRequested, !ownsQuitCleanup {
             return .invalidated(.quitCleanup)
         }
@@ -73,19 +75,25 @@ public final class MacAccessController: ObservableObject {
     }
 
     public func refreshFromHelper() async {
+        projectionGeneration &+= 1
+        let generation = projectionGeneration
         guard let client = client as? any MacAccessStatusProjectingClient,
               let reply = await client.fetchStatus(),
-              reply.status.policyProvider == "mac_connector_core"
+              reply.status.policyProvider == "mac_connector_core",
+              generation == projectionGeneration
         else { return }
         applyAuthoritativeStatus(reply.status)
     }
 
     public func resolvePendingApproval(allow: Bool) async {
+        projectionGeneration &+= 1
+        let generation = projectionGeneration
         guard let pendingApproval,
               let client = client as? any MacAccessStatusProjectingClient,
               let reply = await client.resolvePendingApproval(
                   pendingApproval.approval, allow: allow
-              ), reply.code == .ok
+              ), reply.code == .ok,
+              generation == projectionGeneration
         else {
             await refreshFromHelper()
             return
@@ -94,6 +102,7 @@ public final class MacAccessController: ObservableObject {
     }
 
     public func emergencyStop() {
+        invalidateProjection()
         invalidateCurrentGeneration(because: .emergencyStop)
         machine.emergencyStop()
         state = machine.state
@@ -108,6 +117,7 @@ public final class MacAccessController: ObservableObject {
         guard !quitCleanupInFlight else {
             return .invalidated(.quitCleanup)
         }
+        invalidateProjection()
         invalidateCurrentGeneration(because: .quitCleanup)
         machine.requestQuitCleanup()
         state = machine.state
@@ -117,6 +127,7 @@ public final class MacAccessController: ObservableObject {
     }
 
     public func restoreAfterRestart() {
+        invalidateProjection()
         machine.restoreAfterRestart()
         state = machine.state
     }
@@ -230,8 +241,16 @@ public final class MacAccessController: ObservableObject {
     }
 
     private func requestEmergencyStopCleanup() async {
-        _ = await client.perform(.activateKillSwitch)
+        let result = await client.perform(.activateKillSwitch)
+        guard result == .completed(.localEmergencyStop) else {
+            emergencyStopCleanupIssued = false
+            return
+        }
         await refreshFromHelper()
+    }
+
+    private func invalidateProjection() {
+        projectionGeneration &+= 1
     }
 
     private func applyAuthoritativeStatus(_ status: MacAccessXPCSafeStatus) {
@@ -279,6 +298,7 @@ public final class MacAccessController: ObservableObject {
         )
         machine = MacAccessStateMachine(state: projected)
         state = projected
+        if killSwitch { emergencyStopCleanupIssued = true }
         pendingApproval = status.pendingApproval
         recentAuditEvents = status.recentAuditEvents ?? []
     }

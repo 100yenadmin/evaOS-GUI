@@ -53,6 +53,7 @@ actor MacAccessPolicyCustody {
     private var document: MacAccessCustodyDocument
     private var pendingApproval: MacAccessXPCPendingApproval?
     private var pendingContinuation: CheckedContinuation<Bool, Never>?
+    private var relayAdmissionDigestSHA256: String?
     private var nativeAuthorizationDigestSHA256: String?
     private var nativeDecisionAuditDigestSHA256: String?
     private var nativeBarrierOpen = false
@@ -188,13 +189,18 @@ actor MacAccessPolicyCustody {
             document.state["paused"] = .boolean(true)
         }
         if operation == "disconnect" { document.state["transport_state"] = .string("disconnected") }
-        if operation == "stop" || operation == "revoke" {
-            document.state["transport_state"] = .string("stopped")
-        }
+        if operation == "stop" { document.state["transport_state"] = .string("disconnected") }
         if operation == "revoke" {
             document.state["pairing_state"] = .string("revoked")
             document.state["selected_binding"] = .null
+            document.state["transport_state"] = .string("revoked")
         }
+        let preservesFullIntent = (operation == "pause" || operation == "disconnect")
+            && document.state["configured_mode"]?.string == "full_access"
+        document.state["local_confirmation_required"] = .boolean(preservesFullIntent)
+        document.state["confirmed_runtime_instance_id"] = .null
+        document.state["confirmed_policy_epoch"] = .null
+        document.state["confirmed_binding_fingerprint_sha256"] = .null
         invalidateAuthority()
         if operation == "off" || operation == "stop" || operation == "revoke" {
             locallyAuthorizedMode = nil
@@ -329,8 +335,18 @@ actor MacAccessPolicyCustody {
         return true
     }
 
+    func authorizeRelayAdmission(envelope: [String: JSONValue]) throws {
+        relayAdmissionDigestSHA256 = try Self.actionScope(envelope).envelopeDigest
+        nativeAuthorizationDigestSHA256 = nil
+        nativeDecisionAuditDigestSHA256 = nil
+    }
+
     func authorizeNative(envelope: [String: JSONValue]) throws {
-        nativeAuthorizationDigestSHA256 = try Self.actionScope(envelope).envelopeDigest
+        let digest = try Self.actionScope(envelope).envelopeDigest
+        guard digest == relayAdmissionDigestSHA256 else {
+            throw MacAccessPolicyCustodyError.invalidRequest
+        }
+        nativeAuthorizationDigestSHA256 = digest
         nativeDecisionAuditDigestSHA256 = nil
     }
 
@@ -365,6 +381,7 @@ actor MacAccessPolicyCustody {
 
     func closeNativeBarrierAndInvalidatePending() {
         nativeBarrierOpen = false
+        relayAdmissionDigestSHA256 = nil
         nativeAuthorizationDigestSHA256 = nil
         nativeDecisionAuditDigestSHA256 = nil
         cancelPendingApproval()
@@ -372,14 +389,28 @@ actor MacAccessPolicyCustody {
 
     func consumeNativeAuthorization(envelope: [String: JSONValue]) -> Bool {
         let projection = projectStatus()
-        guard nativeBarrierOpen, !projection.paused, !projection.killSwitch,
-              projection.effectiveMode != "off",
+        let currentModeAuthorized = locallyAuthorizedMode == projection.effectiveMode
+            || (locallyAuthorizedMode == "full_access"
+                && projection.configuredMode == "full_access"
+                && projection.effectiveMode == "ask_every_time")
+        guard nativeBarrierOpen,
+              projection.pairing == "paired", projection.transport == "connected",
+              !projection.paused, !projection.killSwitch,
+              projection.effectiveMode != "off", currentModeAuthorized,
+              envelope["policy_epoch"]?.integer == projection.policyEpoch,
               let digest = try? Self.actionScope(envelope).envelopeDigest,
+              digest == relayAdmissionDigestSHA256,
               digest == nativeAuthorizationDigestSHA256,
               digest == nativeDecisionAuditDigestSHA256
-        else { return false }
+        else {
+            relayAdmissionDigestSHA256 = nil
+            nativeAuthorizationDigestSHA256 = nil
+            nativeDecisionAuditDigestSHA256 = nil
+            return false
+        }
         nativeAuthorizationDigestSHA256 = nil
         nativeDecisionAuditDigestSHA256 = nil
+        relayAdmissionDigestSHA256 = nil
         return true
     }
 
@@ -425,6 +456,7 @@ actor MacAccessPolicyCustody {
     private func invalidateAuthority() {
         document.approvals.removeAll()
         document.fullAccessConfirmationEpoch = nil
+        relayAdmissionDigestSHA256 = nil
         nativeAuthorizationDigestSHA256 = nil
         nativeDecisionAuditDigestSHA256 = nil
         nativeBarrierOpen = false

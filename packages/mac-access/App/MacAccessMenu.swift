@@ -30,21 +30,21 @@ struct MacAccessMenu: View {
                 .font(.headline)
             Text(verbatim: pending.approval.capability)
                 .font(.caption)
-            Text(verbatim: String(
-                format: "Click x %.4f, y %.4f on %@",
-                pending.targetX, pending.targetY, pending.deviceID
-            ))
-                .font(.caption)
             HStack {
-                Button {
+                Text(verbatim: "x")
+                Text(verbatim: String(format: "%.4f", pending.targetX))
+                Text(verbatim: "y")
+                Text(verbatim: String(format: "%.4f", pending.targetY))
+                Image(systemName: "desktopcomputer")
+                Text(verbatim: pending.deviceID)
+            }
+            .font(.caption)
+            HStack {
+                Button("action.allowOnce") {
                     Task { await controller.resolvePendingApproval(allow: true) }
-                } label: {
-                    Text(verbatim: "Allow once")
                 }
-                Button(role: .destructive) {
+                Button("action.deny", role: .destructive) {
                     Task { await controller.resolvePendingApproval(allow: false) }
-                } label: {
-                    Text(verbatim: "Deny")
                 }
             }
         }
@@ -123,10 +123,8 @@ struct MacAccessMenu: View {
         .keyboardShortcut(".", modifiers: [.command, .shift])
 
         if controller.state.blocker == .emergencyStopActive {
-            Button {
+            Button("action.resetAndRepair") {
                 Task { await controller.perform(.clearKillSwitch) }
-            } label: {
-                Text(verbatim: "Reset and re-pair")
             }
         }
 
