@@ -679,6 +679,12 @@ final class PolicyBridgeTests: XCTestCase {
         connected["policy_epoch"] = .integer(2)
         let updated = try await custody.compareAndSwap(expectedRevision: revision, state: connected)
         XCTAssertTrue(updated)
+        let projected = await runtime.safeStatus(
+            pairing: "revoked", transport: "blocked",
+            lastErrorCode: nil, lastAuditID: nil
+        )
+        XCTAssertEqual(projected.pairing, "paired")
+        XCTAssertEqual(projected.transport, "connected")
         try await custody.authorizeLocalMode("ask_every_time")
         await runtime.enableNativeIfAllowed()
         let execution = Task {

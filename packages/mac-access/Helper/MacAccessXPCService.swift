@@ -194,8 +194,8 @@ actor MacAccessPolicyRuntime {
     ) async -> MacAccessXPCSafeStatus {
         let projection = await custody.projectStatus()
         return MacAccessXPCSafeStatus(
-            pairing: pairing,
-            transport: transport,
+            pairing: projection.pairing,
+            transport: projection.transport,
             lastErrorCode: lastErrorCode,
             lastAuditID: lastAuditID,
             configuredMode: projection.configuredMode,
