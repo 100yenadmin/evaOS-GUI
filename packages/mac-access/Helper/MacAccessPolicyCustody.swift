@@ -54,6 +54,8 @@ actor MacAccessPolicyCustody {
     private var pendingApproval: MacAccessXPCPendingApproval?
     private var pendingContinuation: CheckedContinuation<Bool, Never>?
     private var nativeAuthorizationDigestSHA256: String?
+    private var nativeBarrierOpen = false
+    private var locallyAuthorizedMode: String?
 
     init(
         paths: MacAccessPolicyPaths,
@@ -105,6 +107,7 @@ actor MacAccessPolicyCustody {
         replacement["transport_state"] = .string("blocked")
         document.state = replacement
         invalidateAuthority()
+        locallyAuthorizedMode = nil
         try persist()
         return true
     }
@@ -135,6 +138,58 @@ actor MacAccessPolicyCustody {
         document.state["confirmed_policy_epoch"] = .null
         document.state["confirmed_binding_fingerprint_sha256"] = .null
         invalidateAuthority()
+        locallyAuthorizedMode = nil
+        try persist()
+        return projectStatus()
+    }
+
+    func clearEmergencyKill() throws -> MacAccessPolicyProjection {
+        guard document.state["kill_switch"]?.boolean == true else {
+            throw MacAccessPolicyCustodyError.invalidRequest
+        }
+        let nextEpoch = min(9_007_199_254_740_991, (document.state["policy_epoch"]?.integer ?? 0) + 1)
+        document.state["policy_epoch"] = .integer(nextEpoch)
+        document.state["pairing_state"] = .string("unpaired")
+        document.state["selected_binding"] = .null
+        document.state["configured_mode"] = .string("off")
+        document.state["effective_mode"] = .string("off")
+        document.state["requested_target_mode"] = .null
+        document.state["paused"] = .boolean(false)
+        document.state["kill_switch"] = .boolean(false)
+        document.state["transport_state"] = .string("disconnected")
+        document.state["local_confirmation_required"] = .boolean(false)
+        invalidateAuthority()
+        locallyAuthorizedMode = nil
+        try persist()
+        return projectStatus()
+    }
+
+    func forceLocalSafety(_ operation: String) throws -> MacAccessPolicyProjection {
+        guard ["off", "pause", "disconnect", "stop", "revoke"].contains(operation) else {
+            throw MacAccessPolicyCustodyError.invalidRequest
+        }
+        let nextEpoch = min(9_007_199_254_740_991, (document.state["policy_epoch"]?.integer ?? 0) + 1)
+        document.state["policy_epoch"] = .integer(nextEpoch)
+        document.state["effective_mode"] = .string("off")
+        document.state["requested_target_mode"] = .null
+        if operation == "off" || operation == "stop" || operation == "revoke" {
+            document.state["configured_mode"] = .string("off")
+        }
+        if operation == "pause" || operation == "stop" || operation == "revoke" {
+            document.state["paused"] = .boolean(true)
+        }
+        if operation == "disconnect" { document.state["transport_state"] = .string("disconnected") }
+        if operation == "stop" || operation == "revoke" {
+            document.state["transport_state"] = .string("stopped")
+        }
+        if operation == "revoke" {
+            document.state["pairing_state"] = .string("revoked")
+            document.state["selected_binding"] = .null
+        }
+        invalidateAuthority()
+        if operation == "off" || operation == "stop" || operation == "revoke" {
+            locallyAuthorizedMode = nil
+        }
         try persist()
         return projectStatus()
     }
@@ -243,8 +298,35 @@ actor MacAccessPolicyCustody {
         nativeAuthorizationDigestSHA256 = try Self.actionScope(envelope).envelopeDigest
     }
 
+    func authorizeLocalMode(_ mode: String) throws {
+        guard mode == "ask_every_time" || mode == "full_access" else {
+            throw MacAccessPolicyCustodyError.invalidRequest
+        }
+        locallyAuthorizedMode = mode
+    }
+
+    func openNativeBarrierIfAllowed() -> Bool {
+        let projection = projectStatus()
+        nativeBarrierOpen = projection.pairing == "paired"
+            && projection.transport == "connected"
+            && !projection.paused
+            && !projection.killSwitch
+            && projection.effectiveMode != "off"
+            && locallyAuthorizedMode == projection.effectiveMode
+        return nativeBarrierOpen
+    }
+
+    func closeNativeBarrierAndInvalidatePending() {
+        nativeBarrierOpen = false
+        nativeAuthorizationDigestSHA256 = nil
+        cancelPendingApproval()
+    }
+
     func consumeNativeAuthorization(envelope: [String: JSONValue]) -> Bool {
-        guard let digest = try? Self.actionScope(envelope).envelopeDigest,
+        let projection = projectStatus()
+        guard nativeBarrierOpen, !projection.paused, !projection.killSwitch,
+              projection.effectiveMode != "off",
+              let digest = try? Self.actionScope(envelope).envelopeDigest,
               digest == nativeAuthorizationDigestSHA256
         else { return false }
         nativeAuthorizationDigestSHA256 = nil
@@ -294,6 +376,7 @@ actor MacAccessPolicyCustody {
         document.approvals.removeAll()
         document.fullAccessConfirmationEpoch = nil
         nativeAuthorizationDigestSHA256 = nil
+        nativeBarrierOpen = false
         cancelPendingApproval()
     }
 
@@ -404,6 +487,8 @@ struct MacAccessPolicyProjection: Equatable, Sendable {
 struct MacAccessAuditAnchor: Codable, Equatable, Sendable {
     let sequence: Int64
     let recordSHA256: String
+    let oldestSequence: Int64
+    let oldestPreviousRecordSHA256: String?
 }
 
 protocol MacAccessAuditAnchorStore: Sendable {
@@ -573,10 +658,19 @@ actor MacAccessAuditCustody {
         try handle.synchronize()
         try handle.close()
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: paths.audit.path)
-        if let sequence = event["sequence"]?.integer,
-           let digest = event["record_sha256"]?.string,
-           let anchorStore {
-            try await anchorStore.save(MacAccessAuditAnchor(sequence: sequence, recordSHA256: digest))
+        if let anchorStore {
+            let committed = try readEvents()
+            guard let first = committed.first, let last = committed.last,
+                  let sequence = last["sequence"]?.integer,
+                  let digest = last["record_sha256"]?.string,
+                  let oldestSequence = first["sequence"]?.integer
+            else { throw MacAccessPolicyCustodyError.auditCorrupt }
+            try await anchorStore.save(MacAccessAuditAnchor(
+                sequence: sequence,
+                recordSHA256: digest,
+                oldestSequence: oldestSequence,
+                oldestPreviousRecordSHA256: first["previous_record_sha256"]?.string
+            ))
         }
         return event
     }
@@ -631,8 +725,10 @@ actor MacAccessAuditCustody {
         guard let anchorStore else { return true }
         do {
             guard let anchor = try await anchorStore.load() else { return events.isEmpty }
-            guard let last = events.last else { return false }
-            return last["sequence"]?.integer == anchor.sequence
+            guard let first = events.first, let last = events.last else { return false }
+            return first["sequence"]?.integer == anchor.oldestSequence
+                && first["previous_record_sha256"]?.string == anchor.oldestPreviousRecordSHA256
+                && last["sequence"]?.integer == anchor.sequence
                 && last["record_sha256"]?.string == anchor.recordSHA256
         } catch {
             return false

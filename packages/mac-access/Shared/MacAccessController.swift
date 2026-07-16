@@ -153,6 +153,9 @@ public final class MacAccessController: ObservableObject {
                 machine.disconnect()
             case .setAccessMode(.off), .stop, .activateKillSwitch:
                 if !preserveEmergencyEvidence { machine.stop() }
+            case .clearKillSwitch:
+                emergencyStopCleanupIssued = false
+                machine.markUnpaired(.notPaired)
             case .setAccessMode(let mode):
                 machine.setAccessMode(mode)
             case .pause:
@@ -200,7 +203,7 @@ public final class MacAccessController: ObservableObject {
     private func localPreconditionBlocker(for action: ConnectorCoreAction) -> MacAccessBlocker? {
         if let blocker = state.blocker {
             switch action {
-            case .stop, .activateKillSwitch, .setAccessMode(.off):
+            case .stop, .activateKillSwitch, .setAccessMode(.off), .clearKillSwitch:
                 break
             case .pair where blocker == .dashboardPairingUnavailable || blocker == .notPaired
                 || blocker == .stalePairing || blocker == .revokedGrant:

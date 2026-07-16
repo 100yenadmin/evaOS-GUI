@@ -117,6 +117,14 @@ struct MacAccessMenu: View {
         }
         .keyboardShortcut(".", modifiers: [.command, .shift])
 
+        if controller.state.blocker == .emergencyStopActive {
+            Button {
+                Task { await controller.perform(.clearKillSwitch) }
+            } label: {
+                Text(verbatim: "Reset and re-pair")
+            }
+        }
+
         Button("action.diagnostics") {}
             .disabled(true)
             .help("blocker.coreUnavailable")

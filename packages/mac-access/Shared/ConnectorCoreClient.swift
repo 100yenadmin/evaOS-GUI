@@ -11,6 +11,7 @@ public enum ConnectorCoreAction: Equatable, Sendable {
     case revokeSelectedVM
     case stop
     case activateKillSwitch
+    case clearKillSwitch
 }
 
 public enum ConnectorCoreCompletion: Equatable, Sendable {
@@ -23,6 +24,7 @@ public enum ConnectorCoreCompletion: Equatable, Sendable {
     case localPause
     case localResume
     case localEmergencyStop
+    case localEmergencyReset
     case accessModeChanged(MacAccessMode)
 }
 
@@ -72,6 +74,8 @@ public struct LocalOnlyConnectorCoreClient: ConnectorCoreClient {
             return .completed(.localStop)
         case .activateKillSwitch:
             return .completed(.localEmergencyStop)
+        case .clearKillSwitch:
+            return .completed(.localEmergencyReset)
         }
     }
 }

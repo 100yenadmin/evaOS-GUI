@@ -699,7 +699,7 @@ class CoreHost:
             raise HostError("stolen_pairing_code") from error
         state.update(
             pairing_state="paired",
-            configured_mode="ask_every_time",
+            configured_mode="off",
             effective_mode="off",
             requested_target_mode=None,
             selected_binding=binding,

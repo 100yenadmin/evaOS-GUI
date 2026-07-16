@@ -78,13 +78,16 @@ actor MacAccessNativeClickPort {
     private let performer: Performer
     private let isAccessibilityTrusted: @Sendable () -> Bool
     private var actions: [String: Task<[String: JSONValue], Never>] = [:]
+    private var blocked: Bool
 
     init(
         performer: @escaping Performer = MacAccessNativeClickPort.performSystemClick,
-        isAccessibilityTrusted: @escaping @Sendable () -> Bool = AXIsProcessTrusted
+        isAccessibilityTrusted: @escaping @Sendable () -> Bool = AXIsProcessTrusted,
+        initiallyBlocked: Bool = false
     ) {
         self.performer = performer
         self.isAccessibilityTrusted = isAccessibilityTrusted
+        blocked = initiallyBlocked
     }
 
     func validationError(for envelope: [String: JSONValue]) -> String? {
@@ -99,7 +102,7 @@ actor MacAccessNativeClickPort {
     }
 
     func begin(envelope: [String: JSONValue]) throws -> String {
-        guard validationError(for: envelope) == nil,
+        guard !blocked, validationError(for: envelope) == nil,
               let request = envelope["command"]?.object?["request"]?.object,
               let x = request["x"]?.number, let y = request["y"]?.number
         else { throw MacAccessCoreHostError.policyDenied }
@@ -128,6 +131,15 @@ actor MacAccessNativeClickPort {
         for task in tasks { task.cancel() }
         for task in tasks { _ = await task.value }
         actions.removeAll()
+    }
+
+    func blockAndCancelAll() async {
+        blocked = true
+        await cancelAll()
+    }
+
+    func allowActions() {
+        blocked = false
     }
 
     private static func performSystemClick(x: Double, y: Double) async -> Bool {
@@ -207,7 +219,7 @@ actor MacAccessCoreHostPortDispatcher {
             }
             return .object(["state": .string("connected"), "binding": .object(binding)])
         case ("transport", "disconnect"), ("transport", "revoke"), ("transport", "block"):
-            await native.cancelAll()
+            await native.blockAndCancelAll()
             try await custody.invalidateAuthorityAndPersist()
             return .null
         case ("clock", "validate_authority_window"):
@@ -233,10 +245,8 @@ actor MacAccessCoreHostPortDispatcher {
             guard !projection.paused, !projection.killSwitch,
                   envelope["policy_epoch"]?.integer == projection.policyEpoch
             else { return .string("approval_denied") }
-            if projection.effectiveMode == "full_access" {
-                try await custody.authorizeNative(envelope: envelope)
-                return .null
-            }
+            // Raw coordinate clicks remain locally confirmed in v0.1 even when the
+            // broader mode is Full Access. A later target classifier may narrow this.
             let rejection = try await custody.awaitApproval(envelope: envelope)
             if rejection == nil { try await custody.authorizeNative(envelope: envelope) }
             return rejection.map(JSONValue.string) ?? .null
@@ -309,13 +319,18 @@ actor MacAccessCoreHostPortDispatcher {
             }
             return .object(await native.wait(actionID: actionID))
         case ("native", "cancel_all"):
-            await native.cancelAll()
+            await native.blockAndCancelAll()
             return .null
         case ("status", "snapshot"):
             throw MacAccessCoreHostError.unsupportedPort
         default:
             throw MacAccessCoreHostError.unsupportedPort
         }
+    }
+
+    func failClosedOnChannelLoss() async {
+        _ = try? await custody.activateEmergencyKill()
+        await native.blockAndCancelAll()
     }
 
     private static func validateWindow(_ envelope: [String: JSONValue], now: Date) -> String? {
@@ -360,6 +375,7 @@ actor MacAccessStdioCoreHostTransport {
               MacAccessWire.isIdentifier(requestID), pending[requestID] == nil
         else { throw MacAccessCoreHostError.protocolViolation }
         let channel = try ensureChannel()
+        let generation = channelGeneration
         let frame = JSONValue.object([
             "schema_version": .string(Self.schema),
             "message_type": .string("host_request"),
@@ -370,7 +386,12 @@ actor MacAccessStdioCoreHostTransport {
             pending[requestID] = continuation
             Task {
                 do { try await channel.send(data) }
-                catch { self.fail(requestID: requestID, error: error) }
+                catch {
+                    await self.failChannel(
+                        requestID: requestID, error: error,
+                        channel: channel, generation: generation
+                    )
+                }
             }
         }
     }
@@ -409,6 +430,7 @@ actor MacAccessStdioCoreHostTransport {
             if generation == channelGeneration {
                 self.channel = nil
                 failAll(error)
+                await dispatcher.failClosedOnChannelLoss()
             }
             await channel.terminate()
         }
@@ -485,6 +507,7 @@ actor MacAccessStdioCoreHostTransport {
             if generation == channelGeneration {
                 self.channel = nil
                 failAll(error)
+                await dispatcher.failClosedOnChannelLoss()
             }
             await channel.terminate()
         }
@@ -492,6 +515,20 @@ actor MacAccessStdioCoreHostTransport {
 
     private func fail(requestID: String, error: Error) {
         pending.removeValue(forKey: requestID)?.resume(throwing: error)
+    }
+
+    private func failChannel(
+        requestID: String,
+        error: Error,
+        channel failedChannel: any MacAccessCoreHostChannel,
+        generation: UInt64
+    ) async {
+        fail(requestID: requestID, error: error)
+        guard generation == channelGeneration else { return }
+        channel = nil
+        failAll(error)
+        await dispatcher.failClosedOnChannelLoss()
+        await failedChannel.terminate()
     }
 
     private func failAll(_ error: Error) {
@@ -569,6 +606,15 @@ actor MacAccessCoreHostClient {
         await acquire()
         defer { release() }
         return try await perform(operation: operation, extras: extras, allowsRestartRetry: true)
+    }
+
+    func resetPolicyEpoch() {
+        policyEpoch = nil
+    }
+
+    func shutdown() async {
+        policyEpoch = nil
+        await transport.shutdown()
     }
 
     private func perform(

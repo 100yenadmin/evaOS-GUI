@@ -98,7 +98,7 @@
       "path": "python/evaos_desktop_bridge/host/api.py",
       "destination": "src/evaos_desktop_bridge/host/api.py",
       "mode": 420,
-      "sha256": "97ade396f3b4c9cc84706c45ce8b78300345029221b9751f7dbccff907735843"
+      "sha256": "c67704af58bb35ce6fd07a3b131cbe999b47f88927c80746e4e3ea8bce4e07a0"
     },
     {
       "path": "python/evaos_desktop_bridge/host/bundled_tools.py",

@@ -74,6 +74,37 @@ actor MacAccessPolicyRuntime {
         _ = try await client.perform(operation: operation)
     }
 
+    func preemptSafety(_ operation: String) async throws {
+        do {
+            _ = try await custody.forceLocalSafety(operation)
+        } catch {
+            await native.blockAndCancelAll()
+            await client.resetPolicyEpoch()
+            throw error
+        }
+        await native.blockAndCancelAll()
+        await client.resetPolicyEpoch()
+    }
+
+    func enableNativeIfAllowed() async {
+        if await custody.openNativeBarrierIfAllowed() {
+            await native.allowActions()
+        } else {
+            await native.blockAndCancelAll()
+        }
+    }
+
+    func clearEmergencyKill() async throws {
+        await native.blockAndCancelAll()
+        await client.shutdown()
+        _ = try await custody.clearEmergencyKill()
+        await client.resetPolicyEpoch()
+    }
+
+    func isEmergencyKillActive() async -> Bool {
+        await custody.projectStatus().killSwitch
+    }
+
     func perform(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReplyCode {
         do {
             switch request.operation {
@@ -81,7 +112,9 @@ actor MacAccessPolicyRuntime {
                 guard let mode = request.mode,
                       ["off", "ask_every_time", "full_access"].contains(mode)
                 else { return .invalidRequest }
-                if mode == "full_access" {
+                if mode == "off" {
+                    try await preemptSafety("off")
+                } else if mode == "full_access" {
                     let current = await custody.projectStatus().policyEpoch
                     guard current < 9_007_199_254_740_991 else { return .policyUnavailable }
                     try await custody.confirmFullAccess(policyEpoch: current + 1)
@@ -94,14 +127,29 @@ actor MacAccessPolicyRuntime {
                     try? await custody.invalidateAuthorityAndPersist()
                     throw error
                 }
+                if mode != "off" {
+                    try await custody.authorizeLocalMode(mode)
+                    await enableNativeIfAllowed()
+                }
             case .pause:
+                try await preemptSafety("pause")
                 _ = try await client.perform(operation: "pause")
             case .resume:
                 _ = try await client.perform(operation: "resume")
+                await enableNativeIfAllowed()
             case .activateKillSwitch:
-                await native.cancelAll()
-                _ = try await custody.activateEmergencyKill()
+                do {
+                    _ = try await custody.activateEmergencyKill()
+                } catch {
+                    await native.blockAndCancelAll()
+                    await client.resetPolicyEpoch()
+                    throw error
+                }
+                await native.blockAndCancelAll()
+                await client.resetPolicyEpoch()
                 _ = try? await client.perform(operation: "activate_kill_switch")
+            case .clearKillSwitch:
+                return .invalidRequest
             case .approveAction:
                 guard let approval = request.approval else { return .invalidRequest }
                 guard await custody.resolvePendingApproval(approval, allow: true) else {
@@ -160,7 +208,7 @@ private struct MacAccessPolicyComposition {
         let paths = try MacAccessPolicyPaths.production()
         let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: hostSessionID)
         let audit = try MacAccessAuditCustody.production(paths: paths)
-        let native = MacAccessNativeClickPort()
+        let native = MacAccessNativeClickPort(initiallyBlocked: true)
         let dispatcher = MacAccessCoreHostPortDispatcher(
             custody: custody, audit: audit, native: native, vault: vault, pinnedKeys: pinnedKeys
         )
@@ -285,6 +333,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             }
             do {
                 try await policyRuntime.synchronizeConnection(binding: binding)
+                await policyRuntime.enableNativeIfAllowed()
             } catch {
                 _ = try? await runtime.stop()
                 throw MacAccessPublicError.policyUnavailable
@@ -300,8 +349,10 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func disconnect() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
+        guard let policyRuntime else { return await reply(code: .policyUnavailable, status: await runtime.status) }
+        do { try await policyRuntime.preemptSafety("disconnect") }
+        catch { return await reply(code: .policyUnavailable, status: await runtime.status) }
         let status = await runtime.disconnect()
-        guard let policyRuntime else { return await reply(code: .policyUnavailable, status: status) }
         do { try await policyRuntime.synchronize("disconnect") }
         catch { return await reply(code: .policyUnavailable, status: status) }
         return await reply(code: .ok, status: status)
@@ -309,9 +360,10 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func stop() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
+        guard let policyRuntime else { return await reply(code: .policyUnavailable, status: await runtime.status) }
         do {
+            try await policyRuntime.preemptSafety("stop")
             let status = try await runtime.stop()
-            guard let policyRuntime else { return await reply(code: .policyUnavailable, status: status) }
             try await policyRuntime.synchronize("stop")
             return await reply(code: .ok, status: status)
         } catch {
@@ -337,9 +389,10 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 )
             }
         }
+        guard let policyRuntime else { return await reply(code: .policyUnavailable, status: await runtime.status) }
         do {
+            try await policyRuntime.preemptSafety("revoke")
             let status = try await runtime.revokeLocally()
-            guard let policyRuntime else { return await reply(code: .policyUnavailable, status: status) }
             try await policyRuntime.synchronize("revoke")
             return await reply(code: .ok, status: status)
         } catch {
@@ -348,9 +401,22 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     }
 
     func policy(_ request: MacAccessXPCPolicyRequest) async -> MacAccessXPCReply {
-        if request.operation == .activateKillSwitch { _ = try? await runtime?.stop() }
         guard let policyRuntime else { return await unavailableReply() }
+        if request.operation == .clearKillSwitch {
+            guard await policyRuntime.isEmergencyKillActive() else {
+                return await reply(code: .invalidRequest, status: await runtime?.status ?? .initial)
+            }
+            do {
+                if let runtime { _ = try await runtime.revokeLocally() }
+                else { try await vault.erase() }
+                try await policyRuntime.clearEmergencyKill()
+                return await reply(code: .ok, status: await runtime?.status ?? .initial)
+            } catch {
+                return await reply(code: map(error), status: await runtime?.status ?? .initial)
+            }
+        }
         let code = await policyRuntime.perform(request)
+        if request.operation == .activateKillSwitch { _ = try? await runtime?.stop() }
         return await reply(code: code, status: await runtime?.status ?? .initial)
     }
 

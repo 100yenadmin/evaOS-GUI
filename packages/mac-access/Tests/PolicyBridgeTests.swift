@@ -187,6 +187,75 @@ final class PolicyBridgeTests: XCTestCase {
         XCTAssertNil(pendingAfterKill)
     }
 
+    func testLocalStopPreemptsPendingApprovalBeforeCoreSynchronization() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-local-stop"
+        )
+        let envelope = actionEnvelope(commandID: "command-stop-pending")
+        let waiter = Task { try await custody.awaitApproval(envelope: envelope) }
+        while await custody.currentPendingApproval() == nil { await Task.yield() }
+
+        let stopped = try await custody.forceLocalSafety("stop")
+
+        let pendingResult = try await waiter.value
+        XCTAssertEqual(pendingResult, "approval_denied")
+        XCTAssertEqual(stopped.effectiveMode, "off")
+        XCTAssertTrue(stopped.paused)
+        XCTAssertEqual(stopped.transport, "stopped")
+    }
+
+    func testEmergencyResetReturnsUnpairedOffAndCannotRestoreAuthority() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-emergency-reset"
+        )
+        _ = try await custody.activateEmergencyKill()
+        let reset = try await custody.clearEmergencyKill()
+
+        XCTAssertEqual(reset.pairing, "unpaired")
+        XCTAssertEqual(reset.configuredMode, "off")
+        XCTAssertEqual(reset.effectiveMode, "off")
+        XCTAssertEqual(reset.transport, "disconnected")
+        XCTAssertFalse(reset.killSwitch)
+        let reopened = await custody.openNativeBarrierIfAllowed()
+        XCTAssertFalse(reopened)
+    }
+
+    func testChildStateRewriteCannotOpenNativeBarrierWithoutLocalModeAction() async throws {
+        let custody = try MacAccessPolicyCustody(
+            paths: MacAccessPolicyPaths(directory: temporaryDirectory()),
+            hostSessionID: "host-state-rewrite"
+        )
+        let envelope = actionEnvelope(commandID: "command-state-rewrite")
+        var rewritten = await custody.loadState()
+        let revision = try XCTUnwrap(rewritten["revision"]?.integer)
+        rewritten["pairing_state"] = .string("paired")
+        rewritten["transport_state"] = .string("connected")
+        rewritten["configured_mode"] = .string("full_access")
+        rewritten["effective_mode"] = .string("full_access")
+        rewritten["paused"] = .boolean(false)
+        rewritten["kill_switch"] = .boolean(false)
+        rewritten["policy_epoch"] = envelope["policy_epoch"]
+        let rewroteState = try await custody.compareAndSwap(
+            expectedRevision: revision, state: rewritten
+        )
+        XCTAssertTrue(rewroteState)
+        try await custody.authorizeNative(envelope: envelope)
+
+        let openedWithoutLocalAction = await custody.openNativeBarrierIfAllowed()
+        let consumedWithoutLocalAction = await custody.consumeNativeAuthorization(envelope: envelope)
+        XCTAssertFalse(openedWithoutLocalAction)
+        XCTAssertFalse(consumedWithoutLocalAction)
+
+        try await custody.authorizeLocalMode("full_access")
+        let openedAfterLocalAction = await custody.openNativeBarrierIfAllowed()
+        XCTAssertTrue(openedAfterLocalAction)
+        try await custody.authorizeNative(envelope: envelope)
+        let consumedAfterLocalAction = await custody.consumeNativeAuthorization(envelope: envelope)
+        XCTAssertTrue(consumedAfterLocalAction)
+    }
+
     func testReplayTombstoneSurvivesRestart() async throws {
         let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
         let envelope = actionEnvelope(commandID: "command-replay")
@@ -241,7 +310,7 @@ final class PolicyBridgeTests: XCTestCase {
 
     func testAuditRotatesWithinBoundAndPreservesChain() async throws {
         let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
-        let audit = try MacAccessAuditCustody(paths: paths)
+        let audit = try MacAccessAuditCustody(paths: paths, anchorStore: MemoryAuditAnchorStore())
         for index in 0..<260 {
             _ = try await audit.append(
                 envelope: actionEnvelope(commandID: "command-rotate-\(index)"),
@@ -254,6 +323,12 @@ final class PolicyBridgeTests: XCTestCase {
         ))
         let healthyAfterRotation = await audit.anchorHealthy()
         XCTAssertTrue(healthyAfterRotation)
+
+        try FileManager.default.removeItem(
+            at: paths.directory.appendingPathComponent("audit.ndjson.1")
+        )
+        let healthyAfterPrefixDeletion = await audit.anchorHealthy()
+        XCTAssertFalse(healthyAfterPrefixDeletion)
     }
 
     func testMalformedClickDeniedAndValidClickIsBounded() async throws {
@@ -292,6 +367,50 @@ final class PolicyBridgeTests: XCTestCase {
         await native.cancelAll()
         let result = await waiter.value
         XCTAssertEqual(result["outcome"]?.string, "stopped")
+    }
+
+    func testNativeBlockClosesBeginAfterCancelRace() async throws {
+        let native = MacAccessNativeClickPort(isAccessibilityTrusted: { true })
+        let actionID = try await native.begin(
+            envelope: actionEnvelope(commandID: "command-before-block")
+        )
+        await native.blockAndCancelAll()
+        _ = await native.wait(actionID: actionID)
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await native.begin(
+                envelope: actionEnvelope(commandID: "command-after-block")
+            )
+        }
+    }
+
+    func testRunnerChannelLossLatchesKillAndQuiescesNativeWork() async throws {
+        let paths = MacAccessPolicyPaths(directory: temporaryDirectory())
+        let custody = try MacAccessPolicyCustody(paths: paths, hostSessionID: "host-runner-loss")
+        let native = MacAccessNativeClickPort(
+            performer: { _, _ in
+                try? await Task.sleep(for: .seconds(30))
+                return true
+            },
+            isAccessibilityTrusted: { true }
+        )
+        let dispatcher = MacAccessCoreHostPortDispatcher(
+            custody: custody,
+            audit: try MacAccessAuditCustody(paths: paths),
+            native: native,
+            vault: PolicyTestVault()
+        )
+        let actionID = try await native.begin(
+            envelope: actionEnvelope(commandID: "command-runner-loss")
+        )
+        let waiter = Task { await native.wait(actionID: actionID) }
+
+        await dispatcher.failClosedOnChannelLoss()
+
+        let result = await waiter.value
+        let projection = await custody.projectStatus()
+        XCTAssertEqual(result["outcome"]?.string, "stopped")
+        XCTAssertTrue(projection.killSwitch)
     }
 
     func testMissingRunnerFailsClosedAndEmergencyKillPersists() async throws {
@@ -351,6 +470,19 @@ final class PolicyBridgeTests: XCTestCase {
 
         try await runtime.synchronizePairing(code: "ABCDEF12")
         try await runtime.synchronizeConnection(binding: command.binding)
+        var connected = await custody.loadState()
+        let revision = try XCTUnwrap(connected["revision"]?.integer)
+        connected["pairing_state"] = .string("paired")
+        connected["transport_state"] = .string("connected")
+        connected["configured_mode"] = .string("ask_every_time")
+        connected["effective_mode"] = .string("ask_every_time")
+        connected["paused"] = .boolean(false)
+        connected["kill_switch"] = .boolean(false)
+        connected["policy_epoch"] = .integer(2)
+        let updated = try await custody.compareAndSwap(expectedRevision: revision, state: connected)
+        XCTAssertTrue(updated)
+        try await custody.authorizeLocalMode("ask_every_time")
+        await runtime.enableNativeIfAllowed()
         let encodedCommand = try JSONEncoder().encode(command)
         guard case .object(let commandEnvelope) = try JSONDecoder().decode(
             JSONValue.self, from: encodedCommand

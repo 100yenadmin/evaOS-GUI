@@ -8,6 +8,7 @@ public enum MacAccessXPCPolicyOperation: String, Codable, Equatable, Sendable {
     case setAccessMode = "set_access_mode"
     case pause, resume
     case activateKillSwitch = "activate_kill_switch"
+    case clearKillSwitch = "clear_kill_switch"
     case approveAction = "approve_action"
     case denyAction = "deny_action"
     case auditSummary = "audit_summary"
@@ -293,6 +294,9 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessStatusProjectingClient {
         case .activateKillSwitch:
             request = nil
             policy = MacAccessXPCPolicyRequest(operation: .activateKillSwitch)
+        case .clearKillSwitch:
+            request = nil
+            policy = MacAccessXPCPolicyRequest(operation: .clearKillSwitch)
         }
         do {
             let data: Data
@@ -344,6 +348,7 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessStatusProjectingClient {
             case .pause: return .completed(.localPause)
             case .resume: return .completed(.localResume)
             case .activateKillSwitch: return .completed(.localEmergencyStop)
+            case .clearKillSwitch: return .completed(.localEmergencyReset)
             case .setAccessMode(let mode): return .completed(.accessModeChanged(mode))
             }
         case .invalidPairingCode: return .blocked(.invalidPairingCode)

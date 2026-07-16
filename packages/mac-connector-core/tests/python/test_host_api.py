@@ -418,6 +418,14 @@ class CoreHostTests(unittest.TestCase):
             )
         )
 
+    def test_pairing_starts_off_until_local_mode_selection(self) -> None:
+        response = self.pair()
+        self.assertTrue(response["ok"])
+        state = self.state.load()
+        self.assertEqual(state["pairing_state"], "paired")
+        self.assertEqual(state["configured_mode"], "off")
+        self.assertEqual(state["effective_mode"], "off")
+
     def test_all_fourteen_operations_are_dispatched(self) -> None:
         seen = set()
         response = self.host.handle(request("status", 1, None))
