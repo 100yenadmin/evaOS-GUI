@@ -21,6 +21,7 @@ struct MacAccessMenu: View {
         Divider()
 
         Button("onboarding.title") {
+            NSApplication.shared.activate(ignoringOtherApps: true)
             openWindow(id: "onboarding")
         }
         .keyboardShortcut("p")

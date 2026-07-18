@@ -46,11 +46,12 @@ struct OnboardingView: View {
                     Task { await controller.perform(.pair) }
                 }
                 .disabled(!controller.availability.pairing)
+                .keyboardShortcut(.defaultAction)
                 Spacer()
                 Button("action.close") {
                     dismissWindow(id: "onboarding")
                 }
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(.cancelAction)
             }
         }
         .padding(24)
