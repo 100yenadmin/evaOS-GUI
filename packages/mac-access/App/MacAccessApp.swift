@@ -47,14 +47,30 @@ enum MacAccessEntryPoint {
         }
 
         Task { @MainActor in
-            let execution = await MacAccessCLI.execute(
-                arguments: arguments,
-                client: MacAccessXPCConnectorCoreClient(),
-                readStdin: { FileHandle.standardInput.readDataToEndOfFile() }
+            let stdin = MacAccessCLI.parse(arguments: arguments) == .pair
+                ? FileHandle.standardInput.readDataToEndOfFile()
+                : Data()
+            var execution = MacAccessLocalControl.request(
+                arguments: arguments, stdin: stdin
             )
-            let output = execution.standardError ? FileHandle.standardError : FileHandle.standardOutput
-            output.write(execution.output)
-            Darwin.exit(execution.exitCode)
+            if execution == nil {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = false
+                _ = try? await NSWorkspace.shared.openApplication(
+                    at: Bundle.main.bundleURL,
+                    configuration: configuration
+                )
+                for _ in 0..<20 where execution == nil {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    execution = MacAccessLocalControl.request(
+                        arguments: arguments, stdin: stdin
+                    )
+                }
+            }
+            let result = execution ?? MacAccessCLI.appUnavailable(arguments: arguments)
+            let output = result.standardError ? FileHandle.standardError : FileHandle.standardOutput
+            output.write(result.output)
+            Darwin.exit(result.exitCode)
         }
         RunLoop.main.run()
     }
@@ -63,13 +79,27 @@ enum MacAccessEntryPoint {
 struct MacAccessApp: App {
     private static let approvalHandler = MacAccessApprovalHandler()
     @StateObject private var controller: MacAccessController
-    @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
+    @StateObject private var onboardingWindow: MacAccessOnboardingWindow
+    private let localControlServer: MacAccessLocalControlServer
 
     init() {
-        _controller = StateObject(wrappedValue: MacAccessController(
-            client: MacAccessXPCConnectorCoreClient(approvalHandler: Self.approvalHandler),
+        let client = MacAccessXPCConnectorCoreClient(
+            approvalHandler: Self.approvalHandler
+        )
+        let controller = MacAccessController(
+            client: client,
             availability: .internalAlpha
-        ))
+        )
+        let onboardingWindow = MacAccessOnboardingWindow()
+        _controller = StateObject(wrappedValue: controller)
+        _onboardingWindow = StateObject(wrappedValue: onboardingWindow)
+        localControlServer = MacAccessLocalControlServer(
+            client: client,
+            showSetup: {
+                onboardingWindow.show(controller: controller)
+            }
+        )
+        localControlServer.start()
     }
 
     var body: some Scene {

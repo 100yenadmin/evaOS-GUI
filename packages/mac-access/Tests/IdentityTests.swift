@@ -11,6 +11,18 @@ final class IdentityTests: XCTestCase {
         XCTAssertEqual(MacAccessIdentity.connectorServiceID, "com.evaos.mac-access.connector")
     }
 
+    func testAppVersionComesFromBuildSettings() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let plist = try String(
+            contentsOf: packageRoot.appendingPathComponent("Resources/Plists/App-Info.plist"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(plist.contains("<string>$(MARKETING_VERSION)</string>"))
+        XCTAssertTrue(plist.contains("<string>$(CURRENT_PROJECT_VERSION)</string>"))
+    }
+
     func testFrozenDesignatedRequirementDigestsMatchCanonicalText() {
         XCTAssertEqual(sha256(MacAccessIdentity.appDesignatedRequirement), MacAccessIdentity.appDesignatedRequirementSHA256)
         XCTAssertEqual(sha256(MacAccessIdentity.helperDesignatedRequirement), MacAccessIdentity.helperDesignatedRequirementSHA256)

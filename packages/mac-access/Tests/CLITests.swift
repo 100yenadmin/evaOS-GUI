@@ -42,6 +42,48 @@ final class CLITests: XCTestCase {
         XCTAssertFalse(MacAccessCLI.shouldRun(arguments: []))
         XCTAssertFalse(MacAccessCLI.shouldRun(arguments: ["-psn_0_12345"]))
         XCTAssertTrue(MacAccessCLI.shouldRun(arguments: ["status"]))
+        XCTAssertEqual(MacAccessCLI.parse(arguments: ["setup"]), .setup)
+    }
+
+    func testSeparateLocalCLIRequestsShareOneAppOwnedClient() async throws {
+        let socketPath = "/tmp/evaos-mac-access-test-\(UUID().uuidString).sock"
+        let client = StatefulCLIClient()
+        let setupRecorder = await MainActor.run { SetupInvocationRecorder() }
+        let server = MacAccessLocalControlServer(
+            client: client,
+            socketPath: socketPath,
+            showSetup: { setupRecorder.record() }
+        )
+        XCTAssertTrue(server.start())
+        defer { server.stop() }
+
+        let elevated = try XCTUnwrap(MacAccessLocalControl.request(
+            arguments: ["mode", "full", "--json"],
+            stdin: Data(),
+            socketPath: socketPath
+        ))
+        XCTAssertEqual(elevated.exitCode, 0)
+
+        let status = try XCTUnwrap(MacAccessLocalControl.request(
+            arguments: ["status", "--json"],
+            stdin: Data(),
+            socketPath: socketPath
+        ))
+        let decoded = try JSONDecoder().decode(
+            MacAccessCLIResponse.self, from: status.output
+        )
+        XCTAssertEqual(decoded.status?.accessMode, .fullAccess)
+
+        let setup = await Task.detached {
+            MacAccessLocalControl.request(
+                arguments: ["setup", "--json"],
+                stdin: Data(),
+                socketPath: socketPath
+            )
+        }.value
+        XCTAssertEqual(try XCTUnwrap(setup).exitCode, 0)
+        let setupCount = await MainActor.run { setupRecorder.count }
+        XCTAssertEqual(setupCount, 1)
     }
 
     func testPairAcceptsCodeOnlyFromStdinAndDoesNotEchoIt() async {
@@ -114,5 +156,47 @@ final class CLITests: XCTestCase {
             let requests = await client.permissionRequests
             XCTAssertEqual(requests, [expected])
         }
+    }
+}
+
+@MainActor
+private final class SetupInvocationRecorder {
+    private(set) var count = 0
+
+    func record() {
+        count += 1
+    }
+}
+
+private actor StatefulCLIClient: MacAccessCLIClient {
+    private var mode = MacAccessMode.off
+
+    func perform(_ action: ConnectorCoreAction) -> ConnectorCoreResult {
+        if case .setAccessMode(let value) = action {
+            mode = value
+            return .completed(.accessModeSet(value))
+        }
+        return .completed(.connected)
+    }
+
+    func fetchStatus() -> MacAccessXPCReply? {
+        MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired",
+                transport: "connected",
+                lastErrorCode: nil,
+                lastAuditID: "redacted-audit-1",
+                permissions: MacAccessPermissionStatus(
+                    accessibility: .granted,
+                    screenRecording: .granted
+                ),
+                accessMode: mode
+            )
+        )
+    }
+
+    func requestPermission(_ kind: MacAccessPermissionKind) -> MacAccessXPCReply? {
+        fetchStatus()
     }
 }

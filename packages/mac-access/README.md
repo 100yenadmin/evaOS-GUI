@@ -36,9 +36,16 @@ fail closed at the application boundary:
   helper cleanup fails;
 - quit records cleanup intent and requests an orderly local stop before termination;
 - no application UI authority state is persisted, so relaunch cannot restore `Full Access`;
-- the relay currently returns bounded execution receipts but does not yet carry observation/action
-  result payloads, and the helper has not yet applied literal Off/Ask Every Time/Full Access policy
-  to the executor; updater and Workbench integration are deferred from the internal-alpha gate.
+- the helper applies literal `Off`, `Ask Every Time`, and `Full Access` policy before execution;
+  `Off` returns a denied receipt without actuation, `Ask Every Time` requires one uncached approval
+  from the running signed app, and `Full Access` permits the four bounded CUA capabilities;
+- the relay returns bounded redacted receipts with bounded observation/action result payloads; and
+- the installed binary exposes `setup`, status, permissions, pairing, connect/disconnect, literal
+  modes, stop, unpair, and revoke through a same-user local CLI routed to the running app-owned
+  helper, so separate CLI invocations operate one authoritative connector session.
+
+Updater, rollback, Workbench integration, public distribution, and rollout remain deferred from the
+installed internal-alpha gate.
 
 The source contract is pinned to dashboard #669 and evaos-ws-proxy #73. Production composition
 still requires deployment-owned values that those wire responses intentionally do not contain: the
@@ -79,3 +86,24 @@ readiness.
 The native catalog reserves all 12 repository locales without `jq` or Homebrew. English is the only
 completed translation in this draft; non-English units are explicitly `needs_review` and cannot be
 reported as translated by the validation script.
+
+## Installed local CLI
+
+The signed app must remain installed at `/Applications/evaOS Mac Access.app`. The CLI launches the
+menu-bar app when needed and routes each request to that running app over a bounded same-user Unix
+socket; it does not start an independent helper session.
+
+```bash
+MAC_ACCESS="/Applications/evaOS Mac Access.app/Contents/MacOS/evaOS Mac Access"
+"$MAC_ACCESS" setup --json
+"$MAC_ACCESS" status --json
+"$MAC_ACCESS" mode full --json
+"$MAC_ACCESS" connect --json
+"$MAC_ACCESS" stop --json
+```
+
+Pairing codes are accepted only on standard input:
+
+```bash
+printf '%s\n' 'PUBLICCODE12' | "$MAC_ACCESS" pair --code-stdin --json
+```
