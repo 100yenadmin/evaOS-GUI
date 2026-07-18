@@ -2,17 +2,30 @@ import AppKit
 import Foundation
 import MacAccessShared
 
-enum MacAccessSetupURL {
-    static let url = URL(string: "evaos-mac-access://setup")!
+enum MacAccessSetupRequest {
+    static let notification = Notification.Name("com.evaos.mac-access.setup.request")
 
-    static func matches(_ candidate: URL) -> Bool {
-        candidate.scheme == url.scheme
-            && candidate.host == url.host
-            && candidate.path.isEmpty
-            && candidate.user == nil
-            && candidate.password == nil
-            && candidate.query == nil
-            && candidate.fragment == nil
+    @MainActor
+    static func open(bundleURL: URL = Bundle.main.bundleURL) async -> Bool {
+        let launched = await withCheckedContinuation { continuation in
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(
+                at: bundleURL,
+                configuration: configuration
+            ) { application, error in
+                continuation.resume(returning: application != nil && error == nil)
+            }
+        }
+        guard launched else { return false }
+
+        DistributedNotificationCenter.default().postNotificationName(
+            notification,
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        return true
     }
 }
 
@@ -242,8 +255,8 @@ enum MacAccessCLI {
         client: any MacAccessStatusProjectingClient,
         build: MacAccessCLIBuildInfo = .production(),
         readStdin: @Sendable () throws -> Data,
-        openSetup: () -> Bool = {
-            NSWorkspace.shared.open(MacAccessSetupURL.url)
+        openSetup: @MainActor () async -> Bool = {
+            await MacAccessSetupRequest.open()
         }
     ) async -> MacAccessCLIExecution {
         let command: MacAccessCLICommand
@@ -259,7 +272,7 @@ enum MacAccessCLI {
 
         switch command {
         case .setup:
-            let opened = openSetup()
+            let opened = await openSetup()
             return encoded(
                 MacAccessCLIEnvelope(
                     ok: opened,

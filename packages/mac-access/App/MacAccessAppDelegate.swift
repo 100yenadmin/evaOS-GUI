@@ -66,6 +66,12 @@ final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleSetupRequest),
+            name: MacAccessSetupRequest.notification,
+            object: nil
+        )
         #if !DEBUG
         registerLoginItemIfNeeded()
         #endif
@@ -74,9 +80,16 @@ final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        guard urls.contains(where: MacAccessSetupURL.matches) else { return }
+    @objc private func handleSetupRequest(_ notification: Notification) {
         showOnboarding()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        DistributedNotificationCenter.default().removeObserver(
+            self,
+            name: MacAccessSetupRequest.notification,
+            object: nil
+        )
     }
 
     func showOnboarding() {

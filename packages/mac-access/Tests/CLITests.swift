@@ -114,9 +114,10 @@ final class CLITests: XCTestCase {
         XCTAssertTrue(String(decoding: execution.output, as: UTF8.self).contains("setup_opened"))
         let actions = await client.actions
         XCTAssertTrue(actions.isEmpty)
-        XCTAssertTrue(MacAccessSetupURL.matches(MacAccessSetupURL.url))
-        XCTAssertFalse(MacAccessSetupURL.matches(URL(string: "evaos-mac-access://setup?code=secret")!))
-        XCTAssertFalse(MacAccessSetupURL.matches(URL(string: "https://setup")!))
+        XCTAssertEqual(
+            MacAccessSetupRequest.notification.rawValue,
+            "com.evaos.mac-access.setup.request"
+        )
     }
 
     func testPairReadsOnlyStdinAndNeverReturnsCode() async throws {
