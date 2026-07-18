@@ -68,6 +68,9 @@ final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
         #if !DEBUG
         registerLoginItemIfNeeded()
         #endif
+        Task { @MainActor [weak controller] in
+            await controller?.refreshFromHelper()
+        }
     }
 
     @discardableResult

@@ -69,6 +69,7 @@ final actor SuspendedConnectorClient: ConnectorCoreClient {
 
 final actor ProjectingConnectorClient: MacAccessStatusProjectingClient {
     var reply: MacAccessXPCReply
+    private var fetchCount = 0
 
     init(reply: MacAccessXPCReply) { self.reply = reply }
 
@@ -76,12 +77,19 @@ final actor ProjectingConnectorClient: MacAccessStatusProjectingClient {
         .completed(.localStop)
     }
 
-    func fetchStatus() async -> MacAccessXPCReply? { reply }
+    func fetchStatus() async -> MacAccessXPCReply? {
+        fetchCount += 1
+        return reply
+    }
 
     func resolvePendingApproval(
         _ approval: MacAccessXPCApproval, allow: Bool
     ) async -> MacAccessXPCReply? {
         reply
+    }
+
+    func waitForFetchCount(_ expected: Int) async {
+        while fetchCount < expected { await Task.yield() }
     }
 }
 
@@ -190,6 +198,31 @@ private final class FakeMacAccessLoginItemService: MacAccessLoginItemServicing {
 
 @MainActor
 final class ControllerTests: XCTestCase {
+    func testApplicationLaunchOpensPersistentHelperProjection() async {
+        let client = ProjectingConnectorClient(reply: MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: "connected", lastErrorCode: nil,
+                lastAuditID: nil, configuredMode: "ask_every_time",
+                effectiveMode: "ask_every_time", paused: false, killSwitch: false,
+                policyEpoch: 7, policyProvider: "mac_connector_core"
+            )
+        ))
+        let controller = MacAccessController(client: client, availability: .standalonePolicy)
+        let delegate = MacAccessAppDelegate(
+            loginItemService: FakeMacAccessLoginItemService(state: .enabled)
+        )
+        delegate.controller = controller
+
+        delegate.applicationDidFinishLaunching(
+            Notification(name: NSApplication.didFinishLaunchingNotification)
+        )
+        await client.waitForFetchCount(1)
+
+        XCTAssertEqual(controller.state.connection, .connected)
+        XCTAssertEqual(controller.state.effectiveMode, .askEveryTime)
+    }
+
     func testLoginItemRegistrationIsIdempotentAndSurfacesApproval() {
         let service = FakeMacAccessLoginItemService(state: .notRegistered)
         let delegate = MacAccessAppDelegate(loginItemService: service)
