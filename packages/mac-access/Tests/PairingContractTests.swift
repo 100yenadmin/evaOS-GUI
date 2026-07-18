@@ -109,6 +109,7 @@ final class PairingContractTests: XCTestCase {
         XCTAssertEqual(policy.itemClass, "kSecClassGenericPassword")
         XCTAssertEqual(policy.accessibility, "kSecAttrAccessibleWhenUnlockedThisDeviceOnly")
         XCTAssertFalse(policy.synchronizable)
+        XCTAssertTrue(policy.usesDataProtectionKeychain)
         XCTAssertEqual(policy.accessGroup, "TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1")
         XCTAssertEqual(
             MacAccessKeychainPolicy.developmentEpochOne.accessGroup,
