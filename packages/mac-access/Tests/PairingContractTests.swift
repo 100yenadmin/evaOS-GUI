@@ -63,6 +63,12 @@ final class PairingContractTests: XCTestCase {
         XCTAssertNoThrow(try MacAccessWire.parseInstant(
             "2030-01-02T03:04:05.000Z", allowingMilliseconds: true
         ))
+        XCTAssertNoThrow(try MacAccessWire.parseInstant(
+            "2030-01-02T03:04:05.123456+00:00", allowingMilliseconds: true
+        ))
+        XCTAssertThrowsError(try MacAccessWire.parseInstant(
+            "2030-01-02 03:04:05.123456+00:00", allowingMilliseconds: true
+        ))
     }
 
     func testPairingCodeNormalizationIsExact() throws {
