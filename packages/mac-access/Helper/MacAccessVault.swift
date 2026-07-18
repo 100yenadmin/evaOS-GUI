@@ -38,6 +38,7 @@ struct MacAccessKeychainPolicy: Equatable, Sendable {
     let account: String
     let accessibility = "kSecAttrAccessibleWhenUnlockedThisDeviceOnly"
     let synchronizable = false
+    let usesDataProtectionKeychain = true
 
     static let productionEpochOne = MacAccessKeychainPolicy(
         accessGroup: "TC6MS3T6NN.com.evaos.mac-access.credentials.epoch-1",
@@ -121,6 +122,7 @@ actor SecurityMacAccessCredentialVault: MacAccessCredentialVault {
             kSecAttrService as String: policy.service,
             kSecAttrAccount as String: policy.account,
             kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+            kSecUseDataProtectionKeychain as String: kCFBooleanTrue as Any,
         ]
     }
 }
