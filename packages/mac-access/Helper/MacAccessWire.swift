@@ -527,6 +527,28 @@ struct MacAccessSelectedBinding: Codable, Equatable, Sendable {
               try MacAccessWire.parseInstant(grantExpiresAt, allowingMilliseconds: true) > now
         else { throw MacAccessPublicError.wrongBinding }
     }
+
+    func canonicalizedForRelay() throws -> Self {
+        let expiry = try MacAccessWire.parseInstant(
+            grantExpiresAt, allowingMilliseconds: true
+        )
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime]
+        return Self(
+            customerID: customerID,
+            customerVMID: customerVMID,
+            deviceID: deviceID,
+            grantID: grantID,
+            runtime: runtime,
+            bindingID: bindingID,
+            bindingVersion: bindingVersion,
+            grantExpiresAt: formatter.string(from: expiry),
+            connectorInstallationID: connectorInstallationID,
+            connectorKeyID: connectorKeyID,
+            bindingFingerprintSHA256: bindingFingerprintSHA256
+        )
+    }
 }
 
 struct MacAccessExecutionContextClaims: Codable, Equatable, Sendable {

@@ -53,6 +53,7 @@ final class PairingContractTests: XCTestCase {
         let response = try MacAccessPairingRedemptionResponse.decodeStrict(from: golden, now: now)
 
         XCTAssertEqual(response.selectedBinding.connectorInstallationID, "mac-access-golden-installation-v1")
+        XCTAssertEqual(response.selectedBinding.grantExpiresAt, "2030-01-02T03:04:05Z")
         XCTAssertEqual(response.relayCredentialExpiresAt, "2030-01-02T03:04:05.000Z")
     }
 
@@ -66,6 +67,17 @@ final class PairingContractTests: XCTestCase {
         XCTAssertNoThrow(try MacAccessWire.parseInstant(
             "2030-01-02T03:04:05.123456+00:00", allowingMilliseconds: true
         ))
+        let binding = MacAccessSelectedBinding(
+            customerID: "customer-01", customerVMID: "vm-01", deviceID: "mac-01",
+            grantID: "grant-01", runtime: "openclaw", bindingID: "binding-01",
+            bindingVersion: "1", grantExpiresAt: "2030-01-02T03:04:05.123456+00:00",
+            connectorInstallationID: "install-01", connectorKeyID: "key-01",
+            bindingFingerprintSHA256: String(repeating: "a", count: 64)
+        )
+        XCTAssertEqual(
+            try binding.canonicalizedForRelay().grantExpiresAt,
+            "2030-01-02T03:04:05Z"
+        )
         XCTAssertThrowsError(try MacAccessWire.parseInstant(
             "2030-01-02 03:04:05.123456+00:00", allowingMilliseconds: true
         ))

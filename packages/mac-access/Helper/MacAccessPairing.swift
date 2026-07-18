@@ -122,7 +122,14 @@ struct MacAccessPairingRedemptionResponse: Codable, Equatable, Sendable {
               try MacAccessWire.parseInstant(response.relayCredentialExpiresAt, allowingMilliseconds: true) > now
         else { throw MacAccessPublicError.pairingRejected }
         try response.selectedBinding.validate(now: now)
-        return response
+        return Self(
+            ok: response.ok,
+            schemaVersion: response.schemaVersion,
+            selectedBinding: try response.selectedBinding.canonicalizedForRelay(),
+            relayCredential: response.relayCredential,
+            relayCredentialExpiresAt: response.relayCredentialExpiresAt,
+            auditID: response.auditID
+        )
     }
 }
 
