@@ -7,6 +7,7 @@ DERIVED_DATA_PATH=${DERIVED_DATA_PATH:-"${TMPDIR:-/tmp}/evaos-mac-access-derived
 
 "$SCRIPT_DIR/verify-contract-identities.sh"
 "$SCRIPT_DIR/verify-localizations.sh"
+PYTHONDONTWRITEBYTECODE=1 python3 "$PACKAGE_ROOT/Tests/AdapterRunnerTests.py"
 
 xcodebuild \
   -project "$PACKAGE_ROOT/MacAccess.xcodeproj" \

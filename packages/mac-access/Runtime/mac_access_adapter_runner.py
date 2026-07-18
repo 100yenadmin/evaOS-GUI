@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -30,6 +31,39 @@ def _bounded_integer(value: Any, *, name: str, minimum: int, maximum: int) -> in
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise RequestError(f"{name}_invalid")
     return value
+
+
+def _click_coordinates(x: Any, y: Any) -> tuple[int, int]:
+    if isinstance(x, int) and not isinstance(x, bool):
+        return (
+            _bounded_integer(x, name="x", minimum=-20_000, maximum=20_000),
+            _bounded_integer(y, name="y", minimum=-20_000, maximum=20_000),
+        )
+    if (
+        isinstance(x, float)
+        and isinstance(y, float)
+        and math.isfinite(x)
+        and math.isfinite(y)
+        and 0 <= x <= 1
+        and 0 <= y <= 1
+    ):
+        try:
+            import Quartz  # noqa: PLC0415
+
+            bounds = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
+            width = int(bounds.size.width)
+            height = int(bounds.size.height)
+            if width < 1 or height < 1:
+                raise RequestError("display_bounds_unavailable")
+            return (
+                int(round(bounds.origin.x + x * (width - 1))),
+                int(round(bounds.origin.y + y * (height - 1))),
+            )
+        except RequestError:
+            raise
+        except Exception as error:
+            raise RequestError("display_bounds_unavailable") from error
+    raise RequestError("x_invalid")
 
 
 def _optional_string(value: Any, *, name: str, maximum: int) -> str | None:
@@ -69,8 +103,7 @@ def normalized_call(capability: str, request: dict[str, Any]) -> tuple[str, dict
         if (x is None) != (y is None):
             raise RequestError("coordinates_incomplete")
         if x is not None:
-            x = _bounded_integer(x, name="x", minimum=-20_000, maximum=20_000)
-            y = _bounded_integer(y, name="y", minimum=-20_000, maximum=20_000)
+            x, y = _click_coordinates(x, y)
         target_label = _optional_string(request.get("target_label"), name="target_label", maximum=256)
         snapshot_id = _optional_string(request.get("snapshot_id"), name="snapshot_id", maximum=128)
         element_id = _optional_string(request.get("element_id"), name="element_id", maximum=128)
