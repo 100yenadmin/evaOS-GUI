@@ -41,6 +41,14 @@ class AdapterRunnerTests(unittest.TestCase):
                 "customer_mac.desktop_click", {"x": 1.1, "y": 0.5}
             )
 
+    def test_runtime_error_code_reports_only_exception_class(self):
+        error = PermissionError("/private/path/that/must/not-leak")
+        self.assertEqual(
+            RUNNER._runtime_error_code(error),
+            "adapter_runtime_permissionerror",
+        )
+        self.assertNotIn("private", RUNNER._runtime_error_code(error))
+
 
 if __name__ == "__main__":
     unittest.main()

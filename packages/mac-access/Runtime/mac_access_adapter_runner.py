@@ -152,6 +152,13 @@ def _safe_error_code(value: Any, fallback: str) -> str:
     return (normalized or fallback)[:96]
 
 
+def _runtime_error_code(error: Exception) -> str:
+    return _safe_error_code(
+        f"adapter_runtime_{type(error).__name__}",
+        "adapter_runtime_failed",
+    )
+
+
 def execute(payload: dict[str, Any]) -> dict[str, Any]:
     audit_id = f"mac-access-{uuid.uuid4()}"
     try:
@@ -206,12 +213,12 @@ def execute(payload: dict[str, Any]) -> dict[str, Any]:
             "errors": [],
             "provenance": {},
         }
-    except Exception:
+    except Exception as error:
         return {
             "schema_version": "evaos.mac_access.adapter_result.v1",
             "audit_id": audit_id,
             "ok": False,
-            "error_code": "adapter_runtime_failed",
+            "error_code": _runtime_error_code(error),
             "data": {},
             "warnings": [],
             "errors": [],
