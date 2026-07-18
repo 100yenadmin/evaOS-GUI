@@ -76,6 +76,9 @@ final class IdentityTests: XCTestCase {
         XCTAssertTrue(onboarding.contains(".keyboardShortcut(.defaultAction)"))
         XCTAssertTrue(onboarding.contains(".keyboardShortcut(.cancelAction)"))
         XCTAssertTrue(onboarding.contains("window.makeKeyAndOrderFront(nil)"))
+        XCTAssertTrue(onboarding.contains("SecureField(\"onboarding.pairingCode\""))
+        XCTAssertTrue(onboarding.contains("pairingCode = \"\""))
+        XCTAssertFalse(onboarding.contains("TextField(\"onboarding.pairingCode\""))
 
         let catalogData = try Data(contentsOf: packageRoot.appendingPathComponent("Resources/Localizable.xcstrings"))
         let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])

@@ -49,7 +49,7 @@ struct OnboardingView: View {
 
             Text("onboarding.backendBlocked")
 
-            TextField("onboarding.pairingCode", text: $pairingCode)
+            SecureField("onboarding.pairingCode", text: $pairingCode)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: pairingCode) { _, value in
                     pairingCode = String(value.uppercased().prefix(12))
@@ -86,7 +86,13 @@ struct OnboardingView: View {
 
             HStack {
                 Button("action.pair") {
-                    Task { await controller.perform(.pair(pairingCode)) }
+                    let submittedCode = pairingCode
+                    pairingCode = ""
+                    Task {
+                        if await controller.perform(.pair(submittedCode)) == .completed(.paired) {
+                            close()
+                        }
+                    }
                 }
                 .disabled(!controller.availability.pairing || pairingCode.count != 12)
                 .keyboardShortcut(.defaultAction)
