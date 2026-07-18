@@ -157,6 +157,38 @@ final class CLITests: XCTestCase {
             XCTAssertEqual(requests, [expected])
         }
     }
+
+    func testControllerBackedCLIStopLatchesEmergencyAgainstLaterConnect() async {
+        let core = StatefulCLIClient()
+        let initial = MacAccessState(
+            connection: .connected,
+            configuredMode: .fullAccess,
+            effectiveMode: .fullAccess,
+            isPaired: true,
+            blocker: nil
+        )
+        let controller = await MainActor.run {
+            MacAccessController(
+                client: core,
+                initialState: initial,
+                availability: .internalAlpha
+            )
+        }
+        let client = MacAccessControllerCLIClient(
+            controller: controller,
+            statusClient: core
+        )
+
+        let stopped = await client.perform(.stop)
+        XCTAssertEqual(stopped, .completed(.localEmergencyStop))
+        let reconnect = await client.perform(.connect)
+        XCTAssertEqual(reconnect, .blocked(.emergencyStopActive))
+        let actions = await core.actions
+        XCTAssertEqual(actions, [.stop])
+        let status = await client.fetchStatus()
+        XCTAssertEqual(status?.status.transport, "stopped")
+        XCTAssertEqual(status?.status.accessMode, .off)
+    }
 }
 
 @MainActor
@@ -170,13 +202,39 @@ private final class SetupInvocationRecorder {
 
 private actor StatefulCLIClient: MacAccessCLIClient {
     private var mode = MacAccessMode.off
+    private var transport = "connected"
+    private(set) var actions: [ConnectorCoreAction] = []
 
     func perform(_ action: ConnectorCoreAction) -> ConnectorCoreResult {
+        actions.append(action)
         if case .setAccessMode(let value) = action {
             mode = value
             return .completed(.accessModeSet(value))
         }
-        return .completed(.connected)
+        switch action {
+        case .stop:
+            mode = .off
+            transport = "stopped"
+            return .completed(.localStop)
+        case .connect:
+            transport = "connected"
+            return .completed(.connected)
+        case .disconnect:
+            transport = "disconnected"
+            return .completed(.disconnected)
+        case .pair:
+            return .completed(.paired)
+        case .unpair:
+            return .completed(.unpaired)
+        case .revokeSelectedVM:
+            return .completed(.revoked)
+        case .pause:
+            return .completed(.localPause)
+        case .resume:
+            return .completed(.localResume)
+        case .setAccessMode:
+            preconditionFailure("handled above")
+        }
     }
 
     func fetchStatus() -> MacAccessXPCReply? {
@@ -184,8 +242,8 @@ private actor StatefulCLIClient: MacAccessCLIClient {
             code: .ok,
             status: MacAccessXPCSafeStatus(
                 pairing: "paired",
-                transport: "connected",
-                lastErrorCode: nil,
+                transport: transport,
+                lastErrorCode: transport == "stopped" ? "stopped" : nil,
                 lastAuditID: "redacted-audit-1",
                 permissions: MacAccessPermissionStatus(
                     accessibility: .granted,

@@ -41,8 +41,9 @@ fail closed at the application boundary:
   from the running signed app, and `Full Access` permits the four bounded CUA capabilities;
 - the relay returns bounded redacted receipts with bounded observation/action result payloads; and
 - the installed binary exposes `setup`, status, permissions, pairing, connect/disconnect, literal
-  modes, stop, unpair, and revoke through a same-user local CLI routed to the running app-owned
-  helper, so separate CLI invocations operate one authoritative connector session.
+  modes, emergency stop, unpair, and revoke through a same-user local CLI routed through the
+  running app controller to its app-owned helper, so separate CLI invocations operate one
+  authoritative connector session and cannot bypass the emergency-stop latch.
 
 Updater, rollback, Workbench integration, public distribution, and rollout remain deferred from the
 installed internal-alpha gate.

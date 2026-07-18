@@ -6,6 +6,70 @@ protocol MacAccessCLIClient: MacAccessPermissionControllingClient {}
 
 extension MacAccessXPCConnectorCoreClient: MacAccessCLIClient {}
 
+final class MacAccessControllerCLIClient: MacAccessCLIClient, @unchecked Sendable {
+    private let controller: MacAccessController
+    private let statusClient: any MacAccessPermissionControllingClient
+
+    init(
+        controller: MacAccessController,
+        statusClient: any MacAccessPermissionControllingClient
+    ) {
+        self.controller = controller
+        self.statusClient = statusClient
+    }
+
+    func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+        if action == .stop {
+            await controller.emergencyStop()
+            for _ in 0..<50 {
+                if let reply = await statusClient.fetchStatus(),
+                   reply.status.transport == "stopped",
+                   reply.status.accessMode == .off
+                {
+                    return .completed(.localEmergencyStop)
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            return .blocked(.relayUnavailable)
+        }
+
+        await controller.refreshFromHelper()
+        switch await controller.perform(action) {
+        case .completed(let completion):
+            return .completed(completion)
+        case .blocked(let blocker):
+            return .blocked(blocker)
+        case .invalidated(.localPrecondition(let blocker)):
+            return .blocked(blocker)
+        case .invalidated(.quitCleanup):
+            return .blocked(.connectorCoreUnavailable)
+        }
+    }
+
+    func fetchStatus() async -> MacAccessXPCReply? {
+        await controller.refreshFromHelper()
+        guard let reply = await statusClient.fetchStatus() else { return nil }
+        let state = await controller.state
+        guard state.blocker == .emergencyStopActive else { return reply }
+        return MacAccessXPCReply(
+            code: reply.code,
+            status: MacAccessXPCSafeStatus(
+                pairing: reply.status.pairing,
+                transport: "stopped",
+                lastErrorCode: "stopped",
+                lastAuditID: reply.status.lastAuditID,
+                permissions: reply.status.permissions,
+                accessMode: .off
+            )
+        )
+    }
+
+    func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply? {
+        await controller.requestPermission(kind)
+        return await fetchStatus()
+    }
+}
+
 enum MacAccessCLICommand: Equatable {
     case status, permissionStatus, requestAccessibility, requestScreenRecording
     case setup, pair, connect, disconnect, stop, unpair, revoke, modeOff, modeAsk, modeFull, help

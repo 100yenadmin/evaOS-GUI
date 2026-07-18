@@ -94,7 +94,10 @@ struct MacAccessApp: App {
         _controller = StateObject(wrappedValue: controller)
         _onboardingWindow = StateObject(wrappedValue: onboardingWindow)
         localControlServer = MacAccessLocalControlServer(
-            client: client,
+            client: MacAccessControllerCLIClient(
+                controller: controller,
+                statusClient: client
+            ),
             showSetup: {
                 onboardingWindow.show(controller: controller)
             }
