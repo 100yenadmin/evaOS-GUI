@@ -19,6 +19,14 @@ on:
         description: 'Broker rollback-verification Ed25519 public key (unpadded base64url, 32 decoded bytes).'
         required: true
         type: string
+      deployment_profile:
+        description: 'Build an intentionally unconfigured artifact or pin the isolated Mac Access staging endpoints and public keys.'
+        required: true
+        default: unconfigured
+        type: choice
+        options:
+          - unconfigured
+          - staging
 permissions:
   contents: read
 
@@ -51,6 +59,13 @@ jobs:
       MAC_ACCESS_ROLLBACK_KEY_ID: ${{ inputs.rollback_key_id || vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_KEY_ID }}
       MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL: ${{ inputs.rollback_public_key_base64url || vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_PUBLIC_KEY_BASE64URL }}
       MAC_ACCESS_CANDIDATE_BUILD: ${{ inputs.candidate_build || github.run_number }}
+      MAC_ACCESS_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile || 'unconfigured' }}
+      MAC_ACCESS_PAIRING_ENDPOINT: ${{ inputs.deployment_profile == 'staging' && vars.MAC_ACCESS_STAGING_PAIRING_ENDPOINT || '' }}
+      MAC_ACCESS_RELAY_URL: ${{ inputs.deployment_profile == 'staging' && vars.MAC_ACCESS_STAGING_RELAY_URL || '' }}
+      MAC_ACCESS_COMMAND_KEY_ID: ${{ inputs.deployment_profile == 'staging' && vars.MAC_ACCESS_STAGING_COMMAND_KEY_ID || '' }}
+      MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL: ${{ inputs.deployment_profile == 'staging' && vars.MAC_ACCESS_STAGING_COMMAND_PUBLIC_KEY_BASE64URL || '' }}
+      MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID: ${{ inputs.deployment_profile == 'staging' && vars.MAC_ACCESS_STAGING_EXECUTION_CONTEXT_KEY_ID || '' }}
+      MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL: ${{ inputs.deployment_profile == 'staging' && vars.MAC_ACCESS_STAGING_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL || '' }}
       MAC_ACCESS_REQUIRE_PRIVATE_RUNTIME: '1'
       MAC_ACCESS_EXPECTED_ARCH: ${{ matrix.xcode_arch }}
 
@@ -79,6 +94,18 @@ jobs:
           rollback_key_id = os.environ.get('MAC_ACCESS_ROLLBACK_KEY_ID', '').strip()
           rollback_public_key = os.environ.get('MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL', '').strip()
           candidate_build = os.environ.get('MAC_ACCESS_CANDIDATE_BUILD', '').strip()
+          deployment_profile = os.environ.get('MAC_ACCESS_DEPLOYMENT_PROFILE', '').strip()
+          deployment_inputs = {
+              name: os.environ.get(name, '').strip()
+              for name in (
+                  'MAC_ACCESS_PAIRING_ENDPOINT',
+                  'MAC_ACCESS_RELAY_URL',
+                  'MAC_ACCESS_COMMAND_KEY_ID',
+                  'MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL',
+                  'MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID',
+                  'MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL',
+              )
+          }
           if any(
               canonical != os.environ.get(name, '')
               for name, canonical in (
@@ -87,6 +114,8 @@ jobs:
                   ('MAC_ACCESS_ROLLBACK_KEY_ID', rollback_key_id),
                   ('MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL', rollback_public_key),
                   ('MAC_ACCESS_CANDIDATE_BUILD', candidate_build),
+                  ('MAC_ACCESS_DEPLOYMENT_PROFILE', deployment_profile),
+                  *deployment_inputs.items(),
               )
           ):
               raise SystemExit('Mac Access private-RC update inputs must already be canonical and whitespace-free.')
@@ -120,6 +149,63 @@ jobs:
               raise SystemExit('rollback_public_key_base64url must decode to exactly 32 bytes.')
           if not re.fullmatch(r'[1-9][0-9]{0,8}', candidate_build):
               raise SystemExit('candidate_build must be a canonical positive decimal with at most nine digits.')
+          if deployment_profile not in {'unconfigured', 'staging'}:
+              raise SystemExit('deployment_profile must be unconfigured or staging.')
+          if deployment_profile == 'unconfigured':
+              if any(deployment_inputs.values()):
+                  raise SystemExit(
+                      'Unconfigured Mac Access candidates must not embed staging endpoints or keys.'
+                  )
+          else:
+              if not all(deployment_inputs.values()):
+                  raise SystemExit(
+                      'Staging Mac Access candidates require both endpoints and both public-key roles.'
+                  )
+              pairing = urllib.parse.urlsplit(deployment_inputs['MAC_ACCESS_PAIRING_ENDPOINT'])
+              relay = urllib.parse.urlsplit(deployment_inputs['MAC_ACCESS_RELAY_URL'])
+              if (
+                  pairing.scheme != 'https'
+                  or not pairing.hostname
+                  or pairing.username
+                  or pairing.password
+                  or pairing.query
+                  or pairing.fragment
+              ):
+                  raise SystemExit('Mac Access staging pairing endpoint must be canonical HTTPS.')
+              if (
+                  relay.scheme != 'wss'
+                  or not relay.hostname
+                  or relay.username
+                  or relay.password
+                  or relay.path != '/mac-access-relay/v1'
+                  or relay.query
+                  or relay.fragment
+              ):
+                  raise SystemExit(
+                      'Mac Access staging relay URL must be canonical WSS at /mac-access-relay/v1.'
+                  )
+              key_ids = (
+                  deployment_inputs['MAC_ACCESS_COMMAND_KEY_ID'],
+                  deployment_inputs['MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID'],
+              )
+              if any(not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', value)
+                     for value in key_ids) or key_ids[0] == key_ids[1]:
+                  raise SystemExit('Mac Access staging key IDs must be distinct bounded identifiers.')
+              public_keys = (
+                  deployment_inputs['MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL'],
+                  deployment_inputs['MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL'],
+              )
+              if any(not re.fullmatch(r'[A-Za-z0-9_-]{43}', value) for value in public_keys):
+                  raise SystemExit(
+                      'Mac Access staging public keys must be canonical unpadded base64url.'
+                  )
+              decoded_keys = tuple(
+                  base64.urlsafe_b64decode(value + '=') for value in public_keys
+              )
+              if any(len(value) != 32 for value in decoded_keys) or decoded_keys[0] == decoded_keys[1]:
+                  raise SystemExit(
+                      'Mac Access staging public keys must be distinct 32-byte Ed25519 keys.'
+                  )
           PY
           {
             echo "MAC_ACCESS_SIGNING_KEYCHAIN=$RUNNER_TEMP/mac-access-private-rc-signing.keychain-db"
@@ -206,9 +292,22 @@ jobs:
             MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL="$MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL" \
             MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256="$MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256" \
             MAC_ACCESS_HELPER_RELATION_SHA256="$MAC_ACCESS_HELPER_RELATION_SHA256" \
+            MAC_ACCESS_PAIRING_ENDPOINT="$MAC_ACCESS_PAIRING_ENDPOINT" \
+            MAC_ACCESS_RELAY_URL="$MAC_ACCESS_RELAY_URL" \
+            MAC_ACCESS_COMMAND_KEY_ID="$MAC_ACCESS_COMMAND_KEY_ID" \
+            MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL="$MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL" \
+            MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID="$MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID" \
+            MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL="$MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL" \
             clean build
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/evaOS Mac Access.app"
           test -d "$APP_PATH"
+          HELPER_INFO="$APP_PATH/Contents/XPCServices/evaOS Mac Access Helper.xpc/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MacAccessPairingEndpoint' "$HELPER_INFO")" = "$MAC_ACCESS_PAIRING_ENDPOINT"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MacAccessRelayURL' "$HELPER_INFO")" = "$MAC_ACCESS_RELAY_URL"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MacAccessCommandKeyID' "$HELPER_INFO")" = "$MAC_ACCESS_COMMAND_KEY_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MacAccessCommandPublicKeyBase64URL' "$HELPER_INFO")" = "$MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MacAccessExecutionContextKeyID' "$HELPER_INFO")" = "$MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MacAccessExecutionContextPublicKeyBase64URL' "$HELPER_INFO")" = "$MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL"
           echo "MAC_ACCESS_APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
           echo "MAC_ACCESS_SPARKLE_BIN_DIR=$DERIVED_DATA_PATH/SourcePackages/artifacts/sparkle/Sparkle/bin" >> "$GITHUB_ENV"
           packages/mac-access/scripts/verify-bundle-layout.sh "$APP_PATH"

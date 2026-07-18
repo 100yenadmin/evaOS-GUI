@@ -32,6 +32,9 @@ describe('Mac Access private-RC workflow contract', () => {
     expect(workflow).toContain('candidate_build:');
     expect(workflow).toContain('rollback_key_id:');
     expect(workflow).toContain('rollback_public_key_base64url:');
+    expect(workflow).toContain('deployment_profile:');
+    expect(workflow).toContain('- unconfigured');
+    expect(workflow).toContain('- staging');
     expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_FEED_URL');
     expect(workflow).toContain('vars.MAC_ACCESS_SPARKLE_PUBLIC_ED_KEY');
     expect(workflow).toContain('vars.MAC_ACCESS_PRIVATE_RC_ROLLBACK_KEY_ID');
@@ -60,9 +63,27 @@ describe('Mac Access private-RC workflow contract', () => {
       'MAC_ACCESS_ROLLBACK_PUBLIC_KEY_BASE64URL=',
       'MAC_ACCESS_HELPER_ENTITLEMENTS_SHA256=',
       'MAC_ACCESS_HELPER_RELATION_SHA256=',
+      'MAC_ACCESS_PAIRING_ENDPOINT=',
+      'MAC_ACCESS_RELAY_URL=',
+      'MAC_ACCESS_COMMAND_KEY_ID=',
+      'MAC_ACCESS_COMMAND_PUBLIC_KEY_BASE64URL=',
+      'MAC_ACCESS_EXECUTION_CONTEXT_KEY_ID=',
+      'MAC_ACCESS_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL=',
     ]) {
       expect(workflow).toContain(buildSetting);
     }
+    expect(workflow).toContain('vars.MAC_ACCESS_STAGING_PAIRING_ENDPOINT');
+    expect(workflow).toContain('vars.MAC_ACCESS_STAGING_RELAY_URL');
+    expect(workflow).toContain('vars.MAC_ACCESS_STAGING_COMMAND_KEY_ID');
+    expect(workflow).toContain('vars.MAC_ACCESS_STAGING_COMMAND_PUBLIC_KEY_BASE64URL');
+    expect(workflow).toContain('vars.MAC_ACCESS_STAGING_EXECUTION_CONTEXT_KEY_ID');
+    expect(workflow).toContain('vars.MAC_ACCESS_STAGING_EXECUTION_CONTEXT_PUBLIC_KEY_BASE64URL');
+    expect(workflow).toContain("inputs.deployment_profile == 'staging'");
+    expect(workflow).toContain("deployment_profile not in {'unconfigured', 'staging'}");
+    expect(workflow).toContain('Unconfigured Mac Access candidates must not embed staging endpoints or keys.');
+    expect(workflow).toContain('Staging Mac Access candidates require both endpoints and both public-key roles.');
+    expect(workflow).toContain("relay.path != '/mac-access-relay/v1'");
+    expect(workflow).toContain('MacAccessExecutionContextPublicKeyBase64URL');
     for (const secret of [
       'BUILD_CERTIFICATE_BASE64',
       'P12_PASSWORD',
