@@ -20,12 +20,14 @@ private struct MacAccessAdapterReply: Decodable, Sendable {
     let auditID: String
     let ok: Bool
     let errorCode: String?
+    let data: [String: JSONValue]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case auditID = "audit_id"
         case ok
         case errorCode = "error_code"
+        case data
     }
 }
 
@@ -176,7 +178,8 @@ struct MacAccessBridgeCommandExecutor: MacAccessCommandExecutor {
         return MacAccessExecutionResult(
             localAuditID: reply.auditID,
             outcome: reply.ok ? .executed : .failed,
-            errorCode: reply.errorCode
+            errorCode: reply.errorCode,
+            result: reply.ok && capability == "customer_mac.desktop_see" ? reply.data : nil
         )
     }
 }

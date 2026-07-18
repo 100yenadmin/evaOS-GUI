@@ -1278,7 +1278,7 @@ final class TransportContractTests: XCTestCase {
 
     func testBridgeExecutorForwardsBoundedCommandAndAcceptsExecutedReply() async throws {
         let output = Data(
-            #"{"schema_version":"evaos.mac_access.adapter_result.v1","audit_id":"mac-access-audit-01","ok":true,"error_code":null}"#.utf8
+            #"{"schema_version":"evaos.mac_access.adapter_result.v1","audit_id":"mac-access-audit-01","ok":true,"error_code":null,"data":{"engine":"cua_driver","element_count":2}}"#.utf8
         )
         let runner = FixtureAdapterRunner(
             result: MacAccessAdapterProcessResult(
@@ -1286,18 +1286,25 @@ final class TransportContractTests: XCTestCase {
             )
         )
         let result = await MacAccessBridgeCommandExecutor(runner: runner).execute(
-            capability: "customer_mac.desktop_click",
-            request: ["x": .integer(120), "y": .integer(240)]
+            capability: "customer_mac.desktop_see",
+            request: ["max_chars": .integer(2000), "max_nodes": .integer(20)]
         )
         XCTAssertEqual(result.outcome, .executed)
         XCTAssertEqual(result.localAuditID, "mac-access-audit-01")
         XCTAssertNil(result.errorCode)
+        XCTAssertEqual(result.result?["engine"], .string("cua_driver"))
+        XCTAssertEqual(result.result?["element_count"], .integer(2))
+        let clickResult = await MacAccessBridgeCommandExecutor(runner: runner).execute(
+            capability: "customer_mac.desktop_click",
+            request: ["x": .integer(120), "y": .integer(240)]
+        )
+        XCTAssertNil(clickResult.result)
 
         let inputs = await runner.inputs
         let envelope = try MacAccessWire.strictJSONObject(from: try XCTUnwrap(inputs.first))
-        XCTAssertEqual(envelope["capability"] as? String, "customer_mac.desktop_click")
-        XCTAssertEqual((envelope["request"] as? [String: Any])?["x"] as? Int64, 120)
-        XCTAssertEqual((envelope["request"] as? [String: Any])?["y"] as? Int64, 240)
+        XCTAssertEqual(envelope["capability"] as? String, "customer_mac.desktop_see")
+        XCTAssertEqual((envelope["request"] as? [String: Any])?["max_chars"] as? Int64, 2000)
+        XCTAssertEqual((envelope["request"] as? [String: Any])?["max_nodes"] as? Int64, 20)
     }
 
     func testBridgeExecutorFailsClosedForTimeoutAndMalformedReply() async {

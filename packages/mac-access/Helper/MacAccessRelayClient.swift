@@ -90,11 +90,18 @@ struct MacAccessExecutionResult: Equatable, Sendable {
     let localAuditID: String
     let outcome: MacAccessReceiptOutcome
     let errorCode: String?
+    let result: [String: JSONValue]?
 
-    init(localAuditID: String, outcome: MacAccessReceiptOutcome, errorCode: String? = nil) {
+    init(
+        localAuditID: String,
+        outcome: MacAccessReceiptOutcome,
+        errorCode: String? = nil,
+        result: [String: JSONValue]? = nil
+    ) {
         self.localAuditID = localAuditID
         self.outcome = outcome
         self.errorCode = errorCode
+        self.result = result
     }
 }
 
@@ -396,6 +403,7 @@ actor MacAccessHelperRuntime {
                 localAuditID: execution.localAuditID,
                 outcome: execution.outcome,
                 errorCode: execution.errorCode,
+                result: execution.result,
                 sequence: command.sequence
             )
             try await owned.socket.send(MacAccessWire.canonicalData(receipt))

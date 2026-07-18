@@ -766,6 +766,7 @@ struct MacAccessRelayReceipt: Codable, Equatable, Sendable {
     let localAuditID: String
     let outcome: MacAccessReceiptOutcome
     let errorCode: String?
+    let result: [String: JSONValue]?
     let sequence: Int64
 
     enum CodingKeys: String, CodingKey {
@@ -779,6 +780,7 @@ struct MacAccessRelayReceipt: Codable, Equatable, Sendable {
         case localAuditID = "local_audit_id"
         case outcome
         case errorCode = "error_code"
+        case result
         case sequence
     }
 }
