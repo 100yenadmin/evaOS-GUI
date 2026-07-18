@@ -105,9 +105,10 @@ If that canary fails, move long-lived WSS ownership to the already-frozen persis
 - Sprint source of truth: GitHub issues #698 and #724.
 - Reset baseline observed on 2026-07-18: `evaos/beta-rc-20260612@511b23e58d3062b9f6af6a38956946ec398f9b1a`.
 - The v2.1.36 source-merge freeze remains active.
-- Documentation and isolated recovery preparation may proceed.
+- Documentation and isolated recovery development may proceed from the verified reset baseline.
 - No Mac Access source may merge into canonical beta until the v2.1.36 release owner explicitly lifts or supersedes the freeze.
-- Recovery must start from the then-current exact canonical beta head, not from the superseded stacked PR chain.
+- Recovery must not start from the superseded stacked PR chain.
+- Before merge, refresh recovery to the exact canonical beta head named by the release owner after the freeze lifts or is superseded.
 
 ## Validation and proof boundary
 
