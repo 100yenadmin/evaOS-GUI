@@ -40,6 +40,7 @@ install -m 644 \
   "$PACKAGE_ROOT/Resources/Licenses/CuaDriver-LICENSE.txt" \
   "$OUTPUT_ROOT/licenses/CuaDriver-LICENSE.txt"
 find "$OUTPUT_ROOT" -type d -name __pycache__ -prune -exec rm -rf {} +
+find "$OUTPUT_ROOT/python" -type d -name '*.dSYM' -prune -exec rm -rf {} +
 
 "$OUTPUT_ROOT/python/bin/python3" -I -B -c '
 import pathlib
