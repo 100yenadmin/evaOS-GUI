@@ -90,7 +90,7 @@ struct BundledMacAccessAdapterRunner: MacAccessAdapterRunning {
             process.standardError = FileHandle.nullDevice
             process.environment = [
                 "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
-                "PATH": "\(runtimePath)/bin:/usr/bin:/bin",
+                "PATH": "\(runtimePath)/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",
                 "CUA_DRIVER_EMBEDDED": "1",

@@ -87,6 +87,12 @@ final class IdentityTests: XCTestCase {
         let helperValues = try localizedValues(for: "onboarding.helperInvoker", in: strings)
         XCTAssertEqual(helperValues.count, 12)
         XCTAssertEqual(Set(helperValues.values), ["Permission helper identity:"])
+
+        let executor = try String(
+            contentsOf: packageRoot.appendingPathComponent("Helper/MacAccessBridgeCommandExecutor.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(executor.contains("/usr/bin:/bin:/usr/sbin:/sbin"))
     }
 
     private func sha256(_ value: String) -> String {
