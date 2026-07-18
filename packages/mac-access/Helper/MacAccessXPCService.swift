@@ -297,7 +297,6 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     private let policyRuntime: MacAccessPolicyRuntime?
     private let safetyCustody: MacAccessPolicyCustody?
     private let policyRequired: Bool
-    private var commandProcessingTask: Task<Void, Never>?
 
     init(
         configuration: MacAccessHelperDeploymentConfiguration?,
@@ -398,8 +397,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
                 _ = try? await runtime.stop()
                 throw MacAccessPublicError.policyUnavailable
             }
-            commandProcessingTask?.cancel()
-            commandProcessingTask = Task {
+            Task {
                 await runtime.processCommands()
             }
             return await reply(code: .ok, status: status)
@@ -410,8 +408,6 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func disconnect() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
-        commandProcessingTask?.cancel()
-        commandProcessingTask = nil
         guard let policyRuntime else { return await reply(code: .policyUnavailable, status: await runtime.status) }
         do { try await policyRuntime.preemptSafety("disconnect") }
         catch { return await reply(code: .policyUnavailable, status: await runtime.status) }
@@ -423,8 +419,6 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func stop() async -> MacAccessXPCReply {
         guard let runtime else { return await unavailableReply() }
-        commandProcessingTask?.cancel()
-        commandProcessingTask = nil
         guard let policyRuntime else { return await reply(code: .policyUnavailable, status: await runtime.status) }
         do {
             try await policyRuntime.preemptSafety("stop")
@@ -437,8 +431,6 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     }
 
     func revoke() async -> MacAccessXPCReply {
-        commandProcessingTask?.cancel()
-        commandProcessingTask = nil
         guard let runtime else {
             guard let safetyCustody else {
                 try? await vault.erase()
