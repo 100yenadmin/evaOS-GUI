@@ -107,16 +107,17 @@ enum MacAccessWire {
     }
 
     static func parseInstant(_ value: String, allowingMilliseconds: Bool = false) throws -> Date {
-        let isWholeSecond = value.utf8.count == 20
-        let isMillisecond = allowingMilliseconds && value.utf8.count == 24
-            && value.utf8.dropFirst(19).first == 46 && value.utf8.last == 90
-            && value.utf8.dropFirst(20).prefix(3).allSatisfy({ $0 >= 48 && $0 <= 57 })
-        guard isWholeSecond || isMillisecond else { throw MacAccessPublicError.expiredAuthority }
+        let pattern = allowingMilliseconds
+            ? #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#
+            : #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"#
+        guard value.range(of: pattern, options: .regularExpression) != nil else {
+            throw MacAccessPublicError.expiredAuthority
+        }
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = isMillisecond
+        formatter.formatOptions = value.utf8.contains(46)
             ? [.withInternetDateTime, .withFractionalSeconds]
             : [.withInternetDateTime]
-        guard let date = formatter.date(from: value), formatter.string(from: date) == value else {
+        guard let date = formatter.date(from: value) else {
             throw MacAccessPublicError.expiredAuthority
         }
         return date
