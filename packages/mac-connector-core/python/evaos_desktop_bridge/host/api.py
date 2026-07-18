@@ -600,6 +600,16 @@ class CoreHost:
                 self._run_safety_effects(self._ports.transport.block)
                 raise HostError("invalid_transport_receipt") from error
             state["transport_state"] = "connected"
+            if state["paused"]:
+                state["effective_mode"] = "off"
+            elif state["configured_mode"] == "full_access":
+                state["effective_mode"] = "ask_every_time"
+                state["requested_target_mode"] = "full_access"
+                state["local_confirmation_required"] = True
+            else:
+                state["effective_mode"] = state["configured_mode"]
+                state["requested_target_mode"] = state["configured_mode"]
+                state["local_confirmation_required"] = False
             return _lifecycle_result(state), state
         if operation == "disconnect":
             self._force_off(state, clear_configured=False)

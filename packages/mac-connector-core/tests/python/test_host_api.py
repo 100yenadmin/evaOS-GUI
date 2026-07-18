@@ -628,6 +628,20 @@ class CoreHostTests(unittest.TestCase):
         self.assertEqual(response["result"]["outcome"], "denied")
         self.assertEqual(self.native.executions, 0)
 
+    def test_connect_activates_the_preconfigured_ask_every_time_mode(self) -> None:
+        self.assertTrue(self.pair()["ok"])
+        configured = self.host.handle(
+            request("set_access_mode", 2, 1, target_mode="ask_every_time")
+        )
+        self.assertTrue(configured["ok"])
+        self.assertEqual(configured["result"]["effective_mode"], "off")
+
+        connected = self.host.handle(request("connect", 3, 2, binding=BINDING))
+        self.assertTrue(connected["ok"])
+        self.assertEqual(connected["result"]["configured_mode"], "ask_every_time")
+        self.assertEqual(connected["result"]["effective_mode"], "ask_every_time")
+        self.assertEqual(self.state.load()["transport_state"], "connected")
+
     def test_transport_requires_exact_connected_binding_receipt(self) -> None:
         self.assertTrue(self.pair()["ok"])
         self.transport.connect = lambda binding: {}
