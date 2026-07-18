@@ -7,17 +7,25 @@ enum MacAccessSetupRequest {
 
     @MainActor
     static func open(bundleURL: URL = Bundle.main.bundleURL) async -> Bool {
-        let launched = await withCheckedContinuation { continuation in
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            NSWorkspace.shared.openApplication(
-                at: bundleURL,
-                configuration: configuration
-            ) { application, error in
-                continuation.resume(returning: application != nil && error == nil)
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let runningApp = NSRunningApplication.runningApplications(
+            withBundleIdentifier: MacAccessIdentity.appBundleID
+        ).first { application in
+            application.processIdentifier != currentPID && !application.isTerminated
+        }
+
+        if runningApp == nil {
+            do {
+                try NSWorkspace.shared.launchApplication(
+                    at: bundleURL,
+                    options: [.newInstance],
+                    configuration: [:]
+                )
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return false
             }
         }
-        guard launched else { return false }
 
         DistributedNotificationCenter.default().postNotificationName(
             notification,
