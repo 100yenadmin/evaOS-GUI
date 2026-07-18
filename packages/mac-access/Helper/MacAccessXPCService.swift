@@ -102,7 +102,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func status() async -> MacAccessXPCReply {
         guard let runtime else { return unavailableReply() }
-        return reply(code: .ok, status: await runtime.status)
+        return reply(code: .ok, status: await runtime.refreshStatusFromVault())
     }
 
     func pair(code: String) async -> MacAccessXPCReply {

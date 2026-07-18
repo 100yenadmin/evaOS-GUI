@@ -1,9 +1,7 @@
 import Foundation
 import MacAccessShared
 
-protocol MacAccessCLIClient: ConnectorCoreClient {
-    func fetchStatus() async -> MacAccessXPCReply?
-}
+protocol MacAccessCLIClient: MacAccessStatusProvidingClient {}
 
 extension MacAccessXPCConnectorCoreClient: MacAccessCLIClient {}
 

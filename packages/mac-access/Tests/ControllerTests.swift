@@ -67,8 +67,45 @@ final actor SuspendedConnectorClient: ConnectorCoreClient {
     }
 }
 
+final actor StatusProvidingConnectorClient: MacAccessStatusProvidingClient {
+    private let reply: MacAccessXPCReply?
+
+    init(reply: MacAccessXPCReply?) {
+        self.reply = reply
+    }
+
+    func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+        .blocked(.connectorCoreUnavailable)
+    }
+
+    func fetchStatus() async -> MacAccessXPCReply? {
+        reply
+    }
+}
+
 @MainActor
 final class ControllerTests: XCTestCase {
+    func testLaunchProjectionRestoresPairedDisconnectedState() async {
+        let client = StatusProvidingConnectorClient(reply: MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: "disconnected",
+                lastErrorCode: nil, lastAuditID: "pairing-audit-redacted"
+            )
+        ))
+        let controller = MacAccessController(
+            client: client, availability: .pairingTransport
+        )
+
+        await controller.refreshFromHelper()
+
+        XCTAssertTrue(controller.state.isPaired)
+        XCTAssertEqual(controller.state.connection, .disconnected)
+        XCTAssertEqual(controller.state.configuredMode, .off)
+        XCTAssertNil(controller.state.blocker)
+        XCTAssertTrue(controller.canConnect)
+    }
+
     func testLocalOnlyClientBlocksPairingAndTransport() async {
         let client = LocalOnlyConnectorCoreClient()
 

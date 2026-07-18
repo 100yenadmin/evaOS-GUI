@@ -625,6 +625,24 @@ final class TransportContractTests: XCTestCase {
         XCTAssertEqual(finalEndCount, 2)
     }
 
+    func testColdRuntimeHydratesPairedStateFromCredentialVault() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: fixture)),
+            redeemer: UnusedRedeemer(),
+            socketFactory: FixtureSocketFactory(socket: QueuedRelaySocket(received: [])),
+            pinnedKeys: fixture.keys,
+            relayURL: try XCTUnwrap(URL(string: "wss://relay.example.test/mac-access-relay/v1")),
+            now: { fixture.now }
+        )
+
+        let status = await runtime.refreshStatusFromVault()
+
+        XCTAssertEqual(status.pairing, .paired)
+        XCTAssertEqual(status.transport, .disconnected)
+        XCTAssertNil(status.lastError)
+    }
+
     func testReplayHistorySurvivesDisconnectAndReconnect() async throws {
         let fixture = try makeSignedCommandFixture()
         let ack = MacAccessRelayRegistrationAck(

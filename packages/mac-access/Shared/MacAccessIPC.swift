@@ -42,6 +42,10 @@ public struct MacAccessXPCReply: Codable, Equatable, Sendable {
     }
 }
 
+public protocol MacAccessStatusProvidingClient: ConnectorCoreClient {
+    func fetchStatus() async -> MacAccessXPCReply?
+}
+
 @objc public protocol MacAccessXPCServiceProtocol {
     func status(withReply reply: @escaping @Sendable (Data) -> Void)
     func pair(code: String, withReply reply: @escaping @Sendable (Data) -> Void)
@@ -123,7 +127,7 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     }
 }
 
-public actor MacAccessXPCConnectorCoreClient: ConnectorCoreClient {
+public actor MacAccessXPCConnectorCoreClient: MacAccessStatusProvidingClient {
     private let transport: any MacAccessXPCTransport
 
     public init() {

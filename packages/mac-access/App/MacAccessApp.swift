@@ -52,6 +52,9 @@ struct MacAccessApp: App {
                     + Text(verbatim: ", ")
                     + Text(controller.state.effectiveMode.localizationKey)
             )
+            .task {
+                await controller.refreshFromHelper()
+            }
         }
         .menuBarExtraStyle(.menu)
     }

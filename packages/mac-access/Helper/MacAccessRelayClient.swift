@@ -171,6 +171,25 @@ actor MacAccessHelperRuntime {
         self.now = now
     }
 
+    func refreshStatusFromVault() async -> MacAccessHelperSafeStatus {
+        guard channel == nil, status.pairing != .pairing,
+              !credentialMutationInProgress, !channelTransitionInProgress
+        else { return status }
+        guard !revocationLatched else { return status }
+        do {
+            let record = try await vault.load()
+            status.pairing = record?.isPaired == true ? .paired : .unpaired
+            if status.transport == .connected || status.transport == .connecting {
+                status.transport = .disconnected
+            }
+            status.lastError = nil
+        } catch {
+            status.transport = .blocked
+            status.lastError = .credentialUnavailable
+        }
+        return status
+    }
+
     @discardableResult
     func pair(code: String) async throws -> MacAccessHelperSafeStatus {
         guard status.pairing != .pairing, !credentialMutationInProgress,

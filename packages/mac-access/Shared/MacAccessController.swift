@@ -36,6 +36,43 @@ public final class MacAccessController: ObservableObject {
         availability.transport && state.isPaired && state.connection == .disconnected
     }
 
+    public func refreshFromHelper() async {
+        guard !state.quitCleanupRequested, state.blocker != .emergencyStopActive,
+              let client = client as? any MacAccessStatusProvidingClient,
+              let reply = await client.fetchStatus()
+        else { return }
+
+        let paired = reply.status.pairing == "paired"
+        let connection: MacAccessConnectionState
+        switch reply.status.transport {
+        case "connecting":
+            connection = .connecting
+        case "connected":
+            connection = .connected
+        case "disconnected":
+            connection = paired ? .disconnected : .blocked
+        default:
+            connection = .blocked
+        }
+        let blocker = Self.blocker(
+            pairing: reply.status.pairing,
+            transport: reply.status.transport,
+            errorCode: reply.status.lastErrorCode
+        )
+        let projected = MacAccessState(
+            connection: blocker == nil ? connection : .blocked,
+            configuredMode: state.configuredMode,
+            effectiveMode: connection == .connected ? state.effectiveMode : .off,
+            isPaired: paired,
+            blocker: blocker,
+            lastActivityAt: state.lastActivityAt,
+            emergencyStopCount: state.emergencyStopCount,
+            quitCleanupRequested: state.quitCleanupRequested
+        )
+        machine = MacAccessStateMachine(state: projected)
+        state = projected
+    }
+
     @discardableResult
     public func perform(_ action: ConnectorCoreAction) async -> MacAccessActionResult {
         await perform(action, ownsQuitCleanup: false)
@@ -201,5 +238,29 @@ public final class MacAccessController: ObservableObject {
 
     private func requestEmergencyStopCleanup() async {
         _ = await client.perform(.stop)
+    }
+
+    private static func blocker(
+        pairing: String,
+        transport: String,
+        errorCode: String?
+    ) -> MacAccessBlocker? {
+        switch errorCode {
+        case "invalid_pairing_code": return .invalidPairingCode
+        case "pairing_rejected": return .pairingRejected
+        case "credential_unavailable": return .credentialUnavailable
+        case "relay_unavailable": return .relayUnavailable
+        case "policy_unavailable": return .policyUnavailable
+        case "revoked": return .revokedGrant
+        case "stopped": return .emergencyStopActive
+        case .some: return .connectorCoreUnavailable
+        case nil:
+            if pairing == "revoked" { return .revokedGrant }
+            if pairing != "paired" { return .notPaired }
+            if transport == "blocked" || transport == "stopped" {
+                return .relayUnavailable
+            }
+            return nil
+        }
     }
 }
