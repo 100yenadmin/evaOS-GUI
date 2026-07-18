@@ -5,10 +5,14 @@ import SwiftUI
 @main
 struct MacAccessApp: App {
     @StateObject private var controller = MacAccessController()
+    @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
 
     var body: some Scene {
         MenuBarExtra {
-            MacAccessMenu(controller: controller)
+            MacAccessMenu(
+                controller: controller,
+                showOnboarding: { onboardingWindow.show(controller: controller) }
+            )
         } label: {
             Label {
                 Text(controller.state.connection.localizationKey)
@@ -23,12 +27,6 @@ struct MacAccessApp: App {
             )
         }
         .menuBarExtraStyle(.menu)
-
-        Window(String(localized: "onboarding.title"), id: "onboarding") {
-            OnboardingView(controller: controller)
-        }
-        .defaultLaunchBehavior(.suppressed)
-        .windowResizability(.contentSize)
     }
 }
 

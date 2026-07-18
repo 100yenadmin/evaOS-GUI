@@ -37,7 +37,8 @@ final class IdentityTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertTrue(menu.contains("Button(\"onboarding.title\")"))
-        XCTAssertTrue(menu.contains("NSApplication.shared.activate(ignoringOtherApps: true)"))
+        XCTAssertTrue(menu.contains("showOnboarding()"))
+        XCTAssertFalse(menu.contains("@Environment(\\.openWindow)"))
         XCTAssertFalse(menu.contains("Button(\"action.pair\") {\n            openWindow"))
         XCTAssertTrue(menu.contains("Button(\"permission.accessibility\") {}\n                .disabled(true)"))
         XCTAssertTrue(menu.contains("Button(\"permission.screenRecording\") {}\n                .disabled(true)"))
@@ -48,6 +49,7 @@ final class IdentityTests: XCTestCase {
         )
         XCTAssertTrue(onboarding.contains(".keyboardShortcut(.defaultAction)"))
         XCTAssertTrue(onboarding.contains(".keyboardShortcut(.cancelAction)"))
+        XCTAssertTrue(onboarding.contains("window.makeKeyAndOrderFront(nil)"))
 
         let catalogData = try Data(contentsOf: packageRoot.appendingPathComponent("Resources/Localizable.xcstrings"))
         let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])

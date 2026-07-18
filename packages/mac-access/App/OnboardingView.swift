@@ -1,9 +1,45 @@
+import AppKit
 import MacAccessShared
 import SwiftUI
 
+@MainActor
+final class MacAccessOnboardingWindow: ObservableObject {
+    private var windowController: NSWindowController?
+
+    func show(controller: MacAccessController) {
+        if let window = windowController?.window {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let content = NSHostingController(
+            rootView: OnboardingView(
+                controller: controller,
+                close: { [weak self] in self?.close() }
+            )
+        )
+        let window = NSWindow(contentViewController: content)
+        window.title = String(localized: "onboarding.title")
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        let windowController = NSWindowController(window: window)
+        self.windowController = windowController
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        windowController.showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func close() {
+        windowController?.close()
+    }
+}
+
 struct OnboardingView: View {
     @ObservedObject var controller: MacAccessController
-    @Environment(\.dismissWindow) private var dismissWindow
+    let close: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -49,7 +85,7 @@ struct OnboardingView: View {
                 .keyboardShortcut(.defaultAction)
                 Spacer()
                 Button("action.close") {
-                    dismissWindow(id: "onboarding")
+                    close()
                 }
                 .keyboardShortcut(.cancelAction)
             }
