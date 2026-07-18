@@ -74,6 +74,7 @@ final class CLITests: XCTestCase {
     }
 
     func testParserCoversLifecyclePolicyApprovalAndRejectsCodeInArguments() throws {
+        XCTAssertEqual(try MacAccessCLI.parse(arguments: ["setup"]), .setup)
         XCTAssertEqual(try MacAccessCLI.parse(arguments: ["status", "--json"]), .status)
         XCTAssertEqual(try MacAccessCLI.parse(arguments: ["pair", "--code-stdin"]), .pairFromStdin)
         XCTAssertEqual(try MacAccessCLI.parse(arguments: ["access-mode", "off"]), .accessMode(.off))
@@ -92,6 +93,30 @@ final class CLITests: XCTestCase {
         XCTAssertThrowsError(try MacAccessCLI.parse(arguments: ["pair", "ABCDEFGH2345"]))
         XCTAssertThrowsError(try MacAccessCLI.parse(arguments: ["pair", "--code", "ABCDEFGH2345"]))
         XCTAssertThrowsError(try MacAccessCLI.parse(arguments: ["--json", "--json", "status"]))
+    }
+
+    func testSetupOpensOnlyTheLocalNativeWindow() async {
+        var openCount = 0
+        let client = RecordingCLIClient()
+        let execution = await MacAccessCLI.execute(
+            arguments: ["setup", "--json"],
+            client: client,
+            build: testBuild,
+            readStdin: { Data() },
+            openSetup: {
+                openCount += 1
+                return true
+            }
+        )
+
+        XCTAssertEqual(execution.exitCode, 0)
+        XCTAssertEqual(openCount, 1)
+        XCTAssertTrue(String(decoding: execution.output, as: UTF8.self).contains("setup_opened"))
+        let actions = await client.actions
+        XCTAssertTrue(actions.isEmpty)
+        XCTAssertTrue(MacAccessSetupURL.matches(MacAccessSetupURL.url))
+        XCTAssertFalse(MacAccessSetupURL.matches(URL(string: "evaos-mac-access://setup?code=secret")!))
+        XCTAssertFalse(MacAccessSetupURL.matches(URL(string: "https://setup")!))
     }
 
     func testPairReadsOnlyStdinAndNeverReturnsCode() async throws {

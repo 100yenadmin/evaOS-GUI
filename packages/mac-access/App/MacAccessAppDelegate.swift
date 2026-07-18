@@ -48,6 +48,7 @@ final class SystemMacAccessLoginItemService: MacAccessLoginItemServicing {
 @MainActor
 final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
     weak var controller: MacAccessController?
+    var showOnboardingHandler: (() -> Void)?
     private(set) var loginItemState: MacAccessLoginItemState
 
     private let loginItemService: any MacAccessLoginItemServicing
@@ -71,6 +72,15 @@ final class MacAccessAppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor [weak controller] in
             await controller?.refreshFromHelper()
         }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: MacAccessSetupURL.matches) else { return }
+        showOnboarding()
+    }
+
+    func showOnboarding() {
+        showOnboardingHandler?()
     }
 
     @discardableResult

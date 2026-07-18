@@ -1,7 +1,23 @@
+import AppKit
 import Foundation
 import MacAccessShared
 
+enum MacAccessSetupURL {
+    static let url = URL(string: "evaos-mac-access://setup")!
+
+    static func matches(_ candidate: URL) -> Bool {
+        candidate.scheme == url.scheme
+            && candidate.host == url.host
+            && candidate.path.isEmpty
+            && candidate.user == nil
+            && candidate.password == nil
+            && candidate.query == nil
+            && candidate.fragment == nil
+    }
+}
+
 enum MacAccessCLICommand: Equatable {
+    case setup
     case status
     case pairFromStdin
     case connect
@@ -22,6 +38,7 @@ enum MacAccessCLICommand: Equatable {
 
     var name: String {
         switch self {
+        case .setup: "setup"
         case .status: "status"
         case .pairFromStdin: "pair"
         case .connect: "connect"
@@ -125,6 +142,7 @@ enum MacAccessCLI {
       "/Applications/evaOS Mac Access.app/Contents/MacOS/evaOS Mac Access" <command> [--json]
 
     Commands:
+      setup
       status
       pair --code-stdin
       connect | disconnect
@@ -167,6 +185,8 @@ enum MacAccessCLI {
         }
 
         switch command {
+        case "setup" where arguments.count == 1:
+            return .setup
         case "status" where arguments.count == 1:
             return .status
         case "pair" where arguments == ["pair", "--code-stdin"]:
@@ -221,7 +241,10 @@ enum MacAccessCLI {
         arguments: [String],
         client: any MacAccessStatusProjectingClient,
         build: MacAccessCLIBuildInfo = .production(),
-        readStdin: @Sendable () throws -> Data
+        readStdin: @Sendable () throws -> Data,
+        openSetup: () -> Bool = {
+            NSWorkspace.shared.open(MacAccessSetupURL.url)
+        }
     ) async -> MacAccessCLIExecution {
         let command: MacAccessCLICommand
         do {
@@ -235,6 +258,17 @@ enum MacAccessCLI {
         }
 
         switch command {
+        case .setup:
+            let opened = openSetup()
+            return encoded(
+                MacAccessCLIEnvelope(
+                    ok: opened,
+                    command: command.name,
+                    resultCode: opened ? "setup_opened" : "setup_unavailable"
+                ),
+                exitCode: opened ? 0 : exitUnavailable,
+                standardError: !opened
+            )
         case .help:
             return MacAccessCLIExecution(
                 exitCode: 0,

@@ -33,16 +33,21 @@ struct MacAccessApp: App {
     @NSApplicationDelegateAdaptor(MacAccessAppDelegate.self) private var appDelegate
     @StateObject private var controller: MacAccessController
     @StateObject private var updater: MacAccessUpdater
-    @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
+    @StateObject private var onboardingWindow: MacAccessOnboardingWindow
 
     init() {
         let controller = MacAccessController(
             client: MacAccessXPCConnectorCoreClient(),
             availability: .standalonePolicy
         )
+        let onboardingWindow = MacAccessOnboardingWindow()
         _controller = StateObject(wrappedValue: controller)
         _updater = StateObject(wrappedValue: MacAccessUpdater(controller: controller))
+        _onboardingWindow = StateObject(wrappedValue: onboardingWindow)
         appDelegate.controller = controller
+        appDelegate.showOnboardingHandler = {
+            onboardingWindow.show(controller: controller)
+        }
     }
 
     var body: some Scene {
@@ -50,7 +55,7 @@ struct MacAccessApp: App {
             MacAccessMenu(
                 controller: controller,
                 updater: updater,
-                showOnboarding: { onboardingWindow.show(controller: controller) }
+                showOnboarding: { appDelegate.showOnboarding() }
             )
         } label: {
             Label {
