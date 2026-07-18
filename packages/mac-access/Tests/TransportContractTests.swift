@@ -643,6 +643,30 @@ final class TransportContractTests: XCTestCase {
         XCTAssertNil(status.lastError)
     }
 
+    func testStatusRefreshPreservesRelayFailureEvidence() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: fixture)),
+            redeemer: UnusedRedeemer(),
+            socketFactory: FixtureSocketFactory(socket: QueuedRelaySocket(received: [])),
+            pinnedKeys: fixture.keys,
+            relayURL: try XCTUnwrap(URL(string: "wss://relay.example.test/mac-access-relay/v1")),
+            now: { fixture.now }
+        )
+
+        do {
+            _ = try await runtime.connect()
+            XCTFail("expected relay failure")
+        } catch {
+            XCTAssertEqual(error as? MacAccessPublicError, .relayUnavailable)
+        }
+        let status = await runtime.refreshStatusFromVault()
+
+        XCTAssertEqual(status.pairing, .unpaired)
+        XCTAssertEqual(status.transport, .blocked)
+        XCTAssertEqual(status.lastError, .relayUnavailable)
+    }
+
     func testReplayHistorySurvivesDisconnectAndReconnect() async throws {
         let fixture = try makeSignedCommandFixture()
         let ack = MacAccessRelayRegistrationAck(

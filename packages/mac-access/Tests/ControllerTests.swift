@@ -69,13 +69,18 @@ final actor SuspendedConnectorClient: ConnectorCoreClient {
 
 final actor StatusProvidingConnectorClient: MacAccessStatusProvidingClient {
     private let reply: MacAccessXPCReply?
+    private let result: ConnectorCoreResult
 
-    init(reply: MacAccessXPCReply?) {
+    init(
+        reply: MacAccessXPCReply?,
+        result: ConnectorCoreResult = .blocked(.connectorCoreUnavailable)
+    ) {
         self.reply = reply
+        self.result = result
     }
 
     func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
-        .blocked(.connectorCoreUnavailable)
+        result
     }
 
     func fetchStatus() async -> MacAccessXPCReply? {
@@ -104,6 +109,33 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.configuredMode, .off)
         XCTAssertNil(controller.state.blocker)
         XCTAssertTrue(controller.canConnect)
+    }
+
+    func testActionCompletionRefreshesAuthoritativeDisconnectedTransport() async {
+        let reply = MacAccessXPCReply(
+            code: .ok,
+            status: MacAccessXPCSafeStatus(
+                pairing: "paired", transport: "disconnected",
+                lastErrorCode: nil, lastAuditID: nil
+            )
+        )
+        let client = StatusProvidingConnectorClient(
+            reply: reply, result: .completed(.connected)
+        )
+        let paired = MacAccessState(
+            connection: .disconnected, configuredMode: .off, effectiveMode: .off,
+            isPaired: true, blocker: nil
+        )
+        let controller = MacAccessController(
+            client: client, initialState: paired, availability: .pairingTransport
+        )
+
+        let result = await controller.perform(.connect)
+
+        XCTAssertEqual(result, .completed(.connected))
+        XCTAssertEqual(controller.state.connection, .disconnected)
+        XCTAssertTrue(controller.state.isPaired)
+        XCTAssertNil(controller.state.blocker)
     }
 
     func testLocalOnlyClientBlocksPairingAndTransport() async {

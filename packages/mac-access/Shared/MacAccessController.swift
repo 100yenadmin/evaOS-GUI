@@ -102,7 +102,9 @@ public final class MacAccessController: ObservableObject {
         guard generation == actionGeneration else {
             return invalidatedResult(for: generation)
         }
-        return apply(result, for: action)
+        let applied = apply(result, for: action)
+        await refreshFromHelper()
+        return applied
     }
 
     public func emergencyStop() {

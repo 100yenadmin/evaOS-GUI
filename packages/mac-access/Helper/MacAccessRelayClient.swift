@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 protocol MacAccessRelaySocket: Sendable {
     func send(_ data: Data) async throws
@@ -21,6 +22,10 @@ struct NoopMacAccessRelayActivity: MacAccessRelayActivity {
 }
 
 actor URLSessionMacAccessRelaySocket: MacAccessRelaySocket {
+    private static let logger = Logger(
+        subsystem: "com.evaos.mac-access.helper",
+        category: "relay"
+    )
     private let task: URLSessionWebSocketTask
 
     init(url: URL, session: URLSession = .shared) {
@@ -58,11 +63,16 @@ actor URLSessionMacAccessRelaySocket: MacAccessRelaySocket {
         } catch let error as MacAccessPublicError {
             throw error
         } catch {
+            let underlying = error as NSError
+            Self.logger.error(
+                "receive failed domain=\(underlying.domain, privacy: .public) code=\(underlying.code) close_code=\(self.task.closeCode.rawValue) close_reason_bytes=\(self.task.closeReason?.count ?? 0)"
+            )
             throw MacAccessPublicError.relayUnavailable
         }
     }
 
     func close() {
+        Self.logger.info("local close requested")
         task.cancel(with: .goingAway, reason: nil)
     }
 }
@@ -176,6 +186,9 @@ actor MacAccessHelperRuntime {
               !credentialMutationInProgress, !channelTransitionInProgress
         else { return status }
         guard !revocationLatched else { return status }
+        if status.transport == .blocked || status.transport == .stopped {
+            return status
+        }
         do {
             let record = try await vault.load()
             status.pairing = record?.isPaired == true ? .paired : .unpaired
