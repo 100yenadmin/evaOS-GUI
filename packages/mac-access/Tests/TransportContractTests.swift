@@ -421,6 +421,20 @@ private struct FixtureExecutor: MacAccessCommandExecutor {
     }
 }
 
+private actor FixtureAdapterRunner: MacAccessAdapterRunning {
+    private let result: MacAccessAdapterProcessResult
+    private(set) var inputs: [Data] = []
+
+    init(result: MacAccessAdapterProcessResult) {
+        self.result = result
+    }
+
+    func run(input: Data) -> MacAccessAdapterProcessResult {
+        inputs.append(input)
+        return result
+    }
+}
+
 private actor RecordingRelayActivity: MacAccessRelayActivity {
     private(set) var beginCount = 0
     private(set) var endCount = 0
@@ -1256,10 +1270,58 @@ final class TransportContractTests: XCTestCase {
         XCTAssertNil(localRecord)
     }
 
-    func testProductionExecutorFailsClosedUntilPolicySlice() async {
+    func testPlaceholderExecutorRemainsExplicitlyFailClosed() async {
         let result = await PolicyUnavailableMacAccessExecutor().execute(capability: "customer_mac.desktop_click", request: [:])
         XCTAssertEqual(result.outcome, .denied)
         XCTAssertEqual(result.errorCode, MacAccessPublicError.policyUnavailable.rawValue)
+    }
+
+    func testBridgeExecutorForwardsBoundedCommandAndAcceptsExecutedReply() async throws {
+        let output = Data(
+            #"{"schema_version":"evaos.mac_access.adapter_result.v1","audit_id":"mac-access-audit-01","ok":true,"error_code":null}"#.utf8
+        )
+        let runner = FixtureAdapterRunner(
+            result: MacAccessAdapterProcessResult(
+                exitCode: 0, standardOutput: output, timedOut: false
+            )
+        )
+        let result = await MacAccessBridgeCommandExecutor(runner: runner).execute(
+            capability: "customer_mac.desktop_click",
+            request: ["x": .integer(120), "y": .integer(240)]
+        )
+        XCTAssertEqual(result.outcome, .executed)
+        XCTAssertEqual(result.localAuditID, "mac-access-audit-01")
+        XCTAssertNil(result.errorCode)
+
+        let inputs = await runner.inputs
+        let envelope = try MacAccessWire.strictJSONObject(from: try XCTUnwrap(inputs.first))
+        XCTAssertEqual(envelope["capability"] as? String, "customer_mac.desktop_click")
+        XCTAssertEqual((envelope["request"] as? [String: Any])?["x"] as? Int64, 120)
+        XCTAssertEqual((envelope["request"] as? [String: Any])?["y"] as? Int64, 240)
+    }
+
+    func testBridgeExecutorFailsClosedForTimeoutAndMalformedReply() async {
+        let timeoutRunner = FixtureAdapterRunner(
+            result: MacAccessAdapterProcessResult(
+                exitCode: SIGTERM, standardOutput: Data(), timedOut: true
+            )
+        )
+        let timedOut = await MacAccessBridgeCommandExecutor(runner: timeoutRunner).execute(
+            capability: "customer_mac.desktop_see", request: [:]
+        )
+        XCTAssertEqual(timedOut.outcome, .failed)
+        XCTAssertEqual(timedOut.errorCode, "adapter_timeout")
+
+        let malformedRunner = FixtureAdapterRunner(
+            result: MacAccessAdapterProcessResult(
+                exitCode: 0, standardOutput: Data("{}".utf8), timedOut: false
+            )
+        )
+        let malformed = await MacAccessBridgeCommandExecutor(runner: malformedRunner).execute(
+            capability: "customer_mac.desktop_see", request: [:]
+        )
+        XCTAssertEqual(malformed.outcome, .failed)
+        XCTAssertEqual(malformed.errorCode, "adapter_runtime_failed")
     }
 
     private func credentialRecord(for fixture: SignedCommandFixture) -> MacAccessCredentialRecord {

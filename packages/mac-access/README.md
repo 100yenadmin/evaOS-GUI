@@ -21,9 +21,13 @@ fail closed at the application boundary:
   context, enforces binding/digest/expiry and binding-scoped replay limits, canonicalizes signed
   values with RFC 8785 JCS, invokes one injected
   executor, and returns one structured receipt;
-- the production executor returns `policy_unavailable` until issue #703 supplies the policy and
-  execution slice; a fixture executor proves the single-command receipt path without granting
-  production authority;
+- the production executor invokes the existing evaOS `CustomerMacObserver` through a one-request,
+  bounded private Python runner; it accepts only `desktop_see`, `desktop_click`, `desktop_type`,
+  and `desktop_scroll`, and uses the bundled CuaDriver MCP implementation in embedded mode so the
+  helper remains the host identity;
+- Release builds require the pinned private CPython/PyObjC runtime and pinned CuaDriver binary as
+  build inputs, then embed both under the helper resources; the installed product does not use a
+  system/Homebrew Python or a separately installed CuaDriver;
 - local stop closes the channel, clears current work, and preserves the paired helper credential;
   local revoke and an authenticated relay `grant_revoked` additionally erase that credential,
   while other relay closure reasons preserve pairing for recovery;
@@ -32,7 +36,9 @@ fail closed at the application boundary:
   helper cleanup fails;
 - quit records cleanup intent and requests an orderly local stop before termination;
 - no application UI authority state is persisted, so relaunch cannot restore `Full Access`;
-- no Computer Use, updater, or TCC implementation is present.
+- the relay currently returns bounded execution receipts but does not yet carry observation/action
+  result payloads, and the helper has not yet applied literal Off/Ask Every Time/Full Access policy
+  to the executor; updater and Workbench integration are deferred from the internal-alpha gate.
 
 The source contract is pinned to dashboard #669 and evaos-ws-proxy #73. Production composition
 still requires deployment-owned values that those wire responses intentionally do not contain: the
@@ -43,6 +49,19 @@ remains inert. Missing deployment inputs return a redacted typed blocker over XP
 Binding-scoped replay protection and the revocation fail-closed latch are currently helper-process
 memory only. Durable replay/authority persistence across a helper restart remains acceptance work
 for issues #702/#703, so this draft does not close issue #702.
+
+## Private runtime inputs
+
+The customer artifact embeds its own runtime. Prepare the pinned build inputs into an environment
+file, source it in the same shell, and then build:
+
+```bash
+RUNNER_TEMP=/absolute/cache scripts/prepareEvaosDesktopBridgePythonRuntime.sh arm64 /absolute/runtime.env
+RUNNER_TEMP=/absolute/cache packages/mac-access/scripts/prepare-cua-driver.sh /absolute/runtime.env
+```
+
+The CuaDriver archive is the upstream MIT-licensed `cua-driver-rs-v0.7.1` universal macOS binary.
+Its release checksum and license are pinned by the package scripts and resources.
 
 ## Local proof
 

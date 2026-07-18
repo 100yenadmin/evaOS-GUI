@@ -94,6 +94,7 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             vault: vault,
             redeemer: URLSessionMacAccessPairingRedeemer(endpoint: configuration.pairingEndpoint),
             socketFactory: URLSessionMacAccessRelaySocketFactory(),
+            executor: MacAccessBridgeCommandExecutor(),
             pinnedKeys: configuration.pinnedKeys,
             relayURL: configuration.relayURL,
             relayActivity: relayActivity
