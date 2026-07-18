@@ -4,7 +4,7 @@ import SwiftUI
 
 struct MacAccessMenu: View {
     @ObservedObject var controller: MacAccessController
-    @Environment(\.openWindow) private var openWindow
+    let showOnboarding: () -> Void
 
     var body: some View {
         Text(controller.state.connection.localizationKey)
@@ -21,8 +21,7 @@ struct MacAccessMenu: View {
         Divider()
 
         Button("onboarding.title") {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            openWindow(id: "onboarding")
+            showOnboarding()
         }
         .keyboardShortcut("p")
 
