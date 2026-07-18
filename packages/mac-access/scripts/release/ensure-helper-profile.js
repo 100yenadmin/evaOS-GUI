@@ -10,7 +10,7 @@ const BUNDLE_NAME = 'evaOS Mac Access Helper';
 const DEFAULT_PROFILE_NAME = 'evaOS Mac Access Helper Developer ID';
 const PLATFORM = 'MAC_OS';
 const MAC_COMPATIBLE_BUNDLE_PLATFORMS = new Set([PLATFORM, 'UNIVERSAL']);
-const CERTIFICATE_TYPE = 'DEVELOPER_ID_APPLICATION';
+const CERTIFICATE_TYPES = new Set(['DEVELOPER_ID_APPLICATION', 'DEVELOPER_ID_APPLICATION_G2']);
 const PROFILE_TYPE = 'MAC_APP_DIRECT';
 
 class AppStoreConnectError extends Error {
@@ -183,7 +183,7 @@ function selectCertificate(resources, requestedSerial, now) {
     if (
       resource?.type !== 'certificates' ||
       !resource.id ||
-      resource.attributes?.certificateType !== CERTIFICATE_TYPE
+      !CERTIFICATE_TYPES.has(resource.attributes?.certificateType)
     ) {
       throw new AppStoreConnectError('App Store Connect returned a wrong certificate type.');
     }
@@ -203,7 +203,7 @@ async function findCertificate(request, requestedSerial, now) {
   const certificates = await listAll(
     request,
     queryPath('/v1/certificates', {
-      'filter[certificateType]': CERTIFICATE_TYPE,
+      'filter[certificateType]': [...CERTIFICATE_TYPES].join(','),
       limit: '200',
     })
   );
@@ -401,7 +401,6 @@ if (require.main === module) {
 module.exports = {
   API_ORIGIN,
   AppStoreConnectError,
-  CERTIFICATE_TYPE,
   DEFAULT_PROFILE_NAME,
   HELPER_BUNDLE_ID,
   PLATFORM,

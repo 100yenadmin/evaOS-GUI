@@ -101,6 +101,10 @@ test('creates a short-lived ES256 JWT with App Store Connect claims', () => {
 test('normalizes one exact active Developer ID Application certificate', () => {
   assert.equal(normalizeSerial(' 0x00:AB-CD '), 'ABCD');
   assert.equal(selectCertificate([certificate()], 'abcd', NOW).id, 'cert-1');
+  assert.equal(
+    selectCertificate([certificate({ certificateType: 'DEVELOPER_ID_APPLICATION_G2' })], 'abcd', NOW).id,
+    'cert-1'
+  );
   assert.throws(
     () => selectCertificate([certificate(), certificate({ serialNumber: 'ABCD' })], 'ABCD', NOW),
     /Duplicate exact/
