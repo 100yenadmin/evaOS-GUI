@@ -10,6 +10,16 @@ protocol MacAccessRelaySocketFactory: Sendable {
     func open(url: URL) async throws -> any MacAccessRelaySocket
 }
 
+protocol MacAccessRelayActivity: Sendable {
+    func begin() async
+    func end() async
+}
+
+struct NoopMacAccessRelayActivity: MacAccessRelayActivity {
+    func begin() async {}
+    func end() async {}
+}
+
 actor URLSessionMacAccessRelaySocket: MacAccessRelaySocket {
     private let task: URLSessionWebSocketTask
 
@@ -128,6 +138,7 @@ actor MacAccessHelperRuntime {
     private let executor: any MacAccessCommandExecutor
     private let verifier: MacAccessCommandVerifier
     private let relayURL: URL
+    private let relayActivity: any MacAccessRelayActivity
     private let now: @Sendable () -> Date
 
     private var channelGeneration: UInt64 = 0
@@ -147,6 +158,7 @@ actor MacAccessHelperRuntime {
         executor: any MacAccessCommandExecutor = PolicyUnavailableMacAccessExecutor(),
         pinnedKeys: MacAccessPinnedKeys,
         relayURL: URL,
+        relayActivity: any MacAccessRelayActivity = NoopMacAccessRelayActivity(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.vault = vault
@@ -155,6 +167,7 @@ actor MacAccessHelperRuntime {
         self.executor = executor
         verifier = MacAccessCommandVerifier(keys: pinnedKeys)
         self.relayURL = relayURL
+        self.relayActivity = relayActivity
         self.now = now
     }
 
@@ -240,6 +253,7 @@ actor MacAccessHelperRuntime {
             let previous = channel?.socket
             channel = nil
             await previous?.close()
+            await relayActivity.end()
             try requireCurrentGeneration(generation)
             guard let record = try await vault.load(), record.isPaired,
                   let binding = record.binding,
@@ -278,6 +292,8 @@ actor MacAccessHelperRuntime {
                   MacAccessWire.isIdentifier(ack.channelGenerationID)
             else { throw MacAccessPublicError.invalidWireMessage }
             channel?.ack = ack
+            await relayActivity.begin()
+            try requireOwnedChannel(generation)
             status.pairing = .paired
             status.transport = .connected
             return status
@@ -555,6 +571,7 @@ actor MacAccessHelperRuntime {
         else { return false }
         channel = nil
         await active.socket.close()
+        await relayActivity.end()
         return generation == channelGeneration
     }
 
@@ -564,6 +581,7 @@ actor MacAccessHelperRuntime {
         let active = channel
         channel = nil
         await active?.socket.close()
+        await relayActivity.end()
         return generation
     }
 }

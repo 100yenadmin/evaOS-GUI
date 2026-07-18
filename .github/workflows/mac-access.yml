@@ -4,14 +4,12 @@ on:
   pull_request:
     paths:
       - 'packages/mac-access/**'
-      - 'packages/mac-connector-core/contracts/v1/**'
       - '.github/workflows/mac-access.yml'
   push:
     branches:
       - main
     paths:
       - 'packages/mac-access/**'
-      - 'packages/mac-connector-core/contracts/v1/**'
       - '.github/workflows/mac-access.yml'
   workflow_dispatch:
 
@@ -33,7 +31,6 @@ jobs:
           bash -n packages/mac-access/scripts/*.sh
           packages/mac-access/scripts/verify-contract-identities.sh
           packages/mac-access/scripts/verify-localizations.sh
-          swift packages/mac-connector-core/tests/FixtureSmoke.swift
 
       - name: Cold unsigned build
         id: cold

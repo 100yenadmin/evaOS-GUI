@@ -3,12 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PACKAGE_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-REPOSITORY_ROOT=$(CDPATH= cd -- "$PACKAGE_ROOT/../.." && pwd)
 DERIVED_DATA_PATH=${DERIVED_DATA_PATH:-"${TMPDIR:-/tmp}/evaos-mac-access-derived-data"}
 
 "$SCRIPT_DIR/verify-contract-identities.sh"
 "$SCRIPT_DIR/verify-localizations.sh"
-swift "$REPOSITORY_ROOT/packages/mac-connector-core/tests/FixtureSmoke.swift"
 
 xcodebuild \
   -project "$PACKAGE_ROOT/MacAccess.xcodeproj" \

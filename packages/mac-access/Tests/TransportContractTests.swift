@@ -421,6 +421,19 @@ private struct FixtureExecutor: MacAccessCommandExecutor {
     }
 }
 
+private actor RecordingRelayActivity: MacAccessRelayActivity {
+    private(set) var beginCount = 0
+    private(set) var endCount = 0
+
+    func begin() {
+        beginCount += 1
+    }
+
+    func end() {
+        endCount += 1
+    }
+}
+
 final class TransportContractTests: XCTestCase {
     func testCommandAuthorityGoldenParity() throws {
         let fixture = try makeSignedCommandFixture()
@@ -575,15 +588,21 @@ final class TransportContractTests: XCTestCase {
         )
         let socket = QueuedRelaySocket(received: [try MacAccessWire.canonicalData(ack), fixture.wire])
         let vault = MemoryCredentialVault(credentialRecord(for: fixture))
+        let relayActivity = RecordingRelayActivity()
         let runtime = MacAccessHelperRuntime(
             vault: vault, redeemer: UnusedRedeemer(), socketFactory: FixtureSocketFactory(socket: socket),
             executor: FixtureExecutor(), pinnedKeys: fixture.keys,
             relayURL: try XCTUnwrap(URL(string: "wss://relay.example.test/mac-access-relay/v1")),
+            relayActivity: relayActivity,
             now: { fixture.now }
         )
 
         let connected = try await runtime.connect()
+        let beginCountAfterConnect = await relayActivity.beginCount
+        let endCountAfterConnect = await relayActivity.endCount
         XCTAssertEqual(connected.transport, .connected)
+        XCTAssertEqual(beginCountAfterConnect, 1)
+        XCTAssertEqual(endCountAfterConnect, 1)
         let receipt = try await runtime.processOneCommand()
         XCTAssertEqual(receipt.outcome, .executed)
         XCTAssertEqual(receipt.localAuditID, "fixture-audit-01")
@@ -595,11 +614,15 @@ final class TransportContractTests: XCTestCase {
         let preservedRecord = await vault.load()
         let eraseCount = await vault.eraseCount
         let isClosed = await socket.isClosed
+        let finalBeginCount = await relayActivity.beginCount
+        let finalEndCount = await relayActivity.endCount
         XCTAssertEqual(stopped.transport, .stopped)
         XCTAssertEqual(stopped.pairing, .paired)
         XCTAssertNotNil(preservedRecord)
         XCTAssertEqual(eraseCount, 0)
         XCTAssertTrue(isClosed)
+        XCTAssertEqual(finalBeginCount, 1)
+        XCTAssertEqual(finalEndCount, 2)
     }
 
     func testReplayHistorySurvivesDisconnectAndReconnect() async throws {

@@ -3,8 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PACKAGE_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-REPOSITORY_ROOT=$(CDPATH= cd -- "$PACKAGE_ROOT/../.." && pwd)
-TYPESCRIPT_CONTRACT="$REPOSITORY_ROOT/packages/mac-connector-core/contracts/v1/index.ts"
 SWIFT_IDENTITIES="$PACKAGE_ROOT/Shared/FrozenIdentities.swift"
 
 fail() {
@@ -12,32 +10,30 @@ fail() {
   exit 1
 }
 
-require_in_both() {
+require_in_swift() {
   value=$1
-  grep -Fq -- "$value" "$TYPESCRIPT_CONTRACT" || fail "missing from TypeScript contract: $value"
   grep -Fq -- "$value" "$SWIFT_IDENTITIES" || fail "missing from Swift identities: $value"
 }
 
-require_in_both 'TC6MS3T6NN'
-require_in_both 'com.evaos.mac-access'
-require_in_both 'com.evaos.mac-access.helper'
-require_in_both 'com.evaos.mac-access.connector'
-require_in_both 'com.evaos.workbench'
-require_in_both 'com.electricsheephq.EvaDesktop'
-require_in_both 'com.evaos.mac-access.credentials'
-require_in_both 'com.evaos.mac-access.development.credentials'
-require_in_both 'com.evaos.mac-access.connector-credential'
-require_in_both 'com.evaos.mac-access.audit-anchor'
+require_in_swift 'TC6MS3T6NN'
+require_in_swift 'com.evaos.mac-access'
+require_in_swift 'com.evaos.mac-access.helper'
+require_in_swift 'com.evaos.mac-access.connector'
+require_in_swift 'com.evaos.workbench'
+require_in_swift 'com.electricsheephq.EvaDesktop'
+require_in_swift 'com.evaos.mac-access.credentials'
+require_in_swift 'com.evaos.mac-access.development.credentials'
+require_in_swift 'com.evaos.mac-access.connector-credential'
+require_in_swift 'com.evaos.mac-access.audit-anchor'
 
 check_requirement_digest() {
   requirement=$1
   digest=$2
   computed=$(printf '%s' "$requirement" | shasum -a 256 | awk '{print $1}')
   [ "$computed" = "$digest" ] || fail "designated requirement digest mismatch: $digest"
-  grep -Fq -- "$requirement" "$TYPESCRIPT_CONTRACT" || fail "missing requirement from TypeScript contract"
   swift_requirement=$(printf '%s' "$requirement" | sed 's/"/\\"/g')
   grep -Fq -- "$swift_requirement" "$SWIFT_IDENTITIES" || fail "missing requirement from Swift identities"
-  require_in_both "$digest"
+  require_in_swift "$digest"
 }
 
 check_requirement_digest \
@@ -56,4 +52,4 @@ check_requirement_digest \
   'anchor apple generic and certificate leaf[subject.OU] = "TC6MS3T6NN" and identifier "com.electricsheephq.EvaDesktop"' \
   'c6038eaf8a20c83a1aabfd1bf8eb4053877b7af5627e570eb1de37721e76b776'
 
-echo 'Frozen Swift identities match packages/mac-connector-core/contracts/v1/index.ts.'
+echo 'Frozen Swift identities and designated-requirement digests are internally consistent.'

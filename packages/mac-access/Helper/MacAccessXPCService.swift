@@ -1,5 +1,6 @@
 import Foundation
 import MacAccessShared
+import XPC
 
 enum MacAccessXPCCallerPolicy {
     static let allowedBundleIDs = [MacAccessIdentity.appBundleID, MacAccessIdentity.connectorServiceID]
@@ -12,6 +13,22 @@ enum MacAccessXPCCallerPolicy {
         case MacAccessIdentity.connectorServiceID: MacAccessIdentity.connectorDesignatedRequirement
         default: nil
         }
+    }
+}
+
+actor MacAccessXPCTransactionActivity: MacAccessRelayActivity {
+    private var active = false
+
+    func begin() {
+        guard !active else { return }
+        xpc_transaction_begin()
+        active = true
+    }
+
+    func end() {
+        guard active else { return }
+        active = false
+        xpc_transaction_end()
     }
 }
 
@@ -65,7 +82,8 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     init(
         configuration: MacAccessHelperDeploymentConfiguration?,
-        vault: any MacAccessCredentialVault = SecurityMacAccessCredentialVault()
+        vault: any MacAccessCredentialVault = SecurityMacAccessCredentialVault(),
+        relayActivity: any MacAccessRelayActivity = MacAccessXPCTransactionActivity()
     ) {
         self.vault = vault
         guard let configuration else {
@@ -77,7 +95,8 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
             redeemer: URLSessionMacAccessPairingRedeemer(endpoint: configuration.pairingEndpoint),
             socketFactory: URLSessionMacAccessRelaySocketFactory(),
             pinnedKeys: configuration.pinnedKeys,
-            relayURL: configuration.relayURL
+            relayURL: configuration.relayURL,
+            relayActivity: relayActivity
         )
     }
 
