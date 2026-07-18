@@ -63,8 +63,8 @@ public final class MacAccessController: ObservableObject {
         )
         let projected = MacAccessState(
             connection: blocker == nil ? connection : .blocked,
-            configuredMode: state.configuredMode,
-            effectiveMode: connection == .connected ? state.effectiveMode : .off,
+            configuredMode: reply.status.accessMode,
+            effectiveMode: connection == .connected ? reply.status.accessMode : .off,
             isPaired: paired,
             blocker: blocker,
             lastActivityAt: state.lastActivityAt,
@@ -181,13 +181,19 @@ public final class MacAccessController: ObservableObject {
             case .disconnect:
                 machine.disconnect()
             case .setAccessMode(.off), .stop:
-                if !preserveEmergencyEvidence { machine.stop() }
+                if !preserveEmergencyEvidence {
+                    if action == .stop {
+                        machine.stop()
+                    } else {
+                        machine.selectMode(.off)
+                    }
+                }
+            case .setAccessMode(let mode):
+                machine.selectMode(mode)
             case .pause:
                 machine.pause()
             case .resume:
                 machine.resume()
-            default:
-                break
             }
         }
         state = machine.state

@@ -1,7 +1,10 @@
+import ApplicationServices
+import CoreGraphics
 import Foundation
 
 public enum MacAccessXPCAction: String, Codable, Equatable, Sendable {
     case status, pair, connect, disconnect, stop, revoke
+    case setAccessMode = "set_access_mode"
     case requestAccessibility = "request_accessibility"
     case requestScreenRecording = "request_screen_recording"
 }
@@ -48,6 +51,7 @@ public enum MacAccessXPCReplyCode: String, Codable, Equatable, Sendable {
     case relayUnavailable = "relay_unavailable"
     case commandRejected = "command_rejected"
     case policyUnavailable = "policy_unavailable"
+    case permissionDenied = "permission_denied"
     case revoked
     case stopped
 }
@@ -58,19 +62,51 @@ public struct MacAccessXPCSafeStatus: Codable, Equatable, Sendable {
     public let lastErrorCode: String?
     public let lastAuditID: String?
     public let permissions: MacAccessPermissionStatus
+    public let accessMode: MacAccessMode
 
     public init(
         pairing: String,
         transport: String,
         lastErrorCode: String?,
         lastAuditID: String?,
-        permissions: MacAccessPermissionStatus = .unknown
+        permissions: MacAccessPermissionStatus = .unknown,
+        accessMode: MacAccessMode = .off
     ) {
         self.pairing = pairing
         self.transport = transport
         self.lastErrorCode = lastErrorCode
         self.lastAuditID = lastAuditID
         self.permissions = permissions
+        self.accessMode = accessMode
+    }
+}
+
+public struct MacAccessApprovalRequest: Codable, Equatable, Sendable {
+    public let requestID: String
+    public let capability: String
+    public let actionSummary: String
+    public let requestDigestSHA256: String
+
+    public init(
+        requestID: String,
+        capability: String,
+        actionSummary: String,
+        requestDigestSHA256: String
+    ) {
+        self.requestID = requestID
+        self.capability = capability
+        self.actionSummary = actionSummary
+        self.requestDigestSHA256 = requestDigestSHA256
+    }
+}
+
+public struct MacAccessApprovalReply: Codable, Equatable, Sendable {
+    public let requestID: String
+    public let approved: Bool
+
+    public init(requestID: String, approved: Bool) {
+        self.requestID = requestID
+        self.approved = approved
     }
 }
 
@@ -92,6 +128,36 @@ public protocol MacAccessPermissionControllingClient: MacAccessStatusProvidingCl
     func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply?
 }
 
+public struct SystemMacAccessPermissionAuthorizer: Sendable {
+    public init() {}
+
+    public func currentStatus() async -> MacAccessPermissionStatus {
+        await MainActor.run {
+            MacAccessPermissionStatus(
+                accessibility: AXIsProcessTrusted() ? .granted : .denied,
+                screenRecording: CGPreflightScreenCaptureAccess() ? .granted : .denied
+            )
+        }
+    }
+
+    public func request(_ kind: MacAccessPermissionKind) async -> MacAccessPermissionStatus {
+        await MainActor.run {
+            switch kind {
+            case .accessibility:
+                _ = AXIsProcessTrustedWithOptions(
+                    ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+                )
+            case .screenRecording:
+                _ = CGRequestScreenCaptureAccess()
+            }
+            return MacAccessPermissionStatus(
+                accessibility: AXIsProcessTrusted() ? .granted : .denied,
+                screenRecording: CGPreflightScreenCaptureAccess() ? .granted : .denied
+            )
+        }
+    }
+}
+
 @objc public protocol MacAccessXPCServiceProtocol {
     func status(withReply reply: @escaping @Sendable (Data) -> Void)
     func pair(code: String, withReply reply: @escaping @Sendable (Data) -> Void)
@@ -99,8 +165,13 @@ public protocol MacAccessPermissionControllingClient: MacAccessStatusProvidingCl
     func disconnect(withReply reply: @escaping @Sendable (Data) -> Void)
     func stop(withReply reply: @escaping @Sendable (Data) -> Void)
     func revoke(withReply reply: @escaping @Sendable (Data) -> Void)
+    func setAccessMode(_ mode: String, withReply reply: @escaping @Sendable (Data) -> Void)
     func requestAccessibility(withReply reply: @escaping @Sendable (Data) -> Void)
     func requestScreenRecording(withReply reply: @escaping @Sendable (Data) -> Void)
+}
+
+@objc public protocol MacAccessXPCApprovalProtocol: Sendable {
+    func requestApproval(_ request: Data, withReply reply: @escaping @Sendable (Data) -> Void)
 }
 
 protocol MacAccessXPCTransport: Sendable {
@@ -123,6 +194,11 @@ private final class MacAccessXPCReplyGate: @unchecked Sendable {
 actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     static let maximumReplyBytes = 4 << 10
     private var connection: NSXPCConnection?
+    private let approvalHandler: (any MacAccessXPCApprovalProtocol)?
+
+    init(approvalHandler: (any MacAccessXPCApprovalProtocol)? = nil) {
+        self.approvalHandler = approvalHandler
+    }
 
     func request(_ action: MacAccessXPCAction, code: String?) async throws -> Data {
         let connection = connection ?? makeConnection()
@@ -152,6 +228,7 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
             case .disconnect: service.disconnect(withReply: receive)
             case .stop: service.stop(withReply: receive)
             case .revoke: service.revoke(withReply: receive)
+            case .setAccessMode: service.setAccessMode(code ?? "", withReply: receive)
             case .requestAccessibility: service.requestAccessibility(withReply: receive)
             case .requestScreenRecording: service.requestScreenRecording(withReply: receive)
             }
@@ -161,12 +238,17 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     private func makeConnection() -> NSXPCConnection {
         let connection = NSXPCConnection(serviceName: MacAccessIdentity.helperServiceID)
         connection.remoteObjectInterface = NSXPCInterface(with: MacAccessXPCServiceProtocol.self)
-        connection.setCodeSigningRequirement(MacAccessIdentity.helperDesignatedRequirement)
-        connection.invalidationHandler = { [weak self] in
-            Task { await self?.clearConnection() }
+        if let approvalHandler {
+            connection.exportedInterface = NSXPCInterface(with: MacAccessXPCApprovalProtocol.self)
+            connection.exportedObject = approvalHandler
         }
-        connection.interruptionHandler = { [weak self] in
-            Task { await self?.clearConnection() }
+        connection.setCodeSigningRequirement(MacAccessIdentity.helperDesignatedRequirement)
+        let owner = self
+        connection.invalidationHandler = {
+            Task { await owner.clearConnection() }
+        }
+        connection.interruptionHandler = {
+            Task { await owner.clearConnection() }
         }
         connection.resume()
         return connection
@@ -180,8 +262,8 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
 public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClient {
     private let transport: any MacAccessXPCTransport
 
-    public init() {
-        transport = ProductionMacAccessXPCTransport()
+    public init(approvalHandler: (any MacAccessXPCApprovalProtocol)? = nil) {
+        transport = ProductionMacAccessXPCTransport(approvalHandler: approvalHandler)
     }
 
     init(transport: any MacAccessXPCTransport) {
@@ -189,14 +271,21 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClie
     }
 
     public func perform(_ action: ConnectorCoreAction) async -> ConnectorCoreResult {
+        if case .setAccessMode(let mode) = action, mode != .off {
+            let permissions = await SystemMacAccessPermissionAuthorizer().currentStatus()
+            guard permissions.accessibility == .granted,
+                  permissions.screenRecording == .granted
+            else { return .blocked(.permissionDenied) }
+        }
         let request: (MacAccessXPCAction, String?)
         switch action {
         case .pair(let code): request = (.pair, code)
         case .unpair, .revokeSelectedVM: request = (.revoke, nil)
         case .connect: request = (.connect, nil)
         case .disconnect: request = (.disconnect, nil)
-        case .stop, .setAccessMode(.off): request = (.stop, nil)
-        case .setAccessMode, .pause, .resume:
+        case .stop: request = (.stop, nil)
+        case .setAccessMode(let mode): request = (.setAccessMode, mode.rawValue)
+        case .pause, .resume:
             return .blocked(.connectorCoreUnavailable)
         }
         do {
@@ -212,6 +301,12 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClie
     }
 
     public func fetchStatus() async -> MacAccessXPCReply? {
+        guard let reply = await fetchRawStatus() else { return nil }
+        let permissions = await SystemMacAccessPermissionAuthorizer().currentStatus()
+        return replacingPermissions(in: reply, with: permissions)
+    }
+
+    private func fetchRawStatus() async -> MacAccessXPCReply? {
         guard let data = try? await transport.request(.status, code: nil),
               data.count <= ProductionMacAccessXPCTransport.maximumReplyBytes
         else { return nil }
@@ -219,14 +314,26 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClie
     }
 
     public func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply? {
-        let action: MacAccessXPCAction = switch kind {
-        case .accessibility: .requestAccessibility
-        case .screenRecording: .requestScreenRecording
-        }
-        guard let data = try? await transport.request(action, code: nil),
-              data.count <= ProductionMacAccessXPCTransport.maximumReplyBytes
-        else { return nil }
-        return try? JSONDecoder().decode(MacAccessXPCReply.self, from: data)
+        let permissions = await SystemMacAccessPermissionAuthorizer().request(kind)
+        guard let reply = await fetchRawStatus() else { return nil }
+        return replacingPermissions(in: reply, with: permissions)
+    }
+
+    private func replacingPermissions(
+        in reply: MacAccessXPCReply,
+        with permissions: MacAccessPermissionStatus
+    ) -> MacAccessXPCReply {
+        MacAccessXPCReply(
+            code: reply.code,
+            status: MacAccessXPCSafeStatus(
+                pairing: reply.status.pairing,
+                transport: reply.status.transport,
+                lastErrorCode: reply.status.lastErrorCode,
+                lastAuditID: reply.status.lastAuditID,
+                permissions: permissions,
+                accessMode: reply.status.accessMode
+            )
+        )
     }
 
     private func map(_ code: MacAccessXPCReplyCode, for action: ConnectorCoreAction) -> ConnectorCoreResult {
@@ -238,15 +345,16 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClie
             case .connect: return .completed(.connected)
             case .disconnect: return .completed(.disconnected)
             case .revokeSelectedVM: return .completed(.revoked)
-            case .stop, .setAccessMode(.off): return .completed(.localStop)
+            case .stop: return .completed(.localStop)
             case .pause: return .completed(.localPause)
             case .resume: return .completed(.localResume)
-            case .setAccessMode: return .blocked(.connectorCoreUnavailable)
+            case .setAccessMode(let mode): return .completed(.accessModeSet(mode))
             }
         case .invalidPairingCode: return .blocked(.invalidPairingCode)
         case .pairingRejected: return .blocked(.pairingRejected)
         case .credentialUnavailable: return .blocked(.credentialUnavailable)
         case .policyUnavailable: return .blocked(.policyUnavailable)
+        case .permissionDenied: return .blocked(.permissionDenied)
         case .configurationUnavailable:
             return .blocked(action.isPairing ? .dashboardPairingUnavailable : .relayUnavailable)
         case .revoked: return .blocked(.revokedGrant)

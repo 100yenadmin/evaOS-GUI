@@ -3,6 +3,39 @@ import Darwin
 import MacAccessShared
 import SwiftUI
 
+final class MacAccessApprovalHandler: NSObject, MacAccessXPCApprovalProtocol, @unchecked Sendable {
+    func requestApproval(
+        _ data: Data,
+        withReply reply: @escaping @Sendable (Data) -> Void
+    ) {
+        Task { @MainActor in
+            guard data.count <= 4 << 10,
+                  let request = try? JSONDecoder().decode(MacAccessApprovalRequest.self, from: data)
+            else {
+                reply(Data())
+                return
+            }
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = String(localized: "approval.title")
+            alert.informativeText = [
+                request.actionSummary,
+                request.capability,
+                String(request.requestDigestSHA256.prefix(16)),
+            ].joined(separator: "\n")
+            alert.addButton(withTitle: String(localized: "approval.allowOnce"))
+            alert.addButton(withTitle: String(localized: "approval.deny"))
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            let approved = alert.runModal() == .alertFirstButtonReturn
+            let response = MacAccessApprovalReply(
+                requestID: request.requestID,
+                approved: approved
+            )
+            reply((try? JSONEncoder().encode(response)) ?? Data())
+        }
+    }
+}
+
 @main
 enum MacAccessEntryPoint {
     @MainActor
@@ -28,11 +61,16 @@ enum MacAccessEntryPoint {
 }
 
 struct MacAccessApp: App {
-    @StateObject private var controller = MacAccessController(
-        client: MacAccessXPCConnectorCoreClient(),
-        availability: .internalAlpha
-    )
+    private static let approvalHandler = MacAccessApprovalHandler()
+    @StateObject private var controller: MacAccessController
     @StateObject private var onboardingWindow = MacAccessOnboardingWindow()
+
+    init() {
+        _controller = StateObject(wrappedValue: MacAccessController(
+            client: MacAccessXPCConnectorCoreClient(approvalHandler: Self.approvalHandler),
+            availability: .internalAlpha
+        ))
+    }
 
     var body: some Scene {
         MenuBarExtra {

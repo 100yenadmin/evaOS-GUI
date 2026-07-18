@@ -1,4 +1,5 @@
 import Foundation
+import MacAccessShared
 import OSLog
 
 protocol MacAccessRelaySocket: Sendable {
@@ -109,6 +110,83 @@ protocol MacAccessCommandExecutor: Sendable {
     func execute(capability: String, request: [String: JSONValue]) async -> MacAccessExecutionResult
 }
 
+protocol MacAccessApprovalRequesting: Sendable {
+    func requestApproval(_ request: MacAccessApprovalRequest) async -> Bool
+}
+
+enum MacAccessPolicyDecision: Equatable, Sendable {
+    case allow
+    case deny(String)
+}
+
+actor MacAccessCommandPolicy {
+    private(set) var mode: MacAccessMode = .off
+    private let approver: (any MacAccessApprovalRequesting)?
+
+    init(approver: (any MacAccessApprovalRequesting)? = nil) {
+        self.approver = approver
+    }
+
+    func setMode(_ mode: MacAccessMode) {
+        self.mode = mode
+    }
+
+    func authorize(
+        capability: String,
+        request: [String: JSONValue],
+        requestDigestSHA256: String
+    ) async -> MacAccessPolicyDecision {
+        switch mode {
+        case .off:
+            return .deny("access_off")
+        case .fullAccess:
+            return .allow
+        case .askEveryTime:
+            guard let approver else { return .deny("approval_unavailable") }
+            let request = MacAccessApprovalRequest(
+                requestID: "approval-\(UUID().uuidString.lowercased())",
+                capability: capability,
+                actionSummary: Self.summary(capability: capability, request: request),
+                requestDigestSHA256: requestDigestSHA256
+            )
+            return await approver.requestApproval(request) ? .allow : .deny("approval_denied")
+        }
+    }
+
+    private static func summary(
+        capability: String,
+        request: [String: JSONValue]
+    ) -> String {
+        switch capability {
+        case "customer_mac.desktop_see":
+            return "See the current screen"
+        case "customer_mac.desktop_click":
+            return "Click at \(integer("x", in: request)), \(integer("y", in: request))"
+        case "customer_mac.desktop_type":
+            let count = if case .string(let text)? = request["text"] { text.count } else { 0 }
+            return "Type \(count) characters"
+        case "customer_mac.desktop_scroll":
+            let direction = if case .string(let value)? = request["direction"] {
+                value
+            } else {
+                "down"
+            }
+            return "Scroll \(direction) by \(integer("amount", in: request, default: 600))"
+        default:
+            return capability
+        }
+    }
+
+    private static func integer(
+        _ key: String,
+        in request: [String: JSONValue],
+        default defaultValue: Int64 = 0
+    ) -> Int64 {
+        guard case .integer(let value) = request[key] else { return defaultValue }
+        return value
+    }
+}
+
 struct PolicyUnavailableMacAccessExecutor: MacAccessCommandExecutor {
     func execute(capability _: String, request _: [String: JSONValue]) async -> MacAccessExecutionResult {
         MacAccessExecutionResult(
@@ -156,6 +234,7 @@ actor MacAccessHelperRuntime {
     private let verifier: MacAccessCommandVerifier
     private let relayURL: URL
     private let relayActivity: any MacAccessRelayActivity
+    private let policy: MacAccessCommandPolicy
     private let now: @Sendable () -> Date
 
     private var channelGeneration: UInt64 = 0
@@ -176,6 +255,7 @@ actor MacAccessHelperRuntime {
         pinnedKeys: MacAccessPinnedKeys,
         relayURL: URL,
         relayActivity: any MacAccessRelayActivity = NoopMacAccessRelayActivity(),
+        policy: MacAccessCommandPolicy = MacAccessCommandPolicy(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.vault = vault
@@ -185,7 +265,16 @@ actor MacAccessHelperRuntime {
         verifier = MacAccessCommandVerifier(keys: pinnedKeys)
         self.relayURL = relayURL
         self.relayActivity = relayActivity
+        self.policy = policy
         self.now = now
+    }
+
+    func accessMode() async -> MacAccessMode {
+        await policy.mode
+    }
+
+    func setAccessMode(_ mode: MacAccessMode) async {
+        await policy.setMode(mode)
     }
 
     func refreshStatusFromVault() async -> MacAccessHelperSafeStatus {
@@ -384,10 +473,24 @@ actor MacAccessHelperRuntime {
             )
             try requireOwnedChannel(generation, binding: owned.binding)
             try replayWindow.accept(command)
-            let execution = await executor.execute(
+            let decision = await policy.authorize(
                 capability: command.command.capability,
-                request: command.command.request
+                request: command.command.request,
+                requestDigestSHA256: command.command.requestDigestSHA256
             )
+            let execution = switch decision {
+            case .allow:
+                await executor.execute(
+                    capability: command.command.capability,
+                    request: command.command.request
+                )
+            case .deny(let errorCode):
+                MacAccessExecutionResult(
+                    localAuditID: "policy-\(UUID().uuidString.lowercased())",
+                    outcome: .denied,
+                    errorCode: errorCode
+                )
+            }
             guard MacAccessWire.isIdentifier(execution.localAuditID),
                   execution.errorCode == nil || MacAccessWire.isIdentifier(execution.errorCode!)
             else { throw MacAccessPublicError.invalidWireMessage }
@@ -458,6 +561,7 @@ actor MacAccessHelperRuntime {
     @discardableResult
     func stop() async throws -> MacAccessHelperSafeStatus {
         channelTransitionInProgress = true
+        await policy.setMode(.off)
         status = MacAccessHelperSafeStatus(
             pairing: pairingBeforeOperation ?? status.pairing,
             transport: .stopped,
@@ -476,6 +580,7 @@ actor MacAccessHelperRuntime {
         }
         credentialMutationInProgress = true
         revocationLatched = true
+        await policy.setMode(.off)
         status.pairing = .revoked
         status.transport = .stopped
         status.lastError = .revoked
@@ -525,6 +630,7 @@ actor MacAccessHelperRuntime {
         if revoke.reasonCode == "grant_revoked" {
             credentialMutationInProgress = true
             revocationLatched = true
+            await policy.setMode(.off)
             status.pairing = .revoked
             status.transport = .stopped
             status.lastError = .revoked
@@ -548,6 +654,9 @@ actor MacAccessHelperRuntime {
 
         let invalidationGeneration = await invalidateChannel()
         guard invalidationGeneration == channelGeneration else { return .stopped }
+        if revoke.reasonCode == "local_stop" {
+            await policy.setMode(.off)
+        }
         status.pairing = .paired
         status.transport = revoke.reasonCode == "local_stop" ? .disconnected : .blocked
         status.lastError = revoke.reasonCode == "local_stop" ? .stopped : .relayUnavailable
@@ -565,6 +674,7 @@ actor MacAccessHelperRuntime {
         if relayError.code == "grant_revoked" {
             credentialMutationInProgress = true
             revocationLatched = true
+            await policy.setMode(.off)
             status.pairing = .revoked
             status.transport = .blocked
             status.lastError = .revoked

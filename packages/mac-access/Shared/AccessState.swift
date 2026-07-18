@@ -9,7 +9,7 @@ public enum MacAccessConnectionState: String, CaseIterable, Sendable {
     case blocked
 }
 
-public enum MacAccessMode: String, CaseIterable, Sendable {
+public enum MacAccessMode: String, CaseIterable, Codable, Sendable {
     case off
     case askEveryTime
     case fullAccess
@@ -140,7 +140,7 @@ public struct MacAccessStateMachine: Sendable {
             return
         }
         state.connection = .connected
-        state.effectiveMode = state.configuredMode == .fullAccess ? .askEveryTime : state.configuredMode
+        state.effectiveMode = state.configuredMode
         state.blocker = nil
         state.lastActivityAt = date
     }
@@ -199,6 +199,11 @@ public struct MacAccessStateMachine: Sendable {
         state.effectiveMode = .off
     }
 
+    public mutating func selectMode(_ mode: MacAccessMode) {
+        state.configuredMode = mode
+        state.effectiveMode = state.connection == .connected ? mode : .off
+    }
+
     public mutating func stop() {
         state.configuredMode = .off
         state.effectiveMode = .off
@@ -228,9 +233,7 @@ public struct MacAccessStateMachine: Sendable {
     }
 
     public mutating func restoreAfterRestart() {
-        if state.configuredMode == .fullAccess {
-            state.configuredMode = state.isPaired ? .askEveryTime : .off
-        }
+        state.configuredMode = .off
         state.effectiveMode = .off
         state.connection = state.isPaired ? .disconnected : .blocked
         state.blocker = state.isPaired ? nil : .dashboardPairingUnavailable

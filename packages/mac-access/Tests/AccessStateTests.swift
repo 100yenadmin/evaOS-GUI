@@ -65,7 +65,7 @@ final class AccessStateTests: XCTestCase {
         XCTAssertEqual(machine.state.effectiveMode, .off)
     }
 
-    func testRestartDowngradesFullAccessAndClearsEffectiveAuthority() {
+    func testRestartReturnsToOffAndClearsEffectiveAuthority() {
         let state = MacAccessState(
             connection: .connected,
             configuredMode: .fullAccess,
@@ -77,12 +77,12 @@ final class AccessStateTests: XCTestCase {
 
         machine.restoreAfterRestart()
 
-        XCTAssertEqual(machine.state.configuredMode, .askEveryTime)
+        XCTAssertEqual(machine.state.configuredMode, .off)
         XCTAssertEqual(machine.state.effectiveMode, .off)
         XCTAssertEqual(machine.state.connection, .disconnected)
     }
 
-    func testConnectDoesNotMakeFullAccessEffectiveWithoutRuntimeConfirmation() {
+    func testConnectPreservesHelperConfirmedFullAccess() {
         let state = MacAccessState(
             connection: .connecting,
             configuredMode: .fullAccess,
@@ -95,7 +95,7 @@ final class AccessStateTests: XCTestCase {
         machine.markConnected(at: Date(timeIntervalSince1970: 1))
 
         XCTAssertEqual(machine.state.connection, .connected)
-        XCTAssertEqual(machine.state.effectiveMode, .askEveryTime)
+        XCTAssertEqual(machine.state.effectiveMode, .fullAccess)
     }
 
     func testConnectedConfirmationPreservesEveryExistingBlocker() {

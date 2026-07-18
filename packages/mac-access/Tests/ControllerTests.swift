@@ -320,7 +320,7 @@ final class ControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.blocker, .emergencyStopActive)
     }
 
-    func testSuccessfulStopAndOffNoLongerClaimConnected() async {
+    func testSuccessfulStopDisconnectsWhileOffKeepsAControlChannelForDeniedReceipts() async {
         let client = RecordingConnectorClient(result: .completed(.localStop))
         let connected = MacAccessState(
             connection: .connected,
@@ -337,7 +337,7 @@ final class ControllerTests: XCTestCase {
 
         XCTAssertEqual(stopController.state.connection, .disconnected)
         XCTAssertTrue(stopController.state.isPaired)
-        XCTAssertEqual(offController.state.connection, .disconnected)
+        XCTAssertEqual(offController.state.connection, .connected)
         XCTAssertTrue(offController.state.isPaired)
     }
 

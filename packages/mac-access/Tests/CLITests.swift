@@ -61,12 +61,16 @@ final class CLITests: XCTestCase {
         XCTAssertNil(MacAccessCLI.parse(arguments: ["pair", secret]))
     }
 
-    func testStatusConnectDisconnectStopAndRevokeUseExistingXPCClientSurface() async {
+    func testStatusTransportModesStopUnpairAndRevokeUseExistingXPCClientSurface() async {
         let cases: [([String], ConnectorCoreAction?)] = [
             (["status"], nil),
             (["connect"], .connect),
             (["disconnect"], .disconnect),
+            (["mode", "off"], .setAccessMode(.off)),
+            (["mode", "ask"], .setAccessMode(.askEveryTime)),
+            (["mode", "full"], .setAccessMode(.fullAccess)),
             (["stop"], .stop),
+            (["unpair"], .unpair),
             (["revoke"], .revokeSelectedVM),
         ]
 

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import MacAccessShared
 import XCTest
 
 private struct SignedCommandFixture: Sendable {
@@ -338,6 +339,20 @@ private actor CountingExecutor: MacAccessCommandExecutor {
     }
 }
 
+private actor FixtureApprovalRequester: MacAccessApprovalRequesting {
+    private var responses: [Bool]
+    private(set) var requests: [MacAccessApprovalRequest] = []
+
+    init(responses: [Bool]) {
+        self.responses = responses
+    }
+
+    func requestApproval(_ request: MacAccessApprovalRequest) -> Bool {
+        requests.append(request)
+        return responses.isEmpty ? false : responses.removeFirst()
+    }
+}
+
 private actor FixturePairingRedeemer: MacAccessPairingRedeemer {
     private let bindingID: String
     private let mismatchIdentity: Bool
@@ -449,6 +464,82 @@ private actor RecordingRelayActivity: MacAccessRelayActivity {
 }
 
 final class TransportContractTests: XCTestCase {
+    func testLiteralAccessModesAndAskEveryTimeDoesNotCacheApproval() async {
+        let approver = FixtureApprovalRequester(responses: [true, false])
+        let policy = MacAccessCommandPolicy(approver: approver)
+        let text = "private text is not copied into approval UI"
+        let request: [String: JSONValue] = [
+            "text": .string(text),
+        ]
+
+        let offDecision = await policy.authorize(
+            capability: "customer_mac.desktop_type",
+            request: request,
+            requestDigestSHA256: String(repeating: "a", count: 64)
+        )
+        XCTAssertEqual(offDecision, .deny("access_off"))
+
+        await policy.setMode(.fullAccess)
+        let fullDecision = await policy.authorize(
+            capability: "customer_mac.desktop_type",
+            request: request,
+            requestDigestSHA256: String(repeating: "b", count: 64)
+        )
+        XCTAssertEqual(fullDecision, .allow)
+
+        await policy.setMode(.askEveryTime)
+        let firstAsk = await policy.authorize(
+            capability: "customer_mac.desktop_type",
+            request: request,
+            requestDigestSHA256: String(repeating: "c", count: 64)
+        )
+        let secondAsk = await policy.authorize(
+            capability: "customer_mac.desktop_type",
+            request: request,
+            requestDigestSHA256: String(repeating: "d", count: 64)
+        )
+        let requests = await approver.requests
+
+        XCTAssertEqual(firstAsk, .allow)
+        XCTAssertEqual(secondAsk, .deny("approval_denied"))
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertNotEqual(requests[0].requestID, requests[1].requestID)
+        XCTAssertEqual(requests[0].actionSummary, "Type \(text.count) characters")
+        XCTAssertFalse(requests[0].actionSummary.contains("private text"))
+        XCTAssertEqual(requests[0].requestDigestSHA256, String(repeating: "c", count: 64))
+        XCTAssertEqual(requests[1].requestDigestSHA256, String(repeating: "d", count: 64))
+    }
+
+    func testOffReturnsDeniedReceiptWithoutInvokingExecutorOrClosingChannel() async throws {
+        let fixture = try makeSignedCommandFixture()
+        let socket = QueuedRelaySocket(received: [
+            try MacAccessWire.canonicalData(registrationAck()),
+            fixture.wire,
+        ])
+        let executor = CountingExecutor()
+        let runtime = MacAccessHelperRuntime(
+            vault: MemoryCredentialVault(credentialRecord(for: fixture)),
+            redeemer: UnusedRedeemer(),
+            socketFactory: FixtureSocketFactory(socket: socket),
+            executor: executor,
+            pinnedKeys: fixture.keys,
+            relayURL: try relayURL(),
+            now: { fixture.now }
+        )
+
+        _ = try await runtime.connect()
+        let receipt = try await runtime.processOneCommand()
+        let executionCount = await executor.executionCount
+        let isClosed = await socket.isClosed
+        let status = await runtime.status
+
+        XCTAssertEqual(receipt.outcome, .denied)
+        XCTAssertEqual(receipt.errorCode, "access_off")
+        XCTAssertEqual(executionCount, 0)
+        XCTAssertFalse(isClosed)
+        XCTAssertEqual(status.transport, .connected)
+    }
+
     func testCommandAuthorityGoldenParity() throws {
         let fixture = try makeSignedCommandFixture()
         let payload = MacAccessCommandAuthorityPayload(
@@ -611,6 +702,7 @@ final class TransportContractTests: XCTestCase {
             now: { fixture.now }
         )
 
+        await runtime.setAccessMode(.fullAccess)
         let connected = try await runtime.connect()
         let beginCountAfterConnect = await relayActivity.beginCount
         let endCountAfterConnect = await relayActivity.endCount
@@ -697,6 +789,7 @@ final class TransportContractTests: XCTestCase {
             executor: executor, pinnedKeys: fixture.keys, relayURL: try relayURL(), now: { fixture.now }
         )
 
+        await runtime.setAccessMode(.fullAccess)
         _ = try await runtime.connect()
         _ = try await runtime.processOneCommand()
         _ = await runtime.disconnect()
@@ -738,6 +831,7 @@ final class TransportContractTests: XCTestCase {
                 pinnedKeys: fixture.keys, relayURL: try relayURL(), now: { fixture.now }
             )
 
+            await runtime.setAccessMode(.fullAccess)
             _ = try await runtime.connect()
             _ = try await runtime.processOneCommand()
             do {
@@ -752,9 +846,11 @@ final class TransportContractTests: XCTestCase {
             }
 
             let terminalStatus = await runtime.status
+            let terminalMode = await runtime.accessMode()
             let record = await vault.load()
             if reason == "grant_revoked" {
                 XCTAssertEqual(terminalStatus.pairing, .revoked)
+                XCTAssertEqual(terminalMode, .off)
                 XCTAssertNil(record)
                 continue
             }
@@ -762,6 +858,9 @@ final class TransportContractTests: XCTestCase {
             XCTAssertEqual(
                 terminalStatus.transport, reason == "local_stop" ? .disconnected : .blocked
             )
+            if reason == "local_stop" {
+                XCTAssertEqual(terminalMode, .off)
+            }
             XCTAssertNotNil(record)
 
             _ = try await runtime.connect()
@@ -792,6 +891,7 @@ final class TransportContractTests: XCTestCase {
             executor: executor, pinnedKeys: fixture.keys, relayURL: try relayURL(), now: { fixture.now }
         )
 
+        await runtime.setAccessMode(.fullAccess)
         _ = try await runtime.connect()
         let oldReceiver = Task { try await runtime.processOneCommand() }
         await first.waitUntilReceiving()
@@ -1017,6 +1117,7 @@ final class TransportContractTests: XCTestCase {
             executor: executor, pinnedKeys: firstFixture.keys,
             relayURL: try relayURL(), now: { firstFixture.now }
         )
+        await runtime.setAccessMode(.fullAccess)
         _ = try await runtime.connect()
         let receiveLoop = Task { await runtime.processCommands() }
         await socket.waitUntilReceiving()

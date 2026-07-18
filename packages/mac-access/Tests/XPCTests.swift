@@ -24,6 +24,7 @@ private actor RecordingXPCServiceCore: MacAccessXPCServiceCore {
     private(set) var stopCount = 0
     private(set) var revokeCount = 0
     private(set) var permissionRequests: [MacAccessPermissionKind] = []
+    private(set) var accessModes: [MacAccessMode] = []
 
     func status() -> MacAccessXPCReply { okReply() }
     func pair(code: String) -> MacAccessXPCReply { pairingCodes.append(code); return okReply() }
@@ -31,6 +32,10 @@ private actor RecordingXPCServiceCore: MacAccessXPCServiceCore {
     func disconnect() -> MacAccessXPCReply { okReply() }
     func stop() -> MacAccessXPCReply { stopCount += 1; return okReply() }
     func revoke() -> MacAccessXPCReply { revokeCount += 1; return okReply() }
+    func setAccessMode(_ mode: MacAccessMode) -> MacAccessXPCReply {
+        accessModes.append(mode)
+        return okReply(accessMode: mode)
+    }
     func requestPermission(_ kind: MacAccessPermissionKind) -> MacAccessXPCReply {
         permissionRequests.append(kind)
         return okReply(permissions: MacAccessPermissionStatus(
@@ -39,12 +44,16 @@ private actor RecordingXPCServiceCore: MacAccessXPCServiceCore {
         ))
     }
 
-    private func okReply(permissions: MacAccessPermissionStatus = .unknown) -> MacAccessXPCReply {
+    private func okReply(
+        permissions: MacAccessPermissionStatus = .unknown,
+        accessMode: MacAccessMode = .off
+    ) -> MacAccessXPCReply {
         MacAccessXPCReply(
             code: .ok,
             status: MacAccessXPCSafeStatus(
                 pairing: "paired", transport: "connected", lastErrorCode: nil, lastAuditID: nil,
-                permissions: permissions
+                permissions: permissions,
+                accessMode: accessMode
             )
         )
     }
@@ -95,6 +104,7 @@ final class XPCTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(MacAccessXPCReply.self, from: paired).code, .ok)
         _ = await invoke { service.stop(withReply: $0) }
         _ = await invoke { service.revoke(withReply: $0) }
+        let fullAccess = await invoke { service.setAccessMode("fullAccess", withReply: $0) }
         let accessibility = await invoke { service.requestAccessibility(withReply: $0) }
         let screenRecording = await invoke { service.requestScreenRecording(withReply: $0) }
 
@@ -102,10 +112,16 @@ final class XPCTests: XCTestCase {
         let stopCount = await core.stopCount
         let revokeCount = await core.revokeCount
         let permissionRequests = await core.permissionRequests
+        let accessModes = await core.accessModes
         XCTAssertEqual(pairingCodes, ["ABCDEFGH2345"])
         XCTAssertEqual(stopCount, 1)
         XCTAssertEqual(revokeCount, 1)
         XCTAssertEqual(permissionRequests, [.accessibility, .screenRecording])
+        XCTAssertEqual(accessModes, [.fullAccess])
+        XCTAssertEqual(
+            try JSONDecoder().decode(MacAccessXPCReply.self, from: fullAccess).status.accessMode,
+            .fullAccess
+        )
         XCTAssertEqual(
             try JSONDecoder().decode(MacAccessXPCReply.self, from: accessibility)
                 .status.permissions.accessibility,

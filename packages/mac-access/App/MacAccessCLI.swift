@@ -7,7 +7,7 @@ extension MacAccessXPCConnectorCoreClient: MacAccessCLIClient {}
 
 enum MacAccessCLICommand: Equatable {
     case status, permissionStatus, requestAccessibility, requestScreenRecording
-    case pair, connect, disconnect, stop, revoke, help
+    case pair, connect, disconnect, stop, unpair, revoke, modeOff, modeAsk, modeFull, help
 
     var name: String {
         switch self {
@@ -20,6 +20,10 @@ enum MacAccessCLICommand: Equatable {
         case .disconnect: "disconnect"
         case .stop: "stop"
         case .revoke: "revoke"
+        case .unpair: "unpair"
+        case .modeOff: "mode_off"
+        case .modeAsk: "mode_ask_every_time"
+        case .modeFull: "mode_full_access"
         case .help: "help"
         }
     }
@@ -60,7 +64,11 @@ enum MacAccessCLI {
       pair --code-stdin
       connect
       disconnect
+      mode off
+      mode ask
+      mode full
       stop
+      unpair
       revoke
       help
 
@@ -83,7 +91,11 @@ enum MacAccessCLI {
         case ["pair", "--code-stdin"]: return .pair
         case ["connect"]: return .connect
         case ["disconnect"]: return .disconnect
+        case ["mode", "off"]: return .modeOff
+        case ["mode", "ask"]: return .modeAsk
+        case ["mode", "full"]: return .modeFull
         case ["stop"]: return .stop
+        case ["unpair"]: return .unpair
         case ["revoke"]: return .revoke
         case ["help"], ["--help"], ["-h"]: return .help
         default: return nil
@@ -160,7 +172,11 @@ enum MacAccessCLI {
         case .connect: action = .connect
         case .disconnect: action = .disconnect
         case .stop: action = .stop
+        case .unpair: action = .unpair
         case .revoke: action = .revokeSelectedVM
+        case .modeOff: action = .setAccessMode(.off)
+        case .modeAsk: action = .setAccessMode(.askEveryTime)
+        case .modeFull: action = .setAccessMode(.fullAccess)
         case .status, .permissionStatus, .requestAccessibility, .requestScreenRecording, .help:
             preconditionFailure("status and help return before action dispatch")
         }
@@ -213,6 +229,7 @@ enum MacAccessCLI {
         case .localPause: "paused"
         case .localResume: "resumed"
         case .localEmergencyStop: "emergency_stopped"
+        case .accessModeSet(let mode): mode.rawValue
         }
     }
 }

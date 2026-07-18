@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en-US",
   "strings": {
+    "approval.allowOnce": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Allow Once" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Allow Once" } }
+      }
+    },
+    "approval.deny": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Deny" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Deny" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Deny" } }
+      }
+    },
+    "approval.title": {
+      "localizations": {
+        "zh-CN": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "en-US": { "stringUnit": { "state": "translated", "value": "Allow this Mac action?" } },
+        "ja-JP": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "zh-TW": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "ko-KR": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "tr-TR": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "ru-RU": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "uk-UA": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "pt-BR": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "es-ES": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "fr-FR": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } },
+        "fa-IR": { "stringUnit": { "state": "needs_review", "value": "Allow this Mac action?" } }
+      }
+    },
     "blocker.permissionDenied": {
       "localizations": {
         "zh-CN": {
@@ -3734,73 +3782,73 @@
         "zh-CN": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "en-US": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "ja-JP": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "zh-TW": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "ko-KR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "tr-TR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "ru-RU": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "uk-UA": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "es-ES": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "fr-FR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         },
         "fa-IR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access app. Its helper executes only actions allowed by the local access mode. You can revoke either permission at any time in System Settings."
           }
         }
       }

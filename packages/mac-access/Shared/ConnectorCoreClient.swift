@@ -22,6 +22,7 @@ public enum ConnectorCoreCompletion: Equatable, Sendable {
     case localPause
     case localResume
     case localEmergencyStop
+    case accessModeSet(MacAccessMode)
 }
 
 public enum ConnectorCoreInvalidationReason: Equatable, Sendable {
