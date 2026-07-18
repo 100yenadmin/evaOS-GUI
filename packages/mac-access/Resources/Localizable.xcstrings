@@ -3658,73 +3658,73 @@
         "zh-CN": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "en-US": {
           "stringUnit": {
             "state": "translated",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "ja-JP": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "zh-TW": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "ko-KR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "tr-TR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "ru-RU": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "uk-UA": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "es-ES": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "fr-FR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         },
         "fa-IR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Expected future permission helper identity:"
+            "value": "Permission helper identity:"
           }
         }
       }
@@ -3734,73 +3734,73 @@
         "zh-CN": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "en-US": {
           "stringUnit": {
             "state": "translated",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "ja-JP": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "zh-TW": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "ko-KR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "tr-TR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "ru-RU": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "uk-UA": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "es-ES": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "fr-FR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         },
         "fa-IR": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "This unsigned build cannot prove TCC attribution. Approve permissions only for a future signed candidate after its exact code requirement is verified."
+            "value": "macOS grants Accessibility and Screen Recording to the signed evaOS Mac Access helper. You can revoke either permission at any time in System Settings."
           }
         }
       }

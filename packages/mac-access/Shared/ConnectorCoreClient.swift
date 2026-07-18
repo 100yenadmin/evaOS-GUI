@@ -87,4 +87,12 @@ public struct MacAccessActionAvailability: Equatable, Sendable {
         revoke: true,
         update: false
     )
+
+    public static let internalAlpha = MacAccessActionAvailability(
+        pairing: true,
+        transport: true,
+        elevatedAccessModes: true,
+        revoke: true,
+        update: false
+    )
 }

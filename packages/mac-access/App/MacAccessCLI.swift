@@ -1,16 +1,20 @@
 import Foundation
 import MacAccessShared
 
-protocol MacAccessCLIClient: MacAccessStatusProvidingClient {}
+protocol MacAccessCLIClient: MacAccessPermissionControllingClient {}
 
 extension MacAccessXPCConnectorCoreClient: MacAccessCLIClient {}
 
 enum MacAccessCLICommand: Equatable {
-    case status, pair, connect, disconnect, stop, revoke, help
+    case status, permissionStatus, requestAccessibility, requestScreenRecording
+    case pair, connect, disconnect, stop, revoke, help
 
     var name: String {
         switch self {
         case .status: "status"
+        case .permissionStatus: "permissions_status"
+        case .requestAccessibility: "permissions_request_accessibility"
+        case .requestScreenRecording: "permissions_request_screen_recording"
         case .pair: "pair"
         case .connect: "connect"
         case .disconnect: "disconnect"
@@ -50,6 +54,9 @@ enum MacAccessCLI {
 
     Commands:
       status
+      permissions status
+      permissions request accessibility
+      permissions request screen-recording
       pair --code-stdin
       connect
       disconnect
@@ -70,6 +77,9 @@ enum MacAccessCLI {
         let arguments = arguments.filter { $0 != "--json" }
         switch arguments {
         case ["status"]: return .status
+        case ["permissions", "status"]: return .permissionStatus
+        case ["permissions", "request", "accessibility"]: return .requestAccessibility
+        case ["permissions", "request", "screen-recording"]: return .requestScreenRecording
         case ["pair", "--code-stdin"]: return .pair
         case ["connect"]: return .connect
         case ["disconnect"]: return .disconnect
@@ -98,8 +108,26 @@ enum MacAccessCLI {
                 standardError: false
             )
         }
-        if command == .status {
+        if command == .status || command == .permissionStatus {
             guard let reply = await client.fetchStatus() else {
+                return response(
+                    ok: false, command: command.name, resultCode: "helper_unavailable",
+                    status: nil, exitCode: 69, standardError: true
+                )
+            }
+            return response(
+                ok: reply.code == .ok,
+                command: command.name,
+                resultCode: reply.code.rawValue,
+                status: reply.status,
+                exitCode: reply.code == .ok ? 0 : 77,
+                standardError: reply.code != .ok
+            )
+        }
+        if command == .requestAccessibility || command == .requestScreenRecording {
+            let kind: MacAccessPermissionKind =
+                command == .requestAccessibility ? .accessibility : .screenRecording
+            guard let reply = await client.requestPermission(kind) else {
                 return response(
                     ok: false, command: command.name, resultCode: "helper_unavailable",
                     status: nil, exitCode: 69, standardError: true
@@ -133,7 +161,7 @@ enum MacAccessCLI {
         case .disconnect: action = .disconnect
         case .stop: action = .stop
         case .revoke: action = .revokeSelectedVM
-        case .status, .help:
+        case .status, .permissionStatus, .requestAccessibility, .requestScreenRecording, .help:
             preconditionFailure("status and help return before action dispatch")
         }
 

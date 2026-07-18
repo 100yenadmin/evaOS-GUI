@@ -43,18 +43,14 @@ struct MacAccessMenu: View {
         Menu("action.accessMode") {
             accessModeButton(.off)
             accessModeButton(.askEveryTime)
-                .disabled(!controller.availability.elevatedAccessModes)
+                .disabled(!controller.canUseElevatedAccessModes)
             accessModeButton(.fullAccess)
-                .disabled(!controller.availability.elevatedAccessModes)
+                .disabled(!controller.canUseElevatedAccessModes)
         }
 
         Menu("action.permissions") {
-            Button("permission.accessibility") {}
-                .disabled(true)
-                .help("blocker.permissionProofPending")
-            Button("permission.screenRecording") {}
-                .disabled(true)
-                .help("blocker.permissionProofPending")
+            permissionButton(.accessibility, title: "permission.accessibility")
+            permissionButton(.screenRecording, title: "permission.screenRecording")
         }
 
         Menu("action.lastActivity") {
@@ -135,5 +131,23 @@ struct MacAccessMenu: View {
             Label(mode.localizationKey, systemImage: controller.state.configuredMode == mode ? "checkmark" : "circle")
         }
         .accessibilityAddTraits(controller.state.configuredMode == mode ? .isSelected : [])
+    }
+
+    private func permissionButton(
+        _ kind: MacAccessPermissionKind,
+        title: LocalizedStringKey
+    ) -> some View {
+        Button {
+            Task { await controller.requestPermission(kind) }
+        } label: {
+            Label(title, systemImage: permissionState(kind) == .granted ? "checkmark.circle.fill" : "gear")
+        }
+    }
+
+    private func permissionState(_ kind: MacAccessPermissionKind) -> MacAccessPermissionState {
+        switch kind {
+        case .accessibility: controller.permissions.accessibility
+        case .screenRecording: controller.permissions.screenRecording
+        }
     }
 }

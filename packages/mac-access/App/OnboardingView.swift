@@ -27,6 +27,7 @@ final class MacAccessOnboardingWindow: ObservableObject {
 
         let windowController = NSWindowController(window: window)
         self.windowController = windowController
+        NSApplication.shared.setActivationPolicy(.accessory)
         NSApplication.shared.activate(ignoringOtherApps: true)
         windowController.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
@@ -84,6 +85,14 @@ struct OnboardingView: View {
             Text("onboarding.noSecrets")
                 .font(.caption)
 
+            GroupBox("action.permissions") {
+                VStack(alignment: .leading, spacing: 8) {
+                    permissionRow(.accessibility, title: "permission.accessibility")
+                    permissionRow(.screenRecording, title: "permission.screenRecording")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             HStack {
                 Button("action.pair") {
                     Task { await controller.perform(.pair(pairingCode)) }
@@ -99,5 +108,29 @@ struct OnboardingView: View {
         }
         .padding(24)
         .frame(width: 520)
+        .task {
+            await controller.refreshFromHelper()
+        }
+    }
+
+    private func permissionRow(
+        _ kind: MacAccessPermissionKind,
+        title: LocalizedStringKey
+    ) -> some View {
+        HStack {
+            Image(systemName: permissionState(kind) == .granted ? "checkmark.circle.fill" : "circle")
+            Text(title)
+            Spacer()
+            Button(title) {
+                Task { await controller.requestPermission(kind) }
+            }
+        }
+    }
+
+    private func permissionState(_ kind: MacAccessPermissionKind) -> MacAccessPermissionState {
+        switch kind {
+        case .accessibility: controller.permissions.accessibility
+        case .screenRecording: controller.permissions.screenRecording
+        }
     }
 }

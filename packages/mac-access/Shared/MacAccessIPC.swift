@@ -2,6 +2,40 @@ import Foundation
 
 public enum MacAccessXPCAction: String, Codable, Equatable, Sendable {
     case status, pair, connect, disconnect, stop, revoke
+    case requestAccessibility = "request_accessibility"
+    case requestScreenRecording = "request_screen_recording"
+}
+
+public enum MacAccessPermissionKind: String, Codable, Equatable, Sendable {
+    case accessibility
+    case screenRecording = "screen_recording"
+}
+
+public enum MacAccessPermissionState: String, Codable, Equatable, Sendable {
+    case granted, denied, unknown
+}
+
+public struct MacAccessPermissionStatus: Codable, Equatable, Sendable {
+    public let accessibility: MacAccessPermissionState
+    public let screenRecording: MacAccessPermissionState
+
+    public static let unknown = MacAccessPermissionStatus(
+        accessibility: .unknown,
+        screenRecording: .unknown
+    )
+
+    public init(
+        accessibility: MacAccessPermissionState,
+        screenRecording: MacAccessPermissionState
+    ) {
+        self.accessibility = accessibility
+        self.screenRecording = screenRecording
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case accessibility
+        case screenRecording = "screen_recording"
+    }
 }
 
 public enum MacAccessXPCReplyCode: String, Codable, Equatable, Sendable {
@@ -23,12 +57,20 @@ public struct MacAccessXPCSafeStatus: Codable, Equatable, Sendable {
     public let transport: String
     public let lastErrorCode: String?
     public let lastAuditID: String?
+    public let permissions: MacAccessPermissionStatus
 
-    public init(pairing: String, transport: String, lastErrorCode: String?, lastAuditID: String?) {
+    public init(
+        pairing: String,
+        transport: String,
+        lastErrorCode: String?,
+        lastAuditID: String?,
+        permissions: MacAccessPermissionStatus = .unknown
+    ) {
         self.pairing = pairing
         self.transport = transport
         self.lastErrorCode = lastErrorCode
         self.lastAuditID = lastAuditID
+        self.permissions = permissions
     }
 }
 
@@ -46,6 +88,10 @@ public protocol MacAccessStatusProvidingClient: ConnectorCoreClient {
     func fetchStatus() async -> MacAccessXPCReply?
 }
 
+public protocol MacAccessPermissionControllingClient: MacAccessStatusProvidingClient {
+    func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply?
+}
+
 @objc public protocol MacAccessXPCServiceProtocol {
     func status(withReply reply: @escaping @Sendable (Data) -> Void)
     func pair(code: String, withReply reply: @escaping @Sendable (Data) -> Void)
@@ -53,6 +99,8 @@ public protocol MacAccessStatusProvidingClient: ConnectorCoreClient {
     func disconnect(withReply reply: @escaping @Sendable (Data) -> Void)
     func stop(withReply reply: @escaping @Sendable (Data) -> Void)
     func revoke(withReply reply: @escaping @Sendable (Data) -> Void)
+    func requestAccessibility(withReply reply: @escaping @Sendable (Data) -> Void)
+    func requestScreenRecording(withReply reply: @escaping @Sendable (Data) -> Void)
 }
 
 protocol MacAccessXPCTransport: Sendable {
@@ -104,6 +152,8 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
             case .disconnect: service.disconnect(withReply: receive)
             case .stop: service.stop(withReply: receive)
             case .revoke: service.revoke(withReply: receive)
+            case .requestAccessibility: service.requestAccessibility(withReply: receive)
+            case .requestScreenRecording: service.requestScreenRecording(withReply: receive)
             }
         }
     }
@@ -127,7 +177,7 @@ actor ProductionMacAccessXPCTransport: MacAccessXPCTransport {
     }
 }
 
-public actor MacAccessXPCConnectorCoreClient: MacAccessStatusProvidingClient {
+public actor MacAccessXPCConnectorCoreClient: MacAccessPermissionControllingClient {
     private let transport: any MacAccessXPCTransport
 
     public init() {
@@ -163,6 +213,17 @@ public actor MacAccessXPCConnectorCoreClient: MacAccessStatusProvidingClient {
 
     public func fetchStatus() async -> MacAccessXPCReply? {
         guard let data = try? await transport.request(.status, code: nil),
+              data.count <= ProductionMacAccessXPCTransport.maximumReplyBytes
+        else { return nil }
+        return try? JSONDecoder().decode(MacAccessXPCReply.self, from: data)
+    }
+
+    public func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply? {
+        let action: MacAccessXPCAction = switch kind {
+        case .accessibility: .requestAccessibility
+        case .screenRecording: .requestScreenRecording
+        }
+        guard let data = try? await transport.request(action, code: nil),
               data.count <= ProductionMacAccessXPCTransport.maximumReplyBytes
         else { return nil }
         return try? JSONDecoder().decode(MacAccessXPCReply.self, from: data)

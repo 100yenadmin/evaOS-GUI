@@ -5,6 +5,7 @@ import Foundation
 public final class MacAccessController: ObservableObject {
     @Published public private(set) var state: MacAccessState
     @Published public private(set) var lastResult: MacAccessActionResult?
+    @Published public private(set) var permissions: MacAccessPermissionStatus = .unknown
 
     public let availability: MacAccessActionAvailability
     private let client: any ConnectorCoreClient
@@ -43,6 +44,7 @@ public final class MacAccessController: ObservableObject {
         else { return }
 
         let paired = reply.status.pairing == "paired"
+        permissions = reply.status.permissions
         let connection: MacAccessConnectionState
         switch reply.status.transport {
         case "connecting":
@@ -71,6 +73,19 @@ public final class MacAccessController: ObservableObject {
         )
         machine = MacAccessStateMachine(state: projected)
         state = projected
+    }
+
+    public var canUseElevatedAccessModes: Bool {
+        availability.elevatedAccessModes
+            && permissions.accessibility == .granted
+            && permissions.screenRecording == .granted
+    }
+
+    public func requestPermission(_ kind: MacAccessPermissionKind) async {
+        guard let client = client as? any MacAccessPermissionControllingClient,
+              let reply = await client.requestPermission(kind)
+        else { return }
+        permissions = reply.status.permissions
     }
 
     @discardableResult

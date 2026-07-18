@@ -1,3 +1,5 @@
+import ApplicationServices
+import CoreGraphics
 import Foundation
 import MacAccessShared
 import XPC
@@ -39,6 +41,40 @@ protocol MacAccessXPCServiceCore: Sendable {
     func disconnect() async -> MacAccessXPCReply
     func stop() async -> MacAccessXPCReply
     func revoke() async -> MacAccessXPCReply
+    func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply
+}
+
+protocol MacAccessPermissionAuthorizing: Sendable {
+    func currentStatus() async -> MacAccessPermissionStatus
+    func request(_ kind: MacAccessPermissionKind) async -> MacAccessPermissionStatus
+}
+
+struct SystemMacAccessPermissionAuthorizer: MacAccessPermissionAuthorizing {
+    func currentStatus() async -> MacAccessPermissionStatus {
+        await MainActor.run {
+            MacAccessPermissionStatus(
+                accessibility: AXIsProcessTrusted() ? .granted : .denied,
+                screenRecording: CGPreflightScreenCaptureAccess() ? .granted : .denied
+            )
+        }
+    }
+
+    func request(_ kind: MacAccessPermissionKind) async -> MacAccessPermissionStatus {
+        await MainActor.run {
+            switch kind {
+            case .accessibility:
+                _ = AXIsProcessTrustedWithOptions(
+                    ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+                )
+            case .screenRecording:
+                _ = CGRequestScreenCaptureAccess()
+            }
+            return MacAccessPermissionStatus(
+                accessibility: AXIsProcessTrusted() ? .granted : .denied,
+                screenRecording: CGPreflightScreenCaptureAccess() ? .granted : .denied
+            )
+        }
+    }
 }
 
 struct MacAccessHelperDeploymentConfiguration: Equatable, Sendable {
@@ -79,13 +115,16 @@ struct MacAccessHelperDeploymentConfiguration: Equatable, Sendable {
 actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
     private let vault: any MacAccessCredentialVault
     private let runtime: MacAccessHelperRuntime?
+    private let permissionAuthorizer: any MacAccessPermissionAuthorizing
 
     init(
         configuration: MacAccessHelperDeploymentConfiguration?,
         vault: any MacAccessCredentialVault = SecurityMacAccessCredentialVault(),
-        relayActivity: any MacAccessRelayActivity = MacAccessXPCTransactionActivity()
+        relayActivity: any MacAccessRelayActivity = MacAccessXPCTransactionActivity(),
+        permissionAuthorizer: any MacAccessPermissionAuthorizing = SystemMacAccessPermissionAuthorizer()
     ) {
         self.vault = vault
+        self.permissionAuthorizer = permissionAuthorizer
         guard let configuration else {
             runtime = nil
             return
@@ -103,7 +142,11 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
 
     func status() async -> MacAccessXPCReply {
         guard let runtime else { return unavailableReply() }
-        return reply(code: .ok, status: await runtime.refreshStatusFromVault())
+        return reply(
+            code: .ok,
+            status: await runtime.refreshStatusFromVault(),
+            permissions: await permissionAuthorizer.currentStatus()
+        )
     }
 
     func pair(code: String) async -> MacAccessXPCReply {
@@ -168,6 +211,16 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         }
     }
 
+    func requestPermission(_ kind: MacAccessPermissionKind) async -> MacAccessXPCReply {
+        let permissions = await permissionAuthorizer.request(kind)
+        let status = if let runtime {
+            await runtime.refreshStatusFromVault()
+        } else {
+            MacAccessHelperSafeStatus.initial
+        }
+        return reply(code: .ok, status: status, permissions: permissions)
+    }
+
     private func unavailableReply() -> MacAccessXPCReply {
         MacAccessXPCReply(
             code: .configurationUnavailable,
@@ -178,14 +231,19 @@ actor MacAccessRuntimeXPCServiceCore: MacAccessXPCServiceCore {
         )
     }
 
-    private func reply(code: MacAccessXPCReplyCode, status: MacAccessHelperSafeStatus = .initial) -> MacAccessXPCReply {
+    private func reply(
+        code: MacAccessXPCReplyCode,
+        status: MacAccessHelperSafeStatus = .initial,
+        permissions: MacAccessPermissionStatus = .unknown
+    ) -> MacAccessXPCReply {
         MacAccessXPCReply(
             code: code,
             status: MacAccessXPCSafeStatus(
                 pairing: status.pairing.rawValue,
                 transport: status.transport.rawValue,
                 lastErrorCode: status.lastError?.rawValue,
-                lastAuditID: status.lastAuditID
+                lastAuditID: status.lastAuditID,
+                permissions: permissions
             )
         )
     }
@@ -249,6 +307,14 @@ final class MacAccessXPCService: NSObject, MacAccessXPCServiceProtocol, @uncheck
 
     func revoke(withReply reply: @escaping @Sendable (Data) -> Void) {
         respond(reply) { await self.core.revoke() }
+    }
+
+    func requestAccessibility(withReply reply: @escaping @Sendable (Data) -> Void) {
+        respond(reply) { await self.core.requestPermission(.accessibility) }
+    }
+
+    func requestScreenRecording(withReply reply: @escaping @Sendable (Data) -> Void) {
+        respond(reply) { await self.core.requestPermission(.screenRecording) }
     }
 
     private func respond(

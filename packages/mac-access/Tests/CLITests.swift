@@ -6,6 +6,7 @@ private actor StubCLIClient: MacAccessCLIClient {
     let result: ConnectorCoreResult
     let reply: MacAccessXPCReply?
     private(set) var actions: [ConnectorCoreAction] = []
+    private(set) var permissionRequests: [MacAccessPermissionKind] = []
 
     init(
         result: ConnectorCoreResult = .completed(.connected),
@@ -28,6 +29,11 @@ private actor StubCLIClient: MacAccessCLIClient {
 
     func fetchStatus() -> MacAccessXPCReply? {
         reply
+    }
+
+    func requestPermission(_ kind: MacAccessPermissionKind) -> MacAccessXPCReply? {
+        permissionRequests.append(kind)
+        return reply
     }
 }
 
@@ -77,6 +83,32 @@ final class CLITests: XCTestCase {
             let text = String(decoding: execution.output, as: UTF8.self)
             XCTAssertFalse(text.contains("relay_credential"))
             XCTAssertFalse(text.contains("pairing_code"))
+        }
+    }
+
+    func testPermissionStatusAndRequestsUseHelperOwnedXPCSurface() async {
+        let statusClient = StubCLIClient()
+        let status = await MacAccessCLI.execute(
+            arguments: ["permissions", "status", "--json"],
+            client: statusClient,
+            readStdin: { Data() }
+        )
+        XCTAssertEqual(status.exitCode, 0)
+        XCTAssertTrue((try? JSONSerialization.jsonObject(with: status.output)) != nil)
+
+        for (arguments, expected) in [
+            (["permissions", "request", "accessibility"], MacAccessPermissionKind.accessibility),
+            (["permissions", "request", "screen-recording"], MacAccessPermissionKind.screenRecording),
+        ] {
+            let client = StubCLIClient()
+            let execution = await MacAccessCLI.execute(
+                arguments: arguments,
+                client: client,
+                readStdin: { Data() }
+            )
+            XCTAssertEqual(execution.exitCode, 0)
+            let requests = await client.permissionRequests
+            XCTAssertEqual(requests, [expected])
         }
     }
 }
